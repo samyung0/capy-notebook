@@ -2,10 +2,10 @@
 
 Two tiers:
 
-| tier | files | needs | cost |
-|------|-------|-------|------|
-| **offline unit** | `test_modal_parser.py`, `test_helpers.py` | nothing | free, ~4s |
-| **cassette integration** | `test_ingest_query.py` | live Postgres (+ recorded cassettes) | free on replay |
+| tier                     | files                                     | needs                                | cost           |
+| ------------------------ | ----------------------------------------- | ------------------------------------ | -------------- |
+| **offline unit**         | `test_modal_parser.py`, `test_helpers.py` | nothing                              | free, ~4s      |
+| **cassette integration** | `test_ingest_query.py`                    | live Postgres (+ recorded cassettes) | free on replay |
 
 The integration tier drives the real migrated code — the per-workspace factory,
 the model adapters (embedding / LLM / VLM), the custom `modal` parser engine and

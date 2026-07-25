@@ -1,35 +1,43 @@
 import {
   createContext,
+  type ReactNode,
   useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
-  type ReactNode,
 } from 'react';
 
-export type ThemeName = 'friendly' | 'notion';
-export type ThemeMode = 'light' | 'dark';
+export type Style = 'classroom' | 'notion';
+export type Theme = 'light' | 'dark';
 
-export const THEMES: { value: ThemeName; label: string }[] = [
-  { value: 'friendly', label: 'Friendly' },
-  { value: 'notion', label: 'Notion' },
+export const STYLES: { value: Style; label: string }[] = [
+  { label: 'Classroom', value: 'classroom' },
+  { label: 'Notion', value: 'notion' },
+];
+
+export const THEMES: { value: Theme; label: string }[] = [
+  { label: 'Light', value: 'light' },
+  { label: 'Dark', value: 'dark' },
 ];
 
 interface ThemeState {
-  theme: ThemeName;
-  mode: ThemeMode;
-  setTheme: (t: ThemeName) => void;
-  setMode: (m: ThemeMode) => void;
-  toggleMode: () => void;
+  setStyle: (m: Style) => void;
+  setTheme: (t: Theme) => void;
+  style: Style;
+  theme: Theme;
 }
 
 const ThemeContext = createContext<ThemeState | null>(null);
 
+const STYLE_KEY = 'evo.style';
 const THEME_KEY = 'evo.theme';
-const MODE_KEY = 'evo.mode';
 
-function readStored<T extends string>(key: string, allowed: readonly T[], fallback: T): T {
+function readStored<T extends string>(
+  key: string,
+  allowed: readonly T[],
+  fallback: T
+): T {
   if (typeof localStorage === 'undefined') return fallback;
   const v = localStorage.getItem(key) as T | null;
   return v && allowed.includes(v) ? v : fallback;
@@ -37,48 +45,47 @@ function readStored<T extends string>(key: string, allowed: readonly T[], fallba
 
 function prefersDark(): boolean {
   return (
-    typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-color-scheme: dark)').matches
   );
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
-  const [theme, setThemeState] = useState<ThemeName>(() =>
-    readStored<ThemeName>(THEME_KEY, ['friendly', 'notion'], 'friendly')
+  const [style, setStyleState] = useState<Style>(() =>
+    readStored<Style>(STYLE_KEY, ['classroom', 'notion'], 'classroom')
   );
-  const [mode, setModeState] = useState<ThemeMode>(() =>
-    readStored<ThemeMode>(MODE_KEY, ['light', 'dark'], prefersDark() ? 'dark' : 'light')
+  const [theme, setThemeState] = useState<Theme>(() =>
+    readStored<Theme>(
+      THEME_KEY,
+      ['light', 'dark'],
+      prefersDark() ? 'dark' : 'light'
+    )
   );
 
   useEffect(() => {
     const root = document.documentElement;
+    root.dataset.style = style;
     root.dataset.theme = theme;
-    root.dataset.mode = mode;
-  }, [theme, mode]);
+  }, [style, theme]);
 
-  const setTheme = useCallback((t: ThemeName) => {
-    setThemeState(t);
-    localStorage.setItem(THEME_KEY, t);
+  const setStyle = useCallback((t: Style) => {
+    setStyleState(t);
+    localStorage.setItem(STYLE_KEY, t);
   }, []);
 
-  const setMode = useCallback((m: ThemeMode) => {
-    setModeState(m);
-    localStorage.setItem(MODE_KEY, m);
-  }, []);
-
-  const toggleMode = useCallback(() => {
-    setModeState((prev) => {
-      const next = prev === 'light' ? 'dark' : 'light';
-      localStorage.setItem(MODE_KEY, next);
-      return next;
-    });
+  const setTheme = useCallback((m: Theme) => {
+    setThemeState(m);
+    localStorage.setItem(THEME_KEY, m);
   }, []);
 
   const value = useMemo(
-    () => ({ theme, mode, setTheme, setMode, toggleMode }),
-    [theme, mode, setTheme, setMode, toggleMode]
+    () => ({ setStyle, setTheme, style, theme }),
+    [theme, style, setTheme, setStyle]
   );
 
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  return (
+    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
+  );
 }
 
 export function useTheme(): ThemeState {

@@ -1,13 +1,17 @@
-import * as React from 'react';
 import { Popover as PopoverPrimitive } from 'radix-ui';
+import type * as React from 'react';
 
 import { cn } from '@/lib/cn';
 
-function Popover({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Root>) {
+function Popover({
+  ...props
+}: React.ComponentProps<typeof PopoverPrimitive.Root>) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />;
 }
 
-function PopoverTrigger({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
+function PopoverTrigger({
+  ...props
+}: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
 }
 
@@ -23,26 +27,30 @@ function PopoverContent({
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
-        data-slot="popover-content"
         align={align}
-        sideOffset={sideOffset}
         className={cn(
-          'z-50 flex w-72 flex-col gap-2.5 rounded-lg p-2.5 outline-hidden duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=close]:animate-out data-[state=close]:fade-out-0 data-[state=close]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+          'data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=close]:fade-out-0 data-[state=close]:zoom-out-95 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 z-50 flex w-72 flex-col gap-2.5 rounded-lg p-2.5 outline-hidden duration-100 data-[state=close]:animate-out data-[state=open]:animate-in',
           alignWidthToTrigger && 'w-(--radix-popover-trigger-width)!',
           className
         )}
+        data-slot="popover-content"
+        sideOffset={sideOffset}
         {...props}
       />
     </PopoverPrimitive.Portal>
   );
 }
 
-function PopoverAnchor({ ...props }: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
+function PopoverAnchor({
+  ...props
+}: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
   return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />;
 }
 
 function PopoverTitle({ className, ...props }: React.ComponentProps<'h2'>) {
-  return <div data-slot="popover-title" className={cn('', className)} {...props} />;
+  return (
+    <div className={cn('', className)} data-slot="popover-title" {...props} />
+  );
 }
 
 export { Popover, PopoverAnchor, PopoverContent, PopoverTitle, PopoverTrigger };

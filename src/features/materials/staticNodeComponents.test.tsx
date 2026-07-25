@@ -1,22 +1,54 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { Question } from '@/api/types';
+import {
+  createMaterialDocument,
+  flashcardsNode,
+  type MaterialValue,
+  quizNode,
+} from './document';
 import { MaterialPreview } from './MaterialPreview';
-import { createMaterialDocument, flashcardsNode, quizNode, type MaterialValue } from './document';
 
 function renderMaterial(value: MaterialValue): string {
-  return renderToStaticMarkup(<MaterialPreview content={createMaterialDocument(value)} />);
+  return renderToStaticMarkup(
+    <MaterialPreview content={createMaterialDocument(value)} />
+  );
 }
 
 describe('static study-block renderers', () => {
+  it('renders pending insertions and removals from the shared marked head', () => {
+    const html = renderMaterial([
+      {
+        children: [
+          {
+            suggestion: true,
+            suggestion_remove: { id: 'remove', type: 'remove' },
+            text: 'removed',
+          },
+          {
+            suggestion: true,
+            suggestion_insert: { id: 'insert', type: 'insert' },
+            text: 'inserted',
+          },
+        ],
+        type: 'p',
+      },
+    ]);
+
+    expect(html).toContain('<del');
+    expect(html).toContain('line-through');
+    expect(html).toContain('<ins');
+    expect(html).toContain('text-solid-success');
+  });
+
   it('renders task lists with read-only checked state', () => {
     const html = renderMaterial([
       {
-        type: 'p',
-        listStyleType: 'todo',
         checked: true,
-        indent: 1,
         children: [{ text: 'Completed task' }],
+        indent: 1,
+        listStyleType: 'todo',
+        type: 'p',
       },
     ]);
 
@@ -29,14 +61,14 @@ describe('static study-block renderers', () => {
   it('omits unsafe link URLs from static previews', () => {
     const html = renderMaterial([
       {
-        type: 'p',
         children: [
           {
+            children: [{ text: 'Unsafe link' }],
             type: 'a',
             url: 'javascript:alert(1)',
-            children: [{ text: 'Unsafe link' }],
           },
         ],
+        type: 'p',
       },
     ]);
 
@@ -47,15 +79,15 @@ describe('static study-block renderers', () => {
   it('renders persisted font style marks in material previews', () => {
     const html = renderMaterial([
       {
-        type: 'p',
         children: [
           {
-            text: 'Styled text',
-            fontSize: '24px',
-            color: '#dc2626',
             backgroundColor: '#fef9c3',
+            color: '#dc2626',
+            fontSize: '24px',
+            text: 'Styled text',
           },
         ],
+        type: 'p',
       },
     ]);
 
@@ -68,14 +100,16 @@ describe('static study-block renderers', () => {
   it('renders semantic callout variants and code language labels in previews', () => {
     const html = renderMaterial([
       {
+        children: [{ children: [{ text: 'Check this first' }], type: 'p' }],
         type: 'callout',
         variant: 'warning',
-        children: [{ type: 'p', children: [{ text: 'Check this first' }] }],
       },
       {
-        type: 'code_block',
+        children: [
+          { children: [{ text: 'const ready = true;' }], type: 'code_line' },
+        ],
         lang: 'typescript',
-        children: [{ type: 'code_line', children: [{ text: 'const ready = true;' }] }],
+        type: 'code_block',
       },
     ]);
 
@@ -92,10 +126,12 @@ describe('static study-block renderers', () => {
   it('does not render code blocks with persisted list metadata as list items', () => {
     const html = renderMaterial([
       {
-        type: 'code_block',
-        listStyleType: 'disc',
+        children: [
+          { children: [{ text: 'const ready = true;' }], type: 'code_line' },
+        ],
         indent: 1,
-        children: [{ type: 'code_line', children: [{ text: 'const ready = true;' }] }],
+        listStyleType: 'disc',
+        type: 'code_block',
       },
     ]);
 
@@ -108,19 +144,19 @@ describe('static study-block renderers', () => {
   it('preserves persisted column ratios in previews', () => {
     const html = renderMaterial([
       {
-        type: 'column_group',
         children: [
           {
+            children: [{ children: [{ text: 'Wide' }], type: 'p' }],
             type: 'column',
             width: '66.667%',
-            children: [{ type: 'p', children: [{ text: 'Wide' }] }],
           },
           {
+            children: [{ children: [{ text: 'Narrow' }], type: 'p' }],
             type: 'column',
             width: '33.333%',
-            children: [{ type: 'p', children: [{ text: 'Narrow' }] }],
           },
         ],
+        type: 'column_group',
       },
     ]);
 
@@ -133,60 +169,65 @@ describe('static study-block renderers', () => {
   it('renders every quiz question shape as a read-only answer review', () => {
     const questions: Question[] = [
       {
-        id: 'mcq',
-        type: 'mcq',
-        level: 'recall',
-        prompt: 'Pick one',
-        options: [{ value: 'Correct', explanation: 'This is why.' }, { value: 'Distractor' }],
         correct: [0],
+        id: 'mcq',
+        level: 'recall',
+        options: [
+          { explanation: 'This is why.', value: 'Correct' },
+          { value: 'Distractor' },
+        ],
+        prompt: 'Pick one',
+        type: 'mcq',
       },
       {
-        id: 'multi',
-        type: 'multi',
-        level: 'application',
-        prompt: 'Pick several',
-        options: [{ value: 'First' }, { value: 'Second' }],
         correct: [0, 1],
+        id: 'multi',
+        level: 'application',
+        options: [{ value: 'First' }, { value: 'Second' }],
+        prompt: 'Pick several',
+        type: 'multi',
       },
       {
+        correct: true,
         id: 'boolean',
-        type: 'boolean',
         level: 'recall',
         prompt: 'True or false?',
-        correct: true,
+        type: 'boolean',
       },
       {
+        accepted: [{ value: 'Accepted answer' }],
         id: 'fill',
-        type: 'fill',
         level: 'application',
         prompt: 'Fill this',
-        accepted: [{ value: 'Accepted answer' }],
+        type: 'fill',
       },
       {
+        accepted: [{ value: 'Short answer' }],
         id: 'short',
-        type: 'short',
         level: 'analysis',
         prompt: 'Explain briefly',
-        accepted: [{ value: 'Short answer' }],
+        type: 'short',
       },
       {
         id: 'ordering',
-        type: 'ordering',
+        items: [{ value: 'First item' }, { value: 'Second item' }],
         level: 'application',
         prompt: 'Put these in order',
-        items: [{ value: 'First item' }, { value: 'Second item' }],
+        type: 'ordering',
       },
       {
-        id: 'matching',
-        type: 'matching',
-        level: 'analysis',
-        prompt: 'Match these',
-        pairs: [{ left: 'Left', right: 'Right' }],
         explanation: 'Pairs are shown in their correct arrangement.',
+        id: 'matching',
+        level: 'analysis',
+        pairs: [{ left: 'Left', right: 'Right' }],
+        prompt: 'Match these',
+        type: 'matching',
       },
     ];
 
-    const html = renderMaterial([quizNode({ questions, timeLimitMin: 15 }, 'quiz')]);
+    const html = renderMaterial([
+      quizNode({ questions, timeLimitMin: 15 }, 'quiz'),
+    ]);
 
     expect(html).toContain('1.');
     expect(html).toContain('7.');
@@ -203,8 +244,8 @@ describe('static study-block renderers', () => {
     const html = renderMaterial([
       flashcardsNode(
         [
-          { id: 'card-1', front: 'Front one', back: 'Back one' },
-          { id: 'card-2', front: 'Front two', back: 'Back two' },
+          { back: 'Back one', front: 'Front one', id: 'card-1' },
+          { back: 'Back two', front: 'Front two', id: 'card-2' },
         ],
         'deck'
       ),

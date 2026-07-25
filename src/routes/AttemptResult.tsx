@@ -1,9 +1,20 @@
 import { Link, useParams } from '@tanstack/react-router';
-import { PanelWithInvertedRadius } from '@/components/app/layout';
-import { Badge, Button, Icon, ProgressBar, Skeleton, Text } from '@/components/ui';
 import { useAttempt } from '@/api/hooks';
+import { PanelWithInvertedRadius } from '@/components/app/layout';
+import {
+  Badge,
+  Button,
+  Icon,
+  ProgressBar,
+  Skeleton,
+  Text,
+} from '@/components/ui';
+import {
+  type Answer,
+  emptyAnswer,
+  gradeQuestion,
+} from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
-import { emptyAnswer, gradeQuestion, type Answer } from '@/features/quizzes/grade';
 
 function scoreTone(pct: number): 'green' | 'amber' | 'coral' {
   return pct >= 70 ? 'green' : pct >= 55 ? 'amber' : 'coral';
@@ -32,7 +43,7 @@ export default function AttemptResult() {
             <Icon name="x" size={30} />
           </span>
           <Text variant="section">This attempt is unavailable.</Text>
-          <Link to="/quizzes" preload="intent">
+          <Link preload="intent" to="/quizzes">
             <Button iconLeft="chevronLeft">Back to quizzes</Button>
           </Link>
         </div>
@@ -47,49 +58,78 @@ export default function AttemptResult() {
     <PanelWithInvertedRadius>
       <div className="mx-auto flex h-full w-full max-w-2xl flex-col overflow-auto px-6 py-6">
         <div className="mb-4 flex items-center gap-3">
-          <Link to="/quizzes" preload="intent" className="text-fg-muted hover:text-fg">
+          <Link
+            className="text-fg-muted hover:text-fg"
+            preload="intent"
+            to="/quizzes"
+          >
             <Icon name="chevronLeft" size={20} />
           </Link>
           <div className="flex-1">
             <Text variant="section">{attempt.quizName}</Text>
-            <Text variant="meta" tone="muted">
-              {attempt.workspaceName} · {new Date(attempt.takenAt).toLocaleString()}
+            <Text tone="muted" variant="meta">
+              {attempt.workspaceName} ·{' '}
+              {new Date(attempt.takenAt).toLocaleString()}
             </Text>
           </div>
-          <Badge tone={attempt.pct >= 70 ? 'success' : attempt.pct >= 55 ? 'warning' : 'error'}>
+          <Badge
+            tone={
+              attempt.pct >= 70
+                ? 'success'
+                : attempt.pct >= 55
+                  ? 'warning'
+                  : 'error'
+            }
+          >
             {attempt.correct}/{attempt.total} · {attempt.pct}%
           </Badge>
         </div>
 
         <div className="mb-6">
-          <ProgressBar value={attempt.pct} tone={scoreTone(attempt.pct)} height={8} />
+          <ProgressBar
+            height={8}
+            tone={scoreTone(attempt.pct)}
+            value={attempt.pct}
+          />
         </div>
 
-        {!hasBreakdown ? (
-          <Text variant="body" tone="muted" className="py-8 text-center">
-            No per-question breakdown was recorded for this attempt.
-          </Text>
-        ) : (
+        {hasBreakdown ? (
           <div className="flex flex-col gap-4">
             {attempt.questions.map((q, i) => {
               const a = answers?.[q.id] ?? emptyAnswer(q);
               const ok = gradeQuestion(q, a);
               return (
-                <div key={q.id} className="rounded-card border border-line bg-surface p-4">
+                <div
+                  className="rounded-card border border-line bg-surface p-4"
+                  key={q.id}
+                >
                   <div className="mb-3 flex items-center gap-2">
                     <span
-                      className={cnBadge(ok)}
                       aria-label={ok ? 'correct' : 'incorrect'}
+                      className={cnBadge(ok)}
                     >
-                      <Icon name={ok ? 'check' : 'x'} size={13} strokeWidth={2.5} />
+                      <Icon
+                        name={ok ? 'check' : 'x'}
+                        size={13}
+                        strokeWidth={2.5}
+                      />
                     </span>
-                    <Text variant="meta" tone="muted">
+                    <Text tone="muted" variant="meta">
                       Question {i + 1}
                     </Text>
                   </div>
-                  <QuestionRunner question={q} answer={a} onChange={() => {}} review />
+                  <QuestionRunner
+                    answer={a}
+                    onChange={() => {}}
+                    question={q}
+                    review
+                  />
                   {q.explanation && (
-                    <Text variant="meta" tone="muted" className="mt-3 border-t border-divider pt-3">
+                    <Text
+                      className="mt-3 border-divider border-t pt-3"
+                      tone="muted"
+                      variant="meta"
+                    >
                       {q.explanation}
                     </Text>
                   )}
@@ -97,10 +137,14 @@ export default function AttemptResult() {
               );
             })}
           </div>
+        ) : (
+          <Text className="py-8 text-center" tone="muted" variant="body">
+            No per-question breakdown was recorded for this attempt.
+          </Text>
         )}
 
         <div className="mt-6">
-          <Link to="/quizzes" preload="intent">
+          <Link preload="intent" to="/quizzes">
             <Button iconLeft="chevronLeft">Back to quizzes</Button>
           </Link>
         </div>

@@ -1,14 +1,20 @@
 import { useState } from 'react';
-import { Panel, PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import { SegmentedControl, Text } from '@/components/ui';
 import { LocaleSwitcher } from '@/components/app/LocaleSwitcher';
-import { useTheme, THEMES } from '@/theme/ThemeProvider';
-import { cn } from '@/lib/cn';
+import { PageHeader, Panel } from '@/components/app/layout';
+import { SegmentedControl, Text } from '@/components/ui';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
+import { STYLES, useTheme } from '@/theme/ThemeProvider';
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Row({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
   return (
-    <div className="flex items-center justify-between border-b border-divider py-4 last:border-0">
+    <div className="flex items-center justify-between border-divider border-b py-4 last:border-0">
       <Text variant="subtitle">{label}</Text>
       {children}
     </div>
@@ -16,7 +22,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 export default function Settings() {
-  const { theme, mode, setTheme, setMode } = useTheme();
+  const { theme, style, setTheme, setStyle } = useTheme();
   const [privacy, setPrivacy] = useState('private');
 
   return (
@@ -24,20 +30,23 @@ export default function Settings() {
       <PageHeader showTopBar={false} title={m.profile_menu_settings()} />
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
         <div className="mx-auto max-w-2xl">
-          <Text variant="label" tone="muted" className="mb-1 block">
+          <Text className="mb-1 block" tone="muted" variant="label">
             {m.settings_appearance()}
           </Text>
           <div className="rounded-card border border-line bg-surface px-5">
             <Row label={m.settings_theme()}>
               <div className="flex gap-1 rounded-pill border border-line p-[3px]">
-                {THEMES.map((t) => (
+                {STYLES.map((t) => (
                   <button
-                    key={t.value}
-                    onClick={() => setTheme(t.value)}
                     className={cn(
-                      'rounded-pill px-3 py-1.5 text-sm font-semibold',
-                      theme === t.value ? 'bg-action text-action-fg' : 'text-fg-muted'
+                      'rounded-pill px-3 py-1.5 font-semibold text-sm',
+                      style === t.value
+                        ? 'bg-action text-action-fg'
+                        : 'text-fg-muted'
                     )}
+                    key={t.value}
+                    onClick={() => setStyle(t.value)}
+                    type="button"
                   >
                     {t.label}
                   </button>
@@ -46,13 +55,13 @@ export default function Settings() {
             </Row>
             <Row label={m.settings_mode()}>
               <SegmentedControl
-                size="sm"
+                onChange={(v) => setTheme(v as 'light' | 'dark')}
                 options={[
-                  { value: 'light', label: m.mode_light() },
-                  { value: 'dark', label: m.mode_dark() },
+                  { label: m.mode_light(), value: 'light' },
+                  { label: m.mode_dark(), value: 'dark' },
                 ]}
-                value={mode}
-                onChange={(v) => setMode(v as 'light' | 'dark')}
+                size="sm"
+                value={theme}
               />
             </Row>
             <Row label={m.settings_language()}>
@@ -60,20 +69,20 @@ export default function Settings() {
             </Row>
           </div>
 
-          <Text variant="label" tone="muted" className="mt-6 mb-1 block">
+          <Text className="mt-6 mb-1 block" tone="muted" variant="label">
             Workspaces
           </Text>
           <div className="rounded-card border border-line bg-surface px-5">
             <Row label="Default visibility">
               <SegmentedControl
-                size="sm"
-                options={[
-                  { value: 'private', label: 'Private' },
-                  { value: 'public', label: 'Public' },
-                  { value: 'link', label: 'Shared link' },
-                ]}
-                value={privacy}
                 onChange={setPrivacy}
+                options={[
+                  { label: 'Private', value: 'private' },
+                  { label: 'Public', value: 'public' },
+                  { label: 'Shared link', value: 'link' },
+                ]}
+                size="sm"
+                value={privacy}
               />
             </Row>
           </div>

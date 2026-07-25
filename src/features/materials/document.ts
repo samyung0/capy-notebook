@@ -7,23 +7,23 @@ import type {
 } from '@/api/types';
 import { uid } from '@/lib/id';
 import {
+  type FlashcardContent,
   parseFlashcardsFenceBody,
   parseQuizFenceBody,
-  type FlashcardContent,
   type QuizBlock,
 } from './blocks';
 
 export const MATERIAL_SCHEMA_VERSION = 1 as const;
 
 export const MATERIAL_DOCUMENT_LIMITS = {
-  maxNodes: 10000,
-  maxDepth: 64,
   maxContentBytes: 2 * 1024 * 1024,
+  maxDepth: 64,
+  maxNodes: 10_000,
 } as const;
 
 export interface MaterialDocumentMetrics {
-  nodeCount: number;
   maxDepth: number;
+  nodeCount: number;
 }
 
 export interface MaterialText {
@@ -32,8 +32,8 @@ export interface MaterialText {
 }
 
 export interface MaterialElement {
-  type: string;
   children: MaterialNode[];
+  type: string;
   [property: string]: unknown;
 }
 
@@ -46,67 +46,67 @@ export interface MaterialDocument {
 }
 
 export interface QuizPromptElement extends MaterialElement {
-  type: 'quiz_prompt';
   children: MaterialText[];
+  type: 'quiz_prompt';
 }
 
 export interface QuizOptionElement extends MaterialElement {
-  type: 'quiz_option';
-  id: string;
   children: MaterialText[];
+  id: string;
+  type: 'quiz_option';
 }
 
 export interface QuizExplanationElement extends MaterialElement {
-  type: 'quiz_explanation';
   children: MaterialText[];
+  type: 'quiz_explanation';
 }
 
 export interface QuizQuestionElement extends MaterialElement {
-  type: 'quiz_question';
-  id: string;
-  questionType: QuestionType;
-  level: CognitiveLevel;
-  correctOptionIds?: string[];
-  correctBoolean?: boolean;
   acceptedAnswers?: string[];
-  pairs?: { left: string; right: string }[];
   children: (QuizPromptElement | QuizOptionElement | QuizExplanationElement)[];
+  correctBoolean?: boolean;
+  correctOptionIds?: string[];
+  id: string;
+  level: CognitiveLevel;
+  pairs?: { left: string; right: string }[];
+  questionType: QuestionType;
+  type: 'quiz_question';
 }
 
 export interface QuizElement extends MaterialElement {
-  type: 'quiz';
+  children: QuizQuestionElement[];
   id: string;
   timeLimitMin?: number;
-  children: QuizQuestionElement[];
+  type: 'quiz';
 }
 
 export interface FlashcardFaceElement extends MaterialElement {
-  type: 'flashcard_front' | 'flashcard_back';
   children: MaterialText[];
+  type: 'flashcard_front' | 'flashcard_back';
 }
 
 export interface FlashcardElement extends MaterialElement {
-  type: 'flashcard';
-  id: string;
   children: [FlashcardFaceElement, FlashcardFaceElement];
+  id: string;
+  type: 'flashcard';
 }
 
 export interface FlashcardsElement extends MaterialElement {
-  type: 'flashcards';
-  id: string;
   children: FlashcardElement[];
+  id: string;
+  type: 'flashcards';
 }
 
 export interface MermaidCaptionElement extends MaterialElement {
-  type: 'mermaid_caption';
   children: MaterialText[];
+  type: 'mermaid_caption';
 }
 
 export interface MermaidElement extends MaterialElement {
-  type: 'mermaid';
+  children: [MermaidCaptionElement];
   id: string;
   source: string;
-  children: [MermaidCaptionElement];
+  type: 'mermaid';
 }
 
 export type CustomMaterialElement =
@@ -144,14 +144,20 @@ const QUESTION_TYPES = new Set<QuestionType>([
   'matching',
   'ordering',
 ]);
-const COGNITIVE_LEVELS = new Set<CognitiveLevel>(['recall', 'application', 'analysis']);
+const COGNITIVE_LEVELS = new Set<CognitiveLevel>([
+  'recall',
+  'application',
+  'analysis',
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 function isTextNode(value: unknown): value is MaterialText {
-  return isRecord(value) && typeof value.text === 'string' && !('children' in value);
+  return (
+    isRecord(value) && typeof value.text === 'string' && !('children' in value)
+  );
 }
 
 /** Shallow shape check only. Deep validation lives in `isMaterialNode`, which
@@ -180,9 +186,12 @@ function validateCustomElement(element: MaterialElement): boolean {
       return (
         hasId(element) &&
         (element.timeLimitMin == null ||
-          (typeof element.timeLimitMin === 'number' && element.timeLimitMin > 0)) &&
+          (typeof element.timeLimitMin === 'number' &&
+            element.timeLimitMin > 0)) &&
         element.children.length > 0 &&
-        element.children.every((child) => isElementNode(child) && child.type === 'quiz_question')
+        element.children.every(
+          (child) => isElementNode(child) && child.type === 'quiz_question'
+        )
       );
     case 'quiz_question': {
       const question = element as QuizQuestionElement;
@@ -193,9 +202,13 @@ function validateCustomElement(element: MaterialElement): boolean {
         element.children.every(
           (child) =>
             isElementNode(child) &&
-            ['quiz_prompt', 'quiz_option', 'quiz_explanation'].includes(child.type)
+            ['quiz_prompt', 'quiz_option', 'quiz_explanation'].includes(
+              child.type
+            )
         ) &&
-        element.children.some((child) => isElementNode(child) && child.type === 'quiz_prompt')
+        element.children.some(
+          (child) => isElementNode(child) && child.type === 'quiz_prompt'
+        )
       );
     }
     case 'quiz_option':
@@ -219,7 +232,9 @@ function validateCustomElement(element: MaterialElement): boolean {
       return (
         hasId(element) &&
         element.children.length > 0 &&
-        element.children.every((child) => isElementNode(child) && child.type === 'flashcard')
+        element.children.every(
+          (child) => isElementNode(child) && child.type === 'flashcard'
+        )
       );
     case 'mermaid':
       return (
@@ -313,7 +328,8 @@ export function createMaterialDocumentWithMetrics(value: MaterialValue): {
     schemaVersion: MATERIAL_SCHEMA_VERSION,
     value: normalized.value,
   };
-  if (!isMaterialDocument(document)) throw new Error('Invalid or unsupported material document');
+  if (!isMaterialDocument(document))
+    throw new Error('Invalid or unsupported material document');
   return { document, metrics: normalized.metrics };
 }
 
@@ -322,30 +338,52 @@ export function createMaterialDocument(value: MaterialValue): MaterialDocument {
     schemaVersion: MATERIAL_SCHEMA_VERSION,
     value: normalizeMaterialValue(value),
   };
-  if (!isMaterialDocument(document)) throw new Error('Invalid or unsupported material document');
+  if (!isMaterialDocument(document))
+    throw new Error('Invalid or unsupported material document');
   return document;
 }
 
-/** Ensure every Plate element has a stable id. Existing ids are preserved
- * exactly. Every node is copied on purpose: Slate mutates `editor.children`
- * in place, so parsed snapshots and save payloads must never alias live
- * editor (or query-cache) node objects. */
+/** Ensure every Plate element has a stable id and top-level ids are unique.
+ * Runtime comment marks are decorations backed by relational discussions, so
+ * they are deliberately omitted from persisted material snapshots. Every node
+ * is copied because Slate mutates `editor.children` in place. */
 function normalizeMaterialValueInternal(
   value: MaterialValue,
   metrics?: MaterialDocumentMetrics
 ): MaterialValue {
+  const topLevelIds = new Set<string>();
+
   const normalizeNode = (node: MaterialNode, depth: number): MaterialNode => {
     if (metrics) {
       metrics.nodeCount += 1;
       metrics.maxDepth = Math.max(metrics.maxDepth, depth);
     }
 
-    if ('text' in node) return { ...node };
+    if ('text' in node) {
+      const normalized: MaterialText = {
+        text: typeof node.text === 'string' ? node.text : '',
+      };
+      for (const [key, mark] of Object.entries(node)) {
+        if (key === 'text' || key === 'comment' || key.startsWith('comment_')) {
+          continue;
+        }
+        normalized[key] = mark;
+      }
+      return normalized;
+    }
+
+    const currentId =
+      typeof node.id === 'string' && node.id.trim() ? node.id : undefined;
+    const id =
+      depth === 0 && currentId && topLevelIds.has(currentId)
+        ? uid('block')
+        : (currentId ?? uid('block'));
+    if (depth === 0) topLevelIds.add(id);
 
     return {
       ...node,
-      id: typeof node.id === 'string' && node.id ? node.id : uid('block'),
       children: node.children.map((child) => normalizeNode(child, depth + 1)),
+      id,
     };
   };
 
@@ -357,12 +395,12 @@ export function normalizeMaterialValueWithMetrics(value: MaterialValue): {
   metrics: MaterialDocumentMetrics;
 } {
   const metrics: MaterialDocumentMetrics = {
-    nodeCount: 0,
     maxDepth: 0,
+    nodeCount: 0,
   };
   return {
-    value: normalizeMaterialValueInternal(value, metrics),
     metrics,
+    value: normalizeMaterialValueInternal(value, metrics),
   };
 }
 
@@ -373,8 +411,10 @@ export function normalizeMaterialValue(value: MaterialValue): MaterialValue {
 /** Read-only node count and depth. Unlike the normalize walk this allocates
  * nothing, so it is cheap enough to run against live editor content on a
  * throttled cadence for the document-stats footer. */
-export function countMaterialMetrics(value: MaterialValue): MaterialDocumentMetrics {
-  const metrics: MaterialDocumentMetrics = { nodeCount: 0, maxDepth: 0 };
+export function countMaterialMetrics(
+  value: MaterialValue
+): MaterialDocumentMetrics {
+  const metrics: MaterialDocumentMetrics = { maxDepth: 0, nodeCount: 0 };
   const visit = (node: MaterialNode, depth: number) => {
     metrics.nodeCount += 1;
     if (depth > metrics.maxDepth) metrics.maxDepth = depth;
@@ -386,7 +426,7 @@ export function countMaterialMetrics(value: MaterialValue): MaterialDocumentMetr
 }
 
 export function emptyMaterialDocument(): MaterialDocument {
-  return createMaterialDocument([{ type: 'p', children: [{ text: '' }] }]);
+  return createMaterialDocument([{ children: [{ text: '' }], type: 'p' }]);
 }
 
 export function serializeMaterialDocument(document: MaterialDocument): string {
@@ -394,7 +434,7 @@ export function serializeMaterialDocument(document: MaterialDocument): string {
 }
 
 function textElement<T extends string>(type: T, text: string): MaterialElement {
-  return { type, children: [{ text }] };
+  return { children: [{ text }], type };
 }
 
 function optionId(questionId: string, index: number): string {
@@ -409,14 +449,14 @@ function questionOptions(question: Question): {
     const choice = question as ChoiceQuestion;
     const options = choice.options.map((option, index) => ({
       ...(textElement('quiz_option', option.value) as QuizOptionElement),
-      id: optionId(question.id, index),
       explanation: option.explanation,
+      id: optionId(question.id, index),
     }));
     return {
-      options,
       correctOptionIds: choice.correct
         .map((index) => options[index]?.id)
         .filter((id): id is string => Boolean(id)),
+      options,
     };
   }
   if (question.type === 'boolean') {
@@ -425,8 +465,8 @@ function questionOptions(question: Question): {
       id: optionId(question.id, index),
     }));
     return {
-      options,
       correctOptionIds: [options[question.correct ? 0 : 1].id],
+      options,
     };
   }
   if (question.type === 'fill' || question.type === 'short') {
@@ -441,7 +481,10 @@ function questionOptions(question: Question): {
   if (question.type === 'matching') {
     return {
       options: question.pairs.map((pair, index) => ({
-        ...(textElement('quiz_option', `${pair.left} → ${pair.right}`) as QuizOptionElement),
+        ...(textElement(
+          'quiz_option',
+          `${pair.left} → ${pair.right}`
+        ) as QuizOptionElement),
         id: optionId(question.id, index),
         role: 'matching-pair',
       })),
@@ -464,15 +507,20 @@ export function quizQuestionNode(question: Question): QuizQuestionElement {
     ...options,
   ];
   if (question.explanation) {
-    children.push(textElement('quiz_explanation', question.explanation) as QuizExplanationElement);
+    children.push(
+      textElement(
+        'quiz_explanation',
+        question.explanation
+      ) as QuizExplanationElement
+    );
   }
 
   const node: QuizQuestionElement = {
-    type: 'quiz_question',
-    id: question.id || uid('question'),
-    questionType: question.type,
-    level: question.level,
     children,
+    id: question.id || uid('question'),
+    level: question.level,
+    questionType: question.type,
+    type: 'quiz_question',
   };
   if (correctOptionIds?.length) node.correctOptionIds = correctOptionIds;
   if (question.type === 'boolean') node.correctBoolean = question.correct;
@@ -488,18 +536,18 @@ export function quizNode(data: QuizBlock, id = uid('quiz')): QuizElement {
   if (!questions.length) {
     questions.push(
       quizQuestionNode({
-        id: uid('question'),
-        type: 'mcq',
-        level: 'recall',
-        prompt: '',
-        options: [{ value: '' }],
         correct: [0],
+        id: uid('question'),
+        level: 'recall',
+        options: [{ value: '' }],
+        prompt: '',
+        type: 'mcq',
       })
     );
   }
   return {
-    type: 'quiz',
     id,
+    type: 'quiz',
     ...(data.timeLimitMin == null ? {} : { timeLimitMin: data.timeLimitMin }),
     children: questions,
   };
@@ -514,36 +562,45 @@ export function flashcardsNode(
   id = uid('flashcards')
 ): FlashcardsElement {
   const cardNodes = cards.map<FlashcardElement>((card) => ({
-    type: 'flashcard',
-    id: card.id || uid('card'),
     children: [
       textElement('flashcard_front', card.front) as FlashcardFaceElement,
       textElement('flashcard_back', card.back) as FlashcardFaceElement,
     ],
+    id: card.id || uid('card'),
+    type: 'flashcard',
   }));
   if (!cardNodes.length) {
     cardNodes.push({
-      type: 'flashcard',
-      id: uid('card'),
       children: [
         textElement('flashcard_front', '') as FlashcardFaceElement,
         textElement('flashcard_back', '') as FlashcardFaceElement,
       ],
+      id: uid('card'),
+      type: 'flashcard',
     });
   }
-  return { type: 'flashcards', id, children: cardNodes };
+  return { children: cardNodes, id, type: 'flashcards' };
 }
 
-export function flashcardsNodeFromFence(code: string, id?: string): FlashcardsElement {
+export function flashcardsNodeFromFence(
+  code: string,
+  id?: string
+): FlashcardsElement {
   return flashcardsNode(parseFlashcardsFenceBody(code).cards, id);
 }
 
-export function mermaidNode(source: string, caption = '', id = uid('mermaid')): MermaidElement {
+export function mermaidNode(
+  source: string,
+  caption = '',
+  id = uid('mermaid')
+): MermaidElement {
   return {
-    type: 'mermaid',
+    children: [
+      textElement('mermaid_caption', caption) as MermaidCaptionElement,
+    ],
     id,
     source,
-    children: [textElement('mermaid_caption', caption) as MermaidCaptionElement],
+    type: 'mermaid',
   };
 }
 
@@ -574,52 +631,68 @@ export function quizElementToBlock(element: QuizElement): QuizBlock {
     };
     switch (question.questionType) {
       case 'boolean':
-        return { ...base, type: 'boolean', correct: question.correctBoolean ?? true };
+        return {
+          ...base,
+          correct: question.correctBoolean ?? true,
+          type: 'boolean',
+        };
       case 'fill':
       case 'short':
         return {
           ...base,
+          accepted: (question.acceptedAnswers ?? options.map(nodeText)).map(
+            (value) => ({ value })
+          ),
           type: question.questionType,
-          accepted: (question.acceptedAnswers ?? options.map(nodeText)).map((value) => ({ value })),
         };
       case 'matching':
-        return { ...base, type: 'matching', pairs: question.pairs ?? [] };
+        return { ...base, pairs: question.pairs ?? [], type: 'matching' };
       case 'ordering':
         return {
           ...base,
-          type: 'ordering',
           items: options.map((option) => ({ value: nodeText(option) })),
+          type: 'ordering',
         };
-      case 'multi':
-      case 'mcq':
       default:
         return {
           ...base,
-          type: question.questionType === 'multi' ? 'multi' : 'mcq',
-          options: options.map((option) => ({
-            value: nodeText(option),
-            ...(typeof option.explanation === 'string' ? { explanation: option.explanation } : {}),
-          })),
           correct: (question.correctOptionIds ?? [])
             .map((id) => options.findIndex((option) => option.id === id))
             .filter((index) => index >= 0),
+          options: options.map((option) => ({
+            value: nodeText(option),
+            ...(typeof option.explanation === 'string'
+              ? { explanation: option.explanation }
+              : {}),
+          })),
+          type: question.questionType === 'multi' ? 'multi' : 'mcq',
         };
     }
   });
   return {
     questions,
-    ...(element.timeLimitMin == null ? {} : { timeLimitMin: element.timeLimitMin }),
+    ...(element.timeLimitMin == null
+      ? {}
+      : { timeLimitMin: element.timeLimitMin }),
   };
 }
 
-export function flashcardsElementToCards(element: FlashcardsElement): FlashcardContent[] {
+export function flashcardsElementToCards(
+  element: FlashcardsElement
+): FlashcardContent[] {
   return element.children.map((card) => ({
-    id: card.id,
-    front: nodeText(card.children[0] ?? { text: '' }),
     back: nodeText(card.children[1] ?? { text: '' }),
+    front: nodeText(card.children[0] ?? { text: '' }),
+    id: card.id,
   }));
 }
 
-export function isCustomMaterialElement(value: unknown): value is CustomMaterialElement {
-  return isElementNode(value) && CUSTOM_TYPES.has(value.type) && isMaterialNode(value);
+export function isCustomMaterialElement(
+  value: unknown
+): value is CustomMaterialElement {
+  return (
+    isElementNode(value) &&
+    CUSTOM_TYPES.has(value.type) &&
+    isMaterialNode(value)
+  );
 }

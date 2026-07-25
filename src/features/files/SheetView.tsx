@@ -37,13 +37,16 @@ export default function SheetView({ url }: { url: string }) {
         const parsed = wb.SheetNames.map((name) => ({
           name,
           rows: XLSX.utils.sheet_to_json<Cell[]>(wb.Sheets[name], {
-            header: 1,
             defval: null,
+            header: 1,
           }),
         }));
         if (!cancelled) setSheets(parsed);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'failed to load spreadsheet');
+        if (!cancelled)
+          setError(
+            e instanceof Error ? e.message : 'failed to load spreadsheet'
+          );
       }
     })();
     return () => {
@@ -52,18 +55,27 @@ export default function SheetView({ url }: { url: string }) {
   }, [url]);
 
   if (error) {
-    return <p className="t-body py-8 text-center text-tint-error-fg">Couldn't load this spreadsheet ({error}).</p>;
+    return (
+      <p className="t-body py-8 text-center text-tint-error-fg">
+        Couldn't load this spreadsheet ({error}).
+      </p>
+    );
   }
   if (!sheets) {
     return <Skeleton className="h-[60vh] w-full" />;
   }
   if (sheets.length === 0) {
-    return <p className="t-body py-8 text-center text-fg-muted">This spreadsheet is empty.</p>;
+    return (
+      <p className="t-body py-8 text-center text-fg-muted">
+        This spreadsheet is empty.
+      </p>
+    );
   }
 
   const sheet = sheets[Math.min(active, sheets.length - 1)];
   const rows = sheet.rows.slice(0, MAX_ROWS);
-  const truncated = sheet.rows.length > MAX_ROWS || rows.some((r) => r.length > MAX_COLS);
+  const truncated =
+    sheet.rows.length > MAX_ROWS || rows.some((r) => r.length > MAX_COLS);
 
   return (
     <div className="flex h-full flex-col gap-2">
@@ -71,14 +83,15 @@ export default function SheetView({ url }: { url: string }) {
         <div className="flex flex-wrap gap-1">
           {sheets.map((s, i) => (
             <button
-              key={s.name}
-              onClick={() => setActive(i)}
               className={cn(
                 'rounded-row px-2.5 py-1 text-sm transition-colors',
                 i === active
                   ? 'bg-surface-dark font-medium text-fg'
                   : 'text-fg-muted hover:bg-surface-hover-bg'
               )}
+              key={s.name}
+              onClick={() => setActive(i)}
+              type="button"
             >
               {s.name}
             </button>
@@ -89,9 +102,15 @@ export default function SheetView({ url }: { url: string }) {
         <table className="w-max min-w-full border-collapse text-sm">
           <tbody>
             {rows.map((row, ri) => (
-              <tr key={ri} className={ri === 0 ? 'bg-surface-dark font-medium' : undefined}>
+              <tr
+                className={ri === 0 ? 'bg-surface-dark font-medium' : undefined}
+                key={ri}
+              >
                 {row.slice(0, MAX_COLS).map((cell, ci) => (
-                  <td key={ci} className="max-w-90 truncate border border-line px-2.5 py-1.5">
+                  <td
+                    className="max-w-90 truncate border border-line px-2.5 py-1.5"
+                    key={ci}
+                  >
                     {cell == null ? '' : String(cell)}
                   </td>
                 ))}

@@ -7,20 +7,20 @@
 export const PERF_WORKSPACE_ID = 'ws_bio';
 export const PERF_LARGE_NOTE = {
   id: 'mat_perf_large',
-  title: 'Perf probe — near-limit note',
   readyText: 'Section 1',
+  title: 'Perf probe — near-limit note',
 } as const;
 export const PERF_SMALL_NOTE = {
   id: 'mat_perf_small',
-  title: 'Perf probe — baseline note',
   readyText: 'Baseline note for typing latency.',
+  title: 'Perf probe — baseline note',
 } as const;
 
 interface PerfNode {
-  type?: string;
-  text?: string;
-  id?: string;
   children?: PerfNode[];
+  id?: string;
+  text?: string;
+  type?: string;
   [key: string]: unknown;
 }
 
@@ -41,63 +41,70 @@ const WORDS =
 
 function sentence(seed: number, words: number): string {
   const parts: string[] = [];
-  for (let i = 0; i < words; i += 1) parts.push(WORDS[(seed + i * 7) % WORDS.length]);
+  for (let i = 0; i < words; i += 1)
+    parts.push(WORDS[(seed + i * 7) % WORDS.length]);
   return parts.join(' ');
 }
 
 function paragraph(seed: number): PerfNode {
   // Multiple leaves with marks: closer to real documents than one text run.
   return {
-    type: 'p',
-    id: id(),
     children: [
       { text: sentence(seed, 12) + ' ' },
-      { text: sentence(seed + 3, 4), bold: true },
+      { bold: true, text: sentence(seed + 3, 4) },
       { text: ' ' + sentence(seed + 5, 8) + '.' },
     ],
+    id: id(),
+    type: 'p',
   };
 }
 
 function heading(index: number): PerfNode {
-  return { type: 'h2', id: id(), children: [{ text: `Section ${index}` }] };
+  return { children: [{ text: `Section ${index}` }], id: id(), type: 'h2' };
 }
 
 function listItem(seed: number): PerfNode {
   return {
-    type: 'p',
-    id: id(),
-    listStyleType: 'disc',
-    indent: 1,
     children: [{ text: sentence(seed, 9) }],
+    id: id(),
+    indent: 1,
+    listStyleType: 'disc',
+    type: 'p',
   };
 }
 
 function codeBlock(seed: number, lines: number): PerfNode {
   return {
-    type: 'code_block',
+    children: Array.from({ length: lines }, (_, i) => ({
+      children: [{ text: `const value${i} = compute(${seed + i});` }],
+      id: id(),
+      type: 'code_line',
+    })),
     id: id(),
     lang: 'javascript',
-    children: Array.from({ length: lines }, (_, i) => ({
-      type: 'code_line',
-      id: id(),
-      children: [{ text: `const value${i} = compute(${seed + i});` }],
-    })),
+    type: 'code_block',
   };
 }
 
 function table(rows: number, cols: number): PerfNode {
   return {
-    type: 'table',
-    id: id(),
     children: Array.from({ length: rows }, (_, r) => ({
-      type: 'tr',
-      id: id(),
       children: Array.from({ length: cols }, (_, c) => ({
-        type: r === 0 ? 'th' : 'td',
+        children: [
+          {
+            children: [{ text: sentence(r * cols + c, 3) }],
+            id: id(),
+            type: 'p',
+          },
+        ],
         id: id(),
-        children: [{ type: 'p', id: id(), children: [{ text: sentence(r * cols + c, 3) }] }],
+        type: r === 0 ? 'th' : 'td',
       })),
+      id: id(),
+      type: 'tr',
     })),
+    id: id(),
+    type: 'table',
   };
 }
 
@@ -137,6 +144,8 @@ export function buildSmallPerfDocument(): PerfDocument {
   counter = 0;
   return {
     schemaVersion: 1,
-    value: [{ type: 'p', id: id(), children: [{ text: PERF_SMALL_NOTE.readyText }] }],
+    value: [
+      { children: [{ text: PERF_SMALL_NOTE.readyText }], id: id(), type: 'p' },
+    ],
   };
 }

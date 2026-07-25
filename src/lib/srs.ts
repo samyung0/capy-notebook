@@ -5,7 +5,14 @@
  * scheduling state round-trips through JSON / the mock API. These helpers convert
  * to and from the library's `Card` (which uses `Date`s) at the boundary.
  */
-import { createEmptyCard, fsrs, generatorParameters, Rating, type Card, type Grade } from 'ts-fsrs';
+import {
+  type Card,
+  createEmptyCard,
+  fsrs,
+  type Grade,
+  generatorParameters,
+  Rating,
+} from 'ts-fsrs';
 import type { SrsState } from '@/api/types';
 
 const scheduler = fsrs(generatorParameters({ enable_fuzz: true }));
@@ -16,23 +23,25 @@ export const SRS_RATINGS: SrsRating[] = ['again', 'hard', 'good', 'easy'];
 
 const RATING_MAP: Record<SrsRating, Grade> = {
   again: Rating.Again,
-  hard: Rating.Hard,
-  good: Rating.Good,
   easy: Rating.Easy,
+  good: Rating.Good,
+  hard: Rating.Hard,
 };
 
 function toState(card: Card): SrsState {
   return {
-    due: new Date(card.due).toISOString(),
-    stability: card.stability,
     difficulty: card.difficulty,
+    due: new Date(card.due).toISOString(),
     elapsed_days: card.elapsed_days,
-    scheduled_days: card.scheduled_days,
-    reps: card.reps,
     lapses: card.lapses,
-    state: card.state,
-    last_review: card.last_review ? new Date(card.last_review).toISOString() : undefined,
+    last_review: card.last_review
+      ? new Date(card.last_review).toISOString()
+      : undefined,
     learning_steps: (card as { learning_steps?: number }).learning_steps ?? 0,
+    reps: card.reps,
+    scheduled_days: card.scheduled_days,
+    stability: card.stability,
+    state: card.state,
   };
 }
 
@@ -44,16 +53,16 @@ function toState(card: Card): SrsState {
 function toCard(state: SrsState): Card {
   return {
     ...createEmptyCard(new Date(state.due)),
-    due: new Date(state.due),
-    stability: state.stability,
     difficulty: state.difficulty,
+    due: new Date(state.due),
     elapsed_days: state.elapsed_days,
-    scheduled_days: state.scheduled_days,
-    reps: state.reps,
     lapses: state.lapses,
-    state: state.state,
     last_review: state.last_review ? new Date(state.last_review) : undefined,
     learning_steps: state.learning_steps ?? 0,
+    reps: state.reps,
+    scheduled_days: state.scheduled_days,
+    stability: state.stability,
+    state: state.state,
   } as Card;
 }
 
@@ -63,7 +72,11 @@ export function newSrsState(now: Date = new Date()): SrsState {
 }
 
 /** Apply a review rating and return the updated scheduling state. */
-export function reviewSrs(state: SrsState, rating: SrsRating, now: Date = new Date()): SrsState {
+export function reviewSrs(
+  state: SrsState,
+  rating: SrsRating,
+  now: Date = new Date()
+): SrsState {
   const { card } = scheduler.next(toCard(state), now, RATING_MAP[rating]);
   return toState(card);
 }
@@ -89,17 +102,18 @@ export function ratingPreviews(
   now: Date = new Date()
 ): Record<SrsRating, string> {
   const log = scheduler.repeat(toCard(state), now);
-  const fmt = (due: Date) => formatInterval(new Date(due).getTime() - now.getTime());
+  const fmt = (due: Date) =>
+    formatInterval(new Date(due).getTime() - now.getTime());
   return {
     again: fmt(log[Rating.Again].card.due),
-    hard: fmt(log[Rating.Hard].card.due),
-    good: fmt(log[Rating.Good].card.due),
     easy: fmt(log[Rating.Easy].card.due),
+    good: fmt(log[Rating.Good].card.due),
+    hard: fmt(log[Rating.Hard].card.due),
   };
 }
 
 function formatInterval(ms: number): string {
-  const min = Math.max(1, Math.round(ms / 60000));
+  const min = Math.max(1, Math.round(ms / 60_000));
   if (min < 60) return `${min}m`;
   const hr = Math.round(min / 60);
   if (hr < 24) return `${hr}h`;

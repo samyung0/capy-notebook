@@ -1,7 +1,5 @@
+import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
-import { Panel, PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Badge, Button, Card, Icon, SkeletonCardGrid, Tabs, Text } from '@/components/ui';
-import { userColorPair } from '@/lib/userColor';
 import {
   useCloneDeck,
   useCloneQuiz,
@@ -10,8 +8,18 @@ import {
   useExploreQuizzes,
   useExploreWorkspaces,
 } from '@/api/hooks';
+import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import {
+  Badge,
+  Button,
+  Card,
+  Icon,
+  SkeletonCardGrid,
+  Tabs,
+  Text,
+} from '@/components/ui';
 import { m } from '@/i18n';
-import { useNavigate } from '@tanstack/react-router';
+import { userColorPair } from '@/lib/userColor';
 
 export default function Explore() {
   const [tab, setTab] = useState('workspaces');
@@ -26,57 +34,57 @@ export default function Explore() {
   return (
     <PanelWithInvertedRadius>
       <PageHeader
-        title={m.nav_explore()}
         subtitle="Discover public study sets from the community."
+        title={m.nav_explore()}
       />
       <div className="px-6">
         <Tabs
+          onChange={setTab}
           tabs={[
-            { value: 'workspaces', label: m.explore_tab_workspaces() },
-            { value: 'quizzes', label: m.explore_tab_quizzes() },
-            { value: 'decks', label: 'Flashcards' },
+            { label: m.explore_tab_workspaces(), value: 'workspaces' },
+            { label: m.explore_tab_quizzes(), value: 'quizzes' },
+            { label: 'Flashcards', value: 'decks' },
           ]}
           value={tab}
-          onChange={setTab}
         />
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
         {tab === 'workspaces' ? (
           ws.isLoading ? (
-            <SkeletonCardGrid count={6} cardHeight={170} />
+            <SkeletonCardGrid cardHeight={170} count={6} />
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {ws.data?.map((w) => {
                 const c = userColorPair(w.color);
                 return (
-                  <Card key={w.id} radius="card-lg" className="p-5.5">
+                  <Card className="p-5.5" key={w.id} radius="card-lg">
                     <span
                       className="flex h-11 w-11 items-center justify-center rounded-card"
                       style={{ background: c.bg, color: c.fg }}
                     >
                       <Icon name="workspaces" size={20} />
                     </span>
-                    <Text variant="card-title" className="mt-3 truncate">
+                    <Text className="mt-3 truncate" variant="card-title">
                       {w.name}
                     </Text>
-                    <Text variant="meta" tone="muted" className="mt-1">
+                    <Text className="mt-1" tone="muted" variant="meta">
                       by {w.author} · {w.clones.toLocaleString()} clones
                     </Text>
                     <Button
-                      size="sm"
-                      variant="outline"
                       className="mt-3"
-                      iconLeft="plus"
                       disabled={cloneWorkspace.isPending}
+                      iconLeft="plus"
                       onClick={() =>
                         cloneWorkspace.mutate(w.id, {
                           onSuccess: ({ workspace }) =>
                             navigate({
-                              to: '/workspaces/$workspaceId',
                               params: { workspaceId: workspace.id },
+                              to: '/workspaces/$workspaceId',
                             }),
                         })
                       }
+                      size="sm"
+                      variant="outline"
                     >
                       Clone workspace
                     </Button>
@@ -86,40 +94,40 @@ export default function Explore() {
             </div>
           )
         ) : tab === 'quizzes' && qz.isLoading ? (
-          <SkeletonCardGrid count={6} cardHeight={190} />
+          <SkeletonCardGrid cardHeight={190} count={6} />
         ) : tab === 'quizzes' ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {qz.data?.map((q) => (
-              <Card key={q.id} radius="card-lg" className="p-5.5">
+              <Card className="p-5.5" key={q.id} radius="card-lg">
                 <span className="flex h-11 w-11 items-center justify-center rounded-card bg-tint-accent-1 text-tint-accent-1-fg">
                   <Icon name="quiz" size={20} />
                 </span>
-                <Text variant="card-title" className="mt-3 truncate">
+                <Text className="mt-3 truncate" variant="card-title">
                   {q.name}
                 </Text>
-                <Text variant="meta" tone="muted" className="mt-1">
+                <Text className="mt-1" tone="muted" variant="meta">
                   by {q.author} · {q.clones.toLocaleString()} clones
                 </Text>
                 <div className="mt-2">
-                  <Badge tone="neutral" size="sm">
+                  <Badge size="sm" tone="neutral">
                     {q.questions.length} questions
                   </Badge>
                 </div>
                 <Button
-                  size="sm"
-                  variant="outline"
                   className="mt-3"
-                  iconLeft="plus"
                   disabled={cloneQuiz.isPending}
+                  iconLeft="plus"
                   onClick={() =>
                     cloneQuiz.mutate(q.id, {
                       onSuccess: (copy) =>
                         navigate({
-                          to: '/quizzes/$quizId/attempt',
                           params: { quizId: copy.id },
+                          to: '/quizzes/$quizId/attempt',
                         }),
                     })
                   }
+                  size="sm"
+                  variant="outline"
                 >
                   Clone quiz
                 </Button>
@@ -127,40 +135,40 @@ export default function Explore() {
             ))}
           </div>
         ) : decks.isLoading ? (
-          <SkeletonCardGrid count={6} cardHeight={190} />
+          <SkeletonCardGrid cardHeight={190} count={6} />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {decks.data?.map((deck) => (
-              <Card key={deck.id} radius="card-lg" className="p-5.5">
+              <Card className="p-5.5" key={deck.id} radius="card-lg">
                 <span className="flex h-11 w-11 items-center justify-center rounded-card bg-tint-accent-2 text-tint-accent-2-fg">
                   <Icon name="flashcards" size={20} />
                 </span>
-                <Text variant="card-title" className="mt-3 truncate">
+                <Text className="mt-3 truncate" variant="card-title">
                   {deck.name}
                 </Text>
-                <Text variant="meta" tone="muted" className="mt-1">
+                <Text className="mt-1" tone="muted" variant="meta">
                   by {deck.author} · {deck.clones.toLocaleString()} clones
                 </Text>
                 <div className="mt-2">
-                  <Badge tone="neutral" size="sm">
+                  <Badge size="sm" tone="neutral">
                     {deck.cardCount} cards
                   </Badge>
                 </div>
                 <Button
-                  size="sm"
-                  variant="outline"
                   className="mt-3"
-                  iconLeft="plus"
                   disabled={cloneDeck.isPending}
+                  iconLeft="plus"
                   onClick={() =>
                     cloneDeck.mutate(deck.id, {
                       onSuccess: (copy) =>
                         navigate({
-                          to: '/flashcards/$deckId',
                           params: { deckId: copy.id },
+                          to: '/flashcards/$deckId',
                         }),
                     })
                   }
+                  size="sm"
+                  variant="outline"
                 >
                   Clone deck
                 </Button>

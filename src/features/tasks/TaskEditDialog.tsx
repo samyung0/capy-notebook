@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Button, Input, SimpleDialog, Text } from '@/components/ui';
 import type { Task } from '@/api/types';
+import { Button, Input, SimpleDialog, Text } from '@/components/ui';
 import { m } from '@/i18n';
 
-export function TaskEditModal({
+export function TaskEditDialog({
   task,
   open,
   onClose,
@@ -18,13 +18,9 @@ export function TaskEditModal({
 
   return (
     <SimpleDialog
-      open={open}
-      onClose={onClose}
-      title={m.action_edit()}
-      width={440}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button onClick={onClose} variant="ghost">
             Cancel
           </Button>
           <Button
@@ -38,12 +34,19 @@ export function TaskEditModal({
           </Button>
         </>
       }
+      onClose={onClose}
+      open={open}
+      title={m.action_edit()}
     >
       <label className="flex flex-col gap-1.5">
-        <Text variant="label" tone="muted">
+        <Text tone="muted" variant="label">
           Title
         </Text>
-        <Input value={title} onChange={(e) => setTitle(e.target.value)} autoFocus />
+        <Input
+          autoFocus
+          onChange={(e) => setTitle(e.target.value)}
+          value={title}
+        />
       </label>
     </SimpleDialog>
   );

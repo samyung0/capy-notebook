@@ -41,7 +41,11 @@ import {
 import { CalloutPlugin } from '@platejs/callout/react';
 import { CaptionPlugin } from '@platejs/caption/react';
 import { CodeBlockRules, toggleCodeBlock } from '@platejs/code-block';
-import { CodeBlockPlugin, CodeLinePlugin, CodeSyntaxPlugin } from '@platejs/code-block/react';
+import {
+  CodeBlockPlugin,
+  CodeLinePlugin,
+  CodeSyntaxPlugin,
+} from '@platejs/code-block/react';
 import { DndPlugin } from '@platejs/dnd';
 import { DocxPlugin } from '@platejs/docx';
 import { IndentPlugin } from '@platejs/indent/react';
@@ -49,8 +53,17 @@ import { JuicePlugin } from '@platejs/juice';
 import { ColumnItemPlugin, ColumnPlugin } from '@platejs/layout/react';
 import { LinkRules } from '@platejs/link';
 import { LinkPlugin } from '@platejs/link/react';
-import { BulletedListRules, isOrderedList, OrderedListRules, TaskListRules } from '@platejs/list';
-import { ListPlugin, useTodoListElement, useTodoListElementState } from '@platejs/list/react';
+import {
+  BulletedListRules,
+  isOrderedList,
+  OrderedListRules,
+  TaskListRules,
+} from '@platejs/list';
+import {
+  ListPlugin,
+  useTodoListElement,
+  useTodoListElementState,
+} from '@platejs/list/react';
 import { MathRules } from '@platejs/math';
 import { EquationPlugin, InlineEquationPlugin } from '@platejs/math/react';
 import {
@@ -93,21 +106,27 @@ import {
 import { createElement } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { buildAiPlugins } from './ai/aiPlugins';
 import { openAiMenu } from './ai/aiMenuState';
+import { buildAiPlugins } from './ai/aiPlugins';
 import { BlockContextMenu, BlockDraggable } from './BlockInteractions';
-import { BlockSelectionBelowRootNodes, EditorCursorOverlay } from './BlockSelection';
+import {
+  BlockSelectionBelowRootNodes,
+  EditorCursorOverlay,
+} from './BlockSelection';
 import { customBlockPlugins } from './blocks/plugins';
-import { type EditorCollaborationOptions } from './Collaboration';
+import type { EditorCollaborationOptions } from './Collaboration';
 import {
   buildCollaborationPlugins,
   suggestionSafeTrailingBlockPlugin,
 } from './collaborationPlugins';
-import { canCreateExternalEditorAssets, type NoteEditorMode } from './editorMode';
+import {
+  canCreateExternalEditorAssets,
+  type NoteEditorMode,
+} from './editorMode';
 import { LinkFloatingToolbar } from './LinkFloatingToolbar';
-import { noteMarkdownPlugin } from './markdown';
 import { MediaPlaceholderElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
+import { noteMarkdownPlugin } from './markdown';
 import { SlashInputElement } from './SlashInput';
 
 // Plugin-derived editor types are intentionally wider than Plate's base tuple.
@@ -142,19 +161,23 @@ function TodoListItem({
     'div',
     {
       className: 'relative my-1 flex items-start gap-2',
-      style: { marginLeft: element.indent ? `${element.indent * 24}px` : undefined },
+      style: {
+        marginLeft: element.indent ? `${element.indent * 24}px` : undefined,
+      },
     },
     createElement('input', {
-      'aria-label': checkboxProps.checked ? 'Mark task incomplete' : 'Mark task complete',
+      'aria-label': checkboxProps.checked
+        ? 'Mark task incomplete'
+        : 'Mark task complete',
       checked: checkboxProps.checked,
       className:
         'mt-2 size-4 shrink-0 cursor-pointer rounded border-line-strong accent-action-accent',
       contentEditable: false,
       disabled: state.readOnly,
-      type: 'checkbox',
       onChange: (event: React.ChangeEvent<HTMLInputElement>) =>
         checkboxProps.onCheckedChange(event.target.checked),
       onMouseDown: checkboxProps.onMouseDown,
+      type: 'checkbox',
     }),
     createElement(
       'div',
@@ -174,20 +197,16 @@ const IndentListKit = [
     options: { offset: 24 },
   }),
   ListPlugin.configure({
-    inputRules: [
-      BulletedListRules.markdown({ variant: '-' }),
-      BulletedListRules.markdown({ variant: '*' }),
-      OrderedListRules.markdown({ variant: '.' }),
-      OrderedListRules.markdown({ variant: ')' }),
-      TaskListRules.markdown({ checked: false }),
-      TaskListRules.markdown({ checked: true }),
-    ],
     inject: {
       nodeProps: {
         nodeKey: KEYS.listType,
         query: ({ nodeProps }) => {
           const element = nodeProps.element;
-          return Boolean(element?.listStyleType) && !!element && !isOrderedList(element);
+          return (
+            Boolean(element?.listStyleType) &&
+            !!element &&
+            !isOrderedList(element)
+          );
         },
         transformProps: ({ props }) => ({
           ...props,
@@ -197,15 +216,28 @@ const IndentListKit = [
       },
       targetPlugins: listTargets,
     },
+    inputRules: [
+      BulletedListRules.markdown({ variant: '-' }),
+      BulletedListRules.markdown({ variant: '*' }),
+      OrderedListRules.markdown({ variant: '.' }),
+      OrderedListRules.markdown({ variant: ')' }),
+      TaskListRules.markdown({ checked: false }),
+      TaskListRules.markdown({ checked: true }),
+    ],
     render: {
       belowNodes: ((props) => {
-        if (!listTargets.includes(props.element.type) || !props.element.listStyleType) return;
+        if (
+          !listTargets.includes(props.element.type) ||
+          !props.element.listStyleType
+        )
+          return;
 
         if (props.element.listStyleType === KEYS.listTodo) {
           return (nextProps) =>
             createElement(TodoListItem, {
-              element: nextProps.element,
+              // biome-ignore lint/correctness/noChildrenProp: This .ts plugin must use createElement instead of JSX.
               children: nextProps.children,
+              element: nextProps.element,
             });
         }
 
@@ -224,7 +256,9 @@ const IndentListKit = [
               start: element.listStart,
               style: {
                 listStyleType: element.listStyleType,
-                marginLeft: element.indent ? `${element.indent * 24}px` : undefined,
+                marginLeft: element.indent
+                  ? `${element.indent * 24}px`
+                  : undefined,
               },
             },
             createElement('li', null, nextProps.children)
@@ -300,7 +334,10 @@ const BasicMarksKit = [
     ],
   }),
   ItalicPlugin.configure({
-    inputRules: [ItalicRules.markdown({ variant: '*' }), ItalicRules.markdown({ variant: '_' })],
+    inputRules: [
+      ItalicRules.markdown({ variant: '*' }),
+      ItalicRules.markdown({ variant: '_' }),
+    ],
   }),
   UnderlinePlugin.configure({ inputRules: [UnderlineRules.markdown()] }),
   CodePlugin.configure({
@@ -330,7 +367,6 @@ const BasicMarksKit = [
 ];
 
 const AutoformatPlugin = createSlatePlugin({
-  key: 'evo-autoformat',
   inputRules: [
     createTextSubstitutionInputRule({
       enabled: ({ editor }) =>
@@ -359,6 +395,7 @@ const AutoformatPlugin = createSlatePlugin({
       ],
     }),
   ],
+  key: 'evo-autoformat',
 });
 
 function createSaveShortcutPlugin(onSave: () => void) {
@@ -366,12 +403,12 @@ function createSaveShortcutPlugin(onSave: () => void) {
     key: 'evo-save-shortcut',
     shortcuts: {
       save: {
-        keys: 'mod+s',
         handler: ({ event }) => {
           event.preventDefault();
           onSave();
           return true;
         },
+        keys: 'mod+s',
       },
     },
   });
@@ -397,11 +434,16 @@ const MediaKit = [
     render: { node: MediaPlaceholderElement },
   }),
   CaptionPlugin.configure({
-    options: { query: { allow: [KEYS.img, KEYS.video, KEYS.audio, KEYS.file] } },
+    options: {
+      query: { allow: [KEYS.img, KEYS.video, KEYS.audio, KEYS.file] },
+    },
   }),
 ];
 
-function buildBlockInteractionKit(mode: NoteEditorMode, allowExternalAssets: boolean) {
+function buildBlockInteractionKit(
+  mode: NoteEditorMode,
+  allowExternalAssets: boolean
+) {
   return [
     BlockSelectionPlugin.configure(({ editor }) => ({
       options: {
@@ -415,7 +457,10 @@ function buildBlockInteractionKit(mode: NoteEditorMode, allowExternalAssets: boo
             editor.getType(KEYS.td),
           ].includes(element.type),
         ...(allowExternalAssets && {
-          onKeyDownSelecting: (keyEditor: SlateEditor, event: KeyboardEvent) => {
+          onKeyDownSelecting: (
+            keyEditor: SlateEditor,
+            event: KeyboardEvent
+          ) => {
             if (isHotkey('mod+j')(event)) openAiMenu(keyEditor);
           },
         }),
@@ -428,10 +473,12 @@ function buildBlockInteractionKit(mode: NoteEditorMode, allowExternalAssets: boo
         enableScroller: true,
         onDropFiles: ({ dragItem, editor, target }) => {
           if (!canCreateExternalEditorAssets(mode, allowExternalAssets)) return;
-          return editor.getTransforms(PlaceholderPlugin).insert.media(dragItem.files, {
-            at: target,
-            nextBlock: false,
-          });
+          return editor
+            .getTransforms(PlaceholderPlugin)
+            .insert.media(dragItem.files, {
+              at: target,
+              nextBlock: false,
+            });
         },
       },
       render: {
@@ -464,11 +511,11 @@ export const MaterialKit: AnyPlugin[] = [
     options: { lowlight },
     shortcuts: {
       toggle: {
-        keys: 'mod+alt+8',
         handler: ({ editor }) => {
           toggleCodeBlock(editor);
           return true;
         },
+        keys: 'mod+alt+8',
       },
     },
   }),
@@ -484,9 +531,15 @@ export const MaterialKit: AnyPlugin[] = [
   CalloutPlugin,
   ColumnPlugin,
   ColumnItemPlugin,
-  InlineEquationPlugin.configure({ inputRules: [MathRules.markdown({ variant: '$' })] }),
-  EquationPlugin.configure({ inputRules: [MathRules.markdown({ on: 'break', variant: '$$' })] }),
-  MentionPlugin.configure({ options: { triggerPreviousCharPattern: /^$|^[\s"']$/ } }),
+  InlineEquationPlugin.configure({
+    inputRules: [MathRules.markdown({ variant: '$' })],
+  }),
+  EquationPlugin.configure({
+    inputRules: [MathRules.markdown({ on: 'break', variant: '$$' })],
+  }),
+  MentionPlugin.configure({
+    options: { triggerPreviousCharPattern: /^$|^[\s"']$/ },
+  }),
   MentionInputPlugin.withComponent(MentionInputElement),
   FontColorPlugin,
   FontBackgroundColorPlugin,
@@ -510,10 +563,10 @@ export const MaterialKit: AnyPlugin[] = [
 ];
 
 export interface BuildPluginsOptions extends EditorCollaborationOptions {
-  workspaceId: string;
-  mode: NoteEditorMode;
   allowExternalAssets: boolean;
+  mode: NoteEditorMode;
   onSave: () => void;
+  workspaceId: string;
 }
 /** Full playground registry. Preferences filter commands only; no document
  * parser or renderer plugin is ever unloaded. */

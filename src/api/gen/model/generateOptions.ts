@@ -4,21 +4,21 @@
  * Evo Notes API
  * OpenAPI spec version: 0.1.0
  */
-import type { GenerateOptionsKind } from './generateOptionsKind.ts';
+import type { GenerateOptionsKind } from "./generateOptionsKind.ts";
 
 /**
  * Polymorphic generate request (kind discriminates fields).
  */
 export interface GenerateOptions {
-  kind: GenerateOptionsKind;
   chapters?: string[];
-  fileIds?: string[];
   count?: number;
-  style?: string;
-  types?: string[];
-  levels?: string[];
-  timeLimitMin?: number;
   detail?: string;
   diagramType?: string;
+  fileIds?: string[];
+  kind: GenerateOptionsKind;
+  levels?: string[];
+  style?: string;
+  timeLimitMin?: number;
+  types?: string[];
   [key: string]: unknown;
 }

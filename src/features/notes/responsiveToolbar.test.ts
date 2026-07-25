@@ -13,7 +13,12 @@ describe('responsive toolbar groups', () => {
 
   it('keeps persistent groups visible while hiding around them', () => {
     const hidden = getHiddenToolbarGroupIndexes(
-      [{ width: 80 }, { width: 40, persistent: true }, { width: 100 }, { width: 60 }],
+      [
+        { width: 80 },
+        { persistent: true, width: 40 },
+        { width: 100 },
+        { width: 60 },
+      ],
       100
     );
 
@@ -22,6 +27,8 @@ describe('responsive toolbar groups', () => {
   });
 
   it('does not hide anything when all groups fit', () => {
-    expect(getHiddenToolbarGroupIndexes([{ width: 80 }, { width: 40 }], 120).size).toBe(0);
+    expect(
+      getHiddenToolbarGroupIndexes([{ width: 80 }, { width: 40 }], 120).size
+    ).toBe(0);
   });
 });

@@ -1,51 +1,53 @@
-import { cn } from '@/lib/cn';
 import { cva, type VariantProps } from 'class-variance-authority';
+import { cn } from '@/lib/cn';
 
 type Option = string | { value: string; label: string };
 
 const segmentedVariants = cva('inline-flex p-[3px]', {
-  variants: {
-    variant: {
-      solid: 'rounded-pill border border-line bg-surface',
-      ghost: 'rounded-row',
-    },
-  },
   defaultVariants: {
     variant: 'solid',
+  },
+  variants: {
+    variant: {
+      ghost: 'rounded-row',
+      solid: 'rounded-pill border border-line bg-surface',
+    },
   },
 });
 
 const segmentVariants = cva('font-semibold transition-colors', {
+  defaultVariants: {
+    active: false,
+    size: 'md',
+    variant: 'solid',
+  },
   variants: {
-    variant: {
-      solid: 'rounded-pill',
-      ghost: 'rounded-card-lg',
+    active: {
+      false: 'bg-transparent text-fg-muted hover:text-fg',
+      true: 'bg-action text-action-fg shadow-chip',
     },
     size: {
-      sm: 'px-[15px] py-2 text-[12.5px]',
       md: 'px-[19px] py-[11px] text-sm',
+      sm: 'px-[15px] py-2 text-[12.5px]',
     },
-    active: {
-      true: 'bg-action text-action-fg shadow-chip',
-      false: 'bg-transparent text-fg-muted hover:text-fg',
+    variant: {
+      ghost: 'rounded-card-lg',
+      solid: 'rounded-pill',
     },
-  },
-  defaultVariants: {
-    variant: 'solid',
-    size: 'md',
-    active: false,
   },
 });
 
-export interface SegmentedControlProps extends VariantProps<typeof segmentedVariants> {
-  options: Option[];
-  value: string;
-  onChange?: (value: string) => void;
-  size?: 'sm' | 'md';
+export interface SegmentedControlProps
+  extends VariantProps<typeof segmentedVariants> {
   className?: string;
+  onChange?: (value: string) => void;
+  options: Option[];
+  size?: 'sm' | 'md';
+  value: string;
 }
 
-const norm = (o: Option) => (typeof o === 'string' ? { value: o, label: o } : o);
+const norm = (o: Option) =>
+  typeof o === 'string' ? { label: o, value: o } : o;
 
 export function SegmentedControl({
   options,
@@ -62,9 +64,10 @@ export function SegmentedControl({
         const active = o.value === value;
         return (
           <button
+            className={segmentVariants({ active, size, variant })}
             key={o.value}
             onClick={() => onChange?.(o.value)}
-            className={segmentVariants({ variant, size, active })}
+            type="button"
           >
             {o.label}
           </button>

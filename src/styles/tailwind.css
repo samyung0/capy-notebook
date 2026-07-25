@@ -1,23 +1,24 @@
 /* Fustat — keep the CDN import for dev; swap to self-hosted @font-face later. */
-@import url('https://fonts.googleapis.com/css2?family=Fustat:wght@300;400;500;600;700;800&display=swap');
-@import 'tailwindcss';
-@import './tokens/themes/friendly.css';
-@import './tokens/themes/notion.css';
-@import 'tw-animate-css';
+@import url("https://fonts.googleapis.com/css2?family=Fustat:wght@300;400;500;600;700;800&display=swap");
+@import "tailwindcss";
+@import "./tokens/themes/classroom.css";
+@import "./tokens/themes/notion.css";
+@import "tw-animate-css";
 
-/* Drive dark variants off our [data-mode] attribute, not the class. */
-@custom-variant dark (&:where([data-mode='dark'], [data-mode='dark'] *));
+/* Drive dark variants off our [data-theme] attribute, not the class. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
 
 /* ============================================================
    Tailwind bridge — semantic roles → utilities.
    `inline` keeps the var() reference so utilities re-theme at
-   runtime when [data-theme]/[data-mode] change.
+   runtime when [data-style]/[data-theme] change.
    ============================================================ */
 @theme inline {
-  --font-sans: 'Fustat', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans: "Fustat", system-ui, -apple-system, "Segoe UI", sans-serif;
 
   /* Surfaces → bg-* */
   --color-page: var(--surface-page);
+  /* TODO: bg-muted instead of using bg-surface-hover-bg */
 
   --color-surface: var(--surface-card-bg);
   --color-surface-hover-bg: var(--surface-card-hover-bg);
@@ -100,7 +101,7 @@
   --shadow-chip: var(--shadow-chip);
 }
 
-[data-theme='friendly'] {
+[data-style="classroom"] {
   --top-inset-bar-radius: var(--radius-row);
   --top-inset-bar-height: 60px;
   --top-inset-bar-width: 100%;
@@ -108,14 +109,14 @@
 }
 
 @media (min-width: 1024px) {
-  [data-theme='friendly'] {
+  [data-style="classroom"] {
     --top-inset-bar-width: 300px;
     --top-inset-bar-radius: var(--radius-card-lg);
   }
 }
 
 @media (min-width: 1280px) {
-  [data-theme='friendly'] {
+  [data-style="classroom"] {
     --top-inset-bar-width: 360px;
     --top-inset-bar-radius: var(--radius-card-xl);
   }
@@ -126,7 +127,7 @@
    Use via the <Text>/<Heading> components to prevent size/color drift.
    ============================================================ */
 @layer components {
-  [data-theme='friendly'] {
+  [data-style="classroom"] {
     .t-display {
       font-size: var(--display-font-size, 3.125rem);
       font-weight: var(--display-font-weight, 800);
@@ -139,7 +140,7 @@
       line-height: var(--page-title-font-line-height, 1.15);
       letter-spacing: var(--page-title-letter-spacing, -0.02rem);
     }
-    .t-section {
+    .t-large-card-title {
       font-size: var(--section-font-size, 1.375rem);
       font-weight: var(--section-font-weight, 800);
       line-height: var(--section-font-line-height, 1.35);
@@ -174,9 +175,9 @@
   }
 
   .top-inset-bar-shape {
-    border-radius: var(--top-inset-bar-radius);
-    height: var(--top-inset-bar-height);
     width: var(--top-inset-bar-width);
+    height: var(--top-inset-bar-height);
+    border-radius: var(--top-inset-bar-radius);
   }
 
   .inverted-radius-large-panel-container {
@@ -185,18 +186,19 @@
 
   .inverted-radius-large-panel-container::before {
     /* this covers the top right box shadow that is leaking out */
-    content: '';
     position: absolute;
     top: -4px;
     right: -4px;
-    height: calc(
-      var(--top-inset-bar-height) + var(--top-inset-bar-radius) +
-        var(--top-inset-bar-inverted-radius-gap) + 4px
-    );
     width: calc(
       var(--top-inset-bar-width) + var(--top-inset-bar-radius) +
         var(--top-inset-bar-inverted-radius-gap) + 4px
     );
+    height: calc(
+      var(--top-inset-bar-height) + var(--top-inset-bar-radius) +
+        var(--top-inset-bar-inverted-radius-gap) + 4px
+    );
+    /* this covers the top right box shadow that is leaking out */
+    content: "";
     background: var(--color-page);
   }
 
@@ -213,9 +215,9 @@
         var(--top-inset-bar-inverted-radius-gap)
     ); /* vertical offset (no percentage) */
 
-    --_m: /calc(2 * var(--r)) calc(2 * var(--r)) radial-gradient(#000 70%, #0000 72%);
+    --_m: /calc(2 * var(--r)) calc(2 * var(--r))
+      radial-gradient(#000 70%, #0000 72%);
     --_g: conic-gradient(at calc(100% - var(--r)) var(--r), #0000 25%, #000 0);
-    --_d: (var(--s) + var(--r));
     mask:
       calc(100% - var(--_d) - var(--x)) 0 var(--_m),
       100% calc(var(--_d) + var(--y)) var(--_m),
@@ -224,6 +226,7 @@
       var(--_g) calc(-1 * var(--_d) - var(--x)) 0,
       var(--_g) 0 calc(var(--_d) + var(--y));
     mask-repeat: no-repeat;
+    --_d: (var(--s) + var(--r));
   }
 }
 
@@ -236,25 +239,28 @@
   #root {
     height: 100%;
   }
+  #root {
+    isolation: isolate;
+  }
   body {
+    position: relative; /* https://base-ui.com/react/overview/quick-start#ios-26-safari */
     font-family: var(--font-sans);
-    color: var(--text-primary);
-    background: var(--surface-page);
-    -webkit-font-smoothing: antialiased;
-    text-rendering: optimizeLegibility;
-
     font-size: var(--body-font-size, 0.875rem);
     font-weight: var(--body-font-weight, 400);
+    -webkit-font-smoothing: antialiased;
     line-height: var(--body-line-height, 1.5);
+    color: var(--text-primary);
+    background: var(--surface-page);
+    text-rendering: optimizeLegibility; /* https://base-ui.com/react/overview/quick-start#ios-26-safari */
   }
   * {
     box-sizing: border-box;
-    scrollbar-width: thin;
     margin: 0;
+    scrollbar-width: thin;
   }
   ::selection {
-    background: var(--tint-accent-1-bg);
     color: var(--text-primary);
+    background: var(--tint-accent-1-bg);
   }
   button {
     cursor: pointer;
@@ -315,8 +321,8 @@
 
   .note-editor pre .hljs-section,
   .note-editor pre .hljs-strong {
-    color: var(--text-link);
     font-weight: 700;
+    color: var(--text-link);
   }
 
   .note-editor pre .hljs-emphasis {

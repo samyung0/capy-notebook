@@ -4,7 +4,12 @@
     "allowedOrigins": ["https://YOUR_APP_ORIGIN"],
     "allowedHeaders": ["content-type", "range"],
     "allowedOperations": ["s3_put", "s3_get", "s3_head"],
-    "exposeHeaders": ["etag", "content-length", "content-range", "accept-ranges"],
+    "exposeHeaders": [
+      "etag",
+      "content-length",
+      "content-range",
+      "accept-ranges"
+    ],
     "maxAgeSeconds": 3600
   }
 ]

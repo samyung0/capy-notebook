@@ -1,13 +1,12 @@
-import { useEffect, useMemo, useRef } from 'react';
 import { useChat as useBaseChat } from '@ai-sdk/react';
 import { BaseAIPlugin, withAIBatch } from '@platejs/ai';
 import {
   AIChatPlugin,
   AIPlugin,
-  CopilotPlugin,
   aiCommentToRange,
   applyAISuggestions,
   applyTableCellSuggestion,
+  CopilotPlugin,
   getInsertPreviewStart,
   streamInsertChunk,
   useChatChunk,
@@ -15,13 +14,25 @@ import {
 import { getCommentKey } from '@platejs/comment';
 import { serializeMd, stripMarkdown } from '@platejs/markdown';
 import { CursorOverlayPlugin } from '@platejs/selection/react';
-import { ElementApi, KEYS, PathApi, TextApi, type TElement } from 'platejs';
+import { ElementApi, KEYS, PathApi, type TElement, TextApi } from 'platejs';
 import { useEditorRef, usePluginOption } from 'platejs/react';
-import { createPlateAiTransport, plateAiCopilotUrl, plateAiFetch } from '@/api/plateAiTransport';
+import { useEffect, useMemo, useRef } from 'react';
 import { useCreateMaterialDiscussion } from '@/api/hooks';
+import {
+  createPlateAiTransport,
+  plateAiCopilotUrl,
+  plateAiFetch,
+} from '@/api/plateAiTransport';
 import { useEditorRuntime } from '../EditorRuntime';
+import { finalizeSuggestionValue } from '../suggestions';
 import { openAiMenu } from './aiMenuState';
-import { AiAnchorElement, AiCursorOverlay, AiLeaf, AiLoadingBar, GhostText } from './PlateAi';
+import {
+  AiAnchorElement,
+  AiCursorOverlay,
+  AiLeaf,
+  AiLoadingBar,
+  GhostText,
+} from './PlateAi';
 
 /* The AI SDK data parts emitted by the Go adapter. */
 type PlateToolName = 'comment' | 'edit' | 'generate';
@@ -41,10 +52,14 @@ function usePlateChat(workspaceId: string) {
   const editor = useEditorRef();
   const { materialId } = useEditorRuntime();
   const createDiscussion = useCreateMaterialDiscussion(materialId);
-  const transport = useMemo(() => createPlateAiTransport(workspaceId), [workspaceId]);
-  const chat = useBaseChat<import('ai').UIMessage<Record<string, never>, PlateDataPart>>({
+  const transport = useMemo(
+    () => createPlateAiTransport(workspaceId),
+    [workspaceId]
+  );
+  const chat = useBaseChat<
+    import('ai').UIMessage<Record<string, never>, PlateDataPart>
+  >({
     id: `plate-${materialId}`,
-    transport,
     onData(part) {
       if (part.type === 'data-toolName') {
         editor.setOption(AIChatPlugin, 'toolName', part.data as PlateToolName);
@@ -53,7 +68,9 @@ function usePlateChat(workspaceId: string) {
       if (part.type === 'data-table' && part.data) {
         const data = part.data as PlateDataPart['table'];
         if (data?.status === 'streaming' && data.cellUpdate) {
-          withAIBatch(editor, () => applyTableCellSuggestion(editor, data.cellUpdate!));
+          withAIBatch(editor, () =>
+            applyTableCellSuggestion(editor, data.cellUpdate!)
+          );
         }
         return;
       }
@@ -65,8 +82,9 @@ function usePlateChat(workspaceId: string) {
         void createDiscussion
           .mutateAsync({
             blockId: data.comment.blockId,
-            documentContent: data.comment.content,
-            contentRich: [{ type: 'p', children: [{ text: data.comment.comment }] }],
+            contentRich: [
+              { children: [{ text: data.comment.comment }], type: 'p' },
+            ],
           })
           .then((discussion) => {
             editor.tf.setNodes(
@@ -79,6 +97,7 @@ function usePlateChat(workspaceId: string) {
           });
       }
     },
+    transport,
   });
   // AI SDK v4 returns a new helpers object on every render. Plate stores plugin
   // options externally, so writing that changing reference causes a render loop.
@@ -108,11 +127,11 @@ function createAiChatPlugin(workspaceId: string) {
     },
     shortcuts: {
       show: {
-        keys: 'mod+j',
         handler: ({ editor }) => {
           openAiMenu(editor);
           return true;
         },
+        keys: 'mod+j',
       },
     },
     useHooks: ({ editor, getOption }) => {
@@ -122,10 +141,13 @@ function createAiChatPlugin(workspaceId: string) {
       useChatChunk({
         onChunk: ({ chunk, isFirst, nodes, text }) => {
           if (isFirst && mode === 'insert') {
-            const { startBlock, startInEmptyParagraph } = getInsertPreviewStart(editor);
+            const { startBlock, startInEmptyParagraph } =
+              getInsertPreviewStart(editor);
             editor.getTransforms(BaseAIPlugin).ai.beginPreview({
               originalBlocks:
-                startInEmptyParagraph && startBlock && ElementApi.isElement(startBlock)
+                startInEmptyParagraph &&
+                startBlock &&
+                ElementApi.isElement(startBlock)
                   ? [structuredClone(startBlock)]
                   : [],
             });
@@ -151,7 +173,9 @@ function createAiChatPlugin(workspaceId: string) {
             });
           }
           if (toolName === 'edit' && mode === 'chat') {
-            withAIBatch(editor, () => applyAISuggestions(editor, text), { split: isFirst });
+            withAIBatch(editor, () => applyAISuggestions(editor, text), {
+              split: isFirst,
+            });
           }
         },
         onFinish: () => editor.getApi(AIChatPlugin).aiChat.stop(),
@@ -177,12 +201,14 @@ function createCopilotPlugin(workspaceId: string) {
         },
       },
       debounceDelay: 500,
-      renderGhostText: GhostText,
       getPrompt: ({ editor }) => {
         const context = editor.api.block({ highest: true });
         if (!context) return '';
-        return serializeMd(editor, { value: [context[0] as TElement] });
+        return serializeMd(editor, {
+          value: finalizeSuggestionValue([context[0] as TElement], 'reject'),
+        });
       },
+      renderGhostText: GhostText,
     },
     shortcuts: {
       accept: { keys: 'tab' },

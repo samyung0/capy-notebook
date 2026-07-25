@@ -1,7 +1,7 @@
+import type { CalendarEvent, Label } from '@/api/types';
 import { cn } from '@/lib/cn';
 import { userColorPair } from '@/lib/userColor';
-import type { CalendarEvent, Label } from '@/api/types';
-import { WEEKDAYS, monthGrid, sameDay } from './dateUtils';
+import { monthGrid, sameDay, WEEKDAYS } from './dateUtils';
 
 export function MonthView({
   month,
@@ -28,9 +28,9 @@ export function MonthView({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="grid grid-cols-7 border-b border-divider">
+      <div className="grid grid-cols-7 border-divider border-b">
         {WEEKDAYS.map((w) => (
-          <div key={w} className="py-2 text-center font-semibold">
+          <div className="py-2 text-center font-semibold" key={w}>
             {w}
           </div>
         ))}
@@ -39,12 +39,14 @@ export function MonthView({
         {grid.map((day, i) => {
           const inMonth = day.getMonth() === month.getMonth();
           const isToday = sameDay(day, today);
-          const dayEvents = events.filter((e) => sameDay(new Date(e.start), day));
+          const dayEvents = events.filter((e) =>
+            sameDay(new Date(e.start), day)
+          );
           return (
             <div
+              className="min-h-0 cursor-pointer overflow-hidden border-divider border-r border-b p-1 transition-colors hover:bg-surface-hover-bg"
               key={i}
               onClick={() => onCreate?.(day)}
-              className="min-h-0 cursor-pointer overflow-hidden border-r border-b border-divider p-1 transition-colors hover:bg-surface-hover-bg"
             >
               <div
                 className={cn(
@@ -63,14 +65,14 @@ export function MonthView({
                   const c = colorFor(ev);
                   return (
                     <button
+                      className="block w-full truncate rounded px-1.5 py-0.5 text-left font-medium text-[0.66rem]"
                       key={ev.id}
-                      type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         onSelectEvent(ev);
                       }}
-                      className="block w-full truncate rounded px-1.5 py-0.5 text-left text-[0.66rem] font-medium"
                       style={{ background: c.bg, color: c.fg }}
+                      type="button"
                     >
                       {ev.title}
                     </button>

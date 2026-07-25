@@ -6,6 +6,8 @@ export async function openWorkspaceMaterial(
   materialId: string,
   shared = false
 ) {
-  const base = shared ? `/share/workspaces/${workspaceId}` : `/workspaces/${workspaceId}`;
+  const base = shared
+    ? `/share/workspaces/${workspaceId}`
+    : `/workspaces/${workspaceId}`;
   await page.goto(`${base}?material=${encodeURIComponent(materialId)}`);
 }

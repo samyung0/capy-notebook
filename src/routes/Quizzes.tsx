@@ -1,6 +1,16 @@
-import { useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
-import { Panel, PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { useState } from 'react';
+import {
+  useAttempts,
+  useCloneQuiz,
+  useCreateQuiz,
+  useDeleteQuiz,
+  useMistakes,
+  useQuizzes,
+  useUpdateQuiz,
+} from '@/api/hooks';
+import type { Attempt, Quiz } from '@/api/types';
+import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import {
   Badge,
   Button,
@@ -14,20 +24,10 @@ import {
   Tabs,
   Text,
 } from '@/components/ui';
-import {
-  useAttempts,
-  useCloneQuiz,
-  useCreateQuiz,
-  useDeleteQuiz,
-  useMistakes,
-  useQuizzes,
-  useUpdateQuiz,
-} from '@/api/hooks';
-import { useDialogs } from '@/stores/dialogs';
-import { cn } from '@/lib/cn';
-import type { Attempt, Quiz } from '@/api/types';
+import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { m } from '@/i18n';
-import { ShareDialog } from '@/components/app/ShareDialog';
+import { cn } from '@/lib/cn';
+import { usePortals } from '@/stores/portals';
 
 function scoreTone(pct: number): 'success' | 'warning' | 'error' {
   return pct >= 70 ? 'success' : pct >= 55 ? 'warning' : 'error';
@@ -39,22 +39,27 @@ function ReviewMistakesCard() {
   const count = mistakes?.questions.length ?? 0;
   return (
     <Card
-      interactive={count > 0}
       border="solid"
       className={cn('gap-3 p-4.5 xl:p-5.5', count === 0 && 'opacity-60')}
+      interactive={count > 0}
       onClick={() =>
         count > 0 &&
-        navigate({ to: '/quizzes/$quizId/attempt', params: { quizId: 'review_mistakes' } })
+        navigate({
+          params: { quizId: 'review_mistakes' },
+          to: '/quizzes/$quizId/attempt',
+        })
       }
     >
       <span className="flex h-11 w-11 items-center justify-center rounded-card bg-tint-error text-tint-error-fg">
         <Icon name="help" size={20} />
       </span>
-      <Text variant="card-title" className="mt-3 truncate">
+      <Text className="mt-3 truncate" variant="card-title">
         {m.quiz_review_mistakes()}
       </Text>
-      <Text variant="meta" tone="muted" className="mt-1">
-        {count > 0 ? m.quiz_review_mistakes_count({ count }) : m.quiz_review_mistakes_empty()}
+      <Text className="mt-1" tone="muted" variant="meta">
+        {count > 0
+          ? m.quiz_review_mistakes_count({ count })
+          : m.quiz_review_mistakes_empty()}
       </Text>
     </Card>
   );
@@ -66,11 +71,11 @@ function AllQuizzes() {
   const del = useDeleteQuiz();
   const clone = useCloneQuiz();
   const update = useUpdateQuiz();
-  const openConfirm = useDialogs((s) => s.openConfirm);
+  const openConfirm = usePortals((s) => s.openConfirm);
   const [info, setInfo] = useState<Quiz | null>(null);
   const [sharing, setSharing] = useState<Quiz | null>(null);
 
-  if (isLoading) return <SkeletonCardGrid count={6} cardHeight={150} />;
+  if (isLoading) return <SkeletonCardGrid cardHeight={150} count={6} />;
 
   return (
     <>
@@ -78,61 +83,68 @@ function AllQuizzes() {
         <ReviewMistakesCard />
         {data?.map((q) => (
           <Card
-            key={q.id}
-            interactive
             border="solid"
             className="relative h-full gap-3 p-4.5 xl:p-5.5"
+            interactive
+            key={q.id}
             onClick={() => setInfo(q)}
           >
             <span className="flex h-11 w-11 items-center justify-center rounded-card bg-tint-accent-1 text-tint-accent-1-fg">
               <Icon name="quiz" size={20} />
             </span>
-            <Text variant="card-title" className="mt-3 truncate">
+            <Text className="mt-3 truncate" variant="card-title">
               {q.name}
             </Text>
-            <span className="mt-1 flex items-center gap-1 text-xs text-fg-muted">
+            <span className="mt-1 flex items-center gap-1 text-fg-muted text-xs">
               <Icon name="book" size={13} /> {q.workspaceName || 'Standalone'}
             </span>
-            <Text variant="meta" tone="muted" className="mt-1">
-              {q.questions.length} questions · {q.chapters.join(', ') || 'All chapters'}
+            <Text className="mt-1" tone="muted" variant="meta">
+              {q.questions.length} questions ·{' '}
+              {q.chapters.join(', ') || 'All chapters'}
             </Text>
-            <div className="absolute top-3 right-3" onClick={(e) => e.stopPropagation()}>
+            <div
+              className="absolute top-3 right-3"
+              onClick={(e) => e.stopPropagation()}
+            >
               <Menu
                 items={[
                   {
-                    label: m.action_edit(),
                     icon: 'settings',
-                    onClick: () =>
-                      navigate({ to: '/quizzes/$quizId/edit', params: { quizId: q.id } }),
-                  },
-                  {
-                    label: 'Start quiz',
-                    icon: 'quiz',
+                    label: m.action_edit(),
                     onClick: () =>
                       navigate({
-                        to: '/quizzes/$quizId/attempt',
                         params: { quizId: q.id },
+                        to: '/quizzes/$quizId/edit',
                       }),
                   },
                   {
-                    label: 'Share',
+                    icon: 'quiz',
+                    label: 'Start quiz',
+                    onClick: () =>
+                      navigate({
+                        params: { quizId: q.id },
+                        to: '/quizzes/$quizId/attempt',
+                      }),
+                  },
+                  {
                     icon: 'link',
+                    label: 'Share',
                     onClick: () => setSharing(q),
                   },
                   {
-                    label: 'Clone',
                     icon: 'plus',
+                    label: 'Clone',
                     onClick: () => clone.mutate(q.id),
                   },
                   {
-                    label: m.action_delete(),
-                    icon: 'trash',
                     danger: true,
+                    icon: 'trash',
+                    label: m.action_delete(),
                     onClick: () =>
                       openConfirm({
-                        title: m.confirm_delete_title({ name: q.name }),
                         body: m.confirm_delete_body(),
                         onConfirm: () => del.mutate(q.id),
+                        title: m.confirm_delete_title({ name: q.name }),
                       }),
                   },
                 ]}
@@ -143,22 +155,18 @@ function AllQuizzes() {
       </div>
 
       <SimpleDialog
-        open={!!info}
-        onClose={() => setInfo(null)}
-        title={info?.name}
-        width={460}
         footer={
           info && (
             <>
-              <Button variant="ghost" onClick={() => setInfo(null)}>
+              <Button onClick={() => setInfo(null)} variant="ghost">
                 Cancel
               </Button>
               <Button
                 iconRight="arrowRight"
                 onClick={() =>
                   navigate({
-                    to: '/quizzes/$quizId/attempt',
                     params: { quizId: info.id },
+                    to: '/quizzes/$quizId/attempt',
                   })
                 }
               >
@@ -167,24 +175,27 @@ function AllQuizzes() {
             </>
           )
         }
+        onClose={() => setInfo(null)}
+        open={!!info}
+        title={info?.name}
       >
         {info && (
           <div className="flex flex-col gap-2">
             <Text variant="body">
-              <b>{info.questions.length}</b> questions across {info.chapters.length || 'all'}{' '}
-              chapters.
+              <b>{info.questions.length}</b> questions across{' '}
+              {info.chapters.length || 'all'} chapters.
             </Text>
-            <Text variant="body" tone="secondary">
+            <Text tone="secondary" variant="body">
               Workspace: {info.workspaceName || 'Standalone'}
             </Text>
-            {info.timeLimitMin && (
-              <Text variant="body" tone="secondary">
+            {(info.timeLimitMin ?? 0) > 0 && (
+              <Text tone="secondary" variant="body">
                 Time limit: {info.timeLimitMin} min
               </Text>
             )}
             <div className="mt-2 flex flex-wrap gap-1">
               {[...new Set(info.questions.map((q) => q.type))].map((t) => (
-                <Badge key={t} tone="neutral" size="sm">
+                <Badge key={t} size="sm" tone="neutral">
                   {t}
                 </Badge>
               ))}
@@ -194,16 +205,16 @@ function AllQuizzes() {
       </SimpleDialog>
       {sharing && (
         <ShareDialog
-          open
-          onClose={() => setSharing(null)}
-          title={`Share ${sharing.name}`}
-          privacy={sharing.privacy}
           link={`/share/quizzes/${sharing.id}`}
-          saving={update.isPending}
+          onClose={() => setSharing(null)}
           onPrivacyChange={async (privacy) => {
             const quiz = await update.mutateAsync({ id: sharing.id, privacy });
             setSharing(quiz);
           }}
+          open
+          privacy={sharing.privacy}
+          saving={update.isPending}
+          title={`Share ${sharing.name}`}
         />
       )}
     </>
@@ -216,7 +227,7 @@ function PastAttempts() {
   if (isLoading) return <SkeletonList count={6} rowHeight={52} />;
   if (!data?.length)
     return (
-      <Text variant="body" tone="muted" className="py-8 text-center">
+      <Text className="py-8 text-center" tone="muted" variant="body">
         No attempts yet.
       </Text>
     );
@@ -224,7 +235,7 @@ function PastAttempts() {
   return (
     <div className="overflow-hidden rounded-card border border-line">
       {/* desktop header */}
-      <div className="hidden bg-surface-hover-bg px-4 py-3 text-xs font-bold tracking-wide text-fg-muted uppercase md:flex">
+      <div className="hidden bg-surface-hover-bg px-4 py-3 font-bold text-fg-muted text-xs uppercase tracking-wide md:flex">
         <div className="flex-[2.2]">{m.quiz_col_quiz()}</div>
         <div className="flex-[1.8]">{m.quiz_col_workspace()}</div>
         <div className="flex-1 text-center">{m.quiz_col_score()}</div>
@@ -233,26 +244,31 @@ function PastAttempts() {
       </div>
       {data.map((a: Attempt) => (
         <div
+          className="flex flex-col gap-2 border-divider border-t px-4 py-3 first:border-t-0 md:flex-row md:items-center"
           key={a.id}
-          className="flex flex-col gap-2 border-t border-divider px-4 py-3 first:border-t-0 md:flex-row md:items-center"
         >
           <div className="flex-[2.2] font-semibold text-fg">{a.quizName}</div>
-          <div className="flex-[1.8] text-sm text-fg-secondary">{a.workspaceName}</div>
+          <div className="flex-[1.8] text-fg-secondary text-sm">
+            {a.workspaceName}
+          </div>
           <div className="flex-1 md:text-center">
             <Badge tone={scoreTone(a.pct)}>
               {a.correct}/{a.total} · {a.pct}%
             </Badge>
           </div>
-          <div className="flex-[1.3] text-sm text-fg-muted">
+          <div className="flex-[1.3] text-fg-muted text-sm">
             {new Date(a.takenAt).toLocaleDateString()}
           </div>
           <div className="md:w-28">
             <Button
+              onClick={() =>
+                navigate({
+                  params: { attemptId: a.id },
+                  to: '/quizzes/attempts/$attemptId',
+                })
+              }
               size="sm"
               variant="outline"
-              onClick={() =>
-                navigate({ to: '/quizzes/attempts/$attemptId', params: { attemptId: a.id } })
-              }
             >
               Check result
             </Button>
@@ -272,7 +288,11 @@ export default function Quizzes() {
     createQuiz.mutate(
       { name: 'Untitled quiz', questions: [] },
       {
-        onSuccess: (quiz) => navigate({ to: '/quizzes/$quizId/edit', params: { quizId: quiz.id } }),
+        onSuccess: (quiz) =>
+          navigate({
+            params: { quizId: quiz.id },
+            to: '/quizzes/$quizId/edit',
+          }),
       }
     );
   }
@@ -280,26 +300,26 @@ export default function Quizzes() {
   return (
     <PanelWithInvertedRadius>
       <PageHeader
-        title={m.nav_quizzes()}
         actions={
           <IconButton
+            disabled={createQuiz.isPending}
             icon="plus"
-            variant="gray"
-            size="lg"
             label={m.action_new_quiz()}
             onClick={newQuiz}
-            disabled={createQuiz.isPending}
+            size="lg"
+            variant="gray"
           />
         }
+        title={m.nav_quizzes()}
       />
       <div className="px-6 pt-4">
         <Tabs
+          onChange={setTab}
           tabs={[
-            { value: 'all', label: m.quiz_tab_all() },
-            { value: 'attempts', label: m.quiz_tab_attempts() },
+            { label: m.quiz_tab_all(), value: 'all' },
+            { label: m.quiz_tab_attempts(), value: 'attempts' },
           ]}
           value={tab}
-          onChange={setTab}
         />
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">

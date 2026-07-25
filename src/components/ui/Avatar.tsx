@@ -2,36 +2,48 @@ import type { HTMLAttributes } from 'react';
 import { cn } from '@/lib/cn';
 
 type NamedSize = 'xs' | 'sm' | 'md' | 'lg';
-const SIZES: Record<NamedSize, number> = { xs: 24, sm: 30, md: 38, lg: 48 };
+const SIZES: Record<NamedSize, number> = { lg: 48, md: 38, sm: 30, xs: 24 };
+const WHITESPACE_PATTERN = /\s+/;
 
 export interface AvatarProps extends HTMLAttributes<HTMLSpanElement> {
-  src?: string;
   name?: string;
   size?: NamedSize | number;
+  src?: string;
 }
 
 function initials(name?: string): string {
   if (!name) return '·';
   return name
-    .split(/\s+/)
+    .split(WHITESPACE_PATTERN)
     .slice(0, 2)
     .map((w) => w[0]?.toUpperCase() ?? '')
     .join('');
 }
 
-export function Avatar({ src, name, size = 'md', className, style, ...rest }: AvatarProps) {
+export function Avatar({
+  src,
+  name,
+  size = 'md',
+  className,
+  style,
+  ...rest
+}: AvatarProps) {
   const px = typeof size === 'number' ? size : SIZES[size];
   return (
     <span
       className={cn(
-        'bg-tint-accent-1 text-tint-accent-1-fg inline-flex shrink-0 items-center justify-center overflow-hidden rounded-pill font-bold',
+        'inline-flex shrink-0 items-center justify-center overflow-hidden rounded-pill bg-tint-accent-1 font-bold text-tint-accent-1-fg',
         className
       )}
-      style={{ width: px, height: px, fontSize: px * 0.4, ...style }}
+      style={{ fontSize: px * 0.4, height: px, width: px, ...style }}
       {...rest}
     >
       {src ? (
-        <img src={src} alt={name ?? ''} className="h-full w-full object-cover" />
+        <img
+          alt={name ?? ''}
+          className="h-full w-full object-cover"
+          src={src}
+        />
       ) : (
         initials(name)
       )}

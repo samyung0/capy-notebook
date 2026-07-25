@@ -1,4 +1,3 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getCommentKey } from '@platejs/comment';
 import { BaseSuggestionPlugin } from '@platejs/suggestion';
 import { KEYS, TextApi } from 'platejs';
@@ -9,8 +8,7 @@ import {
   useEditorSelector,
   usePlateEditor,
 } from 'platejs/react';
-import { EmptyState, Spinner } from '@/components/ui';
-import { cn } from '@/lib/cn';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useMaterial,
   useMaterialDiscussions,
@@ -19,28 +17,46 @@ import {
   useWorkspaceMembers,
 } from '@/api/hooks';
 import type { Material, WorkspaceRole } from '@/api/types';
-import { NoteBlockDialogsProvider } from './blocks/dialogContext';
-import { NoteToolbar } from './NoteToolbar';
-import { AiMenu } from './ai/AiMenu';
-import { VoiceButton } from './ai/VoiceButton';
-import { buildPlugins } from './plugins';
-import { noteComponents } from './nodeComponents';
+import { EmptyState, Spinner } from '@/components/ui';
 import {
   countMaterialMetrics,
   createMaterialDocumentWithMetrics,
   MATERIAL_DOCUMENT_LIMITS,
-  normalizeMaterialValueWithMetrics,
-  parseMaterialDocument,
-  parseMaterialDocumentWithMetrics,
   type MaterialDocument,
   type MaterialDocumentMetrics,
   type MaterialValue,
+  normalizeMaterialValueWithMetrics,
+  parseMaterialDocument,
+  parseMaterialDocumentWithMetrics,
 } from '@/features/materials/document';
-import { EditorRuntimeProvider, type EditorRuntimeValue } from './EditorRuntime';
-import { CollaborationProvider, suggestionPlugin } from './Collaboration';
+import { cn } from '@/lib/cn';
+import { AiMenu } from './ai/AiMenu';
+import { VoiceButton } from './ai/VoiceButton';
+import { NoteBlockDialogsProvider } from './blocks/dialogContext';
+import {
+  CollaborationProvider,
+  commentDiscussionAnchor,
+  suggestionPlugin,
+} from './Collaboration';
+import {
+  contentSizeKilobytes,
+  formatContentSize,
+  shouldShowDocumentStats,
+} from './documentStats';
+import {
+  EditorRuntimeProvider,
+  type EditorRuntimeValue,
+} from './EditorRuntime';
+import type {
+  NoteEditorMode,
+  NoteEditorSaveState,
+  NoteEditorStatus,
+} from './editorMode';
 import { FloatingToolbar } from './FloatingToolbar';
-import type { NoteEditorMode, NoteEditorSaveState, NoteEditorStatus } from './editorMode';
-import { formatContentSize, contentSizeKilobytes, shouldShowDocumentStats } from './documentStats';
+import { NoteToolbar } from './NoteToolbar';
+import { noteComponents } from './nodeComponents';
+import { buildPlugins } from './plugins';
+import { stripCommentDecorations } from './suggestions';
 
 const NOTE_PLACEHOLDER = 'Type  /  for commands ...';
 
@@ -53,7 +69,9 @@ function materialDocumentSnapshot(
 } {
   return (
     parseMaterialDocumentWithMetrics(input) ??
-    createMaterialDocumentWithMetrics(fallbackValue ?? [{ type: 'p', children: [{ text: '' }] }])
+    createMaterialDocumentWithMetrics(
+      fallbackValue ?? [{ children: [{ text: '' }], type: 'p' }]
+    )
   );
 }
 
@@ -68,12 +86,13 @@ function DocumentStatsFooter({
 
   return (
     <div
-      className="mx-auto mb-20 flex w-full max-w-3xl gap-3 px-10 pb-4 text-xs text-fg-muted max-sm:px-5"
       aria-label="Document statistics"
+      className="mx-auto mb-20 flex w-full max-w-3xl gap-3 px-10 pb-4 text-fg-muted text-xs max-sm:px-5"
     >
       <span
         className={cn(
-          metrics.nodeCount >= MATERIAL_DOCUMENT_LIMITS.maxNodes * 0.85 && 'text-solid-error'
+          metrics.nodeCount >= MATERIAL_DOCUMENT_LIMITS.maxNodes * 0.85 &&
+            'text-solid-error'
         )}
       >
         Nodes: {metrics.nodeCount.toLocaleString()}/
@@ -81,7 +100,8 @@ function DocumentStatsFooter({
       </span>
       <span
         className={cn(
-          metrics.maxDepth >= MATERIAL_DOCUMENT_LIMITS.maxDepth * 0.85 && 'text-solid-error'
+          metrics.maxDepth >= MATERIAL_DOCUMENT_LIMITS.maxDepth * 0.85 &&
+            'text-solid-error'
         )}
       >
         Depth: {metrics.maxDepth}/{MATERIAL_DOCUMENT_LIMITS.maxDepth}
@@ -90,12 +110,16 @@ function DocumentStatsFooter({
         className={cn(
           contentBytes &&
             contentSizeKilobytes(contentBytes) >=
-              contentSizeKilobytes(MATERIAL_DOCUMENT_LIMITS.maxContentBytes) * 0.85 &&
+              contentSizeKilobytes(MATERIAL_DOCUMENT_LIMITS.maxContentBytes) *
+                0.85 &&
             'text-solid-error'
         )}
       >
         Size: {formatContentSize(contentBytes)}/
-        {contentSizeKilobytes(MATERIAL_DOCUMENT_LIMITS.maxContentBytes).toLocaleString()} KB
+        {contentSizeKilobytes(
+          MATERIAL_DOCUMENT_LIMITS.maxContentBytes
+        ).toLocaleString()}{' '}
+        KB
       </span>
     </div>
   );
@@ -131,7 +155,7 @@ function NoteEditorContent({
     <PlateContainer className="relative [&_.slate-selection-area]:z-50 [&_.slate-selection-area]:border [&_.slate-selection-area]:border-action-accent/25 [&_.slate-selection-area]:bg-action-accent/15">
       <PlateContent
         className={cn(
-          'note-editor mx-auto min-h-75 max-w-3xl px-10 pt-4 pb-36 text-base outline-none **:data-slate-placeholder:translate-y-1 **:data-slate-placeholder:text-sm **:data-slate-placeholder:leading-loose **:data-slate-placeholder:text-placeholder **:data-slate-placeholder:opacity-100! max-sm:px-5',
+          'note-editor mx-auto min-h-75 max-w-3xl px-10 pt-4 pb-36 text-base outline-none **:data-slate-placeholder:translate-y-1 **:data-slate-placeholder:text-placeholder **:data-slate-placeholder:text-sm **:data-slate-placeholder:leading-loose **:data-slate-placeholder:opacity-100! max-sm:px-5',
           shouldShowStats && 'pb-16'
         )}
         placeholder={showEditorPlaceholder ? NOTE_PLACEHOLDER : undefined}
@@ -165,30 +189,36 @@ export function NoteEditor({
     );
   }
   if (!material) {
-    return <EmptyState title="Note not found" body="This note may have been deleted." />;
+    return (
+      <EmptyState
+        body="This note may have been deleted."
+        title="Note not found"
+      />
+    );
   }
 
   const modeAllowed =
     (mode === 'edit' && material.capabilities.canEdit) ||
-    (mode === 'suggestion' && (material.capabilities.canEdit || material.capabilities.canComment));
+    (mode === 'suggestion' &&
+      (material.capabilities.canEdit || material.capabilities.canComment));
   if (!modeAllowed) {
     return (
       <EmptyState
-        title="Mode unavailable"
         body="Your current material permissions do not allow this mode."
+        title="Mode unavailable"
       />
     );
   }
 
   return (
     <CollaborativeNoteEditor
+      allowExternalAssets={allowExternalAssets}
+      collaborationActionsHost={collaborationActionsHost}
       key={`${material.id}:${mode}`}
       material={material}
       mode={mode}
-      allowExternalAssets={allowExternalAssets}
-      onSuggestionDirtyChange={onSuggestionDirtyChange}
       onEditorStatusChange={onEditorStatusChange}
-      collaborationActionsHost={collaborationActionsHost}
+      onSuggestionDirtyChange={onSuggestionDirtyChange}
     />
   );
 }
@@ -209,7 +239,8 @@ function CollaborativeNoteEditor({
   collaborationActionsHost?: HTMLElement | null;
 }) {
   const me = useMe();
-  const role: WorkspaceRole | null = material.role ?? (material.isOwner ? 'owner' : null);
+  const role: WorkspaceRole | null =
+    material.role ?? (material.isOwner ? 'owner' : null);
   // Mentions/comments need the member directory for any collaborator, not only
   // owners who can manage invites (`canManageMembers`).
   const members = useWorkspaceMembers(material.workspaceId);
@@ -217,7 +248,10 @@ function CollaborativeNoteEditor({
   const canEdit = material.capabilities.canEdit;
   const canComment = material.capabilities.canComment || canEdit;
   const users = useMemo(
-    () => Object.fromEntries((members.data ?? []).map((member) => [member.userId, member])),
+    () =>
+      Object.fromEntries(
+        (members.data ?? []).map((member) => [member.userId, member])
+      ),
     [members.data]
   );
 
@@ -230,28 +264,28 @@ function CollaborativeNoteEditor({
   }
 
   const runtime: EditorRuntimeValue = {
-    materialId: material.id,
-    workspaceId: material.workspaceId,
-    currentUserId: me.data?.id ?? null,
-    role,
-    canEdit,
-    canComment,
-    mode,
     allowExternalAssets,
+    canComment,
+    canEdit,
+    currentUserId: me.data?.id ?? null,
+    materialId: material.id,
+    mode,
+    role,
+    workspaceId: material.workspaceId,
   };
 
   return (
     <EditorRuntimeProvider value={runtime}>
       <NoteEditorCore
+        allowExternalAssets={allowExternalAssets}
+        collaborationActionsHost={collaborationActionsHost}
+        currentUserId={me.data?.id ?? null}
+        discussions={discussions.data ?? []}
         material={material}
         mode={mode}
-        allowExternalAssets={allowExternalAssets}
-        users={users}
-        discussions={discussions.data ?? []}
-        currentUserId={me.data?.id ?? null}
-        onSuggestionDirtyChange={onSuggestionDirtyChange}
         onEditorStatusChange={onEditorStatusChange}
-        collaborationActionsHost={collaborationActionsHost}
+        onSuggestionDirtyChange={onSuggestionDirtyChange}
+        users={users}
       />
     </EditorRuntimeProvider>
   );
@@ -271,7 +305,10 @@ function NoteEditorCore({
   material: Material;
   mode: NoteEditorMode;
   allowExternalAssets: boolean;
-  users: Record<string, NonNullable<ReturnType<typeof useWorkspaceMembers>['data']>[number]>;
+  users: Record<
+    string,
+    NonNullable<ReturnType<typeof useWorkspaceMembers>['data']>[number]
+  >;
   discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>['data']>;
   currentUserId: string | null;
   onSuggestionDirtyChange?: (dirty: boolean) => void;
@@ -291,27 +328,30 @@ function NoteEditorCore({
     ...materialDocumentSnapshot(material.content),
     revision: material.revision ?? 1,
   }));
-  const [documentMetrics, setDocumentMetrics] = useState<MaterialDocumentMetrics>(
-    () => baseSnapshot.metrics
-  );
+  const [documentMetrics, setDocumentMetrics] =
+    useState<MaterialDocumentMetrics>(() => baseSnapshot.metrics);
   const [savedContentBytes, setSavedContentBytes] = useState<number | null>(
     () => material.contentBytes ?? null
   );
+  const currentDocument = useMemo(
+    () =>
+      (material.revision ?? 1) === baseSnapshot.revision
+        ? baseSnapshot.document
+        : (parseMaterialDocument(material.content) ?? baseSnapshot.document),
+    [
+      baseSnapshot.document,
+      baseSnapshot.revision,
+      material.content,
+      material.revision,
+    ]
+  );
   const updateDocumentMetrics = useCallback((next: MaterialDocumentMetrics) => {
     setDocumentMetrics((current) =>
-      current.nodeCount === next.nodeCount && current.maxDepth === next.maxDepth ? current : next
+      current.nodeCount === next.nodeCount && current.maxDepth === next.maxDepth
+        ? current
+        : next
     );
   }, []);
-  const currentDocument = useMemo(() => {
-    // `currentDocument` is only used to reset a dirty suggestion onto a
-    // newer server revision. Direct-edit saves already update baseSnapshot
-    // from the immutable request snapshot, so parsing the query-cache copy
-    // after every successful save would be a redundant full-tree walk.
-    if (mode !== 'suggestion' || (material.revision ?? 1) === baseSnapshot.revision) {
-      return baseSnapshot.document;
-    }
-    return parseMaterialDocument(material.content) ?? baseSnapshot.document;
-  }, [baseSnapshot.document, baseSnapshot.revision, material.content, material.revision, mode]);
   const initialDocument = baseSnapshot.document;
   const setSuggestionDraftDirty = useCallback(
     (dirty: boolean) => {
@@ -329,7 +369,7 @@ function NoteEditorCore({
   useEffect(() => {
     const status: NoteEditorStatus =
       mode === 'suggestion'
-        ? { mode: 'suggestion', dirty: suggestionDirty }
+        ? { dirty: suggestionDirty, mode: 'suggestion' }
         : { mode: 'edit', saveState };
     onEditorStatusChange?.(status);
   }, [mode, onEditorStatusChange, saveState, suggestionDirty]);
@@ -344,13 +384,13 @@ function NoteEditorCore({
   const plugins = useMemo(
     () =>
       buildPlugins({
-        workspaceId: material.workspaceId,
+        allowExternalAssets,
         currentUserId,
-        users,
         discussions,
         mode,
-        allowExternalAssets,
         onSave: onSaveShortcut,
+        users,
+        workspaceId: material.workspaceId,
       }),
     [
       allowExternalAssets,
@@ -364,8 +404,8 @@ function NoteEditorCore({
   );
 
   const editor = usePlateEditor({
-    plugins,
     components: noteComponents,
+    plugins,
     value: () => structuredClone(initialDocument.value),
   });
   const replaceEditorDocument = useCallback(
@@ -387,8 +427,15 @@ function NoteEditorCore({
 
   useEffect(() => {
     const isSuggesting = mode === 'suggestion';
-    const getOption = editor.getOption as (plugin: unknown, key: string) => unknown;
-    const setOption = editor.setOption as (plugin: unknown, key: string, value: unknown) => void;
+    const getOption = editor.getOption as (
+      plugin: unknown,
+      key: string
+    ) => unknown;
+    const setOption = editor.setOption as (
+      plugin: unknown,
+      key: string,
+      value: unknown
+    ) => void;
     if (getOption(suggestionPlugin, 'isSuggesting') !== isSuggesting) {
       setOption(suggestionPlugin, 'isSuggesting', isSuggesting);
     }
@@ -432,14 +479,19 @@ function NoteEditorCore({
     applyingDiscussionMarks.current = true;
     editor.tf.withoutSaving(() => {
       for (const discussion of discussions) {
-        if (!discussion.anchor) continue;
+        const anchor = commentDiscussionAnchor(discussion);
+        if (!anchor) continue;
         try {
           editor.tf.setNodes(
             {
               [KEYS.comment]: true,
               [getCommentKey(discussion.id)]: true,
             },
-            { at: discussion.anchor, match: TextApi.isText, split: true }
+            {
+              at: anchor as never,
+              match: TextApi.isText,
+              split: true,
+            }
           );
         } catch {
           // Anchors are revision-relative; stale anchors remain available in the thread list.
@@ -463,7 +515,9 @@ function NoteEditorCore({
     if (metricsTimer.current) clearTimeout(metricsTimer.current);
     metricsTimer.current = setTimeout(() => {
       metricsTimer.current = null;
-      updateDocumentMetrics(countMaterialMetrics(editor.children as MaterialValue));
+      updateDocumentMetrics(
+        countMaterialMetrics(editor.children as MaterialValue)
+      );
     }, 1000);
   }, [editor, updateDocumentMetrics]);
   useEffect(
@@ -482,9 +536,14 @@ function NoteEditorCore({
     if (!pending.current) return;
     // Serialize the live editor value now rather than a keystroke-time
     // snapshot: repairs (stable ids) and validation happen once per save.
-    let snapshot: { document: MaterialDocument; metrics: MaterialDocumentMetrics };
+    let snapshot: {
+      document: MaterialDocument;
+      metrics: MaterialDocumentMetrics;
+    };
     try {
-      snapshot = createMaterialDocumentWithMetrics(editor.children as MaterialValue);
+      snapshot = createMaterialDocumentWithMetrics(
+        stripCommentDecorations(editor.children as MaterialValue)
+      );
       updateDocumentMetrics(snapshot.metrics);
     } catch {
       if (mounted.current) setSaveState('error');
@@ -496,9 +555,17 @@ function NoteEditorCore({
     mutateRef.current(
       {
         id: material.id,
-        patch: { content: snapshot.document, expectedRevision: revisionRef.current },
+        patch: {
+          content: snapshot.document,
+          expectedRevision: revisionRef.current,
+        },
       },
       {
+        onError: () => {
+          saveInFlight.current = false;
+          pending.current = true;
+          if (mounted.current) setSaveState('error');
+        },
         onSuccess: (saved) => {
           saveInFlight.current = false;
           revisionRef.current = saved.revision ?? revisionRef.current + 1;
@@ -518,11 +585,6 @@ function NoteEditorCore({
           } else if (mounted.current) {
             setSaveState('saved');
           }
-        },
-        onError: () => {
-          saveInFlight.current = false;
-          pending.current = true;
-          if (mounted.current) setSaveState('error');
         },
       }
     );
@@ -564,16 +626,15 @@ function NoteEditorCore({
             operations (caret moves), which must not schedule saves. */}
         <Plate editor={editor} onValueChange={onEditorChange}>
           <CollaborationProvider
-            baseDocument={baseSnapshot.document}
-            baseRevision={baseSnapshot.revision}
-            currentDocument={currentDocument}
-            currentRevision={Math.max(material.revision ?? 1, revisionRef.current)}
-            discussions={discussions}
-            suggestionDirty={suggestionDirty}
-            onSuggestionReset={() => setSuggestionDraftDirty(false)}
-            replaceEditorDocument={replaceEditorDocument}
             actionsPortalHost={collaborationActionsHost}
-            onBaseDocumentChange={(document, revision) => {
+            currentDocument={currentDocument}
+            currentRevision={Math.max(
+              material.revision ?? 1,
+              revisionRef.current
+            )}
+            currentUserId={currentUserId}
+            discussions={discussions}
+            onMaterialState={(document, revision) => {
               // Documents on this path came from parse/create helpers and are
               // already normalized; a read-only count is enough.
               const metrics = countMaterialMetrics(document.value);
@@ -581,14 +642,28 @@ function NoteEditorCore({
               setBaseSnapshot({ document, metrics, revision });
               updateDocumentMetrics(metrics);
             }}
+            onSuggestionReset={() => setSuggestionDraftDirty(false)}
+            replaceEditorDocument={replaceEditorDocument}
+            suggestionDirty={suggestionDirty}
+            users={users}
           >
             <NoteToolbar
-              right={mode === 'edit' && allowExternalAssets ? <VoiceButton /> : undefined}
+              right={
+                mode === 'edit' && allowExternalAssets ? (
+                  <VoiceButton />
+                ) : undefined
+              }
             />
             <div className="min-h-0 flex-1 overflow-auto">
               <div className="mx-auto min-h-full w-full max-w-7xl">
-                <NoteEditorContent metrics={documentMetrics} contentBytes={savedContentBytes} />
-                <DocumentStatsFooter metrics={documentMetrics} contentBytes={savedContentBytes} />
+                <NoteEditorContent
+                  contentBytes={savedContentBytes}
+                  metrics={documentMetrics}
+                />
+                <DocumentStatsFooter
+                  contentBytes={savedContentBytes}
+                  metrics={documentMetrics}
+                />
               </div>
             </div>
             <FloatingToolbar />

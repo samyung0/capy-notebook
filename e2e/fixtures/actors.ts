@@ -1,11 +1,25 @@
 import {
-  test as base,
-  expect,
   type APIRequestContext,
   type Browser,
+  test as base,
   type Page,
 } from '@playwright/test';
+import type { Material } from '../../src/api/gen/model/material';
+import type { Workspace } from '../../src/api/gen/model/workspace';
 import { e2eHeaders, seed, users } from './seed';
+
+type MaterialFactory = {
+  createNote: (input: {
+    blockId: string;
+    body: string;
+    title: string;
+    workspaceId: string;
+  }) => Promise<Material>;
+};
+
+type WorkspaceFactory = {
+  create: (input: { name: string }) => Promise<Workspace>;
+};
 
 type ActorFixtures = {
   ownerPage: Page;
@@ -20,7 +34,9 @@ type ActorFixtures = {
   viewerApi: APIRequestContext;
   otherApi: APIRequestContext;
   anonymousApi: APIRequestContext;
+  materialFactory: MaterialFactory;
   seed: typeof seed;
+  workspaceFactory: WorkspaceFactory;
 };
 
 async function pageAs(browser: Browser, userId: string) {
@@ -40,20 +56,27 @@ async function pageAs(browser: Browser, userId: string) {
 }
 
 export const test = base.extend<ActorFixtures>({
-  seed: async ({}, use) => {
-    await use(seed);
+  anonymousApi: async ({ playwright }, use) => {
+    const api = await playwright.request.newContext({
+      baseURL: process.env.E2E_API_URL!,
+    });
+    await use(api);
+    await api.dispose();
   },
 
-  ownerPage: async ({ browser }, use) => {
-    const { context, page } = await pageAs(browser, users.owner);
-    await use(page);
+  anonymousPage: async ({ browser }, use) => {
+    const context = await browser.newContext();
+    await use(await context.newPage());
     await context.close();
   },
 
-  editorPage: async ({ browser }, use) => {
-    const { context, page } = await pageAs(browser, users.editor);
-    await use(page);
-    await context.close();
+  commenterApi: async ({ playwright }, use) => {
+    const api = await playwright.request.newContext({
+      baseURL: process.env.E2E_API_URL!,
+      extraHTTPHeaders: e2eHeaders(users.commenter),
+    });
+    await use(api);
+    await api.dispose();
   },
 
   commenterPage: async ({ browser }, use) => {
@@ -62,21 +85,76 @@ export const test = base.extend<ActorFixtures>({
     await context.close();
   },
 
-  viewerPage: async ({ browser }, use) => {
-    const { context, page } = await pageAs(browser, users.viewer);
+  editorApi: async ({ playwright }, use) => {
+    const api = await playwright.request.newContext({
+      baseURL: process.env.E2E_API_URL!,
+      extraHTTPHeaders: e2eHeaders(users.editor),
+    });
+    await use(api);
+    await api.dispose();
+  },
+
+  editorPage: async ({ browser }, use) => {
+    const { context, page } = await pageAs(browser, users.editor);
     await use(page);
     await context.close();
+  },
+
+  materialFactory: async ({ ownerApi }, use) => {
+    const materialIds: string[] = [];
+    await use({
+      createNote: async ({ blockId, body, title, workspaceId }) => {
+        const response = await ownerApi.post(
+          `/api/workspaces/${workspaceId}/materials`,
+          {
+            data: {
+              content: {
+                schemaVersion: 1,
+                value: [
+                  {
+                    children: [{ text: body }],
+                    id: blockId,
+                    type: 'p',
+                  },
+                ],
+              },
+              kind: 'note',
+              title,
+            },
+          }
+        );
+        if (response.status() !== 201) {
+          throw new Error(
+            `Failed to create E2E material (${response.status()}): ${await response.text()}`
+          );
+        }
+        const material = (await response.json()) as Material;
+        materialIds.push(material.id);
+        return material;
+      },
+    });
+    for (const materialId of materialIds.reverse()) {
+      const response = await ownerApi.delete(`/api/materials/${materialId}`);
+      if (response.status() !== 204) {
+        throw new Error(
+          `Failed to clean up E2E material ${materialId}: ${response.status()}`
+        );
+      }
+    }
+  },
+
+  otherApi: async ({ playwright }, use) => {
+    const api = await playwright.request.newContext({
+      baseURL: process.env.E2E_API_URL!,
+      extraHTTPHeaders: e2eHeaders(users.other),
+    });
+    await use(api);
+    await api.dispose();
   },
 
   otherPage: async ({ browser }, use) => {
     const { context, page } = await pageAs(browser, users.other);
     await use(page);
-    await context.close();
-  },
-
-  anonymousPage: async ({ browser }, use) => {
-    const context = await browser.newContext();
-    await use(await context.newPage());
     await context.close();
   },
 
@@ -89,22 +167,14 @@ export const test = base.extend<ActorFixtures>({
     await api.dispose();
   },
 
-  editorApi: async ({ playwright }, use) => {
-    const api = await playwright.request.newContext({
-      baseURL: process.env.E2E_API_URL!,
-      extraHTTPHeaders: e2eHeaders(users.editor),
-    });
-    await use(api);
-    await api.dispose();
+  ownerPage: async ({ browser }, use) => {
+    const { context, page } = await pageAs(browser, users.owner);
+    await use(page);
+    await context.close();
   },
-
-  commenterApi: async ({ playwright }, use) => {
-    const api = await playwright.request.newContext({
-      baseURL: process.env.E2E_API_URL!,
-      extraHTTPHeaders: e2eHeaders(users.commenter),
-    });
-    await use(api);
-    await api.dispose();
+  // biome-ignore lint/correctness/noEmptyPattern: Playwright requires object destructuring for fixture dependencies.
+  seed: async ({}, use) => {
+    await use(seed);
   },
 
   viewerApi: async ({ playwright }, use) => {
@@ -116,22 +186,38 @@ export const test = base.extend<ActorFixtures>({
     await api.dispose();
   },
 
-  otherApi: async ({ playwright }, use) => {
-    const api = await playwright.request.newContext({
-      baseURL: process.env.E2E_API_URL!,
-      extraHTTPHeaders: e2eHeaders(users.other),
-    });
-    await use(api);
-    await api.dispose();
+  viewerPage: async ({ browser }, use) => {
+    const { context, page } = await pageAs(browser, users.viewer);
+    await use(page);
+    await context.close();
   },
 
-  anonymousApi: async ({ playwright }, use) => {
-    const api = await playwright.request.newContext({
-      baseURL: process.env.E2E_API_URL!,
+  workspaceFactory: async ({ ownerApi }, use) => {
+    const workspaceIds: string[] = [];
+    await use({
+      create: async ({ name }) => {
+        const response = await ownerApi.post('/api/workspaces', {
+          data: { color: 'graphite', name },
+        });
+        if (response.status() !== 201) {
+          throw new Error(
+            `Failed to create E2E workspace (${response.status()}): ${await response.text()}`
+          );
+        }
+        const workspace = (await response.json()) as Workspace;
+        workspaceIds.push(workspace.id);
+        return workspace;
+      },
     });
-    await use(api);
-    await api.dispose();
+    for (const workspaceId of workspaceIds.reverse()) {
+      const response = await ownerApi.delete(`/api/workspaces/${workspaceId}`);
+      if (response.status() !== 204) {
+        throw new Error(
+          `Failed to clean up E2E workspace ${workspaceId}: ${response.status()}`
+        );
+      }
+    }
   },
 });
 
-export { expect };
+export { expect } from '@playwright/test';

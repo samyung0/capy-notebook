@@ -121,6 +121,11 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
+	if pending, err := materialdoc.HasPendingSuggestions(raw); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	} else if pending {
+		return nil, huma.Error400BadRequest("new materials cannot contain pending suggestions")
+	}
 	if err := materialdoc.ValidateKind(raw, kind); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -219,10 +224,11 @@ func (a *api) updateMaterial(
 		return nil, hErr(err)
 	}
 	return &materialUpdateOutput{Body: apimodel.MaterialUpdateResult{
-		ID:           res.ID,
-		Revision:     res.Revision,
-		ContentBytes: len(res.Content),
-		UpdatedAt:    res.UpdatedAt,
+		ID:                    res.ID,
+		Revision:              res.Revision,
+		ContentBytes:          len(res.Content),
+		HasPendingSuggestions: res.HasPendingSuggestions,
+		UpdatedAt:             res.UpdatedAt,
 	}}, nil
 }
 

@@ -1,35 +1,20 @@
 /* Static (read-only) note document components. Rendered by PlateStatic without
  * a Plate store: no Plate hooks, no editor transforms, no edit affordances.
  * Styling is shared with the editable components via nodeStyles. */
-import type { CSSProperties, MouseEvent } from 'react';
+
 import { getTableColumnCount } from '@platejs/table';
 import { CircleAlert, CircleCheck, CircleX, Info } from 'lucide-react';
 import { KEYS, NodeApi, type Path, type TTableElement } from 'platejs';
 import {
   SlateElement,
-  SlateLeaf,
   type SlateElementProps,
+  SlateLeaf,
   type SlateLeafProps,
 } from 'platejs/static';
-import { cn } from '@/lib/cn';
-import { Katex } from './Katex';
-import { MediaAssetView, type MediaAssetNode } from './MediaAssetView';
-import { Mermaid } from './Mermaid';
+import type { CSSProperties, MouseEvent } from 'react';
 import {
-  QuizOptionView,
-  QuizQuestionHeader,
-  quizOptionClassName,
-  type QuizOptionRole,
-} from './QuizBlock';
-import type {
-  FlashcardElement as FlashcardNode,
-  MermaidElement as MermaidNode,
-  QuizQuestionElement as QuizQuestionNode,
-  QuizOptionElement as QuizOptionNode,
-} from './document';
-import {
-  BLOCKQUOTE_CLASS,
   BLOCK_SHELL_CLASS,
+  BLOCKQUOTE_CLASS,
   BOLD_MARK_CLASS,
   CALLOUT_CLASS,
   CODE_BLOCK_CLASS,
@@ -45,8 +30,8 @@ import {
   HR_CLASS,
   ITALIC_MARK_CLASS,
   KBD_MARK_CLASS,
-  LINK_CLASS,
   LI_CLASS,
+  LINK_CLASS,
   MENTION_CLASS,
   MERMAID_CAPTION_CLASS,
   OL_CLASS,
@@ -63,19 +48,38 @@ import {
   TOC_EMPTY_CLASS,
   TOC_ITEM_CLASS,
   TOC_TITLE_CLASS,
-  UL_CLASS,
   tocItemIndent,
+  UL_CLASS,
 } from '@/features/notes/nodeStyles';
 import {
   CALLOUT_VARIANT_CLASS,
+  type CalloutVariant,
   getCodeBlockLanguageLabel,
   normalizeCalloutVariant,
-  type CalloutVariant,
 } from '@/features/notes/richBlockConfig';
+import { cn } from '@/lib/cn';
+import type {
+  FlashcardElement as FlashcardNode,
+  MermaidElement as MermaidNode,
+  QuizOptionElement as QuizOptionNode,
+  QuizQuestionElement as QuizQuestionNode,
+} from './document';
+import { Katex } from './Katex';
+import { type MediaAssetNode, MediaAssetView } from './MediaAssetView';
+import { Mermaid } from './Mermaid';
+import {
+  type QuizOptionRole,
+  QuizOptionView,
+  QuizQuestionHeader,
+  quizOptionClassName,
+} from './QuizBlock';
 
 /* ------------------------------------------------------------- helpers */
 
-function element(as: keyof HTMLElementTagNameMap | undefined, className?: string) {
+function element(
+  as: keyof HTMLElementTagNameMap | undefined,
+  className?: string
+) {
   return function StaticEl(props: SlateElementProps) {
     return (
       <SlateElement {...props} as={as} className={className}>
@@ -112,7 +116,10 @@ function CodeBlock(props: SlateElementProps) {
     <SlateElement
       {...props}
       as="pre"
-      className={cn(CODE_BLOCK_CLASS, !(typeof language === 'string' && language) && 'pt-3')}
+      className={cn(
+        CODE_BLOCK_CLASS,
+        !(typeof language === 'string' && language) && 'pt-3'
+      )}
     >
       {typeof language === 'string' && language && (
         <span className="absolute top-2 right-2 font-sans text-[11px] text-fg-muted">
@@ -129,14 +136,14 @@ function LinkElement(props: SlateElementProps) {
     <SlateElement
       {...props}
       as="a"
-      className={LINK_CLASS}
       attributes={
         {
           ...props.attributes,
-          target: '_blank',
           rel: 'noopener noreferrer',
+          target: '_blank',
         } as SlateElementProps['attributes']
       }
+      className={LINK_CLASS}
     >
       {props.children}
     </SlateElement>
@@ -195,7 +202,9 @@ function CalloutIcon({ variant }: { variant: CalloutVariant }) {
 }
 
 function Callout(props: SlateElementProps) {
-  const variant = normalizeCalloutVariant((props.element as { variant?: unknown }).variant);
+  const variant = normalizeCalloutVariant(
+    (props.element as { variant?: unknown }).variant
+  );
   return (
     <SlateElement
       {...props}
@@ -210,7 +219,9 @@ function Callout(props: SlateElementProps) {
 
 /* toc — scrolls the preview instead of moving an editor selection */
 function scrollToHeading(event: MouseEvent, headingOrder: number) {
-  const root = (event.currentTarget as HTMLElement).closest('[data-slate-editor]');
+  const root = (event.currentTarget as HTMLElement).closest(
+    '[data-slate-editor]'
+  );
   if (!root) return;
   const heads = root.querySelectorAll(
     ':scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6'
@@ -230,11 +241,11 @@ function Toc(props: SlateElementProps) {
           <nav className="flex flex-col">
             {headings.map((node, order) => (
               <button
-                key={(node.id as string | undefined) ?? order}
-                type="button"
                 className={TOC_ITEM_CLASS}
-                style={tocItemIndent(node.type as string)}
+                key={(node.id as string | undefined) ?? order}
                 onClick={(event) => scrollToHeading(event, order)}
+                style={tocItemIndent(node.type as string)}
+                type="button"
               >
                 {NodeApi.string(node)}
               </button>
@@ -260,11 +271,13 @@ function Mention(props: SlateElementProps) {
 }
 
 function BlockEquation(props: SlateElementProps) {
-  const tex = String((props.element as { texExpression?: string }).texExpression ?? '');
+  const tex = String(
+    (props.element as { texExpression?: string }).texExpression ?? ''
+  );
   return (
     <SlateElement {...props}>
       <div className={EQUATION_BLOCK_CLASS}>
-        <Katex tex={tex} displayMode />
+        <Katex displayMode tex={tex} />
       </div>
       {props.children}
     </SlateElement>
@@ -272,10 +285,12 @@ function BlockEquation(props: SlateElementProps) {
 }
 
 function InlineEquation(props: SlateElementProps) {
-  const tex = String((props.element as { texExpression?: string }).texExpression ?? '');
+  const tex = String(
+    (props.element as { texExpression?: string }).texExpression ?? ''
+  );
   return (
     <SlateElement {...props} as="span">
-      <Katex tex={tex} displayMode={false} />
+      <Katex displayMode={false} tex={tex} />
       {props.children}
     </SlateElement>
   );
@@ -341,7 +356,7 @@ function FlashcardsElement(props: SlateElementProps) {
 function MermaidElement(props: SlateElementProps) {
   const element = props.element as unknown as MermaidNode;
   return (
-    <BlockShell props={props} label="Diagram">
+    <BlockShell label="Diagram" props={props}>
       <Mermaid code={element.source} />
     </BlockShell>
   );
@@ -351,13 +366,14 @@ function QuizQuestionElement(props: SlateElementProps) {
   const element = props.element as unknown as QuizQuestionNode;
   const path = (props as { path?: Path }).path;
   const pathIndex = path?.[path.length - 1];
-  const questionNumber = typeof pathIndex === 'number' ? pathIndex + 1 : undefined;
+  const questionNumber =
+    typeof pathIndex === 'number' ? pathIndex + 1 : undefined;
   return (
     <SlateElement {...props} className={QUIZ_REVIEW_QUESTION_CLASS}>
       <QuizQuestionHeader
+        level={element.level}
         questionNumber={questionNumber}
         questionType={element.questionType}
-        level={element.level}
       />
       {props.children}
     </SlateElement>
@@ -378,19 +394,25 @@ function QuizOptionElement(props: SlateElementProps) {
     role?: QuizOptionRole;
   };
   const path = (props as { path?: Path }).path;
-  const parent = path?.length ? NodeApi.get(props.editor, path.slice(0, -1)) : undefined;
-  const question = parent?.type === 'quiz_question' ? (parent as QuizQuestionNode) : undefined;
+  const parent = path?.length
+    ? NodeApi.get(props.editor, path.slice(0, -1))
+    : undefined;
+  const question =
+    parent?.type === 'quiz_question' ? (parent as QuizQuestionNode) : undefined;
   const correct = question?.correctOptionIds?.includes(element.id);
   const pathIndex = path?.[path.length - 1];
   const optionNumber = typeof pathIndex === 'number' ? pathIndex : undefined;
 
   return (
-    <SlateElement {...props} className={quizOptionClassName(Boolean(correct), element.role)}>
+    <SlateElement
+      {...props}
+      className={quizOptionClassName(Boolean(correct), element.role)}
+    >
       <QuizOptionView
         correct={Boolean(correct)}
-        role={element.role}
-        optionNumber={optionNumber}
         explanation={element.explanation}
+        optionNumber={optionNumber}
+        role={element.role}
       >
         {props.children}
       </QuizOptionView>
@@ -400,7 +422,11 @@ function QuizOptionElement(props: SlateElementProps) {
 
 function QuizExplanationElement(props: SlateElementProps) {
   return (
-    <SlateElement {...props} as="p" className={cn('col-span-2', QUIZ_EXPLANATION_CLASS)}>
+    <SlateElement
+      {...props}
+      as="p"
+      className={cn('col-span-2', QUIZ_EXPLANATION_CLASS)}
+    >
       {props.children}
     </SlateElement>
   );
@@ -409,7 +435,11 @@ function QuizExplanationElement(props: SlateElementProps) {
 function FlashcardElement(props: SlateElementProps) {
   const element = props.element as unknown as FlashcardNode;
   return (
-    <SlateElement {...props} className={FLASHCARD_CLASS} data-card-id={element.id}>
+    <SlateElement
+      {...props}
+      className={FLASHCARD_CLASS}
+      data-card-id={element.id}
+    >
       {props.children}
     </SlateElement>
   );
@@ -418,58 +448,58 @@ function FlashcardElement(props: SlateElementProps) {
 /* ------------------------------------------------------------- components map */
 
 export const staticNoteComponents = {
+  a: LinkElement,
+  audio: MediaAssetElement,
+  blockquote: element('blockquote', BLOCKQUOTE_CLASS),
+  /* marks */
+  bold: mark('strong', BOLD_MARK_CLASS),
+  callout: Callout,
+  code: mark('code', CODE_MARK_CLASS),
+  code_block: CodeBlock,
+  code_line: element(undefined),
+  code_syntax: CodeSyntax,
+  column: Column,
+  column_group: element('div', COLUMN_GROUP_CLASS),
+  equation: BlockEquation,
+  file: MediaAssetElement,
+  flashcard: FlashcardElement,
+  flashcard_back: element('p', FLASHCARD_BACK_CLASS),
+  flashcard_front: element('p', FLASHCARD_FRONT_CLASS),
+  flashcards: FlashcardsElement,
   h1: element('h1', HEADING_CLASS.h1),
   h2: element('h2', HEADING_CLASS.h2),
   h3: element('h3', HEADING_CLASS.h3),
   h4: element('h4', HEADING_CLASS.h4),
   h5: element('h5', HEADING_CLASS.h5),
   h6: element('h6', HEADING_CLASS.h6),
-  p: element('p', PARAGRAPH_CLASS),
-  blockquote: element('blockquote', BLOCKQUOTE_CLASS),
+  highlight: mark('mark', HIGHLIGHT_MARK_CLASS),
   hr: Hr,
-  code_block: CodeBlock,
-  code_line: element(undefined),
-  code_syntax: CodeSyntax,
-  a: LinkElement,
   img: MediaAssetElement,
-  video: MediaAssetElement,
-  audio: MediaAssetElement,
-  file: MediaAssetElement,
-  ul: element('ul', UL_CLASS),
-  ol: element('ol', OL_CLASS),
+  inline_equation: InlineEquation,
+  italic: mark('em', ITALIC_MARK_CLASS),
+  kbd: mark('kbd', KBD_MARK_CLASS),
   li: element('li', LI_CLASS),
   lic: element('span'),
-  table: Table,
-  tr: element('tr'),
-  td: element('td', TD_CLASS),
-  th: element('th', TH_CLASS),
-  callout: Callout,
-  column_group: element('div', COLUMN_GROUP_CLASS),
-  column: Column,
-  toc: Toc,
   mention: Mention,
-  equation: BlockEquation,
-  inline_equation: InlineEquation,
-  /* study blocks */
-  quiz: QuizElement,
-  quiz_question: QuizQuestionElement,
-  quiz_prompt: QuizPromptElement,
-  quiz_option: QuizOptionElement,
-  quiz_explanation: QuizExplanationElement,
-  flashcards: FlashcardsElement,
-  flashcard: FlashcardElement,
-  flashcard_front: element('p', FLASHCARD_FRONT_CLASS),
-  flashcard_back: element('p', FLASHCARD_BACK_CLASS),
   mermaid: MermaidElement,
   mermaid_caption: element('p', MERMAID_CAPTION_CLASS),
-  /* marks */
-  bold: mark('strong', BOLD_MARK_CLASS),
-  italic: mark('em', ITALIC_MARK_CLASS),
-  underline: mark('u'),
+  ol: element('ol', OL_CLASS),
+  p: element('p', PARAGRAPH_CLASS),
+  /* study blocks */
+  quiz: QuizElement,
+  quiz_explanation: QuizExplanationElement,
+  quiz_option: QuizOptionElement,
+  quiz_prompt: QuizPromptElement,
+  quiz_question: QuizQuestionElement,
   strikethrough: mark('s'),
-  code: mark('code', CODE_MARK_CLASS),
-  highlight: mark('mark', HIGHLIGHT_MARK_CLASS),
   subscript: mark('sub'),
   superscript: mark('sup'),
-  kbd: mark('kbd', KBD_MARK_CLASS),
+  table: Table,
+  td: element('td', TD_CLASS),
+  th: element('th', TH_CLASS),
+  toc: Toc,
+  tr: element('tr'),
+  ul: element('ul', UL_CLASS),
+  underline: mark('u'),
+  video: MediaAssetElement,
 } as const;

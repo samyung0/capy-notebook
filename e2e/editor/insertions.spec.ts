@@ -1,11 +1,17 @@
-import { test, expect } from '@playwright/test';
-import { chooseAllBlocksEntry } from '../helpers/editor';
+import { expect, test } from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
+import { chooseAllBlocksEntry } from '../helpers/editor';
 import { openEditorNote } from './helpers';
 
 test.describe('inline and block insertions', () => {
-  test('mention dropdown opens inside a heading and inserts a member', async ({ page }) => {
-    const editor = await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.headingText);
+  test('mention dropdown opens inside a heading and inserts a member', async ({
+    page,
+  }) => {
+    const editor = await openEditorNote(
+      page,
+      EDITOR_NOTE.id,
+      EDITOR_NOTE.headingText
+    );
 
     // Regression: the dropdown rendered inline (not portaled) and never
     // became visible inside headings.
@@ -23,7 +29,11 @@ test.describe('inline and block insertions', () => {
   });
 
   test('mention dropdown works in a plain paragraph', async ({ page }) => {
-    const editor = await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
+    const editor = await openEditorNote(
+      page,
+      EDITOR_NOTE.id,
+      EDITOR_NOTE.firstParagraph
+    );
 
     await editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true }).click();
     await page.keyboard.press('End');
@@ -35,15 +45,23 @@ test.describe('inline and block insertions', () => {
     await expect(editor.getByText(/Kate Malone/)).toBeVisible();
   });
 
-  test('slash command inserts a table whose cells keep their width', async ({ page }) => {
-    const editor = await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.thirdParagraph);
+  test('slash command inserts a table whose cells keep their width', async ({
+    page,
+  }) => {
+    const editor = await openEditorNote(
+      page,
+      EDITOR_NOTE.id,
+      EDITOR_NOTE.thirdParagraph
+    );
 
     await editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true }).click();
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
     await page.keyboard.type('/table');
 
-    const option = page.getByRole('option').filter({ hasText: 'Insert a 2 × 2 table' });
+    const option = page
+      .getByRole('option')
+      .filter({ hasText: 'Insert a 2 × 2 table' });
     await expect(option).toBeVisible();
     await option.click();
 
@@ -58,9 +76,15 @@ test.describe('inline and block insertions', () => {
   });
 
   test('column layout keeps per-column width', async ({ page }) => {
-    const editor = await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.secondParagraph);
+    const editor = await openEditorNote(
+      page,
+      EDITOR_NOTE.id,
+      EDITOR_NOTE.secondParagraph
+    );
 
-    await editor.getByText(EDITOR_NOTE.secondParagraph, { exact: true }).click();
+    await editor
+      .getByText(EDITOR_NOTE.secondParagraph, { exact: true })
+      .click();
     await page.keyboard.press('End');
     await chooseAllBlocksEntry(page, 'Three equal columns');
 

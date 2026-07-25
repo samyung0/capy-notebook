@@ -1,5 +1,5 @@
-import { MarkdownPlugin } from '@platejs/markdown';
 import { encodeUrlIfNeeded, validateUrl } from '@platejs/link';
+import { MarkdownPlugin, serializeMd } from '@platejs/markdown';
 import { KEYS, type SlatePlugin } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
 import {
@@ -10,6 +10,7 @@ import {
   type MaterialNode,
   type MaterialValue,
 } from '@/features/materials/document';
+import { finalizeSuggestionValue } from './suggestions';
 
 type MarkdownEditor = PlateEditor & {
   getApi: (plugin: typeof MarkdownPlugin) => {
@@ -39,7 +40,8 @@ function sanitizeImportedDocument(
     };
     if (node.type !== editor.getType(KEYS.link)) return sanitized;
 
-    const url = typeof node.url === 'string' ? encodeUrlIfNeeded(node.url.trim()) : '';
+    const url =
+      typeof node.url === 'string' ? encodeUrlIfNeeded(node.url.trim()) : '';
     return {
       ...sanitized,
       url: url && validateUrl(editor, url) ? url : '',
@@ -51,17 +53,27 @@ function sanitizeImportedDocument(
   );
 }
 
-export function importMarkdownDocument(editor: PlateEditor, source: string): MaterialDocument {
-  const value = (editor as MarkdownEditor).getApi(MarkdownPlugin).markdown.deserialize(source);
+export function importMarkdownDocument(
+  editor: PlateEditor,
+  source: string
+): MaterialDocument {
+  const value = (editor as MarkdownEditor)
+    .getApi(MarkdownPlugin)
+    .markdown.deserialize(source);
   return sanitizeImportedDocument(editor, createMaterialDocument(value));
 }
 
-export function importJsonDocument(editor: PlateEditor, source: string): MaterialDocument {
+export function importJsonDocument(
+  editor: PlateEditor,
+  source: string
+): MaterialDocument {
   return sanitizeImportedDocument(editor, assertMaterialDocument(source));
 }
 
 export function exportMarkdownDocument(editor: PlateEditor): string {
-  return (editor as MarkdownEditor).getApi(MarkdownPlugin).markdown.serialize();
+  return serializeMd(editor, {
+    value: finalizeSuggestionValue(editor.children as MaterialValue, 'reject'),
+  });
 }
 
 export async function importDocxDocument(
@@ -70,7 +82,10 @@ export async function importDocxDocument(
 ): Promise<MaterialDocument> {
   const { importDocx } = await loadDocxIo();
   const result = await importDocx(editor, buffer);
-  return sanitizeImportedDocument(editor, createMaterialDocument(result.nodes as MaterialValue));
+  return sanitizeImportedDocument(
+    editor,
+    createMaterialDocument(result.nodes as MaterialValue)
+  );
 }
 
 export async function exportDocxDocument(
@@ -78,7 +93,12 @@ export async function exportDocxDocument(
   plugins: SlatePlugin[]
 ): Promise<Blob> {
   const { exportToDocx } = await loadDocxIo();
-  return exportToDocx(editor.children, { editorPlugins: plugins });
+  return exportToDocx(
+    finalizeSuggestionValue(editor.children as MaterialValue, 'reject'),
+    {
+      editorPlugins: plugins,
+    }
+  );
 }
 
 export function downloadEditorFile(blob: Blob, filename: string) {
@@ -92,6 +112,10 @@ export function downloadEditorFile(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-export function downloadEditorText(text: string, filename: string, type: string) {
+export function downloadEditorText(
+  text: string,
+  filename: string,
+  type: string
+) {
   downloadEditorFile(new Blob([text], { type }), filename);
 }

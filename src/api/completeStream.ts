@@ -4,21 +4,22 @@
  * plain token completion the editor inserts inline. Used for both the AI command
  * menu and Copilot-style "continue writing".
  */
-import { API_BASE } from './client';
+
 import { authHeaders } from './auth';
+import { API_BASE } from './client';
 
 export interface CompleteStreamBody {
+  context?: string;
   /** 'command' runs an instruction over optional context; 'continue' extends the
    * given prefix. */
   mode: 'command' | 'continue';
   prompt?: string;
-  context?: string;
 }
 
 export interface CompleteStreamHandlers {
-  onToken?: (text: string) => void;
   onDone?: () => void;
   onError?: (message: string) => void;
+  onToken?: (text: string) => void;
 }
 
 /** POST to the workspace completion stream and dispatch parsed SSE token events.
@@ -33,9 +34,13 @@ export async function streamComplete(
   let res: Response;
   try {
     res = await fetch(`${API_BASE}/workspaces/${workspaceId}/complete/stream`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...auth },
       body: JSON.stringify(body),
+      headers: {
+        Accept: 'text/event-stream',
+        'Content-Type': 'application/json',
+        ...auth,
+      },
+      method: 'POST',
       signal,
     });
   } catch (e) {
@@ -45,10 +50,12 @@ export async function streamComplete(
   }
 
   if (!res.ok || !res.body) {
-    const payload = (await res.json().catch(() => null)) as
-      | { error?: { message?: string } }
-      | null;
-    handlers.onError?.(payload?.error?.message || `${res.status} ${res.statusText}`);
+    const payload = (await res.json().catch(() => null)) as {
+      error?: { message?: string };
+    } | null;
+    handlers.onError?.(
+      payload?.error?.message || `${res.status} ${res.statusText}`
+    );
     return;
   }
 
@@ -87,15 +94,17 @@ export async function streamComplete(
       const { done, value } = await reader.read();
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
-      let sep: number;
-      while ((sep = buffer.indexOf('\n\n')) !== -1) {
+      let sep = buffer.indexOf('\n\n');
+      while (sep !== -1) {
         const chunk = buffer.slice(0, sep);
         buffer = buffer.slice(sep + 2);
         dispatch(chunk);
+        sep = buffer.indexOf('\n\n');
       }
     }
     if (buffer.trim()) dispatch(buffer);
   } catch (e) {
-    if ((e as Error).name !== 'AbortError') handlers.onError?.((e as Error).message);
+    if ((e as Error).name !== 'AbortError')
+      handlers.onError?.((e as Error).message);
   }
 }

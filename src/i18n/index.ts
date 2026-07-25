@@ -8,10 +8,10 @@
 // @ts-expect-error generated at build time by the Paraglide Vite plugin
 export * as m from '@paraglide/messages';
 export {
-  getLocale,
-  setLocale,
-  locales,
   baseLocale,
+  getLocale,
+  locales,
+  setLocale,
   // @ts-expect-error generated at build time by the Paraglide Vite plugin
 } from '@paraglide/runtime';
 

@@ -379,22 +379,37 @@ func cloneMaterialRelations(
 	sourceID, targetID string,
 	rewriteContent func(string) (string, error),
 ) error {
-	revisions, err := tx.Query(ctx, `SELECT revision, title, content, created_by, created_at
+	revisions, err := tx.Query(ctx, `SELECT revision, parent_revision, event_type, title, content,
+		has_pending_suggestions, event_metadata, created_by, created_at
 		FROM material_revisions WHERE material_id=$1 ORDER BY revision`, sourceID)
 	if err != nil {
 		return err
 	}
 	type revisionRow struct {
-		revision  int64
-		title     string
-		content   string
-		createdBy *string
-		createdAt time.Time
+		revision       int64
+		parentRevision *int64
+		eventType      MaterialRevisionEvent
+		title          string
+		content        string
+		hasPending     bool
+		eventMetadata  []byte
+		createdBy      *string
+		createdAt      time.Time
 	}
 	var history []revisionRow
 	for revisions.Next() {
 		var row revisionRow
-		if err := revisions.Scan(&row.revision, &row.title, &row.content, &row.createdBy, &row.createdAt); err != nil {
+		if err := revisions.Scan(
+			&row.revision,
+			&row.parentRevision,
+			&row.eventType,
+			&row.title,
+			&row.content,
+			&row.hasPending,
+			&row.eventMetadata,
+			&row.createdBy,
+			&row.createdAt,
+		); err != nil {
 			revisions.Close()
 			return err
 		}
@@ -410,82 +425,18 @@ func cloneMaterialRelations(
 			return err
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO material_revisions
-			(material_id, revision, title, content, created_by, created_at)
-			VALUES ($1,$2,$3,$4,$5,$6)`, targetID, row.revision, row.title, json.RawMessage(content), row.createdBy, row.createdAt); err != nil {
+			(material_id, revision, parent_revision, event_type, title, content,
+			 has_pending_suggestions, event_metadata, created_by, created_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+			targetID, row.revision, row.parentRevision, row.eventType, row.title,
+			json.RawMessage(content), row.hasPending, json.RawMessage(row.eventMetadata),
+			row.createdBy, row.createdAt); err != nil {
 			return err
 		}
 	}
-
-	discussions, err := tx.Query(ctx, `SELECT id, block_id, document_content, anchor,
-		created_by, is_resolved, created_at, updated_at
-		FROM material_discussions WHERE material_id=$1 ORDER BY created_at`, sourceID)
-	if err != nil {
-		return err
-	}
-	type discussionRow struct {
-		id, createdBy            string
-		blockID, documentContent *string
-		anchor                   []byte
-		resolved                 bool
-		createdAt, updatedAt     time.Time
-	}
-	var sourceDiscussions []discussionRow
-	for discussions.Next() {
-		var row discussionRow
-		if err := discussions.Scan(&row.id, &row.blockID, &row.documentContent, &row.anchor,
-			&row.createdBy, &row.resolved, &row.createdAt, &row.updatedAt); err != nil {
-			discussions.Close()
-			return err
-		}
-		sourceDiscussions = append(sourceDiscussions, row)
-	}
-	discussions.Close()
-	if err := discussions.Err(); err != nil {
-		return err
-	}
-	for _, discussion := range sourceDiscussions {
-		newDiscussionID := uid("disc")
-		if _, err := tx.Exec(ctx, `INSERT INTO material_discussions
-			(id, material_id, block_id, document_content, anchor, created_by, is_resolved, created_at, updated_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, newDiscussionID, targetID,
-			discussion.blockID, discussion.documentContent, json.RawMessage(discussion.anchor), discussion.createdBy,
-			discussion.resolved, discussion.createdAt, discussion.updatedAt); err != nil {
-			return err
-		}
-		comments, err := tx.Query(ctx, `SELECT user_id, content_rich, is_edited, created_at, updated_at
-			FROM material_comments WHERE discussion_id=$1 ORDER BY created_at`, discussion.id)
-		if err != nil {
-			return err
-		}
-		type commentRow struct {
-			userID               string
-			content              []byte
-			edited               bool
-			createdAt, updatedAt time.Time
-		}
-		var sourceComments []commentRow
-		for comments.Next() {
-			var comment commentRow
-			if err := comments.Scan(&comment.userID, &comment.content, &comment.edited,
-				&comment.createdAt, &comment.updatedAt); err != nil {
-				comments.Close()
-				return err
-			}
-			sourceComments = append(sourceComments, comment)
-		}
-		comments.Close()
-		if err := comments.Err(); err != nil {
-			return err
-		}
-		for _, comment := range sourceComments {
-			if _, err := tx.Exec(ctx, `INSERT INTO material_comments
-				(id, discussion_id, user_id, content_rich, is_edited, created_at, updated_at)
-				VALUES ($1,$2,$3,$4,$5,$6,$7)`, uid("com"), newDiscussionID, comment.userID,
-				json.RawMessage(comment.content), comment.edited, comment.createdAt, comment.updatedAt); err != nil {
-				return err
-			}
-		}
-	}
+	// Collaboration threads are intentionally not copied. A clone receives the
+	// complete revision history; raw Plate IDs remain reviewable even when their
+	// relational discussion metadata is absent.
 	return nil
 }
 
@@ -658,9 +609,9 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 					return Workspace{}, err
 				}
 			}
-			if _, err := tx.Exec(ctx, `INSERT INTO materials (id, user_id, workspace_id, workspace_name, kind, title, content, chapter_id, position, scope_chapters, scope_file_ids, privacy, color, updated_at, revision, updated_by)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$2)`,
-				nid, userID, newID, name, mt.Kind, mt.Title, json.RawMessage(content), chapterID, mt.Position, mt.ScopeChapters, scopeFiles, mt.Color, mt.UpdatedAt, mt.Revision); err != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO materials (id, user_id, workspace_id, workspace_name, kind, title, content, chapter_id, position, scope_chapters, scope_file_ids, privacy, color, updated_at, revision, has_pending_suggestions, updated_by)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$2)`,
+				nid, userID, newID, name, mt.Kind, mt.Title, json.RawMessage(content), chapterID, mt.Position, mt.ScopeChapters, scopeFiles, mt.Color, mt.UpdatedAt, mt.Revision, mt.HasPendingSuggestions); err != nil {
 				return Workspace{}, err
 			}
 			rewrite := func(value string) (string, error) { return value, nil }
@@ -718,9 +669,9 @@ func (s *Store) CloneMaterial(ctx context.Context, userID, matID string) (Materi
 	defer tx.Rollback(ctx)
 
 	nid := uid("mat")
-	if _, err := tx.Exec(ctx, `INSERT INTO materials (id, user_id, workspace_id, workspace_name, kind, title, content, scope_chapters, scope_file_ids, privacy, color, updated_at, revision, updated_by)
-		VALUES ($1,$2,NULL,'',$3,$4,$5,$6,'{}','private',$7,$8,$9,$2)`,
-		nid, userID, src.Kind, src.Title, json.RawMessage(content), src.ScopeChapters, src.Color, src.UpdatedAt, src.Revision); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO materials (id, user_id, workspace_id, workspace_name, kind, title, content, scope_chapters, scope_file_ids, privacy, color, updated_at, revision, has_pending_suggestions, updated_by)
+		VALUES ($1,$2,NULL,'',$3,$4,$5,$6,'{}','private',$7,$8,$9,$10,$2)`,
+		nid, userID, src.Kind, src.Title, json.RawMessage(content), src.ScopeChapters, src.Color, src.UpdatedAt, src.Revision, src.HasPendingSuggestions); err != nil {
 		return Material{}, err
 	}
 	rewrite := func(value string) (string, error) { return value, nil }

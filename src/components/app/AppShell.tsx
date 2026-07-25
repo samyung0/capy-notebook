@@ -1,14 +1,16 @@
-import { useEffect } from 'react';
 import { Outlet, useRouterState } from '@tanstack/react-router';
-import { Sidebar } from './Sidebar';
-import { GlobalDialogs } from './GlobalDialogs';
-import { cn } from '@/lib/cn';
+import { useEffect } from 'react';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
+import { cn } from '@/lib/cn';
+import { GlobalDialogs } from './GlobalDialogs';
+import { Sidebar } from './Sidebar';
+
+const WORKSPACE_PATH_PATTERN = /^\/workspaces\/[^/]+$/;
 
 export function AppShell() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // Opened-workspace view collapses the nav to the icon rail to relieve crowding.
-  const hidden = /^\/workspaces\/[^/]+$/.test(pathname);
+  const hidden = WORKSPACE_PATH_PATTERN.test(pathname);
 
   useEffect(() => {
     if (pathname !== '/schedule') scheduleAutoScroll.reset();

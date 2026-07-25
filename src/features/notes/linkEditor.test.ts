@@ -8,26 +8,28 @@ describe('upsertLinkAtSelection', () => {
   it('restores the captured range before linking selected text', () => {
     const editor = createPlateEditor({
       plugins: [LinkPlugin],
-      value: [{ type: KEYS.p, children: [{ text: 'Selected text' }] }],
+      value: [{ children: [{ text: 'Selected text' }], type: KEYS.p }],
     });
     editor.tf.select({
-      anchor: { path: [0, 0], offset: 0 },
-      focus: { path: [0, 0], offset: 8 },
+      anchor: { offset: 0, path: [0, 0] },
+      focus: { offset: 8, path: [0, 0] },
     });
     const selection = cloneLinkSelection(editor.selection);
 
-    editor.tf.select({ path: [0, 0], offset: 13 });
+    editor.tf.select({ offset: 13, path: [0, 0] });
     const applied = upsertLinkAtSelection(editor, selection, {
       text: 'Selected',
       url: 'https://example.com',
     });
 
     expect(applied).toBe(true);
-    const children = (editor.children[0] as { children: Array<Record<string, unknown>> }).children;
+    const children = (
+      editor.children[0] as { children: Array<Record<string, unknown>> }
+    ).children;
     expect(children.find((child) => child.type === KEYS.link)).toMatchObject({
+      children: [{ text: 'Selected' }],
       type: KEYS.link,
       url: 'https://example.com',
-      children: [{ text: 'Selected' }],
     });
     expect(children).toContainEqual({ text: ' text' });
   });

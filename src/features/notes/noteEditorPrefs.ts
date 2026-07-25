@@ -20,25 +20,41 @@ export type WidgetGroupId =
   | 'mermaid';
 
 export interface WidgetGroupMeta {
+  description: string;
   id: WidgetGroupId;
   label: string;
-  description: string;
 }
 
 /** Display metadata for the settings popover. Order here = order in the UI.
  * These are the *optional* widgets; core editing (paragraphs, headings, marks,
  * lists, links, code, images, markdown, history, AI) is always available. */
 export const WIDGET_GROUPS: WidgetGroupMeta[] = [
-  { id: 'table', label: 'Tables', description: 'Grid tables with header rows' },
-  { id: 'callout', label: 'Callouts', description: 'Highlighted note boxes' },
-  { id: 'columns', label: 'Columns', description: 'Multi-column layouts' },
-  { id: 'math', label: 'Math', description: 'Inline and block equations (KaTeX)' },
-  { id: 'media', label: 'Media', description: 'Image embeds' },
-  { id: 'toc', label: 'Table of contents', description: 'Document outline block' },
-  { id: 'fontStyles', label: 'Font styling', description: 'Color, size, alignment' },
-  { id: 'quiz', label: 'Quiz blocks', description: 'Embedded quizzes' },
-  { id: 'flashcards', label: 'Flashcard blocks', description: 'Embedded flashcards' },
-  { id: 'mermaid', label: 'Diagrams', description: 'Mermaid diagrams' },
+  { description: 'Grid tables with header rows', id: 'table', label: 'Tables' },
+  { description: 'Highlighted note boxes', id: 'callout', label: 'Callouts' },
+  { description: 'Multi-column layouts', id: 'columns', label: 'Columns' },
+  {
+    description: 'Inline and block equations (KaTeX)',
+    id: 'math',
+    label: 'Math',
+  },
+  { description: 'Image embeds', id: 'media', label: 'Media' },
+  {
+    description: 'Document outline block',
+    id: 'toc',
+    label: 'Table of contents',
+  },
+  {
+    description: 'Color, size, alignment',
+    id: 'fontStyles',
+    label: 'Font styling',
+  },
+  { description: 'Embedded quizzes', id: 'quiz', label: 'Quiz blocks' },
+  {
+    description: 'Embedded flashcards',
+    id: 'flashcards',
+    label: 'Flashcard blocks',
+  },
+  { description: 'Mermaid diagrams', id: 'mermaid', label: 'Diagrams' },
 ];
 
 type EnabledMap = Record<WidgetGroupId, boolean>;
@@ -50,16 +66,15 @@ const ALL_ENABLED: EnabledMap = WIDGET_GROUPS.reduce((acc, g) => {
 
 interface NoteEditorPrefsState {
   enabled: EnabledMap;
-  toggle: (id: WidgetGroupId) => void;
   setAll: (value: boolean) => void;
   setEnabled: (enabled: EnabledMap) => void;
+  toggle: (id: WidgetGroupId) => void;
 }
 
 export const useNoteEditorPrefs = create<NoteEditorPrefsState>()(
   persist(
     (set) => ({
       enabled: { ...ALL_ENABLED },
-      toggle: (id) => set((s) => ({ enabled: { ...s.enabled, [id]: !s.enabled[id] } })),
       setAll: (value) =>
         set(() => ({
           enabled: WIDGET_GROUPS.reduce((acc, g) => {
@@ -68,9 +83,10 @@ export const useNoteEditorPrefs = create<NoteEditorPrefsState>()(
           }, {} as EnabledMap),
         })),
       setEnabled: (enabled) => set({ enabled: { ...enabled } }),
+      toggle: (id) =>
+        set((s) => ({ enabled: { ...s.enabled, [id]: !s.enabled[id] } })),
     }),
     {
-      name: 'evo-note-editor-prefs',
       // Merge persisted state with any newly-added groups (default on).
       merge: (persisted, current) => {
         const p = (persisted as Partial<NoteEditorPrefsState>) ?? {};
@@ -80,6 +96,7 @@ export const useNoteEditorPrefs = create<NoteEditorPrefsState>()(
           enabled: { ...ALL_ENABLED, ...(p.enabled ?? {}) },
         };
       },
+      name: 'evo-note-editor-prefs',
     }
   )
 );

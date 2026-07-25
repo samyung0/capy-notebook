@@ -1,13 +1,13 @@
+import type { UserColor } from '@/api/types';
 import { cn } from '@/lib/cn';
-import { UserColor } from '@/api/types';
 import { userColorPair } from '@/lib/userColor';
 
 export interface ProgressBarProps {
-  value?: number;
-  tone?: UserColor;
+  className?: string;
   height?: number;
   showLabel?: boolean;
-  className?: string;
+  tone?: UserColor;
+  value?: number;
 }
 
 export function ProgressBar({
@@ -21,18 +21,26 @@ export function ProgressBar({
   const pct = Math.max(0, Math.min(100, value));
   return (
     <div className={cn('flex items-center gap-2', className)}>
-      <div className="flex-1 overflow-hidden rounded-pill bg-surface-hover-bg" style={{ height }}>
+      <div
+        className="flex-1 overflow-hidden rounded-pill bg-surface-hover-bg"
+        style={{ height }}
+      >
         <div
           className={cn(
             'h-full rounded-pill transition-[width] duration-400 ease-[cubic-bezier(.2,.7,.2,1)]'
           )}
           style={{
+            backgroundColor:
+              userColorPair(tone)?.bg ?? userColorPair('graphite')?.bg,
             width: `${pct}%`,
-            backgroundColor: userColorPair(tone)?.bg ?? userColorPair('graphite')?.bg,
           }}
         />
       </div>
-      {showLabel && <span className="t-label text-fg-muted tabular-nums">{Math.round(pct)}%</span>}
+      {showLabel && (
+        <span className="t-label text-fg-muted tabular-nums">
+          {Math.round(pct)}%
+        </span>
+      )}
     </div>
   );
 }

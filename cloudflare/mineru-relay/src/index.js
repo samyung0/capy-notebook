@@ -1,11 +1,13 @@
 const json = (body, status = 200) =>
   new Response(JSON.stringify(body), {
-    status,
     headers: { 'content-type': 'application/json; charset=utf-8' },
+    status,
   });
 
 function hostAllowed(host, rules) {
-  return rules.some((rule) => (rule.startsWith('.') ? host.endsWith(rule) : host === rule));
+  return rules.some((rule) =>
+    rule.startsWith('.') ? host.endsWith(rule) : host === rule
+  );
 }
 
 async function sameSecret(actual, expected) {
@@ -23,7 +25,8 @@ async function sameSecret(actual, expected) {
 
 export default {
   async fetch(request, env) {
-    if (request.method !== 'POST') return json({ message: 'method not allowed' }, 405);
+    if (request.method !== 'POST')
+      return json({ message: 'method not allowed' }, 405);
     if (!env.RELAY_TOKEN || !env.B2_HOST || !env.MINERU_UPLOAD_HOSTS) {
       return json({ message: 'relay is not configured' }, 503);
     }
@@ -64,36 +67,51 @@ export default {
     const configuredMax = Number(env.MAX_BYTES || 10 * 1024 * 1024);
     const requestedMax = Number(body.maxBytes || configuredMax);
     const maxBytes = Math.min(configuredMax, requestedMax);
-    const timeoutMs = Number(env.RELAY_TIMEOUT_MS || 120000);
+    const timeoutMs = Number(env.RELAY_TIMEOUT_MS || 120_000);
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort('relay timeout'), timeoutMs);
+    const timer = setTimeout(
+      () => controller.abort('relay timeout'),
+      timeoutMs
+    );
     try {
       const sourceResponse = await fetch(source, {
         redirect: 'error',
         signal: controller.signal,
       });
       if (!sourceResponse.ok || !sourceResponse.body) {
-        return json({ message: `source fetch failed (${sourceResponse.status})` }, 502);
+        return json(
+          { message: `source fetch failed (${sourceResponse.status})` },
+          502
+        );
       }
       const size = Number(sourceResponse.headers.get('content-length'));
       if (!Number.isFinite(size) || size < 0 || size > maxBytes) {
         await sourceResponse.body.cancel();
-        return json({ message: 'source size is missing or exceeds the relay limit' }, 413);
+        return json(
+          { message: 'source size is missing or exceeds the relay limit' },
+          413
+        );
       }
       const uploaded = await fetch(destination, {
-        method: 'PUT',
         body: sourceResponse.body,
+        method: 'PUT',
         redirect: 'manual',
         signal: controller.signal,
       });
       await uploaded.body?.cancel();
       if (!uploaded.ok) {
-        return json({ message: `destination upload failed (${uploaded.status})` }, 502);
+        return json(
+          { message: `destination upload failed (${uploaded.status})` },
+          502
+        );
       }
-      return json({ ok: true, bytes: size });
-    } catch (error) {
+      return json({ bytes: size, ok: true });
+    } catch {
       const timedOut = controller.signal.aborted;
-      return json({ message: timedOut ? 'relay timed out' : 'relay transfer failed' }, 502);
+      return json(
+        { message: timedOut ? 'relay timed out' : 'relay transfer failed' },
+        502
+      );
     } finally {
       clearTimeout(timer);
     }

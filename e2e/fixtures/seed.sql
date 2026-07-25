@@ -72,79 +72,85 @@ INSERT INTO materials (
   (
     'qz_e2e_private', 'u_owner', 'ws_e2e_private', 'E2E Private Workspace', 'quiz',
     'E2E Private Quiz',
-    '{"schemaVersion":1,"value":[{"type":"h1","children":[{"text":"E2E Private Quiz"}]},{"type":"quiz","id":"qz_e2e_private:quiz","timeLimitMin":15,"children":[{"type":"quiz_question","id":"q_priv_1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"Private quiz prompt?"}]}]}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"qz_e2e_private:title","children":[{"text":"E2E Private Quiz"}]},{"type":"quiz","id":"qz_e2e_private:quiz","timeLimitMin":15,"children":[{"type":"quiz_question","id":"q_priv_1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"Private quiz prompt?"}]}]}]}]}'::jsonb,
     'ch_e2e_private', '{Private chapter}', '{}', 'private', 'green', now(), now(), 1, 'u_owner'
   ),
   (
     'qz_e2e_link', 'u_owner', NULL, '', 'quiz',
     'E2E Link Quiz',
-    '{"schemaVersion":1,"value":[{"type":"h1","children":[{"text":"E2E Link Quiz"}]},{"type":"quiz","id":"qz_e2e_link:quiz","children":[{"type":"quiz_question","id":"q_link_1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"Link quiz prompt?"}]}]}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"qz_e2e_link:title","children":[{"text":"E2E Link Quiz"}]},{"type":"quiz","id":"qz_e2e_link:quiz","children":[{"type":"quiz_question","id":"q_link_1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"Link quiz prompt?"}]}]}]}]}'::jsonb,
     NULL, '{}', '{}', 'link', 'purple', now(), now(), 1, 'u_owner'
   ),
   (
     'qz_e2e_public', 'u_owner', NULL, '', 'quiz',
     'E2E Public Quiz',
-    '{"schemaVersion":1,"value":[{"type":"h1","children":[{"text":"E2E Public Quiz"}]},{"type":"quiz","id":"qz_e2e_public:quiz","children":[{"type":"quiz_question","id":"q_pub_1","questionType":"boolean","level":"recall","correctBoolean":false,"children":[{"type":"quiz_prompt","children":[{"text":"Public quiz prompt?"}]}]}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"qz_e2e_public:title","children":[{"text":"E2E Public Quiz"}]},{"type":"quiz","id":"qz_e2e_public:quiz","children":[{"type":"quiz_question","id":"q_pub_1","questionType":"boolean","level":"recall","correctBoolean":false,"children":[{"type":"quiz_prompt","children":[{"text":"Public quiz prompt?"}]}]}]}]}'::jsonb,
     NULL, '{}', '{}', 'public', 'blue', now(), now(), 1, 'u_owner'
   ),
   (
     'qz_e2e_mutate', 'u_owner', NULL, '', 'quiz',
     'E2E Mutate Quiz',
-    '{"schemaVersion":1,"value":[{"type":"h1","children":[{"text":"E2E Mutate Quiz"}]},{"type":"quiz","id":"qz_e2e_mutate:quiz","children":[{"type":"quiz_question","id":"q_mut_1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"Mutate quiz prompt?"}]}]}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"qz_e2e_mutate:title","children":[{"text":"E2E Mutate Quiz"}]},{"type":"quiz","id":"qz_e2e_mutate:quiz","children":[{"type":"quiz_question","id":"q_mut_1","questionType":"boolean","level":"recall","correctBoolean":true,"children":[{"type":"quiz_prompt","children":[{"text":"Mutate quiz prompt?"}]}]}]}]}'::jsonb,
     NULL, '{}', '{}', 'private', 'amber', now(), now(), 1, 'u_owner'
   ),
   (
     'dk_e2e_private', 'u_owner', 'ws_e2e_private', 'E2E Private Workspace', 'flashcards',
     'E2E Private Deck',
-    '{"schemaVersion":1,"value":[{"type":"h1","children":[{"text":"E2E Private Deck"}]},{"type":"flashcards","id":"dk_e2e_private:flashcards","children":[{"type":"flashcard","id":"c_e2e_priv_1","children":[{"type":"flashcard_front","children":[{"text":"Private front"}]},{"type":"flashcard_back","children":[{"text":"Private back"}]}]}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"dk_e2e_private:title","children":[{"text":"E2E Private Deck"}]},{"type":"flashcards","id":"dk_e2e_private:flashcards","children":[{"type":"flashcard","id":"c_e2e_priv_1","children":[{"type":"flashcard_front","children":[{"text":"Private front"}]},{"type":"flashcard_back","children":[{"text":"Private back"}]}]}]}]}'::jsonb,
     'ch_e2e_private', '{}', '{}', 'private', 'green', now(), now(), 1, 'u_owner'
   ),
   (
     'dk_e2e_link', 'u_owner', NULL, '', 'flashcards',
     'E2E Link Deck',
-    '{"schemaVersion":1,"value":[{"type":"h1","children":[{"text":"E2E Link Deck"}]},{"type":"flashcards","id":"dk_e2e_link:flashcards","children":[{"type":"flashcard","id":"c_e2e_link_1","children":[{"type":"flashcard_front","children":[{"text":"Link front"}]},{"type":"flashcard_back","children":[{"text":"Link back"}]}]}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"dk_e2e_link:title","children":[{"text":"E2E Link Deck"}]},{"type":"flashcards","id":"dk_e2e_link:flashcards","children":[{"type":"flashcard","id":"c_e2e_link_1","children":[{"type":"flashcard_front","children":[{"text":"Link front"}]},{"type":"flashcard_back","children":[{"text":"Link back"}]}]}]}]}'::jsonb,
     NULL, '{}', '{}', 'link', 'purple', now(), now(), 1, 'u_owner'
   ),
   (
     'dk_e2e_public', 'u_owner', NULL, '', 'flashcards',
     'E2E Public Deck',
-    '{"schemaVersion":1,"value":[{"type":"h1","children":[{"text":"E2E Public Deck"}]},{"type":"flashcards","id":"dk_e2e_public:flashcards","children":[{"type":"flashcard","id":"c_e2e_pub_1","children":[{"type":"flashcard_front","children":[{"text":"Public front"}]},{"type":"flashcard_back","children":[{"text":"Public back"}]}]}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"dk_e2e_public:title","children":[{"text":"E2E Public Deck"}]},{"type":"flashcards","id":"dk_e2e_public:flashcards","children":[{"type":"flashcard","id":"c_e2e_pub_1","children":[{"type":"flashcard_front","children":[{"text":"Public front"}]},{"type":"flashcard_back","children":[{"text":"Public back"}]}]}]}]}'::jsonb,
     NULL, '{}', '{}', 'public', 'blue', now(), now(), 1, 'u_owner'
   ),
   (
     'dk_e2e_mutate', 'u_owner', NULL, '', 'flashcards',
     'E2E Mutate Deck',
-    '{"schemaVersion":1,"value":[{"type":"h1","children":[{"text":"E2E Mutate Deck"}]},{"type":"flashcards","id":"dk_e2e_mutate:flashcards","children":[{"type":"flashcard","id":"c_e2e_mut_1","children":[{"type":"flashcard_front","children":[{"text":"Mutate front"}]},{"type":"flashcard_back","children":[{"text":"Mutate back"}]}]}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"dk_e2e_mutate:title","children":[{"text":"E2E Mutate Deck"}]},{"type":"flashcards","id":"dk_e2e_mutate:flashcards","children":[{"type":"flashcard","id":"c_e2e_mut_1","children":[{"type":"flashcard_front","children":[{"text":"Mutate front"}]},{"type":"flashcard_back","children":[{"text":"Mutate back"}]}]}]}]}'::jsonb,
     NULL, '{}', '{}', 'private', 'amber', now(), now(), 1, 'u_owner'
   ),
   (
     'note_e2e_private', 'u_owner', 'ws_e2e_private', 'E2E Private Workspace', 'note',
     'Secret private title',
-    '{"schemaVersion":1,"value":[{"type":"h1","children":[{"text":"Secret private title"}]},{"type":"p","children":[{"text":"Hidden body"}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"note_e2e_private:title","children":[{"text":"Secret private title"}]},{"type":"p","id":"note_e2e_private:body","children":[{"text":"Hidden body"}]}]}'::jsonb,
     'ch_e2e_private', '{}', '{}', 'private', 'green', now(), now(), 1, 'u_owner'
   ),
   (
     'note_e2e_link', 'u_owner', 'ws_e2e_link', 'E2E Link Workspace', 'note',
     'E2E Viewer Note',
-    '{"schemaVersion":1,"value":[{"type":"h1","children":[{"text":"E2E Viewer Note"}]},{"type":"p","children":[{"text":"Static viewer content"}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"note_e2e_link:title","children":[{"text":"E2E Viewer Note"}]},{"type":"p","id":"note_e2e_link:body","children":[{"text":"Static viewer content"}]}]}'::jsonb,
     'ch_e2e_link', '{}', '{}', 'private', 'purple', now(), now(), 1, 'u_owner'
   ),
   (
     'note_e2e_public', 'u_owner', 'ws_e2e_public', 'E2E Public Workspace', 'note',
     'E2E Commenter Note',
-    '{"schemaVersion":1,"value":[{"type":"h1","children":[{"text":"E2E Commenter Note"}]},{"type":"p","children":[{"text":"Suggest a clearer sentence"}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"note_e2e_public:title","children":[{"text":"E2E Commenter Note"}]},{"type":"p","id":"note_e2e_public:body","children":[{"text":"Suggest a clearer sentence"}]}]}'::jsonb,
+    'ch_e2e_public', '{}', '{}', 'private', 'blue', now(), now(), 1, 'u_owner'
+  ),
+  (
+    'note_e2e_comment', 'u_owner', 'ws_e2e_public', 'E2E Public Workspace', 'note',
+    'E2E Comment Highlight Note',
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"note_e2e_comment:title","children":[{"text":"E2E Comment Highlight Note"}]},{"type":"p","id":"note_e2e_comment:body","children":[{"text":"Comment on this selected sentence"}]}]}'::jsonb,
     'ch_e2e_public', '{}', '{}', 'private', 'blue', now(), now(), 1, 'u_owner'
   ),
   (
     'note_e2e_edit', 'u_owner', 'ws_e2e_edit', 'E2E Editable Link Workspace', 'note',
     'E2E Editable Note',
-    '{"schemaVersion":1,"value":[{"type":"h1","children":[{"text":"E2E Editable Note"}]},{"type":"p","children":[{"text":"Signed-in editors can change this text"}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"note_e2e_edit:title","children":[{"text":"E2E Editable Note"}]},{"type":"p","id":"note_e2e_edit:body","children":[{"text":"Signed-in editors can change this text"}]}]}'::jsonb,
     'ch_e2e_edit', '{}', '{}', 'private', 'coral', now(), now(), 1, 'u_owner'
   ),
   (
     'note_e2e_review', 'u_owner', 'ws_e2e_edit', 'E2E Editable Link Workspace', 'note',
     'E2E Suggestion Review Note',
-    '{"schemaVersion":1,"value":[{"type":"h1","children":[{"text":"E2E Suggestion Review Note"}]},{"type":"p","children":[{"text":"Original review sentence"}]}]}'::jsonb,
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"note_e2e_review:title","children":[{"text":"E2E Suggestion Review Note"}]},{"type":"p","id":"note_e2e_review:body","children":[{"text":"Original review sentence"}]}]}'::jsonb,
     'ch_e2e_edit', '{}', '{}', 'private', 'coral', now(), now(), 1, 'u_owner'
   )
 ON CONFLICT (id) DO UPDATE SET
@@ -153,20 +159,30 @@ ON CONFLICT (id) DO UPDATE SET
   workspace_name = EXCLUDED.workspace_name,
   title = EXCLUDED.title,
   content = EXCLUDED.content,
-  privacy = EXCLUDED.privacy;
+  privacy = EXCLUDED.privacy,
+  revision = 1,
+  has_pending_suggestions = false;
 
-INSERT INTO material_revisions (material_id, revision, title, content, created_by, created_at)
-SELECT id, revision, title, content, user_id, created_at
+INSERT INTO material_revisions (
+  material_id, revision, parent_revision, event_type, title, content,
+  has_pending_suggestions, event_metadata, created_by, created_at
+)
+SELECT id, revision, NULL, 'create', title, content,
+       has_pending_suggestions, '{}'::jsonb, user_id, created_at
 FROM materials
 WHERE id IN (
-  'qz_e2e_private', 'qz_e2e_link', 'qz_e2e_public',
+  'qz_e2e_private', 'qz_e2e_link', 'qz_e2e_public', 'qz_e2e_mutate',
   'dk_e2e_private', 'dk_e2e_link', 'dk_e2e_public', 'dk_e2e_mutate',
-  'note_e2e_private', 'note_e2e_link', 'note_e2e_public',
+  'note_e2e_private', 'note_e2e_link', 'note_e2e_public', 'note_e2e_comment',
   'note_e2e_edit', 'note_e2e_review'
 )
 ON CONFLICT (material_id, revision) DO UPDATE SET
   title = EXCLUDED.title,
   content = EXCLUDED.content,
+  parent_revision = EXCLUDED.parent_revision,
+  event_type = EXCLUDED.event_type,
+  has_pending_suggestions = EXCLUDED.has_pending_suggestions,
+  event_metadata = EXCLUDED.event_metadata,
   created_by = EXCLUDED.created_by;
 
 INSERT INTO card_stats (card_id, material_id, srs, known) VALUES

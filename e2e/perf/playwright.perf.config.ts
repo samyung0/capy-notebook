@@ -1,6 +1,6 @@
-import { defineConfig, devices } from '@playwright/test';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { defineConfig, devices } from '@playwright/test';
 
 /**
  * Editor performance harness. Run with: pnpm perf
@@ -25,37 +25,40 @@ const port = Number(process.env.PERF_PORT ?? 4517);
 const baseURL = `http://127.0.0.1:${port}`;
 
 export default defineConfig({
-  testDir: perfDir,
-  testMatch: '**/*.perf.ts',
   fullyParallel: false,
-  workers: 1,
-  retries: 0,
-  timeout: 300_000,
-  reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report-perf' }]],
-  use: {
-    baseURL,
-    trace: 'off',
-    video: 'off',
-    screenshot: 'off',
-  },
-  webServer: {
-    command: `pnpm exec vite --host 127.0.0.1 --port ${port} --strictPort`,
-    url: baseURL,
-    cwd: root,
-    reuseExistingServer: true,
-    timeout: 120_000,
-    env: {
-      ...process.env,
-      VITE_USE_MSW: 'true',
-      // Adds the deterministic large/small perf notes to the mock db.
-      VITE_PERF_SEED: 'true',
-      VITE_CLERK_PUBLISHABLE_KEY: '',
-    },
-  },
   projects: [
     {
       name: 'chromium-perf',
       use: { ...devices['Desktop Chrome'] },
     },
   ],
+  reporter: [
+    ['list'],
+    ['html', { open: 'never', outputFolder: 'playwright-report-perf' }],
+  ],
+  retries: 0,
+  testDir: perfDir,
+  testMatch: '**/*.perf.ts',
+  timeout: 300_000,
+  use: {
+    baseURL,
+    screenshot: 'off',
+    trace: 'off',
+    video: 'off',
+  },
+  webServer: {
+    command: `pnpm exec vite --host 127.0.0.1 --port ${port} --strictPort`,
+    cwd: root,
+    env: {
+      ...process.env,
+      VITE_CLERK_PUBLISHABLE_KEY: '',
+      // Adds the deterministic large/small perf notes to the mock db.
+      VITE_PERF_SEED: 'true',
+      VITE_USE_MSW: 'true',
+    },
+    reuseExistingServer: true,
+    timeout: 120_000,
+    url: baseURL,
+  },
+  workers: 1,
 });

@@ -23,7 +23,9 @@ export default function PdfView({ url }: { url: string }) {
     if (!container) return;
 
     const resizeObserver = new ResizeObserver(([entry]) => {
-      setPageWidth(Math.min(MAX_PAGE_WIDTH, Math.floor(entry.contentRect.width)));
+      setPageWidth(
+        Math.min(MAX_PAGE_WIDTH, Math.floor(entry.contentRect.width))
+      );
     });
 
     resizeObserver.observe(container);
@@ -31,25 +33,32 @@ export default function PdfView({ url }: { url: string }) {
   }, []);
 
   return (
-    <div ref={containerRef} className="relative flex h-full w-full flex-col items-center">
+    <div
+      className="relative flex h-full w-full flex-col items-center"
+      ref={containerRef}
+    >
       <Document
-        file={url}
         className="h-full w-full max-w-[800px]"
-        onLoadSuccess={({ numPages: n }) => setNumPages(n)}
+        error={
+          <p className="t-body py-8 text-tint-error-fg">
+            Couldn't load this PDF.
+          </p>
+        }
+        file={url}
         loading={<Skeleton className="h-full w-full" />}
-        error={<p className="t-body py-8 text-tint-error-fg">Couldn't load this PDF.</p>}
+        onLoadSuccess={({ numPages: n }) => setNumPages(n)}
       >
         <div className="flex w-full flex-col items-center gap-4">
           {Array.from({ length: numPages }, (_, i) => {
             const p = i + 1;
             return (
-              <div key={p} data-page={p} className="w-full">
+              <div className="w-full" data-page={p} key={p}>
                 <Page
-                  pageNumber={p}
-                  width={pageWidth || undefined}
-                  renderTextLayer
-                  renderAnnotationLayer={false}
                   loading={<Skeleton className="aspect-[1/1.414] w-full" />}
+                  pageNumber={p}
+                  renderAnnotationLayer={false}
+                  renderTextLayer
+                  width={pageWidth || undefined}
                 />
               </div>
             );

@@ -66,7 +66,9 @@ export function ColorPicker({
   const normalizedValue = value?.toLowerCase();
   const customValue = value && HEX_COLOR_RE.test(value) ? value : '#000000';
   const customLabel =
-    normalizedValue && HEX_COLOR_RE.test(normalizedValue) ? normalizedValue : '';
+    normalizedValue && HEX_COLOR_RE.test(normalizedValue)
+      ? normalizedValue
+      : '';
   const customInputRef = useRef<HTMLInputElement>(null);
   const [customDraft, setCustomDraft] = useState(customLabel);
 
@@ -100,39 +102,46 @@ export function ColorPicker({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-xs font-semibold text-fg-secondary">Document colors</span>
+        <span className="font-semibold text-fg-secondary text-xs">
+          Document colors
+        </span>
         <button
-          type="button"
+          className="inline-flex h-7 items-center gap-1 rounded-row px-2 text-fg-secondary text-xs outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-focus"
           data-plate-prevent-deselect
-          onMouseDown={(event) => event.preventDefault()}
           onClick={onClear}
-          className="focus-visible:ring-focus inline-flex h-7 items-center gap-1 rounded-row px-2 text-xs text-fg-secondary outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2"
+          onMouseDown={(event) => event.preventDefault()}
+          type="button"
         >
           <RotateCcw className="size-3.5" />
           <span className="translate-y-px">Default</span>
         </button>
       </div>
 
-      <div role="grid" aria-label="Document color palette" className="grid grid-cols-8 gap-1.5">
+      <div
+        aria-label="Document color palette"
+        className="grid grid-cols-8 gap-1.5"
+        role="grid"
+      >
         {colors.map((color) => {
           const selected = normalizedValue === color.value.toLowerCase();
 
           return (
             <button
-              key={color.value}
-              type="button"
-              role="gridcell"
-              data-plate-prevent-deselect
               aria-label={color.name}
               aria-selected={selected}
-              title={`${color.name} (${color.value})`}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => onChange(color.value)}
               className={cn(
-                'focus-visible:ring-focus flex size-6 items-center justify-center rounded-pill border border-line-strong transition-transform outline-none hover:scale-110 focus-visible:ring-2',
-                selected && 'ring-2 ring-action ring-offset-1 ring-offset-surface'
+                'flex size-6 items-center justify-center rounded-pill border border-line-strong outline-none transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-focus',
+                selected &&
+                  'ring-2 ring-action ring-offset-1 ring-offset-surface'
               )}
+              data-plate-prevent-deselect
+              key={color.value}
+              onClick={() => onChange(color.value)}
+              onMouseDown={(event) => event.preventDefault()}
+              role="gridcell"
               style={{ backgroundColor: color.value }}
+              title={`${color.name} (${color.value})`}
+              type="button"
             >
               {selected && (
                 <Check
@@ -147,17 +156,17 @@ export function ColorPicker({
         })}
       </div>
 
-      <label className="mt-2 flex items-center justify-between gap-3 border-t border-divider pt-2 text-xs font-semibold text-fg-secondary">
+      <label className="mt-2 flex items-center justify-between gap-3 border-divider border-t pt-2 font-semibold text-fg-secondary text-xs">
         Custom color
         <span className="flex items-center gap-2 font-mono font-normal text-fg">
           {customDraft}
           <input
+            aria-label="Choose a custom color"
+            className="h-7 w-9 cursor-pointer rounded-row border border-line bg-transparent p-0.5"
+            data-plate-prevent-deselect
+            defaultValue={customValue}
             ref={customInputRef}
             type="color"
-            data-plate-prevent-deselect
-            aria-label="Choose a custom color"
-            defaultValue={customValue}
-            className="h-7 w-9 cursor-pointer rounded-row border border-line bg-transparent p-0.5"
           />
         </span>
       </label>

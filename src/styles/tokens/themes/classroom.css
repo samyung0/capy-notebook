@@ -1,12 +1,12 @@
 /* ============================================================
-   THEME: FRIENDLY  (light + dark)
+   STYLE: classroom  (light + dark)
    Maps the semantic role tokens (TIER 2) onto primitives.
    Each container role ships as a contrast PAIR/bundle
    (bg + fg + fg-muted + border) so legibility survives the
-   theme/mode switch. Components read ONLY these role tokens.
+   style/theme switch. Components read ONLY these role tokens.
    ============================================================ */
 
-[data-theme='friendly'] {
+[data-style="classroom"] {
   --display-font-size: 3.125rem;
   --display-font-weight: 800;
   --display-line-height: 1.15;
@@ -54,7 +54,7 @@
 
 /* Dial the type scale down on phones so dense screens stay readable. */
 @media (max-width: 767px) {
-  [data-theme='friendly'] {
+  [data-style="classroom"] {
     --display-font-size: 2.25rem;
     --page-title-font-size: 1.375rem;
     --section-font-size: 1.125rem;
@@ -67,11 +67,8 @@
   }
 }
 
-/* ---------------- FRIENDLY · LIGHT ---------------- */
-[data-theme='friendly'][data-mode='light'] {
-  color-scheme: light;
-
-  /* Surfaces */
+/* ---------------- classroom · LIGHT ---------------- */
+[data-style="classroom"][data-theme="light"] {
   --surface-page: #f4f6f5; /* outer "device" */
   --surface-canvas: #f4f6f5; /* page wash behind inset cards */
   --surface-card-bg: #ffffff;
@@ -142,16 +139,15 @@
   /* Shadows */
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.05);
-  --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.05), 0 16px 44px rgba(0, 0, 0, 0.07);
+  --shadow-raised:
+    0 1px 2px rgba(0, 0, 0, 0.05), 0 16px 44px rgba(0, 0, 0, 0.07);
   --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.14);
   --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.06);
+  color-scheme: light;
 }
 
-/* ---------------- FRIENDLY · DARK ---------------- */
-[data-theme='friendly'][data-mode='dark'] {
-  color-scheme: dark;
-
-  /* Surfaces */
+/* ---------------- classroom · DARK ---------------- */
+[data-style="classroom"][data-theme="dark"] {
   --surface-page: #121513;
   --surface-canvas: #0e100f;
   --surface-card-bg: #1c201e;
@@ -221,7 +217,9 @@
   /* Shadows */
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.45);
-  --shadow-raised: 0 1px 2px rgba(0, 0, 0, 0.45), 0 16px 44px rgba(0, 0, 0, 0.55);
+  --shadow-raised:
+    0 1px 2px rgba(0, 0, 0, 0.45), 0 16px 44px rgba(0, 0, 0, 0.55);
   --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.6);
   --shadow-chip: 0 1px 2px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
 }

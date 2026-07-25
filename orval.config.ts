@@ -14,23 +14,23 @@ export default defineConfig({
   // unused; the hand-written src/api/client.ts + hooks.ts stay the source of
   // truth. The value we consume lives in src/api/gen/model/*.
   models: {
+    hooks: { afterAllFilesWrite: 'pnpm run fmt' },
     input,
     output: {
-      mode: 'single',
       client: 'fetch',
-      target: 'src/api/gen/endpoints.ts',
+      mode: 'single',
       schemas: 'src/api/gen/model',
+      target: 'src/api/gen/endpoints.ts',
     },
-    hooks: { afterAllFilesWrite: 'prettier --write' },
   },
   // Standalone zod validators for request/response bodies, in a single file.
   zod: {
+    hooks: { afterAllFilesWrite: 'pnpm run fmt' },
     input,
     output: {
-      mode: 'single',
       client: 'zod',
+      mode: 'single',
       target: 'src/api/gen/validators.ts',
     },
-    hooks: { afterAllFilesWrite: 'prettier --write' },
   },
 });

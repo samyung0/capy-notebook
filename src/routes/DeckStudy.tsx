@@ -1,7 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { PanelWithInvertedRadius } from '@/components/app/layout';
-import { Badge, Button, Icon, IconButton, ProgressBar, Skeleton, Text } from '@/components/ui';
+import { useEffect, useMemo, useState } from 'react';
+import { isApiError } from '@/api/client';
 import {
   useCards,
   useCloneDeck,
@@ -10,27 +9,43 @@ import {
   useReviewCard,
   useUpdateDeck,
 } from '@/api/hooks';
-import { CardEditModal } from '@/features/flashcards/CardEditModal';
-import { isDue, isKnown, ratingPreviews, reviewSrs, SRS_RATINGS, type SrsRating } from '@/lib/srs';
-import { cn } from '@/lib/cn';
 import type { Flashcard } from '@/api/types';
-import { m } from '@/i18n';
-import { ShareDialog } from '@/components/app/ShareDialog';
+import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { PrivateOrUnavailable } from '@/components/app/PrivateOrUnavailable';
-import { isApiError } from '@/api/client';
+import {
+  Badge,
+  Button,
+  Icon,
+  IconButton,
+  ProgressBar,
+  Skeleton,
+  Text,
+} from '@/components/ui';
+import { CardEditModal } from '@/features/flashcards/CardEditModal';
+import { ShareDialog } from '@/features/workspace/ShareDialog';
+import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
+import { cn } from '@/lib/cn';
+import {
+  isDue,
+  isKnown,
+  ratingPreviews,
+  reviewSrs,
+  SRS_RATINGS,
+  type SrsRating,
+} from '@/lib/srs';
 
 const RATING_LABEL: Record<SrsRating, string> = {
   again: 'Again',
-  hard: 'Hard',
-  good: 'Good',
   easy: 'Easy',
+  good: 'Good',
+  hard: 'Hard',
 };
 const RATING_STYLE: Record<SrsRating, string> = {
   again: 'border-tint-error text-tint-error-fg hover:bg-tint-error',
-  hard: 'border-tint-warning text-tint-warning-fg hover:bg-tint-warning',
-  good: 'border-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1',
   easy: 'border-tint-success text-tint-success-fg hover:bg-tint-success',
+  good: 'border-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1',
+  hard: 'border-tint-warning text-tint-warning-fg hover:bg-tint-warning',
 };
 
 export default function DeckStudy() {
@@ -42,7 +57,12 @@ export default function DeckStudy() {
     isError: deckError,
     error: deckErr,
   } = useDeck(deckId);
-  const { data: cards, isLoading, isError: cardsError, error: cardsErr } = useCards(deckId);
+  const {
+    data: cards,
+    isLoading,
+    isError: cardsError,
+    error: cardsErr,
+  } = useCards(deckId);
   const reviewCard = useReviewCard(deckId);
   const deleteCard = useDeleteCard(deckId);
   const cloneDeck = useCloneDeck();
@@ -76,14 +96,23 @@ export default function DeckStudy() {
   }
 
   if (deckLoading || isLoading || !deck || !cards || queue === null) {
-    if (!deckLoading && !isLoading && (deckError || cardsError || !deck || !cards)) {
+    if (
+      !deckLoading &&
+      !isLoading &&
+      (deckError || cardsError || !deck || !cards)
+    ) {
       const err = deckErr ?? cardsErr;
-      const denied = isApiError(err) && (err.status === 404 || err.status === 401);
+      const denied =
+        isApiError(err) && (err.status === 404 || err.status === 401);
       return (
         <PrivateOrUnavailable
-          title={denied ? 'This item is private or unavailable.' : 'Unable to load deck.'}
-          backTo="/flashcards"
           backLabel="Back to flashcards"
+          backTo="/flashcards"
+          title={
+            denied
+              ? 'This item is private or unavailable.'
+              : 'Unable to load deck.'
+          }
         />
       );
     }
@@ -101,7 +130,7 @@ export default function DeckStudy() {
   function rate(rating: SrsRating) {
     if (!card) return;
     const srs = reviewSrs(card.srs, rating);
-    if (isOwner) reviewCard.mutate({ id: card.id, srs, known: isKnown(srs) });
+    if (isOwner) reviewCard.mutate({ id: card.id, known: isKnown(srs), srs });
     setFlipped(false);
     setQueue((q) => {
       if (!q) return q;
@@ -120,41 +149,48 @@ export default function DeckStudy() {
 
   const header = (
     <div className="mb-4 flex items-center gap-3">
-      <Link to="/flashcards" preload="intent" className="text-fg-muted hover:text-fg">
+      <Link
+        className="text-fg-muted hover:text-fg"
+        preload="intent"
+        to="/flashcards"
+      >
         <Icon name="chevronLeft" size={20} />
       </Link>
-      <Text variant="subtitle" className="flex-1 truncate">
+      <Text className="flex-1 truncate" variant="subtitle">
         {deck?.name}
       </Text>
       {isOwner ? (
         <>
           <IconButton
             icon="link"
-            variant="outline"
-            size="sm"
             label="Share deck"
             onClick={() => setShareOpen(true)}
+            size="sm"
+            variant="outline"
           />
           <IconButton
             icon="plus"
-            variant="outline"
-            size="sm"
             label={m.flashcards_add_card()}
             onClick={() => setEditing('new')}
+            size="sm"
+            variant="outline"
           />
         </>
       ) : (
         <Button
-          size="sm"
-          iconLeft="plus"
           disabled={cloneDeck.isPending}
+          iconLeft="plus"
           onClick={() =>
             cloneDeck.mutate(deckId, {
-              onSuccess: (copy) =>
-                navigate({ to: '/flashcards/$deckId', params: { deckId: copy.id } }),
               onError: (err) => toastCloneError(err, 'deck'),
+              onSuccess: (copy) =>
+                navigate({
+                  params: { deckId: copy.id },
+                  to: '/flashcards/$deckId',
+                }),
             })
           }
+          size="sm"
         >
           {cloneDeck.isPending ? 'Cloning…' : 'Clone deck'}
         </Button>
@@ -174,24 +210,30 @@ export default function DeckStudy() {
               <Icon name="check" size={30} />
             </span>
             <Text variant="section">
-              {cards.length === 0 ? m.flashcards_empty_deck() : m.flashcards_all_caught_up()}
+              {cards.length === 0
+                ? m.flashcards_empty_deck()
+                : m.flashcards_all_caught_up()}
             </Text>
             {cards.length > 0 && (
-              <Text variant="body" tone="muted">
+              <Text tone="muted" variant="body">
                 {m.flashcards_scheduled_hint({ count: notDue })}
               </Text>
             )}
             <div className="mt-2 flex gap-3">
               {isOwner && (
-                <Button variant="outline" iconLeft="plus" onClick={() => setEditing('new')}>
+                <Button
+                  iconLeft="plus"
+                  onClick={() => setEditing('new')}
+                  variant="outline"
+                >
                   {m.flashcards_add_card()}
                 </Button>
               )}
               {cards.length > 0 && (
                 <Button
-                  variant="accent"
                   iconLeft="flashcards"
                   onClick={() => startSession(cards.map((c) => c.id))}
+                  variant="accent"
                 >
                   {m.flashcards_study_all()}
                 </Button>
@@ -201,10 +243,10 @@ export default function DeckStudy() {
         </div>
         {isOwner && (
           <CardEditModal
-            deckId={deckId}
             card={null}
-            open={editing !== null}
+            deckId={deckId}
             onClose={() => setEditing(null)}
+            open={editing !== null}
           />
         )}
       </PanelWithInvertedRadius>
@@ -220,24 +262,32 @@ export default function DeckStudy() {
         {header}
         <div className="mb-4 flex items-center gap-3">
           <div className="flex-1">
-            <ProgressBar value={(done / Math.max(1, sessionTotal)) * 100} tone="purple" />
+            <ProgressBar
+              tone="purple"
+              value={(done / Math.max(1, sessionTotal)) * 100}
+            />
           </div>
-          <Badge tone="neutral" size="sm">
+          <Badge size="sm" tone="neutral">
             {queue.length} {m.flashcards_left()}
           </Badge>
         </div>
 
         <button
-          onClick={() => setFlipped((f) => !f)}
           className="flex min-h-0 flex-1 flex-col items-center justify-center rounded-card-lg border border-line bg-surface p-8 text-center shadow-card transition-transform active:scale-[0.99]"
+          onClick={() => setFlipped((f) => !f)}
+          type="button"
         >
-          <Text variant="label" tone="muted">
+          <Text tone="muted" variant="label">
             {flipped ? m.flashcards_answer() : m.flashcards_term()}
           </Text>
-          <Text variant="section" className="mt-3">
+          <Text className="mt-3" variant="section">
             {flipped ? card.back : card.front}
           </Text>
-          <Text variant="meta" tone="muted" className="mt-6 flex items-center gap-1">
+          <Text
+            className="mt-6 flex items-center gap-1"
+            tone="muted"
+            variant="meta"
+          >
             <Icon name="message" size={13} /> {m.flashcards_tap_flip()}
           </Text>
         </button>
@@ -245,64 +295,73 @@ export default function DeckStudy() {
         {isOwner && (
           <div className="mt-3 flex items-center justify-center gap-4">
             <button
+              className="flex items-center gap-1 text-fg-muted text-xs hover:text-fg"
               onClick={() => setEditing(card)}
-              className="flex items-center gap-1 text-xs text-fg-muted hover:text-fg"
+              type="button"
             >
               <Icon name="write" size={13} /> {m.action_edit()}
             </button>
             <button
+              className="flex items-center gap-1 text-fg-muted text-xs hover:text-tint-error-fg"
               onClick={removeCurrent}
-              className="flex items-center gap-1 text-xs text-fg-muted hover:text-tint-error-fg"
+              type="button"
             >
               <Icon name="trash" size={13} /> {m.action_delete()}
             </button>
           </div>
         )}
 
-        {!flipped ? (
-          <div className="mt-3">
-            <Button variant="primary" fullWidth onClick={() => setFlipped(true)}>
-              {m.flashcards_show_answer()}
-            </Button>
-          </div>
-        ) : (
+        {flipped ? (
           <div className="mt-3 grid grid-cols-4 gap-2">
             {SRS_RATINGS.map((r) => (
               <button
-                key={r}
-                onClick={() => rate(r)}
                 className={cn(
-                  'flex flex-col items-center gap-0.5 rounded-card border px-2 py-2.5 text-sm font-semibold transition-colors',
+                  'flex flex-col items-center gap-0.5 rounded-card border px-2 py-2.5 font-semibold text-sm transition-colors',
                   RATING_STYLE[r]
                 )}
+                key={r}
+                onClick={() => rate(r)}
+                type="button"
               >
                 {RATING_LABEL[r]}
-                <span className="text-[11px] font-normal tabular-nums opacity-70">
+                <span className="font-normal text-[11px] tabular-nums opacity-70">
                   {previews[r]}
                 </span>
               </button>
             ))}
+          </div>
+        ) : (
+          <div className="mt-3">
+            <Button
+              fullWidth
+              onClick={() => setFlipped(true)}
+              variant="primary"
+            >
+              {m.flashcards_show_answer()}
+            </Button>
           </div>
         )}
       </div>
 
       {isOwner && (
         <CardEditModal
-          deckId={deckId}
           card={editing === 'new' ? null : editing}
-          open={editing !== null}
+          deckId={deckId}
           onClose={() => setEditing(null)}
+          open={editing !== null}
         />
       )}
       {deck && (
         <ShareDialog
-          open={shareOpen}
-          onClose={() => setShareOpen(false)}
-          title={`Share ${deck.name}`}
-          privacy={deck.privacy ?? 'private'}
           link={`/share/decks/${deck.id}`}
+          onClose={() => setShareOpen(false)}
+          onPrivacyChange={(privacy) =>
+            updateDeck.mutateAsync({ id: deck.id, privacy })
+          }
+          open={shareOpen}
+          privacy={deck.privacy ?? 'private'}
           saving={updateDeck.isPending}
-          onPrivacyChange={(privacy) => updateDeck.mutateAsync({ id: deck.id, privacy })}
+          title={`Share ${deck.name}`}
         />
       )}
     </PanelWithInvertedRadius>

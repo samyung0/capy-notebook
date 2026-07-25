@@ -1,30 +1,30 @@
-import { SVGProps } from 'react';
+import type { SVGProps } from 'react';
 
 export function LogosMicrosoftOnedrive(props: SVGProps<SVGSVGElement>) {
   return (
     <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="1.56em"
       height="1em"
       viewBox="0 0 256 165"
+      width="1.56em"
+      xmlns="http://www.w3.org/2000/svg"
       {...props}
     >
       {/* Icon from SVG Logos by Gil Barbara - https://raw.githubusercontent.com/gilbarbara/logos/master/LICENSE.txt */}
       <path
-        fill="#0364B8"
         d="m154.66 110.682l52.842-50.534c-10.976-42.8-54.57-68.597-97.37-57.62a80 80 0 0 0-46.952 33.51c.817-.02 91.48 74.644 91.48 74.644"
+        fill="#0364B8"
       />
       <path
-        fill="#0078D4"
         d="m97.618 45.552l-.002.009a63.7 63.7 0 0 0-33.619-9.543c-.274 0-.544.017-.818.02C27.852 36.476-.432 65.47.005 100.798a63.97 63.97 0 0 0 11.493 35.798l79.165-9.915l60.694-48.94z"
+        fill="#0078D4"
       />
       <path
-        fill="#1490DF"
         d="M207.502 60.148a53 53 0 0 0-3.51-.131a51.8 51.8 0 0 0-20.61 4.254l-.002-.005l-32.022 13.475l35.302 43.607l63.11 15.341c13.62-25.283 4.164-56.82-21.12-70.44a52 52 0 0 0-21.148-6.1"
+        fill="#1490DF"
       />
       <path
-        fill="#28A8EA"
         d="M11.498 136.596a63.91 63.91 0 0 0 52.5 27.417h139.994a51.99 51.99 0 0 0 45.778-27.323l-98.413-58.95z"
+        fill="#28A8EA"
       />
     </svg>
   );

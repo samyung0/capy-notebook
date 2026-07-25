@@ -1,6 +1,6 @@
-import { Panel, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Button, Icon, Spinner, Text } from '@/components/ui';
 import { Link } from '@tanstack/react-router';
+import { Panel } from '@/components/app/layout';
+import { Button, Spinner } from '@/components/ui';
 
 /** Non-disclosing empty state for private/missing shared resources. */
 export function LoadingLarge({
@@ -21,9 +21,9 @@ export function LoadingLarge({
         <span>
           <Spinner className="size-7" />
         </span>
-        <h1 className="t-section">{title}</h1>
+        <h1 className="t-large-card-title">{title}</h1>
         {backTo && (
-          <Link to={backTo} preload="intent" className="-translate-x-1">
+          <Link className="-translate-x-1" preload="intent" to={backTo}>
             <Button iconLeft="chevronLeft" variant="ghost">
               {backLabel}
             </Button>

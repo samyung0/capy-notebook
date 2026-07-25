@@ -21,20 +21,25 @@ func TestCollaborationContractsAreRegistered(t *testing.T) {
 		"/api/workspaces/{id}/invites:",
 		"/api/workspace-invites/{token}/accept:",
 		"/api/materials/{id}/revisions:",
-		"/api/materials/{id}/suggestions:",
+		"/api/materials/{id}/suggestion-commits:",
+		"/api/materials/{id}/suggestions/review:",
 		"/api/material-suggestions/{id}:",
 		"/api/materials/{id}/discussions:",
 		"/api/discussions/{id}/comments:",
 		"/api/source-upload-policy:",
 		"expectedRevision:",
-		"expectedBaseRevision:",
-		"finalizedContent:",
+		"suggestionIds:",
+		"plateSuggestionId:",
+		"commitRevision:",
+		"resolutionRevision:",
+		"parentCommentId:",
+		"hasPendingSuggestions:",
+		"eventType:",
+		"eventMetadata:",
 		"shareRole:",
 		"identifier:",
 		"schemaVersion:",
 		"capabilities:",
-		"originalFragment:",
-		"proposedFragment:",
 		"contentBytes:",
 		"allowNoExtension:",
 		"parseModes:",
@@ -48,6 +53,13 @@ func TestCollaborationContractsAreRegistered(t *testing.T) {
 		"/api/workspaces/{id}/invites/{inviteId}:",
 		"CreatedWorkspaceInvite",
 		"WorkspaceInviteCandidate",
+		"originalFragment:",
+		"proposedFragment:",
+		"finalizedContent:",
+		"expectedBaseRevision:",
+		"operation:",
+		"previewBefore:",
+		"previewAfter:",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Errorf("OpenAPI contract still exposes %q", forbidden)
@@ -126,6 +138,23 @@ func TestMaterialUpdateResultDoesNotEchoContent(t *testing.T) {
 	if body["id"] != "mat_1" || body["revision"] != float64(2) ||
 		body["contentBytes"] != float64(123) {
 		t.Fatalf("unexpected update acknowledgement: %s", encoded)
+	}
+}
+
+func TestMaterialRefExposesPendingSuggestions(t *testing.T) {
+	encoded, err := json.Marshal(apimodel.MaterialRef{
+		ID: "mat_1", Type: "note", Title: "Pending",
+		HasPendingSuggestions: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var body map[string]any
+	if err := json.Unmarshal(encoded, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["hasPendingSuggestions"] != true {
+		t.Fatalf("material ref omitted pending state: %s", encoded)
 	}
 }
 

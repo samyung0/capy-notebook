@@ -5,6 +5,7 @@ The HTML-in-Canvas API allows rendering real DOM directly inside a canvas elemen
 ## How to implement
 
 ### WebGL and WebGPU
+
 When using WebGL or WebGPU, follow these steps:
 
 1. Check if HTML-in-Canvas is supported in the browser:
@@ -57,7 +58,7 @@ canvas.onpaint = () => {
     try {
       gl.texElementImage2D(gl.TEXTURE_2D, gl.RGBA8, uiElement);
     } catch (err) {
-      console.error('texElementImage2D copy failed:', err);
+      console.error("texElementImage2D copy failed:", err);
     }
   }
 };
@@ -77,7 +78,7 @@ canvas.onpaint = () => {
       };
       root.device.queue.copyElementImageToTexture(sourceDict, destDict);
     } catch (err) {
-      console.error('copyElementImageToTexture copy failed:', err);
+      console.error("copyElementImageToTexture copy failed:", err);
     }
   }
 };
@@ -176,10 +177,11 @@ if ('requestPaint' in HTMLCanvasElement.prototype) {
 2. Create a custom geometry and material for the HTML content.
 
 3. Pass the DOM element into THREE.HTMLTexture:
+
 ```js
-  material.map = new THREE.HTMLTexture(element);
-  mesh = new THREE.Mesh( geometry, material );
-  scene.add( mesh );
+material.map = new THREE.HTMLTexture(element);
+mesh = new THREE.Mesh(geometry, material);
+scene.add(mesh);
 ```
 
 ## Example code
@@ -209,7 +211,7 @@ if ('requestPaint' in HTMLCanvasElement.prototype) {
       try {
         gl.texElementImage2D(gl.TEXTURE_2D, gl.RGBA8, uiElement);
       } catch (err) {
-        console.error('texElementImage2D copy failed:', err);
+        console.error("texElementImage2D copy failed:", err);
       }
     }
 
@@ -277,7 +279,7 @@ if ('requestPaint' in HTMLCanvasElement.prototype) {
         };
         device.queue.copyElementImageToTexture(sourceDict, destDict);
       } catch (err) {
-        console.error('copyElementImageToTexture copy failed:', err);
+        console.error("copyElementImageToTexture copy failed:", err);
       }
     }
 
@@ -319,23 +321,26 @@ if ('requestPaint' in HTMLCanvasElement.prototype) {
 // 1. Initialize Three.js camera, scene, renderer, mesh, interactions;
 
 // 2. Ensure HTML-in-Canvas feature support
-if (!('requestPaint' in HTMLCanvasElement.prototype)) {
+if (!("requestPaint" in HTMLCanvasElement.prototype)) {
   // Use a fallback strategy
 }
 
 // 3. Initialize the source HTML DOM element
-const element = document.createElement('div');
-element.innerHTML = '<h1>Hello World</h1>';
+const element = document.createElement("div");
+element.innerHTML = "<h1>Hello World</h1>";
 
 // 4. Create geometry and material
-const geometry = new RoundedBoxGeometry( 100, 100, 100, 10, 10 );
-const material = new THREE.MeshStandardMaterial( { roughness: 0, metalness: 0.5 } );
+const geometry = new RoundedBoxGeometry(100, 100, 100, 10, 10);
+const material = new THREE.MeshStandardMaterial({
+  roughness: 0,
+  metalness: 0.5,
+});
 
 // 5. Pass the DOM element into THREE.HTMLTexture
 material.map = new THREE.HTMLTexture(element);
 
-mesh = new THREE.Mesh( geometry, material );
-scene.add( mesh );
+mesh = new THREE.Mesh(geometry, material);
+scene.add(mesh);
 
 // 6. Render Loop
 function animate() {

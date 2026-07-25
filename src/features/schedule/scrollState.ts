@@ -6,6 +6,7 @@ let scrollTop: number | null = null;
  * AppShell after navigating away from /schedule.
  */
 export const scheduleAutoScroll = {
+  getPosition: () => scrollTop,
   hasRun: () => didAutoScroll,
   markRun: (currentScrollTop: number) => {
     didAutoScroll = true;
@@ -14,7 +15,6 @@ export const scheduleAutoScroll = {
   rememberPosition: (currentScrollTop: number | undefined) => {
     if (currentScrollTop != null) scrollTop = currentScrollTop;
   },
-  getPosition: () => scrollTop,
   reset: () => {
     didAutoScroll = false;
     scrollTop = null;

@@ -4,7 +4,7 @@ When building tooltips or popovers with CSS Anchor Positioning, the browser can 
 
 ## The problem
 
-Imagine a tooltip that appears above its anchor by default. It has a "down" arrow at the bottom. If the user scrolls and the tooltip flips to appear *below* the anchor, the arrow is now pointing the wrong way and is on the wrong side of the tooltip.
+Imagine a tooltip that appears above its anchor by default. It has a "down" arrow at the bottom. If the user scrolls and the tooltip flips to appear _below_ the anchor, the arrow is now pointing the wrong way and is on the wrong side of the tooltip.
 
 ## The solution: Anchored Container Queries
 
@@ -15,7 +15,9 @@ By setting `container-type: anchored` on your positioned element, you turn it in
 Use the Popover API to create a tooltip. This creates an implicit anchor connection that can be used for positioning.
 
 ```html
-<button popovertarget="tooltip" id="anchor" aria-describedby="tooltip">anchor</button>
+<button popovertarget="tooltip" id="anchor" aria-describedby="tooltip">
+  anchor
+</button>
 <div id="tooltip" popover role="tooltip"></div>
 ```
 
@@ -83,11 +85,10 @@ If you need to change properties on the container itself (like `margin` or `back
 1. Apply `container-type: anchored` to the outer positioned element.
 2. Target the inner element inside the `@container` block.
 
-
 ```css
 @container anchored(fallback: flip-block) {
   .tooltip-content {
-    border-radius: 0 0 .5rem .5rem;
+    border-radius: 0 0 0.5rem 0.5rem;
     margin-block-start: 0.25rem;
   }
 }
@@ -97,7 +98,6 @@ If you need to change properties on the container itself (like `margin` or `back
 
 - **Prefer logical fallbacks**: Use keywords like `flip-block` and `flip-inline` in `position-try-fallbacks` for simpler queries that handle RTL and different writing modes automatically.
 - **Use pseudo-elements for arrows**: Tooltip arrows are purely decorative and are perfect candidates for `::before` or `::after`, which can be styled via anchored container queries without extra DOM.
-
 
 ## Fallback strategies
 

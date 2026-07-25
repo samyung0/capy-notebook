@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures/actors';
+import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
 
 test.describe('deck sharing', () => {
@@ -8,7 +8,10 @@ test.describe('deck sharing', () => {
     seed,
   }) => {
     for (const page of [anonymousPage, otherPage]) {
-      const resPromise = waitForApi(page, apiEndsWith(`/api/decks/${seed.privateDeck.id}`));
+      const resPromise = waitForApi(
+        page,
+        apiEndsWith(`/api/decks/${seed.privateDeck.id}`)
+      );
       await page.goto(`/share/decks/${seed.privateDeck.id}`);
       expect((await resPromise).status()).toBe(404);
       await expect(page.getByTestId('private-or-unavailable')).toBeVisible();
@@ -21,11 +24,16 @@ test.describe('deck sharing', () => {
     seed,
   }) => {
     for (const deck of [seed.linkDeck, seed.publicDeck]) {
-      const res = waitForApi(anonymousPage, apiEndsWith(`/api/decks/${deck.id}`));
+      const res = waitForApi(
+        anonymousPage,
+        apiEndsWith(`/api/decks/${deck.id}`)
+      );
       await anonymousPage.goto(`/share/decks/${deck.id}`);
       expect((await res).status()).toBe(200);
       await expect(anonymousPage.getByText(deck.name)).toBeVisible();
-      await expect(anonymousPage.getByRole('button', { name: 'Clone deck' })).toBeVisible();
+      await expect(
+        anonymousPage.getByRole('button', { name: 'Clone deck' })
+      ).toBeVisible();
       await expect(anonymousPage.getByLabel('Share deck')).toHaveCount(0);
       await expect(anonymousPage.getByLabel(/Add card/i)).toHaveCount(0);
       await expect(anonymousPage.getByText(deck.front)).toBeVisible();
@@ -34,7 +42,9 @@ test.describe('deck sharing', () => {
     // Rating should not fire a review mutation for non-owners on the link deck.
     await anonymousPage.goto(`/share/decks/${seed.linkDeck.id}`);
     await expect(anonymousPage.getByText(seed.linkDeck.front)).toBeVisible();
-    await anonymousPage.getByRole('button', { name: /Show answer|Show Answer/i }).click();
+    await anonymousPage
+      .getByRole('button', { name: /Show answer|Show Answer/i })
+      .click();
     const reviewWatch = anonymousPage.waitForRequest(
       (req) => req.method() === 'PATCH' && req.url().includes('/api/cards/'),
       { timeout: 1500 }
@@ -43,7 +53,10 @@ test.describe('deck sharing', () => {
     await expect(reviewWatch).rejects.toThrow();
   });
 
-  test('only public decks appear on Explore; private/link do not', async ({ otherPage, seed }) => {
+  test('only public decks appear on Explore; private/link do not', async ({
+    otherPage,
+    seed,
+  }) => {
     const exploreRes = waitForApi(otherPage, apiEndsWith('/api/explore/decks'));
     await otherPage.goto('/explore');
     await otherPage.getByRole('button', { name: /Flashcards/i }).click();
@@ -54,8 +67,9 @@ test.describe('deck sharing', () => {
   });
 
   test('signed-in viewer can clone a shared deck; anonymous gets 401', async ({
-    otherPage,
     anonymousPage,
+    otherApi,
+    otherPage,
     seed,
   }) => {
     const clonePromise = waitForApi(
@@ -67,17 +81,24 @@ test.describe('deck sharing', () => {
     const res = await clonePromise;
     expect(res.status()).toBe(201);
     const body = await res.json();
-    expect(body.privacy).toBe('private');
-    expect(body.isOwner).toBe(true);
+    try {
+      expect(body.privacy).toBe('private');
+      expect(body.isOwner).toBe(true);
 
-    const anonClone = waitForApi(
-      anonymousPage,
-      apiEndsWith(`/api/decks/${seed.linkDeck.id}/clone`, 'POST')
-    );
-    await anonymousPage.goto(`/share/decks/${seed.linkDeck.id}`);
-    await anonymousPage.getByRole('button', { name: 'Clone deck' }).click();
-    expect((await anonClone).status()).toBe(401);
-    await expect(anonymousPage.getByText('Sign in to clone')).toBeVisible({ timeout: 5000 });
+      const anonClone = waitForApi(
+        anonymousPage,
+        apiEndsWith(`/api/decks/${seed.linkDeck.id}/clone`, 'POST')
+      );
+      await anonymousPage.goto(`/share/decks/${seed.linkDeck.id}`);
+      await anonymousPage.getByRole('button', { name: 'Clone deck' }).click();
+      expect((await anonClone).status()).toBe(401);
+      await expect(anonymousPage.getByText('Sign in to clone')).toBeVisible({
+        timeout: 5000,
+      });
+    } finally {
+      const removedClone = await otherApi.delete(`/api/materials/${body.id}`);
+      expect(removedClone.status()).toBe(204);
+    }
   });
 
   test('non-member cannot mutate a shared deck', async ({ otherApi, seed }) => {

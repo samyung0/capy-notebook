@@ -1,5 +1,8 @@
 import { AIChatPlugin } from '@platejs/ai/react';
-import { BlockMenuPlugin, BlockSelectionPlugin } from '@platejs/selection/react';
+import {
+  BlockMenuPlugin,
+  BlockSelectionPlugin,
+} from '@platejs/selection/react';
 import type { PlateEditor } from 'platejs/react';
 
 export function openAiMenu(
@@ -7,7 +10,10 @@ export function openAiMenu(
   { selectCurrentBlock = false }: { selectCurrentBlock?: boolean } = {}
 ) {
   const blockSelection = editor.getApi(BlockSelectionPlugin).blockSelection;
-  if (selectCurrentBlock && !editor.getOption(BlockSelectionPlugin, 'isSelectingSome')) {
+  if (
+    selectCurrentBlock &&
+    !editor.getOption(BlockSelectionPlugin, 'isSelectingSome')
+  ) {
     const block = editor.api.block({ highest: true });
     const blockId = block?.[0].id;
     if (typeof blockId === 'string') blockSelection.set(blockId);

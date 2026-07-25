@@ -1,35 +1,37 @@
-import type { ButtonHTMLAttributes } from 'react';
-import { cn } from '@/lib/cn';
-import { Icon, type IconName } from './Icon';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { Slot } from 'radix-ui';
+import { cn } from '@/lib/cn';
+import { Icon, type IconName } from './Icon';
 
 const buttonVariants = cva(
-  'inline-flex min-w-0 cursor-pointer items-center justify-center leading-none font-semibold whitespace-nowrap transition-all duration-150 outline-none select-none focus-visible:ring-2 focus-visible:ring-action active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50',
+  'inline-flex min-w-0 cursor-pointer select-none items-center justify-center whitespace-nowrap font-semibold leading-none outline-none transition-all duration-150 focus-visible:ring-2 focus-visible:ring-action active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50',
   {
+    defaultVariants: {
+      size: 'md',
+      variant: 'primary',
+    },
     variants: {
+      size: {
+        lg: 'gap-[9px] rounded-card px-6.5 py-5 text-[0.9375rem]',
+        md: 'gap-2 rounded-button px-5 py-3 text-sm',
+        sm: 'gap-[7px] rounded-button px-4 py-2.5 text-[0.8125rem]',
+      },
       variant: {
-        primary:
-          'border border-transparent bg-action text-action-fg outline-offset-2 hover:brightness-95 focus-visible:ring-0 focus-visible:outline-2 focus-visible:outline-action',
         accent:
           'border border-transparent bg-action-accent text-action-accent-fg hover:bg-action-accent-hover',
-        outline: 'border border-line bg-surface text-fg hover:bg-surface-hover-bg',
-        surface: 'border border-transparent bg-surface text-fg hover:bg-surface-hover-bg',
+        danger:
+          'border border-transparent bg-solid-error text-surface hover:brightness-95',
         ghost: 'border-none text-fg',
         'ghost-hover': 'border-none text-fg hover:bg-surface-hover-bg',
         'ghost-link': 'border-none text-link hover:text-link-hover',
         gray: 'bg-surface-hover-bg text-surface-dark-fg hover:bg-surface-dark',
-        danger: 'border border-transparent bg-solid-error text-surface hover:brightness-95',
+        outline:
+          'border border-line bg-surface text-fg hover:bg-surface-hover-bg',
+        primary:
+          'border border-transparent bg-action text-action-fg outline-offset-2 hover:brightness-95 focus-visible:outline-2 focus-visible:outline-action focus-visible:ring-0',
+        surface:
+          'border border-transparent bg-surface text-fg hover:bg-surface-hover-bg',
       },
-      size: {
-        sm: 'gap-[7px] rounded-button px-4 py-2.5 text-[0.8125rem]',
-        md: 'gap-2 rounded-button px-5 py-3 text-sm',
-        lg: 'gap-[9px] rounded-card px-6.5 py-5 text-[0.9375rem]',
-      },
-    },
-    defaultVariants: {
-      variant: 'primary',
-      size: 'md',
     },
   }
 );
@@ -37,11 +39,12 @@ const buttonVariants = cva(
 export type ButtonVariantProps = VariantProps<typeof buttonVariants>;
 
 export interface ButtonProps
-  extends React.ComponentProps<'button'>, VariantProps<typeof buttonVariants> {
+  extends React.ComponentProps<'button'>,
+    VariantProps<typeof buttonVariants> {
   asChild?: boolean;
+  fullWidth?: boolean;
   iconLeft?: IconName;
   iconRight?: IconName;
-  fullWidth?: boolean;
 }
 
 const InlineIcon = ({
@@ -52,13 +55,13 @@ const InlineIcon = ({
   size: VariantProps<typeof buttonVariants>['size'];
 }) => (
   <Icon
-    name={name}
     className={cn(
       'pointer-events-none shrink-0 -translate-y-px',
       size === 'sm' && 'size-3.75',
       size === 'md' && 'size-4',
       size === 'lg' && 'size-4.5'
     )}
+    name={name}
   />
 );
 
@@ -76,21 +79,30 @@ export function Button({
   if (asChild) {
     return (
       <Slot.Root
+        className={cn(
+          cn(buttonVariants({ size, variant })),
+          fullWidth && 'w-full',
+          className
+        )}
+        data-size={size}
         data-slot="button"
         data-variant={variant}
-        data-size={size}
-        children={children}
-        className={cn(cn(buttonVariants({ variant, size })), fullWidth && 'w-full', className)}
         {...rest}
-      />
+      >
+        {children}
+      </Slot.Root>
     );
   }
   return (
     <button
+      className={cn(
+        buttonVariants({ size, variant }),
+        fullWidth && 'w-full',
+        className
+      )}
+      data-size={size}
       data-slot="button"
       data-variant={variant}
-      data-size={size}
-      className={cn(buttonVariants({ variant, size }), fullWidth && 'w-full', className)}
       {...rest}
     >
       {iconLeft && <InlineIcon name={iconLeft} size={size} />}

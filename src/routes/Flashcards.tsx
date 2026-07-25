@@ -1,5 +1,13 @@
 import { Link, useNavigate } from '@tanstack/react-router';
-import { Panel, PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { useState } from 'react';
+import {
+  useCloneDeck,
+  useCreateDeck,
+  useDecks,
+  useUpdateDeck,
+} from '@/api/hooks';
+import type { Deck } from '@/api/types';
+import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import {
   Badge,
   Card,
@@ -10,12 +18,9 @@ import {
   SkeletonCardGrid,
   Text,
 } from '@/components/ui';
-import { userColorPair } from '@/lib/userColor';
-import { useCloneDeck, useCreateDeck, useDecks, useUpdateDeck } from '@/api/hooks';
+import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { m } from '@/i18n';
-import { useState } from 'react';
-import type { Deck } from '@/api/types';
-import { ShareDialog } from '@/components/app/ShareDialog';
+import { userColorPair } from '@/lib/userColor';
 
 export default function Flashcards() {
   const { data, isLoading } = useDecks();
@@ -27,36 +32,43 @@ export default function Flashcards() {
 
   function newDeck() {
     createDeck.mutate(
-      { name: 'New deck', color: 'purple' },
-      { onSuccess: (deck) => navigate({ to: '/flashcards/$deckId', params: { deckId: deck.id } }) }
+      { color: 'purple', name: 'New deck' },
+      {
+        onSuccess: (deck) =>
+          navigate({ params: { deckId: deck.id }, to: '/flashcards/$deckId' }),
+      }
     );
   }
 
   return (
     <PanelWithInvertedRadius>
       <PageHeader
-        title={m.nav_flashcards()}
         actions={
           <IconButton
+            disabled={createDeck.isPending}
             icon="plus"
-            variant="dark"
             label={m.flashcards_new_deck()}
             onClick={newDeck}
-            disabled={createDeck.isPending}
+            variant="dark"
           />
         }
+        title={m.nav_flashcards()}
       />
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
         {isLoading ? (
-          <SkeletonCardGrid count={6} cardHeight={190} />
+          <SkeletonCardGrid cardHeight={190} count={6} />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {data?.map((d) => {
               const c = userColorPair(d.color);
               return (
-                <div key={d.id} className="relative">
-                  <Link to="/flashcards/$deckId" params={{ deckId: d.id }} preload="intent">
-                    <Card interactive radius="card-lg" className="h-full p-5.5">
+                <div className="relative" key={d.id}>
+                  <Link
+                    params={{ deckId: d.id }}
+                    preload="intent"
+                    to="/flashcards/$deckId"
+                  >
+                    <Card className="h-full p-5.5" interactive radius="card-lg">
                       <div className="flex items-start justify-between">
                         <span
                           className="flex h-11 w-11 items-center justify-center rounded-card"
@@ -65,31 +77,43 @@ export default function Flashcards() {
                           <Icon name="flashcards" size={20} />
                         </span>
                         {d.dueCount > 0 && (
-                          <Badge tone="accent-1" size="sm">
+                          <Badge size="sm" tone="accent-1">
                             {m.flashcards_due_count({ count: d.dueCount })}
                           </Badge>
                         )}
                       </div>
-                      <Text variant="card-title" className="mt-3 truncate">
+                      <Text className="mt-3 truncate" variant="card-title">
                         {d.name}
                       </Text>
-                      <Text variant="meta" tone="muted" className="mt-0.5">
+                      <Text className="mt-0.5" tone="muted" variant="meta">
                         {d.workspaceName || 'Standalone'}
                       </Text>
                       <div className="mt-4">
-                        <div className="mb-1 flex justify-between text-xs text-fg-muted">
+                        <div className="mb-1 flex justify-between text-fg-muted text-xs">
                           <span>{d.cardCount} cards</span>
                           <span>{d.knownPct}% known</span>
                         </div>
-                        <ProgressBar value={d.knownPct} tone="green" height={5} />
+                        <ProgressBar
+                          height={5}
+                          tone="green"
+                          value={d.knownPct}
+                        />
                       </div>
                     </Card>
                   </Link>
                   <div className="absolute top-3 right-3 z-10">
                     <Menu
                       items={[
-                        { label: 'Share', icon: 'link', onClick: () => setSharing(d) },
-                        { label: 'Clone', icon: 'plus', onClick: () => cloneDeck.mutate(d.id) },
+                        {
+                          icon: 'link',
+                          label: 'Share',
+                          onClick: () => setSharing(d),
+                        },
+                        {
+                          icon: 'plus',
+                          label: 'Clone',
+                          onClick: () => cloneDeck.mutate(d.id),
+                        },
                       ]}
                     />
                   </div>
@@ -101,16 +125,19 @@ export default function Flashcards() {
       </div>
       {sharing && (
         <ShareDialog
-          open
-          onClose={() => setSharing(null)}
-          title={`Share ${sharing.name}`}
-          privacy={sharing.privacy ?? 'private'}
           link={`/share/decks/${sharing.id}`}
-          saving={updateDeck.isPending}
+          onClose={() => setSharing(null)}
           onPrivacyChange={async (privacy) => {
-            const deck = await updateDeck.mutateAsync({ id: sharing.id, privacy });
+            const deck = await updateDeck.mutateAsync({
+              id: sharing.id,
+              privacy,
+            });
             setSharing(deck);
           }}
+          open
+          privacy={sharing.privacy ?? 'private'}
+          saving={updateDeck.isPending}
+          title={`Share ${sharing.name}`}
         />
       )}
     </PanelWithInvertedRadius>

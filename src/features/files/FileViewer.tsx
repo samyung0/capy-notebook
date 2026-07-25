@@ -1,8 +1,8 @@
+import { lazy, type ReactNode, Suspense } from 'react';
 import type { SourceFile } from '@/api/types';
 import { Icon } from '@/components/ui';
 import { ImageViewer } from '@/features/files/ImageViewer';
 import { MaterialPreview } from '@/features/materials/MaterialPreview';
-import { lazy, Suspense, type ReactNode } from 'react';
 import { FileEmpty, FileLoading } from '../materials/CenterContent';
 import { fileExt, IMAGE_MIN_ZOOM, isImageFile } from './fileUtils';
 
@@ -31,9 +31,9 @@ function UnsupportedPreview({ file }: { file: SourceFile }) {
         </p>
         {file.url && (
           <a
-            href={file.url}
-            download={file.name}
             className="t-meta font-medium text-action underline underline-offset-2"
+            download={file.name}
+            href={file.url}
           >
             Download {file.name}
           </a>
@@ -74,10 +74,10 @@ export function FileViewer({
     if (!file.url) return <FileEmpty />;
     return (
       <ImageViewer
-        url={file.url}
         alt={file.name}
-        zoom={imageZoom}
         onZoomChange={onImageZoomChange}
+        url={file.url}
+        zoom={imageZoom}
       />
     );
   }
@@ -87,9 +87,9 @@ export function FileViewer({
     return (
       <div className="grid h-full w-full place-items-center p-6">
         <video
+          className="mx-auto max-h-full max-w-full rounded-card bg-black"
           controls
           src={file.url}
-          className="mx-auto max-h-full max-w-full rounded-card bg-black"
         >
           Your browser can't play this video.
         </video>
@@ -103,7 +103,7 @@ export function FileViewer({
       <div className="grid h-full place-items-center">
         <div className="flex w-full max-w-140 flex-col items-center gap-3">
           <p className="t-subtitle">{file.name}</p>
-          <audio controls src={file.url} className="w-full" />
+          <audio className="w-full" controls src={file.url} />
         </div>
       </div>
     );
@@ -124,13 +124,15 @@ export function FileViewer({
   // markdown files still preview instead of falling to "unsupported".
   if (file.kind === 'md') {
     if (file.content == null) return <FileEmpty />;
-    return <MaterialPreview content={file.content} className="mx-auto max-w-175" />;
+    return (
+      <MaterialPreview className="mx-auto max-w-175" content={file.content} />
+    );
   }
 
   // Plain text (or extracted text content from other kinds).
   if ((file.kind === 'txt' || file.content) && file.content != null) {
     return (
-      <article className="mx-auto max-w-175 p-6 text-[0.95rem] leading-relaxed whitespace-pre-wrap text-fg">
+      <article className="mx-auto max-w-175 whitespace-pre-wrap p-6 text-[0.95rem] text-fg leading-relaxed">
         {file.content}
       </article>
     );

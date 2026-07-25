@@ -1,15 +1,10 @@
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { toUnitLess } from '@platejs/basic-styles';
 import { FontSizePlugin } from '@platejs/basic-styles/react';
 import { encodeUrlIfNeeded, validateUrl } from '@platejs/link';
 import { ListStyleType, toggleList } from '@platejs/list';
 import { TablePlugin, useTableMergeState } from '@platejs/table/react';
-import { KEYS } from 'platejs';
-import { useEditorPlugin, useEditorRef, useEditorSelector } from 'platejs/react';
-import type { SlatePlugin } from 'platejs';
 import {
   AlignCenter,
-  AlignJustify,
   AlignLeft,
   AlignRight,
   ArrowDown,
@@ -22,11 +17,12 @@ import {
   Bold,
   Braces,
   ChevronDown,
-  Combine,
   Code2,
+  Combine,
   FileAudio,
   FileText,
   FileVideo,
+  Grid3X3,
   Heading1,
   Heading2,
   Heading3,
@@ -51,12 +47,19 @@ import {
   Strikethrough,
   Table2,
   Trash2,
-  Ungroup,
   Underline,
   Undo2,
+  Ungroup,
   X,
-  Grid3X3,
 } from 'lucide-react';
+import type { SlatePlugin } from 'platejs';
+import { KEYS } from 'platejs';
+import {
+  useEditorPlugin,
+  useEditorRef,
+  useEditorSelector,
+} from 'platejs/react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Button,
   ColorPicker,
@@ -82,8 +85,9 @@ import {
 } from '@/components/ui';
 import { userToast } from '@/components/ui/userToast';
 import { cn } from '@/lib/cn';
-import { useNoteBlockDialogs } from './blocks/dialogContext';
 import { openAiMenu } from './ai/aiMenuState';
+import { useNoteBlockDialogs } from './blocks/dialogContext';
+import { useCollaborationActions } from './Collaboration';
 import {
   downloadEditorFile,
   downloadEditorText,
@@ -93,24 +97,32 @@ import {
   importJsonDocument,
   importMarkdownDocument,
 } from './documentAdapters';
-import { clearEditorFormatting, toggleEditorBlock } from './editorTransforms';
-import { insertMediaPlaceholder } from './MediaNodes';
-import { MaterialKit } from './plugins';
-import { type WidgetGroupId, useNoteEditorPrefs, WIDGET_GROUPS } from './noteEditorPrefs';
 import { useEditorRuntime } from './EditorRuntime';
-import { canCreateExternalEditorAssets } from './editorMode';
-import { cloneLinkSelection, type LinkSelection, upsertLinkAtSelection } from './linkEditor';
+import { EDITOR_COMMANDS, type EditorCommandGroup } from './editorCommands';
+import {
+  canCreateExternalEditorAssets,
+  isEditorCommandAllowed,
+} from './editorMode';
+import { clearEditorFormatting, toggleEditorBlock } from './editorTransforms';
+import {
+  cloneLinkSelection,
+  type LinkSelection,
+  upsertLinkAtSelection,
+} from './linkEditor';
+import { insertMediaPlaceholder } from './MediaNodes';
+import {
+  useNoteEditorPrefs,
+  WIDGET_GROUPS,
+  type WidgetGroupId,
+} from './noteEditorPrefs';
+import { MaterialKit } from './plugins';
 import { getHiddenToolbarGroupIndexes } from './responsiveToolbar';
 import { ToolbarButton } from './ToolBarButton';
-import { EDITOR_COMMANDS, type EditorCommandGroup } from './editorCommands';
-import { isEditorCommandAllowed } from './editorMode';
-import { useCollaborationActions } from './Collaboration';
 
 // TODO: what is this
 // Plate's plugin transforms are intentionally richer than its base editor type.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyEditor = any;
-
 
 function ToolbarGroup({
   children,
@@ -123,12 +135,12 @@ function ToolbarGroup({
 }) {
   return (
     <div
-      data-toolbar-group
-      data-toolbar-persistent={persistent || undefined}
       className={cn(
         'flex h-full shrink-0 items-center gap-0 after:mx-1.5 after:h-7 after:w-px after:bg-divider last:after:hidden',
         className
       )}
+      data-toolbar-group
+      data-toolbar-persistent={persistent || undefined}
     >
       {children}
     </div>
@@ -143,8 +155,8 @@ function updateResponsiveToolbar(container: HTMLDivElement) {
     element.hidden = false;
   });
   const groups = elements.map((element) => ({
-    width: element.getBoundingClientRect().width,
     persistent: element.hasAttribute('data-toolbar-persistent'),
+    width: element.getBoundingClientRect().width,
   }));
   const hiddenIndexes = getHiddenToolbarGroupIndexes(
     groups,
@@ -164,11 +176,20 @@ const ALL_BLOCK_GROUPS: readonly { id: EditorCommandGroup; label: string }[] = [
   { id: 'inline', label: 'Inline' },
 ];
 
-export function NoteToolbar({ right, className }: { right?: React.ReactNode; className?: string }) {
+export function NoteToolbar({
+  right,
+  className,
+}: {
+  right?: React.ReactNode;
+  className?: string;
+}) {
   const editor = useEditorRef() as AnyEditor;
   const toolbarGroupsRef = useRef<HTMLDivElement>(null);
   const { mode, allowExternalAssets, canComment } = useEditorRuntime();
-  const canCreateAssets = canCreateExternalEditorAssets(mode, allowExternalAssets);
+  const canCreateAssets = canCreateExternalEditorAssets(
+    mode,
+    allowExternalAssets
+  );
   const enabled = useNoteEditorPrefs((state) => state.enabled);
   const dialogs = useNoteBlockDialogs();
   const collaboration = useCollaborationActions();
@@ -246,7 +267,9 @@ export function NoteToolbar({ right, className }: { right?: React.ReactNode; cla
 
     const selection = linkSelectionRef.current;
     if (!selection) {
-      setLinkError('The text selection is no longer available. Select the text and try again.');
+      setLinkError(
+        'The text selection is no longer available. Select the text and try again.'
+      );
       return;
     }
 
@@ -265,242 +288,269 @@ export function NoteToolbar({ right, className }: { right?: React.ReactNode; cla
   return (
     <>
       <div
-        role="toolbar"
         aria-label="Document formatting"
         className={cn(
-          'sticky top-0 z-20 flex h-10 items-center border-b border-divider bg-surface/95 px-2 backdrop-blur-sm',
+          'sticky top-0 z-20 flex h-10 items-center border-divider border-b bg-surface/95 px-2 backdrop-blur-sm',
           className
         )}
+        role="toolbar"
       >
         <div
-          ref={toolbarGroupsRef}
           className="flex h-full min-w-0 flex-1 items-center overflow-hidden"
+          ref={toolbarGroupsRef}
         >
-          <>
-            <ToolbarGroup>
-              <ToolbarButton label="Undo" disabled={!canUndo} onClick={() => editor.tf.undo()}>
-                <Undo2 />
+          <ToolbarGroup>
+            <ToolbarButton
+              disabled={!canUndo}
+              label="Undo"
+              onClick={() => editor.tf.undo()}
+            >
+              <Undo2 />
+            </ToolbarButton>
+            <ToolbarButton
+              disabled={!canRedo}
+              label="Redo"
+              onClick={() => editor.tf.redo()}
+            >
+              <Redo2 />
+            </ToolbarButton>
+            {allowExternalAssets && (
+              <ToolbarButton
+                className="size-fit gap-1.5 px-2 py-1"
+                label="AI commands (Ctrl/Cmd+J)"
+                onClick={() => openAiMenu(editor)}
+              >
+                <Sparkles />
               </ToolbarButton>
-              <ToolbarButton label="Redo" disabled={!canRedo} onClick={() => editor.tf.redo()}>
-                <Redo2 />
-              </ToolbarButton>
-              {allowExternalAssets && (
-                <ToolbarButton
-                  label="AI commands (Ctrl/Cmd+J)"
-                  onClick={() => openAiMenu(editor)}
-                  className="size-fit gap-1.5 px-2 py-1"
-                >
-                  <Sparkles />
-                </ToolbarButton>
-              )}
-            </ToolbarGroup>
-            <ToolbarGroup className="gap-1">
-              {canCreateAssets && <ImportMenu importFile={importFile} />}
-              <ExportMenu editor={editor} />
-            </ToolbarGroup>
-            <ToolbarGroup persistent className="gap-1">
-              <Popover open={moreOpen} onOpenChange={setMoreOpen}>
-                <PopoverTrigger asChild>
-                  <span>
-                    <ToolbarButton
-                      label="All blocks"
-                      className="w-fit"
-                      onClick={() => setMoreOpen(true)}
-                    >
-                      <Plus />
-                      <ChevronDown className="size-3! text-fg-secondary" />
-                    </ToolbarButton>
-                  </span>
-                </PopoverTrigger>
-                <PopoverContent
-                  align="start"
-                  data-all-blocks-menu
-                  className="max-h-[min(80vh,38rem)] w-72 overflow-y-auto rounded-card border border-line bg-surface p-1 shadow-pop"
-                >
-                  {ALL_BLOCK_GROUPS.map((group) => {
-                    const commands = allBlockCommands.filter(
-                      (command) => command.group === group.id
-                    );
-                    if (
-                      !commands.length &&
-                      !(group.id === 'media' && canComment && collaboration)
-                    ) {
-                      return null;
-                    }
-
-                    return (
-                      <section key={group.id} aria-labelledby={`all-blocks-${group.id}`}>
-                        <h3
-                          id={`all-blocks-${group.id}`}
-                          className="px-2 pt-2 pb-1 text-xs font-semibold tracking-wide text-fg-muted first:pt-1"
-                        >
-                          {group.label}
-                        </h3>
-                        {commands.map((command) => {
-                          const Icon = command.icon;
-                          return (
-                            <MenuRow
-                              key={command.id}
-                              label={command.label}
-                              icon={<Icon />}
-                              shortcut={command.shortcut}
-                              onClick={() => runAllBlockCommand(command)}
-                            />
-                          );
-                        })}
-                        {group.id === 'media' && canComment && collaboration && (
-                          <MenuRow
-                            label="Comment"
-                            icon={<MessageSquarePlus />}
-                            shortcut="Ctrl/Cmd+Shift+M"
-                            className="mt-1 border-t border-divider pt-2"
-                            onClick={() => {
-                              setMoreOpen(false);
-                              collaboration.openComment();
-                            }}
-                          />
-                        )}
-                      </section>
-                    );
-                  })}
-                  <div className="mt-1 border-t border-divider pt-1">
-                    <MenuRow label="Subscript" onClick={() => mark(KEYS.sub)} />
-                    <MenuRow label="Superscript" onClick={() => mark(KEYS.sup)} />
-                    <MenuRow label="Clear formatting" onClick={clearFormatting} />
-                  </div>
-                </PopoverContent>
-              </Popover>
-              <BlockTypeMenu onBlock={block} />
-            </ToolbarGroup>
-            {enabled.fontStyles && (
-              <ToolbarGroup>
-                <FontSizeControl />
-                <FontColorControl
-                  label="Text color"
-                  markKey={KEYS.color}
-                  icon={<Baseline />}
-                  fallbackColor="var(--color-fg)"
-                />
-                <FontColorControl
-                  label="Background color"
-                  markKey={KEYS.backgroundColor}
-                  icon={<PaintBucket />}
-                  fallbackColor="transparent"
-                />
-              </ToolbarGroup>
             )}
-            <ToolbarGroup>
-              <ToolbarButton label="Bold" onClick={() => mark(KEYS.bold)}>
-                <Bold />
-              </ToolbarButton>
-              <ToolbarButton label="Italic" onClick={() => mark(KEYS.italic)}>
-                <Italic />
-              </ToolbarButton>
-              <ToolbarButton label="Underline" onClick={() => mark(KEYS.underline)}>
-                <Underline />
-              </ToolbarButton>
-              <ToolbarButton label="Strikethrough" onClick={() => mark(KEYS.strikethrough)}>
-                <Strikethrough />
-              </ToolbarButton>
-              <ToolbarButton label="Inline code" onClick={() => mark(KEYS.code)}>
-                <Code2 />
-              </ToolbarButton>
-              <ToolbarButton label="Highlight" onClick={() => mark(KEYS.highlight)}>
-                <Highlighter />
-              </ToolbarButton>
-            </ToolbarGroup>
-            <ToolbarGroup>
-              {enabled.fontStyles && <AlignMenu editor={editor} />}
-              <ToolbarButton
-                label="Numbered list"
-                onClick={() => toggleList(editor, { listStyleType: ListStyleType.Decimal })}
+          </ToolbarGroup>
+          <ToolbarGroup className="gap-1">
+            {canCreateAssets && <ImportMenu importFile={importFile} />}
+            <ExportMenu editor={editor} />
+          </ToolbarGroup>
+          <ToolbarGroup className="gap-1" persistent>
+            <Popover onOpenChange={setMoreOpen} open={moreOpen}>
+              <PopoverTrigger asChild>
+                <span>
+                  <ToolbarButton
+                    className="w-fit"
+                    label="All blocks"
+                    onClick={() => setMoreOpen(true)}
+                  >
+                    <Plus />
+                    <ChevronDown className="size-3! text-fg-secondary" />
+                  </ToolbarButton>
+                </span>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                className="max-h-[min(80vh,38rem)] w-72 overflow-y-auto rounded-card border border-line bg-surface p-1 shadow-pop"
+                data-all-blocks-menu
               >
-                <ListOrdered />
-              </ToolbarButton>
-              <ToolbarButton
-                label="Bulleted list"
-                onClick={() => toggleList(editor, { listStyleType: ListStyleType.Disc })}
-              >
-                <List />
-              </ToolbarButton>
-              <ToolbarButton
-                label="Task list"
-                onClick={() => toggleList(editor, { listStyleType: KEYS.listTodo })}
-              >
-                <ListChecks />
-              </ToolbarButton>
-            </ToolbarGroup>
-            <ToolbarGroup>
-              <ToolbarButton
-                label="Link"
-                onClick={() => {
-                  const selection = cloneLinkSelection(editor.selection);
-                  const entry = editor.api.above({
-                    at: selection ?? undefined,
-                    match: { type: editor.getType(KEYS.link) },
-                  });
-                  linkSelectionRef.current = selection;
-                  setLinkUrl(entry ? String(entry[0].url ?? '') : '');
-                  setLinkText(
-                    entry
-                      ? editor.api.string(entry[1])
-                      : selection
-                        ? editor.api.string(selection)
-                        : ''
+                {ALL_BLOCK_GROUPS.map((group) => {
+                  const commands = allBlockCommands.filter(
+                    (command) => command.group === group.id
                   );
-                  setEditingLink(Boolean(entry));
-                  setLinkError('');
-                  setLinkOpen(true);
-                }}
-              >
-                <Link />
-              </ToolbarButton>
-              {enabled.table && <TableMenu />}
-            </ToolbarGroup>
-            {canCreateAssets && enabled.media && (
-              <ToolbarGroup>
-                <ToolbarButton
-                  label="Upload image"
-                  onClick={() => insertMediaPlaceholder(editor, 'img')}
-                >
-                  <Image />
-                </ToolbarButton>
-                <ToolbarButton
-                  label="Upload video"
-                  onClick={() => insertMediaPlaceholder(editor, 'video')}
-                >
-                  <FileVideo />
-                </ToolbarButton>
-                <ToolbarButton
-                  label="Upload audio"
-                  onClick={() => insertMediaPlaceholder(editor, 'audio')}
-                >
-                  <FileAudio />
-                </ToolbarButton>
-                <ToolbarButton
-                  label="Upload file"
-                  onClick={() => insertMediaPlaceholder(editor, 'file')}
-                >
-                  <FileText />
-                </ToolbarButton>
-              </ToolbarGroup>
-            )}
-            {canComment && collaboration && (
-              <ToolbarGroup>
-                <ToolbarButton label="Comment" onClick={collaboration.openComment}>
-                  <MessageSquarePlus />
-                </ToolbarButton>
-              </ToolbarGroup>
-            )}
+                  if (
+                    !commands.length &&
+                    !(group.id === 'media' && canComment && collaboration)
+                  ) {
+                    return null;
+                  }
+
+                  return (
+                    <section
+                      aria-labelledby={`all-blocks-${group.id}`}
+                      key={group.id}
+                    >
+                      <h3
+                        className="px-2 pt-2 pb-1 font-semibold text-fg-muted text-xs tracking-wide first:pt-1"
+                        id={`all-blocks-${group.id}`}
+                      >
+                        {group.label}
+                      </h3>
+                      {commands.map((command) => {
+                        const Icon = command.icon;
+                        return (
+                          <MenuRow
+                            icon={<Icon />}
+                            key={command.id}
+                            label={command.label}
+                            onClick={() => runAllBlockCommand(command)}
+                            shortcut={command.shortcut}
+                          />
+                        );
+                      })}
+                      {group.id === 'media' && canComment && collaboration && (
+                        <MenuRow
+                          className="mt-1 border-divider border-t pt-2"
+                          icon={<MessageSquarePlus />}
+                          label="Comment"
+                          onClick={() => {
+                            setMoreOpen(false);
+                            collaboration.openComment();
+                          }}
+                          shortcut="Ctrl/Cmd+Shift+M"
+                        />
+                      )}
+                    </section>
+                  );
+                })}
+                <div className="mt-1 border-divider border-t pt-1">
+                  <MenuRow label="Subscript" onClick={() => mark(KEYS.sub)} />
+                  <MenuRow label="Superscript" onClick={() => mark(KEYS.sup)} />
+                  <MenuRow label="Clear formatting" onClick={clearFormatting} />
+                </div>
+              </PopoverContent>
+            </Popover>
+            <BlockTypeMenu onBlock={block} />
+          </ToolbarGroup>
+          {enabled.fontStyles && (
             <ToolbarGroup>
-              <ToolbarButton label="Outdent" onClick={() => editor.tf.outdent()}>
-                <IndentDecrease />
+              <FontSizeControl />
+              <FontColorControl
+                fallbackColor="var(--color-fg)"
+                icon={<Baseline />}
+                label="Text color"
+                markKey={KEYS.color}
+              />
+              <FontColorControl
+                fallbackColor="transparent"
+                icon={<PaintBucket />}
+                label="Background color"
+                markKey={KEYS.backgroundColor}
+              />
+            </ToolbarGroup>
+          )}
+          <ToolbarGroup>
+            <ToolbarButton label="Bold" onClick={() => mark(KEYS.bold)}>
+              <Bold />
+            </ToolbarButton>
+            <ToolbarButton label="Italic" onClick={() => mark(KEYS.italic)}>
+              <Italic />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Underline"
+              onClick={() => mark(KEYS.underline)}
+            >
+              <Underline />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Strikethrough"
+              onClick={() => mark(KEYS.strikethrough)}
+            >
+              <Strikethrough />
+            </ToolbarButton>
+            <ToolbarButton label="Inline code" onClick={() => mark(KEYS.code)}>
+              <Code2 />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Highlight"
+              onClick={() => mark(KEYS.highlight)}
+            >
+              <Highlighter />
+            </ToolbarButton>
+          </ToolbarGroup>
+          <ToolbarGroup>
+            {enabled.fontStyles && <AlignMenu editor={editor} />}
+            <ToolbarButton
+              label="Numbered list"
+              onClick={() =>
+                toggleList(editor, { listStyleType: ListStyleType.Decimal })
+              }
+            >
+              <ListOrdered />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Bulleted list"
+              onClick={() =>
+                toggleList(editor, { listStyleType: ListStyleType.Disc })
+              }
+            >
+              <List />
+            </ToolbarButton>
+            <ToolbarButton
+              label="Task list"
+              onClick={() =>
+                toggleList(editor, { listStyleType: KEYS.listTodo })
+              }
+            >
+              <ListChecks />
+            </ToolbarButton>
+          </ToolbarGroup>
+          <ToolbarGroup>
+            <ToolbarButton
+              label="Link"
+              onClick={() => {
+                const selection = cloneLinkSelection(editor.selection);
+                const entry = editor.api.above({
+                  at: selection ?? undefined,
+                  match: { type: editor.getType(KEYS.link) },
+                });
+                linkSelectionRef.current = selection;
+                setLinkUrl(entry ? String(entry[0].url ?? '') : '');
+                setLinkText(
+                  entry
+                    ? editor.api.string(entry[1])
+                    : selection
+                      ? editor.api.string(selection)
+                      : ''
+                );
+                setEditingLink(Boolean(entry));
+                setLinkError('');
+                setLinkOpen(true);
+              }}
+            >
+              <Link />
+            </ToolbarButton>
+            {enabled.table && <TableMenu />}
+          </ToolbarGroup>
+          {canCreateAssets && enabled.media && (
+            <ToolbarGroup>
+              <ToolbarButton
+                label="Upload image"
+                onClick={() => insertMediaPlaceholder(editor, 'img')}
+              >
+                <Image />
               </ToolbarButton>
-              <ToolbarButton label="Indent" onClick={() => editor.tf.indent()}>
-                <IndentIncrease />
+              <ToolbarButton
+                label="Upload video"
+                onClick={() => insertMediaPlaceholder(editor, 'video')}
+              >
+                <FileVideo />
+              </ToolbarButton>
+              <ToolbarButton
+                label="Upload audio"
+                onClick={() => insertMediaPlaceholder(editor, 'audio')}
+              >
+                <FileAudio />
+              </ToolbarButton>
+              <ToolbarButton
+                label="Upload file"
+                onClick={() => insertMediaPlaceholder(editor, 'file')}
+              >
+                <FileText />
               </ToolbarButton>
             </ToolbarGroup>
-          </>
+          )}
+          {canComment && collaboration && (
+            <ToolbarGroup>
+              <ToolbarButton
+                label="Comment"
+                onClick={collaboration.openComment}
+              >
+                <MessageSquarePlus />
+              </ToolbarButton>
+            </ToolbarGroup>
+          )}
+          <ToolbarGroup>
+            <ToolbarButton label="Outdent" onClick={() => editor.tf.outdent()}>
+              <IndentDecrease />
+            </ToolbarButton>
+            <ToolbarButton label="Indent" onClick={() => editor.tf.indent()}>
+              <IndentIncrease />
+            </ToolbarButton>
+          </ToolbarGroup>
         </div>
         <div className="ml-auto flex shrink-0 items-center pl-2">
           {right}
@@ -508,7 +558,6 @@ export function NoteToolbar({ right, className }: { right?: React.ReactNode; cla
         </div>
       </div>
       <Dialog
-        open={linkOpen}
         onOpenChange={(open) => {
           setLinkOpen(open);
           if (!open) {
@@ -519,6 +568,7 @@ export function NoteToolbar({ right, className }: { right?: React.ReactNode; cla
             linkSelectionRef.current = null;
           }
         }}
+        open={linkOpen}
       >
         <DialogContent
           className="max-w-md"
@@ -538,30 +588,34 @@ export function NoteToolbar({ right, className }: { right?: React.ReactNode; cla
             <label className="flex flex-col gap-1.5">
               <InputTitle>Link URL</InputTitle>
               <Input
-                autoFocus
-                value={linkUrl}
                 aria-invalid={Boolean(linkError)}
+                autoFocus
                 onChange={(event) => {
                   setLinkUrl(event.target.value);
                   setLinkError('');
                 }}
                 placeholder="https://example.com"
+                value={linkUrl}
               />
               <InputError>{linkError}</InputError>
             </label>
             <label className="flex flex-col gap-1.5">
               <InputTitle>Displayed text</InputTitle>
               <Input
-                value={linkText}
                 onChange={(event) => setLinkText(event.target.value)}
                 placeholder="Use the URL as text"
+                value={linkText}
               />
             </label>
             <DialogFooter>
-              <Button type="button" variant="ghost-hover" onClick={() => setLinkOpen(false)}>
+              <Button
+                onClick={() => setLinkOpen(false)}
+                type="button"
+                variant="ghost-hover"
+              >
                 Cancel
               </Button>
-              <Button type="submit" variant="accent" disabled={!linkUrl.trim()}>
+              <Button disabled={!linkUrl.trim()} type="submit" variant="accent">
                 {editingLink ? 'Save' : 'Apply'}
               </Button>
             </DialogFooter>
@@ -575,7 +629,9 @@ export function NoteToolbar({ right, className }: { right?: React.ReactNode; cla
 const DEFAULT_FONT_SIZE = 16;
 const MIN_FONT_SIZE = 8;
 const MAX_FONT_SIZE = 96;
-const FONT_SIZE_PRESETS = [8, 9, 10, 12, 14, 16, 18, 24, 30, 36, 48, 60, 72, 96] as const;
+const FONT_SIZE_PRESETS = [
+  8, 9, 10, 12, 14, 16, 18, 24, 30, 36, 48, 60, 72, 96,
+] as const;
 // const BLOCK_FONT_SIZES: Record<string, number> = {
 //   [KEYS.h1]: 36,
 //   [KEYS.h2]: 24,
@@ -617,29 +673,33 @@ function FontSizeControl() {
   };
 
   return (
-    <div role="group" className="mr-1 flex items-center overflow-hidden" aria-label="Font size">
+    <div
+      aria-label="Font size"
+      className="mr-1 flex items-center overflow-hidden"
+      role="group"
+    >
       <ToolbarButton
-        label="Decrease font size"
         className="rounded-r-none bg-surface-hover-bg p-0 text-surface-dark-fg hover:bg-surface-dark"
         disabled={cursorFontSize <= MIN_FONT_SIZE}
+        label="Decrease font size"
         onClick={() => setFontSize(cursorFontSize - 1)}
       >
         <Minus />
       </ToolbarButton>
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover onOpenChange={setOpen} open={open}>
         <PopoverTrigger asChild>
           <button
-            type="button"
-            data-plate-prevent-deselect
-            aria-label={`Font size: ${cursorFontSize}`}
-            aria-haspopup="listbox"
             aria-expanded={open}
-            title="Choose font size"
-            onMouseDown={(event) => event.preventDefault()}
+            aria-haspopup="listbox"
+            aria-label={`Font size: ${cursorFontSize}`}
             className={cn(
-              'h-8 w-10 shrink-0 text-center text-sm font-semibold outline-none',
-              'focus-visible:ring-focus bg-surface-hover-bg text-surface-dark-fg hover:bg-surface-dark focus-visible:ring-2'
+              'h-8 w-10 shrink-0 text-center font-semibold text-sm outline-none',
+              'bg-surface-hover-bg text-surface-dark-fg hover:bg-surface-dark focus-visible:ring-2 focus-visible:ring-focus'
             )}
+            data-plate-prevent-deselect
+            onMouseDown={(event) => event.preventDefault()}
+            title="Choose font size"
+            type="button"
           >
             {cursorFontSize}
           </button>
@@ -647,27 +707,28 @@ function FontSizeControl() {
         <PopoverContent
           align="center"
           className="max-h-64 w-14 gap-0 overflow-y-auto border border-line bg-surface p-1 shadow-pop"
-          onOpenAutoFocus={(event) => event.preventDefault()}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
             editor.tf.focus();
           }}
+          onOpenAutoFocus={(event) => event.preventDefault()}
         >
-          <div role="listbox" aria-label="Font sizes">
+          <div aria-label="Font sizes" role="listbox">
             {FONT_SIZE_PRESETS.map((size) => (
               <button
-                key={size}
-                type="button"
-                role="option"
                 aria-selected={size === cursorFontSize}
-                data-plate-prevent-deselect
-                onMouseDown={(event) => event.preventDefault()}
-                onClick={() => setFontSize(size, true)}
                 className={cn(
                   'flex h-8 w-full items-center justify-center rounded-row text-sm outline-none',
-                  'focus-visible:ring-focus hover:bg-surface-hover-bg focus-visible:ring-2',
-                  size === cursorFontSize && 'bg-tint-accent-1 text-tint-accent-1-fg'
+                  'hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-focus',
+                  size === cursorFontSize &&
+                    'bg-tint-accent-1 text-tint-accent-1-fg'
                 )}
+                data-plate-prevent-deselect
+                key={size}
+                onClick={() => setFontSize(size, true)}
+                onMouseDown={(event) => event.preventDefault()}
+                role="option"
+                type="button"
               >
                 {size}
               </button>
@@ -676,9 +737,9 @@ function FontSizeControl() {
         </PopoverContent>
       </Popover>
       <ToolbarButton
-        label="Increase font size"
         className="rounded-l-none bg-surface-hover-bg p-0 text-surface-dark-fg hover:bg-surface-dark"
         disabled={cursorFontSize >= MAX_FONT_SIZE}
+        label="Increase font size"
         onClick={() => setFontSize(cursorFontSize + 1)}
       >
         <Plus />
@@ -716,9 +777,13 @@ function FontColorControl({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
-        <ToolbarButton label={label} active={Boolean(currentColor)} className="relative">
+        <ToolbarButton
+          active={Boolean(currentColor)}
+          className="relative"
+          label={label}
+        >
           {icon}
           <span
             aria-hidden
@@ -730,13 +795,17 @@ function FontColorControl({
       <PopoverContent
         align="center"
         className="w-64 border border-line bg-surface p-2.5 shadow-pop"
-        onOpenAutoFocus={(event) => event.preventDefault()}
         onCloseAutoFocus={(event) => {
           event.preventDefault();
           editor.tf.focus();
         }}
+        onOpenAutoFocus={(event) => event.preventDefault()}
       >
-        <ColorPicker value={currentColor} onChange={applyColor} onClear={clearColor} />
+        <ColorPicker
+          onChange={applyColor}
+          onClear={clearColor}
+          value={currentColor}
+        />
       </PopoverContent>
     </Popover>
   );
@@ -746,20 +815,47 @@ function FontColorControl({
 function BlockTypeMenu({ onBlock }: { onBlock: (type: string) => void }) {
   const [open, setOpen] = useState(false);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
-        <ToolbarButton label="Block Type" className="w-fit">
+        <ToolbarButton className="w-fit" label="Block Type">
           <span className="translate-y-px">Paragraph</span>
           <ChevronDown className="size-3! text-fg-secondary" />
         </ToolbarButton>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-42 gap-0.5 bg-surface p-1 shadow-pop">
-        <MenuRow label="Paragraph" icon={<Pilcrow />} onClick={() => onBlock(KEYS.p)} />
-        <MenuRow label="Heading 1" icon={<Heading1 />} onClick={() => onBlock(KEYS.h1)} />
-        <MenuRow label="Heading 2" icon={<Heading2 />} onClick={() => onBlock(KEYS.h2)} />
-        <MenuRow label="Heading 3" icon={<Heading3 />} onClick={() => onBlock(KEYS.h3)} />
-        <MenuRow label="Blockquote" icon={<Quote />} onClick={() => onBlock(KEYS.blockquote)} />
-        <MenuRow label="Code block" icon={<Braces />} onClick={() => onBlock(KEYS.codeBlock)} />
+      <PopoverContent
+        align="start"
+        className="w-42 gap-0.5 bg-surface p-1 shadow-pop"
+      >
+        <MenuRow
+          icon={<Pilcrow />}
+          label="Paragraph"
+          onClick={() => onBlock(KEYS.p)}
+        />
+        <MenuRow
+          icon={<Heading1 />}
+          label="Heading 1"
+          onClick={() => onBlock(KEYS.h1)}
+        />
+        <MenuRow
+          icon={<Heading2 />}
+          label="Heading 2"
+          onClick={() => onBlock(KEYS.h2)}
+        />
+        <MenuRow
+          icon={<Heading3 />}
+          label="Heading 3"
+          onClick={() => onBlock(KEYS.h3)}
+        />
+        <MenuRow
+          icon={<Quote />}
+          label="Blockquote"
+          onClick={() => onBlock(KEYS.blockquote)}
+        />
+        <MenuRow
+          icon={<Braces />}
+          label="Code block"
+          onClick={() => onBlock(KEYS.codeBlock)}
+        />
       </PopoverContent>
     </Popover>
   );
@@ -771,13 +867,9 @@ const IMPORT_OPTIONS: Record<
   ImportKind,
   { accept: string; extensions: string[]; maxBytes: number }
 > = {
-  markdown: {
-    accept: '.md,.mdx,text/markdown,text/mdx',
-    extensions: ['.md', '.mdx'],
-    maxBytes: 5 * 1024 * 1024,
-  },
   docx: {
-    accept: '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    accept:
+      '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     extensions: ['.docx'],
     maxBytes: 25 * 1024 * 1024,
   },
@@ -785,6 +877,11 @@ const IMPORT_OPTIONS: Record<
     accept: '.json,.plate.json,application/json',
     extensions: ['.json'],
     maxBytes: 10 * 1024 * 1024,
+  },
+  markdown: {
+    accept: '.md,.mdx,text/markdown,text/mdx',
+    extensions: ['.md', '.mdx'],
+    maxBytes: 5 * 1024 * 1024,
   },
 };
 
@@ -799,7 +896,9 @@ function validateImportFile(file: File, kind: ImportKind) {
     throw new Error('The selected file is empty.');
   }
   if (file.size > option.maxBytes) {
-    throw new Error(`The selected file is larger than ${option.maxBytes / 1024 / 1024} MB.`);
+    throw new Error(
+      `The selected file is larger than ${option.maxBytes / 1024 / 1024} MB.`
+    );
   }
 }
 
@@ -813,9 +912,9 @@ function ImportMenu({
   const docxInput = useRef<HTMLInputElement>(null);
   const jsonInput = useRef<HTMLInputElement>(null);
   const inputRefs = {
-    markdown: markdownInput,
     docx: docxInput,
     json: jsonInput,
+    markdown: markdownInput,
   } satisfies Record<ImportKind, React.RefObject<HTMLInputElement | null>>;
 
   const chooseFile = (kind: ImportKind) => {
@@ -823,7 +922,10 @@ function ImportMenu({
     inputRefs[kind].current?.click();
   };
 
-  const handleFile = async (event: React.ChangeEvent<HTMLInputElement>, kind: ImportKind) => {
+  const handleFile = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    kind: ImportKind
+  ) => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
@@ -833,9 +935,11 @@ function ImportMenu({
       await importFile(file, kind);
     } catch (cause) {
       userToast({
-        title: 'Import failed',
         description:
-          cause instanceof Error ? cause.message : 'The selected file could not be read.',
+          cause instanceof Error
+            ? cause.message
+            : 'The selected file could not be read.',
+        title: 'Import failed',
         variant: 'error',
       });
     }
@@ -845,17 +949,17 @@ function ImportMenu({
     <>
       {(Object.keys(IMPORT_OPTIONS) as ImportKind[]).map((kind) => (
         <input
+          accept={IMPORT_OPTIONS[kind].accept}
+          className="hidden"
           key={kind}
+          onChange={(event) => void handleFile(event, kind)}
           ref={inputRefs[kind]}
           type="file"
-          className="hidden"
-          accept={IMPORT_OPTIONS[kind].accept}
-          onChange={(event) => void handleFile(event, kind)}
         />
       ))}
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover onOpenChange={setOpen} open={open}>
         <PopoverTrigger asChild>
-          <ToolbarButton label="Import document" className="w-fit">
+          <ToolbarButton className="w-fit" label="Import document">
             <ArrowUpFromLine />
             <ChevronDown className="size-3! text-fg-secondary" />
           </ToolbarButton>
@@ -864,8 +968,14 @@ function ImportMenu({
           align="start"
           className="w-52 gap-0.5 border border-line bg-surface p-1 shadow-pop"
         >
-          <MenuRow label="Import Markdown (.md)" onClick={() => chooseFile('markdown')} />
-          <MenuRow label="Import Word (.docx)" onClick={() => chooseFile('docx')} />
+          <MenuRow
+            label="Import Markdown (.md)"
+            onClick={() => chooseFile('markdown')}
+          />
+          <MenuRow
+            label="Import Word (.docx)"
+            onClick={() => chooseFile('docx')}
+          />
           <MenuRow label="Import JSON" onClick={() => chooseFile('json')} />
         </PopoverContent>
       </Popover>
@@ -876,9 +986,9 @@ function ImportMenu({
 function ExportMenu({ editor }: { editor: AnyEditor }) {
   const [open, setOpen] = useState(false);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
-        <ToolbarButton label="Export document" className="w-fit">
+        <ToolbarButton className="w-fit" label="Export document">
           <ArrowDownToLine />
           <ChevronDown className="size-3! text-fg-secondary" />
         </ToolbarButton>
@@ -890,14 +1000,18 @@ function ExportMenu({ editor }: { editor: AnyEditor }) {
         <MenuRow
           label="Export Markdown (.md)"
           onClick={() =>
-            downloadEditorText(exportMarkdownDocument(editor), 'document.md', 'text/markdown')
+            downloadEditorText(
+              exportMarkdownDocument(editor),
+              'document.md',
+              'text/markdown'
+            )
           }
         />
         <MenuRow
           label="Export Word (.docx)"
           onClick={() =>
-            void exportDocxDocument(editor, MaterialKit as SlatePlugin[]).then((blob) =>
-              downloadEditorFile(blob, 'document.docx')
+            void exportDocxDocument(editor, MaterialKit as SlatePlugin[]).then(
+              (blob) => downloadEditorFile(blob, 'document.docx')
             )
           }
         />
@@ -905,7 +1019,11 @@ function ExportMenu({ editor }: { editor: AnyEditor }) {
           label="Export JSON"
           onClick={() =>
             downloadEditorText(
-              JSON.stringify({ schemaVersion: 1, value: editor.children }, null, 2),
+              JSON.stringify(
+                { schemaVersion: 1, value: editor.children },
+                null,
+                2
+              ),
               'document.plate.json',
               'application/json'
             )
@@ -920,7 +1038,7 @@ function AlignMenu({ editor }: { editor: AnyEditor }) {
   const [open, setOpen] = useState(false);
   const align = (value: string) => editor.tf.setNodes({ align: value });
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
         <span>
           <ToolbarButton label="Text alignment" onClick={() => setOpen(true)}>
@@ -964,9 +1082,9 @@ function TableMenu() {
   };
 
   return (
-    <DropdownMenu modal={false} open={open} onOpenChange={setOpen}>
+    <DropdownMenu modal={false} onOpenChange={setOpen} open={open}>
       <DropdownMenuTrigger asChild>
-        <ToolbarButton label="Table controls" active={open}>
+        <ToolbarButton active={open} label="Table controls">
           <Table2 />
         </ToolbarButton>
       </DropdownMenuTrigger>
@@ -980,7 +1098,9 @@ function TableMenu() {
             <DropdownMenuSubContent className="w-auto p-0">
               <TablePicker
                 onInsert={(rowCount, colCount) => {
-                  run(() => tf.insert.table({ rowCount, colCount }, { select: true }));
+                  run(() =>
+                    tf.insert.table({ colCount, rowCount }, { select: true })
+                  );
                   setOpen(false);
                 }}
               />
@@ -993,11 +1113,17 @@ function TableMenu() {
               <span>Cell</span>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="w-48">
-              <DropdownMenuItem disabled={!canMerge} onSelect={() => run(() => tf.table.merge())}>
+              <DropdownMenuItem
+                disabled={!canMerge}
+                onSelect={() => run(() => tf.table.merge())}
+              >
                 <Combine />
                 Merge cells
               </DropdownMenuItem>
-              <DropdownMenuItem disabled={!canSplit} onSelect={() => run(() => tf.table.split())}>
+              <DropdownMenuItem
+                disabled={!canSplit}
+                onSelect={() => run(() => tf.table.split())}
+              >
                 <Ungroup />
                 Split cell
               </DropdownMenuItem>
@@ -1010,15 +1136,21 @@ function TableMenu() {
               <span>Row</span>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="w-48">
-              <DropdownMenuItem onSelect={() => run(() => tf.insert.tableRow({ before: true }))}>
+              <DropdownMenuItem
+                onSelect={() => run(() => tf.insert.tableRow({ before: true }))}
+              >
                 <ArrowUp />
                 Insert row before
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => run(() => tf.insert.tableRow())}>
+              <DropdownMenuItem
+                onSelect={() => run(() => tf.insert.tableRow())}
+              >
                 <ArrowDown />
                 Insert row after
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => run(() => tf.remove.tableRow())}>
+              <DropdownMenuItem
+                onSelect={() => run(() => tf.remove.tableRow())}
+              >
                 <X />
                 Delete row
               </DropdownMenuItem>
@@ -1031,22 +1163,33 @@ function TableMenu() {
               <span>Column</span>
             </DropdownMenuSubTrigger>
             <DropdownMenuSubContent className="w-52">
-              <DropdownMenuItem onSelect={() => run(() => tf.insert.tableColumn({ before: true }))}>
+              <DropdownMenuItem
+                onSelect={() =>
+                  run(() => tf.insert.tableColumn({ before: true }))
+                }
+              >
                 <ArrowLeft />
                 Insert column before
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => run(() => tf.insert.tableColumn())}>
+              <DropdownMenuItem
+                onSelect={() => run(() => tf.insert.tableColumn())}
+              >
                 <ArrowRight />
                 Insert column after
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => run(() => tf.remove.tableColumn())}>
+              <DropdownMenuItem
+                onSelect={() => run(() => tf.remove.tableColumn())}
+              >
                 <X />
                 Delete column
               </DropdownMenuItem>
             </DropdownMenuSubContent>
           </DropdownMenuSub>
 
-          <DropdownMenuItem disabled={!tableSelected} onSelect={() => run(() => tf.remove.table())}>
+          <DropdownMenuItem
+            disabled={!tableSelected}
+            onSelect={() => run(() => tf.remove.table())}
+          >
             <Trash2 />
             Delete table
           </DropdownMenuItem>
@@ -1056,14 +1199,16 @@ function TableMenu() {
   );
 }
 
-function TablePicker({ onInsert }: { onInsert: (rowCount: number, colCount: number) => void }) {
-  const [size, setSize] = useState({ rowCount: 3, colCount: 3 });
+function TablePicker({
+  onInsert,
+}: {
+  onInsert: (rowCount: number, colCount: number) => void;
+}) {
+  const [size, setSize] = useState({ colCount: 3, rowCount: 3 });
   const dimension = 8;
 
   return (
     <div
-      role="grid"
-      tabIndex={0}
       aria-label={`Insert ${size.rowCount} by ${size.colCount} table`}
       className="m-0 flex flex-col gap-1 p-1 outline-none"
       onKeyDown={(event) => {
@@ -1074,15 +1219,21 @@ function TablePicker({ onInsert }: { onInsert: (rowCount: number, colCount: numb
         }
 
         const next = { ...size };
-        if (event.key === 'ArrowUp') next.rowCount = Math.max(1, size.rowCount - 1);
-        else if (event.key === 'ArrowDown') next.rowCount = Math.min(dimension, size.rowCount + 1);
-        else if (event.key === 'ArrowLeft') next.colCount = Math.max(1, size.colCount - 1);
-        else if (event.key === 'ArrowRight') next.colCount = Math.min(dimension, size.colCount + 1);
+        if (event.key === 'ArrowUp')
+          next.rowCount = Math.max(1, size.rowCount - 1);
+        else if (event.key === 'ArrowDown')
+          next.rowCount = Math.min(dimension, size.rowCount + 1);
+        else if (event.key === 'ArrowLeft')
+          next.colCount = Math.max(1, size.colCount - 1);
+        else if (event.key === 'ArrowRight')
+          next.colCount = Math.min(dimension, size.colCount + 1);
         else return;
 
         event.preventDefault();
         setSize(next);
       }}
+      role="grid"
+      tabIndex={0}
     >
       <div className="grid size-32 grid-cols-8 gap-0.5">
         {Array.from({ length: dimension * dimension }, (_, index) => {
@@ -1092,24 +1243,26 @@ function TablePicker({ onInsert }: { onInsert: (rowCount: number, colCount: numb
 
           return (
             <button
-              key={`${row}:${column}`}
-              type="button"
-              role="gridcell"
-              tabIndex={-1}
               aria-label={`Insert ${row} by ${column} table`}
               aria-selected={active}
               className={cn(
                 'size-3.5 rounded-xs border border-line bg-surface outline-none',
                 active && 'border-action-accent bg-tint-accent-1'
               )}
-              onPointerEnter={() => setSize({ rowCount: row, colCount: column })}
-              onFocus={() => setSize({ rowCount: row, colCount: column })}
+              key={`${row}:${column}`}
               onClick={() => onInsert(row, column)}
+              onFocus={() => setSize({ colCount: column, rowCount: row })}
+              onPointerEnter={() =>
+                setSize({ colCount: column, rowCount: row })
+              }
+              role="gridcell"
+              tabIndex={-1}
+              type="button"
             />
           );
         })}
       </div>
-      <div className="text-center text-xs text-fg-secondary">
+      <div className="text-center text-fg-secondary text-xs">
         {size.rowCount} × {size.colCount}
       </div>
     </div>
@@ -1132,22 +1285,26 @@ function MenuRow({
 }) {
   return (
     <button
-      type="button"
       className={cn(
-        'flex w-full items-center gap-2 rounded-row px-2 py-1.5 text-left text-sm text-fg hover:bg-surface-hover-bg [&_svg]:size-4',
+        'flex w-full items-center gap-2 rounded-row px-2 py-1.5 text-left text-fg text-sm hover:bg-surface-hover-bg [&_svg]:size-4',
         className
       )}
+      onClick={onClick}
       onMouseDown={(event) => {
         event.preventDefault();
         onMouseDown?.(event);
       }}
-      onClick={onClick}
+      type="button"
       {...rest}
     >
-      {icon && <span className="flex size-4 shrink-0 items-center justify-center">{icon}</span>}
+      {icon && (
+        <span className="flex size-4 shrink-0 items-center justify-center">
+          {icon}
+        </span>
+      )}
       <span className="min-w-0 flex-1">{label}</span>
       {shortcut && (
-        <kbd aria-hidden className="ml-auto shrink-0 text-xs text-fg-muted">
+        <kbd aria-hidden className="ml-auto shrink-0 text-fg-muted text-xs">
           {shortcut}
         </kbd>
       )}
@@ -1162,46 +1319,46 @@ function WidgetSettingsDialog() {
   const [draft, setDraft] = useState(enabled);
   const count = WIDGET_GROUPS.filter((group) => draft[group.id]).length;
 
-  const setAll = (value: boolean) =>
-    setDraft(
-      WIDGET_GROUPS.reduce(
-        (next, group) => ({ ...next, [group.id]: value }),
-        {} as Record<WidgetGroupId, boolean>
-      )
-    );
+  const setAll = (value: boolean) => {
+    const next = {} as Record<WidgetGroupId, boolean>;
+    for (const group of WIDGET_GROUPS) {
+      next[group.id] = value;
+    }
+    setDraft(next);
+  };
 
   return (
     <Dialog
-      open={open}
       onOpenChange={(next) => {
         if (next) setDraft({ ...enabled });
         setOpen(next);
       }}
+      open={open}
     >
       <button
-        type="button"
         aria-label="Editor command settings"
-        title="Editor command settings"
         className="inline-flex size-8 items-center justify-center rounded-row hover:bg-surface-hover-bg"
         onClick={() => setOpen(true)}
+        title="Editor command settings"
+        type="button"
       >
         <Settings2 className="size-4" />
       </button>
       <DialogContent className="max-w-xl">
         <DialogTitle className="pb-2">Editor commands</DialogTitle>
-        <p className="mb-4 text-sm text-fg-muted">
-          Choose which optional commands appear in toolbars and the slash menu. Existing document
-          content always remains enabled.
+        <p className="mb-4 text-fg-muted text-sm">
+          Choose which optional commands appear in toolbars and the slash menu.
+          Existing document content always remains enabled.
         </p>
         <div className="mb-3 flex items-center justify-between">
-          <span className="text-sm font-medium text-fg">
+          <span className="font-medium text-fg text-sm">
             {count} of {WIDGET_GROUPS.length} enabled
           </span>
           <div className="flex gap-1">
-            <Button variant="ghost" size="sm" onClick={() => setAll(true)}>
+            <Button onClick={() => setAll(true)} size="sm" variant="ghost">
               All
             </Button>
-            <Button variant="ghost" size="sm" onClick={() => setAll(false)}>
+            <Button onClick={() => setAll(false)} size="sm" variant="ghost">
               None
             </Button>
           </div>
@@ -1209,32 +1366,39 @@ function WidgetSettingsDialog() {
         <div className="grid max-h-[52vh] grid-cols-1 gap-2 overflow-auto pr-1 sm:grid-cols-2">
           {WIDGET_GROUPS.map((group) => (
             <label
-              key={group.id}
               className="flex items-center justify-between gap-3 rounded-card border border-line px-3 py-2"
+              key={group.id}
             >
               <span className="min-w-0">
-                <span className="block text-sm font-medium text-fg">{group.label}</span>
-                <span className="block text-xs text-fg-muted">{group.description}</span>
+                <span className="block font-medium text-fg text-sm">
+                  {group.label}
+                </span>
+                <span className="block text-fg-muted text-xs">
+                  {group.description}
+                </span>
               </span>
               <Switch
                 checked={draft[group.id]}
                 onChange={() =>
-                  setDraft((current) => ({ ...current, [group.id]: !current[group.id] }))
+                  setDraft((current) => ({
+                    ...current,
+                    [group.id]: !current[group.id],
+                  }))
                 }
               />
             </label>
           ))}
         </div>
         <DialogFooter>
-          <Button variant="ghost-hover" onClick={() => setOpen(false)}>
+          <Button onClick={() => setOpen(false)} variant="ghost-hover">
             Cancel
           </Button>
           <Button
-            variant="accent"
             onClick={() => {
               setEnabled(draft);
               setOpen(false);
             }}
+            variant="accent"
           >
             Apply
           </Button>

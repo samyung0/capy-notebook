@@ -20,7 +20,10 @@ describe('rich block configuration', () => {
       'right-wide',
     ]);
     for (const layout of COLUMN_LAYOUTS) {
-      const total = layout.widths.reduce((sum, width) => sum + Number.parseFloat(width), 0);
+      const total = layout.widths.reduce(
+        (sum, width) => sum + Number.parseFloat(width),
+        0
+      );
       expect(total).toBeCloseTo(100, 3);
     }
   });

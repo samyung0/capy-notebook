@@ -1,31 +1,27 @@
 import { Link } from '@tanstack/react-router';
-import { Panel } from '@/components/app/layout';
-import { TopInsetBar } from '@/components/app/TopInsetBar';
-import { DashboardCalendar } from '@/features/schedule/DashboardCalendar';
 import {
-  Badge,
-  Card,
-  Checkbox,
-  HoverActions,
-  Icon,
-  Button,
-  WorkspaceCard,
-  WorkspaceCardSkeleton,
-} from '@/components/ui';
-import { userColorPair } from '@/lib/userColor';
-import {
-  useCanvases,
   useDeleteTask,
   useMe,
   useTasks,
   useToggleTask,
   useWorkspaces,
 } from '@/api/hooks';
-import { useDialogs } from '@/stores/dialogs';
-import { m } from '@/i18n';
-import DashboardDefaultBanner from '@/components/banners/DashboardDefaultBanner';
 import { CloudConnectBanner } from '@/components/app/CloudConnectBanner';
+import { Panel } from '@/components/app/layout';
+import { TopInsetBar } from '@/components/app/TopInsetBar';
+import DashboardDefaultBanner from '@/components/banners/DashboardDefaultBanner';
+import {
+  Button,
+  Checkbox,
+  HoverActions,
+  Icon,
+  WorkspaceCard,
+  WorkspaceCardSkeleton,
+} from '@/components/ui';
+import { DashboardCalendar } from '@/features/schedule/DashboardCalendar';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { usePortals } from '@/stores/portals';
 
 function StreakHeading() {
   const { data: me } = useMe();
@@ -33,10 +29,13 @@ function StreakHeading() {
   return (
     <div>
       <h2 className="t-page-title">
-        {streak > 0 ? m.dashboard_streak_days({ count: streak }) : m.dashboard_streak_none()}
+        {streak > 0
+          ? m.dashboard_streak_days({ count: streak })
+          : m.dashboard_streak_none()}
       </h2>
       <p className="t-subtitle mt-1 text-fg-muted">
-        Take a look around — your workspaces, notes and itinerary will show up here.
+        Take a look around — your workspaces, notes and itinerary will show up
+        here.
       </p>
     </div>
   );
@@ -45,15 +44,15 @@ function StreakHeading() {
 const DASHBOARD_WORKSPACE_LIMIT = 12;
 
 function WorkspacesSection() {
-  const { data, isLoading, isError } = useWorkspaces({ sort: 'accessed' });
+  const { data, isLoading } = useWorkspaces({ sort: 'accessed' });
   const recent = data?.slice(0, DASHBOARD_WORKSPACE_LIMIT);
   const hasMore = (data?.length ?? 0) > DASHBOARD_WORKSPACE_LIMIT;
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
-        <h2 className="t-section">{m.dashboard_workspaces()}</h2>
-        <Button variant="ghost-link" size="md" asChild className="p-0">
-          <Link to="/workspaces" preload="intent">
+        <h2 className="t-large-card-title">{m.dashboard_workspaces()}</h2>
+        <Button asChild className="p-0" size="md" variant="ghost-link">
+          <Link preload="intent" to="/workspaces">
             {m.action_go_workspaces()}
           </Link>
         </Button>
@@ -70,9 +69,9 @@ function WorkspacesSection() {
           <p>
             No workspaces yet.{' '}
             <Link
-              to="/workspaces"
-              preload="intent"
               className="underline decoration-link decoration-wavy underline-offset-2 hover:decoration-link-hover"
+              preload="intent"
+              to="/workspaces"
             >
               Go create your first workspace :)
             </Link>
@@ -86,8 +85,8 @@ function WorkspacesSection() {
           ))}
           {hasMore && (
             <div className="flex items-center justify-center p-5">
-              <Button variant="ghost-link" size="md" asChild className="p-0">
-                <Link to="/workspaces" preload="intent">
+              <Button asChild className="p-0" size="md" variant="ghost-link">
+                <Link preload="intent" to="/workspaces">
                   <span className="flex items-center gap-2">
                     {m.action_see_all()}
                     <Icon name="arrowRight" size={16} />
@@ -102,51 +101,12 @@ function WorkspacesSection() {
   );
 }
 
-function ThinkingSection() {
-  const { data } = useCanvases();
-  // TODO excess data hint
-  const recent = data;
-  return (
-    <section>
-      <div className="mb-3 flex items-center justify-between">
-        <h2 className="t-section">{m.dashboard_thinking()}</h2>
-        <Link
-          to="/thinking"
-          preload="intent"
-          className="text-sm font-semibold text-link hover:text-link-hover"
-        >
-          {m.action_see_all()}
-        </Link>
-      </div>
-      <div className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(320px,1fr))] gap-4">
-        {recent?.map((c, i) => (
-          <Link key={c.id} to="/thinking/$canvasId" params={{ canvasId: c.id }} preload="intent">
-            {/* TODO fix notes in thinking space */}
-            <div
-              className="flex min-h-28 flex-col justify-between rounded-card-lg p-5"
-              style={{
-                background: i % 2 ? 'var(--note-purple-bg)' : 'var(--note-green-bg)',
-                color: i % 2 ? 'var(--note-purple-fg)' : 'var(--note-green-fg)',
-              }}
-            >
-              <h4 className="t-subtitle text-inherit">{c.name}</h4>
-              <span className="flex items-center gap-1.5 text-[0.72rem] opacity-70">
-                <Icon name="write" size={13} /> Updated {new Date(c.updatedAt).toLocaleDateString()}
-              </span>
-            </div>
-          </Link>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function TasksCard() {
   const { data } = useTasks();
   const toggle = useToggleTask();
   const remove = useDeleteTask();
-  const openTaskEdit = useDialogs((s) => s.openTaskEdit);
-  const openConfirm = useDialogs((s) => s.openConfirm);
+  const openTaskEdit = usePortals((s) => s.openTaskEdit);
+  const openConfirm = usePortals((s) => s.openConfirm);
   const open = data?.filter((t) => !t.done) ?? [];
   const visible = data?.slice(0, 4) ?? [];
   const hasMore = (data?.length ?? 0) > visible.length;
@@ -155,31 +115,34 @@ function TasksCard() {
       <div className="flex items-center justify-between">
         <h3 className="t-card-title">{m.dashboard_tasks()}</h3>
         <Link
-          to="/tasks"
+          className="font-semibold text-link text-sm hover:text-link-hover"
           preload="intent"
-          className="text-sm font-semibold text-link hover:text-link-hover"
+          to="/tasks"
         >
           {m.action_see_all()}
         </Link>
       </div>
       <div className="flex flex-col gap-1">
         {!open.length && (
-          <p className="t-body px-1 pt-2 pb-4 text-center text-fg-muted">{m.tasks_empty()}</p>
+          <p className="t-body px-1 pt-2 pb-4 text-center text-fg-muted">
+            {m.tasks_empty()}
+          </p>
         )}
         {visible.map((t) => (
           <div
-            key={t.id}
             className="group flex items-start gap-3 rounded-row px-1 py-2 hover:bg-surface-hover-bg"
+            key={t.id}
           >
             <Checkbox
               checked={t.done}
-              tone="purple"
-              size={22}
               className={cn(t.meta && 'translate-y-1')}
+              size={22}
+              tone="purple"
             />
             <button
-              onClick={() => toggle.mutate({ id: t.id, done: !t.done })}
               className="flex min-w-0 flex-1 items-start gap-3 text-left"
+              onClick={() => toggle.mutate({ done: !t.done, id: t.id })}
+              type="button"
             >
               <span className="min-w-0">
                 <span
@@ -193,30 +156,32 @@ function TasksCard() {
                 >
                   {t.title}
                 </span>
-                {t.meta && <span className="t-body block text-fg-muted">{t.meta}</span>}
+                {t.meta && (
+                  <span className="t-body block text-fg-muted">{t.meta}</span>
+                )}
               </span>
             </button>
             <HoverActions
               items={[
                 {
-                  label: m.action_edit(),
                   icon: 'write',
+                  label: m.action_edit(),
                   onClick: () => openTaskEdit(t),
                 },
                 {
-                  label: t.done ? m.action_mark_undone() : m.action_mark_done(),
                   icon: 'check',
-                  onClick: () => toggle.mutate({ id: t.id, done: !t.done }),
+                  label: t.done ? m.action_mark_undone() : m.action_mark_done(),
+                  onClick: () => toggle.mutate({ done: !t.done, id: t.id }),
                 },
                 {
-                  label: m.action_delete(),
-                  icon: 'trash',
                   danger: true,
+                  icon: 'trash',
+                  label: m.action_delete(),
                   onClick: () =>
                     openConfirm({
-                      title: m.confirm_delete_title({ name: t.title }),
                       body: m.confirm_delete_body(),
                       onConfirm: () => remove.mutate(t.id),
+                      title: m.confirm_delete_title({ name: t.title }),
                     }),
                 },
               ]}
@@ -225,10 +190,10 @@ function TasksCard() {
         ))}
         {hasMore && (
           <Link
-            to="/tasks"
-            preload="intent"
-            className="px-1 py-1 text-center text-lg leading-none font-bold text-fg-muted hover:text-fg"
             aria-label={m.action_see_all()}
+            className="px-1 py-1 text-center font-bold text-fg-muted text-lg leading-none hover:text-fg"
+            preload="intent"
+            to="/tasks"
           >
             …
           </Link>
@@ -254,7 +219,10 @@ export default function Dashboard() {
 
       <div className="order-first flex h-auto min-h-0 w-full shrink-0 flex-col gap-2.5 overflow-visible lg:order-last lg:h-full lg:min-h-full lg:w-75 lg:overflow-hidden xl:w-90">
         <TopInsetBar />
-        <Panel className="hidden min-h-0 flex-1 lg:flex" sectionClassName="gap-2.5 p-5">
+        <Panel
+          className="hidden min-h-0 flex-1 lg:flex"
+          sectionClassName="gap-2.5 p-5"
+        >
           <TasksCard />
           <DashboardCalendar />
         </Panel>

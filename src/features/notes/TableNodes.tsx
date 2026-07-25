@@ -37,8 +37,13 @@ import {
 import { useMemo, useRef } from 'react';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui';
 import { cn } from '@/lib/cn';
-import { TABLE_CLASS, TABLE_WRAP_CLASS, TD_CLASS, TH_CLASS } from './nodeStyles';
 import { FloatingActionButton } from './nodeComponents';
+import {
+  TABLE_CLASS,
+  TABLE_WRAP_CLASS,
+  TD_CLASS,
+  TH_CLASS,
+} from './nodeStyles';
 
 const DEFAULT_COLUMN_WIDTH = 120;
 const DEFAULT_ROW_HEIGHT = 48;
@@ -82,11 +87,11 @@ function TableElementContent({ children, ...props }: PlateElementProps) {
     >
       <table
         {...tableProps}
-        ref={tableRef}
         className={cn(
           TABLE_CLASS,
           'table-fixed data-[table-selecting=true]:[&_*::selection]:bg-transparent'
         )}
+        ref={tableRef}
         style={{ width: tableWidth }}
       >
         <colgroup>
@@ -113,7 +118,8 @@ function TableFloatingToolbar({ children }: { children: React.ReactElement }) {
     [selected]
   );
   const selectedCellCount = useEditorSelector(
-    (editor) => editor.getApi(TablePlugin).table.getSelectedCellIds()?.length ?? 0,
+    (editor) =>
+      editor.getApi(TablePlugin).table.getSelectedCellIds()?.length ?? 0,
     []
   );
   const open = focused && (collapsedInside || selectedCellCount > 1);
@@ -121,7 +127,9 @@ function TableFloatingToolbar({ children }: { children: React.ReactElement }) {
   return (
     <Popover modal={false} open={open}>
       <PopoverAnchor asChild>{children}</PopoverAnchor>
-      {open && <TableFloatingToolbarContent multiCell={selectedCellCount > 1} />}
+      {open && (
+        <TableFloatingToolbarContent multiCell={selectedCellCount > 1} />
+      )}
     </Popover>
   );
 }
@@ -139,20 +147,26 @@ function TableFloatingToolbarContent({ multiCell }: { multiCell: boolean }) {
   return (
     <PopoverContent
       align="center"
-      side="bottom"
-      sideOffset={8}
       avoidCollisions={false}
+      className="w-auto min-w-14 max-w-[90vw] flex-row items-center justify-center gap-0.5 overflow-x-auto rounded-lg border border-line bg-surface p-1 shadow-pop"
       contentEditable={false}
       onOpenAutoFocus={(event) => event.preventDefault()}
-      className="w-auto max-w-[90vw] min-w-14 flex-row items-center justify-center gap-0.5 overflow-x-auto rounded-lg border border-line bg-surface p-1 shadow-pop"
+      side="bottom"
+      sideOffset={8}
     >
       {canMerge && (
-        <FloatingActionButton label="Merge cells" onClick={() => action(() => tf.table.merge())}>
+        <FloatingActionButton
+          label="Merge cells"
+          onClick={() => action(() => tf.table.merge())}
+        >
           <Combine />
         </FloatingActionButton>
       )}
       {canSplit && (
-        <FloatingActionButton label="Split cell" onClick={() => action(() => tf.table.split())}>
+        <FloatingActionButton
+          label="Split cell"
+          onClick={() => action(() => tf.table.split())}
+        >
           <Ungroup />
         </FloatingActionButton>
       )}
@@ -181,7 +195,9 @@ function TableFloatingToolbarContent({ multiCell }: { multiCell: boolean }) {
           <TableActionSeparator />
           <FloatingActionButton
             label="Insert column before"
-            onClick={() => action(() => tf.insert.tableColumn({ before: true }))}
+            onClick={() =>
+              action(() => tf.insert.tableColumn({ before: true }))
+            }
           >
             <ArrowLeft />
           </FloatingActionButton>
@@ -219,10 +235,13 @@ export function TableRowElement({ children, ...props }: PlateElementProps) {
   const readOnly = useReadOnly();
   const { element } = props;
   const draggable = useDraggable({
+    canDropNode: ({ dragEntry, dropEntry }) =>
+      PathApi.equals(
+        PathApi.parent(dragEntry[1]),
+        PathApi.parent(dropEntry[1])
+      ),
     element,
     type: element.type,
-    canDropNode: ({ dragEntry, dropEntry }) =>
-      PathApi.equals(PathApi.parent(dragEntry[1]), PathApi.parent(dropEntry[1])),
     // onDropHandler: (_, { dragItem }) => {
     //   const draggedElement = (dragItem as { element?: TElement }).element;
     //   if (draggedElement) editor.tf.select(draggedElement);
@@ -234,7 +253,6 @@ export function TableRowElement({ children, ...props }: PlateElementProps) {
     <PlateElement
       {...props}
       as="tr"
-      ref={useComposedRef(props.ref, draggable.previewRef, draggable.nodeRef)}
       className={cn(
         'group/row',
         draggable.isDragging && 'opacity-45',
@@ -243,18 +261,22 @@ export function TableRowElement({ children, ...props }: PlateElementProps) {
         dropLine === 'bottom' &&
           '[&>td]:border-b-2! [&>td]:border-b-action-accent! [&>th]:border-b-2! [&>th]:border-b-action-accent!'
       )}
+      ref={useComposedRef(props.ref, draggable.previewRef, draggable.nodeRef)}
     >
       {!readOnly && (
-        <td className="w-2 max-w-2 min-w-2 p-0 select-none" contentEditable={false}>
+        <td
+          className="w-2 min-w-2 max-w-2 select-none p-0"
+          contentEditable={false}
+        >
           <button
-            ref={draggable.handleRef}
-            type="button"
             aria-label="Drag table row"
-            title="Drag table row"
-            data-plate-prevent-deselect
+            className="absolute top-1/2 left-0 z-40 flex size-5 -translate-y-1/2 cursor-grab items-center justify-center rounded-row border border-line bg-surface text-fg-muted opacity-0 shadow-sm outline-none transition-opacity hover:bg-surface-hover-bg hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-focus active:cursor-grabbing group-hover/row:opacity-100"
             contentEditable={false}
+            data-plate-prevent-deselect
             onClick={() => editor.tf.select(element)}
-            className="focus-visible:ring-focus absolute top-1/2 left-0 z-40 flex size-5 -translate-y-1/2 cursor-grab items-center justify-center rounded-row border border-line bg-surface text-fg-muted opacity-0 shadow-sm transition-opacity outline-none group-hover/row:opacity-100 hover:bg-surface-hover-bg hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 active:cursor-grabbing"
+            ref={draggable.handleRef}
+            title="Drag table row"
+            type="button"
           >
             <GripVertical className="size-3.5" />
           </button>
@@ -304,8 +326,8 @@ export function TableCellElement({
       {!readOnly && (
         <ResizeHandle
           {...rightProps}
-          contentEditable={false}
           className="group/column-resize absolute -top-px -right-1 z-30 h-[calc(100%+2px)] w-2 cursor-col-resize touch-none select-none after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 after:-translate-x-1/2 after:bg-action-accent after:opacity-0 after:transition-opacity hover:after:opacity-100"
+          contentEditable={false}
         />
       )}
     </PlateElement>

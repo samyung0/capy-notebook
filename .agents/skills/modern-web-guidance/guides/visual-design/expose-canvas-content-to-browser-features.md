@@ -65,7 +65,7 @@ canvas.onpaint = () => {
     try {
       gl.texElementImage2D(gl.TEXTURE_2D, gl.RGBA8, uiElement);
     } catch (err) {
-      console.error('texElementImage2D copy failed:', err);
+      console.error("texElementImage2D copy failed:", err);
     }
   }
 };
@@ -85,7 +85,7 @@ canvas.onpaint = () => {
       };
       root.device.queue.copyElementImageToTexture(sourceDict, destDict);
     } catch (err) {
-      console.error('copyElementImageToTexture copy failed:', err);
+      console.error("copyElementImageToTexture copy failed:", err);
     }
   }
 };
@@ -257,7 +257,7 @@ targetHTMLElement.style.transform = computedTransform.toString();
       try {
         gl.texElementImage2D(gl.TEXTURE_2D, gl.RGBA8, uiElement);
       } catch (err) {
-        console.error('texElementImage2D copy failed:', err);
+        console.error("texElementImage2D copy failed:", err);
       }
     }
 
@@ -325,7 +325,7 @@ targetHTMLElement.style.transform = computedTransform.toString();
         };
         device.queue.copyElementImageToTexture(sourceDict, destDict);
       } catch (err) {
-        console.error('copyElementImageToTexture copy failed:', err);
+        console.error("copyElementImageToTexture copy failed:", err);
       }
     }
 

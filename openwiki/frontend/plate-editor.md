@@ -21,9 +21,12 @@ The short version is:
 - **Interactive and static rendering use different plugin/component registries
   over the same persisted node vocabulary.**
 
-That distinction is important. Plate's comments, suggestions, AI previews,
-placeholder uploads, and plugin options are runtime state. They are not the
-database contract by themselves.
+That distinction is important. Plate suggestion metadata in the persisted
+`MaterialDocument` is authoritative for each active operation and diff.
+Discussion/comment rows and runtime comment marks are separate concerns: rows
+hold collaboration lifecycle data, while comment marks are ephemeral editor
+decorations. AI previews, placeholder uploads, selections, and plugin options
+are runtime state rather than database contracts.
 
 ## Version and package boundaries
 
@@ -467,7 +470,10 @@ The persisted content is a JSON `MaterialDocument`:
 ```
 
 `normalizeMaterialValue` adds a stable ID to every element and preserves
-existing IDs. Those IDs support:
+existing IDs. Every top-level block must have a non-empty, unique ID before a
+document crosses the API boundary; suggestion scanning does not fall back to
+array positions because reordering would change that identity. Those IDs
+support:
 
 - Plate drag/drop identity;
 - `data-block-id` DOM targeting;
@@ -590,6 +596,9 @@ Important behavior:
 - Server-applied discussion marks are wrapped in `editor.tf.withoutSaving` and
   guarded by `applyingDiscussionMarks`, so merely decorating a loaded document
   does not create an autosave.
+- `createMaterialDocument` strips `comment` and `comment_<discussionId>` marks
+  during normalization. A later user edit can therefore save the real content
+  without leaking loaded runtime comment decorations into material JSON.
 
 This is optimistic concurrency with server revisions, not realtime
 multi-cursor editing. Plate's editor state is local to the browser; the Go
@@ -597,9 +606,10 @@ API and material revision are the authority for persistence.
 
 ## Suggestion mode and collaboration
 
-The repository uses Plate's comment and suggestion plugins for document
-decoration, but stores threads and suggestion records through the application
-API. It does not use Plate as the collaboration database.
+The repository uses Plate's comment and suggestion plugins for rendering and
+interaction. The persisted Plate JSON is the source of truth for active
+suggestion operations and diffs; collaboration tables supply lifecycle and
+discussion data without duplicating that content authority.
 
 ### Discussions/comments
 
@@ -622,20 +632,24 @@ discussion.anchor
     )
 ```
 
-Stale anchors are caught and ignored for decoration. Discussion and
-suggestion cards render in a **per-block popover**: `BlockDiscussion`
-(`render.aboveNodes` of the discussion plugin) matches records to each
-top-level block by `blockId` (falling back to the anchor's top-level path
-index) and renders a "Show N collaboration items" trigger next to the block.
-There is currently **no unanchored surface**: a suggestion or discussion whose
-anchor has neither a usable `blockId` nor a selection path (e.g. an
-API-created suggestion with only `{ scope: 'document' }`) is invisible in the
-UI. (An earlier right-side `CommentRail` that had an unanchored stack was
-removed; the sharing e2e specs and older docs referencing a
-`Comment threads` complementary region are stale.)
-Creating a new discussion saves the selected text, block ID, anchor, and rich
+Stale comment ranges are caught and ignored for decoration. Collaboration
+items render in a **per-block popover**: `BlockDiscussion`
+(`render.aboveNodes` of the discussion plugin) matches by the stable top-level
+`blockId` and renders a "Show N collaboration items" trigger next to that
+block. Clicking a rendered suggestion or comment mark also sets the
+corresponding active ID, opens the owning block popover, filters to that item,
+and keeps the card/mark hover state synchronized.
+
+Creating a normal comment saves the selected range, stable block ID, and rich
 comment content to the API, then applies the returned discussion ID as a
-decoration-only comment mark inside `withoutSaving`.
+decoration-only comment mark inside `withoutSaving`. Normal comment
+discussions render as standalone thread cards. A discussion linked to a
+suggestion renders its comments and one-level replies inside that suggestion's
+card instead of duplicating them as a second thread card. The same
+`DiscussionComments`/`CommentEntry` interaction is used for both discussion
+kinds, so a root comment in a suggestion card exposes the same `Reply` action
+as a normal comment. The action sends the existing `parentCommentId` field;
+the database contract and one-level nesting limit are unchanged.
 
 ### Suggestions
 
@@ -647,68 +661,62 @@ Suggestion mode changes the meaning of an editor change:
 - block suggestions and void removals get custom wrappers/overlays;
 - local edits set `suggestionDirty` rather than entering the autosave queue.
 
-Submitting a draft sends:
+Submitting a draft sends the **complete marked `MaterialDocument`** plus
+`expectedRevision` to `POST /api/materials/{id}/suggestion-commits`. It does not
+send original/proposed fragments or construct a separate submitted anchor.
+The full commit remains revision-guarded: a stale revision is rejected rather
+than overwriting the current head.
 
-- the base revision;
-- a durable block/selection anchor;
-- the complete original base fragment;
-- the complete proposed fragment.
+The server validates stable top-level block IDs, scans `suggestion` and
+`suggestion_<id>` metadata, and stores the marked document as the next material
+revision. Each scanned change is keyed by `(blockId, Plate suggestion ID)`.
+`scanSuggestions` derives operation, before/after preview, line-break state,
+and block association directly from that revision head.
 
-`buildSubmittedSuggestionAnchor` does not blindly persist the live caret.
-After an Enter keypress, Plate marks the preceding paragraph with an inserted
-line break and leaves the caret in a newly inserted block. The editor resets
-to the base document after submission, so that new block immediately
-disappears; anchoring the card to it made the saved suggestion invisible.
-Submission now finds the nearest changed top-level block whose stable ID also
-exists in the base document and anchors to that survivor. Legacy
-selection-only anchors recover the same ID from the saved original fragment.
+Relational suggestion rows are deliberately narrower lifecycle projections.
+They hold the Plate ID, status, author, reviewer/timestamps, commit and
+resolution revisions, and discussion linkage. They do **not** own operation
+or preview data. `joinActiveSuggestions` joins each pending lifecycle row to
+the current Plate scan; unmatched Plate metadata remains visible as an orphan
+so imports or interrupted migrations do not make active changes unreviewable.
 
-The server can then review a suggestion against the revision from which it was
-created. Accept/reject is finalized by
+This boundary was introduced as a destructive clean-schema change:
+`0001_init.sql` no longer defines operation or preview columns on
+`material_suggestions`. There is no backfill, fallback read, or dual-write
+compatibility path for databases created from the older projection shape.
+
+Accept/reject is finalized by
 [`finalizeSuggestionValue`](../../src/features/notes/suggestions.ts):
 
-- accepting removes `remove` content and strips suggestion metadata;
-- rejecting removes `insert` content and strips suggestion metadata;
-- all remaining nodes retain normal document properties and IDs.
+- accepting removes `remove` content and strips the selected suggestion
+  metadata;
+- rejecting removes `insert` content and strips the selected suggestion
+  metadata;
+- all remaining nodes retain normal document properties and stable IDs.
 
-`reviewSuggestionAtomically` checks the current revision before accepting,
-updates the suggestion status with the expected base revision, and replaces
-the local editor document only after the API succeeds.
+Review and withdrawal send raw Plate IDs with the current expected revision.
+The server resolves those IDs against the marked revision head, updates the
+lifecycle rows, and returns the replacement material state only after the
+atomic mutation succeeds.
 
-Suggestion cards derive per-line **Add/Delete change items** with
-`suggestionChangeItems` (`suggestions.ts`): it walks suggestion metadata in the
-proposed fragment, merges adjacent marked text runs, reports fully suggested
-blocks once, and explicitly labels inserted/removed line breaks. This matches
-the Plate demo card format instead of dumping raw fragments.
+Suggestion cards render the operation and before/after preview from the joined
+Plate scan. DB lifecycle fields provide attribution, status, permissions, and
+review controls only. This avoids stale denormalized previews after the same
+Plate suggestion is edited.
 
 ### Submitted suggestions in every material mode
 
-The collaboration API stores each pending suggestion as an independent
-base/proposed document snapshot. Those snapshots cannot safely be merged into
-the live Slate value: two proposals may conflict, and putting unresolved
-suggestion nodes into edit mode would let normal autosave persist them as
-accepted content. Instead, pending proposals render as non-editable,
-always-visible Add/Delete annotations adjacent to their anchored block:
+The marked material revision head already contains all pending suggestion
+metadata, so interactive Edit/Suggestion surfaces and static View rendering
+read the same document vocabulary. `<ins>`, `<del>`, block suggestions, and
+line-break markers remain visible after submission and reload. The detailed
+card and review controls stay in the stable block's collaboration popover;
+clicking a mark focuses that item directly.
 
-- interactive edit and suggestion modes render
-  `SubmittedSuggestionChanges` from `BlockDiscussionContent`;
-- static view mode adds `StaticSuggestionAnnotationPlugin` to
-  `MaterialPreview`, using a React context to match suggestions without loading
-  the interactive Plate editor. It maps the anchor's top-level path onto the
-  preview's normalized value before falling back to `blockId`: older persisted
-  documents may have no IDs, so interactive and static parsing can otherwise
-  generate different IDs for the same block;
-- the detailed card and Accept/Reject actions remain in the block's
-  collaboration popover;
-- accepted/rejected/withdrawn proposals remain in collaboration history but
-  stop rendering as pending inline changes (accepted content is already in the
-  material).
-
-All material viewers can fetch the same suggestion list through material
-read access, so pending changes remain visible when switching among View,
-Edit, and Suggestion. Keep these annotations outside the editable Slate value
-and `contentEditable={false}`; otherwise clicking or autosaving in edit mode
-can mutate/persist review-only data.
+Accepted, rejected, or withdrawn IDs are projected out of the document during
+the revision-guarded review mutation. Their lifecycle rows may remain for
+history, but they no longer supply active diff content and no longer render as
+pending marks.
 
 ### `withoutSuggestions` pitfalls (fixed Jul 2026)
 

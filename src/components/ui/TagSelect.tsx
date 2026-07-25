@@ -1,22 +1,24 @@
 import { useMemo, useRef, useState } from 'react';
-import type { Tag, TagInput } from '@/api/types';
 import { useTags } from '@/api/hooks';
+import type { Tag, TagInput } from '@/api/types';
 import { cn } from '@/lib/cn';
+import { Badge } from './Badge';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
-import { Badge } from './Badge';
 
 const MAX_LEN = 50;
 
-type Option = { type: 'create'; value: string } | { type: 'existing'; tag: Tag };
+type Option =
+  | { type: 'create'; value: string }
+  | { type: 'existing'; tag: Tag };
 
 export interface TagSelectProps {
-  value: TagInput[];
-  onChange: (next: TagInput[]) => void;
+  invalid?: boolean;
   /** Tag catalog scope — 'workspace' | 'quiz' | 'card'. */
   kind?: string;
+  onChange: (next: TagInput[]) => void;
   placeholder?: string;
-  invalid?: boolean;
+  value: TagInput[];
 }
 
 /**
@@ -50,7 +52,9 @@ export function TagSelect({
   const suggestions = useMemo(() => {
     const ql = q.toLowerCase();
     return catalog.filter(
-      (t) => !selectedKeys.has(t.value.toLowerCase()) && (!ql || t.value.toLowerCase().includes(ql))
+      (t) =>
+        !selectedKeys.has(t.value.toLowerCase()) &&
+        (!ql || t.value.toLowerCase().includes(ql))
     );
   }, [catalog, q, selectedKeys]);
 
@@ -62,7 +66,7 @@ export function TagSelect({
 
   const options: Option[] = [];
   if (canCreate) options.push({ type: 'create', value: q });
-  for (const t of suggestions) options.push({ type: 'existing', tag: t });
+  for (const t of suggestions) options.push({ tag: t, type: 'existing' });
 
   const activeIdx = options.length ? Math.min(active, options.length - 1) : 0;
   const showList = open && options.length > 0;
@@ -121,33 +125,33 @@ export function TagSelect({
         {selected.map((t, i) => (
           <Badge
             key={`${t.id ?? 'new'}:${t.value}:${i}`}
-            tone="neutral"
             size="md"
+            tone="neutral"
             // className="inline-flex items-center gap-1 rounded-pill bg-page py-0.5 pr-1 pl-2 text-xs font-bold text-surface-fg"
           >
             # {t.value}
             <IconButton
-              type="button"
-              icon="x"
-              variant="ghost-hover"
-              size="xs"
-              className="-translate-y-px p-0.5"
               aria-label={`Remove ${t.value}`}
+              className="-translate-y-px p-0.5"
+              icon="x"
               onClick={(e) => {
                 e.stopPropagation();
                 removeAt(i);
               }}
+              size="xs"
+              type="button"
+              variant="ghost-hover"
             />
           </Badge>
         ))}
         <input
-          ref={inputRef}
-          className="min-w-32 flex-1 border-none bg-transparent px-2 py-2 outline-none placeholder:text-placeholder"
-          placeholder={selected.length ? '' : placeholder}
-          value={query}
-          maxLength={MAX_LEN}
-          autoComplete="off"
           aria-invalid={invalid}
+          autoComplete="off"
+          className="min-w-32 flex-1 border-none bg-transparent px-2 py-2 outline-none placeholder:text-placeholder"
+          maxLength={MAX_LEN}
+          onBlur={() => {
+            blurTimer.current = setTimeout(() => setOpen(false), 120);
+          }}
           onChange={(e) => {
             setQuery(e.target.value);
             setOpen(true);
@@ -155,9 +159,9 @@ export function TagSelect({
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          onBlur={() => {
-            blurTimer.current = setTimeout(() => setOpen(false), 120);
-          }}
+          placeholder={selected.length ? '' : placeholder}
+          ref={inputRef}
+          value={query}
         />
       </div>
 
@@ -176,19 +180,25 @@ export function TagSelect({
             return (
               <li key={key}>
                 <button
-                  type="button"
                   className={cn(
                     'flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm',
-                    isActive ? 'bg-surface-hover-bg' : 'hover:bg-surface-hover-bg'
+                    isActive
+                      ? 'bg-surface-hover-bg'
+                      : 'hover:bg-surface-hover-bg'
                   )}
-                  onMouseEnter={() => setActive(i)}
                   onClick={() => commit(opt)}
+                  onMouseEnter={() => setActive(i)}
+                  type="button"
                 >
                   {opt.type === 'create' ? (
                     <>
-                      <Icon name="plus" className="size-4 -translate-y-px text-fg-muted" />
+                      <Icon
+                        className="size-4 -translate-y-px text-fg-muted"
+                        name="plus"
+                      />
                       <span>
-                        Create <span className="font-medium">“{opt.value}”</span>
+                        Create{' '}
+                        <span className="font-medium">“{opt.value}”</span>
                       </span>
                     </>
                   ) : (

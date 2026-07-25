@@ -8,13 +8,21 @@ class FakeUploadXHR {
 
   readonly upload = {
     onprogress: null as
-      | ((event: { lengthComputable: boolean; loaded: number; total: number }) => void)
+      | ((event: {
+          lengthComputable: boolean;
+          loaded: number;
+          total: number;
+        }) => void)
       | null,
   };
   readonly open = vi.fn();
   readonly setRequestHeader = vi.fn();
   readonly send = vi.fn(() => {
-    this.upload.onprogress?.({ lengthComputable: true, loaded: 25, total: 100 });
+    this.upload.onprogress?.({
+      lengthComputable: true,
+      loaded: 25,
+      total: 100,
+    });
     if (FakeUploadXHR.autoComplete) this.onload?.();
   });
   readonly abort = vi.fn(() => this.onabort?.());
@@ -41,13 +49,18 @@ describe('multipart upload client', () => {
     const progress: number[] = [];
 
     await expect(
-      api.upload<{ ok: boolean }>('/workspaces/ws_1/sources', new FormData(), (pct) =>
-        progress.push(pct)
+      api.upload<{ ok: boolean }>(
+        '/workspaces/ws_1/sources',
+        new FormData(),
+        (pct) => progress.push(pct)
       )
     ).resolves.toEqual({ ok: true });
 
     expect(progress).toEqual([25, 100]);
-    expect(FakeUploadXHR.latest?.open).toHaveBeenCalledWith('POST', '/api/workspaces/ws_1/sources');
+    expect(FakeUploadXHR.latest?.open).toHaveBeenCalledWith(
+      'POST',
+      '/api/workspaces/ws_1/sources'
+    );
   });
 
   it('aborts an in-flight multipart request through the signal', async () => {

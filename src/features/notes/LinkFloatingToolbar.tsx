@@ -1,5 +1,8 @@
-import { useMemo, useState } from 'react';
-import { flip, offset, type UseVirtualFloatingOptions } from '@platejs/floating';
+import {
+  flip,
+  offset,
+  type UseVirtualFloatingOptions,
+} from '@platejs/floating';
 import { validateUrl } from '@platejs/link';
 import {
   FloatingLinkUrlInput,
@@ -11,6 +14,7 @@ import {
 } from '@platejs/link/react';
 import { Check, ExternalLink, Pencil, Unlink, X } from 'lucide-react';
 import { useEditorPlugin, useEditorRef, usePluginOption } from 'platejs/react';
+import { useMemo, useState } from 'react';
 import { cn } from '@/lib/cn';
 import { FloatingActionButton } from './nodeComponents';
 
@@ -24,14 +28,18 @@ export function LinkFloatingToolbar() {
     () => ({
       middleware: [
         offset(8),
-        flip({ fallbackPlacements: ['bottom-end', 'top-start', 'top-end'], padding: 12 }),
+        flip({
+          fallbackPlacements: ['bottom-end', 'top-start', 'top-end'],
+          padding: 12,
+        }),
       ],
       placement: 'bottom-start',
     }),
     []
   );
   const state = useFloatingLinkEditState({ floatingOptions });
-  const { editButtonProps, props, ref, unlinkButtonProps } = useFloatingLinkEdit(state);
+  const { editButtonProps, props, ref, unlinkButtonProps } =
+    useFloatingLinkEdit(state);
 
   if (!state.isOpen) return null;
 
@@ -45,8 +53,6 @@ export function LinkFloatingToolbar() {
   if (state.isEditing) {
     return (
       <form
-        ref={ref}
-        style={props.style}
         className="z-50 flex w-80 flex-col gap-2 rounded-card border border-line bg-surface p-2 shadow-pop"
         onSubmit={(event) => {
           event.preventDefault();
@@ -55,40 +61,47 @@ export function LinkFloatingToolbar() {
           submitFloatingLink(editor);
           setAttemptedSubmit(false);
         }}
+        ref={ref}
+        style={props.style}
       >
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-fg-muted">Link URL</span>
+          <span className="font-medium text-fg-muted text-xs">Link URL</span>
           <FloatingLinkUrlInput
-            aria-label="Link URL"
             aria-invalid={invalid}
+            aria-label="Link URL"
             className={cn(
               'h-8 min-w-0 flex-1 rounded-input border border-line bg-surface px-2 text-sm outline-none',
-              'focus:ring-focus focus:border-line-strong focus:ring-2',
+              'focus:border-line-strong focus:ring-2 focus:ring-focus',
               invalid && 'border-solid-error'
             )}
             placeholder="https://example.com"
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-medium text-fg-muted">Displayed text</span>
+          <span className="font-medium text-fg-muted text-xs">
+            Displayed text
+          </span>
           <input
             aria-label="Displayed text"
-            className="focus:ring-focus h-8 min-w-0 rounded-input border border-line bg-surface px-2 text-sm outline-none focus:border-line-strong focus:ring-2"
+            className="h-8 min-w-0 rounded-input border border-line bg-surface px-2 text-sm outline-none focus:border-line-strong focus:ring-2 focus:ring-focus"
+            onChange={(event) => setOption('text', event.target.value)}
             placeholder="Use the URL as text"
             value={text}
-            onChange={(event) => setOption('text', event.target.value)}
           />
         </label>
         <div className="flex items-center justify-end gap-0.5">
           <FloatingActionButton label="Save link" type="submit">
             <Check />
           </FloatingActionButton>
-          <FloatingActionButton label="Cancel link editing" onClick={cancelEdit}>
+          <FloatingActionButton
+            label="Cancel link editing"
+            onClick={cancelEdit}
+          >
             <X />
           </FloatingActionButton>
         </div>
         {invalid && (
-          <p role="alert" className="mt-1.5 text-xs text-solid-error">
+          <p className="mt-1.5 text-solid-error text-xs" role="alert">
             Enter a valid web, email, telephone, document, or anchor URL.
           </p>
         )}
@@ -98,11 +111,11 @@ export function LinkFloatingToolbar() {
 
   return (
     <div
-      ref={ref}
-      style={props.style}
-      role="toolbar"
       aria-label="Link actions"
-      className="z-50 flex w-auto max-w-[90vw] min-w-14 items-center justify-center gap-0.5 overflow-x-auto rounded-card border border-line bg-surface p-1 shadow-pop"
+      className="z-50 flex w-auto min-w-14 max-w-[90vw] items-center justify-center gap-0.5 overflow-x-auto rounded-card border border-line bg-surface p-1 shadow-pop"
+      ref={ref}
+      role="toolbar"
+      style={props.style}
     >
       <FloatingActionButton label="Edit link" {...editButtonProps}>
         <Pencil />

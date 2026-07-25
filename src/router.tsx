@@ -1,3 +1,4 @@
+import type { QueryClient } from '@tanstack/react-query';
 import {
   createRootRouteWithContext,
   createRoute,
@@ -5,14 +6,9 @@ import {
   lazyRouteComponent,
   Outlet,
 } from '@tanstack/react-router';
-import type { QueryClient } from '@tanstack/react-query';
-import { AppShell } from '@/components/app/AppShell';
-import { AuthGate } from '@/components/app/AuthProvider';
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
 import { Toaster } from 'sonner';
-import { features } from '@/lib/features';
 import { USE_MSW } from '@/api/auth';
-import { queryClient } from '@/api/queryClient';
 import {
   allFilesQuery,
   attemptQuery,
@@ -22,23 +18,27 @@ import {
   cardsQuery,
   chaptersQuery,
   conversationsQuery,
-  decksQuery,
   deckQuery,
+  decksQuery,
   eventsQuery,
-  exploreQuizzesQuery,
   exploreDecksQuery,
+  exploreQuizzesQuery,
   exploreWorkspacesQuery,
   filesQuery,
   labelsQuery,
+  materialsQuery,
   meQuery,
   quizQuery,
   quizzesQuery,
   tasksQuery,
   workspaceQuery,
   workspacesQuery,
-  materialsQuery,
 } from '@/api/hooks';
+import { queryClient } from '@/api/queryClient';
+import { AppShell } from '@/components/app/AppShell';
+import { AuthGate } from '@/components/app/AuthProvider';
 import { parseWorkspaceOpenSearch } from '@/features/materials/openItem';
+import { features } from '@/lib/features';
 
 interface RouterContext {
   queryClient: QueryClient;
@@ -48,7 +48,10 @@ interface RouterContext {
  * so the component's `useQuery` hits a warm cache on mount instead of firing
  * the request only after render. Returns void so loaders never contribute
  * `loaderData` (the components still read via `useQuery`). */
-type Loader = (args: { context: RouterContext; params: Record<string, string> }) => void;
+type Loader = (args: {
+  context: RouterContext;
+  params: Record<string, string>;
+}) => void;
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: () => (
@@ -61,13 +64,13 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
 });
 
 const authShellRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  id: 'auth-shell',
   component: () => (
     <AuthGate>
       <AppShell />
     </AuthGate>
   ),
+  getParentRoute: () => rootRoute,
+  id: 'auth-shell',
 });
 
 const page = <const T extends string>(
@@ -76,18 +79,16 @@ const page = <const T extends string>(
   loader?: Loader
 ) =>
   createRoute({
+    component: lazyRouteComponent(importer),
     getParentRoute: () => authShellRoute,
     path,
-    component: lazyRouteComponent(importer),
     ...(loader ? { loader } : {}),
   });
 
 const publicRoutes = [
   createRoute({
-    getParentRoute: () => rootRoute,
-    path: '/share/workspaces/$workspaceId',
     component: lazyRouteComponent(() => import('@/routes/WorkspaceOpen')),
-    validateSearch: parseWorkspaceOpenSearch,
+    getParentRoute: () => rootRoute,
     loader: ({ context: { queryClient: qc }, params }) => {
       const id = params.workspaceId;
       qc.prefetchQuery(workspaceQuery(id));
@@ -95,62 +96,64 @@ const publicRoutes = [
       qc.prefetchQuery(filesQuery(id));
       qc.prefetchQuery(materialsQuery(id));
     },
+    path: '/share/workspaces/$workspaceId',
+    validateSearch: parseWorkspaceOpenSearch,
   }),
   createRoute({
-    getParentRoute: () => rootRoute,
-    path: '/share/quizzes/$quizId',
     component: lazyRouteComponent(() => import('@/routes/QuizAttempt')),
+    getParentRoute: () => rootRoute,
     loader: ({ context: { queryClient: qc }, params }) =>
       qc.prefetchQuery(quizQuery(params.quizId)),
+    path: '/share/quizzes/$quizId',
   }),
   createRoute({
-    getParentRoute: () => rootRoute,
-    path: '/share/decks/$deckId',
     component: lazyRouteComponent(() => import('@/routes/DeckStudy')),
+    getParentRoute: () => rootRoute,
     loader: ({ context: { queryClient: qc }, params }) => {
       qc.prefetchQuery(deckQuery(params.deckId));
       qc.prefetchQuery(cardsQuery(params.deckId));
     },
+    path: '/share/decks/$deckId',
   }),
   ...(USE_MSW
     ? []
     : [
         createRoute({
+          component: lazyRouteComponent(() => import('@/routes/SignIn')),
           getParentRoute: () => rootRoute,
           path: '/sign-in',
-          component: lazyRouteComponent(() => import('@/routes/SignIn')),
         }),
         createRoute({
+          component: lazyRouteComponent(() => import('@/routes/SignUp')),
           getParentRoute: () => rootRoute,
           path: '/sign-up',
-          component: lazyRouteComponent(() => import('@/routes/SignUp')),
         }),
       ]),
 ];
 
 const appRoutes = [
   createRoute({
-    getParentRoute: () => authShellRoute,
-    path: '/',
     component: lazyRouteComponent(() => import('@/routes/Dashboard')),
+    getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       qc.prefetchQuery(meQuery());
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
       qc.prefetchQuery(tasksQuery());
       qc.prefetchQuery(canvasesQuery());
     },
+    path: '/',
   }),
   page(
     '/workspaces',
     () => import('@/routes/Workspaces'),
     ({ context: { queryClient: qc } }) =>
-      qc.prefetchQuery(workspacesQuery({ sort: 'accessed', q: '', color: undefined }))
+      qc.prefetchQuery(
+        workspacesQuery({ color: undefined, q: '', sort: 'accessed' })
+      )
   ),
   createRoute({
-    getParentRoute: () => authShellRoute,
-    path: '/workspaces/$workspaceId',
     component: lazyRouteComponent(() => import('@/routes/WorkspaceOpen')),
-    validateSearch: parseWorkspaceOpenSearch,
+    getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc }, params }) => {
       const id = params.workspaceId;
       qc.prefetchQuery(workspaceQuery(id));
@@ -159,8 +162,13 @@ const appRoutes = [
       qc.prefetchQuery(materialsQuery(id));
       qc.prefetchQuery(conversationsQuery(id));
     },
+    path: '/workspaces/$workspaceId',
+    validateSearch: parseWorkspaceOpenSearch,
   }),
-  page('/workspace-invites/$token', () => import('@/routes/WorkspaceInviteAccept')),
+  page(
+    '/workspace-invites/$token',
+    () => import('@/routes/WorkspaceInviteAccept')
+  ),
   page(
     '/quizzes',
     () => import('@/routes/Quizzes'),
@@ -172,29 +180,32 @@ const appRoutes = [
   page(
     '/quizzes/$quizId/attempt',
     () => import('@/routes/QuizAttempt'),
-    ({ context: { queryClient: qc }, params }) => qc.prefetchQuery(quizQuery(params.quizId))
+    ({ context: { queryClient: qc }, params }) =>
+      qc.prefetchQuery(quizQuery(params.quizId))
   ),
   page(
     '/quizzes/$quizId/edit',
     () => import('@/routes/QuizEdit'),
-    ({ context: { queryClient: qc }, params }) => qc.prefetchQuery(quizQuery(params.quizId))
+    ({ context: { queryClient: qc }, params }) =>
+      qc.prefetchQuery(quizQuery(params.quizId))
   ),
   page(
     '/quizzes/attempts/$attemptId',
     () => import('@/routes/AttemptResult'),
-    ({ context: { queryClient: qc }, params }) => qc.prefetchQuery(attemptQuery(params.attemptId))
+    ({ context: { queryClient: qc }, params }) =>
+      qc.prefetchQuery(attemptQuery(params.attemptId))
   ),
   createRoute({
-    getParentRoute: () => authShellRoute,
-    path: '/schedule',
     component: lazyRouteComponent(() => import('@/routes/Schedule')),
-    validateSearch: (search: Record<string, unknown>): { event?: string } => ({
-      event: typeof search.event === 'string' ? search.event : undefined,
-    }),
+    getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       qc.prefetchQuery(eventsQuery());
       qc.prefetchQuery(labelsQuery());
     },
+    path: '/schedule',
+    validateSearch: (search: Record<string, unknown>): { event?: string } => ({
+      event: typeof search.event === 'string' ? search.event : undefined,
+    }),
   }),
   page(
     '/flashcards',
@@ -224,7 +235,8 @@ const appRoutes = [
         page(
           '/thinking',
           () => import('@/routes/Thinking'),
-          ({ context: { queryClient: qc } }) => qc.prefetchQuery(canvasesQuery())
+          ({ context: { queryClient: qc } }) =>
+            qc.prefetchQuery(canvasesQuery())
         ),
         page(
           '/thinking/$canvasId',
@@ -257,14 +269,17 @@ const appRoutes = [
   ),
 ];
 
-const routeTree = rootRoute.addChildren([...publicRoutes, authShellRoute.addChildren(appRoutes)]);
+const routeTree = rootRoute.addChildren([
+  ...publicRoutes,
+  authShellRoute.addChildren(appRoutes),
+]);
 
 export const router = createRouter({
-  routeTree,
+  context: { queryClient },
   defaultPreload: 'intent',
   defaultPreloadStaleTime: 0,
+  routeTree,
   scrollRestoration: true,
-  context: { queryClient },
 });
 
 declare module '@tanstack/react-router' {

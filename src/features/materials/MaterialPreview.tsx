@@ -1,76 +1,134 @@
-import { createContext, useContext, useMemo, type ReactNode } from 'react';
 import { MarkdownPlugin } from '@platejs/markdown';
 import { createSlateEditor, createSlatePlugin } from 'platejs';
-import { PlateStatic } from 'platejs/static';
-import type { MaterialSuggestion } from '@/api/types';
-import { cn } from '@/lib/cn';
-import { SubmittedSuggestionChanges } from '@/features/notes/SubmittedSuggestionChanges';
 import {
-  suggestionAnchorBlockId,
-  suggestionAnchorTopLevelIndex,
-} from '@/features/notes/suggestions';
-import { StaticMaterialKit } from './staticPlugins';
-import { staticNoteComponents } from './staticNodeComponents';
+  PlateStatic,
+  type SlateElementProps,
+  SlateLeaf,
+  type SlateLeafProps,
+} from 'platejs/static';
+import { useMemo } from 'react';
+import { cn } from '@/lib/cn';
 import {
   createMaterialDocument,
-  parseMaterialDocument,
   type MaterialDocument,
   type MaterialValue,
+  parseMaterialDocument,
 } from './document';
+import { staticNoteComponents } from './staticNodeComponents';
+import { StaticMaterialKit } from './staticPlugins';
 
-const StaticSuggestionContext = createContext<Map<string, MaterialSuggestion[]>>(new Map());
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
+}
 
-function StaticSuggestionAnnotation({
-  blockId,
-  children,
-}: {
-  blockId: string;
-  children: ReactNode;
-}) {
-  const suggestions = useContext(StaticSuggestionContext).get(blockId) ?? [];
-  if (suggestions.length === 0) return <>{children}</>;
+function suggestionOperations(node: Record<string, unknown>): string[] {
+  const result: string[] = [];
+  if (isRecord(node.suggestion) && typeof node.suggestion.type === 'string') {
+    result.push(node.suggestion.type);
+  }
+  for (const [key, value] of Object.entries(node)) {
+    if (
+      key.startsWith('suggestion_') &&
+      isRecord(value) &&
+      typeof value.type === 'string'
+    ) {
+      result.push(value.type);
+    }
+  }
+  return result;
+}
 
+function StaticSuggestionLeaf(props: SlateLeafProps) {
+  const operations = suggestionOperations(
+    props.leaf as Record<string, unknown>
+  );
+  const remove = operations.includes('remove');
+  const update =
+    operations.includes('update') || operations.includes('replace');
   return (
-    <>
-      {children}
-      <SubmittedSuggestionChanges suggestions={suggestions} className="mx-6" />
-    </>
+    <SlateLeaf
+      {...props}
+      as={remove ? 'del' : 'ins'}
+      className={cn(
+        'rounded-sm bg-tint-accent-2 text-solid-success no-underline',
+        update && 'ring-1 ring-action-accent/45',
+        remove &&
+          'bg-tint-error text-solid-error line-through decoration-solid-error'
+      )}
+    >
+      {props.children}
+    </SlateLeaf>
   );
 }
 
-const StaticSuggestionAnnotationPlugin = createSlatePlugin({
-  key: 'static-submitted-suggestions',
+function StaticSuggestedBlock({
+  props,
+  operation,
+}: {
+  props: SlateElementProps;
+  operation: string;
+}) {
+  const remove = operation === 'remove';
+  const lineBreak = isRecord(
+    (props.element as Record<string, unknown>).suggestion
+  )
+    ? (props.element as Record<string, any>).suggestion.isLineBreak === true
+    : false;
+  return (
+    <div
+      className={cn(
+        'rounded-sm bg-tint-accent-2 text-solid-success',
+        lineBreak && 'after:ml-1 after:content-["↵"]',
+        remove &&
+          'bg-tint-error text-solid-error line-through decoration-solid-error'
+      )}
+      data-static-block-suggestion={operation}
+    >
+      {props.children}
+    </div>
+  );
+}
+
+const StaticSuggestionPlugin = createSlatePlugin({
+  key: 'suggestion',
+  node: { isLeaf: true },
   render: {
     aboveNodes: ({ element }) => {
-      const blockId = typeof element.id === 'string' ? element.id : null;
-      if (!blockId) return;
-      return ({ children }) => (
-        <StaticSuggestionAnnotation blockId={blockId}>{children}</StaticSuggestionAnnotation>
+      const operations = suggestionOperations(
+        element as Record<string, unknown>
+      );
+      if (!operations.length) return;
+      const operation = operations.includes('remove')
+        ? 'remove'
+        : operations[0];
+      return (props) => (
+        <StaticSuggestedBlock
+          operation={operation}
+          props={props as unknown as SlateElementProps}
+        />
       );
     },
+    node: StaticSuggestionLeaf,
   },
 });
 
 /**
- * Universal read-only material renderer. Accepts a versioned material document
- * or raw Markdown (file previews) and renders it with a static, non-editable
- * Plate surface: base (non-React) plugins, hook-free components, no Plate
- * store. Visual parity with the editor comes from the shared nodeStyles.
+ * Universal read-only material renderer. Pending Plate suggestion metadata is
+ * rendered directly from the shared material head; it is never hidden or
+ * reconstructed from collaboration rows.
  */
 export function MaterialPreview({
   content,
   className,
-  suggestions = [],
 }: {
   content: string | MaterialDocument;
   className?: string;
-  suggestions?: MaterialSuggestion[];
 }) {
   const editor = useMemo(
     () =>
       createSlateEditor({
-        plugins: [...StaticMaterialKit, StaticSuggestionAnnotationPlugin],
         components: staticNoteComponents,
+        plugins: [...StaticMaterialKit, StaticSuggestionPlugin],
       }),
     []
   );
@@ -80,41 +138,33 @@ export function MaterialPreview({
     if (document) return document.value;
     try {
       if (typeof content !== 'string') return content.value;
-      const imported = editor.getApi(MarkdownPlugin).markdown.deserialize(content) as MaterialValue;
+      const imported = editor
+        .getApi(MarkdownPlugin)
+        .markdown.deserialize(content) as MaterialValue;
       return createMaterialDocument(imported).value;
     } catch (cause) {
-      if (import.meta.env.DEV) {
-        console.error('MaterialPreview: markdown deserialization failed', cause);
-      }
+      if (import.meta.env.DEV)
+        console.error(
+          'MaterialPreview: markdown deserialization failed',
+          cause
+        );
       return [
-        { type: 'p', children: [{ text: typeof content === 'string' ? content : '' }] },
-      ] satisfies MaterialValue;
+        {
+          children: [{ text: typeof content === 'string' ? content : '' }],
+          type: 'p',
+        },
+      ];
     }
   }, [content, editor]);
-  const suggestionsByBlockId = useMemo(() => {
-    const result = new Map<string, MaterialSuggestion[]>();
-    for (const suggestion of suggestions) {
-      const anchorIndex = suggestionAnchorTopLevelIndex(suggestion.anchor);
-      // Older persisted materials may not contain IDs. Parsing assigns fresh
-      // IDs, so map the durable anchor path onto this preview's normalized
-      // value before falling back to a stored blockId.
-      const previewId =
-        anchorIndex === null || typeof value[anchorIndex]?.id !== 'string'
-          ? suggestionAnchorBlockId(suggestion)
-          : value[anchorIndex].id;
-      if (!previewId) continue;
-      result.set(previewId, [...(result.get(previewId) ?? []), suggestion]);
-    }
-    return result;
-  }, [suggestions, value]);
 
   return (
-    <StaticSuggestionContext.Provider value={suggestionsByBlockId}>
-      <PlateStatic
-        editor={editor}
-        value={value}
-        className={cn('note-editor p-6 text-[0.95rem] whitespace-break-spaces', className)}
-      />
-    </StaticSuggestionContext.Provider>
+    <PlateStatic
+      className={cn(
+        'note-editor whitespace-break-spaces p-6 text-[0.95rem]',
+        className
+      )}
+      editor={editor}
+      value={value}
+    />
   );
 }

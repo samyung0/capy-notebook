@@ -1,217 +1,423 @@
 import { describe, expect, it } from 'vitest';
 import type { MaterialValue } from '@/features/materials/document';
 import {
-  buildSubmittedSuggestionAnchor,
   finalizeSuggestionValue,
-  suggestionAnchorBlockId,
-  suggestionChangeItems,
+  resolveSuggestions,
+  scanSuggestions,
+  stripCommentDecorations,
+  suggestionIds,
 } from './suggestions';
 
-const proposed = [
+const marked = [
   {
-    type: 'p',
     children: [
       { text: 'Keep ' },
       {
-        text: 'old',
         suggestion: true,
-        suggestion_remove: { id: 'remove', type: 'remove', userId: 'commenter' },
+        suggestion_replace: { id: 'replace', type: 'remove', userId: 'u' },
+        text: 'old',
       },
       {
-        text: 'new',
         bold: true,
         suggestion: true,
-        suggestion_insert: { id: 'insert', type: 'insert', userId: 'commenter' },
+        suggestion_replace: { id: 'replace', type: 'insert', userId: 'u' },
+        text: 'new',
+      },
+      {
+        bold: true,
+        suggestion: true,
+        suggestion_style: {
+          id: 'style',
+          newProperties: { italic: true },
+          properties: { bold: true },
+          type: 'update',
+        },
+        text: 'styled',
       },
     ],
+    id: 'block-a',
+    type: 'p',
+  },
+  {
+    assetId: 'asset-1',
+    children: [{ text: '' }],
+    id: 'block-b',
+    suggestion: { id: 'void', type: 'insert', userId: 'u' },
+    type: 'img',
   },
 ] as MaterialValue;
 
-describe('finalizeSuggestionValue', () => {
-  it('accepts inserted text and removes deleted text', () => {
-    expect(finalizeSuggestionValue(proposed, 'accept')).toEqual([
-      { type: 'p', children: [{ text: 'Keep ' }, { text: 'new', bold: true }] },
-    ]);
-  });
-
-  it('rejects inserted text and restores deleted text', () => {
-    expect(finalizeSuggestionValue(proposed, 'reject')).toEqual([
-      { type: 'p', children: [{ text: 'Keep ' }, { text: 'old' }] },
-    ]);
-  });
-
-  it('handles block and void suggestion metadata', () => {
-    const blocks = [
+describe('scanSuggestions', () => {
+  it('groups repeated inline marks by Plate ID and block', () => {
+    expect(scanSuggestions(marked)).toEqual([
       {
-        type: 'p',
-        suggestion: { id: 'removed-block', type: 'remove', userId: 'editor' },
-        children: [{ text: 'removed block' }],
+        blockId: 'block-a',
+        metadata: [
+          { id: 'replace', operation: 'remove', userId: 'u' },
+          { id: 'replace', operation: 'insert', userId: 'u' },
+        ],
+        operation: 'replace',
+        plateSuggestionId: 'replace',
+        previewAfter: 'new',
+        previewBefore: 'old',
+        userId: 'u',
       },
       {
-        type: 'img',
-        assetId: 'asset-1',
-        suggestion: { id: 'inserted-void', type: 'insert', userId: 'editor' },
-        children: [{ text: '' }],
-      },
-    ] as MaterialValue;
-
-    expect(finalizeSuggestionValue(blocks, 'accept')).toEqual([
-      { type: 'img', assetId: 'asset-1', children: [{ text: '' }] },
-    ]);
-    expect(finalizeSuggestionValue(blocks, 'reject')).toEqual([
-      { type: 'p', children: [{ text: 'removed block' }] },
-    ]);
-  });
-});
-
-describe('suggestionChangeItems', () => {
-  it('derives Add/Delete items from marked leaves', () => {
-    expect(suggestionChangeItems(proposed)).toEqual([
-      { type: 'remove', text: 'old' },
-      { type: 'insert', text: 'new' },
-    ]);
-  });
-
-  it('merges adjacent same-type runs split by formatting marks', () => {
-    const value = [
-      {
-        type: 'p',
-        children: [
-          { text: 'Keep ' },
+        blockId: 'block-a',
+        metadata: [
           {
-            text: 'hello ',
-            suggestion: true,
-            suggestion_a: { id: 'a', type: 'insert', userId: 'u' },
-          },
-          {
-            text: 'world',
-            bold: true,
-            suggestion: true,
-            suggestion_a: { id: 'a', type: 'insert', userId: 'u' },
+            id: 'style',
+            newProperties: { italic: true },
+            operation: 'update',
+            properties: { bold: true },
           },
         ],
+        operation: 'update',
+        plateSuggestionId: 'style',
+        previewAfter: '{"italic":true}',
+        previewBefore: '{"bold":true}',
       },
-    ] as MaterialValue;
-
-    expect(suggestionChangeItems(value)).toEqual([{ type: 'insert', text: 'hello world' }]);
-  });
-
-  it('does not merge runs separated by unchanged text', () => {
-    const value = [
       {
-        type: 'p',
-        children: [
-          { text: 'a', suggestion: true, suggestion_1: { id: '1', type: 'insert', userId: 'u' } },
-          { text: ' unchanged ' },
-          { text: 'b', suggestion: true, suggestion_2: { id: '2', type: 'insert', userId: 'u' } },
-        ],
+        blockId: 'block-b',
+        metadata: [{ id: 'void', operation: 'insert', userId: 'u' }],
+        operation: 'insert',
+        plateSuggestionId: 'void',
+        previewAfter: 'Image',
+        previewBefore: '',
+        userId: 'u',
       },
-    ] as MaterialValue;
-
-    expect(suggestionChangeItems(value)).toEqual([
-      { type: 'insert', text: 'a' },
-      { type: 'insert', text: 'b' },
+    ]);
+    expect([...suggestionIds(marked)].sort()).toEqual([
+      'replace',
+      'style',
+      'void',
     ]);
   });
 
-  it('reports fully suggested blocks once, not per leaf', () => {
+  it('groups one Plate ID independently in each top-level block', () => {
     const value = [
       {
-        type: 'p',
-        suggestion: { id: 'block', type: 'insert', userId: 'u' },
-        children: [
-          { text: 'new ', suggestion: true, suggestion_block: { id: 'block', type: 'insert', userId: 'u' } },
-          { text: 'block', suggestion: true, suggestion_block: { id: 'block', type: 'insert', userId: 'u' } },
-        ],
-      },
-    ] as MaterialValue;
-
-    expect(suggestionChangeItems(value)).toEqual([{ type: 'insert', text: 'new block' }]);
-  });
-
-  it('labels line-break suggestions', () => {
-    const value = [
-      {
-        type: 'p',
-        suggestion: { id: 'lb', type: 'insert', userId: 'u', isLineBreak: true },
-        children: [{ text: '' }],
-      },
-    ] as MaterialValue;
-
-    expect(suggestionChangeItems(value)).toEqual([{ type: 'insert', text: '(line break)' }]);
-  });
-
-  it('returns no items for a clean document', () => {
-    const value = [
-      { type: 'p', children: [{ text: 'plain' }] },
-      { type: 'h1', children: [{ text: 'title' }] },
-    ] as MaterialValue;
-
-    expect(suggestionChangeItems(value)).toEqual([]);
-  });
-});
-
-describe('submitted suggestion anchors', () => {
-  it('anchors an inserted line to the changed block that survives the editor reset', () => {
-    const baseValue = [
-      { type: 'p', id: 'before', children: [{ text: 'Before' }] },
-      { type: 'p', id: 'changed', children: [{ text: 'Changed' }] },
-    ] as MaterialValue;
-    const proposedValue = [
-      baseValue[0],
-      {
-        ...baseValue[1],
-        suggestion: { id: 'line', type: 'insert', userId: 'u', isLineBreak: true },
-      },
-      {
-        type: 'p',
-        id: 'inserted',
         children: [
           {
-            text: '',
             suggestion: true,
-            suggestion_line: { id: 'line', type: 'insert', userId: 'u' },
+            suggestion_x: { id: 'x', type: 'insert' },
+            text: 'one',
           },
         ],
+        id: 'a',
+        type: 'p',
+      },
+      {
+        children: [
+          {
+            suggestion: true,
+            suggestion_x: { id: 'x', type: 'insert' },
+            text: 'two',
+          },
+        ],
+        id: 'b',
+        type: 'p',
+      },
+    ] as MaterialValue;
+    expect(scanSuggestions(value)).toHaveLength(2);
+  });
+
+  it('requires stable block IDs and concrete Plate metadata', () => {
+    const value = [
+      {
+        children: [
+          { suggestion: true, text: 'missing metadata' },
+          {
+            suggestion: true,
+            suggestion_real: { id: 'real', type: 'insert' },
+            text: 'real',
+          },
+        ],
+        type: 'p',
+      },
+      {
+        children: [{ suggestion: true, text: 'decoration only' }],
+        id: 'stable',
+        type: 'p',
       },
     ] as MaterialValue;
 
-    expect(
-      buildSubmittedSuggestionAnchor({
-        baseValue,
-        proposedValue,
-        selection: {
-          anchor: { path: [2, 0], offset: 0 },
-          focus: { path: [2, 0], offset: 0 },
+    expect(scanSuggestions(value)).toEqual([]);
+  });
+
+  it('retains author, creation time, and typed source metadata for the UI', () => {
+    const value = [
+      {
+        children: [
+          {
+            suggestion: true,
+            suggestion_created: {
+              createdAt: '2026-07-25T01:00:00.000Z',
+              id: 'created',
+              type: 'insert',
+              userId: 'u_author',
+            },
+            text: 'new',
+          },
+        ],
+        id: 'block-a',
+        type: 'p',
+      },
+    ] as MaterialValue;
+
+    expect(scanSuggestions(value)[0]).toMatchObject({
+      createdAt: '2026-07-25T01:00:00.000Z',
+      metadata: [
+        {
+          createdAt: '2026-07-25T01:00:00.000Z',
+          id: 'created',
+          operation: 'insert',
+          userId: 'u_author',
         },
-      })
-    ).toEqual({
-      scope: 'document',
-      blockId: 'changed',
-      selection: {
-        anchor: { path: [1, 0], offset: 0 },
-        focus: { path: [1, 0], offset: 0 },
-      },
+      ],
+      userId: 'u_author',
     });
   });
 
-  it('recovers a block id from a legacy selection-only anchor', () => {
-    expect(
-      suggestionAnchorBlockId({
-        id: 'suggestion',
-        materialId: 'material',
-        userId: 'u',
-        baseRevision: 1,
-        anchor: { selection: { focus: { path: [1, 0], offset: 0 } } },
-        originalFragment: [
-          { type: 'p', id: 'first', children: [{ text: '' }] },
-          { type: 'p', id: 'second', children: [{ text: '' }] },
+  it('scans insert, remove, replace, update, block, line-break, and void metadata', () => {
+    const value = [
+      {
+        children: [
+          {
+            suggestion: true,
+            suggestion_insert: { id: 'insert', type: 'insert' },
+            text: 'add',
+          },
+          {
+            suggestion: true,
+            suggestion_remove: { id: 'remove', type: 'remove' },
+            text: 'remove',
+          },
+          {
+            suggestion: true,
+            suggestion_replace: { id: 'replace', type: 'remove' },
+            text: 'old',
+          },
+          {
+            suggestion: true,
+            suggestion_replace: { id: 'replace', type: 'insert' },
+            text: 'new',
+          },
+          {
+            suggestion: true,
+            suggestion_update: {
+              id: 'update',
+              newProperties: { italic: true },
+              properties: { bold: true },
+              type: 'update',
+            },
+            text: 'styled',
+          },
         ],
-        proposedFragment: null,
-        status: 'pending',
-        createdAt: '',
-        updatedAt: '',
-      })
-    ).toBe('second');
+        id: 'inline',
+        type: 'p',
+      },
+      {
+        children: [{ text: 'whole block' }],
+        id: 'block',
+        suggestion: { id: 'block-change', type: 'insert' },
+        type: 'h2',
+      },
+      {
+        children: [{ text: '' }],
+        id: 'line',
+        suggestion: { id: 'line-break', isLineBreak: true, type: 'insert' },
+        type: 'p',
+      },
+      {
+        children: [{ text: '' }],
+        id: 'void',
+        suggestion: { id: 'void-change', type: 'remove' },
+        type: 'img',
+        url: 'https://example.test/image.png',
+      },
+    ] as MaterialValue;
+
+    const changes = Object.fromEntries(
+      scanSuggestions(value).map((change) => [change.plateSuggestionId, change])
+    );
+    expect(Object.keys(changes).sort()).toEqual([
+      'block-change',
+      'insert',
+      'line-break',
+      'remove',
+      'replace',
+      'update',
+      'void-change',
+    ]);
+    expect(changes.insert).toMatchObject({
+      blockId: 'inline',
+      operation: 'insert',
+      previewAfter: 'add',
+    });
+    expect(changes.remove).toMatchObject({
+      blockId: 'inline',
+      operation: 'remove',
+      previewBefore: 'remove',
+    });
+    expect(changes.replace).toMatchObject({
+      operation: 'replace',
+      previewAfter: 'new',
+      previewBefore: 'old',
+    });
+    expect(changes.update).toMatchObject({
+      operation: 'update',
+      previewAfter: '{"italic":true}',
+      previewBefore: '{"bold":true}',
+    });
+    expect(changes['block-change']).toMatchObject({
+      blockId: 'block',
+      operation: 'insert',
+      previewAfter: 'whole block',
+    });
+    expect(changes['line-break']).toMatchObject({
+      blockId: 'line',
+      operation: 'insert',
+      previewAfter: '(line break)',
+      previewBefore: '',
+    });
+    expect(changes['void-change']).toMatchObject({
+      blockId: 'void',
+      operation: 'remove',
+    });
+  });
+});
+
+describe('stripCommentDecorations', () => {
+  it('removes runtime comment marks without touching suggestion metadata', () => {
+    const value = [
+      {
+        children: [
+          {
+            comment: true,
+            comment_discussion: true,
+            suggestion: true,
+            suggestion_change: { id: 'change', type: 'insert' },
+            text: 'annotated',
+          },
+        ],
+        id: 'block',
+        type: 'p',
+      },
+    ] as MaterialValue;
+
+    expect(stripCommentDecorations(value)).toEqual([
+      {
+        children: [
+          {
+            suggestion: true,
+            suggestion_change: { id: 'change', type: 'insert' },
+            text: 'annotated',
+          },
+        ],
+        id: 'block',
+        type: 'p',
+      },
+    ]);
+    expect(value[0].children[0]).toHaveProperty('comment', true);
+  });
+});
+
+describe('resolveSuggestions', () => {
+  it('accepts all insertions, removals, replacements, and updates', () => {
+    expect(finalizeSuggestionValue(marked, 'accept')).toEqual([
+      {
+        children: [
+          { text: 'Keep ' },
+          { bold: true, text: 'new' },
+          { italic: true, text: 'styled' },
+        ],
+        id: 'block-a',
+        type: 'p',
+      },
+      {
+        assetId: 'asset-1',
+        children: [{ text: '' }],
+        id: 'block-b',
+        type: 'img',
+      },
+    ]);
+  });
+
+  it('rejects all changes back to a clean projection', () => {
+    expect(finalizeSuggestionValue(marked, 'reject')).toEqual([
+      {
+        children: [{ text: 'Keep old' }, { bold: true, text: 'styled' }],
+        id: 'block-a',
+        type: 'p',
+      },
+    ]);
+  });
+
+  it('resolves selected IDs while preserving other pending marks', () => {
+    const result = resolveSuggestions(marked, 'accept', ['style']);
+    expect(result.resolvedIds).toEqual(['style']);
+    expect(result.hasPendingSuggestions).toBe(true);
+    expect(suggestionIds(result.value)).toEqual(new Set(['replace', 'void']));
+  });
+
+  it('rejects one selected ID while preserving every unselected mark', () => {
+    const result = resolveSuggestions(marked, 'reject', ['replace']);
+    expect(result.resolvedIds).toEqual(['replace']);
+    expect(result.hasPendingSuggestions).toBe(true);
+    expect(suggestionIds(result.value)).toEqual(new Set(['style', 'void']));
+    expect(result.value[0].children).toEqual([
+      { text: 'Keep old' },
+      {
+        bold: true,
+        suggestion: true,
+        suggestion_style: {
+          id: 'style',
+          newProperties: { italic: true },
+          properties: { bold: true },
+          type: 'update',
+        },
+        text: 'styled',
+      },
+    ]);
+  });
+
+  it('preserves a valid Slate root when rejecting the only inserted block', () => {
+    const value = [
+      {
+        children: [{ text: '' }],
+        suggestion: { id: 'only', type: 'insert' },
+        type: 'p',
+      },
+    ] as MaterialValue;
+    expect(resolveSuggestions(value, 'reject').value).toEqual([
+      { children: [{ text: '' }], type: 'p' },
+    ]);
+  });
+
+  it('coalesces equivalent text leaves after rejecting a split replacement', () => {
+    const value = [
+      {
+        children: [
+          { text: 'before ' },
+          {
+            suggestion: true,
+            suggestion_replace: { id: 'split-replace', type: 'remove' },
+            text: 'old',
+          },
+          {
+            suggestion: true,
+            suggestion_replace: { id: 'split-replace', type: 'insert' },
+            text: 'new',
+          },
+          { text: ' after' },
+        ],
+        id: 'split',
+        type: 'p',
+      },
+    ] as MaterialValue;
+    expect(resolveSuggestions(value, 'reject').value).toEqual([
+      { children: [{ text: 'before old after' }], id: 'split', type: 'p' },
+    ]);
   });
 });

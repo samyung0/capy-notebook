@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import {
   FloatingPortal,
   flip,
@@ -15,30 +14,31 @@ import {
   useEditorSelector,
   useReadOnly,
 } from 'platejs/react';
+import { useEffect } from 'react';
 import { Button } from '@/components/ui';
-import { cn } from '@/lib/cn';
-import { Mermaid } from '@/features/materials/Mermaid';
 import {
-  QuizOptionView,
-  QuizQuestionHeader,
-  quizOptionClassName,
-  type QuizOptionRole,
-} from '@/features/materials/QuizBlock';
-import {
-  flashcardsElementToCards,
-  flashcardsNodeFromFence,
-  normalizeMaterialValue,
-  quizElementToBlock,
-  quizNodeFromFence,
   type FlashcardElement as FlashcardNode,
   type FlashcardsElement as FlashcardsNode,
-  type MermaidElement as MermaidNode,
+  flashcardsElementToCards,
+  flashcardsNodeFromFence,
   type MaterialElement,
   type MaterialNode,
+  type MermaidElement as MermaidNode,
+  normalizeMaterialValue,
   type QuizElement as QuizNode,
   type QuizOptionElement as QuizOptionNode,
   type QuizQuestionElement as QuizQuestionNode,
+  quizElementToBlock,
+  quizNodeFromFence,
 } from '@/features/materials/document';
+import { Mermaid } from '@/features/materials/Mermaid';
+import {
+  type QuizOptionRole,
+  QuizOptionView,
+  QuizQuestionHeader,
+  quizOptionClassName,
+} from '@/features/materials/QuizBlock';
+import { cn } from '@/lib/cn';
 import {
   BLOCK_SHELL_CLASS,
   FLASHCARD_BACK_CLASS,
@@ -111,7 +111,9 @@ function StudyBlockRoot({
     const activateFromPointer = (event: PointerEvent) => {
       const target = event.target as HTMLElement;
       if (target.closest('[data-study-block-toolbar]')) return;
-      const block = target.closest('[data-slate-type="quiz"], [data-slate-type="flashcards"]');
+      const block = target.closest(
+        '[data-slate-type="quiz"], [data-slate-type="flashcards"]'
+      );
       if (block?.getAttribute('data-block-id') !== id) return;
       const path = editor.api.findPath(props.element);
       if (!path) return;
@@ -123,16 +125,20 @@ function StudyBlockRoot({
       });
     };
     document.addEventListener('pointerdown', activateFromPointer, true);
-    return () => document.removeEventListener('pointerdown', activateFromPointer, true);
+    return () =>
+      document.removeEventListener('pointerdown', activateFromPointer, true);
   }, [editor, props.element, readOnly]);
 
   return (
-    <PlateElement {...props} className={cn(STUDY_BLOCK_LIST_CLASS, 'relative', className)}>
+    <PlateElement
+      {...props}
+      className={cn(STUDY_BLOCK_LIST_CLASS, 'relative', className)}
+    >
       {!readOnly && active && (
         <StudyBlockToolbar
-          onEdit={onEdit}
-          onDuplicate={() => runBlockAction('duplicate')}
           onDelete={() => runBlockAction('delete')}
+          onDuplicate={() => runBlockAction('duplicate')}
+          onEdit={onEdit}
         />
       )}
       {children}
@@ -152,18 +158,25 @@ function StudyBlockToolbar({
 }) {
   const editor = useEditorRef();
   const floating = useVirtualFloating({
-    open: true,
-    strategy: 'fixed',
-    placement: 'bottom',
+    getBoundingClientRect: () =>
+      getRangeBoundingClientRect(editor, editor.selection),
     middleware: [
       offset(10),
       flip({
-        fallbackPlacements: ['top', 'bottom-start', 'bottom-end', 'top-start', 'top-end'],
+        fallbackPlacements: [
+          'top',
+          'bottom-start',
+          'bottom-end',
+          'top-start',
+          'top-end',
+        ],
         padding: 12,
       }),
       shift({ padding: 12 }),
     ],
-    getBoundingClientRect: () => getRangeBoundingClientRect(editor, editor.selection),
+    open: true,
+    placement: 'bottom',
+    strategy: 'fixed',
   });
   useEditorSelector(() => {
     floating.update?.();
@@ -175,15 +188,15 @@ function StudyBlockToolbar({
   return (
     <FloatingPortal>
       <div
-        ref={floating.refs.setFloating}
-        style={floating.style}
-        role="toolbar"
         aria-label="Study block actions"
+        className="z-50 flex items-center gap-0.5 rounded-lg border border-line bg-surface p-1 shadow-pop"
         contentEditable={false}
         data-plate-prevent-deselect
         data-study-block-toolbar
-        className="z-50 flex items-center gap-0.5 rounded-lg border border-line bg-surface p-1 shadow-pop"
         onMouseDown={(event) => event.preventDefault()}
+        ref={floating.refs.setFloating}
+        role="toolbar"
+        style={floating.style}
       >
         {onEdit && (
           <>
@@ -196,7 +209,7 @@ function StudyBlockToolbar({
         <StudyBlockAction label="Duplicate" onClick={onDuplicate}>
           <Copy />
         </StudyBlockAction>
-        <StudyBlockAction label="Delete" danger onClick={onDelete}>
+        <StudyBlockAction danger label="Delete" onClick={onDelete}>
           <Trash2 />
         </StudyBlockAction>
       </div>
@@ -217,16 +230,16 @@ function StudyBlockAction({
 }) {
   return (
     <button
-      type="button"
-      title={label}
       aria-label={label}
-      data-plate-prevent-deselect
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onClick}
       className={cn(
         'flex size-8 items-center justify-center rounded-row text-fg-secondary hover:bg-surface-hover-bg hover:text-fg [&_svg]:size-4',
         danger && 'hover:text-tint-error-fg'
       )}
+      data-plate-prevent-deselect
+      onClick={onClick}
+      onMouseDown={(event) => event.preventDefault()}
+      title={label}
+      type="button"
     >
       {children}
     </button>
@@ -240,12 +253,17 @@ function isCollapsed(selection: {
   return (
     selection.anchor.offset === selection.focus.offset &&
     selection.anchor.path.length === selection.focus.path.length &&
-    selection.anchor.path.every((part, index) => part === selection.focus.path[index])
+    selection.anchor.path.every(
+      (part, index) => part === selection.focus.path[index]
+    )
   );
 }
 
 function isDescendantPath(parent: number[], child: number[]): boolean {
-  return child.length > parent.length && parent.every((part, index) => child[index] === part);
+  return (
+    child.length > parent.length &&
+    parent.every((part, index) => child[index] === part)
+  );
 }
 
 function stripElementIds(node: MaterialNode): MaterialNode {
@@ -264,12 +282,12 @@ function findCurrentStudyItem(
 ): [MaterialElement, number[]] | undefined {
   const selection = editor.selection;
   if (!selection || !isDescendantPath(studyBlockPath, selection.anchor.path)) {
-    return undefined;
+    return;
   }
   const itemPath = selection.anchor.path.slice(0, studyBlockPath.length + 1);
   const node = editor.api.node(itemPath)?.[0];
   if (!node || (node.type !== 'quiz_question' && node.type !== 'flashcard')) {
-    return undefined;
+    return;
   }
   return [node as MaterialElement, itemPath];
 }
@@ -279,7 +297,9 @@ function cloneStudyItem(element: MaterialElement): MaterialElement {
   const oldOptionIds =
     element.type === 'quiz_question'
       ? (element as QuizQuestionNode).children
-          .filter((child): child is QuizOptionNode => child.type === 'quiz_option')
+          .filter(
+            (child): child is QuizOptionNode => child.type === 'quiz_option'
+          )
           .map((child) => child.id)
       : undefined;
   const oldCorrectIds =
@@ -301,7 +321,8 @@ function cloneStudyItem(element: MaterialElement): MaterialElement {
         return index >= 0 ? newOptions[index]?.id : undefined;
       })
       .filter((id): id is string => Boolean(id));
-    if (remapped.length) (clone as QuizQuestionNode).correctOptionIds = remapped;
+    if (remapped.length)
+      (clone as QuizQuestionNode).correctOptionIds = remapped;
     else delete (clone as QuizQuestionNode).correctOptionIds;
   }
 
@@ -327,10 +348,10 @@ function BlockShell({
           <span className="t-label text-fg-muted">{label}</span>
           {!readOnly && onEdit && (
             <Button
-              variant="ghost"
-              size="sm"
-              onClick={onEdit}
               className="opacity-70 hover:opacity-100"
+              onClick={onEdit}
+              size="sm"
+              variant="ghost"
             >
               Edit
             </Button>
@@ -349,10 +370,14 @@ export function QuizElement(props: PlateElementProps) {
   const element = props.element as unknown as QuizNode;
   function edit() {
     dialogs?.openQuiz(quizFenceBody(quizElementToBlock(element)), (code) => {
-      replaceElement(editor, props.element, quizNodeFromFence(code, element.id));
+      replaceElement(
+        editor,
+        props.element,
+        quizNodeFromFence(code, element.id)
+      );
     });
   }
-  return <StudyBlockRoot props={props} onEdit={dialogs ? edit : undefined} />;
+  return <StudyBlockRoot onEdit={dialogs ? edit : undefined} props={props} />;
 }
 
 export function FlashcardsElement(props: PlateElementProps) {
@@ -360,11 +385,24 @@ export function FlashcardsElement(props: PlateElementProps) {
   const dialogs = useOptionalNoteBlockDialogs();
   const element = props.element as unknown as FlashcardsNode;
   function edit() {
-    dialogs?.openFlashcards(flashcardsFenceBody(flashcardsElementToCards(element)), (code) => {
-      replaceElement(editor, props.element, flashcardsNodeFromFence(code, element.id));
-    });
+    dialogs?.openFlashcards(
+      flashcardsFenceBody(flashcardsElementToCards(element)),
+      (code) => {
+        replaceElement(
+          editor,
+          props.element,
+          flashcardsNodeFromFence(code, element.id)
+        );
+      }
+    );
   }
-  return <StudyBlockRoot props={props} onEdit={dialogs ? edit : undefined} className="gap-2" />;
+  return (
+    <StudyBlockRoot
+      className="gap-2"
+      onEdit={dialogs ? edit : undefined}
+      props={props}
+    />
+  );
 }
 
 export function MermaidElement(props: PlateElementProps) {
@@ -375,10 +413,15 @@ export function MermaidElement(props: PlateElementProps) {
     const next = window.prompt('Mermaid diagram source', element.source);
     if (next == null) return;
     const at = editor.api.findPath(props.element);
-    if (at) editor.tf.setNodes({ source: next } as Partial<MermaidNode>, { at });
+    if (at)
+      editor.tf.setNodes({ source: next } as Partial<MermaidNode>, { at });
   }
   return (
-    <BlockShell props={props} onEdit={readOnly ? undefined : edit} label="Diagram">
+    <BlockShell
+      label="Diagram"
+      onEdit={readOnly ? undefined : edit}
+      props={props}
+    >
       <div contentEditable={false}>
         <Mermaid code={element.source} />
       </div>
@@ -391,13 +434,14 @@ export function QuizQuestionElement(props: PlateElementProps) {
   const element = props.element as unknown as QuizQuestionNode;
   const path = editor.api.findPath(props.element);
   const pathIndex = path?.[path.length - 1];
-  const questionNumber = typeof pathIndex === 'number' ? pathIndex + 1 : undefined;
+  const questionNumber =
+    typeof pathIndex === 'number' ? pathIndex + 1 : undefined;
   return (
     <PlateElement {...props} className={QUIZ_REVIEW_QUESTION_CLASS}>
       <QuizQuestionHeader
+        level={element.level}
         questionNumber={questionNumber}
         questionType={element.questionType}
-        level={element.level}
       />
       {props.children}
     </PlateElement>
@@ -424,12 +468,15 @@ export function QuizOptionElement(props: PlateElementProps) {
   const pathIndex = path?.[path.length - 1];
   const optionNumber = typeof pathIndex === 'number' ? pathIndex : undefined;
   return (
-    <PlateElement {...props} className={quizOptionClassName(Boolean(correct), element.role)}>
+    <PlateElement
+      {...props}
+      className={quizOptionClassName(Boolean(correct), element.role)}
+    >
       <QuizOptionView
         correct={Boolean(correct)}
-        role={element.role}
-        optionNumber={optionNumber}
         explanation={element.explanation}
+        optionNumber={optionNumber}
+        role={element.role}
       >
         {props.children}
       </QuizOptionView>
@@ -437,16 +484,25 @@ export function QuizOptionElement(props: PlateElementProps) {
   );
 }
 
-function editorParentQuestion(editor: AnyEditor, element: object): QuizQuestionNode | undefined {
+function editorParentQuestion(
+  editor: AnyEditor,
+  element: object
+): QuizQuestionNode | undefined {
   const path = editor.api.findPath(element);
-  if (!path || path.length < 1) return undefined;
+  if (!path || path.length < 1) return;
   const parent = editor.api.node(path.slice(0, -1))?.[0];
-  return parent?.type === 'quiz_question' ? (parent as QuizQuestionNode) : undefined;
+  return parent?.type === 'quiz_question'
+    ? (parent as QuizQuestionNode)
+    : undefined;
 }
 
 export function QuizExplanationElement(props: PlateElementProps) {
   return (
-    <PlateElement {...props} as="p" className={cn('col-span-2', QUIZ_EXPLANATION_CLASS)}>
+    <PlateElement
+      {...props}
+      as="p"
+      className={cn('col-span-2', QUIZ_EXPLANATION_CLASS)}
+    >
       {props.children}
     </PlateElement>
   );
@@ -455,7 +511,11 @@ export function QuizExplanationElement(props: PlateElementProps) {
 export function FlashcardElement(props: PlateElementProps) {
   const element = props.element as unknown as FlashcardNode;
   return (
-    <PlateElement {...props} className={FLASHCARD_CLASS} data-card-id={element.id}>
+    <PlateElement
+      {...props}
+      className={FLASHCARD_CLASS}
+      data-card-id={element.id}
+    >
       {props.children}
     </PlateElement>
   );

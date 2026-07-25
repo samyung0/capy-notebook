@@ -1,13 +1,13 @@
-import { cn } from '@/lib/cn';
-import { Badge, Icon, Text } from '@/components/ui';
-import { LEVEL_LABEL, LEVEL_TONE } from '@/lib/levels';
 import type { Question } from '@/api/types';
+import { Badge, Icon, Text } from '@/components/ui';
 import {
   QUIZ_REVIEW_OPTION_CLASS,
   QUIZ_REVIEW_OPTION_CORRECT_CLASS,
   QUIZ_REVIEW_OPTION_NEUTRAL_CLASS,
 } from '@/features/notes/nodeStyles';
-import { fuzzyMatch, type Answer } from './grade';
+import { cn } from '@/lib/cn';
+import { LEVEL_LABEL, LEVEL_TONE } from '@/lib/levels';
+import { type Answer, fuzzyMatch } from './grade';
 
 export function QuestionRunner({
   question,
@@ -24,10 +24,10 @@ export function QuestionRunner({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-start gap-2">
-        <Badge tone={LEVEL_TONE[question.level]} size="sm">
+        <Badge size="sm" tone={LEVEL_TONE[question.level]}>
           {LEVEL_LABEL[question.level]}
         </Badge>
-        <Text variant="subtitle" className="flex-1">
+        <Text className="flex-1" variant="subtitle">
           {question.prompt}
         </Text>
       </div>
@@ -49,20 +49,24 @@ export function QuestionRunner({
                 : 'border-line bg-surface text-fg hover:bg-surface-hover-bg';
             return (
               <button
-                key={i}
-                disabled={review}
-                onClick={() => {
-                  if (review) return;
-                  const cur = answer as number[];
-                  if (question.type === 'mcq') onChange([i]);
-                  else onChange(selected ? cur.filter((x) => x !== i) : [...cur, i]);
-                }}
                 className={cn(
                   QUIZ_REVIEW_OPTION_CLASS,
                   'text-left',
                   review && 'cursor-default',
                   reviewTint
                 )}
+                disabled={review}
+                key={i}
+                onClick={() => {
+                  if (review) return;
+                  const cur = answer as number[];
+                  if (question.type === 'mcq') onChange([i]);
+                  else
+                    onChange(
+                      selected ? cur.filter((x) => x !== i) : [...cur, i]
+                    );
+                }}
+                type="button"
               >
                 <span className="flex items-center gap-3">
                   <span
@@ -75,20 +79,28 @@ export function QuestionRunner({
                             ? 'border-solid-error bg-solid-error text-white'
                             : 'border-line-strong'
                         : selected
-                          ? 'text-action-accent-fg bg-action-accent border-accent'
+                          ? 'border-accent bg-action-accent text-action-accent-fg'
                           : 'border-line-strong'
                     )}
                   >
                     {review
                       ? (isCorrect || selected) && (
-                          <Icon name={isCorrect ? 'check' : 'x'} size={13} strokeWidth={2.5} />
+                          <Icon
+                            name={isCorrect ? 'check' : 'x'}
+                            size={13}
+                            strokeWidth={2.5}
+                          />
                         )
-                      : selected && <Icon name="check" size={13} strokeWidth={2.5} />}
+                      : selected && (
+                          <Icon name="check" size={13} strokeWidth={2.5} />
+                        )}
                   </span>
                   {opt.value}
                 </span>
                 {review && opt.explanation && (
-                  <span className="pl-8 text-xs text-fg-muted">{opt.explanation}</span>
+                  <span className="pl-8 text-fg-muted text-xs">
+                    {opt.explanation}
+                  </span>
                 )}
               </button>
             );
@@ -112,14 +124,15 @@ export function QuestionRunner({
                 : 'border-line bg-surface hover:bg-surface-hover-bg';
             return (
               <button
-                key={String(v)}
-                disabled={review}
-                onClick={() => !review && onChange(v)}
                 className={cn(
-                  'flex-1 rounded-card border px-4 py-3 text-sm font-semibold transition-colors',
+                  'flex-1 rounded-card border px-4 py-3 font-semibold text-sm transition-colors',
                   review && 'cursor-default',
                   reviewTint
                 )}
+                disabled={review}
+                key={String(v)}
+                onClick={() => !review && onChange(v)}
+                type="button"
               >
                 {v ? 'True' : 'False'}
               </button>
@@ -131,21 +144,23 @@ export function QuestionRunner({
       {(question.type === 'fill' || question.type === 'short') && (
         <div className="flex flex-col gap-2">
           <input
-            value={answer as string}
-            readOnly={review}
-            onChange={(e) => !review && onChange(e.target.value)}
-            placeholder={review ? '(no answer)' : 'Type your answer'}
             className={cn(
-              'rounded-row border bg-surface px-3 py-2.5 text-sm text-fg outline-none',
+              'rounded-row border bg-surface px-3 py-2.5 text-fg text-sm outline-none',
               review
-                ? question.accepted.some((a) => fuzzyMatch(a.value, (answer as string) ?? ''))
+                ? question.accepted.some((a) =>
+                    fuzzyMatch(a.value, (answer as string) ?? '')
+                  )
                   ? 'border-solid-success'
                   : 'border-solid-error'
                 : 'border-line focus:border-line-strong'
             )}
+            onChange={(e) => !review && onChange(e.target.value)}
+            placeholder={review ? '(no answer)' : 'Type your answer'}
+            readOnly={review}
+            value={answer as string}
           />
           {review && (
-            <Text variant="meta" tone="muted">
+            <Text tone="muted" variant="meta">
               Accepted: {question.accepted.map((a) => a.value).join(', ')}
             </Text>
           )}
@@ -158,7 +173,6 @@ export function QuestionRunner({
             const correctHere = review && question.items[i]?.value === item;
             return (
               <div
-                key={item}
                 className={cn(
                   'flex items-center gap-2 rounded-card border px-3 py-2 text-sm',
                   review
@@ -167,34 +181,45 @@ export function QuestionRunner({
                       : 'border-solid-error bg-tint-error'
                     : 'border-line bg-surface'
                 )}
+                key={item}
               >
-                <span className="flex h-6 w-6 items-center justify-center rounded-pill bg-surface-hover-bg text-xs font-bold text-fg-secondary">
+                <span className="flex h-6 w-6 items-center justify-center rounded-pill bg-surface-hover-bg font-bold text-fg-secondary text-xs">
                   {i + 1}
                 </span>
                 <span className="flex-1">{item}</span>
                 {!review && (
                   <>
                     <button
+                      className="text-fg-muted disabled:opacity-30"
                       disabled={i === 0}
                       onClick={() => {
                         const a = [...(answer as string[])];
                         [a[i - 1], a[i]] = [a[i], a[i - 1]];
                         onChange(a);
                       }}
-                      className="text-fg-muted disabled:opacity-30"
+                      type="button"
                     >
-                      <Icon name="chevronLeft" size={16} style={{ transform: 'rotate(90deg)' }} />
+                      <Icon
+                        name="chevronLeft"
+                        size={16}
+                        style={{ transform: 'rotate(90deg)' }}
+                      />
                     </button>
                     <button
+                      className="text-fg-muted disabled:opacity-30"
                       disabled={i === (answer as string[]).length - 1}
                       onClick={() => {
                         const a = [...(answer as string[])];
                         [a[i + 1], a[i]] = [a[i], a[i + 1]];
                         onChange(a);
                       }}
-                      className="text-fg-muted disabled:opacity-30"
+                      type="button"
                     >
-                      <Icon name="chevronRight" size={16} style={{ transform: 'rotate(90deg)' }} />
+                      <Icon
+                        name="chevronRight"
+                        size={16}
+                        style={{ transform: 'rotate(90deg)' }}
+                      />
                     </button>
                   </>
                 )}
@@ -202,7 +227,7 @@ export function QuestionRunner({
             );
           })}
           {review && (
-            <Text variant="meta" tone="muted">
+            <Text tone="muted" variant="meta">
               Correct order: {question.items.map((it) => it.value).join(' → ')}
             </Text>
           )}
@@ -215,10 +240,19 @@ export function QuestionRunner({
             const chosen = (answer as Record<string, string>)[p.left] ?? '';
             const ok = review && chosen === p.right;
             return (
-              <div key={p.left} className="flex items-center gap-3">
-                <span className="w-1/2 text-sm font-medium text-fg">{p.left}</span>
+              <div className="flex items-center gap-3" key={p.left}>
+                <span className="w-1/2 font-medium text-fg text-sm">
+                  {p.left}
+                </span>
                 <select
-                  value={chosen}
+                  className={cn(
+                    'w-1/2 rounded-row border bg-surface px-2 py-2 text-fg text-sm',
+                    review
+                      ? ok
+                        ? 'border-solid-success'
+                        : 'border-solid-error'
+                      : 'border-line'
+                  )}
                   disabled={review}
                   onChange={(e) =>
                     !review &&
@@ -227,10 +261,7 @@ export function QuestionRunner({
                       [p.left]: e.target.value,
                     })
                   }
-                  className={cn(
-                    'w-1/2 rounded-row border bg-surface px-2 py-2 text-sm text-fg',
-                    review ? (ok ? 'border-solid-success' : 'border-solid-error') : 'border-line'
-                  )}
+                  value={chosen}
                 >
                   <option value="">Choose…</option>
                   {question.pairs.map((opt) => (
@@ -240,7 +271,11 @@ export function QuestionRunner({
                   ))}
                 </select>
                 {review && !ok && (
-                  <Text variant="meta" tone="muted" className="whitespace-nowrap">
+                  <Text
+                    className="whitespace-nowrap"
+                    tone="muted"
+                    variant="meta"
+                  >
                     → {p.right}
                   </Text>
                 )}

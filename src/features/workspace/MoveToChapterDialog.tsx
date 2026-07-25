@@ -1,6 +1,5 @@
-import { Icon, SimpleDialog } from '@/components/ui';
-import { cn } from '@/lib/cn';
 import type { Chapter, UserColor } from '@/api/types';
+import { Icon, SimpleDialog } from '@/components/ui';
 import { userColorPair } from '@/lib/userColor';
 
 /** Chapter picker for moving a file or material into a chapter (membership).
@@ -30,45 +29,55 @@ export function MoveToChapterDialog({
   const styleCls = (active: boolean): React.CSSProperties =>
     active
       ? {
-          background: pair.bg === 'transparent' ? 'var(--color-surface-dark)' : pair.bg,
+          background:
+            pair.bg === 'transparent' ? 'var(--color-surface-dark)' : pair.bg,
           color: pair.fg,
         }
       : {};
   return (
-    <SimpleDialog open={open} onClose={onClose} title={title}>
+    <SimpleDialog onClose={onClose} open={open} title={title}>
       <div className="flex max-h-[60vh] flex-col gap-0.5 overflow-auto">
         {chapters.length > 0 && (
           <>
             <button
-              type="button"
               className="flex w-full items-center gap-2 rounded-row px-2.5 py-2 text-left transition-colors hover:bg-surface-hover-bg"
-              style={styleCls(currentChapterId === null)}
               onClick={() => choose(null)}
+              style={styleCls(currentChapterId === null)}
+              type="button"
             >
               {/* <Icon name="chevronLeft" size={15} className="shrink-0" /> */}
               <span className="flex-1 truncate">No chapter</span>
-              {currentChapterId === null && <Icon name="check" className="size-3.75 shrink-0" />}
+              {currentChapterId === null && (
+                <Icon className="size-3.75 shrink-0" name="check" />
+              )}
             </button>
             {chapters.map((c) => {
               const active = c.id === currentChapterId;
               return (
                 <button
-                  key={c.id}
-                  type="button"
                   className="flex w-full items-center gap-2 rounded-row px-2.5 py-2 text-left transition-colors hover:bg-surface-hover-bg"
-                  style={styleCls(active)}
+                  key={c.id}
                   onClick={() => choose(c.id)}
+                  style={styleCls(active)}
+                  type="button"
                 >
-                  <Icon name="files" className="size-3.75 shrink-0 -translate-y-px" />
+                  <Icon
+                    className="size-3.75 shrink-0 -translate-y-px"
+                    name="files"
+                  />
                   <span className="flex-1 truncate">{c.name}</span>
-                  {active && <Icon name="check" className="size-3.75 shrink-0" />}
+                  {active && (
+                    <Icon className="size-3.75 shrink-0" name="check" />
+                  )}
                 </button>
               );
             })}
           </>
         )}
         {chapters.length === 0 && (
-          <div className="px-2.5 py-3 text-sm">No chapters yet. Create a chapter first.</div>
+          <div className="px-2.5 py-3 text-sm">
+            No chapters yet. Create a chapter first.
+          </div>
         )}
       </div>
     </SimpleDialog>

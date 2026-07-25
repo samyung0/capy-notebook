@@ -1,15 +1,14 @@
 import { useState } from 'react';
-import type { WorkspaceRole } from '@/api/types';
 import {
   useCreateWorkspaceInvite,
   useRemoveWorkspaceMember,
   useUpdateWorkspaceMember,
   useWorkspaceMembers,
 } from '@/api/hooks';
+import type { WorkspaceRole } from '@/api/types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Input, InputTitle } from '@/components/ui/Input';
-import { userToast } from '@/components/ui/userToast';
 import {
   Select,
   SelectContent,
@@ -17,16 +16,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select';
+import { userToast } from '@/components/ui/userToast';
 
 type MemberRole = Exclude<WorkspaceRole, 'owner'>;
 
 const ROLE_OPTIONS: Array<{ value: MemberRole; label: string }> = [
-  { value: 'viewer', label: 'View' },
-  { value: 'commenter', label: 'Comment' },
-  { value: 'editor', label: 'Edit' },
+  { label: 'View', value: 'viewer' },
+  { label: 'Comment', value: 'commenter' },
+  { label: 'Edit', value: 'editor' },
 ];
 
-export function WorkspaceMemberManager({ workspaceId }: { workspaceId: string }) {
+export function WorkspaceMemberManager({
+  workspaceId,
+}: {
+  workspaceId: string;
+}) {
   const [identifier, setIdentifier] = useState('');
   const [role, setRole] = useState<MemberRole>('viewer');
   const members = useWorkspaceMembers(workspaceId);
@@ -41,44 +45,52 @@ export function WorkspaceMemberManager({ workspaceId }: { workspaceId: string })
       await createInvite.mutateAsync({ identifier: value, role });
       setIdentifier('');
       userToast({
-        title: 'Invitation submitted',
         description: "If an account matches, they'll receive an invitation.",
+        title: 'Invitation submitted',
       });
     } catch {
       userToast({
-        title: 'Could not send invitation',
         description: 'Something went wrong. Please try again.',
+        title: 'Could not send invitation',
         variant: 'error',
       });
     }
   }
 
   return (
-    <section className="border-t border-divider pt-4" aria-labelledby="workspace-members-title">
+    <section
+      aria-labelledby="workspace-members-title"
+      className="border-divider border-t pt-4"
+    >
       <div>
         <InputTitle id="workspace-members-title">People with access</InputTitle>
         <p className="t-meta text-fg-muted">
-          Invite by exact email or user ID. They must accept before access is granted.
+          Invite by exact email or user ID. They must accept before access is
+          granted.
         </p>
       </div>
 
       <div className="mt-3 flex gap-2">
         <Input
-          value={identifier}
+          disabled={createInvite.isPending}
           onChange={(event) => setIdentifier(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') void invite();
           }}
           placeholder="Email or user ID"
+          value={identifier}
           wrapperClassName="min-w-0 flex-1"
-          disabled={createInvite.isPending}
         />
-        <RoleSelect value={role} onChange={setRole} disabled={createInvite.isPending} />
+        <RoleSelect
+          disabled={createInvite.isPending}
+          onChange={setRole}
+          value={role}
+        />
         <Button
-          size="sm"
-          variant="accent"
           disabled={createInvite.isPending || !identifier.trim()}
           onClick={() => void invite()}
+          size="sm"
+          variant="accent"
         >
           {createInvite.isPending ? 'Inviting…' : 'Invite'}
         </Button>
@@ -86,28 +98,35 @@ export function WorkspaceMemberManager({ workspaceId }: { workspaceId: string })
 
       <div className="mt-4 flex flex-col gap-1.5">
         {members.data?.map((member) => (
-          <div key={member.userId} className="flex items-center gap-2 py-1">
-            <Avatar src={member.avatarUrl} name={member.name} size="sm" />
+          <div className="flex items-center gap-2 py-1" key={member.userId}>
+            <Avatar name={member.name} size="sm" src={member.avatarUrl} />
             <div className="min-w-0 flex-1">
-              <p className="truncate text-sm font-medium text-fg">{member.name}</p>
-              <p className="truncate text-xs text-fg-muted">{member.email}</p>
+              <p className="truncate font-medium text-fg text-sm">
+                {member.name}
+              </p>
+              <p className="truncate text-fg-muted text-xs">{member.email}</p>
             </div>
             {member.role === 'owner' ? (
-              <span className="px-2 text-xs font-medium text-fg-muted">Owner</span>
+              <span className="px-2 font-medium text-fg-muted text-xs">
+                Owner
+              </span>
             ) : (
               <>
                 <RoleSelect
-                  value={member.role}
-                  onChange={(nextRole) =>
-                    updateMember.mutate({ userId: member.userId, role: nextRole })
-                  }
                   disabled={updateMember.isPending || removeMember.isPending}
+                  onChange={(nextRole) =>
+                    updateMember.mutate({
+                      role: nextRole,
+                      userId: member.userId,
+                    })
+                  }
+                  value={member.role}
                 />
                 <Button
-                  size="sm"
-                  variant="ghost"
                   disabled={removeMember.isPending}
                   onClick={() => removeMember.mutate(member.userId)}
+                  size="sm"
+                  variant="ghost"
                 >
                   Remove
                 </Button>
@@ -131,9 +150,9 @@ function RoleSelect({
 }) {
   return (
     <Select
-      value={value}
-      onValueChange={(next) => onChange(next as MemberRole)}
       disabled={disabled}
+      onValueChange={(next) => onChange(next as MemberRole)}
+      value={value}
     >
       <SelectTrigger className="w-28">
         <SelectValue />

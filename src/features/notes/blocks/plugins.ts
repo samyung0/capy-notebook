@@ -1,5 +1,4 @@
 import { createPlatePlugin } from 'platejs/react';
-import { FLASHCARDS_KEY, MERMAID_KEY, QUIZ_KEY } from './shared';
 import {
   FlashcardBackElement,
   FlashcardElement,
@@ -13,6 +12,7 @@ import {
   QuizPromptElement,
   QuizQuestionElement,
 } from './elements';
+import { FLASHCARDS_KEY, MERMAID_KEY, QUIZ_KEY } from './shared';
 
 export const QuizElementPlugin = createPlatePlugin({
   key: QUIZ_KEY,

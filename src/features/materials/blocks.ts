@@ -21,13 +21,13 @@ import YAML from 'yaml';
 import type { Question } from '@/api/types';
 
 export interface QuizBlock {
-  timeLimitMin?: number;
   questions: Question[];
+  timeLimitMin?: number;
 }
 export interface FlashcardContent {
-  id: string;
-  front: string;
   back: string;
+  front: string;
+  id: string;
 }
 export interface FlashcardsBlock {
   cards: FlashcardContent[];
@@ -51,10 +51,16 @@ export function extractFence(content: string, lang: string): string | null {
 
 function parseQuizYaml(body: string): QuizBlock {
   try {
-    const doc = (YAML.parse(body) ?? {}) as { questions?: unknown; timeLimitMin?: unknown };
+    const doc = (YAML.parse(body) ?? {}) as {
+      questions?: unknown;
+      timeLimitMin?: unknown;
+    };
     return {
-      questions: Array.isArray(doc.questions) ? (doc.questions as Question[]) : [],
-      timeLimitMin: typeof doc.timeLimitMin === 'number' ? doc.timeLimitMin : undefined,
+      questions: Array.isArray(doc.questions)
+        ? (doc.questions as Question[])
+        : [],
+      timeLimitMin:
+        typeof doc.timeLimitMin === 'number' ? doc.timeLimitMin : undefined,
     };
   } catch {
     return { questions: [] };
@@ -64,7 +70,9 @@ function parseQuizYaml(body: string): QuizBlock {
 function parseFlashcardsYaml(body: string): FlashcardsBlock {
   try {
     const doc = (YAML.parse(body) ?? {}) as { cards?: unknown };
-    return { cards: Array.isArray(doc.cards) ? (doc.cards as FlashcardContent[]) : [] };
+    return {
+      cards: Array.isArray(doc.cards) ? (doc.cards as FlashcardContent[]) : [],
+    };
   } catch {
     return { cards: [] };
   }
@@ -103,6 +111,9 @@ export function quizMarkdown(title: string, data: QuizBlock): string {
   return fenceDoc(title || 'Quiz', 'quiz', payload);
 }
 
-export function flashcardsMarkdown(title: string, cards: FlashcardContent[]): string {
+export function flashcardsMarkdown(
+  title: string,
+  cards: FlashcardContent[]
+): string {
   return fenceDoc(title || 'Flashcards', 'flashcards', { cards: cards ?? [] });
 }

@@ -10,10 +10,10 @@ async function getMermaid() {
       const mermaid = mod.default;
       const dark = document.documentElement.classList.contains('dark');
       mermaid.initialize({
+        fontFamily: 'inherit',
+        securityLevel: 'strict',
         startOnLoad: false,
         theme: dark ? 'dark' : 'default',
-        securityLevel: 'strict',
-        fontFamily: 'inherit',
       });
       return mermaid;
     });
@@ -39,7 +39,8 @@ export function Mermaid({ code }: { code: string }) {
         if (!cancelled) setSvg(svg);
       })
       .catch((e: unknown) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to render diagram');
+        if (!cancelled)
+          setError(e instanceof Error ? e.message : 'Failed to render diagram');
       });
     return () => {
       cancelled = true;
@@ -50,8 +51,10 @@ export function Mermaid({ code }: { code: string }) {
   if (error) {
     return (
       <div className="my-3 rounded-card border border-solid-error/40 bg-tint-error/40 p-3">
-        <p className="mb-2 text-xs font-medium text-solid-error">Diagram error: {error}</p>
-        <pre className="overflow-auto text-xs text-fg-muted">{code}</pre>
+        <p className="mb-2 font-medium text-solid-error text-xs">
+          Diagram error: {error}
+        </p>
+        <pre className="overflow-auto text-fg-muted text-xs">{code}</pre>
       </div>
     );
   }

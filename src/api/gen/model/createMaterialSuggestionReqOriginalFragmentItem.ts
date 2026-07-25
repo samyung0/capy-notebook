@@ -5,4 +5,6 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type CreateMaterialSuggestionReqOriginalFragmentItem = { [key: string]: unknown };
+export type CreateMaterialSuggestionReqOriginalFragmentItem = {
+  [key: string]: unknown;
+};

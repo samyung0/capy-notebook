@@ -5,27 +5,28 @@ if (!configuredSecret) {
 export const E2E_SECRET = configuredSecret;
 
 export const users = {
-  owner: 'u_owner',
-  editor: 'u_editor',
   commenter: 'u_commenter',
-  viewer: 'u_viewer',
+  editor: 'u_editor',
   other: 'u_other',
+  owner: 'u_owner',
+  viewer: 'u_viewer',
 } as const;
 
 export const seed = {
-  privateWorkspace: {
-    id: 'ws_e2e_private',
-    name: 'E2E Private Workspace',
-    secretTitle: 'Secret private title',
-    secretFile: 'secret-notes.md',
+  commenterNote: {
+    body: 'Suggest a clearer sentence',
+    id: 'note_e2e_public',
+    name: 'E2E Commenter Note',
   },
-  linkWorkspace: {
-    id: 'ws_e2e_link',
-    name: 'E2E Link Workspace',
+  commentNote: {
+    body: 'Comment on this selected sentence',
+    id: 'note_e2e_comment',
+    name: 'E2E Comment Highlight Note',
   },
-  publicWorkspace: {
-    id: 'ws_e2e_public',
-    name: 'E2E Public Workspace',
+  editableNote: {
+    body: 'Signed-in editors can change this text',
+    id: 'note_e2e_edit',
+    name: 'E2E Editable Note',
   },
   editableWorkspace: {
     id: 'ws_e2e_edit',
@@ -35,73 +36,77 @@ export const seed = {
     id: 'ws_e2e_invite',
     name: 'E2E Invite Only Workspace',
   },
-  mutateWorkspace: {
-    id: 'ws_e2e_mutate',
-    name: 'E2E Mutate Workspace',
-  },
-  privateQuiz: {
-    id: 'qz_e2e_private',
-    name: 'E2E Private Quiz',
-    prompt: 'Private quiz prompt?',
+  linkDeck: {
+    front: 'Link front',
+    id: 'dk_e2e_link',
+    name: 'E2E Link Deck',
   },
   linkQuiz: {
     id: 'qz_e2e_link',
     name: 'E2E Link Quiz',
     prompt: 'Link quiz prompt?',
   },
-  publicQuiz: {
-    id: 'qz_e2e_public',
-    name: 'E2E Public Quiz',
-    prompt: 'Public quiz prompt?',
-  },
-  mutateQuiz: {
-    id: 'qz_e2e_mutate',
-    name: 'E2E Mutate Quiz',
-  },
-  privateDeck: {
-    id: 'dk_e2e_private',
-    name: 'E2E Private Deck',
-    front: 'Private front',
-  },
-  linkDeck: {
-    id: 'dk_e2e_link',
-    name: 'E2E Link Deck',
-    front: 'Link front',
-  },
-  publicDeck: {
-    id: 'dk_e2e_public',
-    name: 'E2E Public Deck',
-    front: 'Public front',
+  linkWorkspace: {
+    id: 'ws_e2e_link',
+    name: 'E2E Link Workspace',
   },
   mutateDeck: {
     id: 'dk_e2e_mutate',
     name: 'E2E Mutate Deck',
   },
-  viewerNote: {
-    id: 'note_e2e_link',
-    name: 'E2E Viewer Note',
-    body: 'Static viewer content',
+  mutateQuiz: {
+    id: 'qz_e2e_mutate',
+    name: 'E2E Mutate Quiz',
   },
-  commenterNote: {
-    id: 'note_e2e_public',
-    name: 'E2E Commenter Note',
-    body: 'Suggest a clearer sentence',
+  mutateWorkspace: {
+    id: 'ws_e2e_mutate',
+    name: 'E2E Mutate Workspace',
   },
-  editableNote: {
-    id: 'note_e2e_edit',
-    name: 'E2E Editable Note',
-    body: 'Signed-in editors can change this text',
+  privateDeck: {
+    front: 'Private front',
+    id: 'dk_e2e_private',
+    name: 'E2E Private Deck',
+  },
+  privateQuiz: {
+    id: 'qz_e2e_private',
+    name: 'E2E Private Quiz',
+    prompt: 'Private quiz prompt?',
+  },
+  privateWorkspace: {
+    id: 'ws_e2e_private',
+    name: 'E2E Private Workspace',
+    secretFile: 'secret-notes.md',
+    secretTitle: 'Secret private title',
+  },
+  publicDeck: {
+    front: 'Public front',
+    id: 'dk_e2e_public',
+    name: 'E2E Public Deck',
+  },
+  publicQuiz: {
+    id: 'qz_e2e_public',
+    name: 'E2E Public Quiz',
+    prompt: 'Public quiz prompt?',
+  },
+  publicWorkspace: {
+    id: 'ws_e2e_public',
+    name: 'E2E Public Workspace',
   },
   reviewNote: {
+    body: 'Original review sentence',
     id: 'note_e2e_review',
     name: 'E2E Suggestion Review Note',
-    body: 'Original review sentence',
+  },
+  viewerNote: {
+    body: 'Static viewer content',
+    id: 'note_e2e_link',
+    name: 'E2E Viewer Note',
   },
 } as const;
 
 export function e2eHeaders(userId: string): Record<string, string> {
   return {
-    'X-E2E-User-Id': userId,
     'X-E2E-Secret': E2E_SECRET,
+    'X-E2E-User-Id': userId,
   };
 }

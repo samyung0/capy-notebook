@@ -23,45 +23,54 @@ import type {
   Attempt as GenAttempt,
   AttemptDetail as GenAttemptDetail,
   Chapter as GenChapter,
+  Comment as GenComment,
   Deck as GenDeck,
+  Discussion as GenDiscussion,
   Event as GenEvent,
   File as GenFile,
+  MaterialSuggestion as GenMaterialSuggestion,
   Quiz as GenQuiz,
   SearchResult as GenSearchResult,
   Workspace as GenWorkspace,
-  UserColor,
   Privacy,
-} from './gen/model';
-
-/* ---------------- enums & scalars (straight from the generated spec) ---------------- */
-export {
   UserColor,
-  Privacy,
-  PlanTier,
-  SubscriptionStatus,
-  FileKind,
-  FileStatus,
-  NotificationKind,
-  SearchKind,
 } from './gen/model';
-export type { Tag, TagInput } from './gen/model';
 
 /* ---------------- pass-through wire contracts ---------------- */
 export type {
-  User,
   BillingInfo,
-  IntegrationsStatus,
-  Flashcard,
-  SrsState,
-  Label,
-  Task,
-  Notification as AppNotification,
   Canvas as ThinkingCanvas,
+  Flashcard,
+  IntegrationsStatus,
+  Label,
+  Notification as AppNotification,
   SourceUploadPolicy,
+  SrsState,
+  Tag,
+  TagInput,
+  Task,
+  User,
+} from './gen/model';
+/* ---------------- enums & scalars (straight from the generated spec) ---------------- */
+export {
+  FileKind,
+  FileStatus,
+  NotificationKind,
+  PlanTier,
+  Privacy,
+  SearchKind,
+  SubscriptionStatus,
+  UserColor,
 } from './gen/model';
 
 /* ---------------- UI-only color extras (not on the wire) ---------------- */
-export type SystemColor = 'success' | 'info' | 'warning' | 'error' | 'accent-1' | 'accent-2';
+export type SystemColor =
+  | 'success'
+  | 'info'
+  | 'warning'
+  | 'error'
+  | 'accent-1'
+  | 'accent-2';
 
 /* ---------------- pass-through contracts (identical to the wire) ---------------- */
 export type Workspace = Omit<GenWorkspace, 'isOwner'> & {
@@ -85,7 +94,10 @@ export type AttemptDetail = Omit<GenAttemptDetail, 'questions' | 'answers'> & {
    Same generated shape, minus the wire's opaque / client-only fields. */
 
 /** Adds transient client state while tolerating legacy mock rows without a position. */
-export type SourceFile = Omit<GenFile, 'position'> & { position?: number; ingestPct?: number };
+export type SourceFile = Omit<GenFile, 'position'> & {
+  position?: number;
+  ingestPct?: number;
+};
 
 /** `color` is a client-side tint derived from the owning workspace/label/deck. */
 export type SearchResult = GenSearchResult & { color?: UserColor };
@@ -110,8 +122,8 @@ export type PublicDeck = Deck & { author: string; clones: number };
  * pipeline was offline — the copied files exist but have no knowledge graph
  * until they are re-ingested. */
 export interface CloneWorkspaceResult {
-  workspace: Workspace;
   ragCloned: boolean;
+  workspace: Workspace;
 }
 
 /* ---------------- chat ----------------
@@ -119,20 +131,23 @@ export interface CloneWorkspaceResult {
    from the generated spec. ChatMessage is the UI-facing turn: the generated
    Message shape with role/status narrowed to unions and an optional client-only
    `pending` flag while a temp (pre-persisted) row streams. */
-export type { Conversation, Citation } from './gen/model';
-export type { Message as WireMessage } from './gen/model';
+export type {
+  Citation,
+  Conversation,
+  Message as WireMessage,
+} from './gen/model';
 
 export type ChatRole = 'user' | 'assistant' | 'system';
 export type ChatStatus = 'streaming' | 'complete' | 'aborted' | 'error';
 
 export interface ChatMessage {
-  id: string;
-  conversationId?: string;
-  role: ChatRole;
-  content: string;
-  status: ChatStatus;
   citations?: import('./gen/model').Citation[];
+  content: string;
+  conversationId?: string;
   createdAt?: string;
+  id: string;
+  role: ChatRole;
+  status: ChatStatus;
 }
 
 /* ---------------- Quizzes: the polymorphic Question union ----------------
@@ -154,39 +169,39 @@ export type QuestionType =
 export type CognitiveLevel = 'recall' | 'application' | 'analysis';
 
 interface BaseQuestion {
+  explanation?: string;
   id: string;
-  type: QuestionType;
   level: CognitiveLevel;
   prompt: string;
-  explanation?: string;
+  type: QuestionType;
 }
 export interface ChoiceQuestion extends BaseQuestion {
-  type: 'mcq' | 'multi';
+  /** indices into `options` */
+  correct: number[];
   /** Object-wrapped so react-hook-form useFieldArray can bind each row. Each
    * option can carry its own explanation (why it is right or wrong), surfaced
    * during review. Question-level `explanation` still applies to non-choice
    * types. */
   options: { value: string; explanation?: string }[];
-  /** indices into `options` */
-  correct: number[];
+  type: 'mcq' | 'multi';
 }
 export interface BooleanQuestion extends BaseQuestion {
-  type: 'boolean';
   correct: boolean;
+  type: 'boolean';
 }
 export interface TextQuestion extends BaseQuestion {
-  type: 'fill' | 'short';
   /** accepted answers (case-insensitive), object-wrapped for useFieldArray */
   accepted: { value: string }[];
+  type: 'fill' | 'short';
 }
 export interface MatchingQuestion extends BaseQuestion {
-  type: 'matching';
   pairs: { left: string; right: string }[];
+  type: 'matching';
 }
 export interface OrderingQuestion extends BaseQuestion {
-  type: 'ordering';
   /** items in their correct order, object-wrapped for useFieldArray */
   items: { value: string }[];
+  type: 'ordering';
 }
 export type Question =
   | ChoiceQuestion
@@ -207,25 +222,31 @@ export interface GenerateScope {
   fileIds: string[]; // file ids
 }
 export interface GenerateFlashcardsOptions extends GenerateScope {
-  kind: 'flashcards';
   count: number;
+  kind: 'flashcards';
   style: 'term-def' | 'qa' | 'cloze';
 }
 export interface GenerateQuizOptions extends GenerateScope {
-  kind: 'quiz';
   count: number;
-  types: QuestionType[];
+  kind: 'quiz';
   levels: CognitiveLevel[];
   timeLimitMin?: number;
+  types: QuestionType[];
 }
-export type DiagramType = 'auto' | 'flowchart' | 'sequence' | 'class' | 'state' | 'er';
+export type DiagramType =
+  | 'auto'
+  | 'flowchart'
+  | 'sequence'
+  | 'class'
+  | 'state'
+  | 'er';
 export interface GenerateMindmapOptions extends GenerateScope {
-  kind: 'mindmap';
   detail: 'brief' | 'standard' | 'detailed';
+  kind: 'mindmap';
 }
 export interface GenerateDiagramOptions extends GenerateScope {
-  kind: 'diagram';
   diagramType: DiagramType;
+  kind: 'diagram';
 }
 export type GenerateOptions =
   | GenerateFlashcardsOptions
@@ -237,113 +258,96 @@ export type GenerateOptions =
    Persisted, workspace-scoped (not chapter-scoped) study artifacts rendered
    in-pane. Mindmaps and diagrams are markdown documents (mermaid fences);
    quizzes and decks are referenced by the unified materials index. */
-export type MaterialKind = 'mindmap' | 'diagram' | 'quiz' | 'flashcards' | 'note';
+export type MaterialKind =
+  | 'mindmap'
+  | 'diagram'
+  | 'quiz'
+  | 'flashcards'
+  | 'note';
 
 export interface Material {
-  id: string;
-  workspaceId: string;
-  workspaceName: string;
   capabilities: import('./gen/model').AccessCapabilities;
-  role?: WorkspaceRole;
-  kind: MaterialKind;
-  title: string;
+  /** Chapter this material is filed under (membership). null = unfiled.
+   * Orthogonal to scopeChapters (provenance of the generated content). */
+  chapterId: string | null;
+  /** Presentation tint; only meaningful for flashcards decks. */
+  color?: UserColor;
   /** Versioned Universal Plate document. */
   content: import('@/features/materials/document').MaterialDocument;
   /** UTF-8 byte length of the persisted content JSON returned by the backend. */
   contentBytes?: number;
-  /** Chapter this material is filed under (membership). null = unfiled.
-   * Orthogonal to scopeChapters (provenance of the generated content). */
-  chapterId: string | null;
-  /** Shared ordering position among files and materials in the same bucket. */
-  position?: number;
-  scopeChapters: string[];
-  scopeFileIds: string[];
-  privacy: Privacy;
-  /** Presentation tint; only meaningful for flashcards decks. */
-  color?: UserColor;
   createdAt: string;
-  updatedAt?: string;
-  revision?: number;
+  hasPendingSuggestions?: boolean;
+  id: string;
   /** Request-scoped: false when viewing someone else's shared material. */
   isOwner?: boolean;
+  kind: MaterialKind;
+  /** Shared ordering position among files and materials in the same bucket. */
+  position?: number;
+  privacy: Privacy;
+  revision?: number;
+  role?: WorkspaceRole;
+  scopeChapters: string[];
+  scopeFileIds: string[];
+  title: string;
+  updatedAt?: string;
+  workspaceId: string;
+  workspaceName: string;
 }
 
-/* ---------------- Plate collaboration (temporary hand-written contracts) ----------------
-   These mirror the new backend models. Keep them isolated here until the next
-   OpenAPI generation can replace them without touching editor components. */
+/* ---------------- Plate collaboration ---------------- */
 export type WorkspaceRole = 'owner' | 'editor' | 'commenter' | 'viewer';
 
 export interface WorkspaceMember {
-  workspaceId: string;
-  userId: string;
-  name: string;
-  email: string;
   avatarUrl?: string;
+  createdAt: string;
+  email: string;
+  name: string;
   role: WorkspaceRole;
-  createdAt: string;
+  userId: string;
+  workspaceId: string;
 }
 
-export interface MaterialComment {
-  id: string;
-  discussionId: string;
-  userId: string;
-  contentRich: import('@/features/materials/document').MaterialValue;
-  isEdited: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
+export type MaterialComment = Omit<GenComment, 'contentRich' | 'replies'> & {
+  contentRich: import('@/features/materials/document').MaterialValue | null;
+  replies: MaterialComment[];
+};
 
-export interface MaterialDiscussion {
-  id: string;
-  materialId: string;
-  blockId?: string;
-  documentContent?: string;
-  anchor?: Record<string, unknown>;
-  userId: string;
-  isResolved: boolean;
-  createdAt: string;
-  updatedAt: string;
+export type MaterialSuggestion = GenMaterialSuggestion;
+
+export type MaterialDiscussion = Omit<
+  GenDiscussion,
+  'anchor' | 'comments' | 'suggestions'
+> & {
+  anchor: unknown;
   comments: MaterialComment[];
-}
+  suggestions: MaterialSuggestion[];
+};
 
 export interface MaterialRevision {
+  content: import('@/features/materials/document').MaterialDocument;
+  createdAt: string;
+  createdBy?: string;
   materialId: string;
   revision: number;
   title: string;
-  content: import('@/features/materials/document').MaterialDocument;
-  createdBy?: string;
-  createdAt: string;
 }
 
-export type SuggestionStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn';
-
-export interface MaterialSuggestion {
-  id: string;
-  materialId: string;
-  userId: string;
-  baseRevision: number;
-  anchor: Record<string, unknown>;
-  originalFragment: import('@/features/materials/document').MaterialValue | null;
-  proposedFragment: import('@/features/materials/document').MaterialValue | null;
-  status: SuggestionStatus;
-  reviewedBy?: string;
-  reviewedAt?: string;
-  createdAt: string;
-  updatedAt: string;
-}
+export type { SuggestionStatus } from './gen/model';
 
 /** A row in the left-panel materials list. Aggregates markdown materials plus
  * the workspace's quizzes and decks into one flat (non chapter-scoped) list. */
 export type MaterialRefType = 'mindmap' | 'diagram' | 'quiz' | 'deck' | 'note';
 export interface MaterialRef {
-  id: string;
-  type: MaterialRefType;
-  title: string;
   /** Chapter this material is filed under (membership). null = unfiled. */
   chapterId: string | null;
+  createdAt: string;
+  hasPendingSuggestions?: boolean;
+  id: string;
   /** Shared ordering position among files and materials in the same bucket. */
   position: number;
-  createdAt: string;
+  title: string;
+  type: MaterialRefType;
 }
 
 /* ---------------- Raw generated namespace ----------------

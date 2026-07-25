@@ -1,13 +1,26 @@
 import type { SourceFile } from '@/api/types';
 
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'jp2', 'webp', 'gif', 'bmp', 'svg', 'avif']);
+const IMAGE_EXTS = new Set([
+  'png',
+  'jpg',
+  'jpeg',
+  'jp2',
+  'webp',
+  'gif',
+  'bmp',
+  'svg',
+  'avif',
+]);
 
 export const IMAGE_MIN_ZOOM = 1;
 export const IMAGE_MAX_ZOOM = 5;
 export const IMAGE_ZOOM_STEP = 0.25;
 
 export function clampImageZoom(next: number) {
-  return Math.min(IMAGE_MAX_ZOOM, Math.max(IMAGE_MIN_ZOOM, Math.round(next * 100) / 100));
+  return Math.min(
+    IMAGE_MAX_ZOOM,
+    Math.max(IMAGE_MIN_ZOOM, Math.round(next * 100) / 100)
+  );
 }
 
 export function fileExt(name: string) {

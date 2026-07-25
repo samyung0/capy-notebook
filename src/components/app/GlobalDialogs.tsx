@@ -1,6 +1,4 @@
-import { ConfirmDialog, SimpleDialog, Text } from '@/components/ui';
 import {
-  useChapters,
   useCreateEvent,
   useCreateWorkspace,
   useLabels,
@@ -8,75 +6,46 @@ import {
   useUpdateLabel,
   useUpdateTask,
   useUpdateWorkspace,
-  useUploadSource,
-  useWorkspaceStats,
 } from '@/api/hooks';
-import { WorkspaceFormCreateDialog } from '@/features/workspaces/WorkspaceFormCreateDialog';
-import { TaskEditModal } from '@/features/tasks/TaskEditDialog';
-import { LabelEditModal } from '@/features/schedule/LabelEditDialog';
-import { EventFormModal } from '@/features/schedule/EventFormDialog';
+import { ConfirmDialog } from '@/components/ui';
 import { EventDetailDialog } from '@/features/schedule/EventDetailDialog';
-import { AddSourceModal } from '@/features/workspace/AddSourceDialog';
-import { useDialogs } from '@/stores/dialogs';
-import { SearchDialog } from './TopInsetBar';
-import { WorkspaceFormEditDialog } from '@/features/workspaces/WorkspaceFormEditDialog';
+import { EventFormDialog } from '@/features/schedule/EventFormDialog';
+import { LabelEditDialog } from '@/features/schedule/LabelEditDialog';
+import { TaskEditDialog } from '@/features/tasks/TaskEditDialog';
+import { AddSourceDialog } from '@/features/workspace/AddSourceDialog';
 import { OneDriveImportDialog } from '@/features/workspace/OneDriveImportDialog';
-
-function WorkspaceStatsModal({ id, onClose }: { id: string; onClose: () => void }) {
-  const { data } = useWorkspaceStats(id);
-  const rows = [
-    ['Chapters', data?.chapters],
-    ['Files', data?.files],
-    ['Quizzes', data?.quizzes],
-    ['Attempts', data?.attempts],
-    ['Average score', data ? `${data.avgScore}%` : undefined],
-  ] as const;
-  return (
-    <SimpleDialog open onClose={onClose} title="Workspace statistics" width={420}>
-      <div className="grid grid-cols-2 gap-3">
-        {rows.map(([label, val]) => (
-          <div
-            key={label}
-            className="rounded-card border border-line bg-surface-hover-bg px-4 py-3"
-          >
-            <Text variant="label" tone="muted">
-              {label}
-            </Text>
-            <Text variant="section" className="mt-1">
-              {val ?? '—'}
-            </Text>
-          </div>
-        ))}
-      </div>
-    </SimpleDialog>
-  );
-}
+import { WorkspaceFormCreateDialog } from '@/features/workspace/WorkspaceFormCreateDialog';
+import { WorkspaceFormEditDialog } from '@/features/workspace/WorkspaceFormEditDialog';
+import { WorkspaceStatsDialog } from '@/features/workspace/WorkspaceStatsDialog';
+import { usePortals } from '@/stores/portals';
+import { userToast } from '../ui/userToast';
+import { SearchDialog } from './TopInsetBar';
 
 export function GlobalDialogs() {
-  const workspaceCreate = useDialogs((s) => s.workspaceCreate);
-  const workspaceEdit = useDialogs((s) => s.workspaceEdit);
-  const workspaceId = useDialogs((s) => s.workspaceId);
-  const workspaceStatsId = useDialogs((s) => s.workspaceStatsId);
-  const taskEdit = useDialogs((s) => s.taskEdit);
-  const labelEdit = useDialogs((s) => s.labelEdit);
-  const eventForm = useDialogs((s) => s.eventForm);
-  const eventDetail = useDialogs((s) => s.eventDetail);
-  const addSource = useDialogs((s) => s.addSource);
-  const msImport = useDialogs((s) => s.msImport);
-  const confirm = useDialogs((s) => s.confirm);
-  const openWorkspaceCreate = useDialogs((s) => s.openWorkspaceCreate);
-  const openWorkspaceEdit = useDialogs((s) => s.openWorkspaceEdit);
-  const openEventForm = useDialogs((s) => s.openEventForm);
-  const closeWorkspaceCreate = useDialogs((s) => s.closeWorkspaceCreate);
-  const closeWorkspaceEdit = useDialogs((s) => s.closeWorkspaceEdit);
-  const closeWorkspaceStats = useDialogs((s) => s.closeWorkspaceStats);
-  const closeTaskEdit = useDialogs((s) => s.closeTaskEdit);
-  const closeLabelEdit = useDialogs((s) => s.closeLabelEdit);
-  const closeEventForm = useDialogs((s) => s.closeEventForm);
-  const closeEventDetail = useDialogs((s) => s.closeEventDetail);
-  const closeAddSource = useDialogs((s) => s.closeAddSource);
-  const closeMsImport = useDialogs((s) => s.closeMsImport);
-  const closeConfirm = useDialogs((s) => s.closeConfirm);
+  const workspaceCreate = usePortals((s) => s.workspaceCreate);
+  const workspaceEdit = usePortals((s) => s.workspaceEdit);
+  const workspaceId = usePortals((s) => s.workspaceId);
+  const workspaceStatsId = usePortals((s) => s.workspaceStatsId);
+  const taskEdit = usePortals((s) => s.taskEdit);
+  const labelEdit = usePortals((s) => s.labelEdit);
+  const eventForm = usePortals((s) => s.eventForm);
+  const eventDetail = usePortals((s) => s.eventDetail);
+  const addSource = usePortals((s) => s.addSource);
+  const msImport = usePortals((s) => s.msImport);
+  const confirm = usePortals((s) => s.confirm);
+  const openWorkspaceCreate = usePortals((s) => s.openWorkspaceCreate);
+  const openWorkspaceEdit = usePortals((s) => s.openWorkspaceEdit);
+  const openEventForm = usePortals((s) => s.openEventForm);
+  const closeWorkspaceCreate = usePortals((s) => s.closeWorkspaceCreate);
+  const closeWorkspaceEdit = usePortals((s) => s.closeWorkspaceEdit);
+  const closeWorkspaceStats = usePortals((s) => s.closeWorkspaceStats);
+  const closeTaskEdit = usePortals((s) => s.closeTaskEdit);
+  const closeLabelEdit = usePortals((s) => s.closeLabelEdit);
+  const closeEventForm = usePortals((s) => s.closeEventForm);
+  const closeEventDetail = usePortals((s) => s.closeEventDetail);
+  const closeAddSource = usePortals((s) => s.closeAddSource);
+  const closeMsImport = usePortals((s) => s.closeMsImport);
+  const closeConfirm = usePortals((s) => s.closeConfirm);
 
   const createWorkspace = useCreateWorkspace();
   const updateWorkspace = useUpdateWorkspace();
@@ -86,77 +55,87 @@ export function GlobalDialogs() {
   const updateEvent = useUpdateEvent();
   const { data: labels } = useLabels();
 
-  const isTopBarSearchOpen = useDialogs((s) => s.isTopBarSearchOpen);
-  const setTopBarSearchOpen = useDialogs((s) => s.setTopBarSearchOpen);
+  const isTopBarSearchOpen = usePortals((s) => s.isTopBarSearchOpen);
+  const setTopBarSearchOpen = usePortals((s) => s.setTopBarSearchOpen);
 
   return (
     <>
+      {/* TODO: fix the workspace create and edit dialog */}
       {workspaceCreate && (
         <WorkspaceFormCreateDialog
+          onSubmit={async (v) => await createWorkspace.mutateAsync(v)}
           open
-          workspace={workspaceCreate}
           setOpen={(open) => {
             if (!open) closeWorkspaceCreate();
             if (open && !workspaceCreate) openWorkspaceCreate();
           }}
-          onSubmit={async (v) => {
-            return await createWorkspace.mutateAsync(v);
-          }}
+          workspace={workspaceCreate}
         />
       )}
 
       {workspaceEdit && (
         <WorkspaceFormEditDialog
+          onSubmit={async (v) => {
+            if (!workspaceId) {
+              userToast({
+                description: 'This should not happen. Please refresh the page.',
+                title: 'Cannot find workspace',
+                variant: 'error',
+              });
+              return;
+            }
+            return await updateWorkspace.mutateAsync({ id: workspaceId, ...v });
+          }}
           open
-          workspace={workspaceEdit}
           setOpen={(open) => {
             if (!open) closeWorkspaceEdit();
             if (open && workspaceId && !workspaceEdit)
               openWorkspaceEdit(workspaceEdit, workspaceId);
           }}
-          onSubmit={async (v) => {
-            if (!workspaceId) {
-              // TODO: throw error
-              return;
-            }
-            return await updateWorkspace.mutateAsync({ id: workspaceId, ...v });
-          }}
+          workspace={workspaceEdit}
         />
       )}
 
       {workspaceStatsId && (
-        <WorkspaceStatsModal id={workspaceStatsId} onClose={closeWorkspaceStats} />
+        <WorkspaceStatsDialog
+          id={workspaceStatsId}
+          onClose={closeWorkspaceStats}
+        />
       )}
 
       {taskEdit && (
-        <TaskEditModal
-          task={taskEdit}
-          open
+        <TaskEditDialog
           onClose={closeTaskEdit}
           onSave={(patch) => updateTask.mutate({ id: taskEdit.id, ...patch })}
+          open
+          task={taskEdit}
         />
       )}
 
       {labelEdit && (
-        <LabelEditModal
+        <LabelEditDialog
           key={labelEdit.id}
           label={labelEdit}
-          open
           onClose={closeLabelEdit}
           onSave={(patch) => updateLabel.mutate({ id: labelEdit.id, ...patch })}
+          open
         />
       )}
 
       {eventForm && (
-        <EventFormModal
-          key={eventForm.id ?? `${eventForm.start ?? ''}-${eventForm.end ?? ''}`}
-          open
-          labels={labels ?? []}
+        <EventFormDialog
           draft={eventForm}
+          key={
+            eventForm.id ?? `${eventForm.start ?? ''}-${eventForm.end ?? ''}`
+          }
+          labels={labels ?? []}
           onClose={closeEventForm}
           onSubmit={(v) =>
-            eventForm.id ? updateEvent.mutate({ id: eventForm.id, ...v }) : createEvent.mutate(v)
+            eventForm.id
+              ? updateEvent.mutate({ id: eventForm.id, ...v })
+              : createEvent.mutate(v)
           }
+          open
         />
       )}
 
@@ -167,32 +146,40 @@ export function GlobalDialogs() {
         onEdit={(ev) => {
           closeEventDetail();
           openEventForm({
-            id: ev.id,
-            title: ev.title,
-            start: ev.start,
             end: ev.end,
-            location: ev.location,
+            id: ev.id,
             labelIds: ev.labelIds,
+            location: ev.location,
+            start: ev.start,
+            title: ev.title,
           });
         }}
       />
 
       {addSource && (
-        <AddSourceModal open onClose={closeAddSource} workspaceId={addSource.workspaceId} />
+        <AddSourceDialog
+          onClose={closeAddSource}
+          open
+          workspaceId={addSource.workspaceId}
+        />
       )}
 
       {msImport && (
-        <OneDriveImportDialog open onClose={closeMsImport} workspaceId={msImport.workspaceId} />
+        <OneDriveImportDialog
+          onClose={closeMsImport}
+          open
+          workspaceId={msImport.workspaceId}
+        />
       )}
 
       <ConfirmDialog
-        open={!!confirm}
-        onClose={closeConfirm}
-        onConfirm={() => confirm?.onConfirm()}
-        title={confirm?.title ?? ''}
         body={confirm?.body}
         confirmLabel={confirm?.confirmLabel}
         danger={confirm?.danger ?? true}
+        onClose={closeConfirm}
+        onConfirm={() => confirm?.onConfirm()}
+        open={!!confirm}
+        title={confirm?.title ?? ''}
       />
 
       <SearchDialog open={isTopBarSearchOpen} setOpen={setTopBarSearchOpen} />

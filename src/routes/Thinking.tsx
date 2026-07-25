@@ -1,7 +1,13 @@
 import { Link } from '@tanstack/react-router';
-import { Panel, PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Card, Icon, IconButton, SkeletonCardGrid, Text } from '@/components/ui';
 import { useCanvases, useCreateCanvas } from '@/api/hooks';
+import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import {
+  Card,
+  Icon,
+  IconButton,
+  SkeletonCardGrid,
+  Text,
+} from '@/components/ui';
 import { m } from '@/i18n';
 
 export default function Thinking() {
@@ -11,46 +17,56 @@ export default function Thinking() {
   return (
     <PanelWithInvertedRadius>
       <PageHeader
-        title={m.nav_thinking()}
         actions={
           <IconButton
             icon="plus"
-            variant="dark"
             label="New canvas"
             onClick={() => {
               const n = prompt('Canvas name');
               if (n) create.mutate(n);
             }}
+            variant="dark"
           />
         }
+        title={m.nav_thinking()}
       />
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
         {isLoading ? (
-          <SkeletonCardGrid count={6} cardHeight={172} />
+          <SkeletonCardGrid cardHeight={172} count={6} />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {data?.map((c, i) => (
               <Link
                 key={c.id}
-                to="/thinking/$canvasId"
                 params={{ canvasId: c.id }}
                 preload="intent"
+                to="/thinking/$canvasId"
               >
-                <Card interactive radius="card-lg" className="overflow-hidden p-0">
+                <Card
+                  className="overflow-hidden p-0"
+                  interactive
+                  radius="card-lg"
+                >
                   <div
                     className="flex h-28 items-center justify-center"
                     style={{
-                      background: i % 2 ? 'var(--note-purple-bg)' : 'var(--note-green-bg)',
-                      color: i % 2 ? 'var(--note-purple-fg)' : 'var(--note-green-fg)',
+                      background:
+                        i % 2
+                          ? 'var(--note-purple-bg)'
+                          : 'var(--note-green-bg)',
+                      color:
+                        i % 2
+                          ? 'var(--note-purple-fg)'
+                          : 'var(--note-green-fg)',
                     }}
                   >
                     <Icon name="write" size={28} />
                   </div>
                   <div className="p-4">
-                    <Text variant="subtitle" className="truncate">
+                    <Text className="truncate" variant="subtitle">
                       {c.name}
                     </Text>
-                    <Text variant="meta" tone="muted" className="mt-0.5">
+                    <Text className="mt-0.5" tone="muted" variant="meta">
                       Updated {new Date(c.updatedAt).toLocaleDateString()}
                     </Text>
                   </div>

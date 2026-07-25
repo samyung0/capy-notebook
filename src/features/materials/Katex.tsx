@@ -15,7 +15,13 @@ function getKatex() {
 
 /** Renders a TeX expression to HTML. Shows the raw source until KaTeX loads,
  * or if rendering fails. */
-export function Katex({ tex, displayMode }: { tex: string; displayMode: boolean }) {
+export function Katex({
+  tex,
+  displayMode,
+}: {
+  tex: string;
+  displayMode: boolean;
+}) {
   const [html, setHtml] = useState<string | null>(null);
 
   useEffect(() => {
@@ -24,7 +30,12 @@ export function Katex({ tex, displayMode }: { tex: string; displayMode: boolean 
       .then((katex) => {
         if (cancelled) return;
         try {
-          setHtml(katex.renderToString(tex || '', { displayMode, throwOnError: false }));
+          setHtml(
+            katex.renderToString(tex || '', {
+              displayMode,
+              throwOnError: false,
+            })
+          );
         } catch {
           setHtml(null);
         }

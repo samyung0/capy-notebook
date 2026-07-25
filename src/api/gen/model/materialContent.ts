@@ -4,7 +4,7 @@
  * Evo Notes API
  * OpenAPI spec version: 0.1.0
  */
-import type { MaterialContentValueItem } from './materialContentValueItem.ts';
+import type { MaterialContentValueItem } from "./materialContentValueItem.ts";
 
 export type MaterialContent = {
   schemaVersion: number;

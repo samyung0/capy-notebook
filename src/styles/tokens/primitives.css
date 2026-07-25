@@ -1,7 +1,7 @@
 /* primitive tokens for color palettes
 TOKENS ARE NOT USED DIRECTLY, IT IS A JUST A REFERENCE FOR THE COLOR GRADIENT VALUES */
 :root {
-  /* ---------- Color ramps (friendly theme) ---------- */
+  /* ---------- Color ramps (classroom theme) ---------- */
   /* Purple — brand accent */
   --ev-purple-300: #b3a6ea;
   --ev-purple-400: #9d8ee0;

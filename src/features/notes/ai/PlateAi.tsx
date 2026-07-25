@@ -2,10 +2,9 @@ import { AIChatPlugin, CopilotPlugin } from '@platejs/ai/react';
 import { useCursorOverlay } from '@platejs/selection/react';
 import {
   PlateElement,
-  PlateText,
   type PlateElementProps,
+  PlateText,
   type PlateTextProps,
-  useEditorRef,
   useElement,
   usePluginOption,
 } from 'platejs/react';
@@ -25,8 +24,8 @@ export function AiCursorOverlay() {
         id === 'selection'
           ? selectionRects.map((rect, index) => (
               <div
-                key={index}
                 className="pointer-events-none absolute z-10 bg-action-accent/25"
+                key={index}
                 style={{
                   height: rect.height,
                   left: rect.left,
@@ -46,9 +45,9 @@ export function AiLoadingBar() {
   if (!streaming) return null;
   return (
     <div
-      role="progressbar"
       aria-label="AI is writing"
       className="h-0.5 w-full overflow-hidden bg-tint-accent-1"
+      role="progressbar"
     >
       <div className="h-full w-1/3 animate-pulse bg-action-accent" />
     </div>
@@ -74,13 +73,19 @@ export function AiAnchorElement(props: PlateElementProps) {
 }
 
 export function GhostText() {
-  const editor = useEditorRef();
   const element = useElement();
-  const isSuggested = usePluginOption(CopilotPlugin, 'isSuggested', element.id as string);
+  const isSuggested = usePluginOption(
+    CopilotPlugin,
+    'isSuggested',
+    element.id as string
+  );
   const suggestionText = usePluginOption(CopilotPlugin, 'suggestionText');
   if (!isSuggested || !suggestionText) return null;
   return (
-    <span className="pointer-events-auto text-fg-muted/70 max-sm:hidden" contentEditable={false}>
+    <span
+      className="pointer-events-auto text-fg-muted/70 max-sm:hidden"
+      contentEditable={false}
+    >
       {suggestionText}
       {/* <span className="ml-2 inline-flex gap-1 align-middle text-[10px]">
         <button

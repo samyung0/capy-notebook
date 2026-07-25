@@ -1,14 +1,18 @@
-import { ClerkProvider, Show, RedirectToSignIn, useAuth } from '@clerk/react';
+import { ClerkProvider, RedirectToSignIn, Show, useAuth } from '@clerk/react';
 import { useEffect, useRef, useState } from 'react';
 import { setAuthTokenGetter, USE_MSW } from '@/api/auth';
 import { queryClient } from '@/api/queryClient';
 
-const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
+const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
+  | string
+  | undefined;
 
 function AuthTokenBridge({ children }: { children: React.ReactNode }) {
   const { getToken, isLoaded, isSignedIn, userId } = useAuth();
   const identity = isLoaded ? (userId ?? null) : undefined;
-  const [readyIdentity, setReadyIdentity] = useState<string | null | undefined>(undefined);
+  const [readyIdentity, setReadyIdentity] = useState<string | null | undefined>(
+    undefined
+  );
   const previousIdentity = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
@@ -31,7 +35,11 @@ function AuthTokenBridge({ children }: { children: React.ReactNode }) {
   // Route loaders must not run until the matching token getter is installed.
   if (!isLoaded || readyIdentity !== identity) {
     return (
-      <div className="flex h-dvh items-center justify-center" role="status" aria-label="Loading">
+      <div
+        aria-label="Loading"
+        className="flex h-dvh items-center justify-center"
+        role="status"
+      >
         Loading…
       </div>
     );
@@ -46,7 +54,7 @@ export function AppAuthProvider({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
   return (
-    <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/sign-in">
+    <ClerkProvider afterSignOutUrl="/sign-in" publishableKey={PUBLISHABLE_KEY}>
       <AuthTokenBridge>{children}</AuthTokenBridge>
     </ClerkProvider>
   );

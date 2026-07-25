@@ -1,0 +1,134 @@
+{
+  "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
+  "extends": [
+    "ultracite/biome/core",
+    "ultracite/biome/react",
+    "ultracite/biome/tanstack",
+    "ultracite/biome/vitest"
+  ],
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single"
+    }
+  },
+  "files": {
+    "includes": [
+      "!!node_modules",
+      "!!.vscode",
+      "!!src/api/gen",
+      "!!public/mockServiceWorker.js",
+      "!!src/styles/tailwind.css"
+    ]
+  },
+  "linter": {
+    "rules": {
+      "correctness": {
+        "noUnresolvedImports": "off", // biome resolver is wrong for template aliases and package exports
+        "useImportExtensions": "off", // relative .ts/.tsx imports break template tsconfig
+        "useExhaustiveDependencies": "off", // eslint
+        "useHookAtTopLevel": "off", // eslint
+        "noUndeclaredVariables": "off", // ts
+        "noUnusedVariables": {
+          "level": "error",
+          "options": {
+            "ignoreRestSiblings": true
+          }
+        },
+        "useImageSize": "off", // className
+        "noNestedComponentDefinitions": "off" // shadcn
+      },
+      "suspicious": {
+        "noConsole": {
+          "level": "error",
+          "options": {
+            "allow": ["assert", "error", "info", "warn"]
+          }
+        },
+        "noAlert": "off", // example
+        "noExplicitAny": "off", // ts chill
+        "noArrayIndexKey": "off", // chill
+        "noUnknownAtRules": "off", // allow for Tailwind @ rules
+        "noEmptyBlockStatements": "off", // chill
+        "useAwait": "off", // chill
+        "noDocumentCookie": "off", // shadcn
+        "noBitwiseOperators": "off", // chill
+        "noConfusingVoidType": "off", // false +
+        "noLeakedRender": "off",
+        "noUnnecessaryConditions": "off",
+        "noShadow": "off",
+        "noEqualsToNull": "off"
+      },
+      "style": {
+        "noNestedTernary": "off", // chill
+        "noNonNullAssertion": "off", // ts chill
+        "useDefaultSwitchClause": "off", // chill
+        "useBlockStatements": "off", // chill
+        "useFilenamingConvention": "off", // chill
+        "useConsistentTypeDefinitions": "off",
+        "useConsistentMethodSignatures": "off",
+        "useConsistentArrayType": "off",
+        "useDestructuring": "off",
+        "noIncrementDecrement": "off",
+        "useTemplate": "off"
+      },
+      "complexity": {
+        "useSimplifiedLogicExpression": "off", // false +
+        "noExcessiveCognitiveComplexity": "off", // chill
+        "noForEach": "off", // chill
+        "noVoid": "off", // chill,
+        "noBannedTypes": "off", // chill
+        "useLiteralKeys": "off"
+      },
+      "a11y": {
+        "noLabelWithoutControl": {
+          "level": "error",
+          "options": {
+            "inputComponents": [
+              "FloatingLinkUrlInput",
+              "Input",
+              "Select",
+              "Switch",
+              "Textarea"
+            ]
+          }
+        },
+        "noNoninteractiveElementInteractions": "off", // region role not supported
+        "useKeyWithClickEvents": "off", // shadcn
+        "useSemanticElements": "off", // shadcn
+        "useFocusableInteractive": "off", // shadcn
+        "noSvgWithoutTitle": "off",
+        "noStaticElementInteractions": "off",
+        "useMediaCaption": "off",
+        "useKeyWithMouseEvents": "off",
+        "useAriaPropsSupportedByRole": "off",
+        "useButtonType": "error"
+      },
+      "security": {
+        "noDangerouslySetInnerHtml": "off" // shadcn
+      },
+      "performance": {
+        "noNamespaceImport": "off", // shadcn
+        "noJsxPropsBind": "off",
+        "noImgElement": "off", // agnostic
+        "noBarrelFile": "off", // tmp
+        "noAwaitInLoops": "off",
+        "noDelete": "off"
+      }
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["e2e/**", "src/mocks/**", "playwright.config.ts"],
+      "linter": {
+        "rules": {
+          "performance": {
+            "useTopLevelRegex": "off"
+          },
+          "suspicious": {
+            "noConsole": "off"
+          }
+        }
+      }
+    }
+  ]
+}

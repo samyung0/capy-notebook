@@ -5,10 +5,11 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type UpdateQuizReqPrivacy = (typeof UpdateQuizReqPrivacy)[keyof typeof UpdateQuizReqPrivacy];
+export type UpdateQuizReqPrivacy =
+  (typeof UpdateQuizReqPrivacy)[keyof typeof UpdateQuizReqPrivacy];
 
 export const UpdateQuizReqPrivacy = {
-  private: 'private',
-  public: 'public',
-  link: 'link',
+  link: "link",
+  private: "private",
+  public: "public",
 } as const;

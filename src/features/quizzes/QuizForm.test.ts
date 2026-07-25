@@ -6,62 +6,62 @@ import { createBlankQuestion, isCompleteQuestion } from './QuizForm';
 
 const questions: Question[] = [
   {
-    id: 'mcq',
-    type: 'mcq',
-    level: 'recall',
-    prompt: 'Pick one',
-    options: [
-      { value: 'Correct', explanation: 'Because it is.' },
-      { value: 'Wrong', explanation: 'Because it is not.' },
-    ],
     correct: [0],
+    id: 'mcq',
+    level: 'recall',
+    options: [
+      { explanation: 'Because it is.', value: 'Correct' },
+      { explanation: 'Because it is not.', value: 'Wrong' },
+    ],
+    prompt: 'Pick one',
+    type: 'mcq',
   },
   {
-    id: 'multi',
-    type: 'multi',
-    level: 'application',
-    prompt: 'Pick several',
-    options: [{ value: 'First' }, { value: 'Second' }],
     correct: [0, 1],
+    id: 'multi',
+    level: 'application',
+    options: [{ value: 'First' }, { value: 'Second' }],
+    prompt: 'Pick several',
+    type: 'multi',
   },
   {
+    correct: false,
     id: 'boolean',
-    type: 'boolean',
     level: 'recall',
     prompt: 'True or false?',
-    correct: false,
+    type: 'boolean',
   },
   {
+    accepted: [{ value: 'Accepted' }],
     id: 'fill',
-    type: 'fill',
     level: 'application',
     prompt: 'Fill this',
-    accepted: [{ value: 'Accepted' }],
+    type: 'fill',
   },
   {
-    id: 'short',
-    type: 'short',
-    level: 'analysis',
-    prompt: 'Explain briefly',
     accepted: [{ value: 'Short answer' }],
     explanation: 'A concise explanation.',
+    id: 'short',
+    level: 'analysis',
+    prompt: 'Explain briefly',
+    type: 'short',
   },
   {
     id: 'ordering',
-    type: 'ordering',
+    items: [{ value: 'First' }, { value: 'Second' }],
     level: 'application',
     prompt: 'Order these',
-    items: [{ value: 'First' }, { value: 'Second' }],
+    type: 'ordering',
   },
   {
     id: 'matching',
-    type: 'matching',
     level: 'analysis',
-    prompt: 'Match these',
     pairs: [
       { left: 'A', right: 'One' },
       { left: 'B', right: 'Two' },
     ],
+    prompt: 'Match these',
+    type: 'matching',
   },
 ];
 
@@ -76,7 +76,9 @@ describe('QuizForm question helpers', () => {
   });
 
   it('round-trips every question type without losing typed fields', () => {
-    const parsed = parseQuizFenceBody(quizFenceBody({ questions, timeLimitMin: 20 }));
+    const parsed = parseQuizFenceBody(
+      quizFenceBody({ questions, timeLimitMin: 20 })
+    );
 
     expect(parsed).toEqual({ questions, timeLimitMin: 20 });
   });

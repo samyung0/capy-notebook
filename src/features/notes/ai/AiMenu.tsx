@@ -1,6 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
 import { AIChatPlugin, AIPlugin } from '@platejs/ai/react';
-import { BlockMenuPlugin, BlockSelectionPlugin } from '@platejs/selection/react';
 import {
   FloatingPortal,
   flip,
@@ -9,7 +7,10 @@ import {
   shift,
   useVirtualFloating,
 } from '@platejs/floating';
-import { useEditorRef, useEditorSelector, usePluginOption } from 'platejs/react';
+import {
+  BlockMenuPlugin,
+  BlockSelectionPlugin,
+} from '@platejs/selection/react';
 import {
   Check,
   Feather,
@@ -22,59 +23,69 @@ import {
   WandSparkles,
   X,
 } from 'lucide-react';
+import {
+  useEditorRef,
+  useEditorSelector,
+  usePluginOption,
+} from 'platejs/react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui';
 import { cn } from '@/lib/cn';
 
 interface AiAction {
+  icon: typeof Sparkles;
   id: string;
   label: string;
-  icon: typeof Sparkles;
+  mode?: 'chat' | 'insert';
   prompt: string;
   toolName: 'comment' | 'edit' | 'generate';
-  mode?: 'chat' | 'insert';
 }
 
 const ACTIONS: AiAction[] = [
   {
+    icon: PenLine,
     id: 'continue',
     label: 'Continue writing',
-    icon: PenLine,
-    prompt: 'Continue writing after the current block with one concise sentence.',
-    toolName: 'generate',
     mode: 'insert',
+    prompt:
+      'Continue writing after the current block with one concise sentence.',
+    toolName: 'generate',
   },
   {
+    icon: WandSparkles,
     id: 'improve',
     label: 'Improve writing',
-    icon: WandSparkles,
-    prompt: 'Improve clarity and flow without changing the meaning or adding new information.',
+    prompt:
+      'Improve clarity and flow without changing the meaning or adding new information.',
     toolName: 'edit',
   },
   {
+    icon: Check,
     id: 'grammar',
     label: 'Fix spelling and grammar',
-    icon: Check,
-    prompt: 'Fix spelling, grammar, and punctuation without changing the meaning or tone.',
+    prompt:
+      'Fix spelling, grammar, and punctuation without changing the meaning or tone.',
     toolName: 'edit',
   },
   {
+    icon: ListMinus,
     id: 'shorter',
     label: 'Make shorter',
-    icon: ListMinus,
     prompt: 'Reduce verbosity while preserving all essential information.',
     toolName: 'edit',
   },
   {
+    icon: ListPlus,
     id: 'longer',
     label: 'Make longer',
-    icon: ListPlus,
-    prompt: 'Elaborate on existing ideas without introducing unsupported information.',
+    prompt:
+      'Elaborate on existing ideas without introducing unsupported information.',
     toolName: 'edit',
   },
   {
+    icon: Feather,
     id: 'simplify',
     label: 'Simplify language',
-    icon: Feather,
     prompt: 'Use clearer, more direct language while preserving the meaning.',
     toolName: 'edit',
   },
@@ -89,13 +100,15 @@ export function AiMenu() {
   const toolName = usePluginOption(AIChatPlugin, 'toolName');
   const streaming = usePluginOption(AIChatPlugin, 'streaming');
   const [input, setInput] = useState('');
-  const loading = chat.status === 'streaming' || chat.status === 'submitted' || streaming;
+  const loading =
+    chat.status === 'streaming' || chat.status === 'submitted' || streaming;
 
   useEffect(() => {
     if (!open) return;
 
     editor.getApi(BlockMenuPlugin).blockMenu.hide();
-    const close = () => editor.getApi(AIChatPlugin).aiChat.hide({ focus: false });
+    const close = () =>
+      editor.getApi(AIChatPlugin).aiChat.hide({ focus: false });
     window.addEventListener('pointerdown', close);
     window.addEventListener('blur', close);
     return () => {
@@ -105,9 +118,16 @@ export function AiMenu() {
   }, [editor, open]);
 
   const floating = useVirtualFloating({
-    open,
-    strategy: 'fixed',
-    placement: 'bottom-start',
+    getBoundingClientRect: () => {
+      const blocks = editor
+        .getApi(BlockSelectionPlugin)
+        .blockSelection.getNodes();
+      const range =
+        blocks.length > 0
+          ? (editor.api.nodesRange(blocks) ?? null)
+          : (chatSelection ?? editor.selection ?? null);
+      return getRangeBoundingClientRect(editor, range);
+    },
     middleware: [
       offset(4),
       flip({
@@ -116,14 +136,9 @@ export function AiMenu() {
       }),
       shift({ padding: 12 }),
     ],
-    getBoundingClientRect: () => {
-      const blocks = editor.getApi(BlockSelectionPlugin).blockSelection.getNodes();
-      const range =
-        blocks.length > 0
-          ? (editor.api.nodesRange(blocks) ?? null)
-          : (chatSelection ?? editor.selection ?? null);
-      return getRangeBoundingClientRect(editor, range);
-    },
+    open,
+    placement: 'bottom-start',
+    strategy: 'fixed',
   });
 
   useEditorSelector(() => {
@@ -137,7 +152,10 @@ export function AiMenu() {
   const hasPreview = useMemo(
     () =>
       editor.getTransforms(AIPlugin).ai.hasPreview() ||
-      (!loading && toolName === 'edit' && mode === 'chat' && chat.messages.length > 0),
+      (!loading &&
+        toolName === 'edit' &&
+        mode === 'chat' &&
+        chat.messages.length > 0),
     [chat.messages.length, editor, loading, mode, toolName]
   );
 
@@ -149,7 +167,9 @@ export function AiMenu() {
   ) => {
     if (!prompt.trim() || loading) return;
     const savedSelection = editor.getOption(AIChatPlugin, 'chatSelection');
-    const selectedBlocks = editor.getApi(BlockSelectionPlugin).blockSelection.getNodes();
+    const selectedBlocks = editor
+      .getApi(BlockSelectionPlugin)
+      .blockSelection.getNodes();
     const contextSelection =
       selectedBlocks.length > 0
         ? (editor.api.nodesRange(selectedBlocks) ?? null)
@@ -160,8 +180,6 @@ export function AiMenu() {
       editor.tf.select(structuredClone(savedSelection));
     }
     void editor.getApi(AIChatPlugin).aiChat.submit('', {
-      prompt,
-      toolName,
       mode: options.mode,
       // Plate normally reads editor.selection here. The native input owns focus,
       // so pass the opening snapshot explicitly instead of relying on focus state.
@@ -174,6 +192,8 @@ export function AiMenu() {
           },
         },
       },
+      prompt,
+      toolName,
     });
     setInput('');
   };
@@ -181,77 +201,80 @@ export function AiMenu() {
   return (
     <FloatingPortal>
       <div
-        ref={floating.refs.setFloating}
-        style={floating.style}
-        role="dialog"
         aria-label="AI commands"
         className="z-50 w-[min(360px,calc(100vw-32px))] overflow-hidden rounded-row border border-line bg-surface shadow-pop"
         onPointerDown={(event) => event.stopPropagation()}
+        ref={floating.refs.setFloating}
+        role="dialog"
+        style={floating.style}
       >
-        <div className="flex items-center border-b border-divider px-2">
+        <div className="flex items-center border-divider border-b px-2">
           <Sparkles className="size-4 text-action-accent" />
           <input
             autoFocus
+            className="h-10 min-w-0 flex-1 bg-transparent px-2 text-fg text-sm outline-none placeholder:text-placeholder"
             data-plate-focus="true"
-            value={input}
-            onChange={(event) => setInput(event.target.value)}
-            placeholder="Ask AI anything"
             disabled={loading}
-            className="h-10 min-w-0 flex-1 bg-transparent px-2 text-sm text-fg outline-none placeholder:text-placeholder"
+            onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
                 submit(input);
               }
-              if (event.key === 'Escape') editor.getApi(AIChatPlugin).aiChat.hide();
+              if (event.key === 'Escape')
+                editor.getApi(AIChatPlugin).aiChat.hide();
             }}
+            placeholder="Ask AI anything"
+            value={input}
           />
           <button
-            type="button"
             aria-label="Close AI commands"
             className="rounded-row p-1 text-fg-muted hover:bg-surface-hover-bg"
             onClick={() => editor.getApi(AIChatPlugin).aiChat.hide()}
+            type="button"
           >
             <X className="size-4" />
           </button>
         </div>
 
         {loading ? (
-          <div className="flex items-center justify-between gap-2 p-3 text-sm text-fg-muted">
+          <div className="flex items-center justify-between gap-2 p-3 text-fg-muted text-sm">
             <span className="flex items-center gap-2">
               <LoaderCircle className="size-4 animate-spin" />
               {chat.status === 'submitted' ? 'Thinking…' : 'Writing…'}
             </span>
             <Button
-              variant="ghost"
-              size="sm"
               onClick={() => editor.getApi(AIChatPlugin).aiChat.stop()}
+              size="sm"
+              variant="ghost"
             >
               Stop
             </Button>
           </div>
         ) : hasPreview ? (
           <div className="flex items-center justify-between gap-2 p-2">
-            <span className="px-1 text-sm text-fg-muted">Review the AI preview</span>
+            <span className="px-1 text-fg-muted text-sm">
+              Review the AI preview
+            </span>
             <div className="flex gap-1">
               <Button
-                variant="ghost"
-                size="sm"
                 onClick={() => {
                   editor.getTransforms(AIPlugin).ai.undo();
                   editor.getApi(AIChatPlugin).aiChat.hide();
                 }}
+                size="sm"
+                variant="ghost"
               >
                 Reject
               </Button>
               <Button
-                variant="accent"
-                size="sm"
                 onClick={() => {
                   editor.getTransforms(AIChatPlugin).aiChat.accept();
                   editor.getTransforms(AIPlugin).ai.acceptPreview();
                   editor.getApi(AIChatPlugin).aiChat.hide();
                 }}
+                size="sm"
+                variant="accent"
               >
                 Accept
               </Button>
@@ -263,15 +286,18 @@ export function AiMenu() {
               const Icon = action.icon;
               return (
                 <button
-                  key={action.id}
-                  type="button"
                   className={cn(
-                    'flex w-full items-center gap-2 rounded-row px-2 py-2 text-left text-sm text-fg',
+                    'flex w-full items-center gap-2 rounded-row px-2 py-2 text-left text-fg text-sm',
                     'hover:bg-surface-hover-bg'
                   )}
+                  key={action.id}
                   onClick={() =>
-                    submit(action.prompt, { toolName: action.toolName, mode: action.mode })
+                    submit(action.prompt, {
+                      mode: action.mode,
+                      toolName: action.toolName,
+                    })
                   }
+                  type="button"
                 >
                   <Icon className="size-4 text-fg-muted" />
                   {action.label}
@@ -280,9 +306,9 @@ export function AiMenu() {
             })}
             {chat.messages.length > 0 && (
               <button
-                type="button"
-                className="flex w-full items-center gap-2 rounded-row px-2 py-2 text-left text-sm text-fg hover:bg-surface-hover-bg"
+                className="flex w-full items-center gap-2 rounded-row px-2 py-2 text-left text-fg text-sm hover:bg-surface-hover-bg"
                 onClick={() => void editor.getApi(AIChatPlugin).aiChat.reload()}
+                type="button"
               >
                 <RotateCcw className="size-4 text-fg-muted" />
                 Try again

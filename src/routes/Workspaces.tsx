@@ -1,12 +1,16 @@
+import { useMemo, useState } from 'react';
 import { useTags, useWorkspaces } from '@/api/hooks';
-import { PageHeader, PanelWithInvertedRadius, Toolbar } from '@/components/app/layout';
+import {
+  PageHeader,
+  PanelWithInvertedRadius,
+  Toolbar,
+} from '@/components/app/layout';
 import {
   Badge,
   Button,
   Card,
   Icon,
   IconButton,
-  Input,
   Menu,
   Popover,
   PopoverContent,
@@ -17,38 +21,39 @@ import {
 } from '@/components/ui';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { useDialogs } from '@/stores/dialogs';
-import { useMemo, useState } from 'react';
+import { usePortals } from '@/stores/portals';
 
 const SORTS = [
-  { value: 'accessed', label: m.workspaces_sort_accessed },
-  { value: 'created', label: m.workspaces_sort_created },
-  { value: 'chapters', label: m.workspaces_sort_chapters },
-  { value: 'files', label: m.workspaces_sort_files },
+  { label: m.workspaces_sort_accessed, value: 'accessed' },
+  { label: m.workspaces_sort_created, value: 'created' },
+  { label: m.workspaces_sort_chapters, value: 'chapters' },
+  { label: m.workspaces_sort_files, value: 'files' },
 ];
 
 function toggleIn(list: string[], value: string) {
-  return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
+  return list.includes(value)
+    ? list.filter((v) => v !== value)
+    : [...list, value];
 }
 
 export default function Workspaces() {
   const [sort, setSort] = useState('accessed');
   const [colorFilters, setColorFilters] = useState<string[]>([]);
   const [tagFilters, setTagFilters] = useState<string[]>([]);
-  const [query, setQuery] = useState('');
-  const [showSearch, setShowSearch] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
 
   const { data, isLoading } = useWorkspaces({
-    sort,
     color: colorFilters,
+    sort,
     tag: tagFilters,
-    q: query,
   });
   const { data: tags = [] } = useTags('workspace');
-  const openWorkspaceCreate = useDialogs((s) => s.openWorkspaceCreate);
+  const openWorkspaceCreate = usePortals((s) => s.openWorkspaceCreate);
 
-  const sortLabel = useMemo(() => SORTS.find((s) => s.value === sort)?.label() ?? '', [sort]);
+  const sortLabel = useMemo(
+    () => SORTS.find((s) => s.value === sort)?.label() ?? '',
+    [sort]
+  );
   const hasFilters = colorFilters.length > 0 || tagFilters.length > 0;
   const filterLabel = useMemo(() => {
     const parts = [...colorFilters, ...tagFilters];
@@ -60,58 +65,75 @@ export default function Workspaces() {
   return (
     <PanelWithInvertedRadius>
       <PageHeader
-        title={m.workspaces_title()}
         actions={
           <IconButton
             icon="plus"
-            variant="gray"
-            size="lg"
-            onClick={() => openWorkspaceCreate()}
             label={m.action_new_workspace()}
+            onClick={() => openWorkspaceCreate()}
+            size="lg"
+            variant="gray"
           />
         }
+        title={m.workspaces_title()}
       />
 
       <div className="flex items-center justify-between gap-3 px-6">
         <Toolbar>
           <Menu
             align="start"
-            trigger={
-              <Button variant="ghost" size="md" iconRight="chevronDown" className="px-1">
-                Sort: {sortLabel}
-              </Button>
-            }
             items={SORTS.map((s) => ({
               label: s.label(),
               onClick: () => setSort(s.value),
             }))}
+            trigger={
+              <Button
+                className="px-1"
+                iconRight="chevronDown"
+                size="md"
+                variant="ghost"
+              >
+                Sort: {sortLabel}
+              </Button>
+            }
           />
-          <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+          <Popover onOpenChange={setFilterOpen} open={filterOpen}>
             <PopoverTrigger asChild>
               <Button
-                variant="ghost"
-                size="md"
+                className="px-1"
                 iconLeft="filter"
                 iconRight="chevronDown"
-                className="px-1"
+                size="md"
+                variant="ghost"
               >
                 {filterLabel}
               </Button>
             </PopoverTrigger>
             <PopoverContent align="start" className="max-h-80 w-72 gap-0 p-0">
-              <Card radius="card" border="solid" className="max-h-80 gap-3 overflow-y-auto p-3">
+              <Card
+                border="solid"
+                className="max-h-80 gap-3 overflow-y-auto p-3"
+                radius="card"
+              >
                 <section className="flex flex-col gap-2">
-                  <h3 className="t-meta text-fg-muted">{m.workspaces_filter_color()}</h3>
+                  <h3 className="t-meta text-fg-muted">
+                    {m.workspaces_filter_color()}
+                  </h3>
                   <UserColorChooser
+                    onChange={(c) =>
+                      setColorFilters((prev) => toggleIn(prev, c))
+                    }
                     selected={colorFilters}
-                    onChange={(c) => setColorFilters((prev) => toggleIn(prev, c))}
                   />
                 </section>
 
                 <section className="flex flex-col gap-2">
-                  <h3 className="t-meta text-fg-muted">{m.workspaces_filter_tags()}</h3>
+                  <h3 className="t-meta text-fg-muted">
+                    {m.workspaces_filter_tags()}
+                  </h3>
                   {tags.length === 0 ? (
-                    <p className="text-sm text-fg-muted">{m.workspaces_filter_no_tags()}</p>
+                    <p className="text-fg-muted text-sm">
+                      {m.workspaces_filter_no_tags()}
+                    </p>
                   ) : (
                     <div className="flex flex-wrap gap-1.5">
                       {tags.map((t) => {
@@ -119,16 +141,18 @@ export default function Workspaces() {
                         return (
                           <button
                             key={t.id}
+                            onClick={() =>
+                              setTagFilters((prev) => toggleIn(prev, t.value))
+                            }
                             type="button"
-                            onClick={() => setTagFilters((prev) => toggleIn(prev, t.value))}
                           >
                             <Badge
-                              size="sm"
-                              tone={active ? 'dark' : 'neutral'}
                               className={cn(
                                 'transition-colors',
                                 !active && 'hover:bg-surface-hover-bg'
                               )}
+                              size="sm"
+                              tone={active ? 'dark' : 'neutral'}
                             >
                               {t.value}
                             </Badge>
@@ -140,14 +164,14 @@ export default function Workspaces() {
                 </section>
 
                 <Button
-                  variant="ghost"
-                  size="sm"
-                  fullWidth
                   disabled={!hasFilters}
+                  fullWidth
                   onClick={() => {
                     setColorFilters([]);
                     setTagFilters([]);
                   }}
+                  size="sm"
+                  variant="ghost"
                 >
                   {m.workspaces_filter_reset()}
                 </Button>
@@ -189,14 +213,16 @@ export default function Workspaces() {
             ))}
             <Card
               border="dashed"
-              radius="card-lg"
+              className="min-h-40 cursor-pointer items-center justify-center"
               interactive
               onClick={() => openWorkspaceCreate()}
-              className="min-h-40 cursor-pointer items-center justify-center"
+              radius="card-lg"
             >
               <span className="flex flex-col items-center gap-2 text-fg-muted">
                 <Icon name="plus" size={24} />
-                <span className="t-meta text-fg-muted">{m.action_new_workspace()}</span>
+                <span className="t-meta text-fg-muted">
+                  {m.action_new_workspace()}
+                </span>
               </span>
             </Card>
           </div>

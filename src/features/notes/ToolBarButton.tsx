@@ -15,23 +15,23 @@ export function ToolbarButton({
 }) {
   return (
     <button
-      type="button"
-      data-slot="button"
-      title={label}
       aria-label={label}
       aria-pressed={active}
-      disabled={disabled}
-      data-plate-prevent-deselect
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onClick}
       className={cn(
         'relative inline-flex size-8 shrink-0 items-center justify-center gap-1 rounded-row px-0.5 outline-none',
-        'focus-visible:ring-focus hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2',
+        'hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-focus',
         'disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-4',
-        'font-semibold whitespace-nowrap transition-all duration-150 outline-none select-none',
+        'select-none whitespace-nowrap font-semibold outline-none transition-all duration-150',
         // active && 'bg-tint-accent-1/35 text-tint-accent-1-fg',
         className
       )}
+      data-plate-prevent-deselect
+      data-slot="button"
+      disabled={disabled}
+      onClick={onClick}
+      onMouseDown={(event) => event.preventDefault()}
+      title={label}
+      type="button"
       {...rest}
     >
       {children}

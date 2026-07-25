@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from '@tanstack/react-router';
+import { useEffect, useRef, useState } from 'react';
+import { useQuiz, useUpdateQuiz } from '@/api/hooks';
+import type { Question } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { Button, Skeleton, Text } from '@/components/ui';
 import { userToast } from '@/components/ui/userToast';
-import { useQuiz, useUpdateQuiz } from '@/api/hooks';
 import { QuizForm } from '@/features/quizzes/QuizForm';
-import type { Question } from '@/api/types';
 
 export default function QuizEdit() {
   const params = useParams({ strict: false });
@@ -37,8 +37,9 @@ export default function QuizEdit() {
       back();
     } catch (err) {
       userToast({
+        description:
+          err instanceof Error ? err.message : 'Something went wrong.',
         title: 'Could not save quiz',
-        description: err instanceof Error ? err.message : 'Something went wrong.',
         variant: 'error',
       });
     }
@@ -47,39 +48,43 @@ export default function QuizEdit() {
   return (
     <PanelWithInvertedRadius>
       <PageHeader
-        title="Edit quiz"
         actions={
           <>
             <Button
-              variant="ghost"
+              disabled={update.isPending}
               iconLeft="chevronLeft"
               onClick={back}
-              disabled={update.isPending}
+              variant="ghost"
             >
               Back
             </Button>
-            <Button iconLeft="check" onClick={save} disabled={update.isPending || !seeded.current}>
+            <Button
+              disabled={update.isPending || !seeded.current}
+              iconLeft="check"
+              onClick={save}
+            >
               {update.isPending ? 'Saving…' : 'Save'}
             </Button>
           </>
         }
+        title={name || 'Edit quiz'}
       />
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
         {isLoading || !seeded.current ? (
           <Skeleton className="h-64 w-full" />
-        ) : !quiz ? (
-          <Text variant="body" tone="muted" className="py-8 text-center">
-            Quiz not found.
-          </Text>
-        ) : (
+        ) : quiz ? (
           <div className="mx-auto max-w-2xl">
             <QuizForm
               name={name}
-              questions={questions}
               onNameChange={setName}
               onQuestionsChange={setQuestions}
+              questions={questions}
             />
           </div>
+        ) : (
+          <Text className="py-8 text-center" tone="muted" variant="body">
+            Quiz not found.
+          </Text>
         )}
       </div>
     </PanelWithInvertedRadius>

@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { useDeleteFile, useMoveFile, useUpdateFile } from '@/api/hooks';
+import type { Chapter, SourceFile, UserColor } from '@/api/types';
 import {
   Button,
   ConfirmDialog,
@@ -8,13 +10,10 @@ import {
   ProgressBar,
   SimpleDialog,
   Spinner,
-  Text,
 } from '@/components/ui';
-import { cn } from '@/lib/cn';
-import { useDeleteFile, useMoveFile, useUpdateFile } from '@/api/hooks';
-import type { Chapter, SourceFile, UserColor } from '@/api/types';
 import { MoveToChapterDialog } from '@/features/workspace/MoveToChapterDialog';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 
 function formatSize(kb: number): string {
   return kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`;
@@ -65,16 +64,26 @@ export function FileListItem({
         )}
       >
         <button
-          onClick={() => !processing && onOpen(file.id)}
-          disabled={processing}
           className={cn(
             'flex w-full items-center gap-1.5 rounded-row px-1.5 py-1.5 pl-2 text-left',
             active && 'font-bold',
             processing && 'cursor-default'
           )}
+          disabled={processing}
+          onClick={() => !processing && onOpen(file.id)}
+          type="button"
         >
-          <Icon name="files" size={15} className={cn(failed && 'text-solid-error')} />
-          <span className={cn('line-clamp-2 flex-1 translate-y-px', failed && 'text-solid-error')}>
+          <Icon
+            className={cn(failed && 'text-solid-error')}
+            name="files"
+            size={15}
+          />
+          <span
+            className={cn(
+              'line-clamp-2 flex-1 translate-y-px',
+              failed && 'text-solid-error'
+            )}
+          >
             {file.name}
           </span>
         </button>
@@ -89,27 +98,27 @@ export function FileListItem({
             iconContainerClassName="hover:bg-unset"
             items={[
               {
-                label: m.action_rename(),
                 icon: 'write',
+                label: m.action_rename(),
                 onClick: () => {
                   setName(file.name);
                   setRenameOpen(true);
                 },
               },
               {
-                label: 'Move File',
                 icon: 'files',
+                label: 'Move File',
                 onClick: () => setMoveOpen(true),
               },
               {
-                label: 'Properties',
                 icon: 'help',
+                label: 'Properties',
                 onClick: () => setPropsOpen(true),
               },
               {
-                label: m.action_delete(),
-                icon: 'trash',
                 danger: true,
+                icon: 'trash',
+                label: m.action_delete(),
                 onClick: () => setConfirmOpen(true),
               },
             ]}
@@ -117,21 +126,20 @@ export function FileListItem({
         )}
       </div>
       {failed && (
-        <div className="pl-2 text-xs font-medium text-solid-error">Error Processing File</div>
+        <div className="pl-2 font-medium text-solid-error text-xs">
+          Error Processing File
+        </div>
       )}
       {processing && (
         <div className="mr-1.5 mb-0.5 ml-6">
-          <ProgressBar tone={color} value={file.ingestPct ?? 0} height={4} />
+          <ProgressBar height={4} tone={color} value={file.ingestPct ?? 0} />
         </div>
       )}
 
       <SimpleDialog
-        open={renameOpen}
-        onClose={() => setRenameOpen(false)}
-        title="Rename file"
         footer={
           <>
-            <Button variant="ghost" onClick={() => setRenameOpen(false)}>
+            <Button onClick={() => setRenameOpen(false)} variant="ghost">
               Cancel
             </Button>
             <Button
@@ -145,11 +153,18 @@ export function FileListItem({
             </Button>
           </>
         }
+        onClose={() => setRenameOpen(false)}
+        open={renameOpen}
+        title="Rename file"
       >
-        <Input value={name} onChange={(e) => setName(e.target.value)} />
+        <Input onChange={(e) => setName(e.target.value)} value={name} />
       </SimpleDialog>
 
-      <SimpleDialog open={propsOpen} onClose={() => setPropsOpen(false)} title="File properties">
+      <SimpleDialog
+        onClose={() => setPropsOpen(false)}
+        open={propsOpen}
+        title="File properties"
+      >
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
           <Row label="Name" value={file.name} />
           <Row label="Type" value={file.kind.toUpperCase()} />
@@ -160,23 +175,23 @@ export function FileListItem({
       </SimpleDialog>
 
       <ConfirmDialog
-        open={confirmOpen}
+        body="This removes the file from the workspace. This cannot be undone."
         onClose={() => setConfirmOpen(false)}
         onConfirm={() => {
           delFile.mutate(file.id);
           onDeleted?.(file.id);
         }}
+        open={confirmOpen}
         title={`Delete ${file.name}?`}
-        body="This removes the file from the workspace. This cannot be undone."
       />
 
       <MoveToChapterDialog
-        open={moveOpen}
-        onClose={() => setMoveOpen(false)}
         chapters={chapters}
         color={color}
         currentChapterId={file.chapterId}
-        onSelect={(chapterId) => moveFile.mutate({ id: file.id, chapterId })}
+        onClose={() => setMoveOpen(false)}
+        onSelect={(chapterId) => moveFile.mutate({ chapterId, id: file.id })}
+        open={moveOpen}
       />
     </div>
   );

@@ -2,11 +2,11 @@ import { cn } from '@/lib/cn';
 import { Menu, type MenuItem } from './Menu';
 
 export interface HoverActionsProps {
-  items: MenuItem[];
   align?: 'start' | 'center' | 'end';
   /** Extra classes for the reveal wrapper. */
   className?: string;
   iconContainerClassName?: string;
+  items: MenuItem[];
 }
 
 /**
@@ -23,13 +23,17 @@ export function HoverActions({
   return (
     <div
       className={cn(
-        'opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100',
+        'opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100',
         // keep the trigger visible while its popover/menu is open
         'has-data-[state=open]:opacity-100',
         className
       )}
     >
-      <Menu items={items} align={align} iconContainerClassName={iconContainerClassName} />
+      <Menu
+        align={align}
+        iconContainerClassName={iconContainerClassName}
+        items={items}
+      />
     </div>
   );
 }

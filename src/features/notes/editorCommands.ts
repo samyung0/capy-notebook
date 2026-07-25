@@ -15,6 +15,7 @@ import {
   List,
   ListChecks,
   ListOrdered,
+  type LucideIcon,
   MessageSquarePlus,
   Minus,
   PanelLeft,
@@ -23,46 +24,53 @@ import {
   Quote,
   Sigma,
   Table2,
-  type LucideIcon,
 } from 'lucide-react';
 import { KEYS } from 'platejs';
-import type { WidgetGroupId } from './noteEditorPrefs';
 import type { NoteBlockDialogsApi } from './blocks/dialogContext';
 import { customBlockNode } from './blocks/shared';
-import { insertMediaPlaceholder } from './MediaNodes';
 import { toggleEditorBlock } from './editorTransforms';
 import { insertEditorNode, type NoteEditorInstance } from './insertEditorNode';
+import { insertMediaPlaceholder } from './MediaNodes';
+import type { WidgetGroupId } from './noteEditorPrefs';
 import { COLUMN_LAYOUTS } from './richBlockConfig';
 
 export { insertEditorNode, type NoteEditorInstance } from './insertEditorNode';
 
-export type EditorCommandGroup = 'basic' | 'lists' | 'media' | 'advanced' | 'inline';
+export type EditorCommandGroup =
+  | 'basic'
+  | 'lists'
+  | 'media'
+  | 'advanced'
+  | 'inline';
 
 export interface EditorCommand {
-  id: string;
-  label: string;
   description: string;
+  focusEditor?: boolean;
   group: EditorCommandGroup;
   icon: LucideIcon;
-  shortcut?: string;
-  focusEditor?: boolean;
+  id: string;
   keywords?: string[];
+  label: string;
+  run: (
+    editor: NoteEditorInstance,
+    dialogs?: NoteBlockDialogsApi | null
+  ) => void;
+  shortcut?: string;
   widget?: WidgetGroupId;
-  run: (editor: NoteEditorInstance, dialogs?: NoteBlockDialogsApi | null) => void;
 }
 
 export function emptyParagraph() {
-  return { type: 'p', children: [{ text: '' }] };
+  return { children: [{ text: '' }], type: 'p' };
 }
 
 export function columnGroupFromWidths(widths: readonly string[]) {
   return {
-    type: KEYS.columnGroup,
     children: widths.map((width) => ({
+      children: [emptyParagraph()],
       type: KEYS.column,
       width,
-      children: [emptyParagraph()],
     })),
+    type: KEYS.columnGroup,
   };
 }
 
@@ -76,17 +84,17 @@ function blockCommand(
   shortcut?: string
 ) {
   return {
-    id,
-    label,
     description: `Turn the current block into ${label.toLowerCase()}`,
     group,
     icon,
-    shortcut,
+    id,
     keywords,
+    label,
     run: (editor: NoteEditorInstance) => {
       editor.tf.focus();
       toggleEditorBlock(editor, type);
     },
+    shortcut,
   } satisfies EditorCommand;
 }
 
@@ -98,12 +106,12 @@ function listCommand(
   keywords: string[] = []
 ) {
   return {
-    id,
-    label,
     description: `Create an indented ${label.toLowerCase()}`,
     group: 'lists',
     icon,
+    id,
     keywords,
+    label,
     run: (editor: NoteEditorInstance) => {
       editor.tf.focus();
       toggleList(editor, { listStyleType });
@@ -119,19 +127,23 @@ function columnCommand(
   keywords: string[] = []
 ) {
   return {
-    id,
-    label,
     description: `Insert ${label.toLowerCase()}`,
     group: 'advanced',
     icon,
-    widget: 'columns',
+    id,
     keywords,
-    run: (editor: NoteEditorInstance) => insertEditorNode(editor, columnGroupFromWidths(widths)),
+    label,
+    run: (editor: NoteEditorInstance) =>
+      insertEditorNode(editor, columnGroupFromWidths(widths)),
+    widget: 'columns',
   } satisfies EditorCommand;
 }
 
 export const EDITOR_COMMANDS: EditorCommand[] = [
-  blockCommand('paragraph', 'Text', 'p', Pilcrow, 'basic', ['paragraph', 'plain']),
+  blockCommand('paragraph', 'Text', 'p', Pilcrow, 'basic', [
+    'paragraph',
+    'plain',
+  ]),
   blockCommand(
     'heading-1',
     'Heading 1',
@@ -181,56 +193,62 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'Ctrl/Cmd+Alt+8'
   ),
   {
-    id: 'divider',
-    label: 'Divider',
     description: 'Insert a horizontal divider',
     group: 'basic',
     icon: Minus,
-    run: (editor) => insertEditorNode(editor, { type: KEYS.hr, children: [{ text: '' }] }),
+    id: 'divider',
+    label: 'Divider',
+    run: (editor) =>
+      insertEditorNode(editor, { children: [{ text: '' }], type: KEYS.hr }),
   },
   listCommand('bulleted-list', 'Bulleted list', ListStyleType.Disc, List, [
     'unordered',
     'ul',
     'bullet',
   ]),
-  listCommand('numbered-list', 'Numbered list', ListStyleType.Decimal, ListOrdered, [
-    'ordered',
-    'ol',
-    'number',
+  listCommand(
+    'numbered-list',
+    'Numbered list',
+    ListStyleType.Decimal,
+    ListOrdered,
+    ['ordered', 'ol', 'number']
+  ),
+  listCommand('task-list', 'Task list', KEYS.listTodo, ListChecks, [
+    'todo',
+    'checklist',
   ]),
-  listCommand('task-list', 'Task list', KEYS.listTodo, ListChecks, ['todo', 'checklist']),
   {
-    id: 'table',
-    label: 'Table',
     description: 'Insert a 2 × 2 table',
     group: 'advanced',
     icon: Table2,
-    widget: 'table',
+    id: 'table',
+    label: 'Table',
     run: (editor) =>
       insertEditorNode(editor, {
-        type: KEYS.table,
         children: [0, 1].map(() => ({
-          type: KEYS.tr,
           children: [0, 1].map(() => ({
-            type: KEYS.td,
             children: [emptyParagraph()],
+            type: KEYS.td,
           })),
+          type: KEYS.tr,
         })),
+        type: KEYS.table,
       }),
+    widget: 'table',
   },
   {
-    id: 'callout',
-    label: 'Callout',
     description: 'Insert a highlighted note box',
     group: 'advanced',
     icon: Info,
-    widget: 'callout',
+    id: 'callout',
+    label: 'Callout',
     run: (editor) =>
       insertEditorNode(editor, {
+        children: [emptyParagraph()],
         type: KEYS.callout,
         variant: 'info',
-        children: [emptyParagraph()],
       }),
+    widget: 'callout',
   },
   ...COLUMN_LAYOUTS.map((layout) =>
     columnCommand(
@@ -248,49 +266,49 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     )
   ),
   {
-    id: 'image',
-    label: 'Image',
     description: 'Upload an image through workspace storage',
     group: 'media',
     icon: Image,
-    widget: 'media',
+    id: 'image',
+    label: 'Image',
     run: (editor) => insertMediaPlaceholder(editor, 'img'),
+    widget: 'media',
   },
   {
-    id: 'video',
-    label: 'Video',
     description: 'Upload a video through workspace storage',
     group: 'media',
     icon: FileVideo,
-    widget: 'media',
+    id: 'video',
+    label: 'Video',
     run: (editor) => insertMediaPlaceholder(editor, 'video'),
+    widget: 'media',
   },
   {
-    id: 'audio',
-    label: 'Audio',
     description: 'Upload audio through workspace storage',
     group: 'media',
     icon: FileAudio,
-    widget: 'media',
+    id: 'audio',
+    label: 'Audio',
     run: (editor) => insertMediaPlaceholder(editor, 'audio'),
+    widget: 'media',
   },
   {
-    id: 'file',
-    label: 'File',
     description: 'Upload a document or attachment',
     group: 'media',
     icon: FileText,
-    widget: 'media',
+    id: 'file',
+    label: 'File',
     run: (editor) => insertMediaPlaceholder(editor, 'file'),
+    widget: 'media',
   },
   {
-    id: 'mention',
-    label: 'Mention',
     description: 'Mention a workspace member',
+    focusEditor: false,
     group: 'inline',
     icon: MessageSquarePlus,
-    focusEditor: false,
+    id: 'mention',
     keywords: ['user', '@'],
+    label: 'Mention',
     // Use the trigger path (same as typing `@`). Inserting mention_input via
     // insertEditorNode focuses the editor and immediately blur-cancels to `@`.
     run: (editor) => {
@@ -298,86 +316,90 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     },
   },
   {
-    id: 'equation',
-    label: 'Equation',
     description: 'Insert a block equation',
     group: 'advanced',
     icon: Sigma,
-    widget: 'math',
+    id: 'equation',
+    label: 'Equation',
     run: (editor) =>
       insertEditorNode(editor, {
-        type: KEYS.equation,
-        texExpression: '',
         children: [{ text: '' }],
+        texExpression: '',
+        type: KEYS.equation,
       }),
+    widget: 'math',
   },
   {
-    id: 'inline-equation',
-    label: 'Inline equation',
     description: 'Insert an inline equation',
     group: 'inline',
     icon: Sigma,
-    widget: 'math',
+    id: 'inline-equation',
+    label: 'Inline equation',
     run: (editor) => {
       editor.tf.focus();
       editor.tf.insertNodes({
-        type: KEYS.inlineEquation,
-        texExpression: '',
         children: [{ text: '' }],
+        texExpression: '',
+        type: KEYS.inlineEquation,
       });
     },
+    widget: 'math',
   },
   {
-    id: 'toc',
-    label: 'Table of contents',
     description: 'Insert a generated document outline',
     group: 'advanced',
     icon: List,
+    id: 'toc',
     keywords: ['toc', 'outline'],
+    label: 'Table of contents',
+    run: (editor) =>
+      insertEditorNode(editor, { children: [{ text: '' }], type: KEYS.toc }),
     widget: 'toc',
-    run: (editor) => insertEditorNode(editor, { type: KEYS.toc, children: [{ text: '' }] }),
   },
   {
-    id: 'quiz',
-    label: 'Quiz',
     description: 'Author an annotatable quiz block',
     group: 'advanced',
     icon: CircleAlert,
-    widget: 'quiz',
+    id: 'quiz',
+    label: 'Quiz',
     run: (editor, dialogs) =>
       dialogs?.openQuiz(undefined, (code) =>
         insertEditorNode(editor, customBlockNode('quiz', code))
       ),
+    widget: 'quiz',
   },
   {
-    id: 'flashcards',
-    label: 'Flashcards',
     description: 'Author an annotatable flashcard set',
     group: 'advanced',
     icon: ListChecks,
-    widget: 'flashcards',
+    id: 'flashcards',
+    label: 'Flashcards',
     run: (editor, dialogs) =>
       dialogs?.openFlashcards(undefined, (code) =>
         insertEditorNode(editor, customBlockNode('flashcards', code))
       ),
+    widget: 'flashcards',
   },
   {
-    id: 'mermaid',
-    label: 'Mermaid diagram',
     description: 'Insert a Mermaid diagram with a rich caption',
     group: 'advanced',
     icon: Braces,
+    id: 'mermaid',
     keywords: ['diagram', 'flowchart'],
-    widget: 'mermaid',
+    label: 'Mermaid diagram',
     run: (editor) =>
-      insertEditorNode(editor, customBlockNode('mermaid', 'flowchart LR\n  A --> B')),
+      insertEditorNode(
+        editor,
+        customBlockNode('mermaid', 'flowchart LR\n  A --> B')
+      ),
+    widget: 'mermaid',
   },
 ];
 
 export function commandMatches(command: EditorCommand, query: string): boolean {
   const normalized = query.trim().toLowerCase();
   if (!normalized) return true;
-  return [command.label, command.description, ...(command.keywords ?? [])].some((value) =>
-    value.toLowerCase().includes(normalized)
+  return [command.label, command.description, ...(command.keywords ?? [])].some(
+    (value) => value.toLowerCase().includes(normalized)
   );
 }

@@ -1,14 +1,26 @@
-import { useEffect } from 'react';
-import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { QueryClient } from '@tanstack/react-query';
-import { API_BASE, api, qk } from './client';
-import { USE_MSW } from './auth';
+import {
+  queryOptions,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
+import { useEffect } from 'react';
 import type {
+  MaterialDocument,
+  MaterialValue,
+} from '@/features/materials/document';
+import { USE_MSW } from './auth';
+import { API_BASE, api, qk } from './client';
+import type {
+  CommitMaterialSuggestionsReq,
   CreateDeckReq,
   CreateEventReq,
   CreateQuizReq,
   CreateWorkspaceReq,
   MaterialUpdateResult,
+  ReviewMaterialSuggestionsReq,
+  SuggestionMutationResult,
   UpdateCardReq,
   UpdateChapterReq,
   UpdateQuizReq,
@@ -16,13 +28,14 @@ import type {
   UpdateWorkspaceSharingReq,
 } from './gen/model';
 import type {
+  AppNotification,
   Attempt,
   AttemptDetail,
   BillingInfo,
   CalendarEvent,
   Chapter,
+  CloneWorkspaceResult,
   Conversation,
-  WireMessage,
   Deck,
   FileStatus,
   Flashcard,
@@ -30,9 +43,14 @@ import type {
   IntegrationsStatus,
   Label,
   Material,
+  MaterialDiscussion,
   MaterialRef,
-  AppNotification,
+  MaterialRevision,
   PlanTier,
+  Privacy,
+  PublicDeck,
+  PublicQuiz,
+  PublicWorkspace,
   Question,
   Quiz,
   SearchResult,
@@ -42,38 +60,31 @@ import type {
   Task,
   ThinkingCanvas,
   User,
+  WireMessage,
   Workspace,
-  PublicDeck,
-  PublicQuiz,
-  PublicWorkspace,
-  CloneWorkspaceResult,
-  MaterialDiscussion,
-  MaterialRevision,
-  MaterialSuggestion,
-  Privacy,
-  SuggestionStatus,
   WorkspaceMember,
   WorkspaceRole,
 } from './types';
-import type { MaterialDocument, MaterialValue } from '@/features/materials/document';
 
 const USE_DIRECT_B2_UPLOAD = import.meta.env.VITE_DIRECT_B2_UPLOAD !== 'false';
 
 /* ---------------- account / shell ---------------- */
-export const meQuery = () => queryOptions({ queryKey: qk.me, queryFn: () => api.get<User>('/me') });
+export const meQuery = () =>
+  queryOptions({ queryFn: () => api.get<User>('/me'), queryKey: qk.me });
 export const useMe = () => useQuery(meQuery());
 
 export const useSearch = (q: string) =>
   useQuery({
-    queryKey: qk.search(q),
-    queryFn: () => api.get<SearchResult[]>(`/search?q=${encodeURIComponent(q)}`),
     enabled: q.trim().length > 0,
+    queryFn: () =>
+      api.get<SearchResult[]>(`/search?q=${encodeURIComponent(q)}`),
+    queryKey: qk.search(q),
   });
 
 export const useNotifications = () =>
   useQuery({
-    queryKey: qk.notifications,
     queryFn: () => api.get<AppNotification[]>('/notifications'),
+    queryKey: qk.notifications,
     refetchInterval: 30_000,
   });
 
@@ -87,8 +98,8 @@ export function useMarkNotificationsRead() {
 
 export const billingQuery = () =>
   queryOptions({
-    queryKey: qk.billing,
     queryFn: () => api.get<BillingInfo>('/billing'),
+    queryKey: qk.billing,
   });
 export const useBilling = () => useQuery(billingQuery());
 
@@ -110,8 +121,8 @@ export function useBillingPortal() {
 
 export const integrationsQuery = () =>
   queryOptions({
-    queryKey: qk.integrations,
     queryFn: () => api.get<IntegrationsStatus>('/integrations'),
+    queryKey: qk.integrations,
   });
 export const useIntegrations = () => useQuery(integrationsQuery());
 
@@ -122,7 +133,8 @@ export function useImportSources(workspaceId: string) {
       provider: 'google' | 'microsoft';
       fileIds: string[];
       chapterId?: string | null;
-    }) => api.post<SourceFile[]>(`/workspaces/${workspaceId}/sources/import`, body),
+    }) =>
+      api.post<SourceFile[]>(`/workspaces/${workspaceId}/sources/import`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.files(workspaceId) });
       qc.invalidateQueries({ queryKey: qk.workspaceStats(workspaceId) });
@@ -132,9 +144,10 @@ export function useImportSources(workspaceId: string) {
 
 export function useMicrosoftRecentFiles(enabled: boolean) {
   return useQuery({
-    queryKey: ['integrations', 'microsoft', 'recent'],
-    queryFn: () => api.get<{ id: string; name: string }[]>('/integrations/microsoft/recent'),
     enabled,
+    queryFn: () =>
+      api.get<{ id: string; name: string }[]>('/integrations/microsoft/recent'),
+    queryKey: ['integrations', 'microsoft', 'recent'],
   });
 }
 
@@ -143,17 +156,17 @@ export function useMicrosoftRecentFiles(enabled: boolean) {
  * Loaded once and filtered client-side (no per-keystroke request). */
 export const tagsQuery = (kind = 'workspace') =>
   queryOptions({
-    queryKey: qk.tags(kind),
     queryFn: () => api.get<Tag[]>(`/tags?kind=${encodeURIComponent(kind)}`),
+    queryKey: qk.tags(kind),
   });
 export const useTags = (kind = 'workspace') => useQuery(tagsQuery(kind));
 
 /* ---------------- workspaces ---------------- */
 export interface WorkspaceQuery {
-  q?: string;
-  sort?: string;
   /** One or more colors; OR-matched with tags on the server. */
   color?: string | string[];
+  q?: string;
+  sort?: string;
   /** One or more tag values; OR-matched with colors on the server. */
   tag?: string | string[];
 }
@@ -161,29 +174,38 @@ export const workspacesQuery = (params: WorkspaceQuery = {}) => {
   const search = new URLSearchParams();
   if (params.q) search.set('q', params.q);
   if (params.sort) search.set('sort', params.sort);
-  const colors = Array.isArray(params.color) ? params.color : params.color ? [params.color] : [];
-  const tags = Array.isArray(params.tag) ? params.tag : params.tag ? [params.tag] : [];
+  const colors = Array.isArray(params.color)
+    ? params.color
+    : params.color
+      ? [params.color]
+      : [];
+  const tags = Array.isArray(params.tag)
+    ? params.tag
+    : params.tag
+      ? [params.tag]
+      : [];
   if (colors.length) search.set('color', colors.join(','));
   if (tags.length) search.set('tag', tags.join(','));
   const qs = search.toString();
   return queryOptions({
-    queryKey: qk.workspaces(params),
     queryFn: () => api.get<Workspace[]>(`/workspaces${qs ? `?${qs}` : ''}`),
+    queryKey: qk.workspaces(params),
   });
 };
-export const useWorkspaces = (params: WorkspaceQuery = {}) => useQuery(workspacesQuery(params));
+export const useWorkspaces = (params: WorkspaceQuery = {}) =>
+  useQuery(workspacesQuery(params));
 
 export const workspaceQuery = (id: string) =>
   queryOptions({
-    queryKey: qk.workspace(id),
-    queryFn: () => api.get<Workspace>(`/workspaces/${id}`),
     enabled: !!id,
+    queryFn: () => api.get<Workspace>(`/workspaces/${id}`),
+    queryKey: qk.workspace(id),
   });
 export const useWorkspace = (id: string) => useQuery(workspaceQuery(id));
 
 export const workspaceStatsQuery = (id: string) =>
   queryOptions({
-    queryKey: qk.workspaceStats(id),
+    enabled: !!id,
     queryFn: () =>
       api.get<{
         chapters: number;
@@ -192,14 +214,16 @@ export const workspaceStatsQuery = (id: string) =>
         attempts: number;
         avgScore: number;
       }>(`/workspaces/${id}/stats`),
-    enabled: !!id,
+    queryKey: qk.workspaceStats(id),
   });
-export const useWorkspaceStats = (id: string) => useQuery(workspaceStatsQuery(id));
+export const useWorkspaceStats = (id: string) =>
+  useQuery(workspaceStatsQuery(id));
 
 export function useCreateWorkspace() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: CreateWorkspaceReq) => api.post<Workspace>('/workspaces', body),
+    mutationFn: (body: CreateWorkspaceReq) =>
+      api.post<Workspace>('/workspaces', body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workspaces'] });
       qc.invalidateQueries({ queryKey: ['tags'] });
@@ -249,46 +273,52 @@ export function useDeleteWorkspace() {
 /* ---------------- chapters & files ---------------- */
 export const sourceUploadPolicyQuery = () =>
   queryOptions({
-    queryKey: qk.sourceUploadPolicy,
     queryFn: () => api.get<SourceUploadPolicy>('/source-upload-policy'),
+    queryKey: qk.sourceUploadPolicy,
   });
 export const useSourceUploadPolicy = () => useQuery(sourceUploadPolicyQuery());
 
 export const chaptersQuery = (wsId: string) =>
   queryOptions({
-    queryKey: qk.chapters(wsId),
-    queryFn: () => api.get<Chapter[]>(`/workspaces/${wsId}/chapters`),
     enabled: !!wsId,
+    queryFn: () => api.get<Chapter[]>(`/workspaces/${wsId}/chapters`),
+    queryKey: qk.chapters(wsId),
   });
 export const useChapters = (wsId: string) => useQuery(chaptersQuery(wsId));
 
 export const filesQuery = (wsId: string) =>
   queryOptions({
-    queryKey: qk.files(wsId),
-    queryFn: () => api.get<SourceFile[]>(`/workspaces/${wsId}/files`),
     enabled: !!wsId,
+    queryFn: () => api.get<SourceFile[]>(`/workspaces/${wsId}/files`),
+    queryKey: qk.files(wsId),
   });
 export const useFiles = (wsId: string) => useQuery(filesQuery(wsId));
 
 export const useFile = (id: string | null) =>
   useQuery({
-    queryKey: qk.file(id ?? ''),
-    queryFn: () => api.get<SourceFile>(`/files/${id}`),
     enabled: !!id,
+    queryFn: () => api.get<SourceFile>(`/files/${id}`),
+    queryKey: qk.file(id ?? ''),
   });
 
 export const allFilesQuery = () =>
   queryOptions({
-    queryKey: ['files', 'all'],
     queryFn: () => api.get<SourceFile[]>('/files'),
+    queryKey: ['files', 'all'],
   });
 export const useAllFiles = () => useQuery(allFilesQuery());
 
 export function useUpdateFile(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: string; name?: string; chapterId?: string | null }) =>
-      api.patch<SourceFile>(`/files/${id}`, body),
+    mutationFn: ({
+      id,
+      ...body
+    }: {
+      id: string;
+      name?: string;
+      chapterId?: string | null;
+    }) => api.patch<SourceFile>(`/files/${id}`, body),
     onSuccess: (file) => {
       qc.invalidateQueries({ queryKey: qk.files(wsId) });
       qc.invalidateQueries({ queryKey: qk.file(file.id) });
@@ -301,9 +331,17 @@ export function useUpdateFile(wsId: string) {
  * patches the files cache, rolls back on error, reconciles chapters on settle. */
 export function useMoveFile(wsId: string) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutation<
+    SourceFile,
+    Error,
+    { id: string; chapterId: string | null },
+    { prev?: SourceFile[] }
+  >({
     mutationFn: ({ id, chapterId }: { id: string; chapterId: string | null }) =>
       api.patch<SourceFile>(`/files/${id}`, { chapterId: chapterId ?? '' }),
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(qk.files(wsId), ctx.prev);
+    },
     onMutate: async ({ id, chapterId }) => {
       await qc.cancelQueries({ queryKey: qk.files(wsId) });
       const prev = qc.getQueryData<SourceFile[]>(qk.files(wsId));
@@ -311,9 +349,6 @@ export function useMoveFile(wsId: string) {
         list?.map((f) => (f.id === id ? { ...f, chapterId } : f))
       );
       return { prev };
-    },
-    onError: (_e, _v, ctx) => {
-      if (ctx?.prev) qc.setQueryData(qk.files(wsId), ctx.prev);
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: qk.files(wsId) });
@@ -336,7 +371,8 @@ export function useDeleteFile(wsId: string) {
 export function useAddChapter(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) => api.post<Chapter>(`/workspaces/${wsId}/chapters`, { name }),
+    mutationFn: (name: string) =>
+      api.post<Chapter>(`/workspaces/${wsId}/chapters`, { name }),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.chapters(wsId) }),
   });
 }
@@ -351,7 +387,8 @@ export function useUpdateChapter(wsId: string) {
 export function useReorderChapters(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (ids: string[]) => api.post<void>(`/workspaces/${wsId}/chapters/reorder`, { ids }),
+    mutationFn: (ids: string[]) =>
+      api.post<void>(`/workspaces/${wsId}/chapters/reorder`, { ids }),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.chapters(wsId) }),
   });
 }
@@ -364,9 +401,29 @@ export interface ContentOrderItem {
 /** Move and reorder the mixed file/material rows in one destination bucket. */
 export function useReorderContent(wsId: string) {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ chapterId, items }: { chapterId: string | null; items: ContentOrderItem[] }) =>
-      api.post<void>(`/workspaces/${wsId}/content/reorder`, { chapterId, items }),
+  return useMutation<
+    void,
+    Error,
+    { chapterId: string | null; items: ContentOrderItem[] },
+    { prevFiles?: SourceFile[]; prevMaterials?: MaterialRef[] }
+  >({
+    mutationFn: ({
+      chapterId,
+      items,
+    }: {
+      chapterId: string | null;
+      items: ContentOrderItem[];
+    }) =>
+      api.post<void>(`/workspaces/${wsId}/content/reorder`, {
+        chapterId,
+        items,
+      }),
+    onError: (_error, _variables, context) => {
+      if (context?.prevFiles)
+        qc.setQueryData(qk.files(wsId), context.prevFiles);
+      if (context?.prevMaterials)
+        qc.setQueryData(qk.materials(wsId), context.prevMaterials);
+    },
     onMutate: async ({ chapterId, items }) => {
       await Promise.all([
         qc.cancelQueries({ queryKey: qk.files(wsId) }),
@@ -380,20 +437,20 @@ export function useReorderContent(wsId: string) {
       qc.setQueryData<SourceFile[]>(qk.files(wsId), (list) =>
         list?.map((file) => {
           const position = positions.get(`file:${file.id}`);
-          return position === undefined ? file : { ...file, chapterId, position };
+          return position === undefined
+            ? file
+            : { ...file, chapterId, position };
         })
       );
       qc.setQueryData<MaterialRef[]>(qk.materials(wsId), (list) =>
         list?.map((material) => {
           const position = positions.get(`material:${material.id}`);
-          return position === undefined ? material : { ...material, chapterId, position };
+          return position === undefined
+            ? material
+            : { ...material, chapterId, position };
         })
       );
       return { prevFiles, prevMaterials };
-    },
-    onError: (_error, _variables, context) => {
-      if (context?.prevFiles) qc.setQueryData(qk.files(wsId), context.prevFiles);
-      if (context?.prevMaterials) qc.setQueryData(qk.materials(wsId), context.prevMaterials);
     },
     onSettled: () =>
       Promise.all([
@@ -424,7 +481,9 @@ function patchFileInCache(
   qc.setQueryData<SourceFile[]>(qk.files(wsId), (prev) =>
     prev ? prev.map((f) => (f.id === fileId ? { ...f, ...patch } : f)) : prev
   );
-  qc.setQueryData<SourceFile>(qk.file(fileId), (prev) => (prev ? { ...prev, ...patch } : prev));
+  qc.setQueryData<SourceFile>(qk.file(fileId), (prev) =>
+    prev ? { ...prev, ...patch } : prev
+  );
 }
 
 // MSW has no SSE channel, so fake the progress animation client-side in dev.
@@ -432,10 +491,13 @@ function simulateMswProgress(qc: QueryClient, wsId: string, fileId: string) {
   let pct = 0;
   const timer = setInterval(() => {
     pct = Math.min(100, pct + 20);
-    patchFileInCache(qc, wsId, fileId, { status: 'processing', ingestPct: pct });
+    patchFileInCache(qc, wsId, fileId, {
+      ingestPct: pct,
+      status: 'processing',
+    });
     if (pct >= 100) {
       clearInterval(timer);
-      patchFileInCache(qc, wsId, fileId, { status: 'ready', ingestPct: 100 });
+      patchFileInCache(qc, wsId, fileId, { ingestPct: 100, status: 'ready' });
     }
   }, 450);
 }
@@ -487,16 +549,22 @@ export function useUploadSource(wsId: string) {
           headers: Record<string, string>;
           expiresAt: string;
         }>(`/workspaces/${wsId}/sources/uploads`, {
-          name: file.name,
-          kind,
           chapterId: chapterId ?? null,
           chapterName: chapterName ?? null,
+          contentType: file.type || 'application/octet-stream',
+          kind,
+          name: file.name,
           parseMode,
           sizeBytes: file.size,
-          contentType: file.type || 'application/octet-stream',
         })
         .then(async (reservation) => {
-          await api.putFile(reservation.url, file, reservation.headers, onUploadProgress, signal);
+          await api.putFile(
+            reservation.url,
+            file,
+            reservation.headers,
+            onUploadProgress,
+            signal
+          );
           onUploadProgress?.(100);
           return api.post<SourceFile>(
             `/workspaces/${wsId}/sources/uploads/${reservation.uploadId}/complete`
@@ -508,7 +576,11 @@ export function useUploadSource(wsId: string) {
       qc.setQueryData<SourceFile[]>(qk.files(wsId), (prev) => {
         const next = prev ? [...prev] : [];
         if (!next.some((f) => f.id === file.id)) {
-          next.push({ ...file, status: file.status ?? 'processing', ingestPct: 0 });
+          next.push({
+            ...file,
+            ingestPct: 0,
+            status: file.status ?? 'processing',
+          });
         }
         return next;
       });
@@ -527,8 +599,15 @@ export function useIngestProgress(wsId: string, enabled = true) {
     const es = new EventSource(`${API_BASE}/workspaces/${wsId}/ingest-events`);
     es.onmessage = (e) => {
       try {
-        const ev = JSON.parse(e.data) as { fileId: string; pct: number; status: FileStatus };
-        patchFileInCache(qc, wsId, ev.fileId, { status: ev.status, ingestPct: ev.pct });
+        const ev = JSON.parse(e.data) as {
+          fileId: string;
+          pct: number;
+          status: FileStatus;
+        };
+        patchFileInCache(qc, wsId, ev.fileId, {
+          ingestPct: ev.pct,
+          status: ev.status,
+        });
         if (ev.status === 'ready' || ev.status === 'failed') {
           qc.invalidateQueries({ queryKey: qk.files(wsId) });
           qc.invalidateQueries({ queryKey: qk.file(ev.fileId) });
@@ -545,19 +624,21 @@ export function useIngestProgress(wsId: string, enabled = true) {
 
 export const conversationsQuery = (wsId: string) =>
   queryOptions({
-    queryKey: qk.conversations(wsId),
-    queryFn: () => api.get<Conversation[]>(`/workspaces/${wsId}/conversations`),
     enabled: !!wsId,
+    queryFn: () => api.get<Conversation[]>(`/workspaces/${wsId}/conversations`),
+    queryKey: qk.conversations(wsId),
   });
-export const useConversations = (wsId: string) => useQuery(conversationsQuery(wsId));
+export const useConversations = (wsId: string) =>
+  useQuery(conversationsQuery(wsId));
 
 export const messagesQuery = (convId: string | null) =>
   queryOptions({
-    queryKey: qk.messages(convId ?? ''),
-    queryFn: () => api.get<WireMessage[]>(`/conversations/${convId}/messages`),
     enabled: !!convId,
+    queryFn: () => api.get<WireMessage[]>(`/conversations/${convId}/messages`),
+    queryKey: qk.messages(convId ?? ''),
   });
-export const useMessages = (convId: string | null) => useQuery(messagesQuery(convId));
+export const useMessages = (convId: string | null) =>
+  useQuery(messagesQuery(convId));
 
 export function useDeleteConversation(wsId: string) {
   const qc = useQueryClient();
@@ -569,7 +650,8 @@ export function useDeleteConversation(wsId: string) {
 export function useGenerate(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (opts: GenerateOptions) => api.post<unknown>(`/workspaces/${wsId}/generate`, opts),
+    mutationFn: (opts: GenerateOptions) =>
+      api.post<unknown>(`/workspaces/${wsId}/generate`, opts),
     onSuccess: async () => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: qk.quizzes }),
@@ -585,17 +667,17 @@ export function useGenerate(wsId: string) {
  * quizzes, decks) for the left panel. Not chapter-scoped. */
 export const materialsQuery = (wsId: string) =>
   queryOptions({
-    queryKey: qk.materials(wsId),
-    queryFn: () => api.get<MaterialRef[]>(`/workspaces/${wsId}/materials`),
     enabled: !!wsId,
+    queryFn: () => api.get<MaterialRef[]>(`/workspaces/${wsId}/materials`),
+    queryKey: qk.materials(wsId),
   });
 export const useMaterials = (wsId: string) => useQuery(materialsQuery(wsId));
 
 export const materialQuery = (id: string | null) =>
   queryOptions({
-    queryKey: qk.material(id ?? ''),
-    queryFn: () => api.get<Material>(`/materials/${id}`),
     enabled: !!id,
+    queryFn: () => api.get<Material>(`/materials/${id}`),
+    queryKey: qk.material(id ?? ''),
   });
 export const useMaterial = (id: string | null) => useQuery(materialQuery(id));
 
@@ -613,16 +695,19 @@ export function useDeleteMaterial(wsId: string) {
 
 /** Create a user-authored note (markdown) material and reveal it in-pane. */
 export interface CreateNoteInput {
-  title?: string;
   content?: MaterialDocument;
   scopeChapters?: string[];
   scopeFileIds?: string[];
+  title?: string;
 }
 export function useCreateNote(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (input: CreateNoteInput = {}) =>
-      api.post<Material>(`/workspaces/${wsId}/materials`, { kind: 'note', ...input }),
+      api.post<Material>(`/workspaces/${wsId}/materials`, {
+        kind: 'note',
+        ...input,
+      }),
     onSuccess: (mt) => {
       qc.invalidateQueries({ queryKey: qk.materials(wsId) });
       qc.setQueryData(qk.material(mt.id), mt);
@@ -632,11 +717,11 @@ export function useCreateNote(wsId: string) {
 
 /** Patch a material's title/content/scope (used by the note editor autosave). */
 export interface UpdateMaterialInput {
-  title?: string;
   content?: MaterialDocument;
   expectedRevision?: number;
   scopeChapters?: string[];
   scopeFileIds?: string[];
+  title?: string;
 }
 export function useUpdateMaterial(wsId: string) {
   const qc = useQueryClient();
@@ -652,14 +737,28 @@ export function useUpdateMaterial(wsId: string) {
           ? {
               ...current,
               ...(patch.title === undefined ? {} : { title: patch.title }),
-              ...(patch.content === undefined ? {} : { content: patch.content }),
-              ...(patch.scopeChapters === undefined ? {} : { scopeChapters: patch.scopeChapters }),
-              ...(patch.scopeFileIds === undefined ? {} : { scopeFileIds: patch.scopeFileIds }),
-              revision: result.revision,
+              ...(patch.content === undefined
+                ? {}
+                : { content: patch.content }),
+              ...(patch.scopeChapters === undefined
+                ? {}
+                : { scopeChapters: patch.scopeChapters }),
+              ...(patch.scopeFileIds === undefined
+                ? {}
+                : { scopeFileIds: patch.scopeFileIds }),
               contentBytes: result.contentBytes,
+              hasPendingSuggestions: result.hasPendingSuggestions,
+              revision: result.revision,
               updatedAt: result.updatedAt,
             }
           : current
+      );
+      qc.setQueryData<MaterialRef[]>(qk.materials(wsId), (refs) =>
+        refs?.map((ref) =>
+          ref.id === id
+            ? { ...ref, hasPendingSuggestions: result.hasPendingSuggestions }
+            : ref
+        )
       );
       // Content/revision/byte-count are absent from MaterialRef rows, so an
       // autosave cannot make the workspace material list stale. Avoid a
@@ -679,9 +778,10 @@ export function useUpdateMaterial(wsId: string) {
 /* ---------------- editor collaboration ---------------- */
 export const workspaceMembersQuery = (workspaceId: string, enabled = true) =>
   queryOptions({
-    queryKey: qk.workspaceMembers(workspaceId),
-    queryFn: () => api.get<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`),
     enabled: !!workspaceId && enabled,
+    queryFn: () =>
+      api.get<WorkspaceMember[]>(`/workspaces/${workspaceId}/members`),
+    queryKey: qk.workspaceMembers(workspaceId),
   });
 
 export const useWorkspaceMembers = (workspaceId: string, enabled = true) =>
@@ -689,8 +789,10 @@ export const useWorkspaceMembers = (workspaceId: string, enabled = true) =>
 
 export function useCreateWorkspaceInvite(workspaceId: string) {
   return useMutation({
-    mutationFn: (body: { identifier: string; role: Exclude<WorkspaceRole, 'owner'> }) =>
-      api.post<void>(`/workspaces/${workspaceId}/invites`, body),
+    mutationFn: (body: {
+      identifier: string;
+      role: Exclude<WorkspaceRole, 'owner'>;
+    }) => api.post<void>(`/workspaces/${workspaceId}/invites`, body),
   });
 }
 
@@ -698,11 +800,15 @@ export function useAcceptWorkspaceInvite() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (token: string) =>
-      api.post<WorkspaceMember>(`/workspace-invites/${encodeURIComponent(token)}/accept`),
+      api.post<WorkspaceMember>(
+        `/workspace-invites/${encodeURIComponent(token)}/accept`
+      ),
     onSuccess: (member) => {
       qc.invalidateQueries({ queryKey: ['workspaces'] });
       qc.invalidateQueries({ queryKey: qk.workspace(member.workspaceId) });
-      qc.invalidateQueries({ queryKey: qk.workspaceMembers(member.workspaceId) });
+      qc.invalidateQueries({
+        queryKey: qk.workspaceMembers(member.workspaceId),
+      });
       qc.invalidateQueries({ queryKey: qk.notifications });
     },
   });
@@ -711,25 +817,35 @@ export function useAcceptWorkspaceInvite() {
 export function useUpdateWorkspaceMember(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ userId, role }: { userId: string; role: Exclude<WorkspaceRole, 'owner'> }) =>
+    mutationFn: ({
+      userId,
+      role,
+    }: {
+      userId: string;
+      role: Exclude<WorkspaceRole, 'owner'>;
+    }) =>
       api.patch<void>(`/workspaces/${workspaceId}/members/${userId}`, { role }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.workspaceMembers(workspaceId) }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.workspaceMembers(workspaceId) }),
   });
 }
 
 export function useRemoveWorkspaceMember(workspaceId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (userId: string) => api.del<void>(`/workspaces/${workspaceId}/members/${userId}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.workspaceMembers(workspaceId) }),
+    mutationFn: (userId: string) =>
+      api.del<void>(`/workspaces/${workspaceId}/members/${userId}`),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.workspaceMembers(workspaceId) }),
   });
 }
 
 export const materialDiscussionsQuery = (materialId: string) =>
   queryOptions({
-    queryKey: qk.materialDiscussions(materialId),
-    queryFn: () => api.get<MaterialDiscussion[]>(`/materials/${materialId}/discussions`),
     enabled: !!materialId,
+    queryFn: () =>
+      api.get<MaterialDiscussion[]>(`/materials/${materialId}/discussions`),
+    queryKey: qk.materialDiscussions(materialId),
   });
 
 export const useMaterialDiscussions = (materialId: string) =>
@@ -740,11 +856,15 @@ export function useCreateMaterialDiscussion(materialId: string) {
   return useMutation({
     mutationFn: (body: {
       blockId?: string;
-      documentContent?: string;
       anchor?: Record<string, unknown>;
       contentRich: MaterialValue;
-    }) => api.post<MaterialDiscussion>(`/materials/${materialId}/discussions`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.materialDiscussions(materialId) }),
+    }) =>
+      api.post<MaterialDiscussion>(
+        `/materials/${materialId}/discussions`,
+        body
+      ),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.materialDiscussions(materialId) }),
   });
 }
 
@@ -754,81 +874,163 @@ export function useCreateMaterialComment(materialId: string) {
     mutationFn: ({
       discussionId,
       contentRich,
+      parentCommentId,
     }: {
       discussionId: string;
       contentRich: MaterialValue;
-    }) => api.post(`/discussions/${discussionId}/comments`, { contentRich }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.materialDiscussions(materialId) }),
+      parentCommentId?: string;
+    }) =>
+      api.post(`/discussions/${discussionId}/comments`, {
+        contentRich,
+        parentCommentId,
+      }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.materialDiscussions(materialId) }),
   });
 }
 
 export function useResolveMaterialDiscussion(materialId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ discussionId, isResolved }: { discussionId: string; isResolved: boolean }) =>
-      api.patch<void>(`/discussions/${discussionId}`, { isResolved }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.materialDiscussions(materialId) }),
+    mutationFn: ({
+      discussionId,
+      isResolved,
+    }: {
+      discussionId: string;
+      isResolved: boolean;
+    }) => api.patch<void>(`/discussions/${discussionId}`, { isResolved }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.materialDiscussions(materialId) }),
+  });
+}
+
+export function useUpdateMaterialComment(materialId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      commentId,
+      contentRich,
+    }: {
+      commentId: string;
+      contentRich: MaterialValue;
+    }) => api.patch(`/comments/${commentId}`, { contentRich }),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.materialDiscussions(materialId) }),
+  });
+}
+
+export function useDeleteMaterialComment(materialId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (commentId: string) => api.del<void>(`/comments/${commentId}`),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.materialDiscussions(materialId) }),
   });
 }
 
 export const materialRevisionsQuery = (materialId: string) =>
   queryOptions({
-    queryKey: qk.materialRevisions(materialId),
-    queryFn: () => api.get<MaterialRevision[]>(`/materials/${materialId}/revisions`),
     enabled: !!materialId,
+    queryFn: () =>
+      api.get<MaterialRevision[]>(`/materials/${materialId}/revisions`),
+    queryKey: qk.materialRevisions(materialId),
   });
 
 export const useMaterialRevisions = (materialId: string) =>
   useQuery(materialRevisionsQuery(materialId));
 
-export const materialSuggestionsQuery = (materialId: string) =>
-  queryOptions({
-    queryKey: qk.materialSuggestions(materialId),
-    queryFn: () => api.get<MaterialSuggestion[]>(`/materials/${materialId}/suggestions`),
-    enabled: !!materialId,
-  });
+async function refreshSuggestionMutation(
+  qc: QueryClient,
+  materialId: string,
+  result: SuggestionMutationResult
+) {
+  qc.setQueryData(
+    qk.materialDiscussions(materialId),
+    result.discussions as MaterialDiscussion[]
+  );
+  const material = await api.get<Material>(`/materials/${materialId}`);
+  qc.setQueryData(qk.material(materialId), material);
+  qc.setQueryData<MaterialRef[]>(qk.materials(material.workspaceId), (refs) =>
+    refs?.map((ref) =>
+      ref.id === materialId
+        ? { ...ref, hasPendingSuggestions: result.hasPendingSuggestions }
+        : ref
+    )
+  );
+  qc.invalidateQueries({ queryKey: qk.materialRevisions(materialId) });
+  return { material, result };
+}
 
-export const useMaterialSuggestions = (materialId: string) =>
-  useQuery(materialSuggestionsQuery(materialId));
-
-export function useCreateMaterialSuggestion(materialId: string) {
+export function useCommitMaterialSuggestions(materialId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: {
-      baseRevision: number;
-      anchor: Record<string, unknown>;
-      originalFragment: MaterialValue;
-      proposedFragment: MaterialValue;
-    }) => api.post<MaterialSuggestion>(`/materials/${materialId}/suggestions`, body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.materialSuggestions(materialId) }),
+    mutationFn: async (body: CommitMaterialSuggestionsReq) => {
+      const result = await api.post<SuggestionMutationResult>(
+        `/materials/${materialId}/suggestion-commits`,
+        body
+      );
+      return refreshSuggestionMutation(qc, materialId, result);
+    },
   });
 }
 
-export function useUpdateMaterialSuggestionStatus(materialId: string) {
+export function useReviewMaterialSuggestions(materialId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({
+    mutationFn: async (
+      body: Omit<ReviewMaterialSuggestionsReq, 'expectedRevision'> & {
+        expectedRevision?: number;
+      }
+    ) => {
+      const expectedRevision =
+        body.expectedRevision ??
+        qc.getQueryData<Material>(qk.material(materialId))?.revision ??
+        (await api.get<Material>(`/materials/${materialId}`)).revision ??
+        1;
+      const result = await api.post<SuggestionMutationResult>(
+        `/materials/${materialId}/suggestions/review`,
+        { ...body, expectedRevision } satisfies ReviewMaterialSuggestionsReq
+      );
+      return refreshSuggestionMutation(qc, materialId, result);
+    },
+  });
+}
+
+export function useWithdrawMaterialSuggestion(materialId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
       suggestionId,
-      status,
-      finalizedContent,
-      expectedBaseRevision,
+      expectedRevision,
     }: {
       suggestionId: string;
-      status: SuggestionStatus;
-      finalizedContent?: MaterialDocument;
-      expectedBaseRevision?: number;
-    }) =>
-      api.patch<MaterialSuggestion>(`/material-suggestions/${suggestionId}`, {
-        status,
-        finalizedContent,
-        expectedBaseRevision,
-      }),
-    onSuccess: async () => {
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: qk.materialSuggestions(materialId) }),
-        qc.invalidateQueries({ queryKey: qk.material(materialId) }),
-        qc.invalidateQueries({ queryKey: qk.materialRevisions(materialId) }),
-      ]);
+      expectedRevision: number;
+    }) => {
+      const result = await api.del<SuggestionMutationResult>(
+        `/material-suggestions/${suggestionId}?expectedRevision=${expectedRevision}`
+      );
+      return refreshSuggestionMutation(qc, materialId, result);
+    },
+  });
+}
+
+export function useDeleteMaterialDiscussion(materialId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      discussionId,
+      expectedRevision,
+    }: {
+      discussionId: string;
+      expectedRevision?: number;
+    }) => {
+      const query = expectedRevision
+        ? `?expectedRevision=${expectedRevision}`
+        : '';
+      const result = await api.del<SuggestionMutationResult>(
+        `/discussions/${discussionId}${query}`
+      );
+      return refreshSuggestionMutation(qc, materialId, result);
     },
   });
 }
@@ -838,62 +1040,69 @@ export function useUpdateMaterialSuggestionStatus(materialId: string) {
  * patches the materials list + single-material caches, rolls back on error. */
 export function useMoveMaterial(wsId: string) {
   const qc = useQueryClient();
-  return useMutation({
+  return useMutation<
+    Material,
+    Error,
+    { id: string; chapterId: string | null },
+    { prevList?: MaterialRef[] }
+  >({
     mutationFn: ({ id, chapterId }: { id: string; chapterId: string | null }) =>
       api.patch<Material>(`/materials/${id}`, { chapterId: chapterId ?? '' }),
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prevList) qc.setQueryData(qk.materials(wsId), ctx.prevList);
+    },
     onMutate: async ({ id, chapterId }) => {
       await qc.cancelQueries({ queryKey: qk.materials(wsId) });
       const prevList = qc.getQueryData<MaterialRef[]>(qk.materials(wsId));
       qc.setQueryData<MaterialRef[]>(qk.materials(wsId), (prev) =>
         prev?.map((r) => (r.id === id ? { ...r, chapterId } : r))
       );
-      qc.setQueryData<Material>(qk.material(id), (prev) => (prev ? { ...prev, chapterId } : prev));
+      qc.setQueryData<Material>(qk.material(id), (prev) =>
+        prev ? { ...prev, chapterId } : prev
+      );
       return { prevList };
     },
-    onError: (_e, _v, ctx) => {
-      if (ctx?.prevList) qc.setQueryData(qk.materials(wsId), ctx.prevList);
-    },
-    onSuccess: (mt) => qc.setQueryData(qk.material(mt.id), mt),
     onSettled: () => qc.invalidateQueries({ queryKey: qk.materials(wsId) }),
+    onSuccess: (mt) => qc.setQueryData(qk.material(mt.id), mt),
   });
 }
 
 /* ---------------- quizzes ---------------- */
 export const quizzesQuery = () =>
   queryOptions({
-    queryKey: qk.quizzes,
     queryFn: () => api.get<Quiz[]>('/quizzes'),
+    queryKey: qk.quizzes,
   });
 export const useQuizzes = () => useQuery(quizzesQuery());
 
 export const quizQuery = (id: string) =>
   queryOptions({
-    queryKey: qk.quiz(id),
-    queryFn: () => api.get<Quiz>(`/quizzes/${id}`),
     enabled: !!id,
+    queryFn: () => api.get<Quiz>(`/quizzes/${id}`),
+    queryKey: qk.quiz(id),
   });
 export const useQuiz = (id: string) => useQuery(quizQuery(id));
 
 export const attemptsQuery = () =>
   queryOptions({
-    queryKey: qk.attempts,
     queryFn: () => api.get<Attempt[]>('/attempts'),
+    queryKey: qk.attempts,
   });
 export const useAttempts = () => useQuery(attemptsQuery());
 
 export const attemptQuery = (id: string) =>
   queryOptions({
-    queryKey: qk.attempt(id),
-    queryFn: () => api.get<AttemptDetail>(`/attempts/${id}`),
     enabled: !!id,
+    queryFn: () => api.get<AttemptDetail>(`/attempts/${id}`),
+    queryKey: qk.attempt(id),
   });
 export const useAttempt = (id: string) => useQuery(attemptQuery(id));
 
 /** Ad-hoc quiz built from recently-missed questions. */
 export const mistakesQuery = () =>
   queryOptions({
-    queryKey: qk.mistakes,
     queryFn: () => api.get<Quiz>('/mistakes'),
+    queryKey: qk.mistakes,
   });
 export const useMistakes = () => useQuery(mistakesQuery());
 
@@ -902,15 +1111,18 @@ export const useMistakes = () => useQuery(mistakesQuery());
 function invalidateAllMaterials(qc: ReturnType<typeof useQueryClient>) {
   qc.invalidateQueries({
     predicate: (q) =>
-      Array.isArray(q.queryKey) && q.queryKey[0] === 'workspace' && q.queryKey[2] === 'materials',
+      Array.isArray(q.queryKey) &&
+      q.queryKey[0] === 'workspace' &&
+      q.queryKey[2] === 'materials',
   });
 }
 
 export function useCreateQuiz() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: Omit<CreateQuizReq, 'questions'> & { questions?: Question[] }) =>
-      api.post<Quiz>('/quizzes', body),
+    mutationFn: (
+      body: Omit<CreateQuizReq, 'questions'> & { questions?: Question[] }
+    ) => api.post<Quiz>('/quizzes', body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.quizzes });
       invalidateAllMaterials(qc);
@@ -923,8 +1135,10 @@ export function useUpdateQuiz() {
     mutationFn: ({
       id,
       ...body
-    }: Omit<UpdateQuizReq, 'questions'> & { id: string; questions?: Question[] }) =>
-      api.patch<Quiz>(`/quizzes/${id}`, body),
+    }: Omit<UpdateQuizReq, 'questions'> & {
+      id: string;
+      questions?: Question[];
+    }) => api.patch<Quiz>(`/quizzes/${id}`, body),
     onSuccess: (_d, v) => {
       qc.invalidateQueries({ queryKey: qk.quizzes });
       qc.invalidateQueries({ queryKey: qk.quiz(v.id) });
@@ -961,11 +1175,11 @@ export function useSubmitAttempt() {
       questions?: Question[];
     }) =>
       api.post<Attempt>(`/quizzes/${quizId}/attempts`, {
+        answers,
         correct,
+        questions,
         total,
         wrong,
-        answers,
-        questions,
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.attempts });
@@ -976,7 +1190,10 @@ export function useSubmitAttempt() {
 
 /* ---------------- flashcards ---------------- */
 export const decksQuery = () =>
-  queryOptions({ queryKey: qk.decks, queryFn: () => api.get<Deck[]>('/decks') });
+  queryOptions({
+    queryFn: () => api.get<Deck[]>('/decks'),
+    queryKey: qk.decks,
+  });
 export const useDecks = () => useQuery(decksQuery());
 
 export function useCreateDeck() {
@@ -1015,17 +1232,17 @@ export function useDeleteCard(deckId: string) {
 
 export const deckQuery = (id: string) =>
   queryOptions({
-    queryKey: qk.deck(id),
-    queryFn: () => api.get<Deck>(`/decks/${id}`),
     enabled: !!id,
+    queryFn: () => api.get<Deck>(`/decks/${id}`),
+    queryKey: qk.deck(id),
   });
 export const useDeck = (id: string) => useQuery(deckQuery(id));
 
 export const cardsQuery = (deckId: string) =>
   queryOptions({
-    queryKey: qk.cards(deckId),
-    queryFn: () => api.get<Flashcard[]>(`/decks/${deckId}/cards`),
     enabled: !!deckId,
+    queryFn: () => api.get<Flashcard[]>(`/decks/${deckId}/cards`),
+    queryKey: qk.cards(deckId),
   });
 export const useCards = (deckId: string) => useQuery(cardsQuery(deckId));
 export function useUpdateCard(deckId: string) {
@@ -1045,7 +1262,7 @@ export function useReviewCard(deckId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ id, srs, known }: Pick<Flashcard, 'id' | 'srs' | 'known'>) =>
-      api.patch<Flashcard>(`/cards/${id}`, { srs, known }),
+      api.patch<Flashcard>(`/cards/${id}`, { known, srs }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.deck(deckId) });
       qc.invalidateQueries({ queryKey: qk.decks });
@@ -1056,13 +1273,16 @@ export function useReviewCard(deckId: string) {
 /* ---------------- schedule ---------------- */
 export const eventsQuery = () =>
   queryOptions({
-    queryKey: qk.events,
     queryFn: () => api.get<CalendarEvent[]>('/events'),
+    queryKey: qk.events,
   });
 export const useEvents = () => useQuery(eventsQuery());
 
 export const labelsQuery = () =>
-  queryOptions({ queryKey: qk.labels, queryFn: () => api.get<Label[]>('/labels') });
+  queryOptions({
+    queryFn: () => api.get<Label[]>('/labels'),
+    queryKey: qk.labels,
+  });
 export const useLabels = () => useQuery(labelsQuery());
 export function useUpdateLabel() {
   const qc = useQueryClient();
@@ -1085,7 +1305,8 @@ export function useDeleteLabel() {
 export function useCreateEvent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: CreateEventReq) => api.post<CalendarEvent>('/events', body),
+    mutationFn: (body: CreateEventReq) =>
+      api.post<CalendarEvent>('/events', body),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.events }),
   });
 }
@@ -1100,14 +1321,20 @@ export function useUpdateEvent() {
 
 /* ---------------- tasks ---------------- */
 export const tasksQuery = () =>
-  queryOptions({ queryKey: qk.tasks, queryFn: () => api.get<Task[]>('/tasks') });
+  queryOptions({
+    queryFn: () => api.get<Task[]>('/tasks'),
+    queryKey: qk.tasks,
+  });
 export const useTasks = () => useQuery(tasksQuery());
 
 interface TasksMutationContext {
   prev?: Task[];
 }
 
-function patchTasksCache(qc: ReturnType<typeof useQueryClient>, mutate: (tasks: Task[]) => Task[]) {
+function patchTasksCache(
+  qc: ReturnType<typeof useQueryClient>,
+  mutate: (tasks: Task[]) => Task[]
+) {
   const prev = qc.getQueryData<Task[]>(qk.tasks);
   if (prev) qc.setQueryData<Task[]>(qk.tasks, mutate(prev));
   return prev;
@@ -1115,17 +1342,22 @@ function patchTasksCache(qc: ReturnType<typeof useQueryClient>, mutate: (tasks: 
 
 export function useToggleTask() {
   const qc = useQueryClient();
-  return useMutation<Task, Error, { id: string; done: boolean }, TasksMutationContext>({
+  return useMutation<
+    Task,
+    Error,
+    { id: string; done: boolean },
+    TasksMutationContext
+  >({
     mutationFn: ({ id, done }) => api.patch<Task>(`/tasks/${id}`, { done }),
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(qk.tasks, ctx.prev);
+    },
     onMutate: async ({ id, done }) => {
       await qc.cancelQueries({ queryKey: qk.tasks });
       const prev = patchTasksCache(qc, (tasks) =>
         tasks.map((t) => (t.id === id ? { ...t, done } : t))
       );
       return { prev };
-    },
-    onError: (_e, _v, ctx) => {
-      if (ctx?.prev) qc.setQueryData(qk.tasks, ctx.prev);
     },
     onSettled: () => qc.invalidateQueries({ queryKey: qk.tasks }),
   });
@@ -1139,15 +1371,15 @@ export function useUpdateTask() {
     TasksMutationContext
   >({
     mutationFn: ({ id, ...patch }) => api.patch<Task>(`/tasks/${id}`, patch),
+    onError: (_e, _v, ctx) => {
+      if (ctx?.prev) qc.setQueryData(qk.tasks, ctx.prev);
+    },
     onMutate: async ({ id, ...patch }) => {
       await qc.cancelQueries({ queryKey: qk.tasks });
       const prev = patchTasksCache(qc, (tasks) =>
         tasks.map((t) => (t.id === id ? { ...t, ...patch } : t))
       );
       return { prev };
-    },
-    onError: (_e, _v, ctx) => {
-      if (ctx?.prev) qc.setQueryData(qk.tasks, ctx.prev);
     },
     onSettled: () => qc.invalidateQueries({ queryKey: qk.tasks }),
   });
@@ -1156,13 +1388,15 @@ export function useDeleteTask() {
   const qc = useQueryClient();
   return useMutation<void, Error, string, TasksMutationContext>({
     mutationFn: (id) => api.del<void>(`/tasks/${id}`),
-    onMutate: async (id) => {
-      await qc.cancelQueries({ queryKey: qk.tasks });
-      const prev = patchTasksCache(qc, (tasks) => tasks.filter((t) => t.id !== id));
-      return { prev };
-    },
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(qk.tasks, ctx.prev);
+    },
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: qk.tasks });
+      const prev = patchTasksCache(qc, (tasks) =>
+        tasks.filter((t) => t.id !== id)
+      );
+      return { prev };
     },
     onSettled: () => qc.invalidateQueries({ queryKey: qk.tasks }),
   });
@@ -1171,22 +1405,23 @@ export function useDeleteTask() {
 /* ---------------- thinking ---------------- */
 export const canvasesQuery = () =>
   queryOptions({
-    queryKey: qk.thinking,
     queryFn: () => api.get<ThinkingCanvas[]>('/thinking'),
+    queryKey: qk.thinking,
   });
 export const useCanvases = () => useQuery(canvasesQuery());
 
 export const canvasQuery = (id: string) =>
   queryOptions({
-    queryKey: qk.canvas(id),
-    queryFn: () => api.get<ThinkingCanvas>(`/thinking/${id}`),
     enabled: !!id,
+    queryFn: () => api.get<ThinkingCanvas>(`/thinking/${id}`),
+    queryKey: qk.canvas(id),
   });
 export const useCanvas = (id: string) => useQuery(canvasQuery(id));
 export function useCreateCanvas() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (name: string) => api.post<ThinkingCanvas>('/thinking', { name }),
+    mutationFn: (name: string) =>
+      api.post<ThinkingCanvas>('/thinking', { name }),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.thinking }),
   });
 }
@@ -1202,22 +1437,22 @@ export function useSaveCanvas(id: string) {
 /* ---------------- explore ---------------- */
 export const exploreWorkspacesQuery = () =>
   queryOptions({
-    queryKey: qk.exploreWorkspaces,
     queryFn: () => api.get<PublicWorkspace[]>('/explore/workspaces'),
+    queryKey: qk.exploreWorkspaces,
   });
 export const useExploreWorkspaces = () => useQuery(exploreWorkspacesQuery());
 
 export const exploreQuizzesQuery = () =>
   queryOptions({
-    queryKey: qk.exploreQuizzes,
     queryFn: () => api.get<PublicQuiz[]>('/explore/quizzes'),
+    queryKey: qk.exploreQuizzes,
   });
 export const useExploreQuizzes = () => useQuery(exploreQuizzesQuery());
 
 export const exploreDecksQuery = () =>
   queryOptions({
-    queryKey: qk.exploreDecks,
     queryFn: () => api.get<PublicDeck[]>('/explore/decks'),
+    queryKey: qk.exploreDecks,
   });
 export const useExploreDecks = () => useQuery(exploreDecksQuery());
 
@@ -1228,7 +1463,8 @@ export const useExploreDecks = () => useQuery(exploreDecksQuery());
 export function useCloneWorkspace() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => api.post<CloneWorkspaceResult>(`/workspaces/${id}/clone`),
+    mutationFn: (id: string) =>
+      api.post<CloneWorkspaceResult>(`/workspaces/${id}/clone`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workspaces'] });
       qc.invalidateQueries({ queryKey: qk.quizzes });

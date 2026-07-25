@@ -7,12 +7,24 @@ const composeFile = path.join(root, 'deploy', 'docker-compose.e2e.yml');
 const composeProject = process.env.E2E_COMPOSE_PROJECT!;
 
 export default async function globalTeardown() {
-  if (process.env.E2E_SKIP_COMPOSE === 'true' || process.env.E2E_KEEP_STACK === 'true') {
+  if (
+    process.env.E2E_SKIP_COMPOSE === 'true' ||
+    process.env.E2E_KEEP_STACK === 'true'
+  ) {
     return;
   }
   const result = spawnSync(
     'docker',
-    ['compose', '-f', composeFile, '-p', composeProject, 'down', '-v', '--remove-orphans'],
+    [
+      'compose',
+      '-f',
+      composeFile,
+      '-p',
+      composeProject,
+      'down',
+      '-v',
+      '--remove-orphans',
+    ],
     {
       cwd: root,
       encoding: 'utf8',

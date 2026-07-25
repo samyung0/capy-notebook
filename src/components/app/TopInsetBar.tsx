@@ -1,43 +1,51 @@
-import { useRef, useState } from 'react';
-import { useNavigate } from '@tanstack/react-router';
 import { useClerk } from '@clerk/react';
+import { useNavigate } from '@tanstack/react-router';
+import { useState } from 'react';
 import { USE_MSW } from '@/api/auth';
-import { cn } from '@/lib/cn';
-import { userColorPair } from '@/lib/userColor';
-import { useDebounced } from '@/lib/useDebounced';
-import { useOutsideClick } from '@/lib/useOutsideClick';
+import {
+  useMarkNotificationsRead,
+  useMe,
+  useNotifications,
+  useSearch,
+} from '@/api/hooks';
+import type { SearchKind } from '@/api/types';
 import {
   Avatar,
   Card,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
   Icon,
   IconButton,
   Input,
   Menu,
-  SkeletonList,
-  DialogClose,
-  DialogContent,
-  DialogTitle,
   Popover,
-  PopoverTrigger,
-  Dialog,
   PopoverContent,
+  PopoverTrigger,
+  SkeletonList,
 } from '@/components/ui';
-import { useMe, useNotifications, useSearch, useMarkNotificationsRead } from '@/api/hooks';
-import type { SearchKind } from '@/api/types';
+import { cn } from '@/lib/cn';
+import { useDebounced } from '@/lib/useDebounced';
+import { userColorPair } from '@/lib/userColor';
 
-const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as string | undefined;
+const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
+  | string
+  | undefined;
 const CLERK_ACTIVE = !USE_MSW && !!CLERK_PUBLISHABLE_KEY;
-import { m } from '@/i18n';
-import { MobileNav } from './Sidebar';
-import { useDialogs } from '@/stores/dialogs';
+
 import { VisuallyHidden } from 'radix-ui';
+import { m } from '@/i18n';
+import { usePortals } from '@/stores/portals';
+import { MobileNavDrawer } from './Sidebar';
+import { ThemeSwitchDrawer } from './ThemeSwitchDrawer';
 
 const KIND_ICON: Record<SearchKind, Parameters<typeof Icon>[0]['name']> = {
-  workspace: 'workspaces',
-  file: 'files',
   event: 'schedule',
+  file: 'files',
   flashcards: 'flashcards',
   thinking: 'write',
+  workspace: 'workspaces',
 };
 
 export function SearchDialog({
@@ -55,48 +63,54 @@ export function SearchDialog({
 
   return (
     <Dialog
-      open={open}
       onOpenChange={(isOpen) => {
         setOpen(isOpen);
         if (isOpen) setQ('');
       }}
+      open={open}
     >
       <DialogContent
+        cardScrollContainerClassName="p-0"
+        className="top-[12vh] translate-y-0"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           (e.currentTarget as HTMLElement).querySelector('input')?.focus();
         }}
-        className="top-[12vh] translate-y-0"
         showCloseButton={false}
-        cardScrollContainerClassName="p-0"
       >
         <VisuallyHidden.Root asChild>
           <DialogTitle>{m.search_placeholder()}</DialogTitle>
         </VisuallyHidden.Root>
         <div className="flex max-h-[70vh] flex-col">
-          <div className="flex items-center gap-2.5 border-b border-divider px-4 py-3">
+          <div className="flex items-center gap-2.5 border-divider border-b px-4 py-3">
             <Icon name="search" size={18} />
             <Input
-              variant="transparent"
-              value={q}
               onChange={(e) => setQ(e.target.value)}
               placeholder={m.search_placeholder()}
+              value={q}
+              variant="transparent"
               wrapperClassName="flex-1 translate-y-px"
             />
             <DialogClose asChild>
-              <IconButton icon="x" variant="ghost" size="sm" label="Close" />
+              <IconButton icon="x" label="Close" size="sm" variant="ghost" />
             </DialogClose>
           </div>
           <div className="relative min-h-40 flex-1 overflow-auto py-1">
-            {isFetching && <SkeletonList count={5} rowHeight={48} className="p-1" />}
+            {isFetching && (
+              <SkeletonList className="p-1" count={5} rowHeight={48} />
+            )}
             {!isFetching && !query && (
               <div className="t-body absolute inset-0 flex items-center justify-center text-center text-fg-muted">
-                <span className="-translate-y-1/2">{m.search_result_placeholder()}</span>
+                <span className="-translate-y-1/2">
+                  {m.search_result_placeholder()}
+                </span>
               </div>
             )}
             {!isFetching && query && !data?.length && (
               <div className="t-body absolute inset-0 flex items-center justify-center text-center text-fg-muted">
-                <span className="-translate-y-1/2">No matches for "{query}".</span>
+                <span className="-translate-y-1/2">
+                  No matches for "{query}".
+                </span>
               </div>
             )}
             {!isFetching &&
@@ -104,12 +118,13 @@ export function SearchDialog({
                 const c = r.color ? userColorPair(r.color) : null;
                 return (
                   <button
+                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-surface-hover-bg"
                     key={`${r.kind}-${r.id}`}
                     onClick={() => {
                       setOpen(false);
                       navigate({ to: r.href });
                     }}
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-surface-hover-bg"
+                    type="button"
                   >
                     <span
                       className="flex h-8 w-8 items-center justify-center rounded-row bg-surface-hover-bg text-fg-secondary"
@@ -118,9 +133,13 @@ export function SearchDialog({
                       <Icon name={KIND_ICON[r.kind]} size={16} />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-sm font-medium text-fg">{r.title}</span>
+                      <span className="block truncate font-medium text-fg text-sm">
+                        {r.title}
+                      </span>
                       {r.subtitle && (
-                        <span className="block truncate text-xs text-fg-muted">{r.subtitle}</span>
+                        <span className="block truncate text-fg-muted text-xs">
+                          {r.subtitle}
+                        </span>
                       )}
                     </span>
                   </button>
@@ -134,15 +153,15 @@ export function SearchDialog({
 }
 
 function SearchButton() {
-  const setTopBarSearchOpen = useDialogs((s) => s.setTopBarSearchOpen);
+  const setTopBarSearchOpen = usePortals((s) => s.setTopBarSearchOpen);
   return (
     <IconButton
-      icon="search"
-      size="md"
-      variant="dark"
       className="shrink-0"
+      icon="search"
       label={m.search_placeholder()}
       onClick={() => setTopBarSearchOpen(true)}
+      size="md"
+      variant="dark"
     />
   );
 }
@@ -155,23 +174,23 @@ function NotificationsBell() {
   const unread = data?.some((n) => !n.read);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
         <IconButton
-          icon="bell"
-          variant="neutral"
-          size="md"
+          className="shrink-0"
           dot={unread}
+          icon="bell"
           label="Notifications"
           onClick={() => {
             if (unread) markRead.mutate();
           }}
-          className="shrink-0"
+          size="md"
+          variant="neutral"
         />
       </PopoverTrigger>
       <PopoverContent className="w-80">
-        <Card radius="card" border="solid" className="block p-1">
-          <div className="t-label border-b border-divider px-4 py-3 text-fg-muted">
+        <Card border="solid" className="block p-1" radius="card">
+          <div className="t-label border-divider border-b px-4 py-3 text-fg-muted">
             {m.notifications_title()}
           </div>
           <div className="max-h-96 overflow-auto">
@@ -203,21 +222,22 @@ function NotificationsBell() {
                   </span>
                 </>
               );
-              const itemClass = 'flex w-full gap-3 border-b border-divider px-4 py-3 last:border-0';
+              const itemClass =
+                'flex w-full gap-3 border-b border-divider px-4 py-3 last:border-0';
               return n.href ? (
                 <button
-                  key={n.id}
-                  type="button"
                   className={`${itemClass} hover:bg-surface-hover-bg`}
+                  key={n.id}
                   onClick={() => {
                     setOpen(false);
                     navigate({ to: n.href });
                   }}
+                  type="button"
                 >
                   {content}
                 </button>
               ) : (
-                <div key={n.id} className={itemClass}>
+                <div className={itemClass} key={n.id}>
                   {content}
                 </div>
               );
@@ -232,44 +252,56 @@ function NotificationsBell() {
 function ProfilePillInner({ onLogout }: { onLogout?: () => void }) {
   const { data: me } = useMe();
   const navigate = useNavigate();
+  const [themeOpen, setThemeOpen] = useState(false);
 
   return (
-    <Menu
-      align="end"
-      alignWidthToTrigger
-      trigger={
-        <button className="flex items-center gap-2.5 rounded-card bg-surface py-1 pr-3 pl-1 hover:bg-surface-hover-bg lg:rounded-pill">
-          <Avatar name={me?.name} src={me?.avatarUrl} size="md" />
-          <span className="text-left">
-            <span className="block font-bold">{me?.name ?? '—'}</span>
-          </span>
-          <Icon name="chevronDown" size={16} className="text-fg-muted" />
-        </button>
-      }
-      items={[
-        {
-          label: m.profile_menu_profile(),
-          icon: 'profile',
-          onClick: () => navigate({ to: '/profile' }),
-        },
-        {
-          label: m.profile_menu_subscription(),
-          icon: 'settings',
-          onClick: () => navigate({ to: '/subscription' }),
-        },
-        {
-          label: m.profile_menu_settings(),
-          icon: 'settings',
-          onClick: () => navigate({ to: '/settings' }),
-        },
-        {
-          label: m.profile_menu_logout(),
-          icon: 'logout',
-          danger: true,
-          onClick: onLogout,
-        },
-      ]}
-    />
+    <>
+      <Menu
+        align="end"
+        alignWidthToTrigger
+        items={[
+          {
+            icon: 'profile',
+            label: m.profile_menu_profile(),
+            onClick: () => navigate({ to: '/profile' }),
+          },
+          {
+            icon: 'settings',
+            label: m.profile_menu_subscription(),
+            onClick: () => navigate({ to: '/subscription' }),
+          },
+          {
+            icon: 'settings',
+            label: m.profile_menu_settings(),
+            onClick: () => navigate({ to: '/settings' }),
+          },
+          {
+            icon: 'palette',
+            label: m.settings_theme(),
+            onClick: () => setThemeOpen(true),
+          },
+          {
+            danger: true,
+            icon: 'logout',
+            label: m.profile_menu_logout(),
+            onClick: onLogout,
+          },
+        ]}
+        trigger={
+          <button
+            className="flex items-center gap-2.5 rounded-card bg-surface py-1 pr-3 pl-1 hover:bg-surface-hover-bg lg:rounded-pill"
+            type="button"
+          >
+            <Avatar name={me?.name} size="md" src={me?.avatarUrl} />
+            <span className="text-left">
+              <span className="block font-bold">{me?.name ?? '—'}</span>
+            </span>
+            <Icon className="text-fg-muted" name="chevronDown" size={16} />
+          </button>
+        }
+      />
+      <ThemeSwitchDrawer onOpenChange={setThemeOpen} open={themeOpen} />
+    </>
   );
 }
 
@@ -287,15 +319,15 @@ export function TopInsetBar({ className }: { className?: string }) {
   return (
     // the border radius should match the large panel/panel with inverted radius
     <Card
-      theme="gray"
-      radius="unset"
       className={cn(
         'top-inset-bar-shape flex-row items-center justify-between gap-2.5 py-1.5 pr-3 pl-4',
         className
       )}
+      radius="unset"
+      theme="gray"
     >
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
-        <MobileNav className="lg:hidden" />
+        <MobileNavDrawer className="lg:hidden" />
         <div className="hidden lg:block">
           <SearchButton />
         </div>

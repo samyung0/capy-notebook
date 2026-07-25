@@ -5,10 +5,10 @@ describe('workspace access helpers', () => {
   it('marks share viewers as read-only', () => {
     expect(
       isWorkspaceReadOnly({
-        canView: true,
-        canEdit: false,
         canComment: false,
+        canEdit: false,
         canManageMembers: false,
+        canView: true,
       })
     ).toBe(true);
   });
@@ -16,10 +16,10 @@ describe('workspace access helpers', () => {
   it('keeps editors editable', () => {
     expect(
       isWorkspaceReadOnly({
-        canView: true,
-        canEdit: true,
         canComment: true,
+        canEdit: true,
         canManageMembers: false,
+        canView: true,
       })
     ).toBe(false);
   });
@@ -27,18 +27,18 @@ describe('workspace access helpers', () => {
   it('allows share only for owners', () => {
     expect(
       canShareWorkspace({
-        canView: true,
-        canEdit: true,
         canComment: true,
+        canEdit: true,
         canManageMembers: true,
+        canView: true,
       })
     ).toBe(true);
     expect(
       canShareWorkspace({
-        canView: true,
-        canEdit: true,
         canComment: true,
+        canEdit: true,
         canManageMembers: false,
+        canView: true,
       })
     ).toBe(false);
   });

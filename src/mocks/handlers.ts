@@ -1,3 +1,5 @@
+import { delay, HttpResponse, http } from 'msw';
+import type { SuggestionMutationResult } from '@/api/gen/model';
 import type {
   Chapter,
   Deck,
@@ -23,15 +25,19 @@ import { parseFlashcardsBlock } from '@/features/materials/blocks';
 import {
   createMaterialDocument,
   emptyMaterialDocument,
+  type FlashcardsElement,
   flashcardsElementToCards,
   flashcardsNode,
   mermaidNode,
   quizNode,
-  type FlashcardsElement,
 } from '@/features/materials/document';
+import {
+  finalizeSuggestionValue,
+  resolveSuggestions,
+  scanSuggestions,
+} from '@/features/notes/suggestions';
 import { getFileKind } from '@/features/workspace/sourceUpload';
 import { isKnown, newSrsState } from '@/lib/srs';
-import { delay, http, HttpResponse } from 'msw';
 import * as db from './db';
 import { uid } from './db';
 import { sourceUploadPolicy } from './sourceUploadPolicy';
@@ -42,29 +48,29 @@ const refType = (kind: Material['kind']): MaterialRefType =>
 
 const latency = () => delay(1000 + Math.random() * 220);
 const ownerMaterialAccess = {
-  role: 'owner' as const,
   capabilities: {
-    canView: true,
-    canEdit: true,
     canComment: true,
+    canEdit: true,
     canManageMembers: true,
+    canView: true,
   },
+  role: 'owner' as const,
 };
 interface MockWorkspaceInvite {
-  id: string;
-  workspaceId: string;
-  invitedUserId: string;
+  acceptedAt?: string;
   email: string;
+  expiresAt: string;
+  id: string;
+  invitedUserId: string;
   role: Exclude<WorkspaceMember['role'], 'owner'>;
   token: string;
-  expiresAt: string;
-  acceptedAt?: string;
+  workspaceId: string;
 }
 interface MockInviteCandidate {
+  avatarUrl?: string;
+  email: string;
   id: string;
   name: string;
-  email: string;
-  avatarUrl?: string;
 }
 
 const mockDiscussions: MaterialDiscussion[] = [];
@@ -73,11 +79,90 @@ const mockWorkspaceInvites: MockWorkspaceInvite[] = [];
 const mockWorkspaceMembers: WorkspaceMember[] = [];
 const mockInviteCandidates: MockInviteCandidate[] = [
   {
+    email: 'morgan@example.com',
     id: 'u_mock_collaborator',
     name: 'Morgan Lee',
-    email: 'morgan@example.com',
   },
 ];
+
+const editorStateCacheName = 'evo-notes-editor-e2e-state-v1';
+const editorStateRequest = (materialId: string) =>
+  new Request(
+    `https://editor-state.evonotes.test/materials/${encodeURIComponent(materialId)}`
+  );
+
+/**
+ * SOURCE: The editor Playwright project deliberately runs against MSW, whose
+ * module arrays are recreated by a full page reload. Cache Storage is isolated
+ * per Playwright browser context, so this test-only backdoor preserves the
+ * revision head and collaboration projection across reloads without leaking
+ * state between parallel journeys or introducing a second mock server.
+ */
+async function persistEditorState(materialId: string) {
+  if (import.meta.env.VITE_E2E_EDITOR_SEED !== 'true' || !globalThis.caches)
+    return;
+  const material = db.materials.find((item) => item.id === materialId);
+  if (!material) return;
+  const discussions = mockDiscussions.filter(
+    (item) => item.materialId === materialId
+  );
+  const cache = await globalThis.caches.open(editorStateCacheName);
+  await cache.put(
+    editorStateRequest(materialId),
+    Response.json({ discussions, material })
+  );
+}
+
+async function hydrateEditorState(materialId: string) {
+  if (import.meta.env.VITE_E2E_EDITOR_SEED !== 'true' || !globalThis.caches)
+    return;
+  const cached = await (
+    await globalThis.caches.open(editorStateCacheName)
+  ).match(editorStateRequest(materialId));
+  if (!cached) return;
+  const state = (await cached.json()) as {
+    material: Material;
+    discussions: MaterialDiscussion[];
+  };
+  const material = db.materials.find((item) => item.id === materialId);
+  if (material) Object.assign(material, state.material);
+  const previousDiscussionIds = new Set(
+    mockDiscussions
+      .filter((item) => item.materialId === materialId)
+      .map((item) => item.id)
+  );
+  for (let index = mockDiscussions.length - 1; index >= 0; index--) {
+    if (mockDiscussions[index].materialId === materialId)
+      mockDiscussions.splice(index, 1);
+  }
+  for (let index = mockSuggestions.length - 1; index >= 0; index--) {
+    if (previousDiscussionIds.has(mockSuggestions[index].discussionId)) {
+      mockSuggestions.splice(index, 1);
+    }
+  }
+  const discussions = structuredClone(state.discussions);
+  mockDiscussions.push(...discussions);
+  mockSuggestions.push(
+    ...discussions.flatMap((discussion) => discussion.suggestions)
+  );
+}
+
+function mockSuggestionResult(
+  material: Material,
+  suggestionIds: string[]
+): SuggestionMutationResult {
+  return {
+    contentBytes: material.contentBytes ?? 0,
+    discussions: mockDiscussions.filter(
+      (discussion) => discussion.materialId === material.id
+    ),
+    hasPendingSuggestions: material.hasPendingSuggestions ?? false,
+    id: material.id,
+    revision: material.revision ?? 1,
+    suggestionIds,
+    updatedAt: material.updatedAt ?? new Date().toISOString(),
+  };
+}
 
 const mockNodeText = (node: unknown): string => {
   if (!node || typeof node !== 'object') return '';
@@ -90,11 +175,16 @@ const materialCards = (material: Material) =>
   typeof material.content === 'string'
     ? parseFlashcardsBlock(material.content).cards
     : flashcardsElementToCards(
-        material.content.value.find((node) => node.type === 'flashcards') as FlashcardsElement
+        finalizeSuggestionValue(material.content.value, 'reject').find(
+          (node) => node.type === 'flashcards'
+        ) as FlashcardsElement
       );
 
-const quizDocument = (questions: Question[], timeLimitMin?: number, id = uid('quiz')) =>
-  createMaterialDocument([quizNode({ questions, timeLimitMin }, id)]);
+const quizDocument = (
+  questions: Question[],
+  timeLimitMin?: number,
+  id = uid('quiz')
+) => createMaterialDocument([quizNode({ questions, timeLimitMin }, id)]);
 
 const flashcardsDocument = (
   cards: { id: string; front: string; back: string }[],
@@ -110,7 +200,9 @@ function resolveTags(kind: string, refs: TagInput[] | null | undefined): Tag[] {
   for (const r of refs ?? []) {
     const value = (r.value ?? '').trim();
     if (!value) continue;
-    let entry = r.id ? db.tagCatalog.find((t) => t.id === r.id && t.kind === kind) : undefined;
+    let entry = r.id
+      ? db.tagCatalog.find((t) => t.id === r.id && t.kind === kind)
+      : undefined;
     if (!entry)
       entry = db.tagCatalog.find(
         (t) => t.kind === kind && t.value.toLowerCase() === value.toLowerCase()
@@ -130,14 +222,17 @@ function sortWorkspaces(list: Workspace[], sort: string | null): Workspace[] {
   const copy = [...list];
   switch (sort) {
     case 'created':
-      return copy.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+      return copy.sort(
+        (a, b) => +new Date(b.createdAt) - +new Date(a.createdAt)
+      );
     case 'chapters':
       return copy.sort((a, b) => b.chapterCount - a.chapterCount);
     case 'files':
       return copy.sort((a, b) => b.fileCount - a.fileCount);
-    case 'accessed':
     default:
-      return copy.sort((a, b) => +new Date(b.lastAccessedAt) - +new Date(a.lastAccessedAt));
+      return copy.sort(
+        (a, b) => +new Date(b.lastAccessedAt) - +new Date(a.lastAccessedAt)
+      );
   }
 }
 
@@ -151,58 +246,63 @@ export const handlers = [
   /* ---------------- global search ---------------- */
   http.get('/api/search', async ({ request }) => {
     await latency();
-    const q = (new URL(request.url).searchParams.get('q') ?? '').toLowerCase().trim();
+    const q = (new URL(request.url).searchParams.get('q') ?? '')
+      .toLowerCase()
+      .trim();
     if (!q) return HttpResponse.json([] as SearchResult[]);
     const results: SearchResult[] = [];
     for (const w of db.workspaces)
-      if (w.name.toLowerCase().includes(q) || w.tags.some((t) => t.value.toLowerCase().includes(q)))
+      if (
+        w.name.toLowerCase().includes(q) ||
+        w.tags.some((t) => t.value.toLowerCase().includes(q))
+      )
         results.push({
+          color: w.color,
+          href: `/workspaces/${w.id}`,
           id: w.id,
           kind: 'workspace',
-          title: w.name,
           subtitle: w.tags.map((t) => t.value).join(' · '),
-          href: `/workspaces/${w.id}`,
-          color: w.color,
+          title: w.name,
         });
     for (const f of db.files)
       if (f.name.toLowerCase().includes(q)) {
         const ws = db.workspaces.find((w) => w.id === f.workspaceId);
         results.push({
+          color: ws?.color,
+          href: `/workspaces/${f.workspaceId}?file=${f.id}`,
           id: f.id,
           kind: 'file',
-          title: f.name,
           subtitle: ws?.name,
-          href: `/workspaces/${f.workspaceId}?file=${f.id}`,
-          color: ws?.color,
+          title: f.name,
         });
       }
     for (const e of db.events)
       if (e.title.toLowerCase().includes(q))
         results.push({
+          color: db.labels.find((l) => l.id === e.labelIds[0])?.color,
+          href: '/schedule',
           id: e.id,
           kind: 'event',
-          title: e.title,
           subtitle: e.location,
-          href: '/schedule',
-          color: db.labels.find((l) => l.id === e.labelIds[0])?.color,
+          title: e.title,
         });
     for (const mt of db.deckMaterials())
       if (mt.title.toLowerCase().includes(q))
         results.push({
+          color: mt.color,
+          href: `/flashcards/${mt.id}`,
           id: mt.id,
           kind: 'flashcards',
-          title: mt.title,
           subtitle: mt.workspaceName,
-          href: `/flashcards/${mt.id}`,
-          color: mt.color,
+          title: mt.title,
         });
     for (const c of db.canvases)
       if (c.name.toLowerCase().includes(q))
         results.push({
+          href: `/thinking/${c.id}`,
           id: c.id,
           kind: 'thinking',
           title: c.name,
-          href: `/thinking/${c.id}`,
         });
     return HttpResponse.json(results.slice(0, 20));
   }),
@@ -213,7 +313,9 @@ export const handlers = [
     return HttpResponse.json(db.notifications);
   }),
   http.post('/api/notifications/read', async () => {
-    db.notifications.forEach((n) => (n.read = true));
+    db.notifications.forEach((notification) => {
+      notification.read = true;
+    });
     return new HttpResponse(null, { status: 204 });
   }),
 
@@ -247,7 +349,8 @@ export const handlers = [
     if (q)
       list = list.filter(
         (w) =>
-          w.name.toLowerCase().includes(q) || w.tags.some((t) => t.value.toLowerCase().includes(q))
+          w.name.toLowerCase().includes(q) ||
+          w.tags.some((t) => t.value.toLowerCase().includes(q))
       );
     if (colors.length || tags.length) {
       list = list.filter(
@@ -276,30 +379,39 @@ export const handlers = [
         .map((m) => m.id)
     );
     const att = db.attempts.filter((a) => wsQuizIds.has(a.quizId));
-    const avg = att.length ? Math.round(att.reduce((s, a) => s + a.pct, 0) / att.length) : 0;
+    const avg = att.length
+      ? Math.round(att.reduce((s, a) => s + a.pct, 0) / att.length)
+      : 0;
     return HttpResponse.json({
+      attempts: att.length,
+      avgScore: avg,
       chapters: ws.chapterCount,
       files: ws.fileCount,
       quizzes: wsQuizIds.size,
-      attempts: att.length,
-      avgScore: avg,
     });
   }),
   http.post('/api/workspaces', async ({ request }) => {
-    const body = (await request.json()) as Partial<Workspace> & { tags?: TagInput[] };
+    const body = (await request.json()) as Partial<Workspace> & {
+      tags?: TagInput[];
+    };
     const ws: Workspace = {
-      id: uid('ws'),
-      name: body.name ?? 'Untitled workspace',
-      role: 'owner',
-      capabilities: { canView: true, canEdit: true, canComment: true, canManageMembers: true },
+      capabilities: {
+        canComment: true,
+        canEdit: true,
+        canManageMembers: true,
+        canView: true,
+      },
+      chapterCount: 0,
       color: (body.color as UserColor) ?? 'green',
+      createdAt: new Date().toISOString(),
+      fileCount: 0,
+      id: uid('ws'),
+      lastAccessedAt: new Date().toISOString(),
+      name: body.name ?? 'Untitled workspace',
       privacy: 'private',
+      role: 'owner',
       shareRole: 'viewer',
       tags: resolveTags('workspace', body.tags),
-      chapterCount: 0,
-      fileCount: 0,
-      createdAt: new Date().toISOString(),
-      lastAccessedAt: new Date().toISOString(),
     };
     db.workspaces.unshift(ws);
     return HttpResponse.json(ws, { status: 201 });
@@ -307,7 +419,9 @@ export const handlers = [
   http.patch('/api/workspaces/:id', async ({ params, request }) => {
     const ws = db.workspaces.find((w) => w.id === params.id);
     if (!ws) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as Partial<Workspace> & { tags?: TagInput[] };
+    const body = (await request.json()) as Partial<Workspace> & {
+      tags?: TagInput[];
+    };
     if (body.tags !== undefined) ws.tags = resolveTags('workspace', body.tags);
     if (body.name !== undefined) ws.name = body.name;
     if (body.color !== undefined) ws.color = body.color;
@@ -316,7 +430,10 @@ export const handlers = [
   http.patch('/api/workspaces/:id/sharing', async ({ params, request }) => {
     const ws = db.workspaces.find((w) => w.id === params.id);
     if (!ws) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as Pick<Workspace, 'privacy' | 'shareRole'>;
+    const body = (await request.json()) as Pick<
+      Workspace,
+      'privacy' | 'shareRole'
+    >;
     if (body.privacy !== undefined) ws.privacy = body.privacy;
     if (body.shareRole !== undefined) ws.shareRole = body.shareRole;
     return HttpResponse.json(ws);
@@ -325,14 +442,18 @@ export const handlers = [
     const workspaceId = String(params.id);
     return HttpResponse.json([
       {
-        workspaceId,
-        userId: db.user.id,
-        name: db.user.name,
+        createdAt:
+          db.workspaces.find((workspace) => workspace.id === params.id)
+            ?.createdAt ?? '',
         email: db.user.email,
+        name: db.user.name,
         role: 'owner' as const,
-        createdAt: db.workspaces.find((workspace) => workspace.id === params.id)?.createdAt ?? '',
+        userId: db.user.id,
+        workspaceId,
       },
-      ...mockWorkspaceMembers.filter((member) => member.workspaceId === workspaceId),
+      ...mockWorkspaceMembers.filter(
+        (member) => member.workspaceId === workspaceId
+      ),
     ]);
   }),
   http.post('/api/workspaces/:id/invites', async ({ params, request }) => {
@@ -342,37 +463,47 @@ export const handlers = [
     };
     const identifier = body.identifier.trim().toLowerCase();
     const matches = mockInviteCandidates.filter(
-      (item) => item.id === body.identifier.trim() || item.email.toLowerCase() === identifier
+      (item) =>
+        item.id === body.identifier.trim() ||
+        item.email.toLowerCase() === identifier
     );
     const candidate = matches.length === 1 ? matches[0] : undefined;
     const workspaceId = String(params.id);
     const alreadyMember = candidate
       ? mockWorkspaceMembers.some(
-          (member) => member.workspaceId === workspaceId && member.userId === candidate.id
+          (member) =>
+            member.workspaceId === workspaceId && member.userId === candidate.id
         )
       : false;
-    if (!candidate || alreadyMember) return new HttpResponse(null, { status: 202 });
+    if (!candidate || alreadyMember)
+      return new HttpResponse(null, { status: 202 });
 
     const now = new Date();
     let invite = mockWorkspaceInvites.find(
       (item) =>
-        item.workspaceId === workspaceId && item.invitedUserId === candidate.id && !item.acceptedAt
+        item.workspaceId === workspaceId &&
+        item.invitedUserId === candidate.id &&
+        !item.acceptedAt
     );
-    if (!invite) {
-      invite = {
-        id: uid('invite'),
-        workspaceId,
-        invitedUserId: candidate.id,
-        email: candidate.email,
-        role: body.role,
-        token: uid('invite-token'),
-        expiresAt: new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      };
-      mockWorkspaceInvites.push(invite);
-    } else {
+    if (invite) {
       invite.role = body.role;
       invite.token = uid('invite-token');
-      invite.expiresAt = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      invite.expiresAt = new Date(
+        now.getTime() + 7 * 24 * 60 * 60 * 1000
+      ).toISOString();
+    } else {
+      invite = {
+        email: candidate.email,
+        expiresAt: new Date(
+          now.getTime() + 7 * 24 * 60 * 60 * 1000
+        ).toISOString(),
+        id: uid('invite'),
+        invitedUserId: candidate.id,
+        role: body.role,
+        token: uid('invite-token'),
+        workspaceId,
+      };
+      mockWorkspaceInvites.push(invite);
     }
     const href = `/workspace-invites/${invite.token}`;
     const existingNotification = db.notifications.find((notification) =>
@@ -380,36 +511,41 @@ export const handlers = [
     );
     if (existingNotification) {
       Object.assign(existingNotification, {
-        body: 'You’ve been invited to join this workspace.',
         at: now.toISOString(),
-        read: false,
+        body: 'You’ve been invited to join this workspace.',
         href,
+        read: false,
       });
     } else {
       db.notifications.unshift({
+        at: now.toISOString(),
+        body: 'You’ve been invited to join this workspace.',
+        href,
         id: uid('notification'),
         kind: 'workspace_invite',
-        title: 'Workspace invitation',
-        body: 'You’ve been invited to join this workspace.',
-        at: now.toISOString(),
         read: false,
-        href,
+        title: 'Workspace invitation',
       });
     }
     return new HttpResponse(null, { status: 202 });
   }),
-  http.patch('/api/workspaces/:id/members/:memberId', async ({ params, request }) => {
-    const member = mockWorkspaceMembers.find(
-      (item) => item.workspaceId === params.id && item.userId === params.memberId
-    );
-    if (!member) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as { role: WorkspaceMember['role'] };
-    member.role = body.role;
-    return new HttpResponse(null, { status: 204 });
-  }),
+  http.patch(
+    '/api/workspaces/:id/members/:memberId',
+    async ({ params, request }) => {
+      const member = mockWorkspaceMembers.find(
+        (item) =>
+          item.workspaceId === params.id && item.userId === params.memberId
+      );
+      if (!member) return new HttpResponse(null, { status: 404 });
+      const body = (await request.json()) as { role: WorkspaceMember['role'] };
+      member.role = body.role;
+      return new HttpResponse(null, { status: 204 });
+    }
+  ),
   http.delete('/api/workspaces/:id/members/:memberId', async ({ params }) => {
     const index = mockWorkspaceMembers.findIndex(
-      (item) => item.workspaceId === params.id && item.userId === params.memberId
+      (item) =>
+        item.workspaceId === params.id && item.userId === params.memberId
     );
     if (index < 0) return new HttpResponse(null, { status: 404 });
     mockWorkspaceMembers.splice(index, 1);
@@ -421,19 +557,22 @@ export const handlers = [
     );
     if (!invite) return new HttpResponse(null, { status: 404 });
     invite.acceptedAt = new Date().toISOString();
-    const candidate = mockInviteCandidates.find((item) => item.id === invite.invitedUserId);
+    const candidate = mockInviteCandidates.find(
+      (item) => item.id === invite.invitedUserId
+    );
     const member: WorkspaceMember = {
-      workspaceId: invite.workspaceId,
-      userId: invite.invitedUserId,
-      name: candidate?.name ?? invite.email,
-      email: invite.email,
       avatarUrl: candidate?.avatarUrl,
-      role: invite.role,
       createdAt: invite.acceptedAt,
+      email: invite.email,
+      name: candidate?.name ?? invite.email,
+      role: invite.role,
+      userId: invite.invitedUserId,
+      workspaceId: invite.workspaceId,
     };
     mockWorkspaceMembers.push(member);
     const notificationIndex = db.notifications.findIndex(
-      (notification) => notification.href === `/workspace-invites/${invite.token}`
+      (notification) =>
+        notification.href === `/workspace-invites/${invite.token}`
     );
     if (notificationIndex >= 0) db.notifications.splice(notificationIndex, 1);
     return HttpResponse.json(member);
@@ -452,12 +591,12 @@ export const handlers = [
     const newId = uid('ws');
     const workspace: Workspace = {
       ...source,
+      createdAt: new Date().toISOString(),
       id: newId,
+      isOwner: true,
+      lastAccessedAt: new Date().toISOString(),
       name: `${source.name} (copy)`,
       privacy: 'private',
-      isOwner: true,
-      createdAt: new Date().toISOString(),
-      lastAccessedAt: new Date().toISOString(),
     };
     db.workspaces.unshift(workspace);
 
@@ -467,7 +606,7 @@ export const handlers = [
       .forEach((chapter) => {
         const id = uid('ch');
         chapterMap.set(chapter.id, id);
-        db.chapters.push({ ...chapter, id, workspaceId: newId, fileIds: [] });
+        db.chapters.push({ ...chapter, fileIds: [], id, workspaceId: newId });
       });
     const fileMap = new Map<string, string>();
     db.files
@@ -477,9 +616,11 @@ export const handlers = [
         fileMap.set(file.id, id);
         db.files.push({
           ...file,
+          chapterId: file.chapterId
+            ? (chapterMap.get(file.chapterId) ?? null)
+            : null,
           id,
           workspaceId: newId,
-          chapterId: file.chapterId ? (chapterMap.get(file.chapterId) ?? null) : null,
         });
       });
     db.materials
@@ -487,36 +628,40 @@ export const handlers = [
       .forEach((material) => {
         db.materials.push({
           ...material,
+          chapterId: material.chapterId
+            ? (chapterMap.get(material.chapterId) ?? null)
+            : null,
+          createdAt: new Date().toISOString(),
           id: uid('mat'),
-          workspaceId: newId,
-          workspaceName: workspace.name,
-          chapterId: material.chapterId ? (chapterMap.get(material.chapterId) ?? null) : null,
+          privacy: 'private',
           scopeFileIds: material.scopeFileIds
             .map((id) => fileMap.get(id))
             .filter((id): id is string => !!id),
-          privacy: 'private',
-          createdAt: new Date().toISOString(),
+          workspaceId: newId,
+          workspaceName: workspace.name,
         });
       });
-    return HttpResponse.json({ workspace, ragCloned: true }, { status: 201 });
+    return HttpResponse.json({ ragCloned: true, workspace }, { status: 201 });
   }),
 
   /* ---------------- chapters & files ---------------- */
   http.get('/api/workspaces/:id/chapters', async ({ params }) => {
     await latency();
     return HttpResponse.json(
-      db.chapters.filter((c) => c.workspaceId === params.id).sort((a, b) => a.order - b.order)
+      db.chapters
+        .filter((c) => c.workspaceId === params.id)
+        .sort((a, b) => a.order - b.order)
     );
   }),
   http.post('/api/workspaces/:id/chapters', async ({ params, request }) => {
     const body = (await request.json()) as { name: string };
     const order = db.chapters.filter((c) => c.workspaceId === params.id).length;
     const ch: Chapter = {
+      fileIds: [],
       id: uid('ch'),
-      workspaceId: String(params.id),
       name: body.name,
       order,
-      fileIds: [],
+      workspaceId: String(params.id),
     };
     db.chapters.push(ch);
     const ws = db.workspaces.find((w) => w.id === params.id);
@@ -537,33 +682,41 @@ export const handlers = [
     });
     return new HttpResponse(null, { status: 204 });
   }),
-  http.post('/api/workspaces/:id/content/reorder', async ({ params, request }) => {
-    const body = (await request.json()) as {
-      chapterId: string | null;
-      items: { id: string; type: 'file' | 'material' }[];
-    };
-    body.items.forEach((item, position) => {
-      if (item.type === 'file') {
-        db.chapters.forEach((chapter) => {
-          chapter.fileIds = chapter.fileIds.filter((id) => id !== item.id);
-        });
-        if (body.chapterId) {
-          db.chapters.find((chapter) => chapter.id === body.chapterId)?.fileIds.push(item.id);
+  http.post(
+    '/api/workspaces/:id/content/reorder',
+    async ({ params, request }) => {
+      const body = (await request.json()) as {
+        chapterId: string | null;
+        items: { id: string; type: 'file' | 'material' }[];
+      };
+      body.items.forEach((item, position) => {
+        if (item.type === 'file') {
+          db.chapters.forEach((chapter) => {
+            chapter.fileIds = chapter.fileIds.filter((id) => id !== item.id);
+          });
+          if (body.chapterId) {
+            db.chapters
+              .find((chapter) => chapter.id === body.chapterId)
+              ?.fileIds.push(item.id);
+          }
         }
-      }
-      const content =
-        item.type === 'file'
-          ? db.files.find((file) => file.id === item.id && file.workspaceId === params.id)
-          : db.materials.find(
-              (material) => material.id === item.id && material.workspaceId === params.id
-            );
-      if (content) {
-        content.chapterId = body.chapterId;
-        content.position = position;
-      }
-    });
-    return new HttpResponse(null, { status: 204 });
-  }),
+        const content =
+          item.type === 'file'
+            ? db.files.find(
+                (file) => file.id === item.id && file.workspaceId === params.id
+              )
+            : db.materials.find(
+                (material) =>
+                  material.id === item.id && material.workspaceId === params.id
+              );
+        if (content) {
+          content.chapterId = body.chapterId;
+          content.position = position;
+        }
+      });
+      return new HttpResponse(null, { status: 204 });
+    }
+  ),
   http.delete('/api/chapters/:id', async ({ params }) => {
     const i = db.chapters.findIndex((c) => c.id === params.id);
     if (i >= 0) {
@@ -584,7 +737,9 @@ export const handlers = [
   }),
   http.get('/api/workspaces/:id/files', async ({ params }) => {
     await latency();
-    return HttpResponse.json(db.files.filter((f) => f.workspaceId === params.id));
+    return HttpResponse.json(
+      db.files.filter((f) => f.workspaceId === params.id)
+    );
   }),
   http.get('/api/files/:id', async ({ params }) => {
     await latency();
@@ -594,12 +749,15 @@ export const handlers = [
   http.patch('/api/files/:id', async ({ params, request }) => {
     const f = db.files.find((x) => x.id === params.id);
     if (!f) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as Partial<Pick<SourceFile, 'name' | 'chapterId'>>;
+    const body = (await request.json()) as Partial<
+      Pick<SourceFile, 'name' | 'chapterId'>
+    >;
     if (body.name !== undefined) f.name = body.name;
     if (body.chapterId !== undefined) {
       // Empty-string sentinel unfiles (mirrors the Go gateway).
       const next = body.chapterId === '' ? null : body.chapterId;
-      for (const c of db.chapters) c.fileIds = c.fileIds.filter((id) => id !== f.id);
+      for (const c of db.chapters)
+        c.fileIds = c.fileIds.filter((id) => id !== f.id);
       f.chapterId = next;
       if (next) db.chapters.find((c) => c.id === next)?.fileIds.push(f.id);
     }
@@ -611,7 +769,8 @@ export const handlers = [
       const [removed] = db.files.splice(i, 1);
       const ws = db.workspaces.find((w) => w.id === removed.workspaceId);
       if (ws) ws.fileCount = Math.max(0, ws.fileCount - 1);
-      for (const ch of db.chapters) ch.fileIds = ch.fileIds.filter((id) => id !== removed.id);
+      for (const ch of db.chapters)
+        ch.fileIds = ch.fileIds.filter((id) => id !== removed.id);
     }
     return new HttpResponse(null, { status: 204 });
   }),
@@ -623,12 +782,13 @@ export const handlers = [
     const refs: MaterialRef[] = db.materials
       .filter((mt) => mt.workspaceId === wsId)
       .map((mt) => ({
-        id: mt.id,
-        type: refType(mt.kind),
-        title: mt.title,
         chapterId: mt.chapterId ?? null,
-        position: mt.position ?? 0,
         createdAt: mt.createdAt,
+        hasPendingSuggestions: mt.hasPendingSuggestions ?? false,
+        id: mt.id,
+        position: mt.position ?? 0,
+        title: mt.title,
+        type: refType(mt.kind),
       }))
       .sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
     return HttpResponse.json(refs);
@@ -646,24 +806,25 @@ export const handlers = [
     };
     const mt: Material = {
       ...ownerMaterialAccess,
-      id: uid('mat'),
-      workspaceId: wsId,
-      workspaceName: ws?.name ?? '',
-      kind: body.kind ?? 'note',
-      title: body.title || 'Untitled note',
-      content: body.content ?? emptyMaterialDocument(),
       chapterId: null,
+      content: body.content ?? emptyMaterialDocument(),
+      createdAt: new Date().toISOString(),
+      id: uid('mat'),
+      kind: body.kind ?? 'note',
+      privacy: 'private',
+      revision: 1,
       scopeChapters: body.scopeChapters ?? [],
       scopeFileIds: body.scopeFileIds ?? [],
-      privacy: 'private',
-      createdAt: new Date().toISOString(),
-      revision: 1,
+      title: body.title || 'Untitled note',
+      workspaceId: wsId,
+      workspaceName: ws?.name ?? '',
     };
     db.refreshMaterialContentBytes(mt);
     db.materials.unshift(mt);
     return HttpResponse.json(mt, { status: 201 });
   }),
   http.get('/api/materials/:id', async ({ params }) => {
+    await hydrateEditorState(String(params.id));
     await latency();
     const mt = db.materials.find((x) => x.id === params.id);
     return mt ? HttpResponse.json(mt) : new HttpResponse(null, { status: 404 });
@@ -685,23 +846,30 @@ export const handlers = [
       body.expectedRevision != null &&
       body.expectedRevision !== (mt.revision ?? 1)
     ) {
-      return HttpResponse.json({ message: 'material revision is stale' }, { status: 409 });
+      return HttpResponse.json(
+        { message: 'material revision is stale' },
+        { status: 409 }
+      );
     }
     if (body.title != null) mt.title = body.title;
     if (body.content != null) {
-      mt.content = body.content;
+      mt.content = createMaterialDocument(body.content.value);
+      mt.hasPendingSuggestions = scanSuggestions(mt.content.value).length > 0;
       db.refreshMaterialContentBytes(mt);
     }
-    if (body.title != null || body.content != null) mt.revision = (mt.revision ?? 1) + 1;
+    if (body.title != null || body.content != null)
+      mt.revision = (mt.revision ?? 1) + 1;
     // Empty-string sentinel unfiles; a real id files it; omitted leaves it.
-    if (body.chapterId != null) mt.chapterId = body.chapterId === '' ? null : body.chapterId;
+    if (body.chapterId != null)
+      mt.chapterId = body.chapterId === '' ? null : body.chapterId;
     if (body.scopeChapters != null) mt.scopeChapters = body.scopeChapters;
     if (body.scopeFileIds != null) mt.scopeFileIds = body.scopeFileIds;
     mt.updatedAt = new Date().toISOString();
+    await persistEditorState(mt.id);
     return HttpResponse.json({
+      contentBytes: mt.contentBytes,
       id: mt.id,
       revision: mt.revision,
-      contentBytes: mt.contentBytes,
       updatedAt: mt.updatedAt,
     });
   }),
@@ -710,41 +878,48 @@ export const handlers = [
     if (i >= 0) db.materials.splice(i, 1);
     return new HttpResponse(null, { status: 204 });
   }),
-  http.get('/api/materials/:id/discussions', async ({ params }) =>
-    HttpResponse.json(mockDiscussions.filter((item) => item.materialId === params.id))
-  ),
+  http.get('/api/materials/:id/discussions', async ({ params }) => {
+    await hydrateEditorState(String(params.id));
+    return HttpResponse.json(
+      mockDiscussions.filter((item) => item.materialId === params.id)
+    );
+  }),
   http.post('/api/materials/:id/discussions', async ({ params, request }) => {
     const body = (await request.json()) as {
       blockId?: string;
-      documentContent?: string;
       anchor?: Record<string, unknown>;
       contentRich: MaterialDiscussion['comments'][number]['contentRich'];
     };
     const now = new Date().toISOString();
     const discussion: MaterialDiscussion = {
-      id: uid('discussion'),
-      materialId: String(params.id),
+      anchor: body.anchor ?? {},
       blockId: body.blockId,
-      documentContent: body.documentContent,
-      anchor: body.anchor,
-      userId: db.user.id,
-      isResolved: false,
-      createdAt: now,
-      updatedAt: now,
       comments: [
         {
-          id: uid('comment'),
-          discussionId: '',
-          userId: db.user.id,
           contentRich: body.contentRich,
-          isEdited: false,
           createdAt: now,
+          discussionId: '',
+          id: uid('comment'),
+          isDeleted: false,
+          isEdited: false,
+          replies: [],
           updatedAt: now,
+          userId: db.user.id,
         },
       ],
+      createdAt: now,
+      id: uid('discussion'),
+      isDeleted: false,
+      isResolved: false,
+      kind: 'comment',
+      materialId: String(params.id),
+      suggestions: [],
+      updatedAt: now,
+      userId: db.user.id,
     };
     discussion.comments[0].discussionId = discussion.id;
     mockDiscussions.unshift(discussion);
+    await persistEditorState(discussion.materialId);
     return HttpResponse.json(discussion, { status: 201 });
   }),
   http.post('/api/discussions/:id/comments', async ({ params, request }) => {
@@ -752,19 +927,29 @@ export const handlers = [
     if (!discussion) return new HttpResponse(null, { status: 404 });
     const body = (await request.json()) as {
       contentRich: MaterialDiscussion['comments'][number]['contentRich'];
+      parentCommentId?: string;
     };
     const now = new Date().toISOString();
-    discussion.comments.push({
-      id: uid('comment'),
-      discussionId: discussion.id,
-      userId: db.user.id,
+    const comment: MaterialDiscussion['comments'][number] = {
       contentRich: body.contentRich,
-      isEdited: false,
       createdAt: now,
+      discussionId: discussion.id,
+      id: uid('comment'),
+      isDeleted: false,
+      isEdited: false,
+      parentCommentId: body.parentCommentId,
+      replies: [],
       updatedAt: now,
-    });
+      userId: db.user.id,
+    };
+    const parent = body.parentCommentId
+      ? discussion.comments.find((entry) => entry.id === body.parentCommentId)
+      : undefined;
+    if (parent) parent.replies.push(comment);
+    else discussion.comments.push(comment);
     discussion.updatedAt = now;
-    return HttpResponse.json(discussion.comments.at(-1), { status: 201 });
+    await persistEditorState(discussion.materialId);
+    return HttpResponse.json(comment, { status: 201 });
   }),
   http.patch('/api/discussions/:id', async ({ params, request }) => {
     const discussion = mockDiscussions.find((item) => item.id === params.id);
@@ -772,56 +957,255 @@ export const handlers = [
     const body = (await request.json()) as { isResolved: boolean };
     discussion.isResolved = body.isResolved;
     discussion.updatedAt = new Date().toISOString();
-    return HttpResponse.json(discussion);
+    return new HttpResponse(null, { status: 204 });
   }),
-  http.get('/api/materials/:id/suggestions', async ({ params }) =>
-    HttpResponse.json(mockSuggestions.filter((item) => item.materialId === params.id))
-  ),
-  http.post('/api/materials/:id/suggestions', async ({ params, request }) => {
-    const body = (await request.json()) as Pick<
-      MaterialSuggestion,
-      'baseRevision' | 'anchor' | 'originalFragment' | 'proposedFragment'
-    >;
-    const now = new Date().toISOString();
-    const suggestion: MaterialSuggestion = {
-      id: uid('suggestion'),
-      materialId: String(params.id),
-      userId: db.user.id,
-      ...body,
-      status: 'pending',
-      createdAt: now,
-      updatedAt: now,
-    };
-    mockSuggestions.unshift(suggestion);
-    return HttpResponse.json(suggestion, { status: 201 });
-  }),
-  http.patch('/api/material-suggestions/:id', async ({ params, request }) => {
-    const suggestion = mockSuggestions.find((item) => item.id === params.id);
-    if (!suggestion) return new HttpResponse(null, { status: 404 });
-    const body = (await request.json()) as {
-      status: MaterialSuggestion['status'];
-      finalizedContent?: Material['content'];
-      expectedBaseRevision?: number;
-    };
-    if (body.status === 'accepted') {
-      const material = db.materials.find((item) => item.id === suggestion.materialId);
-      if (
-        !material ||
-        !body.finalizedContent ||
-        body.expectedBaseRevision !== suggestion.baseRevision ||
-        body.expectedBaseRevision !== (material.revision ?? 1)
-      ) {
-        return HttpResponse.json({ message: 'material revision is stale' }, { status: 409 });
+  http.delete('/api/discussions/:id', async ({ params, request }) => {
+    const discussion = mockDiscussions.find((item) => item.id === params.id);
+    const material = db.materials.find(
+      (item) => item.id === discussion?.materialId
+    );
+    if (!discussion || !material)
+      return new HttpResponse(null, { status: 404 });
+    const pendingIds = discussion.suggestions
+      .filter((item) => item.status === 'pending')
+      .map((item) => item.plateSuggestionId);
+    if (pendingIds.length) {
+      const expected = Number(
+        new URL(request.url).searchParams.get('expectedRevision')
+      );
+      if (expected !== (material.revision ?? 1)) {
+        return HttpResponse.json(
+          { message: 'material revision is stale' },
+          { status: 409 }
+        );
       }
-      material.content = body.finalizedContent;
-      db.refreshMaterialContentBytes(material);
+      const resolved = resolveSuggestions(
+        material.content.value,
+        'reject',
+        pendingIds
+      );
+      material.content = createMaterialDocument(resolved.value);
       material.revision = (material.revision ?? 1) + 1;
+      material.hasPendingSuggestions = resolved.hasPendingSuggestions;
+      for (const suggestion of discussion.suggestions) {
+        if (suggestion.status === 'pending') suggestion.status = 'rejected';
+      }
+      db.refreshMaterialContentBytes(material);
     }
-    suggestion.status = body.status;
-    suggestion.reviewedBy = db.user.id;
-    suggestion.reviewedAt = new Date().toISOString();
-    suggestion.updatedAt = suggestion.reviewedAt;
-    return HttpResponse.json(suggestion);
+    discussion.isDeleted = true;
+    await persistEditorState(material.id);
+    return HttpResponse.json(
+      mockSuggestionResult(
+        material,
+        discussion.suggestions.map((item) => item.id)
+      )
+    );
+  }),
+  http.patch('/api/comments/:id', async ({ params, request }) => {
+    const body = (await request.json()) as {
+      contentRich: MaterialDiscussion['comments'][number]['contentRich'];
+    };
+    for (const discussion of mockDiscussions) {
+      const entries = discussion.comments.flatMap((entry) => [
+        entry,
+        ...entry.replies,
+      ]);
+      const comment = entries.find((entry) => entry.id === params.id);
+      if (!comment) continue;
+      comment.contentRich = body.contentRich;
+      comment.isEdited = true;
+      comment.updatedAt = new Date().toISOString();
+      return HttpResponse.json(comment);
+    }
+    return new HttpResponse(null, { status: 404 });
+  }),
+  http.delete('/api/comments/:id', async ({ params }) => {
+    for (const discussion of mockDiscussions) {
+      const entry = discussion.comments
+        .flatMap((comment) => [comment, ...comment.replies])
+        .find((comment) => comment.id === params.id);
+      if (!entry) continue;
+      entry.isDeleted = true;
+      entry.contentRich = null;
+      return new HttpResponse(null, { status: 204 });
+    }
+    return new HttpResponse(null, { status: 404 });
+  }),
+  http.post(
+    '/api/materials/:id/suggestion-commits',
+    async ({ params, request }) => {
+      const material = db.materials.find((item) => item.id === params.id);
+      if (!material) return new HttpResponse(null, { status: 404 });
+      const body = (await request.json()) as {
+        content: Material['content'];
+        expectedRevision: number;
+      };
+      if (body.expectedRevision !== (material.revision ?? 1)) {
+        return HttpResponse.json(
+          { message: 'material revision is stale' },
+          { status: 409 }
+        );
+      }
+      const topLevelIds = new Set<string>();
+      const hasInvalidBlockId = body.content.value.some((block) => {
+        const id =
+          typeof block.id === 'string' && block.id.trim() ? block.id : null;
+        if (!id || topLevelIds.has(id)) return true;
+        topLevelIds.add(id);
+        return false;
+      });
+      const changes = scanSuggestions(body.content.value);
+      if (hasInvalidBlockId || changes.length === 0) {
+        return HttpResponse.json(
+          { message: 'suggestion commit requires stable block IDs' },
+          { status: 400 }
+        );
+      }
+      const now = new Date().toISOString();
+      const nextRevision = (material.revision ?? 1) + 1;
+      const committedIds = new Set<string>();
+      for (const change of changes) {
+        committedIds.add(change.plateSuggestionId);
+        const existingDiscussion = mockDiscussions.find(
+          (entry) =>
+            entry.materialId === material.id &&
+            entry.blockId === change.blockId &&
+            entry.kind === 'suggestion' &&
+            entry.suggestions.some(
+              (suggestion) =>
+                suggestion.plateSuggestionId === change.plateSuggestionId &&
+                suggestion.status === 'pending'
+            )
+        );
+        const existingSuggestion = existingDiscussion?.suggestions.find(
+          (entry) =>
+            entry.plateSuggestionId === change.plateSuggestionId &&
+            entry.status === 'pending'
+        );
+        if (existingSuggestion) {
+          existingSuggestion.commitRevision = nextRevision;
+          existingSuggestion.updatedAt = now;
+          continue;
+        }
+        const discussion: MaterialDiscussion = {
+          anchor: { blockId: change.blockId },
+          blockId: change.blockId,
+          comments: [],
+          createdAt: now,
+          id: uid('discussion'),
+          isDeleted: false,
+          isResolved: false,
+          kind: 'suggestion',
+          materialId: material.id,
+          suggestions: [],
+          updatedAt: now,
+          userId: db.user.id,
+        };
+        const suggestion: MaterialSuggestion = {
+          commitRevision: nextRevision,
+          createdAt: now,
+          discussionId: discussion.id,
+          id: uid('suggestion'),
+          isDeleted: false,
+          plateSuggestionId: change.plateSuggestionId,
+          status: 'pending',
+          updatedAt: now,
+          userId: db.user.id,
+        };
+        discussion.suggestions.push(suggestion);
+        mockDiscussions.unshift(discussion);
+        mockSuggestions.unshift(suggestion);
+      }
+      material.content = createMaterialDocument(body.content.value);
+      material.revision = nextRevision;
+      material.hasPendingSuggestions =
+        scanSuggestions(body.content.value).length > 0;
+      material.updatedAt = now;
+      db.refreshMaterialContentBytes(material);
+      await persistEditorState(material.id);
+      return HttpResponse.json(
+        mockSuggestionResult(material, [...committedIds].sort()),
+        {
+          status: 201,
+        }
+      );
+    }
+  ),
+  http.post(
+    '/api/materials/:id/suggestions/review',
+    async ({ params, request }) => {
+      const material = db.materials.find((item) => item.id === params.id);
+      if (!material) return new HttpResponse(null, { status: 404 });
+      const body = (await request.json()) as {
+        decision: 'accept' | 'reject';
+        suggestionIds?: string[];
+        expectedRevision: number;
+      };
+      if (body.expectedRevision !== (material.revision ?? 1)) {
+        return HttpResponse.json(
+          { message: 'material revision is stale' },
+          { status: 409 }
+        );
+      }
+      const resolved = resolveSuggestions(
+        material.content.value,
+        body.decision,
+        body.suggestionIds
+      );
+      const now = new Date().toISOString();
+      material.content = createMaterialDocument(resolved.value);
+      material.revision = (material.revision ?? 1) + 1;
+      material.hasPendingSuggestions = resolved.hasPendingSuggestions;
+      material.updatedAt = now;
+      db.refreshMaterialContentBytes(material);
+      const ids: string[] = [];
+      for (const suggestion of mockSuggestions) {
+        if (
+          !resolved.resolvedIds.includes(suggestion.plateSuggestionId) ||
+          suggestion.status !== 'pending'
+        )
+          continue;
+        suggestion.status =
+          body.decision === 'accept' ? 'accepted' : 'rejected';
+        suggestion.reviewedBy = db.user.id;
+        suggestion.reviewedAt = now;
+        suggestion.updatedAt = now;
+        suggestion.resolutionRevision = material.revision;
+        ids.push(suggestion.plateSuggestionId);
+      }
+      await persistEditorState(material.id);
+      return HttpResponse.json(mockSuggestionResult(material, ids));
+    }
+  ),
+  http.delete('/api/material-suggestions/:id', async ({ params, request }) => {
+    const suggestion = mockSuggestions.find((item) => item.id === params.id);
+    const discussion = mockDiscussions.find(
+      (item) => item.id === suggestion?.discussionId
+    );
+    const material = db.materials.find(
+      (item) => item.id === discussion?.materialId
+    );
+    if (!suggestion || !material)
+      return new HttpResponse(null, { status: 404 });
+    const expected = Number(
+      new URL(request.url).searchParams.get('expectedRevision')
+    );
+    if (expected !== (material.revision ?? 1)) {
+      return HttpResponse.json(
+        { message: 'material revision is stale' },
+        { status: 409 }
+      );
+    }
+    const resolved = resolveSuggestions(material.content.value, 'reject', [
+      suggestion.plateSuggestionId,
+    ]);
+    material.content = createMaterialDocument(resolved.value);
+    material.revision = (material.revision ?? 1) + 1;
+    material.hasPendingSuggestions = resolved.hasPendingSuggestions;
+    suggestion.status = 'withdrawn';
+    suggestion.isDeleted = true;
+    await persistEditorState(material.id);
+    return HttpResponse.json(mockSuggestionResult(material, [suggestion.id]));
   }),
   http.get('/api/source-upload-policy', async () => {
     await latency();
@@ -839,7 +1223,11 @@ export const handlers = [
     if (ct.includes('multipart/form-data')) {
       const form = await request.formData();
       const file = form.get('file');
-      name = String(form.get('name') || (file instanceof File ? file.name : '') || 'Untitled');
+      name = String(
+        form.get('name') ||
+          (file instanceof File ? file.name : '') ||
+          'Untitled'
+      );
       kind = (String(form.get('kind') || '') ||
         getFileKind(name, sourceUploadPolicy)) as SourceKindFix;
       chapterId = (form.get('chapterId') as string) || null;
@@ -864,47 +1252,56 @@ export const handlers = [
       );
     }
     if (expectedKind === 'unknown' || kind !== expectedKind) {
-      return HttpResponse.json({ message: 'unsupported source file type' }, { status: 400 });
+      return HttpResponse.json(
+        { message: 'unsupported source file type' },
+        { status: 400 }
+      );
     }
     if (!chapterId && chapterName?.trim()) {
       const normalizedName = chapterName.trim().toLowerCase();
       const existing = db.chapters.find(
         (chapter) =>
-          chapter.workspaceId === params.id && chapter.name.trim().toLowerCase() === normalizedName
+          chapter.workspaceId === params.id &&
+          chapter.name.trim().toLowerCase() === normalizedName
       );
       if (existing) {
         chapterId = existing.id;
       } else {
-        const order = db.chapters.filter((chapter) => chapter.workspaceId === params.id).length;
+        const order = db.chapters.filter(
+          (chapter) => chapter.workspaceId === params.id
+        ).length;
         const chapter: Chapter = {
+          fileIds: [],
           id: uid('ch'),
-          workspaceId: String(params.id),
           name: chapterName.trim(),
           order,
-          fileIds: [],
+          workspaceId: String(params.id),
         };
         db.chapters.push(chapter);
-        const ws = db.workspaces.find((workspace) => workspace.id === params.id);
+        const ws = db.workspaces.find(
+          (workspace) => workspace.id === params.id
+        );
         if (ws) ws.chapterCount += 1;
         chapterId = chapter.id;
       }
     }
     const f: (typeof db.files)[number] = {
-      id: uid('f'),
-      workspaceId: String(params.id),
-      chapterId,
-      name,
-      kind,
-      sizeKb: Math.round(200 + Math.random() * 3000),
       addedAt: new Date().toISOString(),
+      chapterId,
+      id: uid('f'),
+      kind,
+      name,
+      sizeKb: Math.round(200 + Math.random() * 3000),
       // Mirror the real backend: uploads start 'processing' and the client
       // animates progress (useUploadSource) before flipping to 'ready'.
       status: 'processing',
+      workspaceId: String(params.id),
     };
     db.files.push(f);
     const ws = db.workspaces.find((w) => w.id === params.id);
     if (ws) ws.fileCount += 1;
-    if (f.chapterId) db.chapters.find((c) => c.id === f.chapterId)?.fileIds.push(f.id);
+    if (f.chapterId)
+      db.chapters.find((c) => c.id === f.chapterId)?.fileIds.push(f.id);
     // Eventually mark ready so later refetches reflect a finished ingest.
     setTimeout(() => {
       f.status = 'ready';
@@ -918,14 +1315,14 @@ export const handlers = [
     const body = (await request.json()) as { text: string };
     const sources = db.files.slice(0, 2);
     return HttpResponse.json({
-      id: uid('m'),
-      role: 'assistant',
-      text: `Based on your sources, ${body.text.replace(/\?$/, '')} relates to the key ideas in your materials. In short: the cell membrane regulates transport, and energy is produced in the mitochondria.`,
       citations: sources.map((f) => ({
         fileId: f.id,
         fileName: f.name,
         snippet: 'Relevant passage from your source…',
       })),
+      id: uid('m'),
+      role: 'assistant',
+      text: `Based on your sources, ${body.text.replace(/\?$/, '')} relates to the key ideas in your materials. In short: the cell membrane regulates transport, and energy is produced in the mitochondria.`,
     });
   }),
 
@@ -937,20 +1334,25 @@ export const handlers = [
       .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
     return HttpResponse.json(list);
   }),
-  http.post('/api/workspaces/:id/conversations', async ({ params, request }) => {
-    await latency();
-    const body = (await request.json().catch(() => ({}))) as { title?: string };
-    const now = new Date().toISOString();
-    const conv = {
-      id: uid('conv'),
-      workspaceId: params.id as string,
-      title: body.title ?? '',
-      createdAt: now,
-      updatedAt: now,
-    };
-    db.conversations.push(conv);
-    return HttpResponse.json(conv, { status: 201 });
-  }),
+  http.post(
+    '/api/workspaces/:id/conversations',
+    async ({ params, request }) => {
+      await latency();
+      const body = (await request.json().catch(() => ({}))) as {
+        title?: string;
+      };
+      const now = new Date().toISOString();
+      const conv = {
+        createdAt: now,
+        id: uid('conv'),
+        title: body.title ?? '',
+        updatedAt: now,
+        workspaceId: params.id as string,
+      };
+      db.conversations.push(conv);
+      return HttpResponse.json(conv, { status: 201 });
+    }
+  ),
   http.get('/api/conversations/:id/messages', async ({ params }) => {
     await latency();
     const list = db.chatMessages.filter(
@@ -963,7 +1365,8 @@ export const handlers = [
     const i = db.conversations.findIndex((c) => c.id === params.id);
     if (i >= 0) db.conversations.splice(i, 1);
     for (let j = db.chatMessages.length - 1; j >= 0; j--) {
-      if (db.chatMessages[j].conversationId === params.id) db.chatMessages.splice(j, 1);
+      if (db.chatMessages[j].conversationId === params.id)
+        db.chatMessages.splice(j, 1);
     }
     return new HttpResponse(null, { status: 204 });
   }),
@@ -973,7 +1376,10 @@ export const handlers = [
      token-by-token as `data: {type,...}` events, then saves the assistant
      turn. Honors the client AbortController so Stop works in dev. */
   http.post('/api/workspaces/:id/chat/stream', async ({ params, request }) => {
-    const body = (await request.json()) as { conversationId?: string; text: string };
+    const body = (await request.json()) as {
+      conversationId?: string;
+      text: string;
+    };
     const now = new Date().toISOString();
 
     let conv = body.conversationId
@@ -981,23 +1387,23 @@ export const handlers = [
       : undefined;
     if (!conv) {
       conv = {
-        id: uid('conv'),
-        workspaceId: params.id as string,
-        title: '',
         createdAt: now,
+        id: uid('conv'),
+        title: '',
         updatedAt: now,
+        workspaceId: params.id as string,
       };
       db.conversations.push(conv);
     }
     if (!conv.title) conv.title = body.text.slice(0, 60);
     db.chatMessages.push({
-      id: uid('m'),
-      conversationId: conv.id,
-      role: 'user',
-      content: body.text,
-      status: 'complete',
       citations: null,
+      content: body.text,
+      conversationId: conv.id,
       createdAt: now,
+      id: uid('m'),
+      role: 'user',
+      status: 'complete',
     });
 
     const convId = conv.id;
@@ -1019,33 +1425,37 @@ export const handlers = [
       async start(controller) {
         const send = (o: unknown) =>
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(o)}\n\n`));
-        send({ type: 'start', messageId: assistantId, conversationId: convId });
+        send({ conversationId: convId, messageId: assistantId, type: 'start' });
         await delay(120);
-        send({ type: 'citations', citations });
+        send({ citations, type: 'citations' });
         let acc = '';
         for (const w of words) {
           if (request.signal.aborted) break;
           await delay(35);
           acc += w + ' ';
-          send({ type: 'token', text: w + ' ' });
+          send({ text: w + ' ', type: 'token' });
         }
         const aborted = request.signal.aborted;
         db.chatMessages.push({
-          id: assistantId,
-          conversationId: convId,
-          role: 'assistant',
-          content: acc.trim(),
-          status: aborted ? 'aborted' : 'complete',
           citations,
+          content: acc.trim(),
+          conversationId: convId,
           createdAt: new Date().toISOString(),
+          id: assistantId,
+          role: 'assistant',
+          status: aborted ? 'aborted' : 'complete',
         });
         conv!.updatedAt = new Date().toISOString();
-        if (!aborted) send({ type: 'done', status: 'complete', tokenCount: words.length });
+        if (!aborted)
+          send({ status: 'complete', tokenCount: words.length, type: 'done' });
         controller.close();
       },
     });
     return new HttpResponse(stream, {
-      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Content-Type': 'text/event-stream',
+      },
     });
   }),
 
@@ -1067,14 +1477,17 @@ export const handlers = [
         for (const w of words) {
           if (request.signal.aborted) break;
           await delay(40);
-          send({ type: 'token', text: w + ' ' });
+          send({ text: w + ' ', type: 'token' });
         }
         if (!request.signal.aborted) send({ type: 'done' });
         controller.close();
       },
     });
     return new HttpResponse(stream, {
-      headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+      headers: {
+        'Cache-Control': 'no-cache',
+        'Content-Type': 'text/event-stream',
+      },
     });
   }),
 
@@ -1082,7 +1495,10 @@ export const handlers = [
      editor integration can be developed under MSW without provider calls. */
   http.post('/api/workspaces/:id/ai/command', async ({ request }) => {
     const body = (await request.json()) as {
-      messages?: Array<{ role: string; parts?: Array<{ type: string; text?: string }> }>;
+      messages?: Array<{
+        role: string;
+        parts?: Array<{ type: string; text?: string }>;
+      }>;
       ctx?: {
         children?: Array<{ id?: string; children?: unknown[] }>;
         toolName?: 'generate' | 'edit' | 'comment';
@@ -1097,17 +1513,21 @@ export const handlers = [
         .join('') ?? '';
     const toolName =
       body.ctx?.toolName ??
-      (/\b(comment|feedback|review|annotat)/i.test(instruction) ? 'comment' : 'generate');
+      (/\b(comment|feedback|review|annotat)/i.test(instruction)
+        ? 'comment'
+        : 'generate');
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         const send = (event: unknown) =>
           controller.enqueue(
-            encoder.encode(`data: ${typeof event === 'string' ? event : JSON.stringify(event)}\n\n`)
+            encoder.encode(
+              `data: ${typeof event === 'string' ? event : JSON.stringify(event)}\n\n`
+            )
           );
         send({ type: 'start' });
         send({ type: 'start-step' });
-        send({ type: 'data-toolName', data: toolName });
+        send({ data: toolName, type: 'data-toolName' });
 
         if (toolName === 'comment') {
           const block = body.ctx?.children?.[0];
@@ -1115,22 +1535,22 @@ export const handlers = [
           if (block?.id && content) {
             await delay(40);
             send({
-              id: uid('ai'),
-              type: 'data-comment',
               data: {
                 comment: {
                   blockId: block.id,
-                  content,
                   comment: 'Consider making this point more specific.',
+                  content,
                 },
                 status: 'streaming',
               },
+              id: uid('ai'),
+              type: 'data-comment',
             });
           }
           send({
+            data: { comment: null, status: 'finished' },
             id: uid('ai'),
             type: 'data-comment',
-            data: { comment: null, status: 'finished' },
           });
         } else {
           const text =
@@ -1138,27 +1558,27 @@ export const handlers = [
               ? 'This revised passage is clearer and more concise.'
               : `A concise response to: ${instruction || 'your request'}.`;
           const textId = uid('ai');
-          send({ type: 'text-start', id: textId });
+          send({ id: textId, type: 'text-start' });
           for (const word of text.split(' ')) {
             if (request.signal.aborted) {
               controller.close();
               return;
             }
             await delay(25);
-            send({ type: 'text-delta', id: textId, delta: `${word} ` });
+            send({ delta: `${word} `, id: textId, type: 'text-delta' });
           }
-          send({ type: 'text-end', id: textId });
+          send({ id: textId, type: 'text-end' });
         }
         send({ type: 'finish-step' });
-        send({ type: 'finish', finishReason: 'stop' });
+        send({ finishReason: 'stop', type: 'finish' });
         send('[DONE]');
         controller.close();
       },
     });
     return new HttpResponse(stream, {
       headers: {
-        'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
+        'Content-Type': 'text/event-stream',
         'x-vercel-ai-ui-message-stream': 'v1',
       },
     });
@@ -1169,9 +1589,9 @@ export const handlers = [
     if (request.signal.aborted) return HttpResponse.json(null, { status: 408 });
     await delay(80);
     return HttpResponse.json({
-      text: body.prompt?.trim() ? ' with a natural continuation.' : '0',
       finishReason: 'stop',
-      usage: { promptTokens: 8, completionTokens: 5 },
+      text: body.prompt?.trim() ? ' with a natural continuation.' : '0',
+      usage: { completionTokens: 5, promptTokens: 8 },
     });
   }),
 
@@ -1184,7 +1604,8 @@ export const handlers = [
     await delay(900);
     const opts = (await request.json()) as GenerateOptions;
     const wsId = String(params.id);
-    const wsName = db.workspaces.find((w) => w.id === wsId)?.name ?? 'Workspace';
+    const wsName =
+      db.workspaces.find((w) => w.id === wsId)?.name ?? 'Workspace';
     // Chapters arrive as ids; resolve to names for display + storage parity
     // with the Go backend.
     const scopeChapterNames = opts.chapters
@@ -1204,58 +1625,62 @@ export const handlers = [
       const id = uid('dk');
       const name = `${wsName} flashcards`;
       const cardContents = Array.from({ length: opts.count }, (_, i) => ({
-        id: uid('c'),
-        front: `Term ${i + 1}`,
         back: `Definition for term ${i + 1}.`,
+        front: `Term ${i + 1}`,
+        id: uid('c'),
       }));
       const material: Material = {
         ...ownerMaterialAccess,
-        id,
-        workspaceId: wsId,
-        workspaceName: wsName,
-        kind: 'flashcards',
-        title: name,
+        chapterId: null,
         color: 'green',
         content: flashcardsDocument(cardContents, id),
-        chapterId: null,
+        createdAt: new Date().toISOString(),
+        id,
+        kind: 'flashcards',
+        privacy: 'private',
         scopeChapters: scopeChapterNames,
         scopeFileIds: opts.fileIds,
-        privacy: 'private',
-        createdAt: new Date().toISOString(),
+        title: name,
+        workspaceId: wsId,
+        workspaceName: wsName,
       };
       db.refreshMaterialContentBytes(material);
       db.materials.unshift(material);
       for (const c of cardContents)
-        db.cardStats[c.id] = { materialId: id, srs: newSrsState(), known: false };
+        db.cardStats[c.id] = {
+          known: false,
+          materialId: id,
+          srs: newSrsState(),
+        };
       return HttpResponse.json({
-        kind: 'flashcards',
-        deck: db.deckFromMaterial(material),
         cards: db.cardsFromMaterial(material),
+        deck: db.deckFromMaterial(material),
+        kind: 'flashcards',
       });
     }
 
     if (opts.kind === 'mindmap' || opts.kind === 'diagram') {
       const material: Material = {
         ...ownerMaterialAccess,
-        id: uid('mat'),
-        workspaceId: wsId,
-        workspaceName: wsName,
-        kind: opts.kind,
-        title: `${wsName} ${opts.kind}`,
+        chapterId: null,
         content: createMaterialDocument([
-          { type: 'h1', children: [{ text: `${wsName} ${opts.kind}` }] },
-          { type: 'p', children: [{ text: `Generated from ${scopeLabel}.` }] },
+          { children: [{ text: `${wsName} ${opts.kind}` }], type: 'h1' },
+          { children: [{ text: `Generated from ${scopeLabel}.` }], type: 'p' },
           mermaidNode(
             opts.kind === 'mindmap'
               ? 'mindmap\n  root((Topic))\n    Key idea A\n      Detail 1\n      Detail 2\n    Key idea B\n      Detail 3'
               : 'flowchart LR\n  A[Start] --> B[Process]\n  B --> C{Decision}\n  C -->|Yes| D[Outcome 1]\n  C -->|No| E[Outcome 2]'
           ),
         ]),
-        chapterId: null,
+        createdAt: new Date().toISOString(),
+        id: uid('mat'),
+        kind: opts.kind,
+        privacy: 'private',
         scopeChapters: scopeChapterNames,
         scopeFileIds: opts.fileIds,
-        privacy: 'private',
-        createdAt: new Date().toISOString(),
+        title: `${wsName} ${opts.kind}`,
+        workspaceId: wsId,
+        workspaceName: wsName,
       };
       db.refreshMaterialContentBytes(material);
       db.materials.unshift(material);
@@ -1275,77 +1700,88 @@ export const handlers = [
         case 'boolean':
           return {
             ...base,
-            type: 'boolean',
             correct: true,
             explanation: 'This statement is true based on your sources.',
+            type: 'boolean',
           } as Question;
         case 'fill':
         case 'short':
           return {
             ...base,
-            type,
             accepted: [{ value: 'answer' }],
-            explanation: 'The accepted answer follows from the source material.',
+            explanation:
+              'The accepted answer follows from the source material.',
+            type,
           } as Question;
         case 'ordering':
           return {
             ...base,
+            items: [
+              { value: 'First' },
+              { value: 'Second' },
+              { value: 'Third' },
+            ],
             type: 'ordering',
-            items: [{ value: 'First' }, { value: 'Second' }, { value: 'Third' }],
           } as Question;
         case 'matching':
           return {
             ...base,
-            type: 'matching',
             pairs: [
               { left: 'A', right: '1' },
               { left: 'B', right: '2' },
             ],
+            type: 'matching',
           } as Question;
         case 'multi':
           return {
             ...base,
-            type: 'multi',
-            options: [
-              { value: 'A', explanation: 'Correct — supported by the material.' },
-              { value: 'B', explanation: 'Incorrect for this question.' },
-              { value: 'C', explanation: 'Correct — also supported.' },
-              { value: 'D', explanation: 'Incorrect for this question.' },
-            ],
             correct: [0, 2],
+            options: [
+              {
+                explanation: 'Correct — supported by the material.',
+                value: 'A',
+              },
+              { explanation: 'Incorrect for this question.', value: 'B' },
+              { explanation: 'Correct — also supported.', value: 'C' },
+              { explanation: 'Incorrect for this question.', value: 'D' },
+            ],
+            type: 'multi',
           } as Question;
         default:
           return {
             ...base,
-            type: 'mcq',
-            options: [
-              { value: 'A', explanation: 'Correct — this is the best answer.' },
-              { value: 'B', explanation: 'Incorrect — a common distractor.' },
-              { value: 'C', explanation: 'Incorrect for this question.' },
-              { value: 'D', explanation: 'Incorrect for this question.' },
-            ],
             correct: [0],
+            options: [
+              { explanation: 'Correct — this is the best answer.', value: 'A' },
+              { explanation: 'Incorrect — a common distractor.', value: 'B' },
+              { explanation: 'Incorrect for this question.', value: 'C' },
+              { explanation: 'Incorrect for this question.', value: 'D' },
+            ],
+            type: 'mcq',
           } as Question;
       }
     });
     const name = `${wsName} quiz`;
     const quizMat: Material = {
       ...ownerMaterialAccess,
-      id: uid('qz'),
-      workspaceId: wsId,
-      workspaceName: wsName,
-      kind: 'quiz',
-      title: name,
-      content: quizDocument(qs, opts.timeLimitMin),
       chapterId: null,
+      content: quizDocument(qs, opts.timeLimitMin),
+      createdAt: new Date().toISOString(),
+      id: uid('qz'),
+      kind: 'quiz',
+      privacy: 'private',
       scopeChapters: scopeChapterNames,
       scopeFileIds: opts.fileIds,
-      privacy: 'private',
-      createdAt: new Date().toISOString(),
+      title: name,
+      workspaceId: wsId,
+      workspaceName: wsName,
     };
     db.refreshMaterialContentBytes(quizMat);
     db.materials.unshift(quizMat);
-    return HttpResponse.json({ kind: 'quiz', quiz: db.quizFromMaterial(quizMat) });
+    return HttpResponse.json({
+      kind: 'quiz',
+      quiz: db.quizFromMaterial(quizMat),
+    });
   }),
 
   /* ---------------- quizzes & attempts ---------------- */
@@ -1359,17 +1795,17 @@ export const handlers = [
     const name = body.name ?? 'Untitled quiz';
     const material: Material = {
       ...ownerMaterialAccess,
-      id: uid('qz'),
-      workspaceId: body.workspaceId ?? '',
-      workspaceName: ws?.name ?? '',
-      kind: 'quiz',
-      title: name,
-      content: quizDocument(body.questions ?? [], body.timeLimitMin),
       chapterId: null,
+      content: quizDocument(body.questions ?? [], body.timeLimitMin),
+      createdAt: new Date().toISOString(),
+      id: uid('qz'),
+      kind: 'quiz',
+      privacy: body.privacy ?? 'private',
       scopeChapters: body.chapters ?? [],
       scopeFileIds: [],
-      privacy: body.privacy ?? 'private',
-      createdAt: new Date().toISOString(),
+      title: name,
+      workspaceId: body.workspaceId ?? '',
+      workspaceName: ws?.name ?? '',
     };
     db.refreshMaterialContentBytes(material);
     db.materials.unshift(material);
@@ -1379,14 +1815,14 @@ export const handlers = [
   http.get('/api/mistakes', async () => {
     await latency();
     const quiz: Quiz = {
+      chapters: [],
+      createdAt: new Date().toISOString(),
       id: 'review_mistakes',
       name: 'Review mistakes',
+      privacy: 'private',
+      questions: db.mistakes,
       workspaceId: '',
       workspaceName: 'From your missed questions',
-      chapters: [],
-      questions: db.mistakes,
-      createdAt: new Date().toISOString(),
-      privacy: 'private',
     };
     return HttpResponse.json(quiz);
   }),
@@ -1394,23 +1830,27 @@ export const handlers = [
     await latency();
     if (params.id === 'review_mistakes') {
       return HttpResponse.json({
+        chapters: [],
+        createdAt: new Date().toISOString(),
         id: 'review_mistakes',
         name: 'Review mistakes',
+        privacy: 'private',
+        questions: db.mistakes,
         workspaceId: '',
         workspaceName: 'From your missed questions',
-        chapters: [],
-        questions: db.mistakes,
-        createdAt: new Date().toISOString(),
-        privacy: 'private',
       } satisfies Quiz);
     }
-    const mt = db.materials.find((x) => x.id === params.id && x.kind === 'quiz');
+    const mt = db.materials.find(
+      (x) => x.id === params.id && x.kind === 'quiz'
+    );
     return mt
       ? HttpResponse.json(db.quizFromMaterial(mt))
       : new HttpResponse(null, { status: 404 });
   }),
   http.patch('/api/quizzes/:id', async ({ params, request }) => {
-    const mt = db.materials.find((x) => x.id === params.id && x.kind === 'quiz');
+    const mt = db.materials.find(
+      (x) => x.id === params.id && x.kind === 'quiz'
+    );
     if (!mt) return new HttpResponse(null, { status: 404 });
     const body = (await request.json()) as Partial<Quiz>;
     const cur = db.quizFromMaterial(mt);
@@ -1426,7 +1866,9 @@ export const handlers = [
     return HttpResponse.json(db.quizFromMaterial(mt));
   }),
   http.delete('/api/quizzes/:id', async ({ params }) => {
-    const i = db.materials.findIndex((x) => x.id === params.id && x.kind === 'quiz');
+    const i = db.materials.findIndex(
+      (x) => x.id === params.id && x.kind === 'quiz'
+    );
     if (i >= 0) db.materials.splice(i, 1);
     return new HttpResponse(null, { status: 204 });
   }),
@@ -1436,22 +1878,25 @@ export const handlers = [
       (material) => material.id === params.id && material.kind === 'quiz'
     );
     const publicQuiz = db.publicQuizzes.find((quiz) => quiz.id === params.id);
-    if (!sourceMaterial && !publicQuiz) return new HttpResponse(null, { status: 404 });
-    const source = sourceMaterial ? db.quizFromMaterial(sourceMaterial) : publicQuiz!;
+    if (!sourceMaterial && !publicQuiz)
+      return new HttpResponse(null, { status: 404 });
+    const source = sourceMaterial
+      ? db.quizFromMaterial(sourceMaterial)
+      : publicQuiz!;
     const material: Material = {
       ...ownerMaterialAccess,
-      id: uid('qz'),
-      workspaceId: '',
-      workspaceName: '',
-      kind: 'quiz',
-      title: source.name,
-      content: quizDocument(source.questions, source.timeLimitMin),
       chapterId: null,
+      content: quizDocument(source.questions, source.timeLimitMin),
+      createdAt: new Date().toISOString(),
+      id: uid('qz'),
+      isOwner: true,
+      kind: 'quiz',
+      privacy: 'private',
       scopeChapters: source.chapters,
       scopeFileIds: [],
-      privacy: 'private',
-      createdAt: new Date().toISOString(),
-      isOwner: true,
+      title: source.name,
+      workspaceId: '',
+      workspaceName: '',
     };
     db.refreshMaterialContentBytes(material);
     db.materials.unshift(material);
@@ -1460,7 +1905,9 @@ export const handlers = [
   http.get('/api/attempts', async () => {
     await latency();
     return HttpResponse.json(
-      [...db.attempts].sort((a, b) => +new Date(b.takenAt) - +new Date(a.takenAt))
+      [...db.attempts].sort(
+        (a, b) => +new Date(b.takenAt) - +new Date(a.takenAt)
+      )
     );
   }),
   http.get('/api/attempts/:id', async ({ params }) => {
@@ -1481,7 +1928,9 @@ export const handlers = [
       answers?: Record<string, unknown>;
       questions?: Question[];
     };
-    const quizMt = db.materials.find((x) => x.id === params.id && x.kind === 'quiz');
+    const quizMt = db.materials.find(
+      (x) => x.id === params.id && x.kind === 'quiz'
+    );
     const quiz = quizMt ? db.quizFromMaterial(quizMt) : undefined;
     // Fold any missed questions into the review-mistakes pool (deduped by id).
     if (body.wrong?.length) {
@@ -1499,17 +1948,17 @@ export const handlers = [
       }
     }
     const at = {
-      id: uid('at'),
-      quizId: String(params.id),
-      quizName: quiz?.name ?? 'Quiz',
-      workspaceName: quiz?.workspaceName ?? '',
+      answers: body.answers ?? {},
       chapters: quiz?.chapters ?? [],
       correct: body.correct,
-      total: body.total,
+      id: uid('at'),
       pct: Math.round((body.correct / Math.max(1, body.total)) * 100),
-      takenAt: new Date().toISOString(),
-      answers: body.answers ?? {},
       questions: body.questions ?? [],
+      quizId: String(params.id),
+      quizName: quiz?.name ?? 'Quiz',
+      takenAt: new Date().toISOString(),
+      total: body.total,
+      workspaceName: quiz?.workspaceName ?? '',
     };
     db.attempts.unshift(at);
     return HttpResponse.json(at, { status: 201 });
@@ -1527,18 +1976,18 @@ export const handlers = [
     const id = uid('dk');
     const material: Material = {
       ...ownerMaterialAccess,
-      id,
-      workspaceId: body.workspaceId ?? '',
-      workspaceName: ws?.name ?? body.workspaceName ?? '',
-      kind: 'flashcards',
-      title: name,
+      chapterId: null,
       color: body.color ?? 'green',
       content: flashcardsDocument([], id),
-      chapterId: null,
+      createdAt: new Date().toISOString(),
+      id,
+      kind: 'flashcards',
+      privacy: 'private',
       scopeChapters: [],
       scopeFileIds: [],
-      privacy: 'private',
-      createdAt: new Date().toISOString(),
+      title: name,
+      workspaceId: body.workspaceId ?? '',
+      workspaceName: ws?.name ?? body.workspaceName ?? '',
     };
     db.refreshMaterialContentBytes(material);
     db.materials.unshift(material);
@@ -1546,7 +1995,9 @@ export const handlers = [
   }),
   http.get('/api/decks/:id', async ({ params }) => {
     await latency();
-    const mt = db.materials.find((x) => x.id === params.id && x.kind === 'flashcards');
+    const mt = db.materials.find(
+      (x) => x.id === params.id && x.kind === 'flashcards'
+    );
     return mt
       ? HttpResponse.json(db.deckFromMaterial(mt))
       : new HttpResponse(null, { status: 404 });
@@ -1579,45 +2030,58 @@ export const handlers = [
     const id = uid('dk');
     const material: Material = {
       ...source,
+      chapterId: null,
+      content: flashcardsDocument(cards, id),
+      createdAt: new Date().toISOString(),
       id,
+      isOwner: true,
+      privacy: 'private',
+      scopeFileIds: [],
       workspaceId: '',
       workspaceName: '',
-      content: flashcardsDocument(cards, id),
-      chapterId: null,
-      scopeFileIds: [],
-      privacy: 'private',
-      createdAt: new Date().toISOString(),
-      isOwner: true,
     };
     db.materials.unshift(material);
     cards.forEach((card) => {
-      db.cardStats[card.id] = { materialId: id, srs: newSrsState(), known: false };
+      db.cardStats[card.id] = {
+        known: false,
+        materialId: id,
+        srs: newSrsState(),
+      };
     });
     return HttpResponse.json(db.deckFromMaterial(material), { status: 201 });
   }),
   http.get('/api/decks/:id/cards', async ({ params }) => {
     await latency();
-    const mt = db.materials.find((x) => x.id === params.id && x.kind === 'flashcards');
+    const mt = db.materials.find(
+      (x) => x.id === params.id && x.kind === 'flashcards'
+    );
     return mt
       ? HttpResponse.json(db.cardsFromMaterial(mt))
       : new HttpResponse(null, { status: 404 });
   }),
   http.post('/api/decks/:id/cards', async ({ params, request }) => {
-    const mt = db.materials.find((x) => x.id === params.id && x.kind === 'flashcards');
+    const mt = db.materials.find(
+      (x) => x.id === params.id && x.kind === 'flashcards'
+    );
     if (!mt) return new HttpResponse(null, { status: 404 });
     const body = (await request.json()) as { front: string; back: string };
     const id = uid('c');
     const cards = materialCards(mt);
-    cards.push({ id, front: body.front ?? '', back: body.back ?? '' });
+    cards.push({ back: body.back ?? '', front: body.front ?? '', id });
     mt.content = flashcardsDocument(cards, mt.id);
     db.refreshMaterialContentBytes(mt);
-    db.cardStats[id] = { materialId: mt.id, srs: newSrsState(), known: false };
-    return HttpResponse.json(db.cardsFromMaterial(mt).find((c) => c.id === id)!, { status: 201 });
+    db.cardStats[id] = { known: false, materialId: mt.id, srs: newSrsState() };
+    return HttpResponse.json(
+      db.cardsFromMaterial(mt).find((c) => c.id === id)!,
+      { status: 201 }
+    );
   }),
   http.patch('/api/cards/:id', async ({ params, request }) => {
     const stat = db.cardStats[String(params.id)];
     if (!stat) return new HttpResponse(null, { status: 404 });
-    const mt = db.materials.find((x) => x.id === stat.materialId && x.kind === 'flashcards');
+    const mt = db.materials.find(
+      (x) => x.id === stat.materialId && x.kind === 'flashcards'
+    );
     if (!mt) return new HttpResponse(null, { status: 404 });
     const body = (await request.json()) as Partial<
       Pick<Flashcard, 'front' | 'back' | 'known' | 'srs'>
@@ -1637,12 +2101,16 @@ export const handlers = [
     else if (body.srs !== undefined) stat.known = isKnown(body.srs);
     const cards = db.cardsFromMaterial(mt);
     const out = cards.find((c) => c.id === params.id);
-    return out ? HttpResponse.json(out) : new HttpResponse(null, { status: 404 });
+    return out
+      ? HttpResponse.json(out)
+      : new HttpResponse(null, { status: 404 });
   }),
   http.delete('/api/cards/:id', async ({ params }) => {
     const stat = db.cardStats[String(params.id)];
     if (!stat) return new HttpResponse(null, { status: 404 });
-    const mt = db.materials.find((x) => x.id === stat.materialId && x.kind === 'flashcards');
+    const mt = db.materials.find(
+      (x) => x.id === stat.materialId && x.kind === 'flashcards'
+    );
     if (!mt) return new HttpResponse(null, { status: 404 });
     const kept = materialCards(mt).filter((c) => c.id !== params.id);
     mt.content = flashcardsDocument(kept, mt.id);
@@ -1657,7 +2125,10 @@ export const handlers = [
     return HttpResponse.json(db.events);
   }),
   http.post('/api/events', async ({ request }) => {
-    const body = (await request.json()) as Omit<(typeof db.events)[number], 'id'>;
+    const body = (await request.json()) as Omit<
+      (typeof db.events)[number],
+      'id'
+    >;
     const ev = { ...body, id: uid('ev') };
     db.events.push(ev);
     return HttpResponse.json(ev, { status: 201 });
@@ -1699,7 +2170,9 @@ export const handlers = [
     // simulate day-end cleanup: drop tasks completed before today
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
-    const visible = db.tasks.filter((t) => !(t.done && +new Date(t.dueDate) < +startOfToday));
+    const visible = db.tasks.filter(
+      (t) => !(t.done && +new Date(t.dueDate) < +startOfToday)
+    );
     return HttpResponse.json(visible);
   }),
   http.patch('/api/tasks/:id', async ({ params, request }) => {
@@ -1770,7 +2243,9 @@ export const handlers = [
   http.post('/api/billing/checkout', async ({ request }) => {
     await latency();
     const body = (await request.json()) as { planTier: string };
-    return HttpResponse.json({ url: `/subscription?mock_checkout=${body.planTier}` });
+    return HttpResponse.json({
+      url: `/subscription?mock_checkout=${body.planTier}`,
+    });
   }),
   http.post('/api/billing/portal', async () => {
     await latency();
@@ -1793,31 +2268,34 @@ export const handlers = [
       { id: 'ms_file_2', name: 'Lab Report.pdf' },
     ]);
   }),
-  http.post('/api/workspaces/:id/sources/import', async ({ params, request }) => {
-    await latency();
-    const wsId = params.id as string;
-    const body = (await request.json()) as {
-      provider: string;
-      fileIds: string[];
-      chapterId?: string | null;
-    };
-    const created = body.fileIds.map((fid, i) => {
-      const f = {
-        id: uid('f'),
-        workspaceId: wsId,
-        chapterId: body.chapterId ?? null,
-        name: `${body.provider}-import-${i + 1}.pdf`,
-        kind: 'pdf' as const,
-        sizeKb: 512,
-        addedAt: new Date().toISOString(),
-        status: 'processing' as const,
-        ingestPct: 0,
+  http.post(
+    '/api/workspaces/:id/sources/import',
+    async ({ params, request }) => {
+      await latency();
+      const wsId = params.id as string;
+      const body = (await request.json()) as {
+        provider: string;
+        fileIds: string[];
+        chapterId?: string | null;
       };
-      db.files.unshift(f);
-      return f;
-    });
-    return HttpResponse.json(created, { status: 201 });
-  }),
+      const created = body.fileIds.map((_fileId, i) => {
+        const f = {
+          addedAt: new Date().toISOString(),
+          chapterId: body.chapterId ?? null,
+          id: uid('f'),
+          ingestPct: 0,
+          kind: 'pdf' as const,
+          name: `${body.provider}-import-${i + 1}.pdf`,
+          sizeKb: 512,
+          status: 'processing' as const,
+          workspaceId: wsId,
+        };
+        db.files.unshift(f);
+        return f;
+      });
+      return HttpResponse.json(created, { status: 201 });
+    }
+  ),
 ];
 
 type SourceKindFix = 'pdf' | 'doc' | 'md' | 'image' | 'txt';

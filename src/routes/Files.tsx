@@ -1,9 +1,16 @@
 import { useState } from 'react';
-import { Panel, PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Badge, Card, Icon, SimpleDialog, SkeletonCardGrid, Text } from '@/components/ui';
 import { useAllFiles } from '@/api/hooks';
-import { FileViewer } from '@/features/files/FileViewer';
 import type { SourceFile } from '@/api/types';
+import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import {
+  Badge,
+  Card,
+  Icon,
+  SimpleDialog,
+  SkeletonCardGrid,
+  Text,
+} from '@/components/ui';
+import { FileViewer } from '@/features/files/FileViewer';
 import { m } from '@/i18n';
 
 export default function Files() {
@@ -15,29 +22,29 @@ export default function Files() {
       <PageHeader title={m.nav_files()} />
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
         {isLoading ? (
-          <SkeletonCardGrid count={6} cardHeight={72} />
+          <SkeletonCardGrid cardHeight={72} count={6} />
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {data?.map((f) => (
               <Card
-                key={f.id}
-                interactive
-                radius="card-lg"
-                onClick={() => setOpen(f)}
                 className="flex items-center gap-3 p-5.5"
+                interactive
+                key={f.id}
+                onClick={() => setOpen(f)}
+                radius="card-lg"
               >
                 <span className="flex h-10 w-10 items-center justify-center rounded-card bg-surface-hover-bg text-fg-secondary">
                   <Icon name="files" size={18} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <Text variant="subtitle" className="truncate">
+                  <Text className="truncate" variant="subtitle">
                     {f.name}
                   </Text>
-                  <Text variant="meta" tone="muted">
+                  <Text tone="muted" variant="meta">
                     {(f.sizeKb / 1024).toFixed(1)} MB
                   </Text>
                 </div>
-                <Badge tone="neutral" size="sm">
+                <Badge size="sm" tone="neutral">
                   {f.kind}
                 </Badge>
               </Card>
@@ -45,7 +52,12 @@ export default function Files() {
           </div>
         )}
       </div>
-      <SimpleDialog open={!!open} onClose={() => setOpen(null)} title={open?.name} width={760}>
+      <SimpleDialog
+        onClose={() => setOpen(null)}
+        open={!!open}
+        title={open?.name}
+        width={760}
+      >
         <div className="min-h-[50vh]">{open && <FileViewer file={open} />}</div>
       </SimpleDialog>
     </PanelWithInvertedRadius>

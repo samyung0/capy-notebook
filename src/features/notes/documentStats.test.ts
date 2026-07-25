@@ -1,16 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { MATERIAL_DOCUMENT_LIMITS } from '@/features/materials/document';
-import { contentSizeKilobytes, formatContentSize, shouldShowDocumentStats } from './documentStats';
+import {
+  contentSizeKilobytes,
+  formatContentSize,
+  shouldShowDocumentStats,
+} from './documentStats';
 
 const belowHalf = {
-  nodeCount: MATERIAL_DOCUMENT_LIMITS.maxNodes / 2 - 1,
   maxDepth: MATERIAL_DOCUMENT_LIMITS.maxDepth / 2 - 1,
+  nodeCount: MATERIAL_DOCUMENT_LIMITS.maxNodes / 2 - 1,
 };
 
 describe('document statistics visibility', () => {
   it('stays hidden while every dimension is below half', () => {
     expect(
-      shouldShowDocumentStats(belowHalf, MATERIAL_DOCUMENT_LIMITS.maxContentBytes / 2 - 1)
+      shouldShowDocumentStats(
+        belowHalf,
+        MATERIAL_DOCUMENT_LIMITS.maxContentBytes / 2 - 1
+      )
     ).toBe(false);
   });
 
@@ -33,9 +40,12 @@ describe('document statistics visibility', () => {
   });
 
   it('shows at exactly half of the saved content-size limit', () => {
-    expect(shouldShowDocumentStats(belowHalf, MATERIAL_DOCUMENT_LIMITS.maxContentBytes / 2)).toBe(
-      true
-    );
+    expect(
+      shouldShowDocumentStats(
+        belowHalf,
+        MATERIAL_DOCUMENT_LIMITS.maxContentBytes / 2
+      )
+    ).toBe(true);
   });
 
   it('does not show solely because an unsaved size is unavailable', () => {

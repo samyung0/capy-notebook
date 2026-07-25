@@ -8,33 +8,57 @@
 export const EDITOR_WORKSPACE_ID = 'ws_bio';
 
 export const EDITOR_NOTE = {
-  id: 'mat_e2e_editor',
-  title: 'Editor matrix note',
-  headingText: 'Editor matrix heading',
   firstParagraph: 'First paragraph alpha',
+  headingText: 'Editor matrix heading',
+  id: 'mat_e2e_editor',
   secondParagraph: 'Second paragraph beta',
   thirdParagraph: 'Third paragraph gamma',
+  title: 'Editor matrix note',
 };
 
 export const SUGGEST_NOTE = {
+  body: 'Original suggestion sentence',
+  headingText: 'Suggestion matrix heading',
   id: 'mat_e2e_suggest',
   title: 'Suggestion matrix note',
-  headingText: 'Suggestion matrix heading',
-  body: 'Original suggestion sentence',
 };
 
 export function buildEditorNoteValue() {
   return [
-    { type: 'h1', children: [{ text: EDITOR_NOTE.headingText }] },
-    { type: 'p', children: [{ text: EDITOR_NOTE.firstParagraph }] },
-    { type: 'p', children: [{ text: EDITOR_NOTE.secondParagraph }] },
-    { type: 'p', children: [{ text: EDITOR_NOTE.thirdParagraph }] },
+    {
+      children: [{ text: EDITOR_NOTE.headingText }],
+      id: `${EDITOR_NOTE.id}:title`,
+      type: 'h1',
+    },
+    {
+      children: [{ text: EDITOR_NOTE.firstParagraph }],
+      id: `${EDITOR_NOTE.id}:first`,
+      type: 'p',
+    },
+    {
+      children: [{ text: EDITOR_NOTE.secondParagraph }],
+      id: `${EDITOR_NOTE.id}:second`,
+      type: 'p',
+    },
+    {
+      children: [{ text: EDITOR_NOTE.thirdParagraph }],
+      id: `${EDITOR_NOTE.id}:third`,
+      type: 'p',
+    },
   ];
 }
 
 export function buildSuggestNoteValue() {
   return [
-    { type: 'h1', children: [{ text: SUGGEST_NOTE.headingText }] },
-    { type: 'p', children: [{ text: SUGGEST_NOTE.body }] },
+    {
+      children: [{ text: SUGGEST_NOTE.headingText }],
+      id: `${SUGGEST_NOTE.id}:title`,
+      type: 'h1',
+    },
+    {
+      children: [{ text: SUGGEST_NOTE.body }],
+      id: `${SUGGEST_NOTE.id}:body`,
+      type: 'p',
+    },
   ];
 }

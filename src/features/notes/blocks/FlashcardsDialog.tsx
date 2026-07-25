@@ -1,8 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Button, IconButton, Input, SimpleDialog, Text } from '@/components/ui';
-import { parseFlashcardsFenceBody, type FlashcardContent } from '@/features/materials/blocks';
-import { flashcardsFenceBody } from './shared';
+import {
+  type FlashcardContent,
+  parseFlashcardsFenceBody,
+} from '@/features/materials/blocks';
 import { uid } from '@/lib/id';
+import { flashcardsFenceBody } from './shared';
 
 /** Small popup to author a ```flashcards block inline in a note. Emits the
  * fence body (YAML) via onSave. */
@@ -21,15 +24,19 @@ export function FlashcardsDialog({
 
   useEffect(() => {
     if (!open) return;
-    const parsed = initialCode ? parseFlashcardsFenceBody(initialCode).cards : [];
-    setCards(parsed.length ? parsed : [{ id: uid('card'), front: '', back: '' }]);
+    const parsed = initialCode
+      ? parseFlashcardsFenceBody(initialCode).cards
+      : [];
+    setCards(
+      parsed.length ? parsed : [{ back: '', front: '', id: uid('card') }]
+    );
   }, [open, initialCode]);
 
   function update(i: number, patch: Partial<FlashcardContent>) {
     setCards((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
   }
   function add() {
-    setCards((cs) => [...cs, { id: uid('card'), front: '', back: '' }]);
+    setCards((cs) => [...cs, { back: '', front: '', id: uid('card') }]);
   }
   function remove(i: number) {
     setCards((cs) => cs.filter((_, idx) => idx !== i));
@@ -40,50 +47,61 @@ export function FlashcardsDialog({
 
   return (
     <SimpleDialog
-      open={open}
-      onClose={onClose}
-      title="Flashcards"
-      width={620}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button onClick={onClose} variant="ghost">
             Cancel
           </Button>
-          <Button onClick={() => onSave(flashcardsFenceBody(clean))} disabled={!canSave}>
+          <Button
+            disabled={!canSave}
+            onClick={() => onSave(flashcardsFenceBody(clean))}
+          >
             Insert
           </Button>
         </>
       }
+      onClose={onClose}
+      open={open}
+      title="Flashcards"
+      width={620}
     >
       <div className="flex max-h-[60vh] flex-col gap-3 overflow-auto pr-1">
         {cards.map((c, i) => (
-          <div key={c.id} className="flex items-start gap-2 rounded-card border border-line p-2">
+          <div
+            className="flex items-start gap-2 rounded-card border border-line p-2"
+            key={c.id}
+          >
             <div className="grid flex-1 grid-cols-2 gap-2">
               <Input
+                onChange={(e) => update(i, { front: e.target.value })}
                 placeholder="Front"
                 value={c.front}
-                onChange={(e) => update(i, { front: e.target.value })}
               />
               <Input
+                onChange={(e) => update(i, { back: e.target.value })}
                 placeholder="Back"
                 value={c.back}
-                onChange={(e) => update(i, { back: e.target.value })}
               />
             </div>
             <IconButton
               icon="trash"
-              variant="ghost"
-              size="sm"
               label="Remove card"
               onClick={() => remove(i)}
+              size="sm"
+              variant="ghost"
             />
           </div>
         ))}
-        <Button variant="outline" size="sm" onClick={add} className="self-start">
+        <Button
+          className="self-start"
+          onClick={add}
+          size="sm"
+          variant="outline"
+        >
           Add card
         </Button>
         {!canSave && (
-          <Text variant="meta" tone="muted">
+          <Text tone="muted" variant="meta">
             Add at least one card with content.
           </Text>
         )}

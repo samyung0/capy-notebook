@@ -1,5 +1,13 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
+import {
+  useDeck,
+  useFile,
+  useMaterial,
+  useQuiz,
+  useReviewMaterialSuggestions,
+} from '@/api/hooks';
+import type { MaterialKind, UserColor } from '@/api/types';
 import {
   Button,
   Icon,
@@ -14,7 +22,6 @@ import {
   SelectValue,
   Spinner,
 } from '@/components/ui';
-import { useDeck, useFile, useMaterial, useMaterialSuggestions, useQuiz } from '@/api/hooks';
 import { FileViewer } from '@/features/files/FileViewer';
 import {
   clampImageZoom,
@@ -23,22 +30,26 @@ import {
   IMAGE_ZOOM_STEP,
   isImageFile,
 } from '@/features/files/fileUtils';
+import {
+  type NoteEditorStatus,
+  noteEditorStatusLabel,
+} from '@/features/notes/editorMode';
+import { cn } from '@/lib/cn';
 import { MaterialPreview } from './MaterialPreview';
 import {
   isInteractiveMaterialMode,
+  type MaterialMode,
   materialModePolicy,
   resolveMaterialMode,
-  type MaterialMode,
 } from './modePolicy';
 import type { OpenItem } from './openItem';
-import { type MaterialKind, UserColor } from '@/api/types';
-import { noteEditorStatusLabel, type NoteEditorStatus } from '@/features/notes/editorMode';
-import { cn } from '@/lib/cn';
 
 /* Interactive Plate is the heaviest chunk in this route. View mode
  * deliberately never loads it. */
 const NoteEditor = lazy(() =>
-  import('@/features/notes/NoteEditor').then((m) => ({ default: m.NoteEditor }))
+  import('@/features/notes/NoteEditor').then((m) => ({
+    default: m.NoteEditor,
+  }))
 );
 
 /** The center pane. Dispatches on the currently-open item — a source file or a
@@ -59,10 +70,12 @@ export function CenterContent({
   const [imageZoom, setImageZoom] = useState(IMAGE_MIN_ZOOM);
   const [materialMode, setMaterialMode] = useState<MaterialMode | null>(null);
   const [suggestionDirty, setSuggestionDirty] = useState(false);
-  const [editorStatus, setEditorStatus] = useState<NoteEditorStatus | null>(null);
-  const [collaborationActionsHost, setCollaborationActionsHost] = useState<HTMLDivElement | null>(
+  const [editorStatus, setEditorStatus] = useState<NoteEditorStatus | null>(
     null
   );
+  const [collaborationVersion, setCollaborationVersion] = useState(0);
+  const [collaborationActionsHost, setCollaborationActionsHost] =
+    useState<HTMLDivElement | null>(null);
   const updateSuggestionDirty = useCallback(
     (dirty: boolean) => {
       setSuggestionDirty(dirty);
@@ -76,12 +89,15 @@ export function CenterContent({
     setMaterialMode(null);
     updateSuggestionDirty(false);
     setEditorStatus(null);
+    setCollaborationVersion(0);
   }, [item?.kind, item?.id, updateSuggestionDirty]);
 
   const changeMaterialMode = (nextMode: MaterialMode) => {
     if (
       suggestionDirty &&
-      !window.confirm('Discard the unsubmitted suggestion draft and change modes?')
+      !window.confirm(
+        'Discard the unsubmitted suggestion draft and change modes?'
+      )
     ) {
       return;
     }
@@ -96,24 +112,25 @@ export function CenterContent({
   return (
     <>
       <Header
-        item={item}
-        imageZoom={imageZoom}
-        onImageZoomChange={setImageZoom}
-        materialMode={materialMode}
-        onMaterialModeChange={changeMaterialMode}
-        editorStatus={editorStatus}
         collaborationActionsRef={setCollaborationActionsHost}
+        editorStatus={editorStatus}
+        imageZoom={imageZoom}
+        item={item}
+        materialMode={materialMode}
+        onBulkReviewed={() => setCollaborationVersion((version) => version + 1)}
+        onImageZoomChange={setImageZoom}
+        onMaterialModeChange={changeMaterialMode}
       />
       <div className="relative min-h-0 flex-1 overflow-auto">
         {item.kind === 'material' && (
           <MaterialBody
-            key={item.id}
+            allowExternalAssets={!readOnly}
+            collaborationActionsHost={collaborationActionsHost}
+            key={`${item.id}:${collaborationVersion}`}
             materialId={item.id}
             mode={materialMode}
-            allowExternalAssets={!readOnly}
-            onSuggestionDirtyChange={updateSuggestionDirty}
             onEditorStatusChange={setEditorStatus}
-            collaborationActionsHost={collaborationActionsHost}
+            onSuggestionDirtyChange={updateSuggestionDirty}
           />
         )}
         {item.kind === 'file' && (
@@ -130,15 +147,15 @@ export function CenterContent({
 }
 
 const MATERIALMODE_ICON: Record<MaterialMode, IconName> = {
-  view: 'eye',
   edit: 'write',
   suggestion: 'rubber',
+  view: 'eye',
 };
 
 const MATERIALMODE_LABEL: Record<MaterialMode, string> = {
-  view: 'View',
   edit: 'Edit',
   suggestion: 'Suggestion',
+  view: 'View',
 };
 
 function MaterialBody({
@@ -157,7 +174,6 @@ function MaterialBody({
   collaborationActionsHost: HTMLDivElement | null;
 }) {
   const { data: material, isLoading, isError } = useMaterial(materialId);
-  const suggestions = useMaterialSuggestions(material?.kind === 'note' ? materialId : '');
   if (isLoading) {
     return <FileLoading />;
   }
@@ -172,22 +188,21 @@ function MaterialBody({
       {activeMode === 'view' && (
         <div className="h-full min-h-0 overflow-auto">
           <MaterialPreview
-            content={material.content}
-            suggestions={suggestions.data ?? []}
             className="mx-auto max-w-175"
+            content={material.content}
           />
         </div>
       )}
       {isInteractiveMaterialMode(activeMode) && (
         <Suspense fallback={<FileLoading />}>
           <NoteEditor
+            allowExternalAssets={allowExternalAssets}
+            collaborationActionsHost={collaborationActionsHost}
             key={`${materialId}:${activeMode}`}
             materialId={materialId}
             mode={activeMode}
-            allowExternalAssets={allowExternalAssets}
-            onSuggestionDirtyChange={onSuggestionDirtyChange}
             onEditorStatusChange={onEditorStatusChange}
-            collaborationActionsHost={collaborationActionsHost}
+            onSuggestionDirtyChange={onSuggestionDirtyChange}
           />
         </Suspense>
       )}
@@ -200,21 +215,29 @@ function QuizPreviewActions({ quizId }: { quizId: string }) {
   const navigate = useNavigate();
   const summary = quiz.data
     ? `${quiz.data.questions.length} question${quiz.data.questions.length === 1 ? '' : 's'}${
-        quiz.data.timeLimitMin == null ? '' : ` · Time limit: ${quiz.data.timeLimitMin} min`
+        quiz.data.timeLimitMin == null
+          ? ''
+          : ` · Time limit: ${quiz.data.timeLimitMin} min`
       }`
     : quiz.isLoading
       ? 'Loading quiz details…'
       : 'Quiz';
 
   return (
-    <div role="toolbar" aria-label="Quiz actions" className="flex min-w-0 items-center gap-3">
+    <div
+      aria-label="Quiz actions"
+      className="flex min-w-0 items-center gap-3"
+      role="toolbar"
+    >
       <span className="t-meta min-w-0 truncate text-fg-muted">{summary}</span>
       <Button
+        className="font-medium text-sm"
+        iconRight="arrowRight"
+        onClick={() =>
+          navigate({ params: { quizId }, to: '/quizzes/$quizId/attempt' })
+        }
         size="sm"
         variant="ghost-hover"
-        iconRight="arrowRight"
-        className="text-sm font-medium"
-        onClick={() => navigate({ to: '/quizzes/$quizId/attempt', params: { quizId } })}
       >
         Start quiz
       </Button>
@@ -232,13 +255,19 @@ function DeckPreviewActions({ deckId }: { deckId: string }) {
       : 'Flashcards';
 
   return (
-    <div role="toolbar" aria-label="Flashcard actions" className="flex min-w-0 items-center gap-3">
+    <div
+      aria-label="Flashcard actions"
+      className="flex min-w-0 items-center gap-3"
+      role="toolbar"
+    >
       <span className="t-meta min-w-0 truncate text-fg-muted">{summary}</span>
       <Button
+        iconRight="arrowRight"
+        onClick={() =>
+          navigate({ params: { deckId }, to: '/flashcards/$deckId' })
+        }
         size="sm"
         variant="ghost-hover"
-        iconRight="arrowRight"
-        onClick={() => navigate({ to: '/flashcards/$deckId', params: { deckId } })}
       >
         Study
       </Button>
@@ -246,22 +275,79 @@ function DeckPreviewActions({ deckId }: { deckId: string }) {
   );
 }
 
-function MaterialViewActions({ materialId, kind }: { materialId: string; kind: MaterialKind }) {
+function MaterialViewActions({
+  materialId,
+  kind,
+}: {
+  materialId: string;
+  kind: MaterialKind;
+}) {
   if (kind === 'quiz') return <QuizPreviewActions quizId={materialId} />;
   if (kind === 'flashcards') return <DeckPreviewActions deckId={materialId} />;
   return null;
 }
 
+function BulkSuggestionActions({
+  materialId,
+  onReviewed,
+}: {
+  materialId: string;
+  onReviewed: () => void;
+}) {
+  const { data: material } = useMaterial(materialId);
+  const review = useReviewMaterialSuggestions(materialId);
+  if (!material?.capabilities.canEdit || !material.hasPendingSuggestions)
+    return null;
+
+  const run = (decision: 'accept' | 'reject') => {
+    if (
+      !window.confirm(
+        `${decision === 'accept' ? 'Accept' : 'Reject'} all pending suggestions in this material?`
+      )
+    ) {
+      return;
+    }
+    review.mutate(
+      {
+        decision,
+        expectedRevision: material.revision ?? 1,
+      },
+      { onSuccess: onReviewed }
+    );
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      <Button
+        disabled={review.isPending}
+        onClick={() => run('accept')}
+        size="sm"
+        variant="ghost-hover"
+      >
+        Accept all
+      </Button>
+      <Button
+        disabled={review.isPending}
+        onClick={() => run('reject')}
+        size="sm"
+        variant="ghost-hover"
+      >
+        Reject all
+      </Button>
+    </div>
+  );
+}
+
 function EmptyCenter() {
   return (
     <>
-      <div className="flex items-center gap-3 border-b border-divider px-5 py-4">
-        <Icon name="files" className="size-5.5" />
+      <div className="flex items-center gap-3 border-divider border-b px-5 py-4">
+        <Icon className="size-5.5" name="files" />
         <h2 className="t-subtitle translate-y-px truncate">--</h2>
       </div>
       <div className="grid flex-1 place-items-center p-6">
         <div className="flex flex-col items-center gap-2">
-          <Icon name="files" className="size-7" />
+          <Icon className="size-7" name="files" />
           <p>Select a file or material to view it here.</p>
         </div>
       </div>
@@ -277,6 +363,7 @@ function Header({
   onMaterialModeChange,
   editorStatus,
   collaborationActionsRef,
+  onBulkReviewed,
 }: {
   item: OpenItem;
   imageZoom: number;
@@ -285,26 +372,36 @@ function Header({
   onMaterialModeChange: (mode: MaterialMode) => void;
   editorStatus: NoteEditorStatus | null;
   collaborationActionsRef: (node: HTMLDivElement | null) => void;
+  onBulkReviewed: () => void;
 }) {
   // TODO: magic wand for summary/AI related stuff, then some tool box? same action menu
-  const { icon, title, materialKind, showImageZoom, modeOptions, defaultMode } = useHeader(item);
+  const { icon, title, materialKind, showImageZoom, modeOptions, defaultMode } =
+    useHeader(item);
   const activeMode =
     materialMode && modeOptions?.some((option) => option.value === materialMode)
       ? materialMode
       : defaultMode;
   const statusLabel = noteEditorStatusLabel(editorStatus);
   return (
-    <div className="flex h-14 items-center gap-3 border-b border-divider px-5 py-4">
-      <Icon name={icon} className="size-5.5" />
-      <h2 className="t-subtitle min-w-0 flex-1 translate-y-px truncate">{title ?? '--'}</h2>
+    <div className="flex h-14 items-center gap-3 border-divider border-b px-5 py-4">
+      <Icon className="size-5.5" name={icon} />
+      <h2 className="t-subtitle min-w-0 flex-1 translate-y-px truncate">
+        {title ?? '--'}
+      </h2>
       <div className="ml-auto flex items-center gap-2">
+        {item.kind === 'material' && (
+          <BulkSuggestionActions
+            materialId={item.id}
+            onReviewed={onBulkReviewed}
+          />
+        )}
         {item.kind === 'material' && activeMode === 'view' && materialKind && (
-          <MaterialViewActions materialId={item.id} kind={materialKind} />
+          <MaterialViewActions kind={materialKind} materialId={item.id} />
         )}
         {statusLabel && (
           <span
             className={cn(
-              'px-1 text-xs text-fg-muted',
+              'px-1 text-fg-muted text-xs',
               editorStatus?.mode === 'edit' &&
                 editorStatus.saveState === 'error' &&
                 'text-solid-error'
@@ -316,28 +413,35 @@ function Header({
         )}
         {activeMode && isInteractiveMaterialMode(activeMode) && (
           <div
-            ref={collaborationActionsRef}
-            role="toolbar"
             aria-label="Material collaboration"
             className="flex items-center gap-1"
+            ref={collaborationActionsRef}
+            role="toolbar"
           />
         )}
         {modeOptions && modeOptions.length > 1 && activeMode && (
           <Select
+            onValueChange={(value) =>
+              onMaterialModeChange(value as MaterialMode)
+            }
             value={activeMode}
-            onValueChange={(value) => onMaterialModeChange(value as MaterialMode)}
           >
             <SelectTrigger variant="ghost-hover">
-              <SelectValue></SelectValue>
+              <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectGroup>
                 {modeOptions.map((o) => (
-                  <SelectItem size="sm" key={o.value} value={o.value} className="text-sm">
+                  <SelectItem
+                    className="text-sm"
+                    key={o.value}
+                    size="sm"
+                    value={o.value}
+                  >
                     <div className="flex items-center gap-2">
                       <Icon
-                        name={MATERIALMODE_ICON[o.value]}
                         className="size-3.75 -translate-y-px"
+                        name={MATERIALMODE_ICON[o.value]}
                       />
                       <span>{o.label}</span>
                     </div>
@@ -350,24 +454,28 @@ function Header({
         {showImageZoom && (
           <div className="flex items-center gap-0.5">
             <IconButton
-              icon="zoomOut"
-              size="sm"
-              variant="ghost-hover"
-              strokeWidth={1.5}
               className="p-1.5"
-              label="Zoom out"
               disabled={imageZoom <= IMAGE_MIN_ZOOM}
-              onClick={() => onImageZoomChange(clampImageZoom(imageZoom - IMAGE_ZOOM_STEP))}
+              icon="zoomOut"
+              label="Zoom out"
+              onClick={() =>
+                onImageZoomChange(clampImageZoom(imageZoom - IMAGE_ZOOM_STEP))
+              }
+              size="sm"
+              strokeWidth={1.5}
+              variant="ghost-hover"
             />
             <IconButton
-              icon="zoomIn"
-              size="sm"
-              variant="ghost-hover"
-              strokeWidth={1.5}
               className="p-1.5"
-              label="Zoom in"
               disabled={imageZoom >= IMAGE_MAX_ZOOM}
-              onClick={() => onImageZoomChange(clampImageZoom(imageZoom + IMAGE_ZOOM_STEP))}
+              icon="zoomIn"
+              label="Zoom in"
+              onClick={() =>
+                onImageZoomChange(clampImageZoom(imageZoom + IMAGE_ZOOM_STEP))
+              }
+              size="sm"
+              strokeWidth={1.5}
+              variant="ghost-hover"
             />
           </div>
         )}
@@ -386,7 +494,6 @@ function materialIcon(kind: MaterialKind): IconName {
       return 'flashcards';
     case 'note':
       return 'write';
-    case 'mindmap':
     default:
       return 'workspaces';
   }
@@ -405,22 +512,25 @@ function useHeader(item: OpenItem): {
   if (item.kind === 'file') {
     return {
       icon: 'files',
-      title: file.data?.name,
       showImageZoom: !!file.data && isImageFile(file.data),
+      title: file.data?.name,
     };
   }
   const mt = material.data;
-  if (!mt) return { icon: 'workspaces', title: undefined, showImageZoom: false };
+  if (!mt)
+    return { icon: 'workspaces', showImageZoom: false, title: undefined };
   return {
-    icon: materialIcon(mt.kind),
-    title: mt.title,
-    materialKind: mt.kind,
-    showImageZoom: false,
-    modeOptions: materialModePolicy(mt.kind, mt.capabilities).modes.map((value) => ({
-      value,
-      label: MATERIALMODE_LABEL[value],
-    })),
     defaultMode: materialModePolicy(mt.kind, mt.capabilities).defaultMode,
+    icon: materialIcon(mt.kind),
+    materialKind: mt.kind,
+    modeOptions: materialModePolicy(mt.kind, mt.capabilities).modes.map(
+      (value) => ({
+        label: MATERIALMODE_LABEL[value],
+        value,
+      })
+    ),
+    showImageZoom: false,
+    title: mt.title,
   };
 }
 
@@ -444,7 +554,9 @@ export function FileError() {
 export function FileEmpty() {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-3 font-semibold text-solid-error">
-      <p className="mt-3">The file is empty or corrupted. Please reupload and try again.</p>
+      <p className="mt-3">
+        The file is empty or corrupted. Please reupload and try again.
+      </p>
     </div>
   );
 }
@@ -467,9 +579,14 @@ function FileBody({
     return (
       <div className="grid h-full place-items-center">
         <div className="flex w-64 -translate-y-1/2 flex-col items-center gap-3">
-          <Icon name="sparkles" className="size-7" />
+          <Icon className="size-7" name="sparkles" />
           <p>Processing {file.name}…</p>
-          <ProgressBar tone={color} value={file.ingestPct ?? 0} showLabel className="w-full" />
+          <ProgressBar
+            className="w-full"
+            showLabel
+            tone={color}
+            value={file.ingestPct ?? 0}
+          />
         </div>
       </div>
     );
@@ -482,6 +599,10 @@ function FileBody({
     );
   }
   return (
-    <FileViewer file={file ?? null} imageZoom={imageZoom} onImageZoomChange={onImageZoomChange} />
+    <FileViewer
+      file={file ?? null}
+      imageZoom={imageZoom}
+      onImageZoomChange={onImageZoomChange}
+    />
   );
 }

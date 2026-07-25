@@ -19,5 +19,7 @@ export function contentSizeKilobytes(contentBytes: number): number {
 }
 
 export function formatContentSize(contentBytes: number | null): string {
-  return contentBytes == null ? '—' : `${contentSizeKilobytes(contentBytes).toLocaleString()} KB`;
+  return contentBytes == null
+    ? '—'
+    : `${contentSizeKilobytes(contentBytes).toLocaleString()} KB`;
 }

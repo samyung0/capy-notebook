@@ -11,8 +11,8 @@
 export type MaterialKind = (typeof MaterialKind)[keyof typeof MaterialKind];
 
 export const MaterialKind = {
-  mindmap: 'mindmap',
-  diagram: 'diagram',
-  quiz: 'quiz',
-  flashcards: 'flashcards',
+  diagram: "diagram",
+  flashcards: "flashcards",
+  mindmap: "mindmap",
+  quiz: "quiz",
 } as const;

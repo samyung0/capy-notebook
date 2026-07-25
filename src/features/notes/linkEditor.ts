@@ -1,19 +1,21 @@
-import { upsertLink, type UpsertLinkOptions } from '@platejs/link';
+import { type UpsertLinkOptions, upsertLink } from '@platejs/link';
 
 type LinkEditor = Parameters<typeof upsertLink>[0];
 export type LinkSelection = NonNullable<LinkEditor['selection']>;
 
-export function cloneLinkSelection(selection: LinkEditor['selection']): LinkSelection | null {
+export function cloneLinkSelection(
+  selection: LinkEditor['selection']
+): LinkSelection | null {
   if (!selection) return null;
 
   return {
     anchor: {
-      path: [...selection.anchor.path],
       offset: selection.anchor.offset,
+      path: [...selection.anchor.path],
     },
     focus: {
-      path: [...selection.focus.path],
       offset: selection.focus.offset,
+      path: [...selection.focus.path],
     },
   };
 }

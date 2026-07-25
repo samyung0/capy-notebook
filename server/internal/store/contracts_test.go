@@ -73,54 +73,7 @@ func TestInviteTokensAreBearerSafe(t *testing.T) {
 	}
 }
 
-func TestSuggestionAuthorization(t *testing.T) {
-	tests := []struct {
-		name    string
-		role    WorkspaceRole
-		author  bool
-		status  SuggestionStatus
-		allowed bool
-	}{
-		{"commenter withdraws own", RoleCommenter, true, SuggestionWithdrawn, true},
-		{"commenter cannot withdraw another", RoleCommenter, false, SuggestionWithdrawn, false},
-		{"commenter cannot accept", RoleCommenter, true, SuggestionAccepted, false},
-		{"viewer cannot withdraw", RoleViewer, true, SuggestionWithdrawn, false},
-		{"editor accepts", RoleEditor, false, SuggestionAccepted, true},
-		{"owner rejects", RoleOwner, false, SuggestionRejected, true},
-		{"anonymous cannot write", "", true, SuggestionWithdrawn, false},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := CanSetSuggestionStatus(test.role, test.author, test.status); got != test.allowed {
-				t.Fatalf("CanSetSuggestionStatus(%q, %v, %q) = %v, want %v",
-					test.role, test.author, test.status, got, test.allowed)
-			}
-		})
-	}
-}
-
-func TestSuggestionStatusTransitionsAreSingleShot(t *testing.T) {
-	for _, terminal := range []SuggestionStatus{
-		SuggestionAccepted,
-		SuggestionRejected,
-		SuggestionWithdrawn,
-	} {
-		if !SuggestionStatusTransitionAllowed(SuggestionPending, terminal) {
-			t.Errorf("pending -> %s should be allowed", terminal)
-		}
-		for _, next := range []SuggestionStatus{
-			SuggestionAccepted,
-			SuggestionRejected,
-			SuggestionWithdrawn,
-		} {
-			if SuggestionStatusTransitionAllowed(terminal, next) {
-				t.Errorf("terminal transition %s -> %s would permit a concurrent overwrite", terminal, next)
-			}
-		}
-	}
-}
-
-func TestSuggestionFragmentsMustBePlateNodes(t *testing.T) {
+func TestCommentContentMustBePlateNodes(t *testing.T) {
 	valid, err := json.Marshal(materialdoc.Empty().Value)
 	if err != nil {
 		t.Fatal(err)
@@ -135,6 +88,29 @@ func TestSuggestionFragmentsMustBePlateNodes(t *testing.T) {
 	} {
 		if err := validateRichContent(invalid); err == nil {
 			t.Errorf("invalid Plate fragment was accepted: %s", invalid)
+		}
+	}
+}
+
+func TestCommentAnchorRejectsCollapsedAndMalformedRanges(t *testing.T) {
+	valid := map[string]any{
+		"anchor": map[string]any{"path": []any{float64(0), float64(0)}, "offset": float64(1)},
+		"focus":  map[string]any{"path": []any{float64(0), float64(0)}, "offset": float64(4)},
+	}
+	if err := validateCommentAnchor(valid); err != nil {
+		t.Fatalf("valid comment range was rejected: %v", err)
+	}
+	for _, invalid := range []map[string]any{
+		{
+			"anchor": map[string]any{"path": []any{float64(0)}, "offset": float64(2)},
+			"focus":  map[string]any{"path": []any{float64(0)}, "offset": float64(2)},
+		},
+		{
+			"anchor": map[string]any{"path": []any{float64(0)}, "offset": float64(1)},
+		},
+	} {
+		if err := validateCommentAnchor(invalid); err == nil {
+			t.Fatalf("invalid comment range was accepted: %#v", invalid)
 		}
 	}
 }

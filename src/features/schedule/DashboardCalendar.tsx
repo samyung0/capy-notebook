@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { cn } from '@/lib/cn';
-import { Button, IconButton } from '@/components/ui';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEvents, useLabels } from '@/api/hooks';
-import { useDialogs } from '@/stores/dialogs';
+import { Button, IconButton } from '@/components/ui';
 import { m } from '@/i18n';
-import { MONTHS, addDays, sameDay, startOfDay } from './dateUtils';
+import { cn } from '@/lib/cn';
+import { usePortals } from '@/stores/portals';
+import { addDays, MONTHS, sameDay, startOfDay } from './dateUtils';
 import { TimeGrid } from './TimeGrid';
 
 const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -18,7 +18,7 @@ const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 export function DashboardCalendar() {
   const { data: events } = useEvents();
   const { data: labels } = useLabels();
-  const openEventForm = useDialogs((s) => s.openEventForm);
+  const openEventForm = usePortals((s) => s.openEventForm);
 
   const [now, setNow] = useState(() => new Date());
   const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
@@ -29,7 +29,10 @@ export function DashboardCalendar() {
     return () => clearInterval(id);
   }, []);
 
-  const week = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(anchor, i - 3)), [anchor]);
+  const week = useMemo(
+    () => Array.from({ length: 7 }, (_, i) => addDays(anchor, i - 3)),
+    [anchor]
+  );
 
   const eventDays = useMemo(
     () => new Set((events ?? []).map((e) => new Date(e.start).toDateString())),
@@ -58,20 +61,20 @@ export function DashboardCalendar() {
         </span>
         <div className="flex items-center gap-1">
           <IconButton
-            icon="chevronLeft"
-            variant="ghost"
-            size="sm"
             className="text-fg-muted hover:bg-surface-hover-bg"
-            onClick={() => shiftWeek(-1)}
+            icon="chevronLeft"
             label="Previous week"
+            onClick={() => shiftWeek(-1)}
+            size="sm"
+            variant="ghost"
           />
           <IconButton
-            icon="chevronRight"
-            variant="ghost"
-            size="sm"
             className="text-fg-muted hover:bg-surface-hover-bg"
-            onClick={() => shiftWeek(1)}
+            icon="chevronRight"
             label="Next week"
+            onClick={() => shiftWeek(1)}
+            size="sm"
+            variant="ghost"
           />
         </div>
       </div>
@@ -84,16 +87,17 @@ export function DashboardCalendar() {
           const hasEvent = eventDays.has(day.toDateString());
           return (
             <button
+              className="flex flex-col items-center gap-1 py-1"
               key={day.toISOString()}
               onClick={() => setSelected(startOfDay(day))}
-              className="flex flex-col items-center gap-1 py-1"
+              type="button"
             >
-              <span className="text-[0.68rem] font-semibold text-fg-muted">
+              <span className="font-semibold text-[0.68rem] text-fg-muted">
                 {WEEKDAY_SHORT[(day.getDay() + 6) % 7][0]}
               </span>
               <span
                 className={cn(
-                  'relative flex h-8 w-8 items-center justify-center rounded-row text-[0.8rem] font-semibold transition-colors',
+                  'relative flex h-8 w-8 items-center justify-center rounded-row font-semibold text-[0.8rem] transition-colors',
                   isToday && 'bg-action font-bold text-action-fg',
                   !isToday && isSel && 'text-fg ring-[1.5px] ring-action',
                   !isToday && !isSel && 'text-fg hover:bg-surface-hover-bg'
@@ -112,25 +116,28 @@ export function DashboardCalendar() {
       {/* selected-day label + see calendar */}
       <div className="mt-3 mb-1 flex items-center justify-between">
         <span className="t-body font-bold text-fg">{dayLabel}</span>
-        <Button variant="ghost-link" size="sm" asChild className="p-0">
-          <Link to="/schedule" preload="intent">
+        <Button asChild className="p-0" size="sm" variant="ghost-link">
+          <Link preload="intent" to="/schedule">
             {m.schedule_see_calendar()}
           </Link>
         </Button>
       </div>
 
       {/* hourly grid for the selected day */}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto" ref={scrollRef}>
         <TimeGrid
           days={[selected]}
           events={events ?? []}
+          hideHeader
           labels={labels ?? []}
-          selectedId={null}
           onCreateSlot={(start, end) =>
-            openEventForm({ start: start.toISOString(), end: end.toISOString() })
+            openEventForm({
+              end: end.toISOString(),
+              start: start.toISOString(),
+            })
           }
           scrollContainerRef={scrollRef}
-          hideHeader
+          selectedId={null}
         />
       </div>
     </div>

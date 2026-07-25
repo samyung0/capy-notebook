@@ -1,6 +1,11 @@
 import type { Question } from '@/api/types';
 
-export type Answer = number[] | boolean | string | string[] | Record<string, string>;
+export type Answer =
+  | number[]
+  | boolean
+  | string
+  | string[]
+  | Record<string, string>;
 
 /** Normalize for comparison: lowercase, collapse whitespace, strip punctuation. */
 const norm = (s: string) =>
@@ -12,7 +17,8 @@ const norm = (s: string) =>
     .trim();
 
 const setEq = (a: number[], b: number[]) =>
-  a.length === b.length && [...a].sort().every((v, i) => v === [...b].sort()[i]);
+  a.length === b.length &&
+  [...a].sort().every((v, i) => v === [...b].sort()[i]);
 
 /** Classic Levenshtein edit distance. */
 function levenshtein(a: string, b: string): number {
@@ -21,7 +27,7 @@ function levenshtein(a: string, b: string): number {
   if (!b.length) return a.length;
   let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
   for (let i = 1; i <= a.length; i++) {
-    let cur = [i];
+    const cur = [i];
     for (let j = 1; j <= b.length; j++) {
       const cost = a[i - 1] === b[j - 1] ? 0 : 1;
       cur[j] = Math.min(cur[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
@@ -45,7 +51,10 @@ export function fuzzyMatch(a: string, b: string, threshold = 0.85): boolean {
   return 1 - levenshtein(x, y) / maxLen >= threshold;
 }
 
-export function gradeQuestion(q: Question, answer: Answer | undefined): boolean {
+export function gradeQuestion(
+  q: Question,
+  answer: Answer | undefined
+): boolean {
   if (answer == null) return false;
   switch (q.type) {
     case 'mcq':
@@ -59,7 +68,10 @@ export function gradeQuestion(q: Question, answer: Answer | undefined): boolean 
       return answer === q.correct;
     case 'fill':
     case 'short':
-      return typeof answer === 'string' && q.accepted.some((a) => fuzzyMatch(a.value, answer));
+      return (
+        typeof answer === 'string' &&
+        q.accepted.some((a) => fuzzyMatch(a.value, answer))
+      );
     case 'ordering':
       return (
         Array.isArray(answer) &&
@@ -67,7 +79,9 @@ export function gradeQuestion(q: Question, answer: Answer | undefined): boolean 
       );
     case 'matching': {
       if (typeof answer !== 'object' || Array.isArray(answer)) return false;
-      return q.pairs.every((p) => (answer as Record<string, string>)[p.left] === p.right);
+      return q.pairs.every(
+        (p) => (answer as Record<string, string>)[p.left] === p.right
+      );
     }
     default:
       return false;

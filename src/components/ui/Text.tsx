@@ -13,39 +13,39 @@ type Variant =
 type Tone = 'primary' | 'secondary' | 'muted' | 'link' | 'inherit';
 
 const VARIANT_CLASS: Record<Variant, string> = {
-  display: 't-display',
-  'page-title': 't-page-title',
-  section: 't-section',
-  'card-title': 't-card-title',
-  subtitle: 't-subtitle',
   body: 't-body',
-  meta: 't-meta',
+  'card-title': 't-card-title',
+  display: 't-display',
   label: 't-label',
+  meta: 't-meta',
+  'page-title': 't-page-title',
+  section: 't-large-card-title',
+  subtitle: 't-subtitle',
 };
 
 const TONE_CLASS: Record<Tone, string> = {
+  inherit: '',
+  link: 'text-link',
+  muted: 'text-fg-muted',
   primary: 'text-fg',
   secondary: 'text-fg-secondary',
-  muted: 'text-fg-muted',
-  link: 'text-link',
-  inherit: '',
 };
 
 const DEFAULT_TAG: Record<Variant, ElementType> = {
+  body: 'p',
+  'card-title': 'h3',
   display: 'h1',
+  label: 'span',
+  meta: 'span',
   'page-title': 'h1',
   section: 'h2',
-  'card-title': 'h3',
   subtitle: 'h4',
-  body: 'p',
-  meta: 'span',
-  label: 'span',
 };
 
 export interface TextProps extends HTMLAttributes<HTMLElement> {
-  variant?: Variant;
-  tone?: Tone;
   as?: ElementType;
+  tone?: Tone;
+  variant?: Variant;
 }
 
 export function Text({
@@ -58,7 +58,10 @@ export function Text({
 }: TextProps) {
   const Tag = (as ?? DEFAULT_TAG[variant]) as ElementType;
   return (
-    <Tag className={cn(VARIANT_CLASS[variant], TONE_CLASS[tone], 'm-0', className)} {...rest}>
+    <Tag
+      className={cn(VARIANT_CLASS[variant], TONE_CLASS[tone], 'm-0', className)}
+      {...rest}
+    >
       {children}
     </Tag>
   );

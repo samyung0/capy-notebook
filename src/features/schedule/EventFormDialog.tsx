@@ -1,29 +1,30 @@
 import { useState } from 'react';
-import { Button, Input, InputTitle, SimpleDialog, Text } from '@/components/ui';
+import type { Label } from '@/api/types';
+import { Button, Input, InputTitle, SimpleDialog } from '@/components/ui';
 import { cn } from '@/lib/cn';
 import { userColorPair } from '@/lib/userColor';
-import type { Label } from '@/api/types';
 
 export interface EventFormValues {
-  title: string;
-  start: string;
   end: string;
-  location?: string;
   labelIds: string[];
+  location?: string;
+  start: string;
+  title: string;
 }
 
 export interface EventDraft {
+  end?: string;
   // present when editing an existing event; absent when creating.
   id?: string;
-  title?: string;
-  start?: string;
-  end?: string;
-  location?: string;
   labelIds?: string[];
+  location?: string;
+  start?: string;
+  title?: string;
 }
 
 const pad = (n: number) => String(n).padStart(2, '0');
-const toDateValue = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const toDateValue = (d: Date) =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const toTimeValue = (d: Date) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 const combine = (dateStr: string, timeStr: string) =>
   new Date(`${dateStr}T${timeStr}`).toISOString();
@@ -34,7 +35,7 @@ function defaultStart() {
   return d;
 }
 
-export function EventFormModal({
+export function EventFormDialog({
   open,
   onClose,
   labels,
@@ -49,7 +50,9 @@ export function EventFormModal({
 }) {
   const isEdit = !!draft?.id;
   const start = draft?.start ? new Date(draft.start) : defaultStart();
-  const end = draft?.end ? new Date(draft.end) : new Date(start.getTime() + 60 * 60 * 1000);
+  const end = draft?.end
+    ? new Date(draft.end)
+    : new Date(start.getTime() + 60 * 60 * 1000);
 
   // TODO: use react-hook-form and zod-resolver, refer to workspaceFormEditDialog, relevant schema should be auto generated already
 
@@ -61,30 +64,29 @@ export function EventFormModal({
   const [labelIds, setLabelIds] = useState<string[]>(draft?.labelIds ?? []);
 
   const toggleLabel = (id: string) =>
-    setLabelIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setLabelIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
 
-  const valid = title.trim() && date && startTime && endTime && endTime > startTime;
+  const valid =
+    title.trim() && date && startTime && endTime && endTime > startTime;
 
   return (
     <SimpleDialog
-      open={open}
-      onClose={onClose}
-      title={isEdit ? 'Edit event' : 'New event'}
-      width={460}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button onClick={onClose} variant="ghost">
             Cancel
           </Button>
           <Button
             disabled={!valid}
             onClick={() => {
               onSubmit({
-                title: title.trim(),
-                start: combine(date, startTime),
                 end: combine(date, endTime),
-                location: location.trim() || undefined,
                 labelIds,
+                location: location.trim() || undefined,
+                start: combine(date, startTime),
+                title: title.trim(),
               });
               onClose();
             }}
@@ -93,40 +95,55 @@ export function EventFormModal({
           </Button>
         </>
       }
+      onClose={onClose}
+      open={open}
+      title={isEdit ? 'Edit event' : 'New event'}
     >
       <div className="flex flex-col gap-4">
         <label className="flex flex-col gap-1.5">
           <InputTitle>Title</InputTitle>
           <Input
-            value={title}
+            autoFocus
             onChange={(e) => setTitle(e.target.value)}
             placeholder="Event title"
-            autoFocus
+            value={title}
           />
         </label>
 
         <label className="flex flex-col gap-1.5">
           <InputTitle>Date</InputTitle>
-          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+          <Input
+            onChange={(e) => setDate(e.target.value)}
+            type="date"
+            value={date}
+          />
         </label>
 
         <div className="flex gap-3">
           <label className="flex flex-1 flex-col gap-1.5">
             <InputTitle>Start</InputTitle>
-            <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} />
+            <Input
+              onChange={(e) => setStartTime(e.target.value)}
+              type="time"
+              value={startTime}
+            />
           </label>
           <label className="flex flex-1 flex-col gap-1.5">
             <InputTitle>End</InputTitle>
-            <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} />
+            <Input
+              onChange={(e) => setEndTime(e.target.value)}
+              type="time"
+              value={endTime}
+            />
           </label>
         </div>
 
         <label className="flex flex-col gap-1.5">
           <InputTitle>Location</InputTitle>
           <Input
-            value={location}
             onChange={(e) => setLocation(e.target.value)}
             placeholder="Optional"
+            value={location}
           />
         </label>
 
@@ -139,13 +156,16 @@ export function EventFormModal({
                 const p = userColorPair(l.color);
                 return (
                   <button
+                    className={cn(
+                      'flex items-center gap-1.5 rounded-pill border px-3 py-1 font-medium text-sm transition-colors',
+                      on
+                        ? 'border-transparent'
+                        : 'border-line text-fg-muted hover:text-fg'
+                    )}
                     key={l.id}
                     onClick={() => toggleLabel(l.id)}
-                    className={cn(
-                      'flex items-center gap-1.5 rounded-pill border px-3 py-1 text-sm font-medium transition-colors',
-                      on ? 'border-transparent' : 'border-line text-fg-muted hover:text-fg'
-                    )}
                     style={on ? { background: p.bg, color: p.fg } : undefined}
+                    type="button"
                   >
                     <span
                       className="h-2.5 w-2.5 rounded-full"

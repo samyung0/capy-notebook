@@ -15,20 +15,23 @@ export function UserColorChooser({
       {USER_COLORS.map((c) => {
         const p = userColorPair(c);
         const isTransparent = c === 'transparent';
-        const isSelected = Array.isArray(selected) ? selected.includes(c) : selected === c;
+        const isSelected = Array.isArray(selected)
+          ? selected.includes(c)
+          : selected === c;
         return (
           <button
-            key={c}
-            type="button"
-            onClick={() => onChange(c)}
             aria-label={c}
             aria-pressed={isSelected}
             className={cn(
               'flex h-8 w-8 items-center justify-center rounded-pill transition-transform',
               isTransparent && 'border border-line-strong text-fg-muted',
-              isSelected && 'ring-2 ring-action ring-offset-2 ring-offset-surface'
+              isSelected &&
+                'ring-2 ring-action ring-offset-2 ring-offset-surface'
             )}
+            key={c}
+            onClick={() => onChange(c)}
             style={isTransparent ? undefined : { background: p.bg }}
+            type="button"
           >
             {isTransparent && <Icon name="x" size={15} />}
           </button>

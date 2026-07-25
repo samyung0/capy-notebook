@@ -1,22 +1,30 @@
 import { describe, expect, it } from 'vitest';
 
-import { plateAiCommandUrl, plateAiCopilotUrl, sanitizePlateAiBody } from './plateAiTransport';
+import {
+  plateAiCommandUrl,
+  plateAiCopilotUrl,
+  sanitizePlateAiBody,
+} from './plateAiTransport';
 
 describe('Plate AI transport', () => {
   it('scopes command and copilot routes to the encoded workspace', () => {
-    expect(plateAiCommandUrl('workspace/one')).toContain('/workspaces/workspace%2Fone/ai/command');
-    expect(plateAiCopilotUrl('workspace/one')).toContain('/workspaces/workspace%2Fone/ai/copilot');
+    expect(plateAiCommandUrl('workspace/one')).toContain(
+      '/workspaces/workspace%2Fone/ai/command'
+    );
+    expect(plateAiCopilotUrl('workspace/one')).toContain(
+      '/workspaces/workspace%2Fone/ai/copilot'
+    );
   });
 
   it('recursively removes browser-controlled provider credentials', () => {
     const sanitized = sanitizePlateAiBody(
       JSON.stringify({
-        prompt: 'Improve this',
         apiKey: 'secret',
+        prompt: 'Improve this',
         providerOptions: {
-          provider: 'demo',
           model: 'unsafe-model',
-          nested: [{ key: 'secret', keep: true }],
+          nested: [{ keep: true, key: 'secret' }],
+          provider: 'demo',
         },
       })
     );

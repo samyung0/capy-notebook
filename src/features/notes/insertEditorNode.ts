@@ -19,7 +19,10 @@ export function insertEditorNode(editor: NoteEditorInstance, node: unknown) {
     const currentBlockPath = [selection.anchor.path[0]];
     const currentBlock = editor.api.node(currentBlockPath)?.[0];
 
-    if (currentBlock?.type === editor.getType(KEYS.p) && NodeApi.string(currentBlock) === '') {
+    if (
+      currentBlock?.type === editor.getType(KEYS.p) &&
+      NodeApi.string(currentBlock) === ''
+    ) {
       editor.tf.withoutNormalizing(() => {
         editor.tf.removeNodes({ at: currentBlockPath });
         editor.tf.insertNodes(node, { at: currentBlockPath, select: true });

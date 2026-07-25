@@ -2,38 +2,52 @@
 import YAML from 'yaml';
 import type { FlashcardContent, QuizBlock } from '@/features/materials/blocks';
 import {
-  flashcardsElementToCards,
-  flashcardsNodeFromFence,
-  mermaidNode,
-  quizElementToBlock,
-  quizNodeFromFence,
   type CustomMaterialElement,
   type FlashcardsElement,
+  flashcardsElementToCards,
+  flashcardsNodeFromFence,
   type MermaidElement,
+  mermaidNode,
   type QuizElement,
+  quizElementToBlock,
+  quizNodeFromFence,
 } from '@/features/materials/document';
 
 export const QUIZ_KEY = 'quiz';
 export const FLASHCARDS_KEY = 'flashcards';
 export const MERMAID_KEY = 'mermaid';
 
-export const CUSTOM_BLOCK_LANGS = [QUIZ_KEY, FLASHCARDS_KEY, MERMAID_KEY] as const;
+export const CUSTOM_BLOCK_LANGS = [
+  QUIZ_KEY,
+  FLASHCARDS_KEY,
+  MERMAID_KEY,
+] as const;
 export type CustomBlockLang = (typeof CUSTOM_BLOCK_LANGS)[number];
 
 export function isCustomBlockLang(lang: unknown): lang is CustomBlockLang {
-  return typeof lang === 'string' && (CUSTOM_BLOCK_LANGS as readonly string[]).includes(lang);
+  return (
+    typeof lang === 'string' &&
+    (CUSTOM_BLOCK_LANGS as readonly string[]).includes(lang)
+  );
 }
 
-export type CustomBlockElement = QuizElement | FlashcardsElement | MermaidElement;
+export type CustomBlockElement =
+  | QuizElement
+  | FlashcardsElement
+  | MermaidElement;
 
-export function customBlockNode(type: CustomBlockLang, code: string): CustomBlockElement {
+export function customBlockNode(
+  type: CustomBlockLang,
+  code: string
+): CustomBlockElement {
   if (type === QUIZ_KEY) return quizNodeFromFence(code);
   if (type === FLASHCARDS_KEY) return flashcardsNodeFromFence(code);
   return mermaidNode(code);
 }
 
 export function customBlockCode(element: CustomMaterialElement): string {
-  if (element.type === QUIZ_KEY) return quizFenceBody(quizElementToBlock(element));
+  if (element.type === QUIZ_KEY)
+    return quizFenceBody(quizElementToBlock(element));
   if (element.type === FLASHCARDS_KEY) {
     return flashcardsFenceBody(flashcardsElementToCards(element));
   }

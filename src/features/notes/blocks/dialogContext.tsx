@@ -7,14 +7,14 @@ import {
   useRef,
   useState,
 } from 'react';
-import { QuizDialog } from './QuizDialog';
 import { FlashcardsDialog } from './FlashcardsDialog';
+import { QuizDialog } from './QuizDialog';
 
 type SaveFn = (code: string) => void;
 
 export interface NoteBlockDialogsApi {
-  openQuiz: (initialCode: string | undefined, onSave: SaveFn) => void;
   openFlashcards: (initialCode: string | undefined, onSave: SaveFn) => void;
+  openQuiz: (initialCode: string | undefined, onSave: SaveFn) => void;
 }
 
 const Ctx = createContext<NoteBlockDialogsApi | null>(null);
@@ -30,22 +30,32 @@ let mountedDialogsApi: NoteBlockDialogsApi | null = null;
 /** Hosts the quiz/flashcards authoring popups and exposes imperative openers.
  * Used both for inserting new blocks (toolbar/slash) and editing existing ones
  * (block element "Edit" button). */
-export function NoteBlockDialogsProvider({ children }: { children: React.ReactNode }) {
+export function NoteBlockDialogsProvider({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   const [quiz, setQuiz] = useState<{ code?: string } | null>(null);
   const [flash, setFlash] = useState<{ code?: string } | null>(null);
   const saveRef = useRef<SaveFn>(() => {});
 
-  const openQuiz = useCallback((initialCode: string | undefined, onSave: SaveFn) => {
-    saveRef.current = onSave;
-    setQuiz({ code: initialCode });
-  }, []);
-  const openFlashcards = useCallback((initialCode: string | undefined, onSave: SaveFn) => {
-    saveRef.current = onSave;
-    setFlash({ code: initialCode });
-  }, []);
+  const openQuiz = useCallback(
+    (initialCode: string | undefined, onSave: SaveFn) => {
+      saveRef.current = onSave;
+      setQuiz({ code: initialCode });
+    },
+    []
+  );
+  const openFlashcards = useCallback(
+    (initialCode: string | undefined, onSave: SaveFn) => {
+      saveRef.current = onSave;
+      setFlash({ code: initialCode });
+    },
+    []
+  );
 
   const api = useMemo<NoteBlockDialogsApi>(
-    () => ({ openQuiz, openFlashcards }),
+    () => ({ openFlashcards, openQuiz }),
     [openQuiz, openFlashcards]
   );
 
@@ -60,22 +70,22 @@ export function NoteBlockDialogsProvider({ children }: { children: React.ReactNo
     <Ctx.Provider value={api}>
       {children}
       <QuizDialog
-        open={!!quiz}
         initialCode={quiz?.code}
         onClose={() => setQuiz(null)}
         onSave={(code) => {
           saveRef.current(code);
           setQuiz(null);
         }}
+        open={!!quiz}
       />
       <FlashcardsDialog
-        open={!!flash}
         initialCode={flash?.code}
         onClose={() => setFlash(null)}
         onSave={(code) => {
           saveRef.current(code);
           setFlash(null);
         }}
+        open={!!flash}
       />
     </Ctx.Provider>
   );
@@ -87,7 +97,10 @@ function useResolvedDialogs(): NoteBlockDialogsApi | null {
 
 export function useNoteBlockDialogs(): NoteBlockDialogsApi {
   const ctx = useResolvedDialogs();
-  if (!ctx) throw new Error('useNoteBlockDialogs must be used within NoteBlockDialogsProvider');
+  if (!ctx)
+    throw new Error(
+      'useNoteBlockDialogs must be used within NoteBlockDialogsProvider'
+    );
   return ctx;
 }
 

@@ -1,7 +1,15 @@
-<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Evo Notes">
-  <rect width="64" height="64" rx="18" fill="#222222"></rect>
-  <rect x="20" y="18" width="24" height="6" rx="3" fill="#ffffff"></rect>
-  <rect x="20" y="29" width="17" height="6" rx="3" fill="#aef07f"></rect>
-  <rect x="20" y="40" width="24" height="6" rx="3" fill="#ffffff"></rect>
-  <circle cx="44" cy="32" r="3.4" fill="#8c7bd9"></circle>
+<svg
+  aria-label="Evo Notes"
+  fill="none"
+  height="64"
+  role="img"
+  viewBox="0 0 64 64"
+  width="64"
+  xmlns="http://www.w3.org/2000/svg"
+>
+  <rect fill="#222222" height="64" rx="18" width="64"></rect>
+  <rect fill="#ffffff" height="6" rx="3" width="24" x="20" y="18"></rect>
+  <rect fill="#aef07f" height="6" rx="3" width="17" x="20" y="29"></rect>
+  <rect fill="#ffffff" height="6" rx="3" width="24" x="20" y="40"></rect>
+  <circle cx="44" cy="32" fill="#8c7bd9" r="3.4"></circle>
 </svg>

@@ -10,9 +10,9 @@ function createCodeEditor(text = 'console.log()') {
   const lowlight = createLowlight(common);
   const editor = createPlateEditor({
     plugins: [CodeBlockPlugin.configure({ options: { lowlight } })],
-    value: [{ type: KEYS.p, children: [{ text }] }],
+    value: [{ children: [{ text }], type: KEYS.p }],
   });
-  editor.tf.select({ path: [0, 0], offset: text.length });
+  editor.tf.select({ offset: text.length, path: [0, 0] });
   toggleEditorBlock(editor, KEYS.codeBlock);
   return editor;
 }
@@ -25,11 +25,11 @@ describe('toggleEditorBlock', () => {
 
     expect(editor.children).toHaveLength(1);
     expect(editor.children[0]).toMatchObject({
-      type: KEYS.codeBlock,
       children: [
-        { type: KEYS.codeLine, children: [{ text: 'console.log()' }] },
-        { type: KEYS.codeLine, children: [{ text: '' }] },
+        { children: [{ text: 'console.log()' }], type: KEYS.codeLine },
+        { children: [{ text: '' }], type: KEYS.codeLine },
       ],
+      type: KEYS.codeBlock,
     });
   });
 
@@ -43,11 +43,11 @@ describe('toggleEditorBlock', () => {
 
     expect(editor.children).toHaveLength(1);
     expect(editor.children[0]).toMatchObject({
-      type: KEYS.codeBlock,
       children: [
-        { type: KEYS.codeLine, children: [{ text: 'first' }] },
-        { type: KEYS.codeLine, children: [{ text: 'second' }] },
+        { children: [{ text: 'first' }], type: KEYS.codeLine },
+        { children: [{ text: 'second' }], type: KEYS.codeLine },
       ],
+      type: KEYS.codeBlock,
     });
   });
 
@@ -72,23 +72,25 @@ describe('clearEditorFormatting', () => {
     const editor = createPlateEditor({
       value: [
         {
-          type: KEYS.p,
           children: [
-            { text: 'bold', bold: true },
-            { text: ' and ', italic: true, underline: true },
-            { text: 'colored', color: '#ff0000', highlight: true },
+            { bold: true, text: 'bold' },
+            { italic: true, text: ' and ', underline: true },
+            { color: '#ff0000', highlight: true, text: 'colored' },
           ],
+          type: KEYS.p,
         },
       ],
     });
     editor.tf.select({
-      anchor: { path: [0, 0], offset: 0 },
-      focus: { path: [0, 2], offset: 'colored'.length },
+      anchor: { offset: 0, path: [0, 0] },
+      focus: { offset: 'colored'.length, path: [0, 2] },
     });
 
     clearEditorFormatting(editor);
 
-    const leaves = (editor.children[0] as { children: Record<string, unknown>[] }).children;
+    const leaves = (
+      editor.children[0] as { children: Record<string, unknown>[] }
+    ).children;
     for (const leaf of leaves) {
       expect(Object.keys(leaf)).toEqual(['text']);
     }
@@ -99,23 +101,25 @@ describe('clearEditorFormatting', () => {
     const editor = createPlateEditor({
       value: [
         {
-          type: KEYS.p,
           children: [
-            { text: 'keep', bold: true },
-            { text: ' drop', bold: true },
+            { bold: true, text: 'keep' },
+            { bold: true, text: ' drop' },
           ],
+          type: KEYS.p,
         },
       ],
     });
     editor.tf.select({
-      anchor: { path: [0, 0], offset: 'keep'.length },
-      focus: { path: [0, 1], offset: ' drop'.length },
+      anchor: { offset: 'keep'.length, path: [0, 0] },
+      focus: { offset: ' drop'.length, path: [0, 1] },
     });
 
     clearEditorFormatting(editor);
 
-    const leaves = (editor.children[0] as { children: Record<string, unknown>[] }).children;
-    expect(leaves[0]).toEqual({ text: 'keep', bold: true });
+    const leaves = (
+      editor.children[0] as { children: Record<string, unknown>[] }
+    ).children;
+    expect(leaves[0]).toEqual({ bold: true, text: 'keep' });
     expect(leaves[1]).toEqual({ text: ' drop' });
   });
 });

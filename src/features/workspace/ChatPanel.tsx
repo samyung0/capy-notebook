@@ -1,11 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import type React from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Streamdown } from 'streamdown';
-import { Button, ButtonGroup, Icon, IconButton, Input, Menu, Spinner } from '@/components/ui';
-import { useConversations, useDeleteConversation, useMessages } from '@/api/hooks';
-import { useChatStream, toChatMessage } from './useChatStream';
+import { useConversations, useMessages } from '@/api/hooks';
 import type { ChatMessage, UserColor } from '@/api/types';
+import { Icon, IconButton, Input, Menu, Spinner } from '@/components/ui';
 import { m } from '@/i18n';
-import { ColorPair, DEFAULT_USER_COLOR, userColorPairLight } from '@/lib/userColor';
+import { userColorPairLight } from '@/lib/userColor';
+import { toChatMessage, useChatStream } from './useChatStream';
 
 function Citations({ msg }: { msg: ChatMessage }) {
   // TODO: click to jump to file, better yet: instruct llm to surround sentences with quote blocks so I can underline the text for internal hyperlinks
@@ -14,9 +15,9 @@ function Citations({ msg }: { msg: ChatMessage }) {
     <div className="mt-2 flex flex-wrap gap-1.5">
       {msg.citations.map((c) => (
         <span
+          className="inline-flex items-center gap-1 rounded-pill bg-tint-info px-2 py-0.5 font-medium text-[11px] text-tint-info-fg"
           key={c.fileId}
           title={c.snippet}
-          className="inline-flex items-center gap-1 rounded-pill bg-tint-info px-2 py-0.5 text-[11px] font-medium text-tint-info-fg"
         >
           <Icon name="files" size={12} /> {c.fileName}
         </span>
@@ -25,7 +26,13 @@ function Citations({ msg }: { msg: ChatMessage }) {
   );
 }
 
-function AssistantBubble({ msg, streaming }: { msg: ChatMessage; streaming: boolean }) {
+function AssistantBubble({
+  msg,
+  streaming,
+}: {
+  msg: ChatMessage;
+  streaming: boolean;
+}) {
   const empty = !msg.content;
   return (
     <div className="mr-auto max-w-[92%] px-3.5 py-2.5">
@@ -37,10 +44,14 @@ function AssistantBubble({ msg, streaming }: { msg: ChatMessage; streaming: bool
             className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
             components={{
               ol: ({ children }) => (
-                <ol className="ml-4 list-outside list-decimal whitespace-normal">{children}</ol>
+                <ol className="ml-4 list-outside list-decimal whitespace-normal">
+                  {children}
+                </ol>
               ),
               ul: ({ children }) => (
-                <ul className="ml-4 list-outside list-disc whitespace-normal">{children}</ul>
+                <ul className="ml-4 list-outside list-disc whitespace-normal">
+                  {children}
+                </ul>
               ),
             }}
           >
@@ -48,17 +59,24 @@ function AssistantBubble({ msg, streaming }: { msg: ChatMessage; streaming: bool
           </Streamdown>
         </div>
       )}
-      {msg.status === 'aborted' && <p className="mt-1 py-1 text-fg-muted italic">Stopped.</p>}
+      {msg.status === 'aborted' && (
+        <p className="mt-1 py-1 text-fg-muted italic">Stopped.</p>
+      )}
       <Citations msg={msg} />
     </div>
   );
 }
 
-export function ChatPanel({ workspaceId, color }: { workspaceId: string; color?: UserColor }) {
+export function ChatPanel({
+  workspaceId,
+  color,
+}: {
+  workspaceId: string;
+  color?: UserColor;
+}) {
   const { messages, conversationId, streaming, send, stop, startNew, hydrate } =
     useChatStream(workspaceId);
   const { data: conversations } = useConversations(workspaceId);
-  const deleteConv = useDeleteConversation(workspaceId);
   // TODO: add time stamp for convos (last chat), show timestamp and action menu in chat history dropdown items
 
   const [text, setText] = useState('');
@@ -114,35 +132,35 @@ export function ChatPanel({ workspaceId, color }: { workspaceId: string; color?:
             items={
               conversations?.length
                 ? conversations.map((c) => ({
-                    label: c.title || 'Untitled chat',
                     icon: 'message' as const,
+                    label: c.title || 'Untitled chat',
                     onClick: () => {
                       hydratedRef.current = null;
                       setSelectId(c.id);
                     },
                   }))
-                : [{ label: 'No conversations yet', disabled: true }]
+                : [{ disabled: true, label: 'No conversations yet' }]
             }
             trigger={
               <IconButton
-                icon="clock"
-                variant="accent-light"
                 className="translate-x-px rounded-r-none bg-(--temp-btn-bg) py-1.5 pl-3.5 text-(--temp-btn-fg) hover:bg-(--temp-btn-hover-bg) disabled:opacity-30"
+                icon="clock"
+                label="Open history"
                 size="sm"
                 strokeWidth={1.5}
-                label="Open history"
+                variant="accent-light"
               />
             }
           />
           <IconButton
-            icon="plus"
-            variant="accent-light"
-            size="sm"
+            className="rounded-r-none rounded-l-none bg-(--temp-btn-bg) py-1.5 pr-2.5 text-(--temp-btn-fg) hover:bg-(--temp-btn-hover-bg) disabled:opacity-30"
             disabled={!conversationId}
-            strokeWidth={1.5}
-            className="rounded-l-none rounded-r-none bg-(--temp-btn-bg) py-1.5 pr-2.5 text-(--temp-btn-fg) hover:bg-(--temp-btn-hover-bg) disabled:opacity-30"
+            icon="plus"
             label="New chat"
             onClick={openNew}
+            size="sm"
+            strokeWidth={1.5}
+            variant="accent-light"
           />
         </div>
         {/* <div className="flex items-center gap-1">
@@ -162,18 +180,21 @@ export function ChatPanel({ workspaceId, color }: { workspaceId: string; color?:
         </div> */}
       </div>
 
-      <div ref={scrollRef} className="flex flex-1 flex-col gap-4 self-stretch overflow-auto p-4">
+      <div
+        className="flex flex-1 flex-col gap-4 self-stretch overflow-auto p-4"
+        ref={scrollRef}
+      >
         {!messages.length && (
           <div className="m-auto max-w-[80%] text-center">
-            <Icon name="message" className="mx-auto mb-2 size-6.5" />
+            <Icon className="mx-auto mb-2 size-6.5" name="message" />
             <p className="text-sm">Ask anything about your sources.</p>
           </div>
         )}
         {messages.map((msg) =>
           msg.role === 'user' ? (
             <div
+              className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-[14px] rounded-tr-sm bg-page px-3.5 py-2.5"
               key={msg.id}
-              className="ml-auto max-w-[85%] rounded-[14px] rounded-tr-sm bg-page px-3.5 py-2.5 whitespace-pre-wrap"
             >
               {msg.content}
             </div>
@@ -186,7 +207,9 @@ export function ChatPanel({ workspaceId, color }: { workspaceId: string; color?:
       <div className="grow-0 p-3">
         {/* TODO: use form? */}
         <Input
-          value={text}
+          actionCallback={streaming ? stop : submit}
+          actionClassName="bg-(--temp-btn-bg) text-(--temp-btn-fg) hover:bg-(--temp-btn-hover-bg)"
+          actionIcon={streaming ? 'x' : 'send'}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -195,14 +218,14 @@ export function ChatPanel({ workspaceId, color }: { workspaceId: string; color?:
             }
           }}
           placeholder={m.chat_placeholder()}
-          actionIcon={streaming ? 'x' : 'send'}
-          actionCallback={streaming ? stop : submit}
           size="lg"
-          actionClassName="bg-(--temp-btn-bg) text-(--temp-btn-fg) hover:bg-(--temp-btn-hover-bg)"
+          value={text}
           // className="min-w-0 flex-1 border-none bg-transparent text-sm text-fg outline-none placeholder:text-placeholder"
         />
         {/* TODO: update workdings to sth like answer generated may not be accurate etc  */}
-        <p className="mt-2 text-center text-[11px] text-fg-muted">{m.chat_grounded()}</p>
+        <p className="mt-2 text-center text-[11px] text-fg-muted">
+          {m.chat_grounded()}
+        </p>
       </div>
     </div>
   );

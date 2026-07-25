@@ -1,4 +1,4 @@
-import { test, expect, type Locator, type Page } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
 import {
   buildLargePerfDocument,
   countPerfNodes,
@@ -7,8 +7,8 @@ import {
   PERF_WORKSPACE_ID,
 } from '../../src/mocks/perfSeed';
 import {
-  collectMetrics,
   CPU_RATE,
+  collectMetrics,
   frameStats,
   installPerfInstrumentation,
   reportMetrics,
@@ -43,25 +43,25 @@ const KEY_DELAY_MS = 40;
  * - scroll on 8k-node doc: ~26-34 FPS, 24-43% janky frames
  */
 const BUDGET = {
-  small: {
-    // Worst single interaction (INP-style) while typing.
-    typingInpMs: 900,
-    // Share of keydown/keyup events slower than the 16ms reporting threshold.
-    slowKeyEventRatio: 0.85,
-    // Total main-thread blocking beyond 50ms tasks during the typing burst.
-    typingBlockingMs: 6000,
-  },
   large: {
-    typingInpMs: 4000,
-    typingBlockingMs: 120_000,
     // Full save cycle of a near-limit document: flush serialization walk plus
     // lightweight acknowledgement handling. This budget intentionally fails
     // if the API starts echoing/parsing the complete document again.
     flushBlockingMs: 3500,
+    typingBlockingMs: 120_000,
+    typingInpMs: 4000,
   },
   scroll: {
     avgFps: 15,
     droppedFrameRatio: 0.7,
+  },
+  small: {
+    // Share of keydown/keyup events slower than the 16ms reporting threshold.
+    slowKeyEventRatio: 0.85,
+    // Total main-thread blocking beyond 50ms tasks during the typing burst.
+    typingBlockingMs: 6000,
+    // Worst single interaction (INP-style) while typing.
+    typingInpMs: 900,
   },
 };
 
@@ -82,11 +82,19 @@ async function warmUpTyping(page: Page): Promise<void> {
 
 const LARGE_NOTE_NODE_COUNT = countPerfNodes(buildLargePerfDocument());
 
-async function openNote(page: Page, materialId: string, readyText: string): Promise<Locator> {
-  await page.goto(`/workspaces/${PERF_WORKSPACE_ID}?material=${encodeURIComponent(materialId)}`);
+async function openNote(
+  page: Page,
+  materialId: string,
+  readyText: string
+): Promise<Locator> {
+  await page.goto(
+    `/workspaces/${PERF_WORKSPACE_ID}?material=${encodeURIComponent(materialId)}`
+  );
   const editor = page.locator('[contenteditable="true"]').first();
   await expect(editor).toBeVisible({ timeout: 60_000 });
-  await expect(editor.getByText(readyText).first()).toBeVisible({ timeout: 60_000 });
+  await expect(editor.getByText(readyText).first()).toBeVisible({
+    timeout: 60_000,
+  });
   // Let initial render and decoration effects settle so they do not pollute
   // the measurement window.
   await page.waitForTimeout(1500);
@@ -94,9 +102,15 @@ async function openNote(page: Page, materialId: string, readyText: string): Prom
 }
 
 test.describe('editor performance', () => {
-  test(`typing latency — small document (cpu x${CPU_RATE})`, async ({ page }, testInfo) => {
+  test(`typing latency — small document (cpu x${CPU_RATE})`, async ({
+    page,
+  }, testInfo) => {
     await installPerfInstrumentation(page);
-    const editor = await openNote(page, PERF_SMALL_NOTE.id, PERF_SMALL_NOTE.readyText);
+    const editor = await openNote(
+      page,
+      PERF_SMALL_NOTE.id,
+      PERF_SMALL_NOTE.readyText
+    );
 
     await editor.getByText(PERF_SMALL_NOTE.readyText).click();
     await page.keyboard.press('End');
@@ -106,7 +120,10 @@ test.describe('editor performance', () => {
     await page.keyboard.type(` ${TYPING_TEXT}`, { delay: KEY_DELAY_MS });
     await page.waitForTimeout(500);
 
-    const stats = typingStats(await collectMetrics(page), TYPING_TEXT.length + 1);
+    const stats = typingStats(
+      await collectMetrics(page),
+      TYPING_TEXT.length + 1
+    );
     await reportMetrics(testInfo, 'typing-small-document', stats);
 
     expect(stats.inpApproxMs, 'worst interaction while typing').toBeLessThan(
@@ -115,9 +132,10 @@ test.describe('editor performance', () => {
     expect(stats.slowKeyEventRatio, 'share of slow key events').toBeLessThan(
       BUDGET.small.slowKeyEventRatio
     );
-    expect(stats.loafTotalBlockingMs, 'main-thread blocking during typing').toBeLessThan(
-      BUDGET.small.typingBlockingMs
-    );
+    expect(
+      stats.loafTotalBlockingMs,
+      'main-thread blocking during typing'
+    ).toBeLessThan(BUDGET.small.typingBlockingMs);
   });
 
   test(`typing latency and save flush — near-limit document (cpu x${CPU_RATE})`, async ({
@@ -127,14 +145,22 @@ test.describe('editor performance', () => {
     // Warm the Plate/React input path on the small fixture. Warming on the
     // 8k-node fixture would schedule a large autosave whose response handling
     // can overlap the measured typing window under heavy CPU throttling.
-    const warmEditor = await openNote(page, PERF_SMALL_NOTE.id, PERF_SMALL_NOTE.readyText);
+    const warmEditor = await openNote(
+      page,
+      PERF_SMALL_NOTE.id,
+      PERF_SMALL_NOTE.readyText
+    );
     await warmEditor.getByText(PERF_SMALL_NOTE.readyText).click();
     await page.keyboard.press('End');
     await throttleCpu(page);
     await warmUpTyping(page);
     await throttleCpu(page, 1);
 
-    const editor = await openNote(page, PERF_LARGE_NOTE.id, PERF_LARGE_NOTE.readyText);
+    const editor = await openNote(
+      page,
+      PERF_LARGE_NOTE.id,
+      PERF_LARGE_NOTE.readyText
+    );
 
     await editor.getByText(PERF_LARGE_NOTE.readyText).first().click();
     await page.keyboard.press('End');
@@ -143,7 +169,10 @@ test.describe('editor performance', () => {
 
     await page.keyboard.type(` ${TYPING_TEXT}`, { delay: KEY_DELAY_MS });
     await page.waitForTimeout(500);
-    const typing = typingStats(await collectMetrics(page), TYPING_TEXT.length + 1);
+    const typing = typingStats(
+      await collectMetrics(page),
+      TYPING_TEXT.length + 1
+    );
 
     // The debounced autosave fires 5s after the last keystroke and performs
     // the full normalize/validate/serialize walk, then response handling
@@ -156,31 +185,39 @@ test.describe('editor performance', () => {
       loafTotalBlockingMs: Math.round(
         flushState.loafs.reduce((sum, loaf) => sum + loaf.blocking, 0)
       ),
-      worstLoafs: [...flushState.loafs].sort((a, b) => b.blocking - a.blocking).slice(0, 3),
+      worstLoafs: [...flushState.loafs]
+        .sort((a, b) => b.blocking - a.blocking)
+        .slice(0, 3),
     };
 
     await reportMetrics(testInfo, 'typing-large-document', {
+      flush,
       nodeCount: LARGE_NOTE_NODE_COUNT,
       typing,
-      flush,
     });
 
     expect(typing.inpApproxMs, 'worst interaction while typing').toBeLessThan(
       BUDGET.large.typingInpMs
     );
-    expect(typing.loafTotalBlockingMs, 'main-thread blocking during typing').toBeLessThan(
-      BUDGET.large.typingBlockingMs
-    );
-    expect(flush.loafTotalBlockingMs, 'main-thread blocking during save flush').toBeLessThan(
-      BUDGET.large.flushBlockingMs
-    );
+    expect(
+      typing.loafTotalBlockingMs,
+      'main-thread blocking during typing'
+    ).toBeLessThan(BUDGET.large.typingBlockingMs);
+    expect(
+      flush.loafTotalBlockingMs,
+      'main-thread blocking during save flush'
+    ).toBeLessThan(BUDGET.large.flushBlockingMs);
   });
 
   test(`scroll frame rate — near-limit document (cpu x${CPU_RATE})`, async ({
     page,
   }, testInfo) => {
     await installPerfInstrumentation(page);
-    const editor = await openNote(page, PERF_LARGE_NOTE.id, PERF_LARGE_NOTE.readyText);
+    const editor = await openNote(
+      page,
+      PERF_LARGE_NOTE.id,
+      PERF_LARGE_NOTE.readyText
+    );
 
     await throttleCpu(page);
     const box = await editor.boundingBox();
@@ -206,10 +243,15 @@ test.describe('editor performance', () => {
       ...frames,
     });
 
-    expect(frames.sampledFrames, 'frame sampler produced data').toBeGreaterThan(50);
-    expect(frames.avgFps, 'average FPS while scrolling').toBeGreaterThan(BUDGET.scroll.avgFps);
-    expect(frames.droppedFrameRatio, 'share of janky frames (>34ms)').toBeLessThan(
-      BUDGET.scroll.droppedFrameRatio
+    expect(frames.sampledFrames, 'frame sampler produced data').toBeGreaterThan(
+      50
     );
+    expect(frames.avgFps, 'average FPS while scrolling').toBeGreaterThan(
+      BUDGET.scroll.avgFps
+    );
+    expect(
+      frames.droppedFrameRatio,
+      'share of janky frames (>34ms)'
+    ).toBeLessThan(BUDGET.scroll.droppedFrameRatio);
   });
 });

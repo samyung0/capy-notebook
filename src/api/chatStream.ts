@@ -6,31 +6,32 @@
  * which can't POST) so the request carries a JSON body and can be aborted via an
  * AbortController — the abort propagates all the way to the LLM provider.
  */
-import { API_BASE } from './client';
+
 import { authHeaders } from './auth';
-import type { Citation, ChatStatus } from './types';
+import { API_BASE } from './client';
+import type { ChatStatus, Citation } from './types';
 
 export interface StreamStart {
-  messageId: string;
   conversationId: string;
+  messageId: string;
 }
 export interface StreamDone {
+  generationId?: string;
   status: ChatStatus;
   tokenCount?: number;
-  generationId?: string;
 }
 export interface ChatStreamHandlers {
-  onStart?: (e: StreamStart) => void;
-  onToken?: (text: string) => void;
   onCitations?: (citations: Citation[]) => void;
   onDone?: (e: StreamDone) => void;
   onError?: (message: string) => void;
+  onStart?: (e: StreamStart) => void;
+  onToken?: (text: string) => void;
 }
 
 export interface ChatStreamBody {
   conversationId?: string;
-  text: string;
   model?: string;
+  text: string;
 }
 
 /** POST to the workspace chat stream and dispatch parsed SSE events. Resolves
@@ -45,9 +46,13 @@ export async function streamChat(
   let res: Response;
   try {
     res = await fetch(`${API_BASE}/workspaces/${workspaceId}/chat/stream`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream', ...auth },
       body: JSON.stringify(body),
+      headers: {
+        Accept: 'text/event-stream',
+        'Content-Type': 'application/json',
+        ...auth,
+      },
+      method: 'POST',
       signal,
     });
   } catch (e) {
@@ -91,7 +96,10 @@ export async function streamChat(
     }
     switch (ev.type) {
       case 'start':
-        handlers.onStart?.({ messageId: ev.messageId!, conversationId: ev.conversationId! });
+        handlers.onStart?.({
+          conversationId: ev.conversationId!,
+          messageId: ev.messageId!,
+        });
         break;
       case 'token':
         handlers.onToken?.(ev.text ?? '');
@@ -101,9 +109,9 @@ export async function streamChat(
         break;
       case 'done':
         handlers.onDone?.({
+          generationId: ev.generationId,
           status: ev.status ?? 'complete',
           tokenCount: ev.tokenCount,
-          generationId: ev.generationId,
         });
         break;
       case 'error':
@@ -118,15 +126,17 @@ export async function streamChat(
       if (done) break;
       buffer += decoder.decode(value, { stream: true });
       // Events are separated by a blank line.
-      let sep: number;
-      while ((sep = buffer.indexOf('\n\n')) !== -1) {
+      let sep = buffer.indexOf('\n\n');
+      while (sep !== -1) {
         const chunk = buffer.slice(0, sep);
         buffer = buffer.slice(sep + 2);
         dispatch(chunk);
+        sep = buffer.indexOf('\n\n');
       }
     }
     if (buffer.trim()) dispatch(buffer);
   } catch (e) {
-    if ((e as Error).name !== 'AbortError') handlers.onError?.((e as Error).message);
+    if ((e as Error).name !== 'AbortError')
+      handlers.onError?.((e as Error).message);
   }
 }

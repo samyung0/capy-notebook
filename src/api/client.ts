@@ -27,7 +27,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const auth = await authHeaders();
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...auth, ...(init?.headers ?? {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...auth,
+      ...(init?.headers ?? {}),
+    },
   });
   if (!res.ok) {
     let detail = '';
@@ -67,15 +71,19 @@ async function upload<T>(
     };
 
     xhr.open('POST', `${API_BASE}${path}`);
-    for (const [name, value] of Object.entries(auth)) xhr.setRequestHeader(name, value);
+    for (const [name, value] of Object.entries(auth))
+      xhr.setRequestHeader(name, value);
     xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100));
+      if (event.lengthComputable)
+        onProgress?.(Math.round((event.loaded / event.total) * 100));
     };
     xhr.onload = () => {
       if (xhr.status < 200 || xhr.status >= 300) {
         let detail = '';
         try {
-          detail = (JSON.parse(xhr.responseText) as { message?: string })?.message ?? '';
+          detail =
+            (JSON.parse(xhr.responseText) as { message?: string })?.message ??
+            '';
         } catch {
           /* ignore */
         }
@@ -89,11 +97,14 @@ async function upload<T>(
       try {
         succeed(JSON.parse(xhr.responseText) as T);
       } catch (error) {
-        fail(error instanceof Error ? error : new Error('Invalid JSON response'));
+        fail(
+          error instanceof Error ? error : new Error('Invalid JSON response')
+        );
       }
     };
     xhr.onerror = () => fail(new Error('Upload failed: network error'));
-    xhr.onabort = () => fail(new DOMException('Upload cancelled', 'AbortError'));
+    xhr.onabort = () =>
+      fail(new DOMException('Upload cancelled', 'AbortError'));
     if (signal) {
       if (signal.aborted) {
         fail(new DOMException('Upload cancelled', 'AbortError'));
@@ -128,16 +139,19 @@ function putFile(
       reject(error);
     };
     xhr.open('PUT', url);
-    for (const [name, value] of Object.entries(headers)) xhr.setRequestHeader(name, value);
+    for (const [name, value] of Object.entries(headers))
+      xhr.setRequestHeader(name, value);
     xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) onProgress?.(Math.round((event.loaded / event.total) * 100));
+      if (event.lengthComputable)
+        onProgress?.(Math.round((event.loaded / event.total) * 100));
     };
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) succeed();
       else fail(new Error(`B2 upload failed: ${xhr.status} ${xhr.statusText}`));
     };
     xhr.onerror = () => fail(new Error('B2 upload failed: network error'));
-    xhr.onabort = () => fail(new DOMException('Upload cancelled', 'AbortError'));
+    xhr.onabort = () =>
+      fail(new DOMException('Upload cancelled', 'AbortError'));
     if (signal) {
       if (signal.aborted) {
         fail(new DOMException('Upload cancelled', 'AbortError'));
@@ -152,73 +166,73 @@ function putFile(
 type RequestOptions = Pick<RequestInit, 'signal'>;
 
 export const api = {
+  del: <T>(path: string, options?: RequestOptions) =>
+    request<T>(path, { ...options, method: 'DELETE' }),
   get: <T>(path: string, options?: RequestOptions) => request<T>(path, options),
+  patch: <T>(path: string, body?: unknown, options?: RequestOptions) =>
+    request<T>(path, {
+      ...options,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      method: 'PATCH',
+    }),
+  post: <T>(path: string, body?: unknown, options?: RequestOptions) =>
+    request<T>(path, {
+      ...options,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      method: 'POST',
+    }),
+  put: <T>(path: string, body?: unknown, options?: RequestOptions) =>
+    request<T>(path, {
+      ...options,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      method: 'PUT',
+    }),
+  putFile,
   upload: <T>(
     path: string,
     form: FormData,
     onProgress?: (pct: number) => void,
     signal?: AbortSignal
   ) => upload<T>(path, form, onProgress, signal),
-  putFile,
-  post: <T>(path: string, body?: unknown, options?: RequestOptions) =>
-    request<T>(path, {
-      ...options,
-      method: 'POST',
-      body: body === undefined ? undefined : JSON.stringify(body),
-    }),
-  patch: <T>(path: string, body?: unknown, options?: RequestOptions) =>
-    request<T>(path, {
-      ...options,
-      method: 'PATCH',
-      body: body === undefined ? undefined : JSON.stringify(body),
-    }),
-  put: <T>(path: string, body?: unknown, options?: RequestOptions) =>
-    request<T>(path, {
-      ...options,
-      method: 'PUT',
-      body: body === undefined ? undefined : JSON.stringify(body),
-    }),
-  del: <T>(path: string, options?: RequestOptions) =>
-    request<T>(path, { ...options, method: 'DELETE' }),
 };
 
 /** Central query-key registry for TanStack Query. */
 export const qk = {
-  me: ['me'] as const,
-  search: (q: string) => ['search', q] as const,
-  notifications: ['notifications'] as const,
-  billing: ['billing'] as const,
-  integrations: ['integrations'] as const,
-  sourceUploadPolicy: ['source-upload-policy'] as const,
-  workspaces: (params?: unknown) => ['workspaces', params ?? null] as const,
-  workspace: (id: string) => ['workspace', id] as const,
-  workspaceStats: (id: string) => ['workspace', id, 'stats'] as const,
-  chapters: (wsId: string) => ['workspace', wsId, 'chapters'] as const,
-  files: (wsId: string) => ['workspace', wsId, 'files'] as const,
-  file: (id: string) => ['file', id] as const,
-  quizzes: ['quizzes'] as const,
-  quiz: (id: string) => ['quiz', id] as const,
-  materials: (wsId: string) => ['workspace', wsId, 'materials'] as const,
-  material: (id: string) => ['material', id] as const,
-  materialRevisions: (id: string) => ['material', id, 'revisions'] as const,
-  materialDiscussions: (id: string) => ['material', id, 'discussions'] as const,
-  materialSuggestions: (id: string) => ['material', id, 'suggestions'] as const,
-  workspaceMembers: (id: string) => ['workspace', id, 'members'] as const,
-  attempts: ['attempts'] as const,
   attempt: (id: string) => ['attempt', id] as const,
-  mistakes: ['mistakes'] as const,
-  decks: ['decks'] as const,
-  deck: (id: string) => ['deck', id] as const,
+  attempts: ['attempts'] as const,
+  billing: ['billing'] as const,
+  canvas: (id: string) => ['canvas', id] as const,
   cards: (deckId: string) => ['deck', deckId, 'cards'] as const,
+  chapters: (wsId: string) => ['workspace', wsId, 'chapters'] as const,
+  conversations: (wsId: string) =>
+    ['workspace', wsId, 'conversations'] as const,
+  deck: (id: string) => ['deck', id] as const,
+  decks: ['decks'] as const,
   events: ['events'] as const,
+  exploreDecks: ['explore', 'decks'] as const,
+  exploreQuizzes: ['explore', 'quizzes'] as const,
+  exploreWorkspaces: ['explore', 'workspaces'] as const,
+  file: (id: string) => ['file', id] as const,
+  files: (wsId: string) => ['workspace', wsId, 'files'] as const,
+  integrations: ['integrations'] as const,
   labels: ['labels'] as const,
+  material: (id: string) => ['material', id] as const,
+  materialDiscussions: (id: string) => ['material', id, 'discussions'] as const,
+  materialRevisions: (id: string) => ['material', id, 'revisions'] as const,
+  materials: (wsId: string) => ['workspace', wsId, 'materials'] as const,
+  me: ['me'] as const,
+  messages: (convId: string) => ['conversation', convId, 'messages'] as const,
+  mistakes: ['mistakes'] as const,
+  notifications: ['notifications'] as const,
+  quiz: (id: string) => ['quiz', id] as const,
+  quizzes: ['quizzes'] as const,
+  search: (q: string) => ['search', q] as const,
+  sourceUploadPolicy: ['source-upload-policy'] as const,
+  tags: (kind: string) => ['tags', kind] as const,
   tasks: ['tasks'] as const,
   thinking: ['thinking'] as const,
-  canvas: (id: string) => ['canvas', id] as const,
-  exploreWorkspaces: ['explore', 'workspaces'] as const,
-  exploreQuizzes: ['explore', 'quizzes'] as const,
-  exploreDecks: ['explore', 'decks'] as const,
-  tags: (kind: string) => ['tags', kind] as const,
-  conversations: (wsId: string) => ['workspace', wsId, 'conversations'] as const,
-  messages: (convId: string) => ['conversation', convId, 'messages'] as const,
+  workspace: (id: string) => ['workspace', id] as const,
+  workspaceMembers: (id: string) => ['workspace', id, 'members'] as const,
+  workspaceStats: (id: string) => ['workspace', id, 'stats'] as const,
+  workspaces: (params?: unknown) => ['workspaces', params ?? null] as const,
 };

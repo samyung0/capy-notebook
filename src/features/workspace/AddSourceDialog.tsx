@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { USE_MSW } from '@/api/auth';
 import { api } from '@/api/client';
 import {
@@ -25,7 +26,6 @@ import {
   SelectTrigger,
   SelectValue,
   SimpleDialog,
-  Spinner,
   Tabs,
   Text,
 } from '@/components/ui';
@@ -33,16 +33,15 @@ import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useProviderConnect } from '@/lib/useProviderConnect';
-import { useDialogs } from '@/stores/dialogs';
-import { useEffect, useRef, useState } from 'react';
+import { usePortals } from '@/stores/portals';
 import {
   aggregateUploadPct,
   defaultParseMode,
   fileExt,
   getFileKind,
   isTextKind,
-  parseModeIssues,
   type ParseMode,
+  parseModeIssues,
 } from './sourceUpload';
 
 /** Count a PDF's pages with pdfjs (already bundled via react-pdf, loaded on
@@ -54,7 +53,8 @@ async function pdfPageCount(file: File): Promise<number | null> {
     if (!pdfjs.GlobalWorkerOptions.workerSrc) {
       pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
     }
-    const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+    const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() })
+      .promise;
     const n = doc.numPages;
     void doc.destroy();
     return n;
@@ -70,11 +70,11 @@ function formatSize(bytes: number) {
 
 interface GooglePickerBuilder {
   addView: (v: unknown) => GooglePickerBuilder;
-  setOAuthToken: (t: string) => GooglePickerBuilder;
+  build: () => { setVisible: (v: boolean) => void };
   setCallback: (
     cb: (data: { action: string; docs?: { id: string }[] }) => void
   ) => GooglePickerBuilder;
-  build: () => { setVisible: (v: boolean) => void };
+  setOAuthToken: (t: string) => GooglePickerBuilder;
 }
 
 declare global {
@@ -82,7 +82,11 @@ declare global {
     google?: {
       picker: {
         ViewId: { DOCS: string };
-        DocsView: new (viewId: string) => { setIncludeFolders: (v: boolean) => unknown };
+        DocsView: new (
+          viewId: string
+        ) => {
+          setIncludeFolders: (v: boolean) => unknown;
+        };
         PickerBuilder: new () => GooglePickerBuilder;
       };
     };
@@ -98,10 +102,11 @@ function loadGooglePicker(): Promise<void> {
     const script = document.createElement('script');
     script.src = 'https://apis.google.com/js/api.js';
     script.onload = () => {
-      (window as unknown as { gapi: { load: (n: string, cb: () => void) => void } }).gapi.load(
-        'picker',
-        () => resolve()
-      );
+      (
+        window as unknown as {
+          gapi: { load: (n: string, cb: () => void) => void };
+        }
+      ).gapi.load('picker', () => resolve());
     };
     script.onerror = () => reject(new Error('failed to load google picker'));
     document.head.appendChild(script);
@@ -126,7 +131,6 @@ function ChapterSelect({
 }) {
   return (
     <Select
-      value={value ?? NO_CHAPTER}
       onValueChange={(v) => {
         if (v === CREATE_CHAPTER) {
           onCreateRequest?.();
@@ -134,9 +138,10 @@ function ChapterSelect({
         }
         onChange(v === NO_CHAPTER ? null : v);
       }}
+      value={value ?? NO_CHAPTER}
     >
-      <SelectTrigger size="sm" variant="underline" className="w-fit">
-        <div className="w-fit max-w-36 min-w-28">
+      <SelectTrigger className="w-fit" size="sm" variant="underline">
+        <div className="w-fit min-w-28 max-w-36">
           {chapterName ? (
             <span className="line-clamp-1 translate-y-px">{chapterName}</span>
           ) : (
@@ -150,7 +155,7 @@ function ChapterSelect({
             <span className="text-fg-muted">No chapter</span>
           </SelectItem>
           {chapters.map((o) => (
-            <SelectItem size="sm" key={o.id} value={o.id}>
+            <SelectItem key={o.id} size="sm" value={o.id}>
               <span className="line-clamp-1 translate-y-px">{o.name}</span>
             </SelectItem>
           ))}
@@ -174,14 +179,14 @@ function ChapterSelect({
 }
 
 interface PendingFile {
-  key: string;
-  file: File;
-  kind: SourceFile['kind'];
   chapterId: string | null;
   chapterName: string | null;
-  parseMode: ParseMode;
+  file: File;
+  key: string;
+  kind: SourceFile['kind'];
   /** PDF page count via pdfjs; undefined = still counting, null = unknown. */
   pageCount?: number | null;
+  parseMode: ParseMode;
   uploadPct?: number;
 }
 
@@ -196,19 +201,27 @@ function ParseModeSelect({
 }) {
   if (pending.kind === 'unknown') return;
   if (isTextKind(pending.kind, policy)) return;
-  const issues = parseModeIssues(pending.file, pending.kind, policy, pending.pageCount);
+  const issues = parseModeIssues(
+    pending.file,
+    pending.kind,
+    policy,
+    pending.pageCount
+  );
   if (issues.advanced && issues.normal) return;
   return (
-    <Select value={pending.parseMode} onValueChange={(v) => onChange(v as ParseMode)}>
-      <SelectTrigger size="sm" variant="underline" className="w-fit">
+    <Select
+      onValueChange={(v) => onChange(v as ParseMode)}
+      value={pending.parseMode}
+    >
+      <SelectTrigger className="w-fit" size="sm" variant="underline">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          <SelectItem size="sm" value="advanced" disabled={!!issues.advanced}>
+          <SelectItem disabled={!!issues.advanced} size="sm" value="advanced">
             Advanced parsing{issues.advanced ? ` (${issues.advanced})` : ''}
           </SelectItem>
-          <SelectItem size="sm" value="normal" disabled={!!issues.normal}>
+          <SelectItem disabled={!!issues.normal} size="sm" value="normal">
             Normal parsing{issues.normal ? ` (${issues.normal})` : ''}
           </SelectItem>
           <SelectItem size="sm" value="none">
@@ -243,7 +256,8 @@ function UploadFiles({
 
   useEffect(
     () => () => {
-      for (const controller of uploadControllers.current.values()) controller.abort();
+      for (const controller of uploadControllers.current.values())
+        controller.abort();
     },
     []
   );
@@ -252,8 +266,8 @@ function UploadFiles({
     if (!list?.length) return;
     if (!uploadPolicy) {
       userToast({
-        title: `Upload formats are still loading`,
-        description: `Please try again in a moment.`,
+        description: 'Please try again in a moment.',
+        title: 'Upload formats are still loading',
         variant: 'error',
       });
       return;
@@ -261,11 +275,11 @@ function UploadFiles({
     const candidates = Array.from(list).map((f, i) => {
       const kind = getFileKind(f.name, uploadPolicy);
       return {
-        key: `${Date.now()}-${i}-${f.name}`,
-        file: f,
-        kind,
         chapterId: null,
         chapterName: null,
+        file: f,
+        key: `${Date.now()}-${i}-${f.name}`,
+        kind,
         parseMode: defaultParseMode(f, kind, uploadPolicy),
       };
     });
@@ -273,8 +287,8 @@ function UploadFiles({
     const rejected = candidates.filter((file) => file.kind === 'unknown');
     if (rejected.length) {
       userToast({
-        title: `Unsupported file format`,
         description: rejected.map((file) => file.file.name).join(', '),
+        title: 'Unsupported file format',
         variant: 'error',
       });
     }
@@ -297,7 +311,12 @@ function UploadFiles({
               f.parseMode !== 'none' &&
               parseModeIssues(f.file, f.kind, uploadPolicy, n)[f.parseMode]
             ) {
-              next.parseMode = defaultParseMode(f.file, f.kind, uploadPolicy, n);
+              next.parseMode = defaultParseMode(
+                f.file,
+                f.kind,
+                uploadPolicy,
+                n
+              );
             }
             return next;
           })
@@ -307,7 +326,9 @@ function UploadFiles({
   }
 
   function patchFile(key: string, patch: Partial<PendingFile>) {
-    setFiles((prev) => prev.map((f) => (f.key === key ? { ...f, ...patch } : f)));
+    setFiles((prev) =>
+      prev.map((f) => (f.key === key ? { ...f, ...patch } : f))
+    );
   }
 
   function confirmCreateChapter(key: string) {
@@ -315,7 +336,9 @@ function UploadFiles({
     if (!name) return;
     // Reuse an existing chapter when it is already loaded. New names travel
     // with the upload and are resolved atomically by the backend.
-    const existing = chapters?.find((c) => c.name.toLowerCase() === name.toLowerCase());
+    const existing = chapters?.find(
+      (c) => c.name.toLowerCase() === name.toLowerCase()
+    );
     patchFile(key, {
       chapterId: existing?.id ?? null,
       chapterName: existing ? null : name,
@@ -335,13 +358,13 @@ function UploadFiles({
         uploadControllers.current.set(f.key, controller);
         return uploadSource
           .mutateAsync({
-            file: f.file,
-            kind: f.kind,
             chapterId: f.chapterId,
             chapterName: f.chapterName,
+            file: f.file,
+            kind: f.kind,
+            onUploadProgress: (uploadPct) => patchFile(f.key, { uploadPct }),
             parseMode: f.parseMode,
             signal: controller.signal,
-            onUploadProgress: (uploadPct) => patchFile(f.key, { uploadPct }),
           })
           .finally(() => uploadControllers.current.delete(f.key));
       })
@@ -353,11 +376,13 @@ function UploadFiles({
       onClose?.();
     } else {
       const succeededKeys = new Set(
-        batch.filter((_, index) => results[index]?.status === 'fulfilled').map((file) => file.key)
+        batch
+          .filter((_, index) => results[index]?.status === 'fulfilled')
+          .map((file) => file.key)
       );
       setFiles((prev) => prev.filter((file) => !succeededKeys.has(file.key)));
       userToast({
-        title: `Some files failed to upload`,
+        title: 'Some files failed to upload',
         variant: 'error',
       });
     }
@@ -368,57 +393,72 @@ function UploadFiles({
     if (totalBytes < 1024 * 1024) return `${(totalBytes / 1024).toFixed(1)} KB`;
     return `${(totalBytes / 1024 / 1024).toFixed(1)} MB`;
   };
-  const normalParse = uploadPolicy?.parseModes.find((mode) => mode.mode === 'normal');
-  const advancedParse = uploadPolicy?.parseModes.find((mode) => mode.mode === 'advanced');
+  const normalParse = uploadPolicy?.parseModes.find(
+    (mode) => mode.mode === 'normal'
+  );
+  const advancedParse = uploadPolicy?.parseModes.find(
+    (mode) => mode.mode === 'advanced'
+  );
   const aggregateProgress = aggregateUploadPct(
     files.map((file) => ({ size: file.file.size, uploadPct: file.uploadPct }))
   );
-  const completedUploads = files.filter((file) => file.uploadPct === 100).length;
+  const completedUploads = files.filter(
+    (file) => file.uploadPct === 100
+  ).length;
 
   return (
     <div className={cn('flex flex-col gap-4', className)}>
       <button
-        disabled={!uploadPolicy}
-        onClick={() => inputRef.current?.click()}
         className={cn(
-          'flex flex-col items-center gap-2 rounded-card border-2 border-dashed border-line px-6 py-8 transition-colors hover:bg-surface-hover-bg',
+          'flex flex-col items-center gap-2 rounded-card border-2 border-line border-dashed px-6 py-8 transition-colors hover:bg-surface-hover-bg',
           files.length > 0 && 'py-4'
         )}
+        disabled={!uploadPolicy}
+        onClick={() => inputRef.current?.click()}
+        type="button"
       >
-        <Icon name="upload" className="size-7" />
+        <Icon className="size-7" name="upload" />
         <p className="t-subtitle">Upload from your computer</p>
-        <p className="t-meta text-fg-muted">PDF, Office, Markdown, text, images, audio or video</p>
+        <p className="t-meta text-fg-muted">
+          PDF, Office, Markdown, text, images, audio or video
+        </p>
       </button>
       <input
+        accept={uploadPolicy?.accept}
+        hidden
+        multiple
+        onChange={(e) => handleFiles(e.target.files)}
         ref={inputRef}
         type="file"
-        multiple
-        hidden
-        accept={uploadPolicy?.accept}
-        onChange={(e) => handleFiles(e.target.files)}
       />
 
       {files.length > 0 && (
         <ul className="flex max-h-88 flex-col gap-2 overflow-y-auto pr-1">
           {files.map((f) => (
-            <li key={f.key} className="flex flex-col gap-2 px-1.5 pt-0.5">
+            <li className="flex flex-col gap-2 px-1.5 pt-0.5" key={f.key}>
               <div className="flex flex-col gap-0">
                 <div className="flex flex-1 justify-between gap-2">
                   <div className="flex items-center gap-2">
-                    <Icon name="files" className="size-4 shrink-0 -translate-y-px" />
-                    <span className="t-subtitle min-w-0 flex-1 truncate" title={f.file.name}>
+                    <Icon
+                      className="size-4 shrink-0 -translate-y-px"
+                      name="files"
+                    />
+                    <span
+                      className="t-subtitle min-w-0 flex-1 truncate"
+                      title={f.file.name}
+                    >
                       {f.file.name}
                     </span>
                   </div>
                   <IconButton
                     icon="x"
-                    size="xs"
-                    variant="ghost-hover"
                     label="Remove file"
                     onClick={() => {
                       uploadControllers.current.get(f.key)?.abort();
                       setFiles((prev) => prev.filter((pf) => pf.key !== f.key));
                     }}
+                    size="xs"
+                    variant="ghost-hover"
                   />
                 </div>
                 <div className="flex items-center gap-2">
@@ -434,60 +474,72 @@ function UploadFiles({
                         <div className="flex items-center gap-0">
                           <Input
                             autoFocus
-                            variant="underline"
-                            size="sm"
-                            value={newChapterName}
-                            placeholder="New chapter name"
                             onChange={(e) => setNewChapterName(e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') void confirmCreateChapter(f.key);
+                              if (e.key === 'Enter')
+                                void confirmCreateChapter(f.key);
                               if (e.key === 'Escape') setCreatingKey(null);
                             }}
+                            placeholder="New chapter name"
+                            size="sm"
+                            value={newChapterName}
+                            variant="underline"
                           />
                           <IconButton
-                            icon="check"
-                            size="xs"
-                            variant="ghost-hover"
-                            label="Create chapter"
                             className="p-1.5"
                             disabled={!newChapterName.trim()}
+                            icon="check"
+                            label="Create chapter"
                             onClick={() => void confirmCreateChapter(f.key)}
-                          />
-                          <IconButton
-                            icon="x"
                             size="xs"
                             variant="ghost-hover"
+                          />
+                          <IconButton
                             className="p-1.5"
+                            icon="x"
                             label="Cancel"
                             onClick={() => setCreatingKey(null)}
+                            size="xs"
+                            variant="ghost-hover"
                           />
                         </div>
                       ) : (
                         <ChapterSelect
-                          chapters={chapters ?? []}
-                          value={f.chapterId}
                           chapterName={f.chapterName}
-                          onChange={(v) => patchFile(f.key, { chapterId: v, chapterName: null })}
+                          chapters={chapters ?? []}
+                          onChange={(v) =>
+                            patchFile(f.key, {
+                              chapterId: v,
+                              chapterName: null,
+                            })
+                          }
                           onCreateRequest={() => {
                             setCreatingKey(f.key);
                             setNewChapterName('');
                           }}
+                          value={f.chapterId}
                         />
                       )}
                     </div>
                     <div className="min-w-0">
                       {uploadPolicy && (
                         <ParseModeSelect
+                          onChange={(mode) =>
+                            patchFile(f.key, { parseMode: mode })
+                          }
                           pending={f}
                           policy={uploadPolicy}
-                          onChange={(mode) => patchFile(f.key, { parseMode: mode })}
                         />
                       )}
                     </div>
                   </div>
                 </div>
                 {f.uploadPct != null && (
-                  <ProgressBar value={f.uploadPct} height={4} className="mt-1.5 w-full" />
+                  <ProgressBar
+                    className="mt-1.5 w-full"
+                    height={4}
+                    value={f.uploadPct}
+                  />
                 )}
               </div>
             </li>
@@ -499,24 +551,25 @@ function UploadFiles({
         OCR parsing (default) supports English and Chinese documents only (up to{' '}
         {normalParse ? Math.round(normalParse.maxBytes / 1024 / 1024) : 10} MB /{' '}
         {normalParse?.maxPages ?? 20} pages). VLM parsing accepts files up to{' '}
-        {advancedParse ? Math.round(advancedParse.maxBytes / 1024 / 1024) : 100} MB.
+        {advancedParse ? Math.round(advancedParse.maxBytes / 1024 / 1024) : 100}{' '}
+        MB.
       </p>
       <ConfirmDialog
-        open={confirmOpen}
+        body={`This will upload ${files.length} files, total size ${formatFileSizes()}.`}
+        closeOnConfirm={false}
+        danger={false}
+        disabled={!uploadPolicy || files.length === 0 || isSubmitting}
+        isSubmitting={isSubmitting}
         onClose={() => {
           if (!isSubmitting) setConfirmOpen(false);
         }}
         onConfirm={handleUpload}
-        danger={false}
-        closeOnConfirm={false}
-        isSubmitting={isSubmitting}
-        disabled={!uploadPolicy || files.length === 0 || isSubmitting}
-        title={`Confirm Upload?`}
-        body={`This will upload ${files.length} files, total size ${formatFileSizes()}.`}
+        open={confirmOpen}
+        title={'Confirm Upload?'}
       >
         {isSubmitting && (
           <div className="mt-3 flex flex-col gap-1.5">
-            <ProgressBar value={aggregateProgress} showLabel />
+            <ProgressBar showLabel value={aggregateProgress} />
             <p className="t-meta text-fg-muted">
               Uploading {completedUploads} of {files.length} files…
             </p>
@@ -525,7 +578,11 @@ function UploadFiles({
       </ConfirmDialog>
       <DialogFooter>
         <DialogClose asChild>
-          <Button variant="ghost-hover" disabled={isSubmitting} onClick={onClose}>
+          <Button
+            disabled={isSubmitting}
+            onClick={onClose}
+            variant="ghost-hover"
+          >
             Cancel
           </Button>
         </DialogClose>
@@ -550,7 +607,7 @@ function ImportFiles({
   className?: string;
 }) {
   // const [chapterId, setChapterId] = useState<string | null>(null);
-  const openMsImport = useDialogs((s) => s.openMsImport);
+  const openMsImport = usePortals((s) => s.openMsImport);
   const { data: integrations } = useIntegrations();
   const importSources = useImportSources(workspaceId);
   // const { data: msFiles } = useMicrosoftRecentFiles(msOpen && !!integrations?.microsoft);
@@ -560,9 +617,9 @@ function ImportFiles({
   async function connect(provider: 'google' | 'microsoft') {
     if (USE_MSW) {
       importSources.mutate({
-        provider,
-        fileIds: ['mock_drive_file'],
         chapterId: null,
+        fileIds: ['mock_drive_file'],
+        provider,
       });
       onClose();
       return;
@@ -573,8 +630,11 @@ function ImportFiles({
       await connectProvider(provider);
     } catch (err) {
       userToast({
+        description:
+          err instanceof Error
+            ? err.message
+            : 'Something went wrong. Please try again.',
         title: `Could not connect ${provider}`,
-        description: err instanceof Error ? err.message : `Something went wrong. Please try again.`,
         variant: 'error',
       });
     }
@@ -582,7 +642,11 @@ function ImportFiles({
 
   async function openGooglePicker() {
     if (USE_MSW) {
-      importSources.mutate({ provider: 'google', fileIds: ['mock_drive_file'], chapterId: null });
+      importSources.mutate({
+        chapterId: null,
+        fileIds: ['mock_drive_file'],
+        provider: 'google',
+      });
       onClose();
       return;
     }
@@ -599,9 +663,9 @@ function ImportFiles({
       .setCallback((data: { action: string; docs?: { id: string }[] }) => {
         if (data.action === 'picked' && data.docs?.length) {
           importSources.mutate({
-            provider: 'google',
-            fileIds: data.docs.map((d: { id: string }) => d.id),
             chapterId: null,
+            fileIds: data.docs.map((d: { id: string }) => d.id),
+            provider: 'google',
           });
           onClose();
         }
@@ -629,24 +693,24 @@ function ImportFiles({
     <div className={cn(className)}>
       <div className="grid grid-cols-2 gap-3">
         <Button
-          variant="outline"
+          disabled={importSources.isPending}
           iconLeft="files"
           onClick={onGoogleClick}
-          disabled={importSources.isPending}
+          variant="outline"
         >
           Google Drive
         </Button>
         <Button
-          variant="outline"
+          disabled={importSources.isPending}
           iconLeft="files"
           onClick={onMicrosoftClick}
-          disabled={importSources.isPending}
+          variant="outline"
         >
           OneDrive
         </Button>
       </div>
       {!integrations?.google && !integrations?.microsoft && !USE_MSW && (
-        <Text variant="meta" tone="muted" className="text-center">
+        <Text className="text-center" tone="muted" variant="meta">
           Connect your cloud account on first use.
         </Text>
       )}
@@ -654,22 +718,11 @@ function ImportFiles({
   );
 }
 
-function CreateFile({
-  workspaceId,
-  onClose,
-  className,
-}: {
-  workspaceId: string;
-  onClose: () => void;
-  className?: string;
-}) {
-  const uploadSource = useUploadSource(workspaceId);
-  const [chapterId, setChapterId] = useState<string | null>(null);
-
+function CreateFile({ className }: { className?: string }) {
   return <div className={cn(className)}>dummy</div>;
 }
 
-export function AddSourceModal({
+export function AddSourceDialog({
   open,
   onClose,
   workspaceId,
@@ -681,33 +734,34 @@ export function AddSourceModal({
   // TODO: i18n
   const [mode, setMode] = useState('upload');
   return (
-    <SimpleDialog className="max-w-3xl" open={open} onClose={onClose} title="Add file">
+    <SimpleDialog
+      className="max-w-3xl"
+      onClose={onClose}
+      open={open}
+      title="Add file"
+    >
       <div className="flex flex-col gap-4">
         <Tabs
+          onChange={setMode}
           tabs={[
-            { value: 'upload', label: 'Upload' },
-            { value: 'import', label: 'Import' },
-            { value: 'create', label: 'Create' },
+            { label: 'Upload', value: 'upload' },
+            { label: 'Import', value: 'import' },
+            { label: 'Create', value: 'create' },
           ]}
           value={mode}
-          onChange={setMode}
         />
         <div className="h-full flex-1 overflow-hidden">
           <UploadFiles
             className={cn({ hidden: mode !== 'upload' })}
-            workspaceId={workspaceId}
             onClose={onClose}
+            workspaceId={workspaceId}
           />
           <ImportFiles
             className={cn({ hidden: mode !== 'import' })}
-            workspaceId={workspaceId}
             onClose={onClose}
-          />
-          <CreateFile
-            className={cn({ hidden: mode !== 'create' })}
             workspaceId={workspaceId}
-            onClose={onClose}
           />
+          <CreateFile className={cn({ hidden: mode !== 'create' })} />
         </div>
       </div>
     </SimpleDialog>

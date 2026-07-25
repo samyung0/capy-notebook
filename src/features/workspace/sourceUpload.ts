@@ -11,7 +11,10 @@ function extensionWithDot(name: string): string {
   return ext ? `.${ext}` : '';
 }
 
-export function getFileKind(name: string, policy: SourceUploadPolicy): FileKind {
+export function getFileKind(
+  name: string,
+  policy: SourceUploadPolicy
+): FileKind {
   const ext = extensionWithDot(name);
   if (!ext && policy.allowNoExtension) return 'txt';
   return (
@@ -21,7 +24,10 @@ export function getFileKind(name: string, policy: SourceUploadPolicy): FileKind 
   );
 }
 
-export function isTextKind(kind: FileKind, policy: SourceUploadPolicy): boolean {
+export function isTextKind(
+  kind: FileKind,
+  policy: SourceUploadPolicy
+): boolean {
   return policy.kinds.some((entry) => entry.kind === kind && entry.text);
 }
 
@@ -35,7 +41,9 @@ export function parseModeIssues(
   const ext = extensionWithDot(file.name);
   const issueFor = (mode: 'advanced' | 'normal') => {
     const rule = policy.parseModes.find((entry) => entry.mode === mode);
-    if (!rule || !rule.extensions.some((candidate) => candidate.toLowerCase() === ext)) {
+    if (
+      !rule?.extensions.some((candidate) => candidate.toLowerCase() === ext)
+    ) {
       return 'format not supported';
     }
     if (file.size > rule.maxBytes) {
@@ -73,11 +81,14 @@ export interface UploadProgressItem {
 }
 
 /** Returns a byte-weighted batch percentage so large files contribute fairly. */
-export function aggregateUploadPct(items: readonly UploadProgressItem[]): number {
+export function aggregateUploadPct(
+  items: readonly UploadProgressItem[]
+): number {
   const totalBytes = items.reduce((sum, item) => sum + item.size, 0);
   if (totalBytes === 0) return 0;
   const uploadedBytes = items.reduce(
-    (sum, item) => sum + (item.size * Math.max(0, Math.min(100, item.uploadPct ?? 0))) / 100,
+    (sum, item) =>
+      sum + (item.size * Math.max(0, Math.min(100, item.uploadPct ?? 0))) / 100,
     0
   );
   return Math.round((uploadedBytes / totalBytes) * 100);

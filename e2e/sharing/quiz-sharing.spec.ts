@@ -1,9 +1,12 @@
-import { test, expect } from '../fixtures/actors';
+import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
 
 test.describe('quiz sharing', () => {
   test('owner can open a private quiz', async ({ ownerPage, seed }) => {
-    const resPromise = waitForApi(ownerPage, apiEndsWith(`/api/quizzes/${seed.privateQuiz.id}`));
+    const resPromise = waitForApi(
+      ownerPage,
+      apiEndsWith(`/api/quizzes/${seed.privateQuiz.id}`)
+    );
     await ownerPage.goto(`/share/quizzes/${seed.privateQuiz.id}`);
     expect((await resPromise).status()).toBe(200);
     await expect(ownerPage.getByText(seed.privateQuiz.prompt)).toBeVisible();
@@ -15,7 +18,10 @@ test.describe('quiz sharing', () => {
     seed,
   }) => {
     for (const page of [anonymousPage, otherPage]) {
-      const resPromise = waitForApi(page, apiEndsWith(`/api/quizzes/${seed.privateQuiz.id}`));
+      const resPromise = waitForApi(
+        page,
+        apiEndsWith(`/api/quizzes/${seed.privateQuiz.id}`)
+      );
       await page.goto(`/share/quizzes/${seed.privateQuiz.id}`);
       expect((await resPromise).status()).toBe(404);
       await expect(page.getByTestId('private-or-unavailable')).toBeVisible();
@@ -28,18 +34,29 @@ test.describe('quiz sharing', () => {
     otherPage,
     seed,
   }) => {
-    const linkRes = waitForApi(anonymousPage, apiEndsWith(`/api/quizzes/${seed.linkQuiz.id}`));
+    const linkRes = waitForApi(
+      anonymousPage,
+      apiEndsWith(`/api/quizzes/${seed.linkQuiz.id}`)
+    );
     await anonymousPage.goto(`/share/quizzes/${seed.linkQuiz.id}`);
     expect((await linkRes).status()).toBe(200);
     await expect(anonymousPage.getByText(seed.linkQuiz.prompt)).toBeVisible();
-    await expect(anonymousPage.getByRole('button', { name: 'Clone' })).toBeVisible();
+    await expect(
+      anonymousPage.getByRole('button', { name: 'Clone' })
+    ).toBeVisible();
 
-    const publicRes = waitForApi(anonymousPage, apiEndsWith(`/api/quizzes/${seed.publicQuiz.id}`));
+    const publicRes = waitForApi(
+      anonymousPage,
+      apiEndsWith(`/api/quizzes/${seed.publicQuiz.id}`)
+    );
     await anonymousPage.goto(`/share/quizzes/${seed.publicQuiz.id}`);
     expect((await publicRes).status()).toBe(200);
     await expect(anonymousPage.getByText(seed.publicQuiz.prompt)).toBeVisible();
 
-    const exploreRes = waitForApi(otherPage, apiEndsWith('/api/explore/quizzes'));
+    const exploreRes = waitForApi(
+      otherPage,
+      apiEndsWith('/api/explore/quizzes')
+    );
     await otherPage.goto('/explore');
     await otherPage.getByRole('button', { name: /Public quizzes/i }).click();
     expect((await exploreRes).status()).toBe(200);
@@ -49,6 +66,7 @@ test.describe('quiz sharing', () => {
   });
 
   test('signed-in viewer can clone a shared quiz to a private copy', async ({
+    otherApi,
     otherPage,
     seed,
   }) => {
@@ -61,11 +79,19 @@ test.describe('quiz sharing', () => {
     const res = await clonePromise;
     expect(res.status()).toBe(201);
     const body = await res.json();
-    expect(body.privacy).toBe('private');
-    expect(body.isOwner).toBe(true);
+    try {
+      expect(body.privacy).toBe('private');
+      expect(body.isOwner).toBe(true);
+    } finally {
+      const removedClone = await otherApi.delete(`/api/quizzes/${body.id}`);
+      expect(removedClone.status()).toBe(204);
+    }
   });
 
-  test('anonymous clone and attempt require sign-in', async ({ anonymousPage, seed }) => {
+  test('anonymous clone and attempt require sign-in', async ({
+    anonymousPage,
+    seed,
+  }) => {
     await anonymousPage.goto(`/share/quizzes/${seed.linkQuiz.id}`);
     const clonePromise = waitForApi(
       anonymousPage,
@@ -83,20 +109,30 @@ test.describe('quiz sharing', () => {
     );
     await anonymousPage.getByRole('button', { name: 'Finish' }).click();
     expect((await attemptPromise).status()).toBe(401);
-    await expect(anonymousPage.getByText(/Sign in to save your score/i)).toBeVisible();
-    await expect(anonymousPage.getByTestId('private-or-unavailable')).toHaveCount(0);
+    await expect(
+      anonymousPage.getByText(/Sign in to save your score/i)
+    ).toBeVisible();
+    await expect(
+      anonymousPage.getByTestId('private-or-unavailable')
+    ).toHaveCount(0);
   });
 
-  test('non-member cannot record an attempt on a private quiz', async ({ otherApi, seed }) => {
-    const res = await otherApi.post(`/api/quizzes/${seed.privateQuiz.id}/attempts`, {
-      data: {
-        correct: 0,
-        total: 1,
-        wrong: [],
-        answers: {},
-        questions: [],
-      },
-    });
+  test('non-member cannot record an attempt on a private quiz', async ({
+    otherApi,
+    seed,
+  }) => {
+    const res = await otherApi.post(
+      `/api/quizzes/${seed.privateQuiz.id}/attempts`,
+      {
+        data: {
+          answers: {},
+          correct: 0,
+          questions: [],
+          total: 1,
+          wrong: [],
+        },
+      }
+    );
     expect(res.status()).toBe(404);
   });
 });

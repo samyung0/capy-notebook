@@ -8,11 +8,12 @@
 /**
  * mindmap | diagram | quiz | deck (flashcards surfaced as deck)
  */
-export type MaterialRefType = (typeof MaterialRefType)[keyof typeof MaterialRefType];
+export type MaterialRefType =
+  (typeof MaterialRefType)[keyof typeof MaterialRefType];
 
 export const MaterialRefType = {
-  mindmap: 'mindmap',
-  diagram: 'diagram',
-  quiz: 'quiz',
-  deck: 'deck',
+  deck: "deck",
+  diagram: "diagram",
+  mindmap: "mindmap",
+  quiz: "quiz",
 } as const;

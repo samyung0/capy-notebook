@@ -1,6 +1,6 @@
-import { Panel, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Button, Icon, Text } from '@/components/ui';
 import { Link } from '@tanstack/react-router';
+import { Panel } from '@/components/app/layout';
+import { Button, Icon } from '@/components/ui';
 
 /** Non-disclosing empty state for private/missing shared resources. */
 export function PrivateOrUnavailable({
@@ -21,12 +21,12 @@ export function PrivateOrUnavailable({
         data-testid="private-or-unavailable"
       >
         <span className="flex size-15 items-center justify-center rounded-card-lg bg-tint-error text-tint-error-fg">
-          <Icon name="warning" className="size-7" />
+          <Icon className="size-7" name="warning" />
         </span>
-        <h1 className="t-section mt-1">{title}</h1>
+        <h1 className="t-large-card-title mt-1">{title}</h1>
         <p className="t-subtitle font-medium">{description}</p>
         {backTo && (
-          <Link to={backTo} preload="intent" className="mt-4">
+          <Link className="mt-4" preload="intent" to={backTo}>
             <Button iconLeft="chevronLeft" variant="ghost">
               {backLabel}
             </Button>

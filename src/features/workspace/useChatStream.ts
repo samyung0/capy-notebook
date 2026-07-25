@@ -1,23 +1,29 @@
-import { useCallback, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
-import { qk } from '@/api/client';
+import { useCallback, useRef, useState } from 'react';
 import { streamChat } from '@/api/chatStream';
-import type { ChatMessage, ChatRole, ChatStatus, WireMessage } from '@/api/types';
+import { qk } from '@/api/client';
+import type {
+  ChatMessage,
+  ChatRole,
+  ChatStatus,
+  WireMessage,
+} from '@/api/types';
 
 /** Map a persisted wire message onto the UI turn shape (narrowing role/status). */
 export function toChatMessage(m: WireMessage): ChatMessage {
   return {
-    id: m.id,
-    conversationId: m.conversationId,
-    role: m.role as ChatRole,
-    content: m.content,
-    status: m.status as ChatStatus,
     citations: m.citations ?? undefined,
+    content: m.content,
+    conversationId: m.conversationId,
     createdAt: m.createdAt,
+    id: m.id,
+    role: m.role as ChatRole,
+    status: m.status as ChatStatus,
   };
 }
 
-const tempId = () => `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+const tempId = () =>
+  `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
 /**
  * Client state machine for a single active conversation. Holds the message list,
@@ -36,10 +42,13 @@ export function useChatStream(workspaceId: string) {
   }, []);
 
   /** Replace local state with a loaded conversation (history) or a blank thread. */
-  const hydrate = useCallback((convId: string | null, history: ChatMessage[]) => {
-    setConversationId(convId);
-    setMessages(history);
-  }, []);
+  const hydrate = useCallback(
+    (convId: string | null, history: ChatMessage[]) => {
+      setConversationId(convId);
+      setMessages(history);
+    },
+    []
+  );
 
   const startNew = useCallback(() => {
     abortRef.current?.abort();
@@ -55,9 +64,9 @@ export function useChatStream(workspaceId: string) {
       if (!trimmed || streaming) return;
 
       const userMsg: ChatMessage = {
+        content: trimmed,
         id: tempId(),
         role: 'user',
-        content: trimmed,
         status: 'complete',
       };
       const placeholderId = tempId();
@@ -65,7 +74,12 @@ export function useChatStream(workspaceId: string) {
       setMessages((prev) => [
         ...prev,
         userMsg,
-        { id: placeholderId, role: 'assistant', content: '', status: 'streaming' },
+        {
+          content: '',
+          id: placeholderId,
+          role: 'assistant',
+          status: 'streaming',
+        },
       ]);
       setStreaming(true);
 
@@ -74,29 +88,33 @@ export function useChatStream(workspaceId: string) {
 
       await streamChat(
         workspaceId,
-        { conversationId: conversationId ?? undefined, text: trimmed, model },
+        { conversationId: conversationId ?? undefined, model, text: trimmed },
         {
-          onStart: ({ messageId, conversationId: cid }) => {
-            currentId = messageId;
-            setConversationId(cid);
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === placeholderId ? { ...m, id: messageId, conversationId: cid } : m
-              )
-            );
-          },
-          onToken: (t) =>
-            setMessages((prev) =>
-              prev.map((m) => (m.id === currentId ? { ...m, content: m.content + t } : m))
-            ),
           onCitations: (c) => patch(currentId, { citations: c }),
           onDone: ({ status }) => patch(currentId, { status }),
           onError: (msg) =>
             setMessages((prev) =>
               prev.map((m) =>
                 m.id === currentId
-                  ? { ...m, status: 'error', content: m.content || `⚠ ${msg}` }
+                  ? { ...m, content: m.content || `⚠ ${msg}`, status: 'error' }
                   : m
+              )
+            ),
+          onStart: ({ messageId, conversationId: cid }) => {
+            currentId = messageId;
+            setConversationId(cid);
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === placeholderId
+                  ? { ...m, conversationId: cid, id: messageId }
+                  : m
+              )
+            );
+          },
+          onToken: (t) =>
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === currentId ? { ...m, content: m.content + t } : m
               )
             ),
         },
@@ -113,5 +131,5 @@ export function useChatStream(workspaceId: string) {
     [workspaceId, conversationId, streaming, patch, qc]
   );
 
-  return { messages, conversationId, streaming, send, stop, startNew, hydrate };
+  return { conversationId, hydrate, messages, send, startNew, stop, streaming };
 }

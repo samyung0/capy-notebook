@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent } from 'react';
+import { type PointerEvent, useEffect, useRef, useState } from 'react';
 import { clampImageZoom, IMAGE_MIN_ZOOM } from './fileUtils';
 
 /** Clamp pan so the scaled image can't be dragged past the viewport edges. */
@@ -124,8 +124,8 @@ export function ImageViewer({
     gestureRef.current = {
       kind: 'pan',
       pointerId,
-      startPoint: point,
       startOffset: offsetRef.current,
+      startPoint: point,
     };
     setDragging(true);
   }
@@ -179,7 +179,10 @@ export function ImageViewer({
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const factor = e.deltaY < 0 ? WHEEL_ZOOM_FACTOR : 1 / WHEEL_ZOOM_FACTOR;
-      zoomAroundPointRef.current({ x: e.clientX, y: e.clientY }, zoomRef.current * factor);
+      zoomAroundPointRef.current(
+        { x: e.clientX, y: e.clientY },
+        zoomRef.current * factor
+      );
     };
 
     viewport.addEventListener('wheel', onWheel, { passive: false });
@@ -220,7 +223,8 @@ export function ImageViewer({
       }
 
       const currentMidpoint = midpoint(first, second);
-      const nextZoomRaw = gesture.startZoom * (distance(first, second) / gesture.startDistance);
+      const nextZoomRaw =
+        gesture.startZoom * (distance(first, second) / gesture.startDistance);
 
       // Keep the image point beneath the initial pinch midpoint under the
       // fingers while also applying the midpoint's movement as a pan.
@@ -235,10 +239,12 @@ export function ImageViewer({
       updateOffset(
         currentMidpoint.x -
           center.x -
-          scaleRatio * (gesture.startMidpoint.x - center.x - gesture.startOffset.x),
+          scaleRatio *
+            (gesture.startMidpoint.x - center.x - gesture.startOffset.x),
         currentMidpoint.y -
           center.y -
-          scaleRatio * (gesture.startMidpoint.y - center.y - gesture.startOffset.y),
+          scaleRatio *
+            (gesture.startMidpoint.y - center.y - gesture.startOffset.y),
         nextZoom
       );
       return;
@@ -277,25 +283,32 @@ export function ImageViewer({
 
   return (
     <div
-      ref={viewportRef}
       className={`absolute inset-0 overflow-hidden p-3 ${
-        canPan ? (dragging ? 'cursor-grabbing' : 'cursor-grab') : 'cursor-default'
+        canPan
+          ? dragging
+            ? 'cursor-grabbing'
+            : 'cursor-grab'
+          : 'cursor-default'
       }`}
+      onPointerCancel={endDrag}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
-      onPointerCancel={endDrag}
-      style={{ touchAction: 'none', overscrollBehavior: 'contain' }}
+      ref={viewportRef}
+      style={{ overscrollBehavior: 'contain', touchAction: 'none' }}
     >
-      <div ref={stageRef} className="flex h-full w-full items-center justify-center">
+      <div
+        className="flex h-full w-full items-center justify-center"
+        ref={stageRef}
+      >
         <img
-          ref={imgRef}
-          src={url}
           alt={alt}
+          className="max-h-full max-w-full select-none rounded-md object-contain transition-all duration-150 ease-out will-change-transform [-webkit-user-drag:none]"
           draggable={false}
           onDragStart={(e) => e.preventDefault()}
           onLoad={() => updateOffset(offsetRef.current.x, offsetRef.current.y)}
-          className="max-h-full max-w-full rounded-md object-contain transition-all duration-150 ease-out will-change-transform select-none [-webkit-user-drag:none]"
+          ref={imgRef}
+          src={url}
           style={{
             transform: `translate(${offset.x}px, ${offset.y}px) scale(${displayZoom})`,
             transformOrigin: 'center center',

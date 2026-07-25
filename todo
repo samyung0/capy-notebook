@@ -26,14 +26,17 @@ low priority:
 24. what is the backend actually doing
 25. how to not lose ones mind when reading this repo
 26. send workspace invitations by email in addition to in-app notifications
+27. migrate from radix ui to base ui
+28. languine and paraglide?
 
 high PRIORITIES:
 
-3. unify quizblock and questionrunner (with questionrunner as default)? (need to consider the impact of how user can edit them when rendered using questionrunner styles) we have two different rendering paths, remove question type ordering-item
-4. materials action menu should have same functions as normal files (file property should in addition show nodes and depths (is this saved in db?)), materials like quiz/flashcards may have additional customizations (e.g. time limit when attempting etc), put these additional customizations into an option called settings which pops up a dialog
-5. in centercontent header, add in a full screen button and the action menu (with same functions found in filelistitem)
-6. how to adjust blockselection colors?
-7. fix block selection, per plate playground:
+1. overwrite content instead of creating new version everytime, we need a better way to create new versions
+2. unify quizblock and questionrunner (with questionrunner as default)? (need to consider the impact of how user can edit them when rendered using questionrunner styles) we have two different rendering paths, remove question type ordering-item
+3. materials action menu should have same functions as normal files (file property should in addition show nodes and depths (is this saved in db?)), materials like quiz/flashcards may have additional customizations (e.g. time limit when attempting etc), put these additional customizations into an option called settings which pops up a dialog
+4. in centercontent header, add in a full screen button and the action menu (with same functions found in filelistitem)
+5. how to adjust blockselection colors?
+6. fix block selection, per plate playground:
    Block Selection
    There are multiple ways to select entire blocks:
    Click and drag from the editor margin to select multiple blocks
@@ -47,28 +50,28 @@ high PRIORITIES:
    useBlockSelected in DraggableBlock seems to retun false always (i.e. clicking on the drag handle doesnt select the block),
    DraggableBlock and right clicking blocks right now has a custom bg color rather than using plate block selection
    selecting text seems to use browser default selection rather than plate block selection
-8. if copy and pasting markdown, render it directly rather than inside a code block (? what determines if a code block gets inserted or not?)
-9. handle file loading errors (not unable to fetch from backend, thats handled, but onload error from urls, both in centercontent and in plate editor)
-10. combine image/videos/audio/files into just a single upload (plus insert via url, make it a dropdown with a chevron down icon like how file import/export does it), (if upload, backend gen presigned url to upload to blackblaze, then store the link to the file, in all cases the file should never pass through backend to prevent attacks/reduce bandwidth), after getting the direct file url it displays in plate editor and parse into image/video/audio base on file format
-11. fix the suggestion mode
-12. in editor we need to use custom tooltips rather than title=xxx, include shortcut as well
-13. add layout adjust in editor to make the document smaller or larger in width
-14. theme configuration (use dialog) put in topsetbar avatar dropdown instead of nav
-15. set loading state for submit buttons (esp dialogs)
-16. remove all the <Text> components
-17. enable ordering of doucments within chapters with drag and drop (right now it just drops in the chapter)
-18. add icons for common file format
-19. enrich the global searches (in the topinsetbar)
+7. if copy and pasting markdown, render it directly rather than inside a code block (? what determines if a code block gets inserted or not?)
+8. handle file loading errors (not unable to fetch from backend, thats handled, but onload error from urls, both in centercontent and in plate editor)
+9. combine image/videos/audio/files into just a single upload (plus insert via url, make it a dropdown with a chevron down icon like how file import/export does it), (if upload, backend gen presigned url to upload to blackblaze, then store the link to the file, in all cases the file should never pass through backend to prevent attacks/reduce bandwidth), after getting the direct file url it displays in plate editor and parse into image/video/audio base on file format
+10. fix the suggestion mode
+11. in editor we need to use custom tooltips rather than title=xxx, include shortcut as well
+12. add layout adjust in editor to make the document smaller or larger in width
+13. theme configuration (use dialog) put in topsetbar avatar dropdown instead of nav
+14. set loading state for submit buttons (esp dialogs)
+15. remove all the <Text> components
+16. enable ordering of doucments within chapters with drag and drop (right now it just drops in the chapter)
+17. add icons for common file format
+18. enrich the global searches (in the topinsetbar)
     - workspace names & chapters
     - files and materials names
     - calendar event names
     - tasks title
     - Remove: thinking space (not worked on yet)
-20. make the onsuccess invalidate queries async await so awaiting a mutateAsync awaits both the mutate call AND the refetch query call, this is good for UI since loading states spans data mutation + refetch, refetch is where user actually sees the display changes, if loading state exits early, there is a gap between user seeing action finishes and UI updates
-21. when calling backend, we should always use react hook form paired with zod schema validations (auto generated), the submit button should be disabled when submitDisabled is true (const submitDisabled =
+19. make the onsuccess invalidate queries async await so awaiting a mutateAsync awaits both the mutate call AND the refetch query call, this is good for UI since loading states spans data mutation + refetch, refetch is where user actually sees the display changes, if loading state exits early, there is a gap between user seeing action finishes and UI updates
+20. when calling backend, we should always use react hook form paired with zod schema validations (auto generated), the submit button should be disabled when submitDisabled is true (const submitDisabled =
     !form.formState.isDirty || !form.formState.isValid || form.formState.isSubmitting;) when error happens inside handleSubmit, a userToast must always show. editing existing resources or creating resources shouldnt need to show toast unless there is minimal to no UI change to let user know the action is successful (e.g. inviting members to workspace, or updaing privacy inside the shareDialog (very minimal select value changes))
-22. enable website mcp for the LLM so users can ask (summarize file page x to xx or how to answer quiz A question 5), curate list of tools available to workspace chat llm/website convo llm (two different set of tools & context provided since workspace can provide more informations)
-23. modularize ai models, let user choose what cloud/local models they want to use for different scenarios:
+21. enable website mcp for the LLM so users can ask (summarize file page x to xx or how to answer quiz A question 5), curate list of tools available to workspace chat llm/website convo llm (two different set of tools & context provided since workspace can provide more informations)
+22. modularize ai models, let user choose what cloud/local models they want to use for different scenarios:
     exhaustive list:
 
 - file parsing

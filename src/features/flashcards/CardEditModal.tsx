@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { SimpleDialog, Button, Input, Text } from '@/components/ui';
 import { useCreateCard, useUpdateCard } from '@/api/hooks';
 import type { Flashcard } from '@/api/types';
+import { Button, Input, SimpleDialog, Text } from '@/components/ui';
 
 /**
  * Create or edit a single flashcard. When `card` is provided the modal edits it,
@@ -36,39 +36,43 @@ export function CardEditModal({
   function save() {
     if (!canSave) return;
     const done = { onSuccess: () => onClose() };
-    if (card) updateCard.mutate({ id: card.id, front, back }, done);
-    else createCard.mutate({ front, back }, done);
+    if (card) updateCard.mutate({ back, front, id: card.id }, done);
+    else createCard.mutate({ back, front }, done);
   }
 
   return (
     <SimpleDialog
-      open={open}
-      onClose={onClose}
-      title={card ? 'Edit card' : 'New card'}
-      width={480}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button onClick={onClose} variant="ghost">
             Cancel
           </Button>
-          <Button onClick={save} disabled={!canSave || pending}>
+          <Button disabled={!canSave || pending} onClick={save}>
             {card ? 'Save' : 'Add card'}
           </Button>
         </>
       }
+      onClose={onClose}
+      open={open}
+      title={card ? 'Edit card' : 'New card'}
+      width={480}
     >
       <div className="flex flex-col gap-4">
         <label className="flex flex-col gap-1.5">
-          <Text variant="label" tone="muted">
+          <Text tone="muted" variant="label">
             Front (term / question)
           </Text>
-          <Input value={front} onChange={(e) => setFront(e.target.value)} autoFocus />
+          <Input
+            autoFocus
+            onChange={(e) => setFront(e.target.value)}
+            value={front}
+          />
         </label>
         <label className="flex flex-col gap-1.5">
-          <Text variant="label" tone="muted">
+          <Text tone="muted" variant="label">
             Back (definition / answer)
           </Text>
-          <Input value={back} onChange={(e) => setBack(e.target.value)} />
+          <Input onChange={(e) => setBack(e.target.value)} value={back} />
         </label>
       </div>
     </SimpleDialog>

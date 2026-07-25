@@ -1,17 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Card, HoverActions, Icon, IconButton, SegmentedControl, Skeleton } from '@/components/ui';
-import { userColorPair } from '@/lib/userColor';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDeleteLabel, useEvents, useLabels } from '@/api/hooks';
 import type { CalendarEvent } from '@/api/types';
-import { useDialogs } from '@/stores/dialogs';
-import { m } from '@/i18n';
-import { MiniCalendar } from '@/features/schedule/MiniCalendar';
-import { TimeGrid } from '@/features/schedule/TimeGrid';
-import { MonthView } from '@/features/schedule/MonthView';
+import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import {
+  Card,
+  HoverActions,
+  Icon,
+  IconButton,
+  SegmentedControl,
+  Skeleton,
+} from '@/components/ui';
 import { MONTHS, weekDays } from '@/features/schedule/dateUtils';
+import { MiniCalendar } from '@/features/schedule/MiniCalendar';
+import { MonthView } from '@/features/schedule/MonthView';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
+import { TimeGrid } from '@/features/schedule/TimeGrid';
+import { m } from '@/i18n';
+import { userColorPair } from '@/lib/userColor';
+import { usePortals } from '@/stores/portals';
 
 type View = 'month' | 'week' | 'day';
 
@@ -23,11 +30,11 @@ export default function Schedule() {
   const { data: events, isLoading } = useEvents();
   const { data: labels } = useLabels();
   const deleteLabel = useDeleteLabel();
-  const openLabelEdit = useDialogs((s) => s.openLabelEdit);
-  const openConfirm = useDialogs((s) => s.openConfirm);
-  const openEventForm = useDialogs((s) => s.openEventForm);
-  const openEventDetail = useDialogs((s) => s.openEventDetail);
-  const eventDetail = useDialogs((s) => s.eventDetail);
+  const openLabelEdit = usePortals((s) => s.openLabelEdit);
+  const openConfirm = usePortals((s) => s.openConfirm);
+  const openEventForm = usePortals((s) => s.openEventForm);
+  const openEventDetail = usePortals((s) => s.openEventDetail);
+  const eventDetail = usePortals((s) => s.eventDetail);
   const [view, setView] = useState<View>('week');
   const [month, setMonth] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date());
@@ -42,7 +49,8 @@ export default function Schedule() {
   const visibleEvents = useMemo(
     () =>
       (events ?? []).filter(
-        (e) => e.labelIds.length === 0 || e.labelIds.some((id) => !hidden.has(id))
+        (e) =>
+          e.labelIds.length === 0 || e.labelIds.some((id) => !hidden.has(id))
       ),
     [events, hidden]
   );
@@ -63,7 +71,9 @@ export default function Schedule() {
     setSelected((prev) => {
       if (view === 'week') {
         const visible = weekDays(prev);
-        return visible.some((d) => d.toDateString() === day.toDateString()) ? prev : day;
+        return visible.some((d) => d.toDateString() === day.toDateString())
+          ? prev
+          : day;
       }
       if (view === 'day') {
         return prev.toDateString() === day.toDateString() ? prev : day;
@@ -84,19 +94,19 @@ export default function Schedule() {
     if (openedFromParam.current && wasOpen && !eventDetail) {
       openedFromParam.current = false;
       scheduleAutoScroll.rememberPosition(scrollRef.current?.scrollTop);
-      navigate({ to: '/schedule', search: {}, replace: true });
+      navigate({ replace: true, search: {}, to: '/schedule' });
     }
   }, [eventDetail, navigate]);
 
   const days = view === 'week' ? weekDays(selected) : [selected];
 
   const createAt = (start: Date, end: Date) =>
-    openEventForm({ start: start.toISOString(), end: end.toISOString() });
+    openEventForm({ end: end.toISOString(), start: start.toISOString() });
   const selectEvent = (event: CalendarEvent) => {
     scheduleAutoScroll.rememberPosition(scrollRef.current?.scrollTop);
     openedFromParam.current = true;
     openEventDetail(event);
-    navigate({ to: '/schedule', search: { event: event.id } });
+    navigate({ search: { event: event.id }, to: '/schedule' });
   };
   const createOnDay = (day: Date) => {
     const start = new Date(day);
@@ -109,15 +119,15 @@ export default function Schedule() {
   const range = useMemo(() => {
     if (view === 'month') {
       return {
-        start: new Date(month.getFullYear(), month.getMonth(), 1),
         end: new Date(month.getFullYear(), month.getMonth() + 1, 0),
+        start: new Date(month.getFullYear(), month.getMonth(), 1),
       };
     }
     if (view === 'week') {
       const wd = weekDays(selected);
-      return { start: wd[0], end: wd[6] };
+      return { end: wd[6], start: wd[0] };
     }
-    return { start: selected, end: selected };
+    return { end: selected, start: selected };
   }, [view, month, selected]);
 
   return (
@@ -126,94 +136,109 @@ export default function Schedule() {
       <div className="flex h-full w-70 shrink-0 flex-col gap-3 overflow-auto">
         <Card className="gap-0 p-3.5">
           <MiniCalendar
+            eventDays={eventDays}
             month={month}
             onMonthChange={setMonth}
-            selected={selected}
             onSelect={(d) => {
               setSelected(d);
               setMonth(d);
             }}
-            eventDays={eventDays}
-            rangeStart={range.start}
             rangeEnd={range.end}
+            rangeStart={range.start}
+            selected={selected}
           />
         </Card>
 
         <Card className="h-full flex-1 gap-0 p-3.5">
           <button
-            onClick={() => setLabelsOpen((o) => !o)}
-            className="flex w-full items-center gap-1.5 text-left"
             aria-expanded={labelsOpen}
+            className="flex w-full items-center gap-1.5 text-left"
+            onClick={() => setLabelsOpen((o) => !o)}
+            type="button"
           >
             <Icon
+              className="text-fg-muted"
               name={labelsOpen ? 'chevronDown' : 'chevronRight'}
               size={16}
-              className="text-fg-muted"
             />
             <span className="t-card-title font-semibold">Labels</span>
           </button>
           {labelsOpen && (
             <div className="flex flex-col py-1.5 pl-4">
-              {(showAllLabels ? labels : labels?.slice(0, LABEL_LIMIT))?.map((l) => {
-                const on = !hidden.has(l.id);
-                return (
-                  <div
-                    key={l.id}
-                    className="group relative flex items-center rounded-row py-1.5 pr-8 hover:bg-surface-hover-bg"
-                  >
-                    <button
-                      onClick={() =>
-                        setHidden((s) => {
-                          const n = new Set(s);
-                          on ? n.add(l.id) : n.delete(l.id);
-                          return n;
-                        })
-                      }
-                      className="flex min-w-0 flex-1 items-center gap-2.5 px-1.5 text-left"
+              {(showAllLabels ? labels : labels?.slice(0, LABEL_LIMIT))?.map(
+                (l) => {
+                  const on = !hidden.has(l.id);
+                  return (
+                    <div
+                      className="group relative flex items-center rounded-row py-1.5 pr-8 hover:bg-surface-hover-bg"
+                      key={l.id}
                     >
-                      <span
-                        className="h-3.5 w-3.5 shrink-0 rounded-[4px]"
-                        style={{
-                          background: on ? userColorPair(l.color).bg : 'transparent',
-                          border: on ? 'none' : '1.5px solid var(--border-strong)',
-                        }}
-                      />
-                      <span
-                        className={
-                          on ? 'truncate text-sm text-fg' : 'truncate text-sm text-fg-muted'
+                      <button
+                        className="flex min-w-0 flex-1 items-center gap-2.5 px-1.5 text-left"
+                        onClick={() =>
+                          setHidden((s) => {
+                            const n = new Set(s);
+                            if (on) {
+                              n.add(l.id);
+                            } else {
+                              n.delete(l.id);
+                            }
+                            return n;
+                          })
                         }
+                        type="button"
                       >
-                        {l.name}
-                      </span>
-                    </button>
-                    <HoverActions
-                      className="absolute top-1/2 right-1 -translate-y-1/2"
-                      items={[
-                        {
-                          label: m.action_edit(),
-                          icon: 'write',
-                          onClick: () => openLabelEdit(l),
-                        },
-                        {
-                          label: m.action_delete(),
-                          icon: 'trash',
-                          danger: true,
-                          onClick: () =>
-                            openConfirm({
-                              title: m.confirm_delete_title({ name: l.name }),
-                              body: m.confirm_delete_body(),
-                              onConfirm: () => deleteLabel.mutate(l.id),
-                            }),
-                        },
-                      ]}
-                    />
-                  </div>
-                );
-              })}
+                        <span
+                          className="h-3.5 w-3.5 shrink-0 rounded-[4px]"
+                          style={{
+                            background: on
+                              ? userColorPair(l.color).bg
+                              : 'transparent',
+                            border: on
+                              ? 'none'
+                              : '1.5px solid var(--border-strong)',
+                          }}
+                        />
+                        <span
+                          className={
+                            on
+                              ? 'truncate text-fg text-sm'
+                              : 'truncate text-fg-muted text-sm'
+                          }
+                        >
+                          {l.name}
+                        </span>
+                      </button>
+                      <HoverActions
+                        className="absolute top-1/2 right-1 -translate-y-1/2"
+                        items={[
+                          {
+                            icon: 'write',
+                            label: m.action_edit(),
+                            onClick: () => openLabelEdit(l),
+                          },
+                          {
+                            danger: true,
+                            icon: 'trash',
+                            label: m.action_delete(),
+                            onClick: () =>
+                              openConfirm({
+                                body: m.confirm_delete_body(),
+                                onConfirm: () => deleteLabel.mutate(l.id),
+                                title: m.confirm_delete_title({ name: l.name }),
+                              }),
+                          },
+                        ]}
+                      />
+                    </div>
+                  );
+                }
+              )}
               {(labels?.length ?? 0) > LABEL_LIMIT && (
                 <button
+                  className="mt-1 self-start rounded-row px-1.5 py-1 font-medium text-fg-muted text-sm hover:bg-surface-hover-bg hover:text-fg"
                   onClick={() => setShowAllLabels((s) => !s)}
-                  className="mt-1 self-start rounded-row px-1.5 py-1 text-sm font-medium text-fg-muted hover:bg-surface-hover-bg hover:text-fg"
+                  type="button"
                 >
                   {showAllLabels ? 'Show less' : `Show all (${labels?.length})`}
                 </button>
@@ -226,55 +251,55 @@ export default function Schedule() {
       {/* main calendar */}
       <PanelWithInvertedRadius className="flex-1">
         <PageHeader
-          title={`${MONTHS[month.getMonth()]} ${month.getFullYear()}`}
           actions={
             <IconButton
               icon="plus"
-              variant="gray"
               label="New event"
-              size="lg"
               onClick={() => openEventForm()}
+              size="lg"
+              variant="gray"
             />
           }
           showTopBar
+          title={`${MONTHS[month.getMonth()]} ${month.getFullYear()}`}
         />
         <div className="flex items-center gap-3 px-6 pb-3">
           <SegmentedControl
-            size="sm"
-            variant="ghost"
-            options={[
-              { value: 'month', label: 'Month' },
-              { value: 'week', label: 'Week' },
-              { value: 'day', label: 'Day' },
-            ]}
-            value={view}
             onChange={(v) => setView(v as View)}
+            options={[
+              { label: 'Month', value: 'month' },
+              { label: 'Week', value: 'week' },
+              { label: 'Day', value: 'day' },
+            ]}
+            size="sm"
+            value={view}
+            variant="ghost"
           />
         </div>
 
-        <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto px-3 pb-4">
+        <div className="min-h-0 flex-1 overflow-auto px-3 pb-4" ref={scrollRef}>
           {isLoading ? (
             <Skeleton className="h-full min-h-[560px] w-full" />
           ) : view === 'month' ? (
             <div className="h-full min-h-[560px]">
               <MonthView
-                month={month}
                 events={visibleEvents}
                 labels={labels ?? []}
+                month={month}
                 onCreate={createOnDay}
                 onSelectEvent={selectEvent}
               />
             </div>
           ) : (
             <TimeGrid
+              autoScrollTracker={scheduleAutoScroll}
               days={days}
               events={visibleEvents}
               labels={labels ?? []}
-              selectedId={eventDetail?.id ?? null}
               onCreateSlot={createAt}
               onSelectEvent={selectEvent}
-              autoScrollTracker={scheduleAutoScroll}
               scrollContainerRef={scrollRef}
+              selectedId={eventDetail?.id ?? null}
             />
           )}
         </div>

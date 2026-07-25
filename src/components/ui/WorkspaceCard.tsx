@@ -1,17 +1,17 @@
-import { Workspace } from '@/api/types';
-import { userColorPair } from '@/lib/userColor';
 import { Link } from '@tanstack/react-router';
+import { useState } from 'react';
+import { useDeleteWorkspace, useUpdateWorkspaceSharing } from '@/api/hooks';
+import type { Workspace } from '@/api/types';
+import { Menu } from '@/components/ui/Menu';
+import { ShareDialog } from '@/features/workspace/ShareDialog';
+import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
+import { userColorPair } from '@/lib/userColor';
+import { usePortals } from '@/stores/portals';
 import { Badge } from './Badge';
 import { Card } from './Card';
-import { Icon } from './Icon';
 import { Skeleton } from './feedback';
-import { Menu } from '@/components/ui/Menu';
-import { m } from '@/i18n';
-import { useDeleteWorkspace, useUpdateWorkspaceSharing } from '@/api/hooks';
-import { useDialogs } from '@/stores/dialogs';
-import { cn } from '@/lib/cn';
-import { useState } from 'react';
-import { ShareDialog } from '@/components/app/ShareDialog';
+import { Icon } from './Icon';
 
 export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const c = userColorPair(workspace.color);
@@ -19,25 +19,35 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const updateSharing = useUpdateWorkspaceSharing();
   const [shareOpen, setShareOpen] = useState(false);
   const canManage = workspace.capabilities.canManageMembers;
-  const openWorkspaceEdit = useDialogs((s) => s.openWorkspaceEdit);
-  // const openWorkspaceStats = useDialogs((s) => s.openWorkspaceStats);
-  const openConfirm = useDialogs((s) => s.openConfirm);
+  const openWorkspaceEdit = usePortals((s) => s.openWorkspaceEdit);
+  // const openWorkspaceStats = usePortals((s) => s.openWorkspaceStats);
+  const openConfirm = usePortals((s) => s.openConfirm);
   return (
     <div className="relative">
       <Link
         key={workspace.id}
-        to="/workspaces/$workspaceId"
         params={{ workspaceId: workspace.id }}
         preload="intent"
+        to="/workspaces/$workspaceId"
       >
-        <Card interactive border="solid" className="relative h-full gap-4 p-4.5 xl:p-5.5">
+        <Card
+          border="solid"
+          className="relative h-full gap-4 p-4.5 xl:p-5.5"
+          interactive
+        >
           <span
-            className={cn('size-fit rounded-card p-3', workspace.color === 'transparent' && 'px-1')}
+            className={cn(
+              'size-fit rounded-card p-3',
+              workspace.color === 'transparent' && 'px-1'
+            )}
             style={{ background: c.bg, color: c.fg }}
           >
             <Icon
+              className={cn(
+                'size-5.5',
+                workspace.color === 'transparent' && 'size-6'
+              )}
               name="workspaces"
-              className={cn('size-5.5', workspace.color === 'transparent' && 'size-6')}
             />
           </span>
           <div className="flex-1">
@@ -47,12 +57,15 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
             </p>
             <div className="mt-3 flex flex-wrap gap-1">
               {workspace.tags.slice(0, 3).map((t) => (
-                <Badge key={t.value} tone="neutral" size="sm">
+                <Badge key={t.value} size="sm" tone="neutral">
                   # {t.value}
                 </Badge>
               ))}
               {workspace.privacy !== 'private' && (
-                <Badge tone={workspace.privacy === 'public' ? 'success' : 'info'} size="sm">
+                <Badge
+                  size="sm"
+                  tone={workspace.privacy === 'public' ? 'success' : 'info'}
+                >
                   {workspace.privacy === 'public' ? 'Public' : 'Shared'}
                 </Badge>
               )}
@@ -66,44 +79,44 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
             <Menu
               items={[
                 {
-                  label: m.action_edit(),
                   icon: 'settings',
+                  label: m.action_edit(),
                   onClick: () => openWorkspaceEdit(workspace, workspace.id),
                 },
                 {
-                  label: 'Share',
                   icon: 'link',
+                  label: 'Share',
                   onClick: () => setShareOpen(true),
                 },
                 {
-                  label: m.action_delete(),
-                  icon: 'trash',
                   danger: true,
+                  icon: 'trash',
+                  label: m.action_delete(),
                   onClick: () =>
                     openConfirm({
-                      title: m.confirm_delete_title({ name: workspace.name }),
                       body: m.confirm_delete_body(),
                       onConfirm: () => del.mutate(workspace.id),
+                      title: m.confirm_delete_title({ name: workspace.name }),
                     }),
                 },
               ]}
             />
           </div>
           <ShareDialog
-            open={shareOpen}
-            onClose={() => setShareOpen(false)}
-            title={`Share ${workspace.name}`}
-            privacy={workspace.privacy}
             link={`/share/workspaces/${workspace.id}`}
-            saving={updateSharing.isPending}
-            workspaceId={workspace.id}
-            shareRole={workspace.shareRole ?? 'viewer'}
+            onClose={() => setShareOpen(false)}
             onPrivacyChange={(privacy) =>
               updateSharing.mutateAsync({ id: workspace.id, privacy })
             }
             onShareRoleChange={(shareRole) =>
               updateSharing.mutateAsync({ id: workspace.id, shareRole })
             }
+            open={shareOpen}
+            privacy={workspace.privacy}
+            saving={updateSharing.isPending}
+            shareRole={workspace.shareRole ?? 'viewer'}
+            title={`Share ${workspace.name}`}
+            workspaceId={workspace.id}
           />
         </>
       )}

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { EDITOR_NOTE } from '../../src/mocks/editorSeed';
 import {
   blockSelectionOverlays,
@@ -8,7 +8,9 @@ import {
 } from './helpers';
 
 test.describe('block selection and context menu', () => {
-  test('clicking a drag handle selects the block with a visible overlay', async ({ page }) => {
+  test('clicking a drag handle selects the block with a visible overlay', async ({
+    page,
+  }) => {
     await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
 
     const handle = await hoverBlockHandle(page, EDITOR_NOTE.firstParagraph);
@@ -18,12 +20,16 @@ test.describe('block selection and context menu', () => {
     await expect(blockSelectionOverlays(page).first()).toBeVisible();
   });
 
-  test('right-clicking a block selects it and opens the context menu', async ({ page }) => {
+  test('right-clicking a block selects it and opens the context menu', async ({
+    page,
+  }) => {
     await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.secondParagraph);
 
     const menu = await openBlockContextMenu(page, EDITOR_NOTE.secondParagraph);
 
-    await expect(menu.getByRole('menuitem', { name: 'Duplicate' })).toBeVisible();
+    await expect(
+      menu.getByRole('menuitem', { name: 'Duplicate' })
+    ).toBeVisible();
     await expect(menu.getByRole('menuitem', { name: 'Delete' })).toBeVisible();
     await expect(blockSelectionOverlays(page)).toHaveCount(1);
 
@@ -32,39 +38,65 @@ test.describe('block selection and context menu', () => {
   });
 
   test('context menu Duplicate copies the block', async ({ page }) => {
-    const editor = await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.secondParagraph);
+    const editor = await openEditorNote(
+      page,
+      EDITOR_NOTE.id,
+      EDITOR_NOTE.secondParagraph
+    );
 
     const menu = await openBlockContextMenu(page, EDITOR_NOTE.secondParagraph);
     await menu.getByRole('menuitem', { name: 'Duplicate' }).click();
 
-    await expect(editor.getByText(EDITOR_NOTE.secondParagraph, { exact: true })).toHaveCount(2);
+    await expect(
+      editor.getByText(EDITOR_NOTE.secondParagraph, { exact: true })
+    ).toHaveCount(2);
   });
 
   test('context menu Delete removes the block', async ({ page }) => {
-    const editor = await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.thirdParagraph);
+    const editor = await openEditorNote(
+      page,
+      EDITOR_NOTE.id,
+      EDITOR_NOTE.thirdParagraph
+    );
 
     const menu = await openBlockContextMenu(page, EDITOR_NOTE.thirdParagraph);
     await menu.getByRole('menuitem', { name: 'Delete' }).click();
 
-    await expect(editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true })).toHaveCount(0);
+    await expect(
+      editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true })
+    ).toHaveCount(0);
     // The rest of the document is untouched.
-    await expect(editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true })).toBeVisible();
+    await expect(
+      editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true })
+    ).toBeVisible();
   });
 
   test('context menu Turn into converts the block type', async ({ page }) => {
-    const editor = await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
+    const editor = await openEditorNote(
+      page,
+      EDITOR_NOTE.id,
+      EDITOR_NOTE.firstParagraph
+    );
 
     const menu = await openBlockContextMenu(page, EDITOR_NOTE.firstParagraph);
     await menu.getByRole('menuitem', { name: 'Turn into' }).hover();
     await page.getByRole('menuitem', { name: 'Heading 2' }).click();
 
     await expect(
-      editor.locator('h2').getByText(EDITOR_NOTE.firstParagraph, { exact: true })
+      editor
+        .locator('h2')
+        .getByText(EDITOR_NOTE.firstParagraph, { exact: true })
     ).toBeVisible();
   });
 
-  test('select-all escalates from text selection to block selection', async ({ page }) => {
-    const editor = await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
+  test('select-all escalates from text selection to block selection', async ({
+    page,
+  }) => {
+    const editor = await openEditorNote(
+      page,
+      EDITOR_NOTE.id,
+      EDITOR_NOTE.firstParagraph
+    );
 
     await editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true }).click();
     await page.keyboard.press('ControlOrMeta+a');
@@ -75,12 +107,19 @@ test.describe('block selection and context menu', () => {
   });
 
   test('dragging a handle reorders blocks', async ({ page }) => {
-    const editor = await openEditorNote(page, EDITOR_NOTE.id, EDITOR_NOTE.firstParagraph);
+    const editor = await openEditorNote(
+      page,
+      EDITOR_NOTE.id,
+      EDITOR_NOTE.firstParagraph
+    );
 
     const handle = await hoverBlockHandle(page, EDITOR_NOTE.firstParagraph);
-    await handle.dragTo(editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true }), {
-      targetPosition: { x: 40, y: 20 },
-    });
+    await handle.dragTo(
+      editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true }),
+      {
+        targetPosition: { x: 40, y: 20 },
+      }
+    );
 
     const first = editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true });
     const third = editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true });

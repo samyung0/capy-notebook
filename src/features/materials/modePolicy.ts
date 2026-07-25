@@ -39,7 +39,9 @@ export function resolveMaterialMode(
   requested: MaterialMode | null,
   policy: MaterialModePolicy
 ): MaterialMode {
-  return requested && policy.modes.includes(requested) ? requested : policy.defaultMode;
+  return requested && policy.modes.includes(requested)
+    ? requested
+    : policy.defaultMode;
 }
 
 export function isInteractiveMaterialMode(

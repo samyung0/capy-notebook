@@ -1,5 +1,12 @@
-import { Badge, Dialog, DialogContent, DialogTitle, Icon, IconButton } from '@/components/ui';
 import type { CalendarEvent, Label } from '@/api/types';
+import {
+  Badge,
+  Dialog,
+  DialogContent,
+  DialogTitle,
+  Icon,
+  IconButton,
+} from '@/components/ui';
 import { fmtTime } from './dateUtils';
 
 export function EventDetailDialog({
@@ -14,7 +21,7 @@ export function EventDetailDialog({
   onEdit?: (event: CalendarEvent) => void;
 }) {
   return (
-    <Dialog open={!!event} onOpenChange={(open) => !open && onClose()}>
+    <Dialog onOpenChange={(open) => !open && onClose()} open={!!event}>
       <DialogContent className="max-w-md">
         {event && (
           <>
@@ -22,22 +29,23 @@ export function EventDetailDialog({
               <span className="min-w-0 truncate">{event.title}</span>
             </DialogTitle>
             <IconButton
-              icon="write"
-              variant="ghost-hover"
-              size="md"
               className="absolute top-4 right-14"
+              icon="write"
               label="Edit"
               onClick={() => onEdit?.(event)}
+              size="md"
+              variant="ghost-hover"
             />
 
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2">
-                <Icon name="clock" className="size-4 -translate-y-px" /> {fmtTime(event.start)} –{' '}
-                {fmtTime(event.end)}
+                <Icon className="size-4 -translate-y-px" name="clock" />{' '}
+                {fmtTime(event.start)} – {fmtTime(event.end)}
               </div>
               {event.location && (
                 <div className="flex items-center gap-2">
-                  <Icon name="location" className="size-4 -translate-y-px" /> {event.location}
+                  <Icon className="size-4 -translate-y-px" name="location" />{' '}
+                  {event.location}
                 </div>
               )}
               {event.labelIds.length > 0 && (
@@ -45,7 +53,7 @@ export function EventDetailDialog({
                   {event.labelIds.map((id) => {
                     const l = labels.find((x) => x.id === id);
                     return l ? (
-                      <Badge key={id} tone="neutral" size="sm">
+                      <Badge key={id} size="sm" tone="neutral">
                         # {l.name}
                       </Badge>
                     ) : null;

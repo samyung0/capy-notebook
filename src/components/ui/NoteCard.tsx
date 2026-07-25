@@ -11,15 +11,15 @@ const THEME: Record<NoteTheme, { bg: string; fg: string; muted: string }> = {
     fg: 'var(--note-green-fg)',
     muted: 'var(--note-green-fg-muted)',
   },
-  purple: {
-    bg: 'var(--note-purple-bg)',
-    fg: 'var(--note-purple-fg)',
-    muted: 'var(--note-purple-fg-muted)',
-  },
   greenSoft: {
     bg: 'var(--note-green-soft-bg)',
     fg: 'var(--note-green-soft-fg)',
     muted: 'var(--note-green-soft-fg)',
+  },
+  purple: {
+    bg: 'var(--note-purple-bg)',
+    fg: 'var(--note-purple-fg)',
+    muted: 'var(--note-purple-fg-muted)',
   },
   purpleSoft: {
     bg: 'var(--note-purple-soft-bg)',
@@ -29,11 +29,11 @@ const THEME: Record<NoteTheme, { bg: string; fg: string; muted: string }> = {
 };
 
 export interface NoteCardProps extends HTMLAttributes<HTMLDivElement> {
-  title: string;
   body?: string;
   date?: string;
-  theme?: NoteTheme;
   onMenu?: () => void;
+  theme?: NoteTheme;
+  title: string;
 }
 
 export function NoteCard({
@@ -49,27 +49,34 @@ export function NoteCard({
   const t = THEME[theme];
   return (
     <div
-      className={cn('flex min-h-[150px] flex-col gap-3 rounded-card-lg p-5', className)}
+      className={cn(
+        'flex min-h-[150px] flex-col gap-3 rounded-card-lg p-5',
+        className
+      )}
       style={{ background: t.bg, color: t.fg, ...style }}
       {...rest}
     >
       <div className="flex items-start">
-        <span className="text-base font-bold">{title}</span>
+        <span className="font-bold text-base">{title}</span>
         {onMenu && (
           <button
-            onClick={onMenu}
             aria-label="Note options"
             className="ml-auto flex h-[26px] w-[26px] items-center justify-center rounded-row"
+            onClick={onMenu}
             style={{
               background: 'color-mix(in srgb, currentColor 14%, transparent)',
             }}
+            type="button"
           >
             <Icon name="moreVertical" size={16} strokeWidth={2.4} />
           </button>
         )}
       </div>
       {body && (
-        <p className="m-0 text-[0.84rem] leading-normal" style={{ opacity: 0.92 }}>
+        <p
+          className="m-0 text-[0.84rem] leading-normal"
+          style={{ opacity: 0.92 }}
+        >
           {body}
         </p>
       )}

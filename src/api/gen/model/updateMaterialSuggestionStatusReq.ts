@@ -4,8 +4,8 @@
  * Evo Notes API
  * OpenAPI spec version: 0.1.0
  */
-import type { Envelope } from './envelope.ts';
-import type { SuggestionStatus } from './suggestionStatus.ts';
+import type { Envelope } from "./envelope.ts";
+import type { SuggestionStatus } from "./suggestionStatus.ts";
 
 export interface UpdateMaterialSuggestionStatusReq {
   /** A URL to the JSON Schema for this object. */

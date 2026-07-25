@@ -1,6 +1,6 @@
-import { Menu } from '@/components/ui/Menu';
 import { Button } from '@/components/ui/Button';
-import { getLocale, setLocale, locales, LOCALE_LABELS } from '@/i18n';
+import { Menu } from '@/components/ui/Menu';
+import { getLocale, LOCALE_LABELS, locales, setLocale } from '@/i18n';
 
 export function LocaleSwitcher() {
   const current = (() => {
@@ -10,20 +10,22 @@ export function LocaleSwitcher() {
       return 'en';
     }
   })();
-  const available: readonly string[] = (locales as readonly string[] | undefined) ?? ['en', 'zh'];
+  const available: readonly string[] = (locales as
+    | readonly string[]
+    | undefined) ?? ['en', 'zh'];
 
   return (
     <Menu
       align="end"
+      items={available.map((locale) => ({
+        label: LOCALE_LABELS[locale] ?? locale,
+        onClick: () => setLocale(locale as never),
+      }))}
       trigger={
-        <Button variant="outline" size="sm" iconLeft="globe">
+        <Button iconLeft="globe" size="sm" variant="outline">
           {LOCALE_LABELS[current] ?? current}
         </Button>
       }
-      items={available.map((loc) => ({
-        label: LOCALE_LABELS[loc] ?? loc,
-        onClick: () => setLocale(loc as never),
-      }))}
     />
   );
 }

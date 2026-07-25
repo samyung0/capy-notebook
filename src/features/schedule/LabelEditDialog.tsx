@@ -1,16 +1,16 @@
 import { useState } from 'react';
+import type { Label, UserColor } from '@/api/types';
 import { Button, Input, SimpleDialog, Text } from '@/components/ui';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { USER_COLORS, userColorPair } from '@/lib/userColor';
-import type { Label, UserColor } from '@/api/types';
-import { m } from '@/i18n';
 
 export interface LabelFormValues {
-  name: string;
   color: UserColor;
+  name: string;
 }
 
-export function LabelEditModal({
+export function LabelEditDialog({
   label,
   open,
   onClose,
@@ -26,19 +26,15 @@ export function LabelEditModal({
 
   return (
     <SimpleDialog
-      open={open}
-      onClose={onClose}
-      title={m.action_edit()}
-      width={440}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button onClick={onClose} variant="ghost">
             Cancel
           </Button>
           <Button
             disabled={!name.trim()}
             onClick={() => {
-              onSave({ name: name.trim(), color });
+              onSave({ color, name: name.trim() });
               onClose();
             }}
           >
@@ -46,17 +42,24 @@ export function LabelEditModal({
           </Button>
         </>
       }
+      onClose={onClose}
+      open={open}
+      title={m.action_edit()}
     >
       <div className="flex flex-col gap-4">
         <label className="flex flex-col gap-1.5">
-          <Text variant="label" tone="muted">
+          <Text tone="muted" variant="label">
             Name
           </Text>
-          <Input value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+          <Input
+            autoFocus
+            onChange={(e) => setName(e.target.value)}
+            value={name}
+          />
         </label>
 
         <div className="flex flex-col gap-1.5">
-          <Text variant="label" tone="muted">
+          <Text tone="muted" variant="label">
             Color
           </Text>
           <div className="flex gap-2">
@@ -64,14 +67,16 @@ export function LabelEditModal({
               const p = userColorPair(c);
               return (
                 <button
-                  key={c}
-                  onClick={() => setColor(c)}
                   aria-label={c}
                   className={cn(
                     'h-8 w-8 rounded-pill transition-transform',
-                    color === c && 'ring-2 ring-action ring-offset-2 ring-offset-surface'
+                    color === c &&
+                      'ring-2 ring-action ring-offset-2 ring-offset-surface'
                   )}
+                  key={c}
+                  onClick={() => setColor(c)}
                   style={{ background: p.bg }}
+                  type="button"
                 />
               );
             })}

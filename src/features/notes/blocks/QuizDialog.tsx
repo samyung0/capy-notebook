@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
+import type { Question } from '@/api/types';
 import { Button, Input, SimpleDialog, Text } from '@/components/ui';
 import { parseQuizFenceBody } from '@/features/materials/blocks';
-import type { Question } from '@/api/types';
 import {
   createBlankQuestion,
   isCompleteQuestion,
@@ -29,14 +29,20 @@ export function QuizDialog({
     const parsed = initialCode
       ? parseQuizFenceBody(initialCode)
       : { questions: [], timeLimitMin: undefined };
-    setQuestions(parsed.questions.length ? structuredClone(parsed.questions) : [createBlankQuestion()]);
-    setTimeLimit(parsed.timeLimitMin != null ? String(parsed.timeLimitMin) : '');
+    setQuestions(
+      parsed.questions.length
+        ? structuredClone(parsed.questions)
+        : [createBlankQuestion()]
+    );
+    setTimeLimit(
+      parsed.timeLimitMin == null ? '' : String(parsed.timeLimitMin)
+    );
   }, [open, initialCode]);
 
   const canSave = questions.length > 0 && questions.every(isCompleteQuestion);
 
   function save() {
-    const tl = parseInt(timeLimit, 10);
+    const tl = Number.parseInt(timeLimit, 10);
     onSave(
       quizFenceBody({
         questions,
@@ -47,42 +53,41 @@ export function QuizDialog({
 
   return (
     <SimpleDialog
-      open={open}
-      onClose={onClose}
-      title="Quiz"
-      width={640}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>
+          <Button onClick={onClose} variant="ghost">
             Cancel
           </Button>
-          <Button onClick={save} disabled={!canSave}>
+          <Button disabled={!canSave} onClick={save}>
             {initialCode ? 'Save' : 'Insert'}
           </Button>
         </>
       }
+      onClose={onClose}
+      open={open}
+      title="Quiz"
     >
       <div className="flex max-h-[62vh] flex-col gap-4 overflow-auto pr-1">
         <label className="flex items-center gap-2">
-          <Text variant="label" tone="muted">
+          <Text tone="muted" variant="label">
             Time limit (min, optional)
           </Text>
           <Input
-            type="number"
             className="w-24"
-            value={timeLimit}
             onChange={(e) => setTimeLimit(e.target.value)}
+            type="number"
+            value={timeLimit}
           />
         </label>
         <QuizForm
           name=""
-          questions={questions}
           onNameChange={() => {}}
           onQuestionsChange={setQuestions}
+          questions={questions}
           showName={false}
         />
         {!canSave && (
-          <Text variant="meta" tone="muted">
+          <Text tone="muted" variant="meta">
             Complete every question and mark its correct answer before saving.
           </Text>
         )}

@@ -1,5 +1,5 @@
-import { useEffect, useRef } from 'react';
 import { Excalidraw } from '@excalidraw/excalidraw';
+import { useEffect, useRef } from 'react';
 import '@excalidraw/excalidraw/index.css';
 import { useTheme } from '@/theme/ThemeProvider';
 
@@ -14,7 +14,7 @@ export default function CanvasEditor({
   initialScene?: unknown;
   onChange: (scene: unknown) => void;
 }) {
-  const { mode } = useTheme();
+  const { theme } = useTheme();
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const scene = (initialScene ?? {}) as SceneBlob;
 
@@ -28,7 +28,6 @@ export default function CanvasEditor({
   return (
     <div className="h-full w-full">
       <Excalidraw
-        theme={mode === 'dark' ? 'dark' : 'light'}
         initialData={{
           elements: (scene.elements as never) ?? [],
           scrollToContent: true,
@@ -37,6 +36,7 @@ export default function CanvasEditor({
           if (timer.current) clearTimeout(timer.current);
           timer.current = setTimeout(() => onChange({ elements }), 800);
         }}
+        theme={theme === 'dark' ? 'dark' : 'light'}
       />
     </div>
   );

@@ -1,37 +1,55 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { PlaceholderPlugin, PlaceholderProvider, updateUploadHistory } from '@platejs/media/react';
+import {
+  PlaceholderPlugin,
+  PlaceholderProvider,
+  updateUploadHistory,
+} from '@platejs/media/react';
+import {
+  FileAudio,
+  FileText,
+  FileVideo,
+  Image,
+  LoaderCircle,
+  Upload,
+  X,
+} from 'lucide-react';
 import type { TPlaceholderElement } from 'platejs';
 import { KEYS } from 'platejs';
 import {
   PlateElement,
   type PlateElementProps,
   useEditorPlugin,
-  useEditorRef,
+  type useEditorRef,
   withHOC,
 } from 'platejs/react';
-import { FileAudio, FileText, FileVideo, Image, LoaderCircle, Upload, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFilePicker } from 'use-file-picker';
 import { uploadEditorAsset } from '@/api/editorAssets';
-import { MediaAssetView, type MediaAssetNode } from '@/features/materials/MediaAssetView';
+import {
+  type MediaAssetNode,
+  MediaAssetView,
+} from '@/features/materials/MediaAssetView';
 import { cn } from '@/lib/cn';
 import { useEditorRuntime } from './EditorRuntime';
 import { canCreateExternalEditorAssets } from './editorMode';
 import { insertEditorNode } from './insertEditorNode';
 import {
-  MEDIA_ACCEPT,
   acceptsPurpose,
   editorAssetPurpose,
+  MEDIA_ACCEPT,
   mediaNodeFromAsset,
-  plateMediaType,
+  type plateMediaType,
 } from './media';
 
 type MediaType = ReturnType<typeof plateMediaType>;
 
-const PLACEHOLDER_COPY: Record<MediaType, { label: string; icon: typeof Image }> = {
-  img: { label: 'Add an image', icon: Image },
-  audio: { label: 'Add audio', icon: FileAudio },
-  video: { label: 'Add video', icon: FileVideo },
-  file: { label: 'Add a file', icon: FileText },
+const PLACEHOLDER_COPY: Record<
+  MediaType,
+  { label: string; icon: typeof Image }
+> = {
+  audio: { icon: FileAudio, label: 'Add audio' },
+  file: { icon: FileText, label: 'Add a file' },
+  img: { icon: Image, label: 'Add an image' },
+  video: { icon: FileVideo, label: 'Add video' },
 };
 
 function purposeForMediaType(type: string) {
@@ -43,10 +61,15 @@ function purposeForMediaType(type: string) {
 
 export const MediaPlaceholderElement = withHOC(
   PlaceholderProvider,
-  function MediaPlaceholderElement(props: PlateElementProps<TPlaceholderElement>) {
+  function MediaPlaceholderElement(
+    props: PlateElementProps<TPlaceholderElement>
+  ) {
     const { editor, element } = props;
     const { workspaceId, mode, allowExternalAssets } = useEditorRuntime();
-    const canCreateAssets = canCreateExternalEditorAssets(mode, allowExternalAssets);
+    const canCreateAssets = canCreateExternalEditorAssets(
+      mode,
+      allowExternalAssets
+    );
     const { api } = useEditorPlugin(PlaceholderPlugin);
     const [progress, setProgress] = useState(0);
     const [uploading, setUploading] = useState<File | null>(null);
@@ -72,13 +95,21 @@ export const MediaPlaceholderElement = withHOC(
         setError(null);
         api.placeholder.addUploadingFile(element.id as string, file);
         try {
-          const asset = await uploadEditorAsset(workspaceId, file, editorAssetPurpose(file), {
-            signal: controller.signal,
-            onProgress: setProgress,
-          });
+          const asset = await uploadEditorAsset(
+            workspaceId,
+            file,
+            editorAssetPurpose(file),
+            {
+              onProgress: setProgress,
+              signal: controller.signal,
+            }
+          );
           const path = editor.api.findPath(element);
           if (!path) return;
-          const node = { ...mediaNodeFromAsset(asset), placeholderId: element.id as string };
+          const node = {
+            ...mediaNodeFromAsset(asset),
+            placeholderId: element.id as string,
+          };
           editor.tf.withoutSaving(() => {
             editor.tf.removeNodes({ at: path });
             editor.tf.insertNodes(node, { at: path });
@@ -104,7 +135,8 @@ export const MediaPlaceholderElement = withHOC(
         if (!canCreateAssets) return;
         const [first, ...rest] = plainFiles;
         if (first) void replaceCurrentPlaceholder(first);
-        if (rest.length) editor.getTransforms(PlaceholderPlugin).insert.media(rest);
+        if (rest.length)
+          editor.getTransforms(PlaceholderPlugin).insert.media(rest);
       },
     });
 
@@ -113,19 +145,30 @@ export const MediaPlaceholderElement = withHOC(
       const dropped = api.placeholder.getUploadingFile(element.id as string);
       if (dropped) void replaceCurrentPlaceholder(dropped);
       return () => abortRef.current?.abort();
-    }, [api.placeholder, canCreateAssets, element.id, replaceCurrentPlaceholder]);
+    }, [
+      api.placeholder,
+      canCreateAssets,
+      element.id,
+      replaceCurrentPlaceholder,
+    ]);
 
     return (
       <PlateElement {...props} className="my-2">
         <div
-          contentEditable={false}
           className={cn(
-            'flex min-h-18 items-center gap-3 rounded-card border border-dashed border-line bg-surface-hover-bg px-4 py-3',
-            canCreateAssets && !uploading && 'cursor-pointer hover:border-line-strong'
+            'flex min-h-18 items-center gap-3 rounded-card border border-line border-dashed bg-surface-hover-bg px-4 py-3',
+            canCreateAssets &&
+              !uploading &&
+              'cursor-pointer hover:border-line-strong'
           )}
+          contentEditable={false}
           onClick={() => canCreateAssets && !uploading && openFilePicker()}
           onKeyDown={(event) => {
-            if (canCreateAssets && !uploading && (event.key === 'Enter' || event.key === ' ')) {
+            if (
+              canCreateAssets &&
+              !uploading &&
+              (event.key === 'Enter' || event.key === ' ')
+            ) {
               openFilePicker();
             }
           }}
@@ -138,10 +181,15 @@ export const MediaPlaceholderElement = withHOC(
             <Icon className="size-5 text-fg-muted" />
           )}
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-fg">
+            <p className="truncate font-medium text-fg text-sm">
               {uploading?.name ?? content.label}
             </p>
-            <p className={cn('text-xs text-fg-muted', error && 'text-solid-error')}>
+            <p
+              className={cn(
+                'text-fg-muted text-xs',
+                error && 'text-solid-error'
+              )}
+            >
               {error ??
                 (uploading
                   ? `${progress}% uploaded`
@@ -160,13 +208,13 @@ export const MediaPlaceholderElement = withHOC(
           </div>
           {uploading ? (
             <button
-              type="button"
-              className="rounded-row p-1 text-fg-muted hover:bg-surface"
               aria-label="Cancel upload"
+              className="rounded-row p-1 text-fg-muted hover:bg-surface"
               onClick={(event) => {
                 event.stopPropagation();
                 abortRef.current?.abort();
               }}
+              type="button"
             >
               <X className="size-4" />
             </button>
@@ -191,10 +239,13 @@ export function MediaAssetElement(props: PlateElementProps) {
 }
 
 /** Exposed for the toolbar and slash menu. */
-export function insertMediaPlaceholder(editor: ReturnType<typeof useEditorRef>, type: MediaType) {
+export function insertMediaPlaceholder(
+  editor: ReturnType<typeof useEditorRef>,
+  type: MediaType
+) {
   insertEditorNode(editor, {
-    type: KEYS.placeholder,
-    mediaType: type,
     children: [{ text: '' }],
+    mediaType: type,
+    type: KEYS.placeholder,
   });
 }

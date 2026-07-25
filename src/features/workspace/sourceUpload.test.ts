@@ -2,7 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
 
-import { aggregateUploadPct, defaultParseMode, getFileKind, parseModeIssues } from './sourceUpload';
+import {
+  aggregateUploadPct,
+  defaultParseMode,
+  getFileKind,
+  parseModeIssues,
+} from './sourceUpload';
 
 const file = (name: string, size = 1) => ({ name, size }) as File;
 
@@ -16,17 +21,29 @@ describe('source upload policy', () => {
   });
 
   it('selects parser modes using server-provided limits', () => {
-    expect(defaultParseMode(file('paper.pdf'), 'pdf', sourceUploadPolicy)).toBe('normal');
-    expect(defaultParseMode(file('paper.pdf', 11 * 1024 * 1024), 'pdf', sourceUploadPolicy)).toBe(
-      'advanced'
+    expect(defaultParseMode(file('paper.pdf'), 'pdf', sourceUploadPolicy)).toBe(
+      'normal'
     );
-    expect(parseModeIssues(file('paper.pdf', 21 * 1024 * 1024), 'pdf', sourceUploadPolicy)).toEqual(
-      {
-        advanced: null,
-        normal: 'over 10 MB',
-      }
+    expect(
+      defaultParseMode(
+        file('paper.pdf', 11 * 1024 * 1024),
+        'pdf',
+        sourceUploadPolicy
+      )
+    ).toBe('advanced');
+    expect(
+      parseModeIssues(
+        file('paper.pdf', 21 * 1024 * 1024),
+        'pdf',
+        sourceUploadPolicy
+      )
+    ).toEqual({
+      advanced: null,
+      normal: 'over 10 MB',
+    });
+    expect(defaultParseMode(file('script.py'), 'txt', sourceUploadPolicy)).toBe(
+      'none'
     );
-    expect(defaultParseMode(file('script.py'), 'txt', sourceUploadPolicy)).toBe('none');
   });
 });
 

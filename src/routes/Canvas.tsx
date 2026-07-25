@@ -1,8 +1,8 @@
-import { Suspense, lazy } from 'react';
 import { Link, useParams } from '@tanstack/react-router';
-import { Panel, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Icon, Skeleton, Text } from '@/components/ui';
+import { lazy, Suspense } from 'react';
 import { useCanvas, useSaveCanvas } from '@/api/hooks';
+import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { Icon, Skeleton, Text } from '@/components/ui';
 
 const CanvasEditor = lazy(() => import('@/features/thinking/CanvasEditor'));
 
@@ -14,15 +14,19 @@ export default function Canvas() {
 
   return (
     <PanelWithInvertedRadius>
-      <div className="flex items-center gap-3 border-b border-divider px-5 py-3">
-        <Link to="/thinking" preload="intent" className="text-fg-muted hover:text-fg">
+      <div className="flex items-center gap-3 border-divider border-b px-5 py-3">
+        <Link
+          className="text-fg-muted hover:text-fg"
+          preload="intent"
+          to="/thinking"
+        >
           <Icon name="chevronLeft" size={20} />
         </Link>
-        <Text variant="subtitle" className="flex-1">
+        <Text className="flex-1" variant="subtitle">
           {canvas?.name ?? 'Canvas'}
         </Text>
         {save.isPending && (
-          <Text variant="meta" tone="muted">
+          <Text tone="muted" variant="meta">
             Saving…
           </Text>
         )}
@@ -31,7 +35,9 @@ export default function Canvas() {
         {isLoading ? (
           <Skeleton className="h-full w-full rounded-none" />
         ) : (
-          <Suspense fallback={<Skeleton className="h-full w-full rounded-none" />}>
+          <Suspense
+            fallback={<Skeleton className="h-full w-full rounded-none" />}
+          >
             <CanvasEditor
               initialScene={canvas?.scene}
               onChange={(scene) => save.mutate({ scene })}

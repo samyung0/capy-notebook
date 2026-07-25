@@ -1,7 +1,10 @@
-import { flip, offset, useFloatingToolbar, useFloatingToolbarState } from '@platejs/floating';
 import { AIChatPlugin } from '@platejs/ai/react';
-import { KEYS } from 'platejs';
-import { useEditorId, useEditorRef, useEventEditorValue, usePluginOption } from 'platejs/react';
+import {
+  flip,
+  offset,
+  useFloatingToolbar,
+  useFloatingToolbarState,
+} from '@platejs/floating';
 import {
   Bold,
   Code2,
@@ -13,6 +16,13 @@ import {
   Strikethrough,
   Underline,
 } from 'lucide-react';
+import { KEYS } from 'platejs';
+import {
+  useEditorId,
+  useEditorRef,
+  useEventEditorValue,
+  usePluginOption,
+} from 'platejs/react';
 import { cn } from '@/lib/cn';
 import { openAiMenu } from './ai/aiMenuState';
 import { useCollaborationActions } from './Collaboration';
@@ -27,18 +37,23 @@ export function FloatingToolbar() {
   const collaboration = useCollaborationActions();
   const state = useFloatingToolbarState({
     editorId,
-    focusedEditorId,
-    hideToolbar: aiOpen,
     floatingOptions: {
       middleware: [
         offset(10),
         flip({
-          fallbackPlacements: ['top-start', 'top-end', 'bottom-start', 'bottom-end'],
+          fallbackPlacements: [
+            'top-start',
+            'top-end',
+            'bottom-start',
+            'bottom-end',
+          ],
           padding: 12,
         }),
       ],
       placement: 'top',
     },
+    focusedEditorId,
+    hideToolbar: aiOpen,
   });
   const { clickOutsideRef, hidden, props, ref } = useFloatingToolbar(state);
 
@@ -53,10 +68,10 @@ export function FloatingToolbar() {
     <div ref={clickOutsideRef}>
       <div
         {...props}
-        ref={ref}
-        role="toolbar"
         aria-label="Selection actions"
         className="absolute z-50 flex max-w-[90vw] items-center gap-0.5 overflow-x-auto rounded-card border border-line bg-surface p-1 shadow-pop"
+        ref={ref}
+        role="toolbar"
       >
         <FloatingButton label="AI commands" onClick={() => openAiMenu(editor)}>
           <Sparkles /> <span className="pr-1 text-xs">Ask AI</span>
@@ -71,7 +86,10 @@ export function FloatingToolbar() {
         <FloatingButton label="Underline" onClick={() => mark(KEYS.underline)}>
           <Underline />
         </FloatingButton>
-        <FloatingButton label="Strikethrough" onClick={() => mark(KEYS.strikethrough)}>
+        <FloatingButton
+          label="Strikethrough"
+          onClick={() => mark(KEYS.strikethrough)}
+        >
           <Strikethrough />
         </FloatingButton>
         <FloatingButton label="Inline code" onClick={() => mark(KEYS.code)}>
@@ -81,9 +99,9 @@ export function FloatingToolbar() {
           label="Inline equation"
           onClick={() =>
             editor.tf.insertNodes({
-              type: KEYS.inlineEquation,
-              texExpression: '',
               children: [{ text: '' }],
+              texExpression: '',
+              type: KEYS.inlineEquation,
             })
           }
         >
@@ -93,7 +111,9 @@ export function FloatingToolbar() {
           label="Link"
           onClick={() =>
             (
-              document.querySelector('button[aria-label="Link"]') as HTMLButtonElement | null
+              document.querySelector(
+                'button[aria-label="Link"]'
+              ) as HTMLButtonElement | null
             )?.click()
           }
         >
@@ -125,17 +145,17 @@ function FloatingButton({
 }) {
   return (
     <button
-      type="button"
-      title={label}
       aria-label={label}
       aria-pressed={active}
-      data-plate-prevent-deselect
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onClick}
       className={cn(
         'flex h-8 shrink-0 items-center gap-1 rounded-row px-2 text-fg-secondary hover:bg-surface-hover-bg hover:text-fg [&_svg]:size-4',
         active && 'bg-tint-accent-1 text-tint-accent-1-fg'
       )}
+      data-plate-prevent-deselect
+      onClick={onClick}
+      onMouseDown={(event) => event.preventDefault()}
+      title={label}
+      type="button"
     >
       {children}
     </button>

@@ -64,7 +64,10 @@ export const CODE_BLOCK_LANGUAGES = [
 
 export function getCodeBlockLanguageLabel(value: unknown): string {
   if (typeof value !== 'string' || !value) return 'Plain text';
-  return CODE_BLOCK_LANGUAGES.find((language) => language.value === value)?.label ?? value;
+  return (
+    CODE_BLOCK_LANGUAGES.find((language) => language.value === value)?.label ??
+    value
+  );
 }
 
 export interface ColumnLayout {
@@ -80,6 +83,14 @@ export const COLUMN_LAYOUTS: readonly ColumnLayout[] = [
     value: 'equal-3',
     widths: ['33.333%', '33.333%', '33.334%'],
   },
-  { label: 'Two columns, 2:1', value: 'left-wide', widths: ['66.667%', '33.333%'] },
-  { label: 'Two columns, 1:2', value: 'right-wide', widths: ['33.333%', '66.667%'] },
+  {
+    label: 'Two columns, 2:1',
+    value: 'left-wide',
+    widths: ['66.667%', '33.333%'],
+  },
+  {
+    label: 'Two columns, 1:2',
+    value: 'right-wide',
+    widths: ['33.333%', '66.667%'],
+  },
 ];

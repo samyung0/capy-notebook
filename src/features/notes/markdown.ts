@@ -5,14 +5,14 @@
    existing fenced-code format used by the Go backend and the read-only renderer.
    ============================================================ */
 import { MarkdownPlugin, remarkMdx } from '@platejs/markdown';
+import remarkEmoji from 'remark-emoji';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import remarkEmoji from 'remark-emoji';
 import {
+  type CustomBlockLang,
   customBlockCode,
   customBlockNode,
   isCustomBlockLang,
-  type CustomBlockLang,
 } from './blocks/shared';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -20,8 +20,8 @@ type AnyNode = any;
 
 function serializeCustomBlock(lang: string) {
   return (node: AnyNode) => ({
-    type: 'code',
     lang,
+    type: 'code',
     value: customBlockCode(node),
   });
 }
@@ -36,22 +36,25 @@ export const noteMarkdownPlugin = MarkdownPlugin.configure({
         deserialize: (node: AnyNode) => {
           const lang = node.lang ?? undefined;
           if (isCustomBlockLang(lang)) {
-            return customBlockNode(lang as CustomBlockLang, String(node.value ?? ''));
+            return customBlockNode(
+              lang as CustomBlockLang,
+              String(node.value ?? '')
+            );
           }
           const lines = String(node.value ?? '').split('\n');
           return {
-            type: 'code_block',
-            lang,
             children: lines.map((line: string) => ({
-              type: 'code_line',
               children: [{ text: line }],
+              type: 'code_line',
             })),
+            lang,
+            type: 'code_block',
           };
         },
       },
-      quiz: { serialize: serializeCustomBlock('quiz') },
       flashcards: { serialize: serializeCustomBlock('flashcards') },
       mermaid: { serialize: serializeCustomBlock('mermaid') },
+      quiz: { serialize: serializeCustomBlock('quiz') },
     } as AnyNode,
   },
 });

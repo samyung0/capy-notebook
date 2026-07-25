@@ -29,9 +29,9 @@ function useClerkProviderConnect() {
     const account = existing
       ? await existing.reauthorize({ additionalScopes, redirectUrl })
       : await user.createExternalAccount({
-          strategy: `oauth_${provider}`,
-          redirectUrl,
           additionalScopes,
+          redirectUrl,
+          strategy: `oauth_${provider}`,
         });
     const url = account.verification?.externalVerificationRedirectURL;
     if (url) window.location.assign(url.toString());
@@ -48,4 +48,6 @@ function useMockProviderConnect() {
  * ClerkProvider (MSW mode, or missing publishable key) — mirrors the
  * conditions in AppAuthProvider. */
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-export const useProviderConnect = CLERK_ACTIVE ? useClerkProviderConnect : useMockProviderConnect;
+export const useProviderConnect = CLERK_ACTIVE
+  ? useClerkProviderConnect
+  : useMockProviderConnect;

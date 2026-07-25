@@ -1,3 +1,31 @@
+import { useLink } from '@platejs/link/react';
+import { isOrderedList } from '@platejs/list';
+import { useTocElementState } from '@platejs/toc/react';
+import {
+  Check,
+  CircleAlert,
+  CircleCheck,
+  CircleX,
+  Clipboard,
+  Info,
+} from 'lucide-react';
+import { KEYS, NodeApi, type TLinkElement } from 'platejs';
+import {
+  PlateElement,
+  type PlateElementProps,
+  PlateLeaf,
+  type PlateLeafProps,
+  useEditorRef,
+  useReadOnly,
+} from 'platejs/react';
+import { Slot } from 'radix-ui';
+import {
+  type FocusEvent,
+  type KeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
+  useEffect,
+  useState,
+} from 'react';
 import {
   Select,
   SelectContent,
@@ -7,35 +35,6 @@ import {
 } from '@/components/ui/Select';
 import { Katex } from '@/features/materials/Katex';
 import { cn } from '@/lib/cn';
-import { isOrderedList } from '@platejs/list';
-import { useLink } from '@platejs/link/react';
-import { useTocElementState } from '@platejs/toc/react';
-import {
-  Check,
-  CircleAlert,
-  CircleCheck,
-  CircleX,
-  Clipboard,
-  GripVertical,
-  Info,
-} from 'lucide-react';
-import { KEYS, NodeApi, type TLinkElement } from 'platejs';
-import {
-  PlateElement,
-  PlateLeaf,
-  useEditorRef,
-  useReadOnly,
-  type PlateElementProps,
-  type PlateLeafProps,
-} from 'platejs/react';
-import {
-  useEffect,
-  useState,
-  type FocusEvent,
-  type KeyboardEvent,
-  type MouseEvent as ReactMouseEvent,
-} from 'react';
-import { Slot } from 'radix-ui';
 import { Column, ColumnGroup } from './ColumnNodes';
 import { MediaAssetElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
@@ -51,8 +50,8 @@ import {
   HR_CLASS,
   ITALIC_MARK_CLASS,
   KBD_MARK_CLASS,
-  LINK_CLASS,
   LI_CLASS,
+  LINK_CLASS,
   MENTION_CLASS,
   OL_CLASS,
   PARAGRAPH_CLASS,
@@ -60,16 +59,16 @@ import {
   TOC_EMPTY_CLASS,
   TOC_ITEM_CLASS,
   TOC_TITLE_CLASS,
-  UL_CLASS,
   tocItemIndent,
+  UL_CLASS,
 } from './nodeStyles';
 import {
-  CALLOUT_VARIANTS,
   CALLOUT_VARIANT_CLASS,
+  CALLOUT_VARIANTS,
+  type CalloutVariant,
   CODE_BLOCK_LANGUAGES,
   getCodeBlockLanguageLabel,
   normalizeCalloutVariant,
-  type CalloutVariant,
 } from './richBlockConfig';
 import {
   TableCellElement,
@@ -95,16 +94,16 @@ export function FloatingActionButton({
 
   return (
     <Component
-      type={asChild ? undefined : 'button'}
       aria-label={label}
-      title={label}
-      data-plate-prevent-deselect
-      onMouseDown={(event) => event.preventDefault()}
-      onClick={onClick}
       className={cn(
         'z-10 flex size-8 shrink-0 items-center justify-center rounded-row text-fg-secondary outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-action active:cursor-grabbing [&_svg]:size-4',
         className
       )}
+      data-plate-prevent-deselect
+      onClick={onClick}
+      onMouseDown={(event) => event.preventDefault()}
+      title={label}
+      type={asChild ? undefined : 'button'}
       {...rest}
     >
       {children}
@@ -181,10 +180,15 @@ function CodeBlock(props: PlateElementProps) {
   };
 
   return (
-    <PlateElement {...props} as="pre" className={CODE_BLOCK_CLASS} data-language={language}>
+    <PlateElement
+      {...props}
+      as="pre"
+      className={CODE_BLOCK_CLASS}
+      data-language={language}
+    >
       <div
-        contentEditable={false}
         className="absolute top-1 right-1 z-10 flex h-7 items-center gap-0.5 font-sans"
+        contentEditable={false}
       >
         {readOnly ? (
           <span className="px-2 text-[11px] text-fg-muted">
@@ -192,25 +196,25 @@ function CodeBlock(props: PlateElementProps) {
           </span>
         ) : (
           <Select
-            value={language}
             onValueChange={(value) => {
               const at = editor.api.findPath(props.element);
               if (at) editor.tf.setNodes({ lang: value }, { at });
             }}
+            value={language}
           >
             <SelectTrigger
               aria-label="Code language"
               className="h-full w-auto translate-y-px bg-transparent py-0 pr-1.5 pl-2 font-semibold text-fg-muted hover:text-fg"
-              size="sm"
-              variant="ghost"
               data-plate-prevent-deselect
               showDownIcon={false}
+              size="sm"
+              variant="ghost"
             >
               <SelectValue />
             </SelectTrigger>
             <SelectContent align="end" className="max-h-72">
               {CODE_BLOCK_LANGUAGES.map((item) => (
-                <SelectItem key={item.value} value={item.value} size="sm">
+                <SelectItem key={item.value} size="sm" value={item.value}>
                   {item.label}
                 </SelectItem>
               ))}
@@ -218,14 +222,18 @@ function CodeBlock(props: PlateElementProps) {
           </Select>
         )}
         <button
-          type="button"
           aria-label={copied ? 'Code copied' : 'Copy code'}
-          title={copied ? 'Copied' : 'Copy code'}
-          data-plate-prevent-deselect
           className="flex size-6 items-center justify-center rounded-md bg-transparent text-fg-muted hover:bg-line/50 hover:text-fg focus-visible:ring-2 focus-visible:ring-action"
+          data-plate-prevent-deselect
           onClick={() => void copy()}
+          title={copied ? 'Copied' : 'Copy code'}
+          type="button"
         >
-          {copied ? <Check className="size-3.5" /> : <Clipboard className="size-3.5" />}
+          {copied ? (
+            <Check className="size-3.5" />
+          ) : (
+            <Clipboard className="size-3.5" />
+          )}
         </button>
       </div>
       {props.children}
@@ -238,11 +246,11 @@ function CodeLine(props: PlateElementProps) {
 
 function LinkElement(props: PlateElementProps) {
   const [modifierDown, setModifierDown] = useState(false);
-  const { props: linkProps } = useLink({ element: props.element as TLinkElement });
+  const { props: linkProps } = useLink({
+    element: props.element as TLinkElement,
+  });
   const attributes = {
     ...props.attributes,
-    rel: linkProps.target === '_blank' ? 'noopener noreferrer' : undefined,
-    style: { cursor: modifierDown ? 'pointer' : 'text' },
     onBlur: (_event: FocusEvent<HTMLAnchorElement>) => setModifierDown(false),
     onClick: (event: ReactMouseEvent<HTMLAnchorElement>) => {
       event.preventDefault();
@@ -260,10 +268,18 @@ function LinkElement(props: PlateElementProps) {
     onMouseLeave: () => setModifierDown(false),
     onMouseMove: (event: ReactMouseEvent<HTMLAnchorElement>) =>
       setModifierDown(event.ctrlKey || event.metaKey),
+    rel: linkProps.target === '_blank' ? 'noopener noreferrer' : undefined,
+    style: { cursor: modifierDown ? 'pointer' : 'text' },
   } as PlateElementProps['attributes'];
 
   return (
-    <PlateElement {...props} {...linkProps} as="a" className={LINK_CLASS} attributes={attributes}>
+    <PlateElement
+      {...props}
+      {...linkProps}
+      as="a"
+      attributes={attributes}
+      className={LINK_CLASS}
+    >
       {props.children}
     </PlateElement>
   );
@@ -317,12 +333,18 @@ function CalloutIcon({ variant }: { variant: CalloutVariant }) {
 function Callout(props: PlateElementProps) {
   const editor = useEditorRef();
   const readOnly = useReadOnly();
-  const variant = normalizeCalloutVariant((props.element as { variant?: unknown }).variant);
+  const variant = normalizeCalloutVariant(
+    (props.element as { variant?: unknown }).variant
+  );
 
   return (
     <PlateElement
       {...props}
-      className={cn(CALLOUT_CLASS, CALLOUT_VARIANT_CLASS[variant], !readOnly && 'pr-28')}
+      className={cn(
+        CALLOUT_CLASS,
+        CALLOUT_VARIANT_CLASS[variant],
+        !readOnly && 'pr-28'
+      )}
       data-callout-variant={variant}
     >
       <span contentEditable={false}>
@@ -330,26 +352,29 @@ function Callout(props: PlateElementProps) {
       </span>
       <div className="min-w-0 flex-1 text-fg">{props.children}</div>
       {!readOnly && (
-        <div contentEditable={false} className="absolute top-2 right-2 rounded-row bg-surface/80">
+        <div
+          className="absolute top-2 right-2 rounded-row bg-surface/80"
+          contentEditable={false}
+        >
           <Select
-            value={variant}
             onValueChange={(value) => {
               const at = editor.api.findPath(props.element);
               if (at) editor.tf.setNodes({ variant: value }, { at });
             }}
+            value={variant}
           >
             <SelectTrigger
               aria-label="Callout style"
               className="h-7 w-24 bg-transparent px-2 py-0 text-xs"
+              data-plate-prevent-deselect
               size="sm"
               variant="ghost"
-              data-plate-prevent-deselect
             >
               <SelectValue />
             </SelectTrigger>
             <SelectContent align="end">
               {CALLOUT_VARIANTS.map((item) => (
-                <SelectItem key={item.value} value={item.value} size="sm">
+                <SelectItem key={item.value} size="sm" value={item.value}>
                   {item.label}
                 </SelectItem>
               ))}
@@ -369,7 +394,9 @@ function scrollHeadingIntoView(element: HTMLElement, topOffset: number) {
   while (scroller) {
     const { overflowY } = getComputedStyle(scroller);
     if (
-      (overflowY === 'auto' || overflowY === 'scroll' || overflowY === 'overlay') &&
+      (overflowY === 'auto' ||
+        overflowY === 'scroll' ||
+        overflowY === 'overlay') &&
       scroller.scrollHeight > scroller.clientHeight
     ) {
       break;
@@ -396,16 +423,14 @@ function Toc(props: PlateElementProps) {
 
   return (
     <PlateElement {...props}>
-      <div contentEditable={false} className={TOC_BOX_CLASS}>
+      <div className={TOC_BOX_CLASS} contentEditable={false}>
         <p className={TOC_TITLE_CLASS}>Table of contents</p>
         {headings.length ? (
           <nav className="flex flex-col">
             {headings.map((heading) => (
               <button
-                key={heading.id ?? heading.path.join('-')}
-                type="button"
                 className={TOC_ITEM_CLASS}
-                style={tocItemIndent(heading.type)}
+                key={heading.id ?? heading.path.join('-')}
                 onClick={(event) => {
                   event.preventDefault();
                   const node = NodeApi.get(state.editor, heading.path);
@@ -419,13 +444,17 @@ function Toc(props: PlateElementProps) {
                     target: { path: heading.path, type: 'node' },
                   });
                 }}
+                style={tocItemIndent(heading.type)}
+                type="button"
               >
                 {heading.title}
               </button>
             ))}
           </nav>
         ) : (
-          <p className={TOC_EMPTY_CLASS}>Create a heading to display the table of contents.</p>
+          <p className={TOC_EMPTY_CLASS}>
+            Create a heading to display the table of contents.
+          </p>
         )}
       </div>
       {props.children}
@@ -447,7 +476,9 @@ function Mention(props: PlateElementProps) {
 /* math (KaTeX, lazily loaded). Click to edit the TeX via prompt. */
 function BlockEquation(props: PlateElementProps) {
   const editor = useEditorRef();
-  const tex = String((props.element as { texExpression?: string }).texExpression ?? '');
+  const tex = String(
+    (props.element as { texExpression?: string }).texExpression ?? ''
+  );
   function edit() {
     const next = window.prompt('LaTeX expression', tex);
     if (next == null) return;
@@ -457,11 +488,11 @@ function BlockEquation(props: PlateElementProps) {
   return (
     <PlateElement {...props}>
       <div
+        className={`cursor-pointer ${EQUATION_BLOCK_CLASS}`}
         contentEditable={false}
         onClick={edit}
-        className={`cursor-pointer ${EQUATION_BLOCK_CLASS}`}
       >
-        <Katex tex={tex} displayMode />
+        <Katex displayMode tex={tex} />
       </div>
       {props.children}
     </PlateElement>
@@ -469,7 +500,9 @@ function BlockEquation(props: PlateElementProps) {
 }
 function InlineEquation(props: PlateElementProps) {
   const editor = useEditorRef();
-  const tex = String((props.element as { texExpression?: string }).texExpression ?? '');
+  const tex = String(
+    (props.element as { texExpression?: string }).texExpression ?? ''
+  );
   function edit() {
     const next = window.prompt('LaTeX expression', tex);
     if (next == null) return;
@@ -478,8 +511,8 @@ function InlineEquation(props: PlateElementProps) {
   }
   return (
     <PlateElement {...props} as="span">
-      <span contentEditable={false} onClick={edit} className="cursor-pointer">
-        <Katex tex={tex} displayMode={false} />
+      <span className="cursor-pointer" contentEditable={false} onClick={edit}>
+        <Katex displayMode={false} tex={tex} />
       </span>
       {props.children}
     </PlateElement>
@@ -515,46 +548,46 @@ function CodeSyntax(props: PlateLeafProps) {
 /* ------------------------------------------------------------- components map */
 
 export const noteComponents = {
+  a: LinkElement,
+  audio: MediaAssetElement,
+  blockquote: Blockquote,
+  bold: mark('strong', BOLD_MARK_CLASS),
+  callout: Callout,
+  code: Code,
+  code_block: CodeBlock,
+  code_line: CodeLine,
+  code_syntax: CodeSyntax,
+  column: Column,
+  column_group: ColumnGroup,
+  equation: BlockEquation,
+  file: MediaAssetElement,
   h1: heading('h1', 'h1'),
   h2: heading('h2', 'h2'),
   h3: heading('h3', 'h3'),
   h4: heading('h4', 'h4'),
   h5: heading('h5', 'h5'),
   h6: heading('h6', 'h6'),
-  p: Paragraph,
-  blockquote: Blockquote,
+  highlight: Highlight,
   hr: Hr,
-  code_block: CodeBlock,
-  code_line: CodeLine,
-  code_syntax: CodeSyntax,
-  a: LinkElement,
   img: MediaAssetElement,
-  video: MediaAssetElement,
-  audio: MediaAssetElement,
-  file: MediaAssetElement,
-  ul: Ul,
-  ol: Ol,
+  inline_equation: InlineEquation,
+  italic: mark('em', ITALIC_MARK_CLASS),
+  kbd: Kbd,
   li: Li,
   lic: Lic,
-  table: TableElement,
-  tr: TableRowElement,
-  td: TableCellElement,
-  th: TableCellHeaderElement,
-  callout: Callout,
-  column_group: ColumnGroup,
-  column: Column,
-  toc: Toc,
   mention: Mention,
   mention_input: MentionInputElement,
-  equation: BlockEquation,
-  inline_equation: InlineEquation,
-  bold: mark('strong', BOLD_MARK_CLASS),
-  italic: mark('em', ITALIC_MARK_CLASS),
-  underline: mark('u'),
+  ol: Ol,
+  p: Paragraph,
   strikethrough: mark('s'),
-  code: Code,
-  highlight: Highlight,
   subscript: mark('sub'),
   superscript: mark('sup'),
-  kbd: Kbd,
+  table: TableElement,
+  td: TableCellElement,
+  th: TableCellHeaderElement,
+  toc: Toc,
+  tr: TableRowElement,
+  ul: Ul,
+  underline: mark('u'),
+  video: MediaAssetElement,
 } as const;

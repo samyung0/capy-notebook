@@ -16,8 +16,8 @@ function compose(args: string[]) {
     ['compose', '-f', composeFile, '-p', composeProject, ...args],
     {
       cwd: root,
-      env: { ...process.env, E2E_AUTH_SECRET: secret },
       encoding: 'utf8',
+      env: { ...process.env, E2E_AUTH_SECRET: secret },
       shell: process.platform === 'win32',
     }
   );
@@ -67,10 +67,10 @@ function applySeed() {
     ],
     {
       cwd: root,
-      input: sql,
       encoding: 'utf8',
-      shell: process.platform === 'win32',
       env: { ...process.env, E2E_AUTH_SECRET: secret },
+      input: sql,
+      shell: process.platform === 'win32',
     }
   );
   if (result.status !== 0) {
@@ -85,16 +85,18 @@ function runBackendAccessTests() {
     {
       cwd: path.join(root, 'server'),
       encoding: 'utf8',
-      shell: process.platform === 'win32',
       env: {
         ...process.env,
         REQUIRE_INTEGRATION_DB: 'true',
         TEST_DATABASE_URL: `postgres://evo:evo@127.0.0.1:${process.env.E2E_DB_PORT}/evo?sslmode=disable`,
       },
+      shell: process.platform === 'win32',
     }
   );
   if (result.status !== 0) {
-    throw new Error(`backend access tests failed:\n${result.stdout}\n${result.stderr}`);
+    throw new Error(
+      `backend access tests failed:\n${result.stdout}\n${result.stderr}`
+    );
   }
 }
 

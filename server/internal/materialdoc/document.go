@@ -47,6 +47,7 @@ func Empty() Envelope {
 		SchemaVersion: SchemaVersion,
 		Value: []map[string]any{{
 			"type":     "p",
+			"id":       newID("block"),
 			"children": []any{textLeaf("")},
 		}},
 	}
@@ -56,11 +57,45 @@ func Marshal(doc Envelope) (string, error) {
 	if err := Validate(doc); err != nil {
 		return "", err
 	}
+	doc.Value = stripRuntimeCommentMarks(doc.Value)
 	b, err := json.Marshal(doc)
 	if err == nil && len(b) > maxDocument {
 		return "", fmt.Errorf("%w: document size", ErrInvalid)
 	}
 	return string(b), err
+}
+
+func stripRuntimeCommentMarks(nodes []map[string]any) []map[string]any {
+	result := make([]map[string]any, len(nodes))
+	for index, node := range nodes {
+		copyNode := make(map[string]any, len(node))
+		isTextLeaf := node["text"] != nil
+		for key, value := range node {
+			if isTextLeaf && (key == "comment" || strings.HasPrefix(key, "comment_")) {
+				continue
+			}
+			if key == "children" {
+				if rawChildren, ok := value.([]any); ok {
+					children := make([]map[string]any, 0, len(rawChildren))
+					for _, rawChild := range rawChildren {
+						if child, ok := rawChild.(map[string]any); ok {
+							children = append(children, child)
+						}
+					}
+					stripped := stripRuntimeCommentMarks(children)
+					copiedChildren := make([]any, len(stripped))
+					for childIndex, child := range stripped {
+						copiedChildren[childIndex] = child
+					}
+					copyNode[key] = copiedChildren
+					continue
+				}
+			}
+			copyNode[key] = value
+		}
+		result[index] = copyNode
+	}
+	return result
 }
 
 func Parse(raw string) (Envelope, error) {
@@ -104,6 +139,9 @@ func ValidateKind(raw, kind string) error {
 	doc, err := Parse(raw)
 	if err != nil {
 		return err
+	}
+	if err := validateTopLevelBlockIDs(doc.Value); err != nil {
+		return fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
 	var valid bool
 	switch kind {
@@ -586,9 +624,25 @@ func artifactDocument(title string, node map[string]any) Envelope {
 		title = "Untitled"
 	}
 	return Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{
-		{"type": "h1", "children": []any{textLeaf(title)}},
+		{"type": "h1", "id": newID("block"), "children": []any{textLeaf(title)}},
 		node,
 	}}
+}
+
+func validateTopLevelBlockIDs(nodes []map[string]any) error {
+	seen := make(map[string]bool, len(nodes))
+	for index, node := range nodes {
+		id, ok := node["id"].(string)
+		id = strings.TrimSpace(id)
+		if !ok || id == "" {
+			return fmt.Errorf("value[%d].id is required", index)
+		}
+		if seen[id] {
+			return fmt.Errorf("value[%d].id %q is duplicated", index, id)
+		}
+		seen[id] = true
+	}
+	return nil
 }
 
 func ExtractQuiz(raw string) (json.RawMessage, *int, error) {

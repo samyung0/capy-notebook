@@ -26,18 +26,22 @@ import type {
   WireMessage,
   Workspace,
 } from '@/api/types';
-import { parseFlashcardsBlock, parseQuizBlock } from '@/features/materials/blocks';
+import {
+  parseFlashcardsBlock,
+  parseQuizBlock,
+} from '@/features/materials/blocks';
 import {
   createMaterialDocument,
+  type FlashcardsElement,
   flashcardsElementToCards,
   flashcardsNode,
+  type MaterialValue,
   mermaidNode,
+  type QuizElement,
   quizElementToBlock,
   quizNode,
-  type FlashcardsElement,
-  type MaterialValue,
-  type QuizElement,
 } from '@/features/materials/document';
+import { finalizeSuggestionValue } from '@/features/notes/suggestions';
 import { isDue, isKnown, newSrsState, reviewSrs } from '@/lib/srs';
 import {
   buildEditorNoteValue,
@@ -53,7 +57,8 @@ import {
   PERF_SMALL_NOTE,
 } from './perfSeed';
 
-export const uid = (p = 'id') => `${p}_${Math.random().toString(36).slice(2, 9)}`;
+export const uid = (p = 'id') =>
+  `${p}_${Math.random().toString(36).slice(2, 9)}`;
 
 export function materialContentBytes(content: Material['content']): number {
   return new TextEncoder().encode(JSON.stringify(content)).byteLength;
@@ -116,7 +121,7 @@ function seedCard(
   known: boolean
 ): Flashcard {
   const srs = seedSrs(known);
-  return { id, deckId, front, back, known: isKnown(srs), srs };
+  return { back, deckId, front, id, known: isKnown(srs), srs };
 }
 
 const now = Date.now();
@@ -137,500 +142,558 @@ function dateAt(dayOffset: number, hour: number, minute = 0): string {
 }
 
 export const user: User = {
+  classLabel: 'Grade 11 · Science',
+  email: 'kate@evonotes.app',
   id: 'u_1',
   name: 'Kate Malone',
-  email: 'kate@evonotes.app',
-  classLabel: 'Grade 11 · Science',
-  streak: 0,
   planTier: 'pro',
+  streak: 0,
   subscriptionStatus: 'active',
 };
 
 export const workspaces: Workspace[] = [
   {
-    id: 'ws_bio',
-    name: 'Biology 101',
-    role: 'owner',
-    capabilities: { canView: true, canEdit: true, canComment: true, canManageMembers: true },
+    capabilities: {
+      canComment: true,
+      canEdit: true,
+      canManageMembers: true,
+      canView: true,
+    },
+    chapterCount: 6,
     color: 'green',
+    createdAt: days(40),
+    fileCount: 24,
+    id: 'ws_bio',
+    lastAccessedAt: hours(3),
+    name: 'Biology 101',
     privacy: 'private',
+    role: 'owner',
     shareRole: 'viewer',
     tags: ct('tag_1', 'tag_2'),
-    chapterCount: 6,
-    fileCount: 24,
-    createdAt: days(40),
-    lastAccessedAt: hours(3),
   },
   {
-    id: 'ws_calc',
-    name: 'Calculus II',
-    role: 'owner',
-    capabilities: { canView: true, canEdit: true, canComment: true, canManageMembers: true },
+    capabilities: {
+      canComment: true,
+      canEdit: true,
+      canManageMembers: true,
+      canView: true,
+    },
+    chapterCount: 4,
     color: 'purple',
+    createdAt: days(30),
+    fileCount: 12,
+    id: 'ws_calc',
+    lastAccessedAt: days(1),
+    name: 'Calculus II',
     privacy: 'private',
+    role: 'owner',
     shareRole: 'viewer',
     tags: ct('tag_3', 'tag_4'),
-    chapterCount: 4,
-    fileCount: 12,
-    createdAt: days(30),
-    lastAccessedAt: days(1),
   },
   {
-    id: 'ws_hist',
-    name: 'World History',
-    role: 'owner',
-    capabilities: { canView: true, canEdit: true, canComment: true, canManageMembers: true },
+    capabilities: {
+      canComment: true,
+      canEdit: true,
+      canManageMembers: true,
+      canView: true,
+    },
+    chapterCount: 5,
     color: 'amber',
+    createdAt: days(22),
+    fileCount: 18,
+    id: 'ws_hist',
+    lastAccessedAt: days(2),
+    name: 'World History',
     privacy: 'link',
+    role: 'owner',
     shareRole: 'viewer',
     tags: ct('tag_5', 'tag_6', 'tag_war'),
-    chapterCount: 5,
-    fileCount: 18,
-    createdAt: days(22),
-    lastAccessedAt: days(2),
   },
   {
-    id: 'ws_chem',
-    name: 'Organic Chemistry',
-    role: 'owner',
-    capabilities: { canView: true, canEdit: true, canComment: true, canManageMembers: true },
+    capabilities: {
+      canComment: true,
+      canEdit: true,
+      canManageMembers: true,
+      canView: true,
+    },
+    chapterCount: 3,
     color: 'blue',
+    createdAt: days(12),
+    fileCount: 9,
+    id: 'ws_chem',
+    lastAccessedAt: days(5),
+    name: 'Organic Chemistry',
     privacy: 'private',
+    role: 'owner',
     shareRole: 'viewer',
     tags: ct('tag_7'),
-    chapterCount: 3,
-    fileCount: 9,
-    createdAt: days(12),
-    lastAccessedAt: days(5),
   },
   {
-    id: 'ws_eng',
-    name: 'English Literature',
-    role: 'owner',
-    capabilities: { canView: true, canEdit: true, canComment: true, canManageMembers: true },
+    capabilities: {
+      canComment: true,
+      canEdit: true,
+      canManageMembers: true,
+      canView: true,
+    },
+    chapterCount: 7,
     color: 'coral',
+    createdAt: days(8),
+    fileCount: 21,
+    id: 'ws_eng',
+    lastAccessedAt: hours(20),
+    name: 'English Literature',
     privacy: 'public',
+    role: 'owner',
     shareRole: 'commenter',
     tags: ct('tag_8', 'tag_9'),
-    chapterCount: 7,
-    fileCount: 21,
-    createdAt: days(8),
-    lastAccessedAt: hours(20),
   },
 ];
 
 export const chapters: Chapter[] = [
   {
+    fileIds: ['f_1', 'f_2'],
     id: 'ch_1',
-    workspaceId: 'ws_bio',
     name: 'Cell structure',
     order: 0,
-    fileIds: ['f_1', 'f_2'],
+    workspaceId: 'ws_bio',
   },
   {
+    fileIds: ['f_3'],
     id: 'ch_2',
-    workspaceId: 'ws_bio',
     name: 'Membranes & transport',
     order: 1,
-    fileIds: ['f_3'],
+    workspaceId: 'ws_bio',
   },
   {
+    fileIds: ['f_4', 'f_5'],
     id: 'ch_3',
-    workspaceId: 'ws_bio',
     name: 'Genetics',
     order: 2,
-    fileIds: ['f_4', 'f_5'],
+    workspaceId: 'ws_bio',
   },
   {
+    fileIds: ['f_6'],
     id: 'ch_c1',
-    workspaceId: 'ws_calc',
     name: 'Techniques of integration',
     order: 0,
-    fileIds: ['f_6'],
+    workspaceId: 'ws_calc',
   },
   {
+    fileIds: ['f_7'],
     id: 'ch_c2',
-    workspaceId: 'ws_calc',
     name: 'Sequences & series',
     order: 1,
-    fileIds: ['f_7'],
+    workspaceId: 'ws_calc',
   },
 ];
 
 export const files: SourceFile[] = [
   {
-    id: 'f_1',
-    workspaceId: 'ws_bio',
-    chapterId: 'ch_1',
-    name: 'Cell structure.pdf',
-    kind: 'pdf',
-    sizeKb: 2480,
     addedAt: days(20),
+    chapterId: 'ch_1',
+    id: 'f_1',
+    kind: 'pdf',
+    name: 'Cell structure.pdf',
+    sizeKb: 2480,
     url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
+    workspaceId: 'ws_bio',
   },
   {
-    id: 'f_2',
-    workspaceId: 'ws_bio',
-    chapterId: 'ch_1',
-    name: 'Organelles cheatsheet.md',
-    kind: 'md',
-    sizeKb: 14,
     addedAt: days(19),
+    chapterId: 'ch_1',
     content:
       '# Organelles\n\n- **Nucleus** — stores DNA, controls the cell.\n- **Mitochondria** — the powerhouse; ATP via respiration.\n- **Ribosomes** — protein synthesis.\n- **Golgi apparatus** — packaging & shipping.\n\nThe cell membrane is a *phospholipid bilayer* that controls what enters and leaves.',
+    id: 'f_2',
+    kind: 'md',
+    name: 'Organelles cheatsheet.md',
+    sizeKb: 14,
+    workspaceId: 'ws_bio',
   },
   {
-    id: 'f_3',
-    workspaceId: 'ws_bio',
-    chapterId: 'ch_2',
-    name: 'Osmosis notes.txt',
-    kind: 'txt',
-    sizeKb: 6,
     addedAt: days(18),
+    chapterId: 'ch_2',
     content:
       'Osmosis is the diffusion of water across a semi-permeable membrane from low to high solute concentration.',
+    id: 'f_3',
+    kind: 'txt',
+    name: 'Osmosis notes.txt',
+    sizeKb: 6,
+    workspaceId: 'ws_bio',
   },
   {
-    id: 'f_4',
-    workspaceId: 'ws_bio',
-    chapterId: 'ch_3',
-    name: 'Mendelian genetics.pdf',
-    kind: 'pdf',
-    sizeKb: 1890,
     addedAt: days(15),
-    url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
-  },
-  {
-    id: 'f_5',
-    workspaceId: 'ws_bio',
-    chapterId: null,
-    name: 'Punnett squares.png',
-    kind: 'image',
-    sizeKb: 420,
-    addedAt: days(14),
-    url: 'https://picsum.photos/2000/3000',
-  },
-  {
-    id: 'f_6',
-    workspaceId: 'ws_calc',
-    chapterId: 'ch_c1',
-    name: 'Integration by parts.pdf',
+    chapterId: 'ch_3',
+    id: 'f_4',
     kind: 'pdf',
-    sizeKb: 980,
-    addedAt: days(10),
+    name: 'Mendelian genetics.pdf',
+    sizeKb: 1890,
     url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
+    workspaceId: 'ws_bio',
   },
   {
-    id: 'f_7',
+    addedAt: days(14),
+    chapterId: null,
+    id: 'f_5',
+    kind: 'image',
+    name: 'Punnett squares.png',
+    sizeKb: 420,
+    url: 'https://picsum.photos/2000/3000',
+    workspaceId: 'ws_bio',
+  },
+  {
+    addedAt: days(10),
+    chapterId: 'ch_c1',
+    id: 'f_6',
+    kind: 'pdf',
+    name: 'Integration by parts.pdf',
+    sizeKb: 980,
+    url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
     workspaceId: 'ws_calc',
-    chapterId: 'ch_c2',
-    name: 'Taylor series.md',
-    kind: 'md',
-    sizeKb: 11,
+  },
+  {
     addedAt: days(9),
-    content: '# Taylor series\n\nA function f(x) near a point a:\n\nf(x) = Σ fⁿ(a)/n! · (x − a)ⁿ',
+    chapterId: 'ch_c2',
+    content:
+      '# Taylor series\n\nA function f(x) near a point a:\n\nf(x) = Σ fⁿ(a)/n! · (x − a)ⁿ',
+    id: 'f_7',
+    kind: 'md',
+    name: 'Taylor series.md',
+    sizeKb: 11,
+    workspaceId: 'ws_calc',
   },
   {
+    addedAt: days(14),
+    chapterId: null,
     id: 'f_8',
-    workspaceId: 'ws_bio',
-    chapterId: null,
-    name: 'dummy_video.mp4',
     kind: 'video',
-    sizeKb: 10000,
-    addedAt: days(14),
+    name: 'dummy_video.mp4',
+    sizeKb: 10_000,
     url: 'https://lorem.video/720p',
+    workspaceId: 'ws_bio',
   },
   {
-    id: 'f_9',
-    workspaceId: 'ws_bio',
-    chapterId: null,
-    name: 'dummy_audio.wav',
-    kind: 'audio',
-    sizeKb: 10000,
     addedAt: days(14),
+    chapterId: null,
+    id: 'f_9',
+    kind: 'audio',
+    name: 'dummy_audio.wav',
+    sizeKb: 10_000,
     url: 'https://essentials.pixfort.com/original/wp-content/uploads/sites/4/2020/02/skanews.wav',
+    workspaceId: 'ws_bio',
   },
 ];
 
 const seedQuizzes: Quiz[] = [
   {
-    id: 'qz_1',
-    name: 'Cell biology basics',
-    workspaceId: 'ws_bio',
-    workspaceName: 'Biology 101',
     chapters: ['Cell structure', 'Membranes & transport'],
     createdAt: days(4),
+    id: 'qz_1',
+    name: 'Cell biology basics',
     privacy: 'private',
     questions: [
       {
-        id: 'q1',
-        type: 'mcq',
-        level: 'recall',
-        prompt: 'Which organelle is the powerhouse of the cell?',
-        options: [
-          { value: 'Nucleus', explanation: 'The nucleus stores DNA; it does not make ATP.' },
-          {
-            value: 'Mitochondria',
-            explanation: 'Correct — mitochondria produce ATP via cellular respiration.',
-          },
-          { value: 'Ribosome', explanation: 'Ribosomes build proteins, not energy.' },
-          { value: 'Golgi apparatus', explanation: 'The Golgi packages and ships proteins.' },
-        ],
         correct: [1],
         explanation: 'Mitochondria produce ATP through cellular respiration.',
+        id: 'q1',
+        level: 'recall',
+        options: [
+          {
+            explanation: 'The nucleus stores DNA; it does not make ATP.',
+            value: 'Nucleus',
+          },
+          {
+            explanation:
+              'Correct — mitochondria produce ATP via cellular respiration.',
+            value: 'Mitochondria',
+          },
+          {
+            explanation: 'Ribosomes build proteins, not energy.',
+            value: 'Ribosome',
+          },
+          {
+            explanation: 'The Golgi packages and ships proteins.',
+            value: 'Golgi apparatus',
+          },
+        ],
+        prompt: 'Which organelle is the powerhouse of the cell?',
+        type: 'mcq',
       },
       {
+        correct: true,
         id: 'q2',
-        type: 'boolean',
         level: 'recall',
         prompt: 'The cell membrane is a phospholipid bilayer.',
-        correct: true,
+        type: 'boolean',
       },
       {
-        id: 'q3',
-        type: 'multi',
-        level: 'application',
-        prompt: 'Select all that are membrane-bound organelles.',
-        options: wv('Ribosome', 'Nucleus', 'Mitochondria', 'Cytosol'),
         correct: [1, 2],
+        id: 'q3',
+        level: 'application',
+        options: wv('Ribosome', 'Nucleus', 'Mitochondria', 'Cytosol'),
+        prompt: 'Select all that are membrane-bound organelles.',
+        type: 'multi',
       },
       {
+        accepted: wv('osmosis'),
         id: 'q4',
-        type: 'fill',
         level: 'application',
         prompt: 'The diffusion of water across a membrane is called ____.',
-        accepted: wv('osmosis'),
+        type: 'fill',
       },
       {
         id: 'q5',
-        type: 'ordering',
+        items: wv(
+          'Ribosome',
+          'Rough ER',
+          'Golgi apparatus',
+          'Vesicle',
+          'Cell membrane'
+        ),
         level: 'analysis',
         prompt: 'Order the path of protein secretion.',
-        items: wv('Ribosome', 'Rough ER', 'Golgi apparatus', 'Vesicle', 'Cell membrane'),
+        type: 'ordering',
       },
       {
         id: 'q6',
-        type: 'matching',
         level: 'application',
-        prompt: 'Match the organelle to its function.',
         pairs: [
           { left: 'Nucleus', right: 'Stores DNA' },
           { left: 'Mitochondria', right: 'Makes ATP' },
           { left: 'Ribosome', right: 'Builds proteins' },
         ],
+        prompt: 'Match the organelle to its function.',
+        type: 'matching',
       },
       {
-        id: 'q11',
-        type: 'mcq',
-        level: 'recall',
-        prompt: 'Which structure controls what enters and leaves the cell?',
-        options: wv('Cell wall', 'Cell membrane', 'Nucleolus', 'Vacuole'),
         correct: [1],
+        id: 'q11',
+        level: 'recall',
+        options: wv('Cell wall', 'Cell membrane', 'Nucleolus', 'Vacuole'),
+        prompt: 'Which structure controls what enters and leaves the cell?',
+        type: 'mcq',
       },
       {
-        id: 'q12',
-        type: 'boolean',
-        level: 'recall',
-        prompt: 'Ribosomes are membrane-bound organelles.',
         correct: false,
         explanation: 'Ribosomes are not enclosed by a membrane.',
+        id: 'q12',
+        level: 'recall',
+        prompt: 'Ribosomes are membrane-bound organelles.',
+        type: 'boolean',
       },
       {
-        id: 'q13',
-        type: 'fill',
-        level: 'application',
-        prompt: 'The organelle that produces most of the cell’s ATP is the ____.',
         accepted: wv('mitochondria', 'mitochondrion'),
+        id: 'q13',
+        level: 'application',
+        prompt:
+          'The organelle that produces most of the cell’s ATP is the ____.',
+        type: 'fill',
       },
       {
+        accepted: wv('cellular respiration', 'aerobic respiration'),
         id: 'q14',
-        type: 'short',
         level: 'analysis',
         prompt: 'Name the process cells use to convert glucose into ATP.',
-        accepted: wv('cellular respiration', 'aerobic respiration'),
+        type: 'short',
       },
     ],
-  },
-  {
-    id: 'qz_2',
-    name: 'Genetics check-in',
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',
+  },
+  {
     chapters: ['Genetics'],
     createdAt: days(2),
+    id: 'qz_2',
+    name: 'Genetics check-in',
     privacy: 'private',
     questions: [
       {
-        id: 'q7',
-        type: 'mcq',
-        level: 'application',
-        prompt: 'A cross between Aa × Aa gives what genotype ratio?',
-        options: wv('1:2:1', '3:1', '1:1', '9:3:3:1'),
         correct: [0],
+        id: 'q7',
+        level: 'application',
+        options: wv('1:2:1', '3:1', '1:1', '9:3:3:1'),
+        prompt: 'A cross between Aa × Aa gives what genotype ratio?',
+        type: 'mcq',
       },
       {
+        accepted: wv(
+          'an allele expressed in the phenotype even when only one copy is present'
+        ),
         id: 'q8',
-        type: 'short',
         level: 'analysis',
         prompt: 'Define a dominant allele in one sentence.',
-        accepted: wv('an allele expressed in the phenotype even when only one copy is present'),
+        type: 'short',
       },
       {
-        id: 'q15',
-        type: 'mcq',
-        level: 'recall',
-        prompt: 'The genotype AA is described as…',
-        options: wv('Homozygous dominant', 'Heterozygous', 'Homozygous recessive', 'Hemizygous'),
         correct: [0],
+        id: 'q15',
+        level: 'recall',
+        options: wv(
+          'Homozygous dominant',
+          'Heterozygous',
+          'Homozygous recessive',
+          'Hemizygous'
+        ),
+        prompt: 'The genotype AA is described as…',
+        type: 'mcq',
       },
       {
+        correct: false,
+        explanation:
+          'That describes phenotype; genotype is the genetic makeup.',
         id: 'q16',
-        type: 'boolean',
         level: 'recall',
         prompt: 'Genotype refers to an organism’s observable physical traits.',
-        correct: false,
-        explanation: 'That describes phenotype; genotype is the genetic makeup.',
-      },
-      {
-        id: 'q17',
-        type: 'multi',
-        level: 'application',
-        prompt: 'Select all homozygous genotypes.',
-        options: wv('AA', 'Aa', 'aa', 'Bb'),
-        correct: [0, 2],
-      },
-      {
-        id: 'q18',
-        type: 'fill',
-        level: 'application',
-        prompt: 'A diagram used to predict offspring genotypes is a ____ square.',
-        accepted: wv('Punnett'),
-      },
-      {
-        id: 'q19',
         type: 'boolean',
+      },
+      {
+        correct: [0, 2],
+        id: 'q17',
+        level: 'application',
+        options: wv('AA', 'Aa', 'aa', 'Bb'),
+        prompt: 'Select all homozygous genotypes.',
+        type: 'multi',
+      },
+      {
+        accepted: wv('Punnett'),
+        id: 'q18',
+        level: 'application',
+        prompt:
+          'A diagram used to predict offspring genotypes is a ____ square.',
+        type: 'fill',
+      },
+      {
+        correct: true,
+        id: 'q19',
         level: 'recall',
         prompt: 'Alleles are alternative forms of the same gene.',
-        correct: true,
+        type: 'boolean',
       },
       {
-        id: 'q20',
-        type: 'mcq',
-        level: 'application',
-        prompt: 'A cross Aa × aa gives what phenotype ratio (dominant:recessive)?',
-        options: wv('1:1', '3:1', '1:2:1', 'All dominant'),
         correct: [0],
+        id: 'q20',
+        level: 'application',
+        options: wv('1:1', '3:1', '1:2:1', 'All dominant'),
+        prompt:
+          'A cross Aa × aa gives what phenotype ratio (dominant:recessive)?',
+        type: 'mcq',
       },
       {
         id: 'q21',
-        type: 'ordering',
+        items: wv('Prophase', 'Metaphase', 'Anaphase', 'Telophase'),
         level: 'analysis',
         prompt: 'Order the phases of mitosis.',
-        items: wv('Prophase', 'Metaphase', 'Anaphase', 'Telophase'),
+        type: 'ordering',
       },
       {
+        accepted: wv('the observable characteristics of an organism'),
         id: 'q22',
-        type: 'short',
         level: 'analysis',
         prompt: 'Define phenotype in one sentence.',
-        accepted: wv('the observable characteristics of an organism'),
+        type: 'short',
       },
     ],
+    workspaceId: 'ws_bio',
+    workspaceName: 'Biology 101',
   },
   {
-    id: 'qz_3',
-    name: 'Integration techniques',
-    workspaceId: 'ws_calc',
-    workspaceName: 'Calculus II',
     chapters: ['Techniques of integration'],
     createdAt: days(6),
+    id: 'qz_3',
+    name: 'Integration techniques',
     privacy: 'public',
     questions: [
       {
+        correct: [1],
         id: 'q9',
-        type: 'mcq',
         level: 'application',
-        prompt: '∫ x·eˣ dx is best solved by…',
         options: wv(
           'Substitution',
           'Integration by parts',
           'Partial fractions',
           'Trig substitution'
         ),
-        correct: [1],
+        prompt: '∫ x·eˣ dx is best solved by…',
+        type: 'mcq',
       },
       {
+        correct: true,
         id: 'q10',
-        type: 'boolean',
         level: 'recall',
         prompt: '∫ 1/x dx = ln|x| + C',
-        correct: true,
-      },
-      {
-        id: 'q23',
-        type: 'mcq',
-        level: 'application',
-        prompt: '∫ cos x dx = ?',
-        options: wv('sin x + C', '-sin x + C', 'cos x + C', '-cos x + C'),
-        correct: [0],
-      },
-      {
-        id: 'q24',
         type: 'boolean',
+      },
+      {
+        correct: [0],
+        id: 'q23',
+        level: 'application',
+        options: wv('sin x + C', '-sin x + C', 'cos x + C', '-cos x + C'),
+        prompt: '∫ cos x dx = ?',
+        type: 'mcq',
+      },
+      {
+        correct: true,
+        id: 'q24',
         level: 'recall',
         prompt: 'The integral of a sum equals the sum of the integrals.',
-        correct: true,
+        type: 'boolean',
       },
       {
+        accepted: wv('C'),
         id: 'q25',
-        type: 'fill',
         level: 'application',
         prompt: '∫ 2x dx = x² + ____.',
-        accepted: wv('C'),
+        type: 'fill',
       },
       {
-        id: 'q26',
-        type: 'mcq',
-        level: 'application',
-        prompt: '∫ 1/(1 + x²) dx = ?',
-        options: wv('arctan x + C', 'ln|x| + C', 'arcsin x + C', '1/x + C'),
         correct: [0],
+        id: 'q26',
+        level: 'application',
+        options: wv('arctan x + C', 'ln|x| + C', 'arcsin x + C', '1/x + C'),
+        prompt: '∫ 1/(1 + x²) dx = ?',
+        type: 'mcq',
       },
       {
+        correct: true,
         id: 'q27',
-        type: 'boolean',
         level: 'recall',
         prompt: 'd/dx of ∫ f(x) dx returns f(x).',
-        correct: true,
+        type: 'boolean',
       },
       {
+        correct: [0, 1],
         id: 'q28',
-        type: 'multi',
         level: 'application',
-        prompt: 'Which techniques help integrate rational functions?',
         options: wv(
           'Partial fractions',
           'Polynomial long division',
           'Integration by parts',
           'Trig substitution'
         ),
-        correct: [0, 1],
+        prompt: 'Which techniques help integrate rational functions?',
+        type: 'multi',
       },
       {
         id: 'q29',
-        type: 'ordering',
+        items: wv(
+          'Choose u and dv',
+          'Differentiate u',
+          'Integrate dv',
+          'Apply the formula'
+        ),
         level: 'analysis',
         prompt: 'Order the steps of integration by parts.',
-        items: wv('Choose u and dv', 'Differentiate u', 'Integrate dv', 'Apply the formula'),
+        type: 'ordering',
       },
       {
+        accepted: wv('constant of integration'),
         id: 'q30',
-        type: 'short',
         level: 'recall',
         prompt: 'Name the constant added to every indefinite integral.',
-        accepted: wv('constant of integration'),
+        type: 'short',
       },
     ],
+    workspaceId: 'ws_calc',
+    workspaceName: 'Calculus II',
   },
 ];
 
@@ -639,26 +702,22 @@ export const attempts: (Attempt & {
   questions?: Question[];
 })[] = [
   {
-    id: 'at_1',
-    quizId: 'qz_1',
-    quizName: 'Cell biology basics',
-    workspaceName: 'Biology 101',
-    chapters: ['Cell structure'],
-    correct: 8,
-    total: 10,
-    pct: 80,
-    takenAt: days(2),
-    questions: seedQuizzes[0].questions,
     answers: {
       q1: [1],
       q2: true,
       q3: [1, 2],
       q4: 'osmosis',
-      q5: ['Ribosome', 'Rough ER', 'Golgi apparatus', 'Vesicle', 'Cell membrane'],
+      q5: [
+        'Ribosome',
+        'Rough ER',
+        'Golgi apparatus',
+        'Vesicle',
+        'Cell membrane',
+      ],
       // Wrong: swapped Nucleus/Mitochondria functions.
       q6: {
-        Nucleus: 'Makes ATP',
         Mitochondria: 'Stores DNA',
+        Nucleus: 'Makes ATP',
         Ribosome: 'Builds proteins',
       },
       q11: [1],
@@ -666,18 +725,18 @@ export const attempts: (Attempt & {
       q13: 'mitochondria',
       q14: 'cellular respiration',
     },
+    chapters: ['Cell structure'],
+    correct: 8,
+    id: 'at_1',
+    pct: 80,
+    questions: seedQuizzes[0].questions,
+    quizId: 'qz_1',
+    quizName: 'Cell biology basics',
+    takenAt: days(2),
+    total: 10,
+    workspaceName: 'Biology 101',
   },
   {
-    id: 'at_2',
-    quizId: 'qz_3',
-    quizName: 'Integration techniques',
-    workspaceName: 'Calculus II',
-    chapters: ['Techniques of integration'],
-    correct: 6,
-    total: 10,
-    pct: 60,
-    takenAt: days(3),
-    questions: seedQuizzes[2].questions,
     answers: {
       q9: [1],
       q10: true,
@@ -687,21 +746,26 @@ export const attempts: (Attempt & {
       q26: [0],
       q27: false, // Wrong: correct answer is true.
       q28: [0], // Wrong: correct is [0, 1].
-      q29: ['Apply the formula', 'Choose u and dv', 'Integrate dv', 'Differentiate u'], // Wrong order.
+      q29: [
+        'Apply the formula',
+        'Choose u and dv',
+        'Integrate dv',
+        'Differentiate u',
+      ], // Wrong order.
       q30: '', // Blank: unanswered.
     },
+    chapters: ['Techniques of integration'],
+    correct: 6,
+    id: 'at_2',
+    pct: 60,
+    questions: seedQuizzes[2].questions,
+    quizId: 'qz_3',
+    quizName: 'Integration techniques',
+    takenAt: days(3),
+    total: 10,
+    workspaceName: 'Calculus II',
   },
   {
-    id: 'at_3',
-    quizId: 'qz_2',
-    quizName: 'Genetics check-in',
-    workspaceName: 'Biology 101',
-    chapters: ['Genetics'],
-    correct: 4,
-    total: 10,
-    pct: 40,
-    takenAt: days(5),
-    questions: seedQuizzes[1].questions,
     answers: {
       q7: [0],
       q8: '', // Blank: unanswered.
@@ -714,48 +778,82 @@ export const attempts: (Attempt & {
       q21: ['Telophase', 'Anaphase', 'Metaphase', 'Prophase'], // Wrong order.
       q22: '', // Blank: unanswered.
     },
+    chapters: ['Genetics'],
+    correct: 4,
+    id: 'at_3',
+    pct: 40,
+    questions: seedQuizzes[1].questions,
+    quizId: 'qz_2',
+    quizName: 'Genetics check-in',
+    takenAt: days(5),
+    total: 10,
+    workspaceName: 'Biology 101',
   },
 ];
 
 const seedDecks: Deck[] = [
   {
+    cardCount: 32,
+    color: 'green',
+    dueCount: 0,
     id: 'dk_1',
+    knownPct: 80,
     name: 'Cell organelles',
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',
-    color: 'green',
-    cardCount: 32,
-    knownPct: 80,
-    dueCount: 0,
   },
   {
+    cardCount: 24,
+    color: 'purple',
+    dueCount: 0,
     id: 'dk_2',
+    knownPct: 55,
     name: 'Integration rules',
     workspaceId: 'ws_calc',
     workspaceName: 'Calculus II',
-    color: 'purple',
-    cardCount: 24,
-    knownPct: 55,
-    dueCount: 0,
   },
   {
+    cardCount: 40,
+    color: 'amber',
+    dueCount: 0,
     id: 'dk_3',
+    knownPct: 30,
     name: 'History dates',
     workspaceId: 'ws_hist',
     workspaceName: 'World History',
-    color: 'amber',
-    cardCount: 40,
-    knownPct: 30,
-    dueCount: 0,
   },
 ];
 
 const seedCards: Flashcard[] = [
-  seedCard('c_1', 'dk_1', 'Mitochondria', 'Powerhouse of the cell — produces ATP.', true),
-  seedCard('c_2', 'dk_1', 'Nucleus', 'Stores DNA and controls cell activity.', true),
+  seedCard(
+    'c_1',
+    'dk_1',
+    'Mitochondria',
+    'Powerhouse of the cell — produces ATP.',
+    true
+  ),
+  seedCard(
+    'c_2',
+    'dk_1',
+    'Nucleus',
+    'Stores DNA and controls cell activity.',
+    true
+  ),
   seedCard('c_3', 'dk_1', 'Ribosome', 'Site of protein synthesis.', false),
-  seedCard('c_4', 'dk_1', 'Golgi apparatus', 'Packages and ships proteins.', false),
-  seedCard('c_7', 'dk_1', 'Lysosome', 'Digests waste with hydrolytic enzymes.', false),
+  seedCard(
+    'c_4',
+    'dk_1',
+    'Golgi apparatus',
+    'Packages and ships proteins.',
+    false
+  ),
+  seedCard(
+    'c_7',
+    'dk_1',
+    'Lysosome',
+    'Digests waste with hydrolytic enzymes.',
+    false
+  ),
   seedCard(
     'c_8',
     'dk_1',
@@ -777,118 +875,118 @@ const seedCards: Flashcard[] = [
 export const mistakes: Question[] = [];
 
 export const labels: Label[] = [
-  { id: 'lb_bio', name: 'Biology', color: 'green' },
-  { id: 'lb_calc', name: 'Calculus', color: 'purple' },
-  { id: 'lb_hist', name: 'History', color: 'amber' },
-  { id: 'lb_exam', name: 'Exam', color: 'coral' },
-  { id: 'lb_study', name: 'Study group', color: 'blue' },
+  { color: 'green', id: 'lb_bio', name: 'Biology' },
+  { color: 'purple', id: 'lb_calc', name: 'Calculus' },
+  { color: 'amber', id: 'lb_hist', name: 'History' },
+  { color: 'coral', id: 'lb_exam', name: 'Exam' },
+  { color: 'blue', id: 'lb_study', name: 'Study group' },
 ];
 
 export const events: CalendarEvent[] = [
   {
-    id: 'ev_1',
-    title: 'Biology lecture',
-    start: todayAt(8),
     end: todayAt(9),
+    id: 'ev_1',
     labelIds: ['lb_bio'],
     location: 'Room B2 · 158',
+    start: todayAt(8),
+    title: 'Biology lecture',
   },
   {
-    id: 'ev_2',
-    title: 'Calculus tutorial',
-    start: todayAt(11),
     end: todayAt(12, 30),
+    id: 'ev_2',
     labelIds: ['lb_calc', 'lb_study'],
     location: 'Room 124',
+    start: todayAt(11),
+    title: 'Calculus tutorial',
   },
   {
-    id: 'ev_3',
-    title: 'History essay due',
-    start: todayAt(15),
     end: todayAt(16),
+    id: 'ev_3',
     labelIds: ['lb_hist', 'lb_exam'],
+    start: todayAt(15),
+    title: 'History essay due',
   },
   {
-    id: 'ev_4',
-    title: 'Study group',
-    start: dateAt(1, 13),
     end: dateAt(1, 15),
+    id: 'ev_4',
     labelIds: ['lb_study'],
     location: 'Library',
+    start: dateAt(1, 13),
+    title: 'Study group',
   },
   {
-    id: 'ev_5',
-    title: 'Chem midterm',
-    start: dateAt(2, 9),
     end: dateAt(2, 11),
+    id: 'ev_5',
     labelIds: ['lb_exam'],
     location: 'Hall A',
+    start: dateAt(2, 9),
+    title: 'Chem midterm',
   },
   {
-    id: 'ev_6',
-    title: 'Past revision',
-    start: dateAt(-30, 10),
     end: dateAt(-30, 11),
+    id: 'ev_6',
     labelIds: ['lb_bio'],
+    start: dateAt(-30, 10),
+    title: 'Past revision',
   },
 ];
 
 export const tasks: Task[] = [
   {
+    done: false,
+    dueDate: todayAt(23),
     id: 'tk_1',
+    meta: 'Biology 101',
     title:
       'Read Chapter 3 — Genetics b labdl ab lb la this is really long I guess just to make sure everything works',
-    meta: 'Biology 101',
-    done: false,
-    dueDate: todayAt(23),
   },
   {
+    done: false,
+    dueDate: todayAt(23),
     id: 'tk_2',
-    title: 'Finish integration worksheet',
     meta: 'Calculus II · 12 problems',
-    done: false,
-    dueDate: todayAt(23),
+    title: 'Finish integration worksheet',
   },
   {
-    id: 'tk_3',
-    title: 'Review flashcards',
-    meta: 'Cell organelles',
     done: true,
     dueDate: todayAt(23),
+    id: 'tk_3',
+    meta: 'Cell organelles',
+    title: 'Review flashcards',
   },
   {
-    id: 'tk_4',
-    title: 'Outline history essay',
-    meta: 'World History',
     done: false,
     dueDate: dateAt(1, 23),
+    id: 'tk_4',
+    meta: 'World History',
+    title: 'Outline history essay',
   },
 ];
 
 export const notifications: AppNotification[] = [
   {
+    at: hours(1),
+    body: 'Starts at 11:00 in Room 124.',
     id: 'nt_1',
     kind: 'event',
-    title: 'Calculus tutorial soon',
-    body: 'Starts at 11:00 in Room 124.',
-    at: hours(1),
     read: false,
+    title: 'Calculus tutorial soon',
   },
   {
+    at: hours(5),
+    body: 'Cell biology basics — 8/10.',
     id: 'nt_2',
     kind: 'quiz',
-    title: 'New attempt graded',
-    body: 'Cell biology basics — 8/10.',
-    at: hours(5),
     read: false,
+    title: 'New attempt graded',
   },
   {
+    at: days(1),
+    body: 'Upload your first source to get started.',
     id: 'nt_3',
     kind: 'system',
-    title: 'Welcome to Evo Notes',
-    body: 'Upload your first source to get started.',
-    at: days(1),
     read: true,
+    title: 'Welcome to Evo Notes',
   },
 ];
 
@@ -899,133 +997,131 @@ export const canvases: ThinkingCanvas[] = [
 
 /* ---------------- study materials (mindmaps / diagrams) ---------------- */
 const ownerCapabilities = {
-  canView: true,
-  canEdit: true,
   canComment: true,
+  canEdit: true,
   canManageMembers: true,
+  canView: true,
 };
 
 export const materials: Material[] = [
   {
-    id: 'mat_1',
-    workspaceId: 'ws_bio',
-    workspaceName: 'Biology 101',
-    role: 'owner',
     capabilities: ownerCapabilities,
-    kind: 'mindmap',
-    title: 'Cell biology mindmap',
+    chapterId: 'ch_1',
     content: createMaterialDocument([
-      { type: 'h1', children: [{ text: 'Cell biology mindmap' }] },
+      { children: [{ text: 'Cell biology mindmap' }], type: 'h1' },
       mermaidNode(
         'mindmap\n  root((Cell))\n    Membrane\n      Phospholipid bilayer\n      Transport\n        Diffusion\n        Osmosis\n    Organelles\n      Nucleus\n      Mitochondria\n      Ribosome\n    Energy\n      ATP\n      Respiration'
       ),
     ]),
-    chapterId: 'ch_1',
+    createdAt: days(3),
+    id: 'mat_1',
+    kind: 'mindmap',
+    privacy: 'private',
+    role: 'owner',
     scopeChapters: ['Cell structure', 'Membranes & transport'],
     scopeFileIds: [],
-    privacy: 'private',
-    createdAt: days(3),
-  },
-  {
-    id: 'mat_2',
+    title: 'Cell biology mindmap',
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',
-    role: 'owner',
+  },
+  {
     capabilities: ownerCapabilities,
-    kind: 'diagram',
-    title: 'Protein secretion pathway',
+    chapterId: null,
     content: createMaterialDocument([
-      { type: 'h1', children: [{ text: 'Protein secretion pathway' }] },
+      { children: [{ text: 'Protein secretion pathway' }], type: 'h1' },
       {
+        children: [
+          { text: 'The path a secreted protein takes through the cell:' },
+        ],
         type: 'p',
-        children: [{ text: 'The path a secreted protein takes through the cell:' }],
       },
       mermaidNode(
         'flowchart LR\n  Ribosome --> RoughER\n  RoughER --> Golgi\n  Golgi --> Vesicle\n  Vesicle --> Membrane[Cell membrane]'
       ),
     ]),
-    chapterId: null,
+    createdAt: days(1),
+    id: 'mat_2',
+    kind: 'diagram',
+    privacy: 'private',
+    role: 'owner',
     scopeChapters: [],
     scopeFileIds: ['f_1'],
-    privacy: 'private',
-    createdAt: days(1),
-  },
-  {
-    id: 'mat_note_1',
+    title: 'Protein secretion pathway',
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',
-    role: 'owner',
+  },
+  {
     capabilities: ownerCapabilities,
-    kind: 'note',
-    title: 'Lecture notes — the cell',
+    chapterId: null,
     content: createMaterialDocument([
-      { type: 'h1', children: [{ text: 'Lecture notes - the cell' }] },
+      { children: [{ text: 'Lecture notes - the cell' }], type: 'h1' },
       {
-        type: 'p',
         children: [
           { text: 'The ' },
-          { text: 'cell', bold: true },
+          { bold: true, text: 'cell' },
           { text: ' is the basic unit of life. Key points from today:' },
         ],
+        type: 'p',
       },
       {
-        type: 'p',
-        indent: 1,
-        listStyleType: 'disc',
         children: [{ text: 'Prokaryotes lack a membrane-bound nucleus' }],
-      },
-      {
-        type: 'p',
         indent: 1,
         listStyleType: 'disc',
-        children: [{ text: 'Eukaryotes have organelles' }],
+        type: 'p',
       },
       {
-        type: 'blockquote',
+        children: [{ text: 'Eukaryotes have organelles' }],
+        indent: 1,
+        listStyleType: 'disc',
+        type: 'p',
+      },
+      {
         children: [
           {
+            children: [
+              { text: 'Remember: mitochondria is the powerhouse of the cell.' },
+            ],
             type: 'p',
-            children: [{ text: 'Remember: mitochondria is the powerhouse of the cell.' }],
           },
         ],
+        type: 'blockquote',
       },
     ]),
-    chapterId: null,
+    createdAt: days(0),
+    id: 'mat_note_1',
+    kind: 'note',
+    privacy: 'private',
+    role: 'owner',
     scopeChapters: [],
     scopeFileIds: [],
-    privacy: 'private',
-    createdAt: days(0),
+    title: 'Lecture notes — the cell',
+    workspaceId: 'ws_bio',
+    workspaceName: 'Biology 101',
   },
 ];
 
 /* ---------------- chat: conversations + messages ---------------- */
 export const conversations: Conversation[] = [
   {
-    id: 'conv_seed1',
-    workspaceId: workspaces[0].id,
-    title: 'What is a cell?',
     createdAt: days(1),
+    id: 'conv_seed1',
+    title: 'What is a cell?',
     updatedAt: hours(3),
+    workspaceId: workspaces[0].id,
   },
 ];
 
 export const chatMessages: WireMessage[] = [
   {
-    id: 'm_seed1',
-    conversationId: 'conv_seed1',
-    role: 'user',
-    content: 'What is a cell?',
-    status: 'complete',
     citations: null,
+    content: 'What is a cell?',
+    conversationId: 'conv_seed1',
     createdAt: days(1),
+    id: 'm_seed1',
+    role: 'user',
+    status: 'complete',
   },
   {
-    id: 'm_seed2',
-    conversationId: 'conv_seed1',
-    role: 'assistant',
-    content:
-      'A **cell** is the basic structural and functional unit of life.\n\n- Bounded by a **membrane** that controls transport\n- Contains **organelles** like the nucleus and mitochondria\n- Produces energy (ATP) in the **mitochondria**',
-    status: 'complete',
     citations: files[0]
       ? [
           {
@@ -1035,64 +1131,70 @@ export const chatMessages: WireMessage[] = [
           },
         ]
       : null,
+    content:
+      'A **cell** is the basic structural and functional unit of life.\n\n- Bounded by a **membrane** that controls transport\n- Contains **organelles** like the nucleus and mitochondria\n- Produces energy (ATP) in the **mitochondria**',
+    conversationId: 'conv_seed1',
     createdAt: days(1),
+    id: 'm_seed2',
+    role: 'assistant',
+    status: 'complete',
   },
 ];
 
 export const publicWorkspaces: PublicWorkspace[] = [
   {
     ...workspaces[0],
+    author: 'mrslee',
+    clones: 1240,
     id: 'pub_ws_1',
     name: 'AP Biology — full course',
-    author: 'mrslee',
     privacy: 'public',
-    clones: 1240,
   },
   {
     ...workspaces[2],
+    author: 'historyhub',
+    clones: 860,
     id: 'pub_ws_2',
     name: 'Modern World History',
-    author: 'historyhub',
     privacy: 'public',
-    clones: 860,
   },
 ];
 export const publicQuizzes: PublicQuiz[] = [
   {
     ...seedQuizzes[0],
+    author: 'mrslee',
+    clones: 540,
     id: 'pub_qz_1',
     name: 'Cell biology — 50 questions',
-    author: 'mrslee',
     privacy: 'public',
-    clones: 540,
   },
   {
     ...seedQuizzes[2],
+    author: 'mathpro',
+    clones: 410,
     id: 'pub_qz_2',
     name: 'Calculus II mega quiz',
-    author: 'mathpro',
     privacy: 'public',
-    clones: 410,
   },
 ];
 export const publicDecks: PublicDeck[] = [
   {
     ...seedDecks[0],
-    id: 'pub_dk_1',
-    name: 'Cell biology essentials',
     author: 'mrslee',
-    privacy: 'public',
-    isOwner: false,
     clones: 320,
+    id: 'pub_dk_1',
+    isOwner: false,
+    name: 'Cell biology essentials',
+    privacy: 'public',
   },
   {
     ...seedDecks[1],
-    id: 'pub_dk_2',
-    name: 'Calculus formulas',
     author: 'mathpro',
-    privacy: 'public',
-    isOwner: false,
     clones: 205,
+    id: 'pub_dk_2',
+    isOwner: false,
+    name: 'Calculus formulas',
+    privacy: 'public',
   },
 ];
 
@@ -1104,93 +1206,97 @@ export const publicDecks: PublicDeck[] = [
 
 /** Per-card scheduling state, keyed by card id (the flashcards fence owns the
  * front/back; this owns FSRS + known). */
-export const cardStats: Record<string, { materialId: string; srs: SrsState; known: boolean }> = {};
-for (const c of seedCards) cardStats[c.id] = { materialId: c.deckId, srs: c.srs, known: c.known };
+export const cardStats: Record<
+  string,
+  { materialId: string; srs: SrsState; known: boolean }
+> = {};
+for (const c of seedCards)
+  cardStats[c.id] = { known: c.known, materialId: c.deckId, srs: c.srs };
 
 seedQuizzes.forEach((q) => {
   materials.push({
-    id: q.id,
-    workspaceId: q.workspaceId,
-    workspaceName: q.workspaceName,
-    role: 'owner',
     capabilities: ownerCapabilities,
-    kind: 'quiz',
-    title: q.name,
+    chapterId: null,
     content: createMaterialDocument([
       quizNode({ questions: q.questions, timeLimitMin: q.timeLimitMin }, q.id),
     ]),
-    chapterId: null,
+    createdAt: q.createdAt,
+    id: q.id,
+    kind: 'quiz',
+    privacy: q.privacy,
+    role: 'owner',
     scopeChapters: q.chapters,
     scopeFileIds: [],
-    privacy: q.privacy,
-    createdAt: q.createdAt,
+    title: q.name,
+    workspaceId: q.workspaceId,
+    workspaceName: q.workspaceName,
   });
 });
 seedDecks.forEach((d, i) => {
   const deckCards = seedCards.filter((c) => c.deckId === d.id);
   materials.push({
-    id: d.id,
-    workspaceId: d.workspaceId,
-    workspaceName: d.workspaceName,
-    role: 'owner',
     capabilities: ownerCapabilities,
-    kind: 'flashcards',
-    title: d.name,
+    chapterId: null,
     color: d.color,
     content: createMaterialDocument([
       flashcardsNode(
-        deckCards.map((c) => ({ id: c.id, front: c.front, back: c.back })),
+        deckCards.map((c) => ({ back: c.back, front: c.front, id: c.id })),
         d.id
       ),
     ]),
-    chapterId: null,
+    createdAt: days(5 + i),
+    id: d.id,
+    kind: 'flashcards',
+    privacy: 'private',
+    role: 'owner',
     scopeChapters: [],
     scopeFileIds: [],
-    privacy: 'private',
-    createdAt: days(5 + i),
+    title: d.name,
+    workspaceId: d.workspaceId,
+    workspaceName: d.workspaceName,
   });
 });
 /* ---------------- editor matrix fixtures (e2e/editor) ---------------- */
 if (import.meta.env.VITE_E2E_EDITOR_SEED === 'true') {
   materials.push(
     {
-      id: EDITOR_NOTE.id,
-      workspaceId: EDITOR_WORKSPACE_ID,
-      workspaceName: 'Biology 101',
-      role: 'owner',
       capabilities: ownerCapabilities,
-      kind: 'note',
-      title: EDITOR_NOTE.title,
-      content: createMaterialDocument(buildEditorNoteValue() as MaterialValue),
       chapterId: null,
+      content: createMaterialDocument(buildEditorNoteValue() as MaterialValue),
+      createdAt: days(1),
+      id: EDITOR_NOTE.id,
+      kind: 'note',
+      privacy: 'private',
+      revision: 1,
+      role: 'owner',
       scopeChapters: [],
       scopeFileIds: [],
-      privacy: 'private',
-      createdAt: days(1),
-      revision: 1,
-    },
-    {
-      id: SUGGEST_NOTE.id,
+      title: EDITOR_NOTE.title,
       workspaceId: EDITOR_WORKSPACE_ID,
       workspaceName: 'Biology 101',
+    },
+    {
+      capabilities: {
+        canComment: true,
+        canEdit: false,
+        canManageMembers: false,
+        canView: true,
+      },
+      chapterId: null,
+      content: createMaterialDocument(buildSuggestNoteValue() as MaterialValue),
+      createdAt: days(1),
+      id: SUGGEST_NOTE.id,
+      kind: 'note',
+      privacy: 'private',
+      revision: 1,
       // Commenter capabilities: the note opens in suggestion mode, mirroring
       // how a shared commenter sees it (materialModePolicy defaultMode).
       role: 'commenter',
-      capabilities: {
-        canView: true,
-        canEdit: false,
-        canComment: true,
-        canManageMembers: false,
-      },
-      kind: 'note',
-      title: SUGGEST_NOTE.title,
-      content: createMaterialDocument(buildSuggestNoteValue() as MaterialValue),
-      chapterId: null,
       scopeChapters: [],
       scopeFileIds: [],
-      privacy: 'private',
-      createdAt: days(1),
-      revision: 1,
+      title: SUGGEST_NOTE.title,
+      workspaceId: EDITOR_WORKSPACE_ID,
+      workspaceName: 'Biology 101',
     }
   );
 }
@@ -1202,20 +1308,20 @@ if (import.meta.env.VITE_PERF_SEED === 'true') {
     [PERF_SMALL_NOTE, buildSmallPerfDocument()],
   ] as const) {
     materials.push({
-      id: note.id,
-      workspaceId: 'ws_bio',
-      workspaceName: 'Biology 101',
-      role: 'owner',
       capabilities: ownerCapabilities,
-      kind: 'note',
-      title: note.title,
-      content: createMaterialDocument(content.value as MaterialValue),
       chapterId: null,
+      content: createMaterialDocument(content.value as MaterialValue),
+      createdAt: days(1),
+      id: note.id,
+      kind: 'note',
+      privacy: 'private',
+      revision: 1,
+      role: 'owner',
       scopeChapters: [],
       scopeFileIds: [],
-      privacy: 'private',
-      createdAt: days(1),
-      revision: 1,
+      title: note.title,
+      workspaceId: 'ws_bio',
+      workspaceName: 'Biology 101',
     });
   }
 }
@@ -1224,40 +1330,46 @@ for (const material of materials) refreshMaterialContentBytes(material);
 
 /** Derive the typed Quiz view from a quiz material (questions from the fence). */
 export function quizFromMaterial(mt: Material): Quiz {
+  const cleanValue = finalizeSuggestionValue(mt.content.value, 'reject');
   const { questions, timeLimitMin } =
     typeof mt.content === 'string'
       ? parseQuizBlock(mt.content)
-      : quizElementToBlock(mt.content.value.find((node) => node.type === 'quiz') as QuizElement);
+      : quizElementToBlock(
+          cleanValue.find((node) => node.type === 'quiz') as QuizElement
+        );
   return {
+    chapters: mt.scopeChapters,
+    createdAt: mt.createdAt,
     id: mt.id,
+    isOwner: true,
     name: mt.title,
+    privacy: mt.privacy,
+    questions,
+    timeLimitMin,
     workspaceId: mt.workspaceId,
     workspaceName: mt.workspaceName,
-    chapters: mt.scopeChapters,
-    questions,
-    createdAt: mt.createdAt,
-    privacy: mt.privacy,
-    timeLimitMin,
-    isOwner: true,
   };
 }
 
 /** Derive the typed cards for a flashcards material (fence + cardStats join). */
 export function cardsFromMaterial(mt: Material): Flashcard[] {
+  const cleanValue = finalizeSuggestionValue(mt.content.value, 'reject');
   const cards =
     typeof mt.content === 'string'
       ? parseFlashcardsBlock(mt.content).cards
       : flashcardsElementToCards(
-          mt.content.value.find((node) => node.type === 'flashcards') as FlashcardsElement
+          cleanValue.find(
+            (node) => node.type === 'flashcards'
+          ) as FlashcardsElement
         );
   return cards.map((c) => {
     const st = cardStats[c.id];
     const srs = st?.srs ?? newSrsState();
     return {
-      id: c.id,
+      back: c.back,
       deckId: mt.id,
       front: c.front,
-      back: c.back,
+      id: c.id,
       known: st?.known ?? false,
       srs,
     };
@@ -1269,19 +1381,20 @@ export function deckFromMaterial(mt: Material): Deck {
   const cs = cardsFromMaterial(mt);
   const known = cs.filter((c) => c.known).length;
   return {
+    cardCount: cs.length,
+    color: mt.color ?? 'green',
+    dueCount: cs.filter((c) => isDue(c.srs)).length,
     id: mt.id,
+    isOwner: true,
+    knownPct: cs.length ? Math.round((100 * known) / cs.length) : 0,
     name: mt.title,
+    privacy: mt.privacy,
     workspaceId: mt.workspaceId,
     workspaceName: mt.workspaceName,
-    color: mt.color ?? 'green',
-    privacy: mt.privacy,
-    isOwner: true,
-    cardCount: cs.length,
-    knownPct: cs.length ? Math.round((100 * known) / cs.length) : 0,
-    dueCount: cs.filter((c) => isDue(c.srs)).length,
   };
 }
 
 /** Convenience accessors for the two derived material kinds. */
 export const quizMaterials = () => materials.filter((m) => m.kind === 'quiz');
-export const deckMaterials = () => materials.filter((m) => m.kind === 'flashcards');
+export const deckMaterials = () =>
+  materials.filter((m) => m.kind === 'flashcards');

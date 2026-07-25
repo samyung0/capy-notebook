@@ -29,12 +29,21 @@ import {
   BaseTextAlignPlugin,
 } from '@platejs/basic-styles';
 import { BaseCalloutPlugin } from '@platejs/callout';
-import { BaseCodeBlockPlugin, BaseCodeLinePlugin, BaseCodeSyntaxPlugin } from '@platejs/code-block';
+import {
+  BaseCodeBlockPlugin,
+  BaseCodeLinePlugin,
+  BaseCodeSyntaxPlugin,
+} from '@platejs/code-block';
 import { BaseIndentPlugin } from '@platejs/indent';
 import { BaseColumnItemPlugin, BaseColumnPlugin } from '@platejs/layout';
 import { BaseLinkPlugin } from '@platejs/link';
 import { BaseListPlugin, isOrderedList } from '@platejs/list';
-import { BaseAudioPlugin, BaseFilePlugin, BaseImagePlugin, BaseVideoPlugin } from '@platejs/media';
+import {
+  BaseAudioPlugin,
+  BaseFilePlugin,
+  BaseImagePlugin,
+  BaseVideoPlugin,
+} from '@platejs/media';
 import { BaseMentionPlugin } from '@platejs/mention';
 import {
   BaseTableCellHeaderPlugin,
@@ -44,7 +53,7 @@ import {
 } from '@platejs/table';
 import { BaseTocPlugin } from '@platejs/toc';
 import { common, createLowlight } from 'lowlight';
-import { BaseParagraphPlugin, KEYS, createSlatePlugin } from 'platejs';
+import { BaseParagraphPlugin, createSlatePlugin, KEYS } from 'platejs';
 import { createElement } from 'react';
 import { noteMarkdownPlugin } from '@/features/notes/markdown';
 
@@ -102,7 +111,11 @@ const StaticListKit: AnyPlugin[] = [
         nodeKey: KEYS.listType,
         query: ({ nodeProps }: AnyPlugin) => {
           const element = nodeProps.element;
-          return Boolean(element?.listStyleType) && !!element && !isOrderedList(element);
+          return (
+            Boolean(element?.listStyleType) &&
+            !!element &&
+            !isOrderedList(element)
+          );
         },
         transformProps: ({ props }: AnyPlugin) => ({
           ...props,
@@ -114,21 +127,35 @@ const StaticListKit: AnyPlugin[] = [
     },
     render: {
       belowNodes: ((props: AnyPlugin) => {
-        if (!listTargets.includes(props.element.type) || !props.element.listStyleType) return;
+        if (
+          !listTargets.includes(props.element.type) ||
+          !props.element.listStyleType
+        )
+          return;
 
         if (props.element.listStyleType === KEYS.listTodo) {
           return (nextProps: AnyPlugin) => {
-            const element = nextProps.element as { checked?: boolean; indent?: number };
+            const element = nextProps.element as {
+              checked?: boolean;
+              indent?: number;
+            };
             return createElement(
               'div',
               {
                 className: 'relative my-1 flex items-start gap-2',
-                style: { marginLeft: element.indent ? `${element.indent * 24}px` : undefined },
+                style: {
+                  marginLeft: element.indent
+                    ? `${element.indent * 24}px`
+                    : undefined,
+                },
               },
               createElement('input', {
-                'aria-label': element.checked ? 'Completed task' : 'Incomplete task',
+                'aria-label': element.checked
+                  ? 'Completed task'
+                  : 'Incomplete task',
                 checked: Boolean(element.checked),
-                className: 'mt-2 size-4 shrink-0 rounded border-line-strong accent-action-accent',
+                className:
+                  'mt-2 size-4 shrink-0 rounded border-line-strong accent-action-accent',
                 disabled: true,
                 readOnly: true,
                 type: 'checkbox',
@@ -161,7 +188,9 @@ const StaticListKit: AnyPlugin[] = [
               start: element.listStart,
               style: {
                 listStyleType: element.listStyleType,
-                marginLeft: element.indent ? `${element.indent * 24}px` : undefined,
+                marginLeft: element.indent
+                  ? `${element.indent * 24}px`
+                  : undefined,
               },
             },
             createElement('li', null, nextProps.children)

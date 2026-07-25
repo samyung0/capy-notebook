@@ -115,6 +115,7 @@ CREATE TABLE IF NOT EXISTS materials (
   color          text NOT NULL DEFAULT 'green',
   clone_count    int    NOT NULL DEFAULT 0,
   revision       bigint NOT NULL DEFAULT 1,
+  has_pending_suggestions boolean NOT NULL DEFAULT false,
   created_at     timestamptz NOT NULL DEFAULT now(),
   updated_at     timestamptz NOT NULL DEFAULT now(),
   updated_by     text REFERENCES users(id) ON DELETE SET NULL,
@@ -132,12 +133,19 @@ CREATE INDEX IF NOT EXISTS materials_privacy_idx ON materials(privacy, kind) WHE
 CREATE INDEX IF NOT EXISTS materials_user_idx ON materials(user_id, kind, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS material_revisions (
-  material_id text NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
-  revision    bigint NOT NULL,
-  title       text NOT NULL,
-  content     jsonb NOT NULL,
-  created_by  text REFERENCES users(id) ON DELETE SET NULL,
-  created_at  timestamptz NOT NULL DEFAULT now(),
+  material_id            text NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
+  revision               bigint NOT NULL,
+  parent_revision        bigint,
+  event_type             text NOT NULL DEFAULT 'create'
+                           CHECK (event_type IN ('create','edit','suggestion_commit','suggestion_accept','suggestion_reject')),
+  title                  text NOT NULL,
+  content                jsonb NOT NULL,
+  has_pending_suggestions boolean NOT NULL DEFAULT false,
+  event_metadata         jsonb NOT NULL DEFAULT '{}'::jsonb
+                           CHECK (jsonb_typeof(event_metadata) = 'object'),
+  created_by             text REFERENCES users(id) ON DELETE SET NULL,
+  created_at             timestamptz NOT NULL DEFAULT now(),
+  CHECK (parent_revision IS NULL OR parent_revision < revision),
   PRIMARY KEY (material_id, revision)
 );
 CREATE INDEX IF NOT EXISTS material_revisions_created_idx
@@ -322,47 +330,63 @@ CREATE UNIQUE INDEX IF NOT EXISTS notifications_workspace_invite_idx
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS material_discussions (
-  id               text PRIMARY KEY,
-  material_id      text NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
-  block_id         text,
-  document_content text,
-  anchor           jsonb NOT NULL DEFAULT '{}'::jsonb,
-  created_by       text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  is_resolved      boolean NOT NULL DEFAULT false,
-  created_at       timestamptz NOT NULL DEFAULT now(),
-  updated_at       timestamptz NOT NULL DEFAULT now()
+  id          text PRIMARY KEY,
+  material_id text NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
+  kind        text NOT NULL DEFAULT 'comment'
+                CHECK (kind IN ('comment','suggestion')),
+  block_id    text,
+  anchor      jsonb NOT NULL DEFAULT '{}'::jsonb
+                CHECK (jsonb_typeof(anchor) = 'object'),
+  created_by  text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  is_resolved boolean NOT NULL DEFAULT false,
+  deleted_at  timestamptz,
+  deleted_by  text REFERENCES users(id) ON DELETE SET NULL,
+  created_at  timestamptz NOT NULL DEFAULT now(),
+  updated_at  timestamptz NOT NULL DEFAULT now(),
+  CHECK (kind <> 'suggestion' OR block_id IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS material_discussions_material_idx
-  ON material_discussions(material_id, created_at);
+  ON material_discussions(material_id, created_at) WHERE deleted_at IS NULL;
 
 CREATE TABLE IF NOT EXISTS material_comments (
-  id            text PRIMARY KEY,
-  discussion_id text NOT NULL REFERENCES material_discussions(id) ON DELETE CASCADE,
-  user_id       text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  content_rich  jsonb NOT NULL,
-  is_edited     boolean NOT NULL DEFAULT false,
-  created_at    timestamptz NOT NULL DEFAULT now(),
-  updated_at    timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS material_comments_discussion_idx
-  ON material_comments(discussion_id, created_at);
-
-CREATE TABLE IF NOT EXISTS material_suggestions (
   id                text PRIMARY KEY,
-  material_id       text NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
+  discussion_id     text NOT NULL REFERENCES material_discussions(id) ON DELETE CASCADE,
+  parent_comment_id text REFERENCES material_comments(id) ON DELETE SET NULL,
   user_id           text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  base_revision     bigint NOT NULL,
-  anchor            jsonb NOT NULL DEFAULT '{}'::jsonb CHECK (jsonb_typeof(anchor) = 'object'),
-  original_fragment jsonb NOT NULL CHECK (jsonb_typeof(original_fragment) = 'array'),
-  proposed_fragment jsonb NOT NULL CHECK (jsonb_typeof(proposed_fragment) = 'array'),
-  status            text NOT NULL DEFAULT 'pending'
-                    CHECK (status IN ('pending','accepted','rejected','withdrawn')),
-  reviewed_by       text REFERENCES users(id) ON DELETE SET NULL,
-  reviewed_at       timestamptz,
+  content_rich      jsonb NOT NULL,
+  is_edited         boolean NOT NULL DEFAULT false,
+  deleted_at        timestamptz,
+  deleted_by        text REFERENCES users(id) ON DELETE SET NULL,
   created_at        timestamptz NOT NULL DEFAULT now(),
   updated_at        timestamptz NOT NULL DEFAULT now(),
-  FOREIGN KEY (material_id, base_revision)
-    REFERENCES material_revisions(material_id, revision) ON DELETE CASCADE,
+  CHECK (parent_comment_id IS NULL OR parent_comment_id <> id)
+);
+CREATE INDEX IF NOT EXISTS material_comments_discussion_idx
+  ON material_comments(discussion_id, created_at) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS material_comments_parent_idx
+  ON material_comments(parent_comment_id, created_at) WHERE parent_comment_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS material_suggestions (
+  id                  text PRIMARY KEY,
+  discussion_id       text NOT NULL REFERENCES material_discussions(id) ON DELETE CASCADE,
+  plate_suggestion_id text NOT NULL,
+  commit_revision     bigint NOT NULL,
+  resolution_revision bigint,
+  status              text NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending','accepted','rejected','withdrawn')),
+  user_id             text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reviewed_by         text REFERENCES users(id) ON DELETE SET NULL,
+  reviewed_at         timestamptz,
+  deleted_at          timestamptz,
+  deleted_by          text REFERENCES users(id) ON DELETE SET NULL,
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  updated_at          timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (discussion_id, plate_suggestion_id),
+  CHECK (
+    (status = 'pending' AND resolution_revision IS NULL)
+    OR
+    (status IN ('accepted','rejected','withdrawn') AND resolution_revision IS NOT NULL)
+  ),
   CHECK (
     (status IN ('accepted','rejected') AND reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL)
     OR
@@ -370,7 +394,9 @@ CREATE TABLE IF NOT EXISTS material_suggestions (
   )
 );
 CREATE INDEX IF NOT EXISTS material_suggestions_material_idx
-  ON material_suggestions(material_id, status, created_at);
+  ON material_suggestions(discussion_id, status, created_at) WHERE deleted_at IS NULL;
+CREATE INDEX IF NOT EXISTS material_suggestions_plate_idx
+  ON material_suggestions(plate_suggestion_id, status);
 CREATE INDEX IF NOT EXISTS material_suggestions_author_idx
   ON material_suggestions(user_id, created_at);
 
@@ -628,8 +654,12 @@ INSERT INTO materials (id, user_id, workspace_id, workspace_name, kind, title, c
 ON CONFLICT (id) DO NOTHING;
 
 -- Every material needs a revision-1 snapshot (suggestions FK against it).
-INSERT INTO material_revisions (material_id, revision, title, content, created_by, created_at)
-SELECT id, revision, title, content, user_id, created_at
+INSERT INTO material_revisions (
+  material_id, revision, parent_revision, event_type, title, content,
+  has_pending_suggestions, event_metadata, created_by, created_at
+)
+SELECT id, revision, NULL, 'create', title, content,
+       has_pending_suggestions, '{}'::jsonb, user_id, created_at
 FROM materials
 ON CONFLICT (material_id, revision) DO NOTHING;
 

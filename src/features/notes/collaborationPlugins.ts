@@ -3,8 +3,8 @@ import { TrailingBlockPlugin } from 'platejs';
 import {
   commentPlugin,
   discussionPlugin,
-  suggestionPlugin,
   type EditorCollaborationOptions,
+  suggestionPlugin,
 } from './Collaboration';
 
 /**

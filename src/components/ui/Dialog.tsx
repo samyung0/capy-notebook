@@ -1,26 +1,34 @@
-import * as React from 'react';
+import { useRouterState } from '@tanstack/react-router';
 import { Dialog as DialogPrimitive } from 'radix-ui';
-
-import { cn } from '@/lib/cn';
-import { IconButton } from './IconButton';
-import { Button } from './Button';
+import * as React from 'react';
 import { Card } from '@/components/ui/Card';
-import { Spinner } from './feedback';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
+import { Button } from './Button';
+import { Spinner } from './feedback';
+import { IconButton } from './IconButton';
 
-function Dialog({ ...props }: React.ComponentProps<typeof DialogPrimitive.Root>) {
+function Dialog({
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Root>) {
   return <DialogPrimitive.Root data-slot="dialog" {...props} />;
 }
 
-function DialogTrigger({ ...props }: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
+function DialogTrigger({
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Trigger>) {
   return <DialogPrimitive.Trigger data-slot="dialog-trigger" {...props} />;
 }
 
-function DialogPortal({ ...props }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
+function DialogPortal({
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Portal>) {
   return <DialogPrimitive.Portal data-slot="dialog-portal" {...props} />;
 }
 
-function DialogClose({ ...props }: React.ComponentProps<typeof DialogPrimitive.Close>) {
+function DialogClose({
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Close>) {
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />;
 }
 
@@ -30,11 +38,11 @@ function DialogOverlay({
 }: React.ComponentProps<typeof DialogPrimitive.Overlay>) {
   return (
     <DialogPrimitive.Overlay
-      data-slot="dialog-overlay"
       className={cn(
-        'fixed inset-0 isolate z-50 bg-black/10 duration-100 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0 supports-backdrop-filter:backdrop-blur-xs',
+        'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 isolate z-50 bg-black/10 duration-100 data-[state=closed]:animate-out data-[state=open]:animate-in supports-backdrop-filter:backdrop-blur-xs',
         className
       )}
+      data-slot="dialog-overlay"
       {...props}
     />
   );
@@ -57,15 +65,18 @@ function DialogContent({
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
-        data-slot="dialog-content"
         className={cn(
-          'fixed top-1/2 left-1/2 z-50 grid w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 px-4 duration-100 outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+          'data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 fixed top-1/2 left-1/2 z-50 grid w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 px-4 outline-none duration-100 data-[state=closed]:animate-out data-[state=open]:animate-in',
           className
         )}
+        data-slot="dialog-content"
         // check github issues for pointer event collisions between dialog and sonner
         // https://github.com/radix-ui/primitives/issues/2690#issuecomment-1945449832
         onPointerDownOutside={(e) => {
-          if (e.target instanceof Element && e.target.closest('[data-sonner-toast]')) {
+          if (
+            e.target instanceof Element &&
+            e.target.closest('[data-sonner-toast]')
+          ) {
             e.preventDefault();
           }
           onPointerDownOutside?.(e);
@@ -73,9 +84,12 @@ function DialogContent({
         {...props}
       >
         <Card
+          className={cn(
+            'relative w-full items-stretch gap-0 overflow-hidden p-0',
+            cardClassName
+          )}
           radius="card-lg"
           raised
-          className={cn('relative w-full items-stretch gap-0 overflow-hidden p-0', cardClassName)}
         >
           <div
             className={cn(
@@ -85,12 +99,12 @@ function DialogContent({
           >
             {children}
             {showCloseButton && (
-              <DialogPrimitive.Close data-slot="dialog-close" asChild>
+              <DialogPrimitive.Close asChild data-slot="dialog-close">
                 <IconButton
-                  icon="x"
-                  variant="ghost-hover"
                   className="absolute top-4 right-4"
+                  icon="x"
                   size="md"
+                  variant="ghost-hover"
                 >
                   <span className="sr-only">Close</span>
                 </IconButton>
@@ -103,24 +117,34 @@ function DialogContent({
   );
 }
 
-function DialogTitle({ className, ...props }: React.ComponentProps<typeof DialogPrimitive.Title>) {
+function DialogTitle({
+  className,
+  ...props
+}: React.ComponentProps<typeof DialogPrimitive.Title>) {
   return (
     <DialogPrimitive.Title
+      className={cn(
+        't-large-card-title flex items-center justify-between pt-0 pb-6',
+        className
+      )}
       data-slot="dialog-title"
-      className={cn('t-section flex items-center justify-between pt-0 pb-6', className)}
       {...props}
     />
   );
 }
 
-function DialogFooter({ className, children, ...props }: React.ComponentProps<'div'>) {
+function DialogFooter({
+  className,
+  children,
+  ...props
+}: React.ComponentProps<'div'>) {
   return (
     <div
-      data-slot="dialog-footer"
       className={cn(
         '-mx-4 -mb-4 flex flex-col-reverse gap-2 p-4 sm:flex-row sm:justify-end',
         className
       )}
+      data-slot="dialog-footer"
       {...props}
     >
       {children}
@@ -157,20 +181,32 @@ function SimpleDialog({
   onPointerDownOutside?: React.ComponentProps<
     typeof DialogPrimitive.Content
   >['onPointerDownOutside'];
-  onInteractOutside?: React.ComponentProps<typeof DialogPrimitive.Content>['onInteractOutside'];
-  onEscapeKeyDown?: React.ComponentProps<typeof DialogPrimitive.Content>['onEscapeKeyDown'];
+  onInteractOutside?: React.ComponentProps<
+    typeof DialogPrimitive.Content
+  >['onInteractOutside'];
+  onEscapeKeyDown?: React.ComponentProps<
+    typeof DialogPrimitive.Content
+  >['onEscapeKeyDown'];
 }) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+
+  React.useEffect(() => {
+    onClose();
+  }, [pathname]);
+
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+    <Dialog onOpenChange={(o) => !o && onClose()} open={open}>
       <DialogContent
-        showCloseButton={showCloseButton}
         className={className}
-        style={width ? { maxWidth: width } : undefined}
-        onPointerDownOutside={onPointerDownOutside}
-        onInteractOutside={onInteractOutside}
         onEscapeKeyDown={onEscapeKeyDown}
+        onInteractOutside={onInteractOutside}
+        onPointerDownOutside={onPointerDownOutside}
+        showCloseButton={showCloseButton}
+        style={width ? { maxWidth: width } : undefined}
       >
-        {title != null && <DialogTitle className="pr-10 pb-4">{title}</DialogTitle>}
+        {title != null && (
+          <DialogTitle className="pr-10 pb-4">{title}</DialogTitle>
+        )}
         {children}
         {footer && <DialogFooter>{footer}</DialogFooter>}
       </DialogContent>
@@ -179,17 +215,17 @@ function SimpleDialog({
 }
 
 interface ConfirmDialogProps {
-  open: boolean;
-  onClose: () => void;
-  onConfirm: () => void;
-  title: string;
   body?: string;
   children?: React.ReactNode;
+  closeOnConfirm?: boolean;
   confirmLabel?: string;
   danger?: boolean;
-  isSubmitting?: boolean;
   disabled?: boolean;
-  closeOnConfirm?: boolean;
+  isSubmitting?: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  open: boolean;
+  title: string;
 }
 
 function ConfirmDialog({
@@ -207,21 +243,22 @@ function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <SimpleDialog
-      open={open}
-      onClose={onClose}
-      title={title}
       footer={
         <>
-          <Button variant="ghost-hover" disabled={isSubmitting} onClick={onClose}>
+          <Button
+            disabled={isSubmitting}
+            onClick={onClose}
+            variant="ghost-hover"
+          >
             Cancel
           </Button>
           <Button
             disabled={disabled || isSubmitting}
-            variant={danger ? 'danger' : 'accent'}
             onClick={() => {
               onConfirm();
               if (closeOnConfirm) onClose();
             }}
+            variant={danger ? 'danger' : 'accent'}
           >
             {!isSubmitting && <span>{confirmLabel ?? m.action_confirm()}</span>}
             {isSubmitting && (
@@ -232,6 +269,9 @@ function ConfirmDialog({
           </Button>
         </>
       }
+      onClose={onClose}
+      open={open}
+      title={title}
     >
       {body && <p>{body}</p>}
       {children}
@@ -240,15 +280,15 @@ function ConfirmDialog({
 }
 
 export {
+  ConfirmDialog,
+  type ConfirmDialogProps,
   Dialog,
   DialogClose,
   DialogContent,
+  DialogFooter,
   DialogOverlay,
   DialogPortal,
   DialogTitle,
   DialogTrigger,
-  DialogFooter,
   SimpleDialog,
-  ConfirmDialog,
-  type ConfirmDialogProps,
 };

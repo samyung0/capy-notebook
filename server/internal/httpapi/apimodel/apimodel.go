@@ -104,25 +104,26 @@ type SourceUploadPolicy struct {
 }
 
 type Material struct {
-	ID            string                   `json:"id"`
-	WorkspaceID   string                   `json:"workspaceId"`
-	WorkspaceName string                   `json:"workspaceName"`
-	Kind          string                   `json:"kind"`
-	Title         string                   `json:"title"`
-	Content       materialdoc.Envelope     `json:"content"`
-	ContentBytes  int                      `json:"contentBytes" doc:"UTF-8 byte length of persisted content JSON"`
-	ChapterID     *string                  `json:"chapterId"`
-	Position      int64                    `json:"position"`
-	ScopeChapters []string                 `json:"scopeChapters" nullable:"false"`
-	ScopeFileIDs  []string                 `json:"scopeFileIds" nullable:"false"`
-	Privacy       store.Privacy            `json:"privacy"`
-	Color         store.UserColor          `json:"color,omitempty"`
-	CreatedAt     time.Time                `json:"createdAt"`
-	UpdatedAt     time.Time                `json:"updatedAt"`
-	Revision      int64                    `json:"revision"`
-	IsOwner       bool                     `json:"isOwner"`
-	Role          *store.WorkspaceRole     `json:"role,omitempty"`
-	Capabilities  store.AccessCapabilities `json:"capabilities"`
+	ID                    string                   `json:"id"`
+	WorkspaceID           string                   `json:"workspaceId"`
+	WorkspaceName         string                   `json:"workspaceName"`
+	Kind                  string                   `json:"kind"`
+	Title                 string                   `json:"title"`
+	Content               materialdoc.Envelope     `json:"content"`
+	ContentBytes          int                      `json:"contentBytes" doc:"UTF-8 byte length of persisted content JSON"`
+	ChapterID             *string                  `json:"chapterId"`
+	Position              int64                    `json:"position"`
+	ScopeChapters         []string                 `json:"scopeChapters" nullable:"false"`
+	ScopeFileIDs          []string                 `json:"scopeFileIds" nullable:"false"`
+	Privacy               store.Privacy            `json:"privacy"`
+	Color                 store.UserColor          `json:"color,omitempty"`
+	CreatedAt             time.Time                `json:"createdAt"`
+	UpdatedAt             time.Time                `json:"updatedAt"`
+	Revision              int64                    `json:"revision"`
+	HasPendingSuggestions bool                     `json:"hasPendingSuggestions"`
+	IsOwner               bool                     `json:"isOwner"`
+	Role                  *store.WorkspaceRole     `json:"role,omitempty"`
+	Capabilities          store.AccessCapabilities `json:"capabilities"`
 }
 
 // MaterialUpdateResult is the lightweight acknowledgement returned by
@@ -130,10 +131,17 @@ type Material struct {
 // echoing and decoding the complete document again only adds response bytes
 // and main-thread JSON work for large notes.
 type MaterialUpdateResult struct {
-	ID           string    `json:"id"`
-	Revision     int64     `json:"revision"`
-	ContentBytes int       `json:"contentBytes" doc:"UTF-8 byte length of persisted content JSON"`
-	UpdatedAt    time.Time `json:"updatedAt"`
+	ID                    string    `json:"id"`
+	Revision              int64     `json:"revision"`
+	ContentBytes          int       `json:"contentBytes" doc:"UTF-8 byte length of persisted content JSON"`
+	HasPendingSuggestions bool      `json:"hasPendingSuggestions"`
+	UpdatedAt             time.Time `json:"updatedAt"`
+}
+
+type SuggestionMutationResult struct {
+	MaterialUpdateResult
+	SuggestionIDs []string     `json:"suggestionIds" nullable:"false"`
+	Discussions   []Discussion `json:"discussions" nullable:"false"`
 }
 
 func FromMaterial(m store.Material) Material {
@@ -147,17 +155,22 @@ func FromMaterial(m store.Material) Material {
 		Position:      m.Position,
 		ScopeChapters: m.ScopeChapters, ScopeFileIDs: m.ScopeFileIDs,
 		Privacy: m.Privacy, Color: m.Color, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
-		Revision: m.Revision, IsOwner: m.IsOwner, Role: m.Role, Capabilities: m.Capabilities,
+		Revision: m.Revision, HasPendingSuggestions: m.HasPendingSuggestions,
+		IsOwner: m.IsOwner, Role: m.Role, Capabilities: m.Capabilities,
 	}
 }
 
 type MaterialRevision struct {
-	MaterialID string               `json:"materialId"`
-	Revision   int64                `json:"revision"`
-	Title      string               `json:"title"`
-	Content    materialdoc.Envelope `json:"content"`
-	CreatedBy  *string              `json:"createdBy,omitempty"`
-	CreatedAt  time.Time            `json:"createdAt"`
+	MaterialID            string                      `json:"materialId"`
+	Revision              int64                       `json:"revision"`
+	ParentRevision        *int64                      `json:"parentRevision,omitempty"`
+	EventType             store.MaterialRevisionEvent `json:"eventType"`
+	Title                 string                      `json:"title"`
+	Content               materialdoc.Envelope        `json:"content"`
+	HasPendingSuggestions bool                        `json:"hasPendingSuggestions"`
+	EventMetadata         map[string]any              `json:"eventMetadata"`
+	CreatedBy             *string                     `json:"createdBy,omitempty"`
+	CreatedAt             time.Time                   `json:"createdAt"`
 }
 
 func FromMaterialRevision(r store.MaterialRevision) MaterialRevision {
@@ -165,55 +178,22 @@ func FromMaterialRevision(r store.MaterialRevision) MaterialRevision {
 	if err != nil {
 		content = materialdoc.Empty()
 	}
-	return MaterialRevision{
+	out := MaterialRevision{
 		MaterialID: r.MaterialID, Revision: r.Revision, Title: r.Title,
-		Content: content, CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt,
+		ParentRevision: r.ParentRevision, EventType: r.EventType, Content: content,
+		HasPendingSuggestions: r.HasPendingSuggestions, EventMetadata: map[string]any{},
+		CreatedBy: r.CreatedBy, CreatedAt: r.CreatedAt,
 	}
+	_ = json.Unmarshal(r.EventMetadata, &out.EventMetadata)
+	return out
 }
 
 type (
-	WorkspaceMember = store.WorkspaceMember
-	Discussion      = store.Discussion
-	Comment         = store.Comment
+	WorkspaceMember    = store.WorkspaceMember
+	Discussion         = store.Discussion
+	Comment            = store.Comment
+	MaterialSuggestion = store.MaterialSuggestion
 )
-
-type MaterialSuggestion struct {
-	ID               string                 `json:"id"`
-	MaterialID       string                 `json:"materialId"`
-	UserID           string                 `json:"userId"`
-	BaseRevision     int64                  `json:"baseRevision"`
-	Anchor           map[string]any         `json:"anchor"`
-	OriginalFragment []map[string]any       `json:"originalFragment"`
-	ProposedFragment []map[string]any       `json:"proposedFragment"`
-	Status           store.SuggestionStatus `json:"status"`
-	ReviewedBy       *string                `json:"reviewedBy,omitempty"`
-	ReviewedAt       *time.Time             `json:"reviewedAt,omitempty"`
-	CreatedAt        time.Time              `json:"createdAt"`
-	UpdatedAt        time.Time              `json:"updatedAt"`
-}
-
-func FromMaterialSuggestion(suggestion store.MaterialSuggestion) MaterialSuggestion {
-	out := MaterialSuggestion{
-		ID: suggestion.ID, MaterialID: suggestion.MaterialID, UserID: suggestion.UserID,
-		BaseRevision: suggestion.BaseRevision, Status: suggestion.Status,
-		ReviewedBy: suggestion.ReviewedBy, ReviewedAt: suggestion.ReviewedAt,
-		CreatedAt: suggestion.CreatedAt, UpdatedAt: suggestion.UpdatedAt,
-		Anchor: map[string]any{}, OriginalFragment: []map[string]any{},
-		ProposedFragment: []map[string]any{},
-	}
-	_ = json.Unmarshal(suggestion.Anchor, &out.Anchor)
-	_ = json.Unmarshal(suggestion.OriginalFragment, &out.OriginalFragment)
-	_ = json.Unmarshal(suggestion.ProposedFragment, &out.ProposedFragment)
-	return out
-}
-
-func FromMaterialSuggestions(suggestions []store.MaterialSuggestion) []MaterialSuggestion {
-	out := make([]MaterialSuggestion, len(suggestions))
-	for i, suggestion := range suggestions {
-		out[i] = FromMaterialSuggestion(suggestion)
-	}
-	return out
-}
 
 // Workspace is the response contract. Tags are object-wrapped for useFieldArray.
 // IsOwner is request-scoped: false when a non-owner reads a link/public

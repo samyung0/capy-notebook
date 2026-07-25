@@ -13,7 +13,9 @@ export function useVoiceInput(onText: (text: string) => void) {
   const streamRef = useRef<MediaStream | null>(null);
 
   const cleanup = useCallback(() => {
-    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current?.getTracks().forEach((track) => {
+      track.stop();
+    });
     streamRef.current = null;
     recorderRef.current = null;
     chunksRef.current = [];
@@ -36,7 +38,9 @@ export function useVoiceInput(onText: (text: string) => void) {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
       recorder.onstop = async () => {
-        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || 'audio/webm' });
+        const blob = new Blob(chunksRef.current, {
+          type: recorder.mimeType || 'audio/webm',
+        });
         cleanup();
         setRecording(false);
         if (blob.size === 0) return;
@@ -70,5 +74,5 @@ export function useVoiceInput(onText: (text: string) => void) {
     else void start();
   }, [recording, start, stop]);
 
-  return { recording, busy, error, toggle };
+  return { busy, error, recording, toggle };
 }

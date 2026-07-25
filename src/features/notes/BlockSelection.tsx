@@ -1,7 +1,7 @@
 import { DndPlugin } from '@platejs/dnd';
 import { useBlockSelected, useCursorOverlay } from '@platejs/selection/react';
 import { KEYS } from 'platejs';
-import { usePluginOption, type PlateElementProps } from 'platejs/react';
+import { type PlateElementProps, usePluginOption } from 'platejs/react';
 import { cn } from '@/lib/cn';
 
 /** Ported from plate-playground-template block-selection.tsx: only blocks the
@@ -13,7 +13,10 @@ function hasSelectableClass({
   attributes: { className?: string };
   className?: string;
 }) {
-  return [className, attributes.className].filter(Boolean).join(' ').includes('slate-selectable');
+  return [className, attributes.className]
+    .filter(Boolean)
+    .join(' ')
+    .includes('slate-selectable');
 }
 
 const NO_OVERLAY_KEYS = new Set<string>([KEYS.table, KEYS.tr]);
@@ -28,18 +31,19 @@ export function BlockSelection(props: PlateElementProps) {
     // span, not div: the overlay renders inside the block element itself,
     // which can be a <p> where a nested <div> is invalid HTML.
     <span
-      data-slot="block-selection"
       className={cn(
         'pointer-events-none absolute inset-0 z-1 bg-tint-accent-1/40 transition-opacity',
         isDragging ? 'opacity-0' : 'opacity-100'
       )}
+      data-slot="block-selection"
     />
   );
 }
 
 /** `render.belowRootNodes` entry for BlockSelectionPlugin. */
 export function BlockSelectionBelowRootNodes(props: PlateElementProps) {
-  if (!hasSelectableClass(props as Parameters<typeof hasSelectableClass>[0])) return null;
+  if (!hasSelectableClass(props as Parameters<typeof hasSelectableClass>[0]))
+    return null;
   return <BlockSelection {...props} />;
 }
 
@@ -57,8 +61,8 @@ export function EditorCursorOverlay() {
         id === 'selection'
           ? selectionRects.map((rect, index) => (
               <div
-                key={index}
                 className="pointer-events-none absolute z-10 bg-action-accent/25"
+                key={index}
                 style={{
                   height: rect.height,
                   left: rect.left,

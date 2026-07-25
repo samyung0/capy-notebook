@@ -1,44 +1,47 @@
-import type { ElementType, HTMLAttributes } from 'react';
-import { cn } from '@/lib/cn';
-import { cva, VariantProps } from 'class-variance-authority';
+import { cva, type VariantProps } from 'class-variance-authority';
 import { Slot } from 'radix-ui';
+import type { ElementType } from 'react';
+import { cn } from '@/lib/cn';
 
 const cardVariants = cva('flex flex-col items-stretch gap-2 p-5.5', {
+  defaultVariants: {
+    border: 'none',
+    radius: 'card',
+    theme: 'light',
+  },
   variants: {
+    border: {
+      dashed: 'border-[1.5px] border-line-strong border-dashed',
+      none: '',
+      solid: 'border border-line',
+    },
     radius: {
-      unset: '',
-      none: 'rounded-none',
+      button: 'rounded-button',
       card: 'rounded-card',
       'card-lg': 'rounded-card-lg',
       'card-xl': 'rounded-card-xl',
+      none: 'rounded-none',
       panel: 'rounded-card-lg',
       row: 'rounded-row',
-      button: 'rounded-button',
-    },
-    border: {
-      none: '',
-      solid: 'border border-line',
-      dashed: 'border-[1.5px] border-dashed border-line-strong',
+      unset: '',
     },
     theme: {
-      light: 'bg-surface text-surface-fg transition-colors hover:bg-surface-hover-bg',
       gray: 'bg-surface-dark text-surface-dark-fg hover:bg-surface-dark-hover-bg',
+      light:
+        'bg-surface text-surface-fg transition-colors hover:bg-surface-hover-bg',
       page: 'bg-page text-surface-fg',
       transparent: 'bg-transparent text-surface-fg',
     },
   },
-  defaultVariants: {
-    radius: 'card',
-    border: 'none',
-    theme: 'light',
-  },
 });
 
-export interface CardProps extends React.ComponentProps<'div'>, VariantProps<typeof cardVariants> {
-  interactive?: boolean;
-  raised?: boolean;
+export interface CardProps
+  extends React.ComponentProps<'div'>,
+    VariantProps<typeof cardVariants> {
   asChild?: boolean;
   hoverBackgroundColorChange?: boolean;
+  interactive?: boolean;
+  raised?: boolean;
 }
 
 export function Card({
@@ -56,18 +59,18 @@ export function Card({
   const Tag = (asChild ? Slot.Root : 'div') as ElementType;
   return (
     <Tag
-      data-slot="card"
-      data-radius={radius}
-      data-theme={theme}
-      data-border={border}
       className={cn(
-        cardVariants({ radius, theme, border }),
+        cardVariants({ border, radius, theme }),
         raised && 'shadow-card',
         interactive &&
           'cursor-pointer transition-all duration-100 hover:-translate-y-0.5 hover:shadow-card',
         (!hoverBackgroundColorChange || !interactive) && 'hover:bg-unset', //todo
         className
       )}
+      data-border={border}
+      data-radius={radius}
+      data-slot="card"
+      data-theme={theme}
       style={{ ...style }}
       {...rest}
     />

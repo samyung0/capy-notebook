@@ -5,11 +5,12 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type GenerateOptionsKind = (typeof GenerateOptionsKind)[keyof typeof GenerateOptionsKind];
+export type GenerateOptionsKind =
+  (typeof GenerateOptionsKind)[keyof typeof GenerateOptionsKind];
 
 export const GenerateOptionsKind = {
-  flashcards: 'flashcards',
-  quiz: 'quiz',
-  mindmap: 'mindmap',
-  diagram: 'diagram',
+  diagram: "diagram",
+  flashcards: "flashcards",
+  mindmap: "mindmap",
+  quiz: "quiz",
 } as const;

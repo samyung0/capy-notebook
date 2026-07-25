@@ -98,6 +98,29 @@ func (r ShareRole) WorkspaceRole() WorkspaceRole {
 	}
 }
 
+// MaterialRevisionEvent records why a complete material snapshot was written.
+type MaterialRevisionEvent string
+
+const (
+	RevisionCreate           MaterialRevisionEvent = "create"
+	RevisionEdit             MaterialRevisionEvent = "edit"
+	RevisionSuggestionCommit MaterialRevisionEvent = "suggestion_commit"
+	RevisionSuggestionAccept MaterialRevisionEvent = "suggestion_accept"
+	RevisionSuggestionReject MaterialRevisionEvent = "suggestion_reject"
+)
+
+func (MaterialRevisionEvent) Schema(r huma.Registry) *huma.Schema {
+	return enumRef(
+		r,
+		"MaterialRevisionEvent",
+		"create",
+		"edit",
+		"suggestion_commit",
+		"suggestion_accept",
+		"suggestion_reject",
+	)
+}
+
 // PlanTier is the account subscription tier.
 type PlanTier string
 

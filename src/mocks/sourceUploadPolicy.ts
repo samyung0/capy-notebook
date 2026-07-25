@@ -1,15 +1,15 @@
 import type { FileKind, SourceUploadPolicy } from '@/api/types';
 
 const explicitExtensions: Record<string, string[]> = {
-  pdf: ['pdf'],
+  audio: ['mp3', 'wav', 'm4a', 'ogg', 'flac', 'aac'],
   doc: ['doc', 'docx'],
-  md: ['md', 'markdown', 'mdx', 'mdc'],
   image: ['png', 'jpg', 'jpeg', 'jp2', 'webp', 'gif', 'bmp', 'svg', 'avif'],
+  json: ['json', 'map'],
+  md: ['md', 'markdown', 'mdx', 'mdc'],
+  pdf: ['pdf'],
   sheet: ['xls', 'xlsx', 'csv'],
   slides: ['ppt', 'pptx'],
   video: ['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v'],
-  audio: ['mp3', 'wav', 'm4a', 'ogg', 'flac', 'aac'],
-  json: ['json', 'map'],
 };
 
 const textExtensions = `
@@ -57,20 +57,24 @@ function extensionsFor(kind: FileKind): string[] {
   return [...extensionKinds.entries()]
     .filter(([, mappedKind]) => mappedKind === kind)
     .map(([extension]) => `.${extension}`)
-    .sort();
+    .sort((a, b) => a.localeCompare(b));
 }
 
-const supportedExtensions = [...extensionKinds.keys()].map((extension) => `.${extension}`).sort();
+const supportedExtensions = [...extensionKinds.keys()]
+  .map((extension) => `.${extension}`)
+  .sort((a, b) => a.localeCompare(b));
 
 export const sourceUploadPolicy: SourceUploadPolicy = {
+  accept: supportedExtensions.join(','),
+  allowNoExtension: false,
   kinds: kindOrder.map((kind) => ({
-    kind,
     extensions: extensionsFor(kind),
+    kind,
     text: kind === 'txt' || kind === 'md' || kind === 'json',
   })),
+  maxBytes: 100 * 1024 * 1024,
   parseModes: [
     {
-      mode: 'advanced',
       extensions: [
         '.bmp',
         '.doc',
@@ -88,9 +92,9 @@ export const sourceUploadPolicy: SourceUploadPolicy = {
         '.xlsx',
       ],
       maxBytes: 100 * 1024 * 1024,
+      mode: 'advanced',
     },
     {
-      mode: 'normal',
       extensions: [
         '.bmp',
         '.docx',
@@ -106,14 +110,12 @@ export const sourceUploadPolicy: SourceUploadPolicy = {
       ],
       maxBytes: 10 * 1024 * 1024,
       maxPages: 20,
+      mode: 'normal',
     },
     {
-      mode: 'none',
       extensions: [],
       maxBytes: 100 * 1024 * 1024,
+      mode: 'none',
     },
   ],
-  accept: supportedExtensions.join(','),
-  maxBytes: 100 * 1024 * 1024,
-  allowNoExtension: false,
 };

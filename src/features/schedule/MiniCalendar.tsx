@@ -1,21 +1,28 @@
 import { useState } from 'react';
-import { cn } from '@/lib/cn';
 import { Icon, IconButton } from '@/components/ui';
-import { MONTHS, WEEKDAYS, addMonths, monthGrid, sameDay, startOfDay } from './dateUtils';
+import { cn } from '@/lib/cn';
+import {
+  addMonths,
+  MONTHS,
+  monthGrid,
+  sameDay,
+  startOfDay,
+  WEEKDAYS,
+} from './dateUtils';
 
 export interface MiniCalendarProps {
-  month: Date;
-  onMonthChange: (d: Date) => void;
-  selected: Date;
-  onSelect: (d: Date) => void;
   /** ISO dates that have events — rendered with a dot. */
   eventDays?: Set<string>;
+  month: Date;
+  onMonthChange: (d: Date) => void;
+  onSelect: (d: Date) => void;
+  rangeEnd?: Date;
   /**
    * Inclusive range to highlight with a grey band — mirrors the span shown in
    * the main calendar. When omitted, falls back to a ring on `selected`.
    */
   rangeStart?: Date;
-  rangeEnd?: Date;
+  selected: Date;
 }
 
 export function MiniCalendar({
@@ -42,27 +49,28 @@ export function MiniCalendar({
     <div className="">
       <div className="mb-2 flex items-center justify-between">
         <button
-          onClick={() => setPicking((p) => !p)}
           className="t-card-title translate-y-px rounded-row px-2.5 py-1 text-left text-fg hover:bg-surface-hover-bg"
+          onClick={() => setPicking((p) => !p)}
+          type="button"
         >
           {MONTHS[month.getMonth()]} {month.getFullYear()}
         </button>
         <div className="flex items-center gap-1">
           <IconButton
-            icon="chevronLeft"
-            variant="ghost"
-            size="sm"
             className="text-fg-muted hover:bg-surface-hover-bg"
-            onClick={() => onMonthChange(addMonths(month, -1))}
+            icon="chevronLeft"
             label="Previous month"
+            onClick={() => onMonthChange(addMonths(month, -1))}
+            size="sm"
+            variant="ghost"
           />
           <IconButton
-            icon="chevronRight"
-            variant="ghost"
-            size="sm"
             className="text-fg-muted hover:bg-surface-hover-bg"
-            onClick={() => onMonthChange(addMonths(month, 1))}
+            icon="chevronRight"
             label="Next month"
+            onClick={() => onMonthChange(addMonths(month, 1))}
+            size="sm"
+            variant="ghost"
           />
         </div>
       </div>
@@ -71,17 +79,27 @@ export function MiniCalendar({
         <div className="py-1">
           <div className="mb-2 flex items-center justify-between">
             <button
-              onClick={() => onMonthChange(new Date(month.getFullYear() - 1, month.getMonth(), 1))}
-              className="rounded-row p-1 text-fg-muted hover:bg-surface-hover-bg"
               aria-label="Previous year"
+              className="rounded-row p-1 text-fg-muted hover:bg-surface-hover-bg"
+              onClick={() =>
+                onMonthChange(
+                  new Date(month.getFullYear() - 1, month.getMonth(), 1)
+                )
+              }
+              type="button"
             >
               <Icon name="chevronLeft" size={16} />
             </button>
-            <span className="text-sm font-bold">{month.getFullYear()}</span>
+            <span className="font-bold text-sm">{month.getFullYear()}</span>
             <button
-              onClick={() => onMonthChange(new Date(month.getFullYear() + 1, month.getMonth(), 1))}
-              className="rounded-row p-1 text-fg-muted hover:bg-surface-hover-bg"
               aria-label="Next year"
+              className="rounded-row p-1 text-fg-muted hover:bg-surface-hover-bg"
+              onClick={() =>
+                onMonthChange(
+                  new Date(month.getFullYear() + 1, month.getMonth(), 1)
+                )
+              }
+              type="button"
             >
               <Icon name="chevronRight" size={16} />
             </button>
@@ -89,15 +107,18 @@ export function MiniCalendar({
           <div className="grid grid-cols-3 gap-1">
             {MONTHS.map((mo, i) => (
               <button
+                className={cn(
+                  'rounded-row py-1.5 font-medium text-xs hover:bg-surface-hover-bg',
+                  i === month.getMonth()
+                    ? 'bg-action text-action-fg'
+                    : 'text-fg'
+                )}
                 key={mo}
                 onClick={() => {
                   onMonthChange(new Date(month.getFullYear(), i, 1));
                   setPicking(false);
                 }}
-                className={cn(
-                  'rounded-row py-1.5 text-xs font-medium hover:bg-surface-hover-bg',
-                  i === month.getMonth() ? 'bg-action text-action-fg' : 'text-fg'
-                )}
+                type="button"
               >
                 {mo.slice(0, 3)}
               </button>
@@ -108,7 +129,10 @@ export function MiniCalendar({
         <>
           <div className="grid grid-cols-7 gap-x-0">
             {WEEKDAYS.map((w) => (
-              <div key={w} className="py-1 text-center text-[0.68rem] font-semibold text-fg-muted">
+              <div
+                className="py-1 text-center font-semibold text-[0.68rem] text-fg-muted"
+                key={w}
+              >
                 {w[0]}
               </div>
             ))}
@@ -124,8 +148,6 @@ export function MiniCalendar({
               const hasEvent = eventDays?.has(day.toDateString());
               return (
                 <button
-                  key={i}
-                  onClick={() => onSelect(day)}
                   className={cn(
                     'relative flex h-8 items-center justify-center transition-colors',
                     // connected range band — spans the full cell so adjacent days touch
@@ -133,14 +155,23 @@ export function MiniCalendar({
                     isRange && isRangeStart && 'rounded-l-row',
                     isRange && isRangeEnd && 'rounded-r-row'
                   )}
+                  key={i}
+                  onClick={() => onSelect(day)}
+                  type="button"
                 >
                   <span
                     className={cn(
                       'flex h-8 w-8 items-center justify-center rounded-row text-[0.8rem]',
                       isToday && 'bg-action font-bold text-action-fg',
                       !isToday && isRange && 'font-semibold text-fg',
-                      !isToday && !isRange && hasRange && 'hover:bg-surface-hover-bg',
-                      !isToday && !hasRange && isSel && 'ring-[1.5px] ring-action',
+                      !isToday &&
+                        !isRange &&
+                        hasRange &&
+                        'hover:bg-surface-hover-bg',
+                      !isToday &&
+                        !hasRange &&
+                        isSel &&
+                        'ring-[1.5px] ring-action',
                       !isToday &&
                         !isRange &&
                         (inMonth

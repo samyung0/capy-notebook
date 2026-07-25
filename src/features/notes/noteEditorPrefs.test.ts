@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { enabledKey, WIDGET_GROUPS, type WidgetGroupId } from './noteEditorPrefs';
+import {
+  enabledKey,
+  WIDGET_GROUPS,
+  type WidgetGroupId,
+} from './noteEditorPrefs';
 
 describe('note editor command preferences', () => {
   it('returns enabled groups in canonical UI order', () => {

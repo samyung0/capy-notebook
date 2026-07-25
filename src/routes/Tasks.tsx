@@ -1,6 +1,6 @@
-import { Panel, PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Checkbox, SkeletonList, Text } from '@/components/ui';
 import { useTasks, useToggleTask } from '@/api/hooks';
+import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { Checkbox, SkeletonList, Text } from '@/components/ui';
 import { m } from '@/i18n';
 
 export default function Tasks() {
@@ -9,11 +9,16 @@ export default function Tasks() {
 
   const groups = (data ?? []).reduce<Record<string, typeof data>>((acc, t) => {
     const day = new Date(t.dueDate).toLocaleDateString(undefined, {
-      weekday: 'long',
-      month: 'short',
       day: 'numeric',
+      month: 'short',
+      weekday: 'long',
     });
-    (acc[day] ??= []).push(t);
+    const tasksForDay = acc[day];
+    if (tasksForDay) {
+      tasksForDay.push(t);
+    } else {
+      acc[day] = [t];
+    }
     return acc;
   }, {});
 
@@ -25,25 +30,22 @@ export default function Tasks() {
           <div className="mx-auto max-w-2xl">
             <SkeletonList count={6} rowHeight={56} />
           </div>
-        ) : !data?.length ? (
-          <Text variant="body" tone="muted" className="py-8 text-center">
-            {m.tasks_empty()}
-          </Text>
-        ) : (
+        ) : data?.length ? (
           <div className="mx-auto flex max-w-2xl flex-col gap-6">
             {Object.entries(groups).map(([day, list]) => (
               <section key={day}>
-                <Text variant="label" tone="muted" className="mb-2 block">
+                <Text className="mb-2 block" tone="muted" variant="label">
                   {day}
                 </Text>
                 <div className="flex flex-col gap-1">
                   {list?.map((t) => (
                     <button
-                      key={t.id}
-                      onClick={() => toggle.mutate({ id: t.id, done: !t.done })}
                       className="flex items-start gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left hover:bg-surface-hover-bg"
+                      key={t.id}
+                      onClick={() => toggle.mutate({ done: !t.done, id: t.id })}
+                      type="button"
                     >
-                      <Checkbox checked={t.done} tone="purple" size={22} />
+                      <Checkbox checked={t.done} size={22} tone="purple" />
                       <span className="min-w-0">
                         <span
                           className={
@@ -54,7 +56,11 @@ export default function Tasks() {
                         >
                           {t.title}
                         </span>
-                        {t.meta && <span className="block text-xs text-fg-muted">{t.meta}</span>}
+                        {t.meta && (
+                          <span className="block text-fg-muted text-xs">
+                            {t.meta}
+                          </span>
+                        )}
                       </span>
                     </button>
                   ))}
@@ -62,6 +68,10 @@ export default function Tasks() {
               </section>
             ))}
           </div>
+        ) : (
+          <Text className="py-8 text-center" tone="muted" variant="body">
+            {m.tasks_empty()}
+          </Text>
         )}
       </div>
     </PanelWithInvertedRadius>

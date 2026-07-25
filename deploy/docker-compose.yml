@@ -19,7 +19,7 @@ services:
   db:
     build:
       context: ./postgres
-    command: ['postgres', '-c', 'shared_preload_libraries=age']
+    command: ["postgres", "-c", "shared_preload_libraries=age"]
     environment:
       POSTGRES_USER: evo
       POSTGRES_PASSWORD: evo
@@ -28,12 +28,12 @@ services:
       # 5432 for the usual case; 5433 is an escape hatch for hosts that already
       # run a native Postgres on 5432 (which would otherwise shadow this one for
       # host-side tools like the pytest suite — see pipeline/tests/README.md).
-      - '5432:5432'
-      - '5433:5432'
+      - "5432:5432"
+      - "5433:5432"
     volumes:
       - evo_pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -U evo -d evo']
+      test: ["CMD-SHELL", "pg_isready -U evo -d evo"]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -41,9 +41,9 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - '6379:6379'
+      - "6379:6379"
     healthcheck:
-      test: ['CMD', 'redis-cli', 'ping']
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 12
@@ -53,8 +53,8 @@ services:
       context: ../server
     environment:
       DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
-      ADDR: ':8080'
-      MIGRATE: 'true'
+      ADDR: ":8080"
+      MIGRATE: "true"
       # Backblaze B2 source-object storage.
       B2_ENDPOINT: ${B2_ENDPOINT:-}
       B2_REGION: ${B2_REGION:-}
@@ -78,7 +78,7 @@ services:
       STRIPE_PRICE_PRO: ${STRIPE_PRICE_PRO:-}
       STRIPE_PRICE_TEAM: ${STRIPE_PRICE_TEAM:-}
     ports:
-      - '8080:8080'
+      - "8080:8080"
     depends_on:
       db:
         condition: service_healthy
@@ -125,7 +125,7 @@ services:
       EVO_MODEL_IMAGE_CAPTION: ${EVO_MODEL_IMAGE_CAPTION:-gemini-3.1-flash-lite-preview}
     volumes:
       - evo_rag:/data/rag_storage
-    command: ['python', '-m', 'pipeline.ingest.worker']
+    command: ["python", "-m", "pipeline.ingest.worker"]
     depends_on:
       db:
         condition: service_healthy
@@ -152,10 +152,18 @@ services:
       GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
       EVO_MODEL_IMAGE_CAPTION: ${EVO_MODEL_IMAGE_CAPTION:-gemini-3.1-flash-lite-preview}
     ports:
-      - '8001:8001'
+      - "8001:8001"
     volumes:
       - evo_rag:/data/rag_storage
-    command: ['uvicorn', 'pipeline.retrieve.service:app', '--host', '0.0.0.0', '--port', '8001']
+    command:
+      [
+        "uvicorn",
+        "pipeline.retrieve.service:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8001",
+      ]
     depends_on:
       db:
         condition: service_healthy
@@ -163,7 +171,7 @@ services:
   reconcile:
     build:
       context: ../server
-    entrypoint: ['/app/reconcile']
+    entrypoint: ["/app/reconcile"]
     environment:
       DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}

@@ -7,36 +7,48 @@ The `Temporal` API provides dedicated types for these partial concepts: `Tempora
 ## Implementation Examples
 
 ### Monthly Expirations (Credit Cards, Billing Cycles)
+
 Use `Temporal.PlainYearMonth` to represent a year and a month.
 
 ```javascript
 // Create a PlainYearMonth from values
 // Use explicit calendar to avoid mismatch issues in polyfill environments
-const expiry = Temporal.PlainYearMonth.from({ year: 2027, month: 12, calendar: 'iso8601' });
+const expiry = Temporal.PlainYearMonth.from({
+  year: 2027,
+  month: 12,
+  calendar: "iso8601",
+});
 
 // Get the current year/month
 const currentMonth = Temporal.Now.plainDateISO().toPlainYearMonth();
 
 // Calculate duration until expiry
 // largestUnit ensures the difference is expressed in years if applicable
-const duration = currentMonth.until(expiry, { largestUnit: 'years' });
+const duration = currentMonth.until(expiry, { largestUnit: "years" });
 
 if (duration.sign < 0) {
   console.log("Expired");
 } else if (duration.sign === 0) {
   console.log("Expires this month");
 } else {
-  console.log(`Expires in ${duration.years} years and ${duration.months} months`);
+  console.log(
+    `Expires in ${duration.years} years and ${duration.months} months`,
+  );
 }
 ```
 
 ### Annual Recurring Dates (Birthdays, Renewals)
+
 Use `Temporal.PlainMonthDay` to represent a month and a day without a year.
 
 ```javascript
 // Create a PlainMonthDay for an annual event
 // Include explicit calendar for polyfill safety
-const birthday = Temporal.PlainMonthDay.from({ month: 10, day: 31, calendar: 'iso8601' });
+const birthday = Temporal.PlainMonthDay.from({
+  month: 10,
+  day: 31,
+  calendar: "iso8601",
+});
 
 // Check if it matches today's date components
 const today = Temporal.Now.plainDateISO();
@@ -48,6 +60,7 @@ const birthdayThisYear = birthday.toPlainDate({ year: today.year });
 ```
 
 ### Wall-Clock Time (Alarms, Store Hours)
+
 Use `Temporal.PlainTime` to represent a time of day without a date.
 
 ```javascript
@@ -84,7 +97,7 @@ Note that the polyfill does not automatically assign the `Temporal` object to th
 ```javascript
 // Check if Temporal is supported natively
 (async () => {
-  if (typeof Temporal === 'undefined') {
+  if (typeof Temporal === "undefined") {
     // Load the polyfill conditionally
     const module = await import("https://esm.sh/@js-temporal/polyfill");
     globalThis.Temporal = module.Temporal;

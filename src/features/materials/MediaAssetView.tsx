@@ -1,12 +1,12 @@
-import { useEffect, useState } from 'react';
 import { FileText, LoaderCircle } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { resolveEditorAsset } from '@/api/editorAssets';
 
 /** Persisted media node shape (img/video/audio/file elements). */
 export interface MediaAssetNode {
-  type: string;
   assetId?: string;
   name?: string;
+  type: string;
   width?: string | number;
 }
 
@@ -21,24 +21,25 @@ export function useResolvedAsset(assetId: string | undefined) {
   useEffect(() => {
     const controller = new AbortController();
     if (!assetId) {
-      setState({ status: 'error', message: 'Missing asset reference' });
+      setState({ message: 'Missing asset reference', status: 'error' });
       return () => controller.abort();
     }
     setState({ status: 'loading' });
     void resolveEditorAsset(assetId, controller.signal)
       .then((asset) =>
         setState({
+          contentType: asset.contentType,
+          name: asset.name,
           status: 'ready',
           url: asset.url,
-          name: asset.name,
-          contentType: asset.contentType,
         })
       )
       .catch((cause) => {
         if (!controller.signal.aborted) {
           setState({
+            message:
+              cause instanceof Error ? cause.message : 'Unable to load asset',
             status: 'error',
-            message: cause instanceof Error ? cause.message : 'Unable to load asset',
           });
         }
       });
@@ -53,7 +54,7 @@ export function useResolvedAsset(assetId: string | undefined) {
 export function MediaAssetView({ element }: { element: MediaAssetNode }) {
   const asset = useResolvedAsset(element.assetId);
   return (
-    <figure contentEditable={false} className="group relative m-0">
+    <figure className="group relative m-0" contentEditable={false}>
       {asset.status === 'loading' && (
         <div className="grid min-h-24 place-items-center rounded-card border border-line bg-surface-hover-bg">
           <LoaderCircle className="size-5 animate-spin text-fg-muted" />
@@ -66,29 +67,29 @@ export function MediaAssetView({ element }: { element: MediaAssetNode }) {
       )}
       {asset.status === 'ready' && element.type === 'img' && (
         <img
-          src={asset.url}
           alt={element.name || asset.name}
           className="mx-auto h-auto max-w-full rounded-card"
+          src={asset.url}
           style={{ width: element.width }}
         />
       )}
       {asset.status === 'ready' && element.type === 'video' && (
         <video
-          src={asset.url}
-          controls
           className="mx-auto max-h-[70vh] max-w-full rounded-card"
+          controls
+          src={asset.url}
           style={{ width: element.width }}
         />
       )}
       {asset.status === 'ready' && element.type === 'audio' && (
-        <audio src={asset.url} controls className="w-full" />
+        <audio className="w-full" controls src={asset.url} />
       )}
       {asset.status === 'ready' && element.type === 'file' && (
         <a
+          className="flex items-center gap-2 rounded-card border border-line bg-surface-hover-bg px-3 py-2 text-fg text-sm hover:border-line-strong"
           href={asset.url}
-          target="_blank"
           rel="noreferrer"
-          className="flex items-center gap-2 rounded-card border border-line bg-surface-hover-bg px-3 py-2 text-sm text-fg hover:border-line-strong"
+          target="_blank"
         >
           <FileText className="size-4 text-fg-muted" />
           <span className="truncate">{element.name || asset.name}</span>

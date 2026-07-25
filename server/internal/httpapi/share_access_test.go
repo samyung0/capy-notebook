@@ -31,7 +31,7 @@ func openShareHTTP(t *testing.T) http.Handler {
 		AuthDisabled: true,
 		E2EAuth:      true,
 		E2ESecret:    "e2e-test-secret",
-		E2EUserIDs:   []string{"u_owner", "u_editor", "u_viewer", "u_other"},
+		E2EUserIDs:   []string{"u_owner", "u_editor", "u_commenter", "u_viewer", "u_other"},
 	})
 }
 
@@ -239,5 +239,111 @@ func TestShareHTTPExploreAndAttempts(t *testing.T) {
 	})
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("non-quiz attempt = %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestCollaborationHTTPRolePermissionsAndRevisionLineage(t *testing.T) {
+	h := openShareHTTP(t)
+	content := map[string]any{
+		"schemaVersion": 1,
+		"value": []any{
+			map[string]any{
+				"type": "p", "id": "permission-block",
+				"children": []any{map[string]any{"text": ""}},
+			},
+		},
+	}
+	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/materials", "u_owner", map[string]any{
+		"kind": "note", "title": "Collaboration permission matrix", "content": content,
+	})
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create collaboration material = %d %s", rec.Code, rec.Body.String())
+	}
+	var created map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	materialID := created["id"].(string)
+	t.Cleanup(func() {
+		_ = doReq(t, h, http.MethodDelete, "/api/materials/"+materialID, "u_owner", nil)
+	})
+
+	commentBody := map[string]any{
+		"blockId": "permission-block",
+		"anchor":  map[string]any{"blockId": "permission-block"},
+		"contentRich": []any{
+			map[string]any{"type": "p", "children": []any{map[string]any{"text": "feedback"}}},
+		},
+	}
+	rec = doReq(t, h, http.MethodPost, "/api/materials/"+materialID+"/discussions",
+		"u_viewer", commentBody)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("viewer comment = %d %s, want 403", rec.Code, rec.Body.String())
+	}
+	rec = doReq(t, h, http.MethodPost, "/api/materials/"+materialID+"/discussions",
+		"u_commenter", commentBody)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("commenter comment = %d %s", rec.Code, rec.Body.String())
+	}
+
+	marked := map[string]any{
+		"schemaVersion": 1,
+		"value": []any{
+			map[string]any{
+				"type": "p", "id": "permission-block",
+				"children": []any{
+					map[string]any{
+						"text": "suggested", "suggestion": true,
+						"suggestion_permission": map[string]any{
+							"id": "permission-plate-id", "type": "insert",
+						},
+					},
+				},
+			},
+		},
+	}
+	commitBody := map[string]any{"content": marked, "expectedRevision": 1}
+	rec = doReq(t, h, http.MethodPost, "/api/materials/"+materialID+"/suggestion-commits",
+		"u_viewer", commitBody)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("viewer suggestion commit = %d %s, want 403", rec.Code, rec.Body.String())
+	}
+	rec = doReq(t, h, http.MethodPost, "/api/materials/"+materialID+"/suggestion-commits",
+		"u_commenter", commitBody)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("commenter suggestion commit = %d %s", rec.Code, rec.Body.String())
+	}
+
+	reviewBody := map[string]any{
+		"decision": "accept", "suggestionIds": []string{"permission-plate-id"},
+		"expectedRevision": 2,
+	}
+	rec = doReq(t, h, http.MethodPost, "/api/materials/"+materialID+"/suggestions/review",
+		"u_commenter", reviewBody)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("commenter review = %d %s, want 403", rec.Code, rec.Body.String())
+	}
+	rec = doReq(t, h, http.MethodPost, "/api/materials/"+materialID+"/suggestions/review",
+		"u_editor", reviewBody)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("editor review = %d %s", rec.Code, rec.Body.String())
+	}
+
+	rec = doReq(t, h, http.MethodGet, "/api/materials/"+materialID+"/revisions", "u_viewer", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("viewer revision history = %d %s", rec.Code, rec.Body.String())
+	}
+	var revisions []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &revisions); err != nil {
+		t.Fatal(err)
+	}
+	if len(revisions) != 3 ||
+		revisions[0]["eventType"] != "suggestion_accept" ||
+		revisions[0]["parentRevision"] != float64(2) ||
+		revisions[1]["eventType"] != "suggestion_commit" ||
+		revisions[1]["parentRevision"] != float64(1) ||
+		revisions[2]["eventType"] != "create" ||
+		revisions[2]["parentRevision"] != nil {
+		t.Fatalf("unexpected HTTP revision lineage: %#v", revisions)
 	}
 }

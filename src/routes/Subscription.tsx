@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { Panel, PageHeader } from '@/components/app/layout';
-import { Button, Text } from '@/components/ui';
-import { useMe, useBillingCheckout, useBillingPortal } from '@/api/hooks';
+import { useBillingCheckout, useBillingPortal, useMe } from '@/api/hooks';
 import type { PlanTier } from '@/api/types';
-import { cn } from '@/lib/cn';
+import { PageHeader, Panel } from '@/components/app/layout';
+import { Button, Text } from '@/components/ui';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 
 function planLabel(tier: PlanTier) {
   switch (tier) {
@@ -22,16 +22,25 @@ const PLANS: {
   bullets: string[];
 }[] = [
   {
-    tier: 'free',
     bullets: ['3 workspaces', '50 MB uploads', 'Basic chat'],
+    tier: 'free',
   },
   {
+    bullets: [
+      'Unlimited workspaces',
+      '5 GB uploads',
+      'AI generate',
+      'Priority ingest',
+    ],
     tier: 'pro',
-    bullets: ['Unlimited workspaces', '5 GB uploads', 'AI generate', 'Priority ingest'],
   },
   {
+    bullets: [
+      'Everything in Pro',
+      'Shared workspaces',
+      'Admin controls (coming soon)',
+    ],
     tier: 'team',
-    bullets: ['Everything in Pro', 'Shared workspaces', 'Admin controls (coming soon)'],
   },
 ];
 
@@ -58,20 +67,24 @@ function PlanCard({
       <div className="flex items-center justify-between gap-2">
         <Text variant="subtitle">{planLabel(tier)}</Text>
         {current && (
-          <Text variant="label" tone="muted" className="rounded-pill bg-action/10 px-2 py-0.5">
+          <Text
+            className="rounded-pill bg-action/10 px-2 py-0.5"
+            tone="muted"
+            variant="label"
+          >
             {m.subscription_current()}
           </Text>
         )}
       </div>
       <ul className="m-0 flex list-none flex-col gap-1.5 p-0">
         {bullets.map((b) => (
-          <li key={b} className="text-sm text-fg-secondary">
+          <li className="text-fg-secondary text-sm" key={b}>
             · {b}
           </li>
         ))}
       </ul>
       {tier !== 'free' && !current && onUpgrade && (
-        <Button variant="primary" onClick={onUpgrade} disabled={loading}>
+        <Button disabled={loading} onClick={onUpgrade} variant="primary">
           {m.subscription_upgrade()}
         </Button>
       )}
@@ -101,37 +114,40 @@ export default function Subscription() {
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
         <div className="mx-auto max-w-3xl">
           <div className="mb-6 rounded-card border border-line bg-surface px-5 py-4">
-            <Text variant="label" tone="muted" className="mb-1 block">
+            <Text className="mb-1 block" tone="muted" variant="label">
               {m.subscription_status_label()}
             </Text>
             <Text variant="subtitle">
-              {planLabel(me?.planTier ?? 'free')} · {me?.subscriptionStatus ?? 'none'}
+              {planLabel(me?.planTier ?? 'free')} ·{' '}
+              {me?.subscriptionStatus ?? 'none'}
             </Text>
             {me?.subscriptionStatus === 'active' && (
               <Button
-                variant="outline"
-                size="sm"
                 className="mt-3"
-                onClick={() => portal.mutate()}
                 disabled={portal.isPending}
+                onClick={() => portal.mutate()}
+                size="sm"
+                variant="outline"
               >
                 {m.subscription_manage()}
               </Button>
             )}
           </div>
 
-          <Text variant="label" tone="muted" className="mb-3 block">
+          <Text className="mb-3 block" tone="muted" variant="label">
             {m.subscription_plans_heading()}
           </Text>
           <div className="grid gap-4 md:grid-cols-3">
             {PLANS.map((p) => (
               <PlanCard
-                key={p.tier}
-                tier={p.tier}
                 bullets={p.bullets}
                 current={me?.planTier === p.tier}
-                onUpgrade={p.tier === 'free' ? undefined : () => upgrade(p.tier)}
+                key={p.tier}
                 loading={busy === p.tier}
+                onUpgrade={
+                  p.tier === 'free' ? undefined : () => upgrade(p.tier)
+                }
+                tier={p.tier}
               />
             ))}
           </div>

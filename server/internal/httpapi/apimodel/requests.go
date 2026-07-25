@@ -97,10 +97,9 @@ type UpdateWorkspaceMemberReq struct {
 }
 
 type CreateDiscussionReq struct {
-	BlockID         *string          `json:"blockId,omitempty"`
-	DocumentContent *string          `json:"documentContent,omitempty"`
-	Anchor          map[string]any   `json:"anchor,omitempty"`
-	ContentRich     []map[string]any `json:"contentRich"`
+	BlockID     *string          `json:"blockId,omitempty"`
+	Anchor      map[string]any   `json:"anchor,omitempty"`
+	ContentRich []map[string]any `json:"contentRich"`
 }
 
 type UpdateDiscussionReq struct {
@@ -108,24 +107,23 @@ type UpdateDiscussionReq struct {
 }
 
 type CreateCommentReq struct {
-	ContentRich []map[string]any `json:"contentRich"`
+	ParentCommentID *string          `json:"parentCommentId,omitempty"`
+	ContentRich     []map[string]any `json:"contentRich"`
 }
 
 type UpdateCommentReq struct {
 	ContentRich []map[string]any `json:"contentRich"`
 }
 
-type CreateMaterialSuggestionReq struct {
-	BaseRevision     int64            `json:"baseRevision" minimum:"1"`
-	Anchor           map[string]any   `json:"anchor,omitempty"`
-	OriginalFragment []map[string]any `json:"originalFragment" minItems:"1"`
-	ProposedFragment []map[string]any `json:"proposedFragment" minItems:"1"`
+type CommitMaterialSuggestionsReq struct {
+	Content          materialdoc.Envelope `json:"content" doc:"Complete Plate document containing suggestion metadata"`
+	ExpectedRevision int64                `json:"expectedRevision" minimum:"1"`
 }
 
-type UpdateMaterialSuggestionStatusReq struct {
-	Status               store.SuggestionStatus `json:"status" enum:"accepted,rejected,withdrawn"`
-	FinalizedContent     *materialdoc.Envelope  `json:"finalizedContent,omitempty" doc:"Required when accepting; complete finalized Plate document"`
-	ExpectedBaseRevision *int64                 `json:"expectedBaseRevision,omitempty" minimum:"1" doc:"Required when accepting and must equal the pending suggestion base"`
+type ReviewMaterialSuggestionsReq struct {
+	Decision         materialdoc.SuggestionDecision `json:"decision" enum:"accept,reject"`
+	SuggestionIDs    []string                       `json:"suggestionIds,omitempty" doc:"Raw Plate suggestion IDs; empty resolves all pending suggestions"`
+	ExpectedRevision int64                          `json:"expectedRevision" minimum:"1"`
 }
 
 type CreateQuizReq struct {

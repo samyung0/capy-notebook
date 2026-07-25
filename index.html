@@ -1,34 +1,36 @@
 <!doctype html>
-<html lang="en" data-theme="friendly" data-mode="light">
+<html data-mode="light" data-theme="classroom" lang="en">
   <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="light dark" />
+    <meta charset="UTF-8">
+    <link href="/favicon.svg" rel="icon" type="image/svg+xml">
+    <meta content="width=device-width, initial-scale=1.0" name="viewport">
+    <meta content="light dark" name="color-scheme">
     <title>Evo Notes</title>
 
     <script>
-      (() => {
-        try {
-          const root = document.documentElement;
-          const theme = localStorage.getItem('evo.theme');
-          const mode = localStorage.getItem('evo.mode');
+    'use strict';
+    (() => {
+      try {
+        const root = document.documentElement;
+        const style = localStorage.getItem('evo.style');
+        const theme = localStorage.getItem('evo.theme');
 
-          root.dataset.theme = theme === 'friendly' || theme === 'notion' ? theme : 'friendly';
-          root.dataset.mode =
-            mode === 'light' || mode === 'dark'
-              ? mode
-              : matchMedia('(prefers-color-scheme: dark)').matches
-                ? 'dark'
-                : 'light';
-        } catch {
-          // Keep the HTML defaults if storage is unavailable.
-        }
-      })();
+        root.dataset.style =
+          style === 'classroom' || style === 'notion' ? style : 'classroom';
+        root.dataset.theme =
+          theme === 'light' || theme === 'dark'
+            ? theme
+            : matchMedia('(prefers-color-scheme: dark)').matches
+              ? 'dark'
+              : 'light';
+      } catch {
+        // Keep the HTML defaults if storage is unavailable.
+      }
+    })();
     </script>
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <script src="/src/main.tsx" type="module"></script>
   </body>
 </html>

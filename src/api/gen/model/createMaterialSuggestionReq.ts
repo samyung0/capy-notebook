@@ -4,9 +4,9 @@
  * Evo Notes API
  * OpenAPI spec version: 0.1.0
  */
-import type { CreateMaterialSuggestionReqAnchor } from './createMaterialSuggestionReqAnchor.ts';
-import type { CreateMaterialSuggestionReqOriginalFragmentItem } from './createMaterialSuggestionReqOriginalFragmentItem.ts';
-import type { CreateMaterialSuggestionReqProposedFragmentItem } from './createMaterialSuggestionReqProposedFragmentItem.ts';
+import type { CreateMaterialSuggestionReqAnchor } from "./createMaterialSuggestionReqAnchor.ts";
+import type { CreateMaterialSuggestionReqOriginalFragmentItem } from "./createMaterialSuggestionReqOriginalFragmentItem.ts";
+import type { CreateMaterialSuggestionReqProposedFragmentItem } from "./createMaterialSuggestionReqProposedFragmentItem.ts";
 
 export interface CreateMaterialSuggestionReq {
   /** A URL to the JSON Schema for this object. */

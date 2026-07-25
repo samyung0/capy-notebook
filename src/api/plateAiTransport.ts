@@ -49,11 +49,13 @@ export async function plateAiFetch(
 
   const body = sanitizePlateAiBody(init?.body);
 
-  return fetch(input, { ...init, headers, body });
+  return fetch(input, { ...init, body, headers });
 }
 
 /** Transport consumed directly by @ai-sdk/react's useChat. */
-export function createPlateAiTransport<MESSAGE extends UIMessage = UIMessage>(workspaceId: string) {
+export function createPlateAiTransport<MESSAGE extends UIMessage = UIMessage>(
+  workspaceId: string
+) {
   return new DefaultChatTransport<MESSAGE>({
     api: plateAiCommandUrl(workspaceId),
     fetch: plateAiFetch,
@@ -61,14 +63,14 @@ export function createPlateAiTransport<MESSAGE extends UIMessage = UIMessage>(wo
 }
 
 export interface PlateCopilotBody {
-  prompt: string;
   instructions?: string;
+  prompt: string;
   system?: string;
 }
 
 export interface PlateCopilotResult {
-  text: string;
   finishReason: string;
+  text: string;
   usage?: {
     promptTokens: number;
     completionTokens: number;
@@ -82,16 +84,18 @@ export async function completePlateCopilot(
   signal?: AbortSignal
 ): Promise<PlateCopilotResult> {
   const response = await plateAiFetch(plateAiCopilotUrl(workspaceId), {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    headers: { 'Content-Type': 'application/json' },
+    method: 'POST',
     signal,
   });
   if (!response.ok) {
     const payload = (await response.json().catch(() => null)) as {
       error?: { message?: string };
     } | null;
-    throw new Error(payload?.error?.message || `AI copilot failed (${response.status})`);
+    throw new Error(
+      payload?.error?.message || `AI copilot failed (${response.status})`
+    );
   }
   return (await response.json()) as PlateCopilotResult;
 }

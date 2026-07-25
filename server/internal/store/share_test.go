@@ -42,7 +42,7 @@ func TestRewriteCardIDs(t *testing.T) {
 	if cards[0].ID != ids[0] || cards[0].Front != "A" || cards[0].Back != "B" {
 		t.Fatalf("cloned card content changed: %#v", cards[0])
 	}
-	if !strings.Contains(cloned, `"comment":"disc_1"`) {
-		t.Fatalf("cloning discarded rich-text annotations: %s", cloned)
+	if strings.Contains(cloned, `"comment":"disc_1"`) {
+		t.Fatalf("cloning persisted a runtime comment decoration: %s", cloned)
 	}
 }
