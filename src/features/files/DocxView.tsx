@@ -38,7 +38,7 @@ export default function DocxView({ url }: { url: string }) {
 
   if (state === 'error') {
     return (
-      <p className="t-body py-8 text-center text-tint-error-fg">
+      <p className="py-8 text-center text-tint-error-fg">
         Couldn't load this document.
       </p>
     );

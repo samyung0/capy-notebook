@@ -23,6 +23,9 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { usePortals } from '@/stores/portals';
 
+import { HugeiconsIcon } from "@hugeicons/react";
+import { Notification03Icon } from "@hugeicons/core-free-icons";
+
 function StreakHeading() {
   const { data: me } = useMe();
   const streak = me?.streak ?? 0;
@@ -44,7 +47,7 @@ function StreakHeading() {
 const DASHBOARD_WORKSPACE_LIMIT = 12;
 
 function WorkspacesSection() {
-  const { data, isLoading } = useWorkspaces({ sort: 'accessed' });
+  const { data, isLoading } = useWorkspaces({ sort: "accessed" });
   const recent = data?.slice(0, DASHBOARD_WORKSPACE_LIMIT);
   const hasMore = (data?.length ?? 0) > DASHBOARD_WORKSPACE_LIMIT;
   return (
@@ -67,7 +70,7 @@ function WorkspacesSection() {
       {!isLoading && (!recent || recent.length === 0) && (
         <div className="mt-30 flex w-full items-center justify-center">
           <p>
-            No workspaces yet.{' '}
+            No workspaces yet.{" "}
             <Link
               className="underline decoration-link decoration-wavy underline-offset-2 hover:decoration-link-hover"
               preload="intent"
@@ -124,18 +127,18 @@ function TasksCard() {
       </div>
       <div className="flex flex-col gap-1">
         {!open.length && (
-          <p className="t-body px-1 pt-2 pb-4 text-center text-fg-muted">
+          <p className="px-1 pt-2 pb-4 text-center text-fg-muted">
             {m.tasks_empty()}
           </p>
         )}
         {visible.map((t) => (
           <div
-            className="group flex items-start gap-3 rounded-row px-1 py-2 hover:bg-surface-hover-bg"
+            className="group flex items-start gap-3 rounded-button px-1 py-2 hover:bg-surface-hover-bg"
             key={t.id}
           >
             <Checkbox
               checked={t.done}
-              className={cn(t.meta && 'translate-y-1')}
+              className={cn(t.meta && "translate-y-1")}
               size={22}
               tone="purple"
             />
@@ -148,34 +151,34 @@ function TasksCard() {
                 <span
                   className={cn(
                     t.done
-                      ? 't-body block font-semibold text-fg-muted line-through'
-                      : 't-body block font-semibold text-fg',
-                    'line-clamp-2',
-                    !t.meta && 'translate-y-1'
+                      ? "block font-semibold text-fg-muted line-through"
+                      : "block font-semibold text-fg",
+                    "line-clamp-2",
+                    !t.meta && "translate-y-1",
                   )}
                 >
                   {t.title}
                 </span>
                 {t.meta && (
-                  <span className="t-body block text-fg-muted">{t.meta}</span>
+                  <span className="block text-fg-muted">{t.meta}</span>
                 )}
               </span>
             </button>
             <HoverActions
               items={[
                 {
-                  icon: 'write',
+                  icon: "write",
                   label: m.action_edit(),
                   onClick: () => openTaskEdit(t),
                 },
                 {
-                  icon: 'check',
+                  icon: "check",
                   label: t.done ? m.action_mark_undone() : m.action_mark_done(),
                   onClick: () => toggle.mutate({ done: !t.done, id: t.id }),
                 },
                 {
                   danger: true,
-                  icon: 'trash',
+                  icon: "trash",
                   label: m.action_delete(),
                   onClick: () =>
                     openConfirm({
@@ -207,7 +210,7 @@ export default function Dashboard() {
   return (
     <div className="flex h-full min-h-full flex-col gap-1.5 sm:gap-2.5 lg:flex-row">
       <Panel
-        className="order-last min-h-0 flex-1 rounded-row lg:order-first lg:rounded-card-xl"
+        className="order-last min-h-0 flex-1 rounded-button lg:order-first lg:rounded-card-xl"
         sectionClassName="gap-5 sm:gap-6 p-4 sm:p-6"
       >
         <StreakHeading />
@@ -217,7 +220,7 @@ export default function Dashboard() {
         {/* <ThinkingSection /> */}
       </Panel>
 
-      <div className="order-first flex h-auto min-h-0 w-full shrink-0 flex-col gap-2.5 overflow-visible lg:order-last lg:h-full lg:min-h-full lg:w-75 lg:overflow-hidden xl:w-90">
+      <div className="order-first flex h-auto min-h-0 w-full shrink-0 flex-col gap-2.5 overflow-visible lg:order-last lg:h-full lg:min-h-full lg:w-[300px] lg:overflow-hidden xl:w-[360px]">
         <TopInsetBar />
         <Panel
           className="hidden min-h-0 flex-1 lg:flex"

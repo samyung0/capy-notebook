@@ -3,26 +3,26 @@ import { Slot } from 'radix-ui';
 import { cn } from '@/lib/cn';
 
 const badgeVariants = cva(
-  'inline-flex items-center gap-1 rounded-pill font-bold leading-none',
+  "inline-flex items-center gap-1 rounded-full font-bold leading-none",
   {
     variants: {
       size: {
-        lg: 'px-3 py-2 text-sm',
-        md: 'px-2.5 py-1.5 text-xs',
-        sm: 'px-2 py-0.5 text-xs',
+        lg: "px-3 py-2 text-sm",
+        md: "px-2.5 py-1.5 text-xs",
+        sm: "px-2 py-0.5 text-xs",
       },
       tone: {
-        'accent-1': 'bg-tint-accent-1 text-tint-accent-1-fg',
-        'accent-2': 'bg-tint-accent-2 text-tint-accent-2-fg',
-        dark: 'bg-action text-action-fg',
-        error: 'bg-tint-error text-tint-error-fg',
-        info: 'bg-tint-info text-tint-info-fg',
-        neutral: 'bg-page text-surface-fg',
-        success: 'bg-tint-success text-tint-success-fg',
-        warning: 'bg-tint-warning text-tint-warning-fg',
+        "accent-1": "bg-tint-accent-1 text-tint-accent-1-fg",
+        "accent-2": "bg-tint-accent-2 text-tint-accent-2-fg",
+        dark: "bg-action text-action-fg",
+        error: "bg-tint-error text-tint-error-fg",
+        info: "bg-tint-info text-tint-info-fg",
+        neutral: "bg-page text-surface-fg",
+        success: "bg-tint-success text-tint-success-fg",
+        warning: "bg-tint-warning text-tint-warning-fg",
       },
     },
-  }
+  },
 );
 
 export interface BadgeProps

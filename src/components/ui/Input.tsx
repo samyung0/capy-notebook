@@ -5,44 +5,44 @@ import { Icon, type IconName } from './Icon';
 import { IconButton, type IconButtonProps } from './IconButton';
 
 const inputContainerVariants = cva(
-  't-body flex items-center gap-2 outline-none transition-[colors,border] duration-150 file:inline-flex file:border-0 file:bg-transparent file:font-medium file:text-fg file:text-sm disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50',
+  "flex items-center gap-2 outline-none transition-[colors,border] duration-150 file:inline-flex file:border-0 file:bg-transparent file:font-medium file:text-fg file:text-sm disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
   {
     compoundVariants: [
       {
-        className: 'rounded-none',
-        size: 'sm',
-        variant: 'underline',
+        className: "rounded-none",
+        size: "sm",
+        variant: "underline",
       },
       {
-        className: 'rounded-none',
-        size: 'md',
-        variant: 'underline',
+        className: "rounded-none",
+        size: "md",
+        variant: "underline",
       },
       {
-        className: 'rounded-none',
-        size: 'lg',
-        variant: 'underline',
+        className: "rounded-none",
+        size: "lg",
+        variant: "underline",
       },
     ],
     defaultVariants: {
-      size: 'md',
-      variant: 'light',
+      size: "md",
+      variant: "light",
     },
     variants: {
       size: {
-        lg: 'rounded-card-lg px-4.5 py-0',
-        md: 'rounded-input px-3.5 py-0',
-        sm: 'rounded-input px-2.5 py-0 text-xs',
+        lg: "rounded-card-lg px-4.5 py-0",
+        md: "rounded-input px-3.5 py-0",
+        sm: "rounded-input px-2.5 py-0 text-xs",
       },
       variant: {
         light:
-          'border border-line bg-surface focus-within:border-line-strong has-[input[aria-invalid=true]]:border-2 has-[input[aria-invalid=true]]:border-solid-error',
-        transparent: '',
+          "border border-line bg-surface focus-within:border-line-strong has-[input[aria-invalid=true]]:border-2 has-[input[aria-invalid=true]]:border-solid-error",
+        transparent: "",
         underline:
-          'border-line border-b focus-within:border-line-strong has-[input[aria-invalid=true]]:border-solid-error has-[input[aria-invalid=true]]:border-b-2',
+          "border-line border-b focus-within:border-line-strong has-[input[aria-invalid=true]]:border-solid-error has-[input[aria-invalid=true]]:border-b-2",
       },
     },
-  }
+  },
 );
 
 const inputVariants = cva(

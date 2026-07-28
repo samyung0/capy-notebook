@@ -16,10 +16,11 @@ Importing this module registers the custom ``modal`` parser engine so the
 ingest pipeline can route pending_parse documents to the Modal GPU MineRU
 service (see ``modal_parser.py``).
 """
+
 from __future__ import annotations
 
 import logging
-from typing import Callable
+from collections.abc import Callable
 
 from lightrag import LightRAG
 from lightrag.kg.shared_storage import initialize_pipeline_status
@@ -27,7 +28,12 @@ from lightrag.llm_roles import RoleLLMConfig
 
 from ..config import cfg
 from .modal_parser import register_modal_parser
-from .models import make_embedding_func, make_llm_func, make_query_llm_func, make_vlm_func
+from .models import (
+    make_embedding_func,
+    make_llm_func,
+    make_query_llm_func,
+    make_vlm_func,
+)
 
 log = logging.getLogger("evo.rag.factory")
 

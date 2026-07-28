@@ -1,7 +1,7 @@
 import { useMe } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Avatar, Badge, Card, Icon, Text } from '@/components/ui';
-import { m } from '@/i18n';
+import { Avatar, Badge, Card, Icon } from "@/components/ui";
+import { m } from "@/i18n";
 
 export default function Profile() {
   const { data: me } = useMe();
@@ -13,10 +13,8 @@ export default function Profile() {
           <Card className="flex items-center gap-5 p-5.5" radius="card-lg">
             <Avatar name={me?.name} size={72} src={me?.avatarUrl} />
             <div className="min-w-0">
-              <Text variant="section">{me?.name ?? '—'}</Text>
-              <Text tone="secondary" variant="body">
-                {me?.email}
-              </Text>
+              <p className="t-large-card-title">{me?.name ?? "—"}</p>
+              <p>{me?.email}</p>
               {me?.classLabel && (
                 <Badge className="mt-2" size="sm" tone="accent-1">
                   {me.classLabel}
@@ -29,10 +27,10 @@ export default function Profile() {
               <Icon name="sparkles" size={20} />
             </span>
             <div>
-              <Text variant="card-title">{me?.streak ?? 0}-day streak</Text>
-              <Text tone="muted" variant="meta">
+              <p className="t-card-title">{me?.streak ?? 0}-day streak</p>
+              <p className="t-meta text-fg-muted">
                 Keep logging in to grow it.
-              </Text>
+              </p>
             </div>
           </Card>
         </div>

@@ -5,30 +5,31 @@ Two tiers:
 | tier                     | files                                     | needs                                | cost           |
 | ------------------------ | ----------------------------------------- | ------------------------------------ | -------------- |
 | **offline unit**         | `test_modal_parser.py`, `test_helpers.py` | nothing                              | free, ~4s      |
-| **cassette integration** | `test_ingest_query.py`                    | live Postgres (+ recorded cassettes) | free on replay |
+| **cassette integration** | `test_ingest_query.py`                    | Docker + recorded cassettes          | free on replay |
 
 The integration tier drives the real migrated code — the per-workspace factory,
 the model adapters (embedding / LLM / VLM), the custom `modal` parser engine and
 LightRAG's ingest + query pipelines — while every model/Modal **HTTP** call is
 served from a recorded [VCR](https://vcrpy.readthedocs.io) cassette in
 `cassettes/`. Postgres and Redis are raw TCP (not HTTP), so VCR never touches
-them: they stay live and cost nothing.
+them. The cassette fixture builds the custom pgvector+AGE image, starts fresh
+containers with temporary host ports, and removes them at the end of the
+pytest session.
 
 ## Running (replay — the default)
 
 Cassettes are committed, so replay needs no API keys and makes no model calls.
-It does need a Postgres with the LightRAG schema + `age`/`vector` extensions —
-the compose DB is fine. That DB is published on host port **5433** (5432 is left
-for a machine's native Postgres; see `deploy/docker-compose.yml`).
+Docker Desktop (or another Docker daemon) is required for the disposable
+Postgres and Redis containers. The Postgres image is built from
+`deploy/postgres/Dockerfile`; no existing database or warm container is used.
 
-```powershell
-cd pipeline
-$env:DATABASE_URL = "postgres://evo:evo@localhost:5433/evo?sslmode=disable"
-uv run --extra test pytest tests/ -q
+```bash
+uv run --extra test pytest pipeline/tests/ -q
 ```
 
-Each integration test uses a unique throwaway workspace and purges its LightRAG
-rows + AGE graph on teardown, so runs are isolated and repeatable.
+The fixture stops and removes both containers after the session. Each
+integration test also uses a unique throwaway workspace and purges its
+LightRAG rows + AGE graph on teardown, so runs are isolated and repeatable.
 
 ## Re-recording cassettes
 
@@ -37,20 +38,18 @@ edits, model or embedding-dimension changes, chunking changes, or a new
 model/Modal call. Recording hits the real services and costs tokens + a Modal
 GPU run.
 
-```powershell
-cd pipeline
+```bash
 # real keys for the providers + a deployed Modal endpoint
-$env:OPENROUTER_API_KEY = "..."
-$env:DEEPSEEK_API_KEY    = "..."
-$env:GOOGLE_API_KEY      = "..."
-$env:MODAL_PARSE_URL     = "https://<org>--evo-mineru-mineruparser-web.modal.run/file_parse"
-$env:MODAL_PARSE_TOKEN   = "..."
-$env:DATABASE_URL        = "postgres://evo:evo@localhost:5433/evo?sslmode=disable"
+export OPENROUTER_API_KEY="..."
+export DEEPSEEK_API_KEY="..."
+export GOOGLE_API_KEY="..."
+export MODAL_PARSE_URL="https://<org>--evo-mineru-mineruparser-web.modal.run/file_parse"
+export MODAL_PARSE_TOKEN="..."
 
-$env:EVO_TEST_RECORD = "once"        # record only interactions not already saved
+export EVO_TEST_RECORD=once           # record only interactions not already saved
 # delete the specific cassette(s) you want to refresh first, then:
-uv run --extra test pytest tests/test_ingest_query.py -q
-Remove-Item Env:EVO_TEST_RECORD
+uv run --extra test pytest pipeline/tests/test_ingest_query.py -q
+unset EVO_TEST_RECORD
 ```
 
 Record one test at a time (`... ::test_name`) — a cold Modal GPU start can take a

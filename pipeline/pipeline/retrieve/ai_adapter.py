@@ -4,6 +4,7 @@ This module translates Plate/@ai-sdk request shapes into server-owned provider
 calls.  It deliberately contains no browser-supplied provider credentials or
 model selection: both come from ``pipeline.config``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -13,7 +14,7 @@ import logging
 import re
 import secrets
 from collections.abc import AsyncIterator
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -33,7 +34,7 @@ MAX_OUTPUT_TOKENS = 1_200
 class UIMessagePart(BaseModel):
     model_config = ConfigDict(extra="ignore")
     type: str = Field(max_length=64)
-    text: Optional[str] = Field(default=None, max_length=MAX_INSTRUCTION_CHARS)
+    text: str | None = Field(default=None, max_length=MAX_INSTRUCTION_CHARS)
 
 
 class UIMessage(BaseModel):
@@ -45,11 +46,11 @@ class UIMessage(BaseModel):
 class PlateContext(BaseModel):
     model_config = ConfigDict(extra="ignore")
     children: list[dict[str, Any]] = Field(default_factory=list, max_length=2_000)
-    selection: Optional[dict[str, Any]] = None
-    toolName: Optional[Literal["generate", "edit", "comment"]] = None
+    selection: dict[str, Any] | None = None
+    toolName: Literal["generate", "edit", "comment"] | None = None
 
     @model_validator(mode="after")
-    def bounded_json(self) -> "PlateContext":
+    def bounded_json(self) -> PlateContext:
         if len(json.dumps(self.model_dump(), ensure_ascii=False)) > MAX_CONTEXT_CHARS:
             raise ValueError("editor context is too large")
         return self
@@ -66,12 +67,14 @@ class PlateCopilotReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
     workspaceId: str = Field(min_length=1, max_length=128)
     prompt: str = Field(min_length=1, max_length=MAX_INSTRUCTION_CHARS)
-    instructions: Optional[str] = Field(default=None, max_length=8_000)
-    system: Optional[str] = Field(default=None, max_length=8_000)
+    instructions: str | None = Field(default=None, max_length=8_000)
+    system: str | None = Field(default=None, max_length=8_000)
 
 
 class AIAdapterError(RuntimeError):
-    def __init__(self, code: str, message: str, status: int = 502, retryable: bool = False):
+    def __init__(
+        self, code: str, message: str, status: int = 502, retryable: bool = False
+    ):
         super().__init__(message)
         self.code = code
         self.status = status
@@ -101,7 +104,9 @@ def _instruction(messages: list[UIMessage]) -> str:
             text = _text(message).strip()
             if text:
                 return text
-    raise AIAdapterError("invalid_request", "a user instruction is required", status=400)
+    raise AIAdapterError(
+        "invalid_request", "a user instruction is required", status=400
+    )
 
 
 def _history(messages: list[UIMessage]) -> str:
@@ -146,7 +151,7 @@ def _node_markdown(node: Any, *, block_ids: bool = False) -> str:
     return body
 
 
-def _path(selection: Optional[dict[str, Any]], edge: str) -> list[int]:
+def _path(selection: dict[str, Any] | None, edge: str) -> list[int]:
     point = (selection or {}).get(edge) or {}
     raw = point.get("path") or []
     return [int(part) for part in raw if isinstance(part, int)]
@@ -167,9 +172,11 @@ def _marked_selected_roots(ctx: PlateContext) -> list[dict[str, Any]]:
         return roots
     selection = ctx.selection or {}
     points = [selection.get("anchor") or {}, selection.get("focus") or {}]
-    points.sort(key=lambda point: (point.get("path") or [], int(point.get("offset") or 0)))
+    points.sort(
+        key=lambda point: (point.get("path") or [], int(point.get("offset") or 0))
+    )
 
-    def leaf(point: dict[str, Any]) -> Optional[dict[str, Any]]:
+    def leaf(point: dict[str, Any]) -> dict[str, Any] | None:
         path = point.get("path") or []
         node: Any = roots
         for index in path:
@@ -186,7 +193,11 @@ def _marked_selected_roots(ctx: PlateContext) -> list[dict[str, Any]]:
                 node = children[index]
             else:
                 return None
-        return node if isinstance(node, dict) and isinstance(node.get("text"), str) else None
+        return (
+            node
+            if isinstance(node, dict) and isinstance(node.get("text"), str)
+            else None
+        )
 
     start, end = points
     start_leaf, end_leaf = leaf(start), leaf(end)
@@ -211,7 +222,11 @@ def _marked_selected_roots(ctx: PlateContext) -> list[dict[str, Any]]:
             offset = max(0, min(len(text), int(end.get("offset") or 0)))
             end_leaf["text"] = text[:offset] + "</Selection>" + text[offset:]
 
-    starts = [path[0] for path in (_path(ctx.selection, "anchor"), _path(ctx.selection, "focus")) if path]
+    starts = [
+        path[0]
+        for path in (_path(ctx.selection, "anchor"), _path(ctx.selection, "focus"))
+        if path
+    ]
     if not starts:
         return roots
     return roots[min(starts) : max(starts) + 1]
@@ -293,7 +308,9 @@ def build_generate_prompt(req: PlateCommandReq) -> str:
         f"<context>{context}</context>" if context else "",
         _AUTHORITATIVE_RULES,
         f"<outputFormatting>Markdown without an outer code fence. {source_rule}</outputFormatting>",
-        f"<history>{_history(req.messages)}</history>" if _history(req.messages) else "",
+        f"<history>{_history(req.messages)}</history>"
+        if _history(req.messages)
+        else "",
     )
 
 
@@ -309,7 +326,9 @@ Output only replacement Markdown. Preserve block count, Markdown syntax, links,
 custom MDX tags, and line breaks unless the instruction explicitly changes them.
 Never output Selection tags.
 </outputFormatting>""",
-        f"<history>{_history(req.messages)}</history>" if _history(req.messages) else "",
+        f"<history>{_history(req.messages)}</history>"
+        if _history(req.messages)
+        else "",
     )
 
 
@@ -367,14 +386,18 @@ extraction, questions, and tables are generate. Output one lowercase word.
         choice = (response.choices[0].message.content or "").strip().lower()
     except AIAdapterError:
         raise
-    except Exception as exc:  # noqa: BLE001
-        raise AIAdapterError("provider_unavailable", "AI provider request failed", retryable=True) from exc
+    except Exception as exc:
+        raise AIAdapterError(
+            "provider_unavailable", "AI provider request failed", retryable=True
+        ) from exc
     allowed = {"generate", "comment"} | ({"edit"} if selecting else set())
     return choice if choice in allowed else "generate"
 
 
 def _sse(payload: dict[str, Any] | str) -> str:
-    body = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
+    body = (
+        payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
+    )
     return f"data: {body}\n\n"
 
 
@@ -386,7 +409,9 @@ def _json_value(text: str) -> Any:
     except json.JSONDecodeError:
         match = re.search(r"(\[.*\]|\{.*\})", candidate, re.DOTALL)
         if not match:
-            raise AIAdapterError("invalid_provider_response", "AI returned invalid structured output")
+            raise AIAdapterError(
+                "invalid_provider_response", "AI returned invalid structured output"
+            )
         try:
             return json.loads(match.group(1))
         except json.JSONDecodeError as exc:
@@ -416,7 +441,9 @@ async def _structured_events(
 ) -> AsyncIterator[str]:
     cell_ids = _selected_cell_ids(req.ctx) if tool_name == "edit" else []
     is_table = len(cell_ids) > 1
-    prompt = build_table_prompt(req, cell_ids) if is_table else build_comment_prompt(req)
+    prompt = (
+        build_table_prompt(req, cell_ids) if is_table else build_comment_prompt(req)
+    )
     response = await _wait_completion(
         request,
         model=cfg.query_model_alt,
@@ -427,7 +454,9 @@ async def _structured_events(
     raw = response.choices[0].message.content if response.choices else ""
     values = _json_value(raw or "")
     if not isinstance(values, list):
-        raise AIAdapterError("invalid_provider_response", "AI returned a non-array tool result")
+        raise AIAdapterError(
+            "invalid_provider_response", "AI returned a non-array tool result"
+        )
 
     if is_table:
         allowed = set(cell_ids)
@@ -460,7 +489,9 @@ async def _structured_events(
             continue
         content = str(value.get("content") or "")[:MAX_INSTRUCTION_CHARS]
         block_id = str(value.get("blockId") or "")[:256]
-        comment = str(value.get("comment") or value.get("comments") or "")[:MAX_INSTRUCTION_CHARS]
+        comment = str(value.get("comment") or value.get("comments") or "")[
+            :MAX_INSTRUCTION_CHARS
+        ]
         if not block_id or not content or content not in context or not comment:
             continue
         yield _sse(
@@ -468,7 +499,11 @@ async def _structured_events(
                 "id": secrets.token_urlsafe(12),
                 "type": "data-comment",
                 "data": {
-                    "comment": {"blockId": block_id, "content": content, "comment": comment},
+                    "comment": {
+                        "blockId": block_id,
+                        "content": content,
+                        "comment": comment,
+                    },
                     "status": "streaming",
                 },
             }
@@ -526,7 +561,11 @@ async def command_events(req: PlateCommandReq, request: Request) -> AsyncIterato
             async for event in _structured_events(request, req, "edit"):
                 yield event
         else:
-            prompt = build_edit_prompt(req) if tool_name == "edit" else build_generate_prompt(req)
+            prompt = (
+                build_edit_prompt(req)
+                if tool_name == "edit"
+                else build_generate_prompt(req)
+            )
             async for event in _text_events(request, prompt):
                 yield event
         if await request.is_disconnected():
@@ -543,7 +582,7 @@ async def command_events(req: PlateCommandReq, request: Request) -> AsyncIterato
                 "data": {"code": exc.code, "retryable": exc.retryable},
             }
         )
-    except Exception:  # noqa: BLE001
+    except Exception:
         log.exception("Plate command failed")
         yield _sse(
             {
@@ -580,10 +619,14 @@ async def plate_command(req: PlateCommandReq, request: Request):
 
 @router.post("/copilot")
 async def plate_copilot(req: PlateCopilotReq, request: Request):
-    instructions = req.instructions or req.system or (
-        "Continue the text naturally to the next punctuation mark. Match its style, "
-        "do not repeat it, do not start a new block, and always end with punctuation. "
-        'If no meaningful continuation is possible, return "0".'
+    instructions = (
+        req.instructions
+        or req.system
+        or (
+            "Continue the text naturally to the next punctuation mark. Match its style, "
+            "do not repeat it, do not start a new block, and always end with punctuation. "
+            'If no meaningful continuation is possible, return "0".'
+        )
     )
     try:
         response = await _wait_completion(
@@ -599,14 +642,18 @@ async def plate_copilot(req: PlateCopilotReq, request: Request):
     except asyncio.CancelledError as exc:
         raise HTTPException(
             status_code=408,
-            detail={"code": "cancelled", "message": "request cancelled", "retryable": True},
+            detail={
+                "code": "cancelled",
+                "message": "request cancelled",
+                "retryable": True,
+            },
         ) from exc
     except AIAdapterError as exc:
         raise HTTPException(
             status_code=exc.status,
             detail={"code": exc.code, "message": str(exc), "retryable": exc.retryable},
         ) from exc
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         log.exception("Plate copilot failed")
         raise HTTPException(
             status_code=502,

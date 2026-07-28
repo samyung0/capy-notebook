@@ -40,9 +40,7 @@ export default function PdfView({ url }: { url: string }) {
       <Document
         className="h-full w-full max-w-[800px]"
         error={
-          <p className="t-body py-8 text-tint-error-fg">
-            Couldn't load this PDF.
-          </p>
+          <p className="py-8 text-tint-error-fg">Couldn't load this PDF.</p>
         }
         file={url}
         loading={<Skeleton className="h-full w-full" />}

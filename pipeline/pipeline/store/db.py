@@ -8,10 +8,11 @@ These are synchronous (psycopg) and are called from the async worker via
 ``asyncio.to_thread`` so a single event loop keeps the cached LightRAG asyncpg
 pools alive across jobs.
 """
+
 from __future__ import annotations
 
 import secrets
-from typing import Any, Dict, Optional
+from typing import Any
 
 import psycopg
 
@@ -28,7 +29,8 @@ def uid(prefix: str) -> str:
 
 # ---------------------------------------------------------------- job queue
 
-def claim_job(cur) -> Optional[Dict[str, Any]]:
+
+def claim_job(cur) -> dict[str, Any] | None:
     """Claim one pending ingest job atomically (FOR UPDATE SKIP LOCKED)."""
     cur.execute(
         """
@@ -46,7 +48,7 @@ def claim_job(cur) -> Optional[Dict[str, Any]]:
     return {"id": row[0], "type": row[1], "payload": row[2]}
 
 
-def set_job(cur, job_id: str, status: str, error: Optional[str] = None) -> None:
+def set_job(cur, job_id: str, status: str, error: str | None = None) -> None:
     cur.execute(
         "UPDATE jobs SET status=%s, error=%s, updated_at=now() WHERE id=%s",
         (status, error, job_id),
@@ -57,7 +59,7 @@ def set_file_status(cur, file_id: str, status: str) -> None:
     cur.execute("UPDATE files SET status=%s WHERE id=%s", (status, file_id))
 
 
-def set_file_doc_id(cur, file_id: str, doc_id: Optional[str]) -> None:
+def set_file_doc_id(cur, file_id: str, doc_id: str | None) -> None:
     """Record the LightRAG document id backing this file (None = no doc)."""
     cur.execute("UPDATE files SET doc_id=%s WHERE id=%s", (doc_id, file_id))
 

@@ -156,10 +156,10 @@ export const MediaPlaceholderElement = withHOC(
       <PlateElement {...props} className="my-2">
         <div
           className={cn(
-            'flex min-h-18 items-center gap-3 rounded-card border border-line border-dashed bg-surface-hover-bg px-4 py-3',
+            "flex min-h-18 items-center gap-3 rounded-card border border-line border-dashed bg-surface-hover-bg px-4 py-3",
             canCreateAssets &&
               !uploading &&
-              'cursor-pointer hover:border-line-strong'
+              "cursor-pointer hover:border-line-strong",
           )}
           contentEditable={false}
           onClick={() => canCreateAssets && !uploading && openFilePicker()}
@@ -167,12 +167,12 @@ export const MediaPlaceholderElement = withHOC(
             if (
               canCreateAssets &&
               !uploading &&
-              (event.key === 'Enter' || event.key === ' ')
+              (event.key === "Enter" || event.key === " ")
             ) {
               openFilePicker();
             }
           }}
-          role={canCreateAssets ? 'button' : undefined}
+          role={canCreateAssets ? "button" : undefined}
           tabIndex={canCreateAssets ? 0 : undefined}
         >
           {uploading ? (
@@ -186,16 +186,16 @@ export const MediaPlaceholderElement = withHOC(
             </p>
             <p
               className={cn(
-                'text-fg-muted text-xs',
-                error && 'text-solid-error'
+                "text-fg-muted text-xs",
+                error && "text-solid-error",
               )}
             >
               {error ??
                 (uploading
                   ? `${progress}% uploaded`
                   : canCreateAssets
-                    ? 'Choose, paste, or drop a file'
-                    : 'Uploads are unavailable in suggestion mode')}
+                    ? "Choose, paste, or drop a file"
+                    : "Uploads are unavailable in suggestion mode")}
             </p>
             {uploading && (
               <div className="mt-2 h-1 overflow-hidden rounded-full bg-divider">
@@ -209,7 +209,7 @@ export const MediaPlaceholderElement = withHOC(
           {uploading ? (
             <button
               aria-label="Cancel upload"
-              className="rounded-row p-1 text-fg-muted hover:bg-surface"
+              className="rounded-button p-1 text-fg-muted hover:bg-surface"
               onClick={(event) => {
                 event.stopPropagation();
                 abortRef.current?.abort();

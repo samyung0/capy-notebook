@@ -314,7 +314,7 @@ function BlockDiscussionContent({
   const path = editor.api.findPath(element);
   const isTopLevel = path?.length === 1;
   const blockId =
-    typeof element.id === 'string' && element.id.trim() ? element.id : null;
+    typeof element.id === "string" && element.id.trim() ? element.id : null;
   const discussions =
     actions?.discussions.filter((item) => item.blockId === blockId) ?? [];
   const drafts =
@@ -325,7 +325,7 @@ function BlockDiscussionContent({
     actions?.suggestions.filter((item) => item.blockId === blockId) ?? [];
   const commentDiscussions = discussions.filter(
     (discussion) =>
-      discussion.kind === 'comment' && discussion.comments.length > 0
+      discussion.kind === "comment" && discussion.comments.length > 0,
   );
   const suggestionItems: ActiveSuggestionEntry[] = [
     ...drafts,
@@ -333,13 +333,13 @@ function BlockDiscussionContent({
     ...suggestions,
   ];
   const total = suggestionItems.length + commentDiscussions.length;
-  const activeSuggestionId = usePluginOption(suggestionPlugin, 'activeId');
-  const activeCommentId = usePluginOption(commentPlugin, 'activeId');
+  const activeSuggestionId = usePluginOption(suggestionPlugin, "activeId");
+  const activeCommentId = usePluginOption(commentPlugin, "activeId");
   const activeSuggestion = suggestionItems.find(
-    (item) => item.plateSuggestionId === activeSuggestionId
+    (item) => item.plateSuggestionId === activeSuggestionId,
   );
   const activeDiscussion = commentDiscussions.find(
-    (discussion) => discussion.id === activeCommentId
+    (discussion) => discussion.id === activeCommentId,
   );
   const selected = !!activeSuggestion || !!activeDiscussion;
   const [manuallyOpen, setManuallyOpen] = useState(false);
@@ -355,7 +355,7 @@ function BlockDiscussionContent({
       ].find(
         ([node]) =>
           editor.getApi(BaseSuggestionPlugin).suggestion.nodeId(node) ===
-          activeSuggestion.plateSuggestionId
+          activeSuggestion.plateSuggestionId,
       );
     } else if (activeCommentId) {
       activeNode = [
@@ -363,7 +363,7 @@ function BlockDiscussionContent({
       ].find(
         ([node]) =>
           editor.getApi(BaseCommentPlugin).comment.nodeId(node) ===
-          activeCommentId
+          activeCommentId,
       );
     }
 
@@ -377,27 +377,27 @@ function BlockDiscussionContent({
 
   const renderedItems = [
     ...suggestionItems.map((entry) => ({
-      createdAt: lifecycleSuggestion(entry)?.createdAt ?? entry.createdAt ?? '',
+      createdAt: lifecycleSuggestion(entry)?.createdAt ?? entry.createdAt ?? "",
       entry,
       key: `suggestion:${entry.blockId}:${entry.plateSuggestionId}`,
-      type: 'suggestion' as const,
+      type: "suggestion" as const,
     })),
     ...commentDiscussions.map((discussion) => ({
       createdAt: discussion.createdAt,
       discussion,
       key: `discussion:${discussion.id}`,
-      type: 'discussion' as const,
+      type: "discussion" as const,
     })),
   ].sort(
     (left, right) =>
       left.createdAt.localeCompare(right.createdAt) ||
-      left.key.localeCompare(right.key)
+      left.key.localeCompare(right.key),
   );
   const visibleItems = selected
     ? renderedItems.filter((item) =>
-        item.type === 'suggestion'
+        item.type === "suggestion"
           ? item.entry === activeSuggestion
-          : item.discussion === activeDiscussion
+          : item.discussion === activeDiscussion,
       )
     : renderedItems;
 
@@ -428,11 +428,11 @@ function BlockDiscussionContent({
           </div>
           <div className="flex flex-col gap-2 p-2">
             {visibleItems.map((item) =>
-              item.type === 'suggestion' ? (
+              item.type === "suggestion" ? (
                 <SuggestionCard entry={item.entry} key={item.key} />
               ) : (
                 <DiscussionThread discussion={item.discussion} key={item.key} />
-              )
+              ),
             )}
           </div>
           {actions.collaborationError && (
@@ -444,8 +444,8 @@ function BlockDiscussionContent({
         <div className="relative size-0 select-none">
           <PopoverTrigger asChild>
             <Button
-              aria-label={`Show ${total} collaboration item${total === 1 ? '' : 's'}`}
-              className="mt-1 ml-1 h-7 min-w-7 gap-1 rounded-row px-1.5 py-0 text-fg-muted data-[state=open]:bg-surface-hover-bg"
+              aria-label={`Show ${total} collaboration item${total === 1 ? "" : "s"}`}
+              className="mt-1 ml-1 h-7 min-w-7 gap-1 rounded-button px-1.5 py-0 text-fg-muted data-[state=open]:bg-surface-hover-bg"
               contentEditable={false}
               size="sm"
               variant="ghost-hover"
@@ -465,7 +465,7 @@ function BlockDiscussionContent({
 }
 
 export const discussionPlugin = createPlatePlugin({
-  key: 'evo-discussions',
+  key: "evo-discussions",
   options: {
     currentUserId: null as string | null,
     discussions: [] as MaterialDiscussion[],
@@ -476,7 +476,7 @@ export const discussionPlugin = createPlatePlugin({
 
 function collaborationClickTarget(
   target: EventTarget | null,
-  selector: string
+  selector: string,
 ): HTMLElement | null {
   return target instanceof HTMLElement ? target.closest(selector) : null;
 }
@@ -486,10 +486,10 @@ export const commentPlugin = toTPlatePlugin<CommentConfig>(BaseCommentPlugin, {
     onClick: ({ event, setOption, type }) => {
       const target = collaborationClickTarget(event.target, `.slate-${type}`);
       if (!target) {
-        setOption('activeId', null);
+        setOption("activeId", null);
         return;
       }
-      setOption('activeId', target.dataset.commentId ?? null);
+      setOption("activeId", target.dataset.commentId ?? null);
     },
   },
   options: {
@@ -498,36 +498,36 @@ export const commentPlugin = toTPlatePlugin<CommentConfig>(BaseCommentPlugin, {
     hoverId: null as string | null,
   },
   render: { node: CommentLeaf },
-  shortcuts: { setDraft: { keys: 'mod+shift+m' } },
+  shortcuts: { setDraft: { keys: "mod+shift+m" } },
 });
 
 function CommentLeaf(props: PlateLeafProps) {
   const commentId =
     useCommentId() ??
     Object.keys(props.leaf)
-      .find((key) => key.startsWith('comment_'))
-      ?.slice('comment_'.length);
+      .find((key) => key.startsWith("comment_"))
+      ?.slice("comment_".length);
   const { setOption } = useEditorPlugin(commentPlugin);
-  const activeId = usePluginOption(commentPlugin, 'activeId');
-  const hoverId = usePluginOption(commentPlugin, 'hoverId');
+  const activeId = usePluginOption(commentPlugin, "activeId");
+  const hoverId = usePluginOption(commentPlugin, "hoverId");
   const highlighted = commentId === activeId || commentId === hoverId;
   return (
     <PlateLeaf
       {...props}
       attributes={{
         ...props.attributes,
-        'data-collaboration-mark': 'comment',
-        ...(commentId ? { 'data-comment-id': commentId } : {}),
+        "data-collaboration-mark": "comment",
+        ...(commentId ? { "data-comment-id": commentId } : {}),
         onClick: (event) => {
           event.stopPropagation();
-          setOption('activeId', commentId ?? null);
+          setOption("activeId", commentId ?? null);
         },
-        onMouseEnter: () => setOption('hoverId', commentId ?? null),
-        onMouseLeave: () => setOption('hoverId', null),
+        onMouseEnter: () => setOption("hoverId", commentId ?? null),
+        onMouseLeave: () => setOption("hoverId", null),
       }}
       className={cn(
-        'rounded-sm bg-tint-accent-2 underline decoration-2 decoration-action-accent/50 underline-offset-2 transition-colors',
-        highlighted && 'bg-action-accent/25 decoration-action-accent'
+        "rounded-sm bg-tint-accent-2 underline decoration-2 decoration-action-accent/50 underline-offset-2 transition-colors",
+        highlighted && "bg-action-accent/25 decoration-action-accent",
       )}
     >
       {props.children}
@@ -557,32 +557,32 @@ function SuggestionLeaf(props: PlateLeafProps<TSuggestionText>) {
     .suggestion.dataList(props.leaf);
   const leafId =
     editor.getApi(BaseSuggestionPlugin).suggestion.nodeId(props.leaf) ?? null;
-  const activeId = usePluginOption(suggestionPlugin, 'activeId');
-  const hoverId = usePluginOption(suggestionPlugin, 'hoverId');
-  const remove = data.some((item) => item.type === 'remove');
+  const activeId = usePluginOption(suggestionPlugin, "activeId");
+  const hoverId = usePluginOption(suggestionPlugin, "hoverId");
+  const remove = data.some((item) => item.type === "remove");
   const highlighted = data.some(
-    (item) => item.id === activeId || item.id === hoverId
+    (item) => item.id === activeId || item.id === hoverId,
   );
   return (
     <PlateLeaf
       {...props}
-      as={remove ? 'del' : 'ins'}
+      as={remove ? "del" : "ins"}
       attributes={{
         ...props.attributes,
-        ...(leafId ? { 'data-suggestion-id': leafId } : {}),
+        ...(leafId ? { "data-suggestion-id": leafId } : {}),
         onClick: (event) => {
           event.stopPropagation();
-          setOption('activeId', leafId);
+          setOption("activeId", leafId);
         },
-        onMouseEnter: () => setOption('hoverId', leafId),
-        onMouseLeave: () => setOption('hoverId', null),
+        onMouseEnter: () => setOption("hoverId", leafId),
+        onMouseLeave: () => setOption("hoverId", null),
       }}
       className={cn(
-        'rounded-sm bg-tint-accent-2 text-tint-accent-2-fg no-underline transition-colors',
-        highlighted && 'bg-action-accent/25',
+        "rounded-sm bg-tint-accent-2 text-tint-accent-2-fg no-underline transition-colors",
+        highlighted && "bg-action-accent/25",
         remove &&
-          'bg-tint-error text-solid-error line-through decoration-solid-error',
-        remove && highlighted && 'bg-solid-error/20'
+          "bg-tint-error text-solid-error line-through decoration-solid-error",
+        remove && highlighted && "bg-solid-error/20",
       )}
     >
       {props.children}
@@ -612,18 +612,18 @@ function BlockSuggestionDecoration({
   element: TElement;
 }) {
   const { setOption } = useEditorPlugin(suggestionPlugin);
-  const activeId = usePluginOption(suggestionPlugin, 'activeId');
-  const hoverId = usePluginOption(suggestionPlugin, 'hoverId');
-  const remove = data.type === 'remove';
+  const activeId = usePluginOption(suggestionPlugin, "activeId");
+  const hoverId = usePluginOption(suggestionPlugin, "hoverId");
+  const remove = data.type === "remove";
   const highlighted = data.id === activeId || data.id === hoverId;
   const interactionProps = {
-    'data-suggestion-id': data.id,
+    "data-suggestion-id": data.id,
     onClick: (event: React.MouseEvent) => {
       event.stopPropagation();
-      setOption('activeId', data.id);
+      setOption("activeId", data.id);
     },
-    onMouseEnter: () => setOption('hoverId', data.id),
-    onMouseLeave: () => setOption('hoverId', null),
+    onMouseEnter: () => setOption("hoverId", data.id),
+    onMouseLeave: () => setOption("hoverId", null),
   };
 
   if (data.isLineBreak) {
@@ -633,10 +633,10 @@ function BlockSuggestionDecoration({
         <span
           {...interactionProps}
           className={cn(
-            'inline-flex h-[calc(1lh+2px)] w-[1lh] items-center justify-center rounded-sm transition-colors',
-            remove ? 'text-solid-error' : 'text-solid-success',
+            "inline-flex h-[calc(1lh+2px)] w-[1lh] items-center justify-center rounded-sm transition-colors",
+            remove ? "text-solid-error" : "text-solid-success",
             highlighted &&
-              (remove ? 'bg-solid-error/20' : 'bg-action-accent/25')
+              (remove ? "bg-solid-error/20" : "bg-action-accent/25"),
           )}
           contentEditable={false}
           data-block-suggestion={data.type}
@@ -651,12 +651,12 @@ function BlockSuggestionDecoration({
     <div
       {...interactionProps}
       className={cn(
-        'rounded-sm bg-tint-accent-2 text-tint-accent-2-fg transition-colors',
-        element.type === KEYS.columnGroup && 'flex size-full gap-2',
-        highlighted && 'bg-action-accent/25',
+        "rounded-sm bg-tint-accent-2 text-tint-accent-2-fg transition-colors",
+        element.type === KEYS.columnGroup && "flex size-full gap-2",
+        highlighted && "bg-action-accent/25",
         remove &&
-          'bg-tint-error text-solid-error line-through decoration-solid-error',
-        remove && highlighted && 'bg-solid-error/20'
+          "bg-tint-error text-solid-error line-through decoration-solid-error",
+        remove && highlighted && "bg-solid-error/20",
       )}
       data-block-suggestion={data.type}
     >
@@ -672,7 +672,7 @@ function VoidRemoveSuggestionOverlay({ editor, element }: PlateElementProps) {
   if (
     !editor.api.isVoid(element) ||
     editor.api.isInline(element) ||
-    data?.type !== 'remove'
+    data?.type !== "remove"
   )
     return null;
   return (
@@ -691,26 +691,26 @@ export const suggestionPlugin = toTPlatePlugin<SuggestionConfig>(
       onClick: ({ event, setOption, type }) => {
         const markTarget = collaborationClickTarget(
           event.target,
-          `.slate-${type}`
+          `.slate-${type}`,
         );
         const blockTarget = markTarget
           ? null
-          : collaborationClickTarget(event.target, '[data-block-suggestion]');
+          : collaborationClickTarget(event.target, "[data-block-suggestion]");
         if (!(markTarget || blockTarget)) {
-          setOption('activeId', null);
+          setOption("activeId", null);
           return;
         }
         setOption(
-          'activeId',
-          (markTarget ?? blockTarget)?.dataset.suggestionId ?? null
+          "activeId",
+          (markTarget ?? blockTarget)?.dataset.suggestionId ?? null,
         );
       },
     },
     inject: {
       isElement: true,
       nodeProps: {
-        nodeKey: '',
-        styleKey: 'cssText',
+        nodeKey: "",
+        styleKey: "cssText",
         transformProps: ({ editor, element, props }) => {
           if (!element) return props;
           const data = getInlineSuggestionData(editor, element);
@@ -719,12 +719,12 @@ export const suggestionPlugin = toTPlatePlugin<SuggestionConfig>(
             ...props,
             className: cn(
               (props as { className?: string }).className,
-              'rounded-sm bg-tint-accent-2 text-tint-accent-2-fg',
-              data.type === 'remove' &&
-                'bg-tint-error text-solid-error line-through decoration-solid-error'
+              "rounded-sm bg-tint-accent-2 text-tint-accent-2-fg",
+              data.type === "remove" &&
+                "bg-tint-error text-solid-error line-through decoration-solid-error",
             ),
-            'data-inline-suggestion': data.type,
-            'data-suggestion-id': data.id,
+            "data-inline-suggestion": data.type,
+            "data-suggestion-id": data.id,
           };
         },
         transformStyle: () => ({}) as CSSStyleDeclaration,
@@ -740,11 +740,11 @@ export const suggestionPlugin = toTPlatePlugin<SuggestionConfig>(
       belowRootNodes: VoidRemoveSuggestionOverlay,
       node: SuggestionLeaf,
     },
-  }
+  },
 );
 
 function richComment(text: string): MaterialValue {
-  return [{ children: [{ text }], type: 'p' }];
+  return [{ children: [{ text }], type: "p" }];
 }
 
 export function CollaborationProvider({
@@ -771,7 +771,7 @@ export function CollaborationProvider({
   onMaterialState: (
     document: MaterialDocument,
     revision: number,
-    hasPending: boolean
+    hasPending: boolean,
   ) => void;
   replaceEditorDocument: (value: MaterialValue) => void;
   actionsPortalHost?: HTMLElement | null;
@@ -788,17 +788,17 @@ export function CollaborationProvider({
   const deleteComment = useDeleteMaterialComment(materialId);
   const resolveDiscussion = useResolveMaterialDiscussion(materialId);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [comment, setComment] = useState('');
+  const [comment, setComment] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const { joined: suggestions, orphans } = joinActiveSuggestions(
     currentDocument.value,
-    discussions
+    discussions,
   );
   const drafts = synthesizeDraftSuggestions(
     editor.children as MaterialValue,
     currentDocument.value,
-    currentUserId
+    currentUserId,
   );
   const mutationPending =
     commit.isPending ||
@@ -807,13 +807,13 @@ export function CollaborationProvider({
     deleteDiscussionMutation.isPending;
 
   const applyReturnedMaterial = (
-    material: Awaited<ReturnType<typeof commit.mutateAsync>>['material']
+    material: Awaited<ReturnType<typeof commit.mutateAsync>>["material"],
   ) => {
     replaceEditorDocument(material.content.value);
     onMaterialState(
       material.content,
       material.revision ?? currentRevision,
-      material.hasPendingSuggestions ?? false
+      material.hasPendingSuggestions ?? false,
     );
     onSuggestionReset();
   };
@@ -822,12 +822,12 @@ export function CollaborationProvider({
     setError(cause instanceof Error ? cause.message : fallback);
 
   async function submitSuggestion() {
-    if (mode !== 'suggestion' || (!canEdit && !canComment) || !suggestionDirty)
+    if (mode !== "suggestion" || (!canEdit && !canComment) || !suggestionDirty)
       return;
     setError(null);
     try {
       const content = createMaterialDocument(
-        stripCommentDecorations(editor.children as MaterialValue)
+        stripCommentDecorations(editor.children as MaterialValue),
       );
       const result = await commit.mutateAsync({
         content,
@@ -835,13 +835,13 @@ export function CollaborationProvider({
       });
       applyReturnedMaterial(result.material);
     } catch (cause) {
-      fail(cause, 'Unable to submit suggestion');
+      fail(cause, "Unable to submit suggestion");
     }
   }
 
   async function reviewEntry(
     entry: ActiveSuggestionEntry,
-    decision: 'accept' | 'reject'
+    decision: "accept" | "reject",
   ) {
     if (!canEdit || mutationPending) return;
     setError(null);
@@ -871,12 +871,12 @@ export function CollaborationProvider({
       editor.tf.withoutSaving(() => {
         editor.tf.setNodes(
           { [KEYS.comment]: true, [getCommentKey(discussion.id)]: true },
-          { at: selection, match: TextApi.isText, split: true }
+          { at: selection, match: TextApi.isText, split: true },
         );
       });
       setDialogOpen(false);
     } catch (cause) {
-      fail(cause, 'Unable to add comment');
+      fail(cause, "Unable to add comment");
     }
   }
 
@@ -900,18 +900,18 @@ export function CollaborationProvider({
     currentRevision,
     currentUserId,
     deleteComment: (entry) => {
-      if (!window.confirm('Delete this comment?')) return;
+      if (!window.confirm("Delete this comment?")) return;
       deleteComment.mutate(entry.id);
     },
     deleteDiscussion: (discussion) => {
       const hasPending = discussion.suggestions.some(
-        (item) => item.status === 'pending'
+        (item) => item.status === "pending",
       );
       if (
         !window.confirm(
           hasPending
-            ? 'Delete this thread? Its pending suggestions will be rejected.'
-            : 'Delete this discussion thread?'
+            ? "Delete this thread? Its pending suggestions will be rejected."
+            : "Delete this discussion thread?",
         )
       )
         return;
@@ -921,7 +921,7 @@ export function CollaborationProvider({
           expectedRevision: hasPending ? currentRevision : undefined,
         })
         .then((result) => applyReturnedMaterial(result.material))
-        .catch((cause) => fail(cause, 'Unable to delete discussion'));
+        .catch((cause) => fail(cause, "Unable to delete discussion"));
     },
     discardSuggestion: () => {
       replaceEditorDocument(currentDocument.value);
@@ -932,7 +932,7 @@ export function CollaborationProvider({
     mutationPending,
     openComment: () => {
       if (!canComment || !editor.selection || editor.api.isCollapsed()) return;
-      setComment('');
+      setComment("");
       setError(null);
       setDialogOpen(true);
     },
@@ -956,7 +956,7 @@ export function CollaborationProvider({
     withdraw: (suggestion) => {
       if (
         !window.confirm(
-          'Withdraw this pending suggestion? Its marked changes will be rejected.'
+          "Withdraw this pending suggestion? Its marked changes will be rejected.",
         )
       )
         return;
@@ -966,7 +966,7 @@ export function CollaborationProvider({
           suggestionId: suggestion.id,
         })
         .then((result) => applyReturnedMaterial(result.material))
-        .catch((cause) => fail(cause, 'Unable to withdraw suggestion'));
+        .catch((cause) => fail(cause, "Unable to withdraw suggestion"));
     },
   };
 
@@ -1007,7 +1007,7 @@ export function CollaborationProvider({
 }
 
 function userName(actions: CollaborationActions, userId: string) {
-  return actions.users[userId]?.name ?? 'Unknown user';
+  return actions.users[userId]?.name ?? "Unknown user";
 }
 
 export function SuggestionCard({ entry }: { entry: ActiveSuggestionEntry }) {
@@ -1018,30 +1018,30 @@ export function SuggestionCard({ entry }: { entry: ActiveSuggestionEntry }) {
   const draft = isDraft(entry);
   const lifecycle = lifecycleSuggestion(entry);
   const discussion = isJoined(entry) ? entry.discussion : null;
-  const status = draft ? 'draft' : orphan ? 'pending' : lifecycle?.status;
+  const status = draft ? "draft" : orphan ? "pending" : lifecycle?.status;
   const permissions = suggestionControlPermissions(
     entry,
     actions.currentUserId,
-    actions.canEdit
+    actions.canEdit,
   );
   return (
     <section
       className={cn(
-        'rounded-card border border-line p-3',
-        orphan && 'border-solid-warning'
+        "rounded-card border border-line p-3",
+        orphan && "border-solid-warning",
       )}
-      onMouseEnter={() => setOption('hoverId', entry.plateSuggestionId)}
-      onMouseLeave={() => setOption('hoverId', null)}
+      onMouseEnter={() => setOption("hoverId", entry.plateSuggestionId)}
+      onMouseLeave={() => setOption("hoverId", null)}
     >
       <div className="flex items-center justify-between gap-2">
         <p className="font-medium text-fg-muted text-xs">
           {orphan
             ? entry.userId
               ? `Suggestion from ${userName(actions, entry.userId)} · missing lifecycle`
-              : 'Unknown user · missing lifecycle'
+              : "Unknown user · missing lifecycle"
             : `Suggestion from ${userName(
                 actions,
-                draft ? entry.userId : (lifecycle?.userId ?? '')
+                draft ? entry.userId : (lifecycle?.userId ?? ""),
               )}`}
         </p>
         <span className="rounded-full bg-surface-hover-bg px-2 py-0.5 text-fg-muted text-xs">
@@ -1057,7 +1057,7 @@ export function SuggestionCard({ entry }: { entry: ActiveSuggestionEntry }) {
         <div className="mt-3 flex gap-2">
           <Button
             disabled={actions.mutationPending}
-            onClick={() => actions.review(entry, 'accept')}
+            onClick={() => actions.review(entry, "accept")}
             size="sm"
             variant="accent"
           >
@@ -1065,7 +1065,7 @@ export function SuggestionCard({ entry }: { entry: ActiveSuggestionEntry }) {
           </Button>
           <Button
             disabled={actions.mutationPending}
-            onClick={() => actions.review(entry, 'reject')}
+            onClick={() => actions.review(entry, "reject")}
             size="sm"
             variant="outline"
           >
@@ -1128,16 +1128,16 @@ export function DiscussionThread({
   if (!actions) return null;
   const canDeleteThread =
     discussion.userId === actions.currentUserId || actions.canEdit;
-  const isCommentDiscussion = discussion.kind === 'comment';
+  const isCommentDiscussion = discussion.kind === "comment";
   return (
     <section
       className={cn(
-        'rounded-card border border-line p-3',
-        discussion.isResolved && 'opacity-65'
+        "rounded-card border border-line p-3",
+        discussion.isResolved && "opacity-65",
       )}
-      onClick={() => setOption('activeId', discussion.id)}
-      onMouseEnter={() => setOption('hoverId', discussion.id)}
-      onMouseLeave={() => setOption('hoverId', null)}
+      onClick={() => setOption("activeId", discussion.id)}
+      onMouseEnter={() => setOption("hoverId", discussion.id)}
+      onMouseLeave={() => setOption("hoverId", null)}
     >
       <DiscussionComments discussion={discussion} />
       <div className="mt-2 flex flex-wrap gap-1">
@@ -1147,7 +1147,7 @@ export function DiscussionThread({
             size="sm"
             variant="ghost"
           >
-            {discussion.isResolved ? 'Reopen' : 'Resolve'}
+            {discussion.isResolved ? "Reopen" : "Resolve"}
           </Button>
         )}
         {canDeleteThread && (
@@ -1170,8 +1170,8 @@ function DiscussionComments({
   discussion: MaterialDiscussion;
 }) {
   const [replyTo, setReplyTo] = useState<string | null>(null);
-  const [reply, setReply] = useState('');
-  const [comment, setComment] = useState('');
+  const [reply, setReply] = useState("");
+  const [comment, setComment] = useState("");
   const actions = useCollaborationActions();
 
   return (
@@ -1203,7 +1203,7 @@ function DiscussionComments({
             onClick={() =>
               void actions
                 .addComment(discussion.id, comment.trim())
-                .then(() => setComment(''))
+                .then(() => setComment(""))
             }
             size="sm"
             variant="outline"
@@ -1217,14 +1217,14 @@ function DiscussionComments({
 }
 
 function commentContentText(contentRich: unknown): string {
-  if (!Array.isArray(contentRich)) return '';
+  if (!Array.isArray(contentRich)) return "";
   return contentRich
     .filter(
       (node): node is Record<string, unknown> =>
-        !!node && typeof node === 'object' && !Array.isArray(node)
+        !!node && typeof node === "object" && !Array.isArray(node),
     )
     .map((node) => NodeApi.string(node as never))
-    .join('\n');
+    .join("\n");
 }
 
 function CommentEntry({
@@ -1247,18 +1247,18 @@ function CommentEntry({
   const actions = useCollaborationActions()!;
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(() =>
-    entry.isDeleted ? '' : commentContentText(entry.contentRich)
+    entry.isDeleted ? "" : commentContentText(entry.contentRich),
   );
   const text = entry.isDeleted
-    ? 'Deleted comment'
+    ? "Deleted comment"
     : commentContentText(entry.contentRich);
   const own = entry.userId === actions.currentUserId;
   const canDelete = own || actions.canEdit;
   return (
     <div
       className={cn(
-        'rounded-row bg-surface-hover-bg px-3 py-2',
-        depth === 1 && 'ml-5'
+        "rounded-button bg-surface-hover-bg px-3 py-2",
+        depth === 1 && "ml-5",
       )}
     >
       <p className="font-medium text-fg-muted text-xs">
@@ -1290,8 +1290,8 @@ function CommentEntry({
       ) : (
         <p
           className={cn(
-            'text-fg text-sm',
-            entry.isDeleted && 'text-fg-muted italic'
+            "text-fg text-sm",
+            entry.isDeleted && "text-fg-muted italic",
           )}
         >
           {text}
@@ -1303,7 +1303,7 @@ function CommentEntry({
             <Button
               onClick={() => {
                 setReplyTo(entry.id);
-                setReply('');
+                setReply("");
               }}
               size="sm"
               variant="ghost"
@@ -1342,7 +1342,7 @@ function CommentEntry({
               void actions
                 .addReply(discussionId, entry.id, reply.trim())
                 .then(() => {
-                  setReply('');
+                  setReply("");
                   setReplyTo(null);
                 })
             }

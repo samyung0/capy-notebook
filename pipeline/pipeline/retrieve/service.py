@@ -6,6 +6,7 @@ FastAPI event loop so the asyncpg pools stay valid.
 
 Run: ``uvicorn pipeline.retrieve.service:app --host 0.0.0.0 --port 8001``
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -13,25 +14,24 @@ import json
 import logging
 import re
 from contextlib import asynccontextmanager
-from typing import Any, List, Optional
+from typing import Annotated, Any
 
 from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import StreamingResponse
+from lightrag import QueryParam
 from pydantic import BaseModel
 
-from lightrag import QueryParam
-
 from ..config import cfg
-from ..store import db
 from ..rag.cache import RagCache
 from ..rag.clone import clone_workspace_state
 from ..rag.factory import build_query_rag
 from ..rag.models import query_model_override
+from ..store import db
 from .ai_adapter import router as plate_ai_router
 
 log = logging.getLogger("evo.retrieve")
 
-_cache: Optional[RagCache] = None
+_cache: RagCache | None = None
 
 
 @asynccontextmanager
@@ -58,32 +58,32 @@ class ChatReq(BaseModel):
     query: str
     workspaceId: str
     k: int = 6
-    model: Optional[str] = None  # deepseek-v4-pro | deepseek-v4-flash
+    model: str | None = None  # deepseek-v4-pro | deepseek-v4-flash
 
 
 class ChatStreamReq(BaseModel):
     query: str
     workspaceId: str
-    model: Optional[str] = None
+    model: str | None = None
     # Prior turns as OpenAI-style role/content pairs, sent to the LLM only.
-    history: Optional[List[dict]] = None
+    history: list[dict] | None = None
 
 
 class GenerateReq(BaseModel):
     workspaceId: str
     kind: str = "quiz"  # flashcards | quiz | mindmap | diagram (summary: legacy)
-    length: Optional[str] = None
-    format: Optional[str] = None
-    count: Optional[int] = None
-    style: Optional[str] = None
-    types: Optional[List[str]] = None
-    levels: Optional[List[str]] = None  # cognitive levels: recall|application|analysis
-    difficulty: Optional[List[str]] = None  # legacy alias, still accepted
-    chapters: Optional[List[str]] = None
-    fileIds: Optional[List[str]] = None  # file-scoped retrieval filtering (doc ids)
-    detail: Optional[str] = None  # mindmap: brief|standard|detailed
-    diagramType: Optional[str] = None  # diagram: auto|flowchart|sequence|class|state|er
-    timeLimitMin: Optional[int] = None
+    length: str | None = None
+    format: str | None = None
+    count: int | None = None
+    style: str | None = None
+    types: list[str] | None = None
+    levels: list[str] | None = None  # cognitive levels: recall|application|analysis
+    difficulty: list[str] | None = None  # legacy alias, still accepted
+    chapters: list[str] | None = None
+    fileIds: list[str] | None = None  # file-scoped retrieval filtering (doc ids)
+    detail: str | None = None  # mindmap: brief|standard|detailed
+    diagramType: str | None = None  # diagram: auto|flowchart|sequence|class|state|er
+    timeLimitMin: int | None = None
 
 
 # Legacy easy/medium/hard -> cognitive level, so old callers keep working.
@@ -99,9 +99,12 @@ _LEVEL_GUIDE = (
 )
 
 
-def _cognitive_levels(req: "GenerateReq") -> List[str]:
+def _cognitive_levels(req: GenerateReq) -> list[str]:
     if req.levels:
-        return [lvl for lvl in req.levels if lvl in _VALID_LEVELS] or ["recall", "application"]
+        return [lvl for lvl in req.levels if lvl in _VALID_LEVELS] or [
+            "recall",
+            "application",
+        ]
     if req.difficulty:
         return [_LEVEL_ALIASES.get(d, "application") for d in req.difficulty]
     return ["recall", "application"]
@@ -146,7 +149,7 @@ def _extract_json(text: str) -> Any:
 async def _answer(
     workspace: str,
     query: str,
-    model: Optional[str],
+    model: str | None,
 ) -> str:
     assert _cache is not None
     rag = await _cache.get(workspace)
@@ -157,13 +160,12 @@ async def _answer(
         query_model_override.reset(token)
 
 
-def _file_names(file_ids: List[str]) -> List[str]:
-    with db.connect() as conn:
-        with conn.cursor() as cur:
-            return db.file_names_for_ids(cur, file_ids)
+def _file_names(file_ids: list[str]) -> list[str]:
+    with db.connect() as conn, conn.cursor() as cur:
+        return db.file_names_for_ids(cur, file_ids)
 
 
-async def _scope_hint(chapters: Optional[List[str]], file_ids: Optional[List[str]]) -> str:
+async def _scope_hint(chapters: list[str] | None, file_ids: list[str] | None) -> str:
     """A natural-language instruction narrowing the answer to the requested
     scope.
 
@@ -183,7 +185,7 @@ async def _scope_hint(chapters: Optional[List[str]], file_ids: Optional[List[str
     if file_ids:
         try:
             names = await asyncio.to_thread(_file_names, list(file_ids))
-        except Exception:  # noqa: BLE001 — hint quality degrades, query proceeds
+        except Exception:
             log.warning("file name lookup for scope hint failed", exc_info=True)
             names = []
         if names:
@@ -209,7 +211,11 @@ def _strip_fence(text: str) -> str:
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True, "query_model": cfg.query_model, "embedding": cfg.embedding_model}
+    return {
+        "ok": True,
+        "query_model": cfg.query_model,
+        "embedding": cfg.embedding_model,
+    }
 
 
 class CloneWorkspaceReq(BaseModel):
@@ -272,7 +278,7 @@ def _sse(payload: dict) -> str:
     return f"data: {json.dumps(payload)}\n\n"
 
 
-async def _answer_stream(req: "ChatStreamReq", request: Request):
+async def _answer_stream(req: ChatStreamReq, request: Request):
     """Yield SSE events (citations -> token* -> done) for a grounded answer.
 
     Uses ``LightRAG.aquery_llm(stream=True)`` so we can iterate the token
@@ -308,7 +314,7 @@ async def _answer_stream(req: "ChatStreamReq", request: Request):
             yield _sse({"type": "token", "text": content})
 
         yield _sse({"type": "done"})
-    except Exception as e:  # noqa: BLE001 — surface any failure to the gateway
+    except Exception as e:
         log.exception("chat stream failed")
         yield _sse({"type": "error", "message": str(e)})
     finally:
@@ -333,9 +339,9 @@ async def chat_stream(req: ChatStreamReq, request: Request):
 class CompleteReq(BaseModel):
     workspaceId: str
     mode: str = "command"  # command | continue
-    prompt: Optional[str] = None
-    context: Optional[str] = None
-    model: Optional[str] = None
+    prompt: str | None = None
+    context: str | None = None
+    model: str | None = None
 
 
 def _llm_client():
@@ -344,7 +350,7 @@ def _llm_client():
     return AsyncOpenAI(api_key=cfg.llm.api_key, base_url=cfg.llm.base_url)
 
 
-def _complete_messages(req: "CompleteReq") -> list[dict]:
+def _complete_messages(req: CompleteReq) -> list[dict]:
     context = (req.context or "").strip()
     if req.mode == "continue":
         system = (
@@ -370,7 +376,7 @@ def _complete_messages(req: "CompleteReq") -> list[dict]:
     ]
 
 
-async def _complete_stream(req: "CompleteReq", request: Request):
+async def _complete_stream(req: CompleteReq, request: Request):
     model = req.model if req.model in cfg.query_models else cfg.query_model
     try:
         client = _llm_client()
@@ -387,7 +393,7 @@ async def _complete_stream(req: "CompleteReq", request: Request):
             if delta:
                 yield _sse({"type": "token", "text": delta})
         yield _sse({"type": "done"})
-    except Exception as e:  # noqa: BLE001 — surface any failure to the gateway
+    except Exception as e:
         log.exception("complete stream failed")
         yield _sse({"type": "error", "message": str(e)})
 
@@ -414,7 +420,7 @@ async def ai_command(req: CompleteReq):
         )
         text = resp.choices[0].message.content if resp.choices else ""
         return {"text": text or ""}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.exception("ai command failed")
         return {"text": "", "error": str(e)}
 
@@ -423,7 +429,7 @@ async def ai_command(req: CompleteReq):
 
 
 @app.post("/transcribe")
-async def transcribe(file: UploadFile = File(...)):
+async def transcribe(file: Annotated[UploadFile, File()]):
     """Transcribe an uploaded audio blob via a Whisper-compatible STT provider."""
     from openai import AsyncOpenAI
 
@@ -435,7 +441,7 @@ async def transcribe(file: UploadFile = File(...)):
             file=(file.filename or "audio.webm", data),
         )
         return {"text": getattr(resp, "text", "") or ""}
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.exception("transcription failed")
         return {"text": "", "error": str(e)}
 
@@ -507,7 +513,9 @@ async def generate(req: GenerateReq):
         dtype = (req.diagramType or "auto").lower()
         header = _DIAGRAM_HEADER.get(dtype)
         want = (
-            f"a Mermaid `{header}` diagram" if header else "the most appropriate Mermaid diagram"
+            f"a Mermaid `{header}` diagram"
+            if header
+            else "the most appropriate Mermaid diagram"
         )
         raw = await _answer(
             req.workspaceId,
@@ -554,11 +562,11 @@ async def generate(req: GenerateReq):
         item.setdefault("level", "application")
         # Normalize mcq/multi options to {value, explanation} objects so the UI
         # can render per-option explanations regardless of what the model emitted.
-        if item.get("type") in ("mcq", "multi") and isinstance(item.get("options"), list):
+        if item.get("type") in ("mcq", "multi") and isinstance(
+            item.get("options"), list
+        ):
             item["options"] = [
-                opt
-                if isinstance(opt, dict)
-                else {"value": str(opt), "explanation": ""}
+                opt if isinstance(opt, dict) else {"value": str(opt), "explanation": ""}
                 for opt in item["options"]
             ]
         questions.append(item)

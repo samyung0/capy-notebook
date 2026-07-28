@@ -17,8 +17,8 @@ export function AppShell() {
   }, [pathname]);
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-page text-fg">
-      <div className={cn('hidden lg:flex', hidden && 'hidden!')}>
+    <div className="flex h-dvh overflow-hidden bg-page t-body text-fg">
+      <div className={cn("hidden lg:flex", hidden && "hidden!")}>
         <Sidebar collapsed={false} />
       </div>
       <main className="h-full min-w-0 flex-1 overflow-hidden p-1.5 sm:p-2.5">

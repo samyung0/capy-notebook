@@ -254,12 +254,12 @@ export function TableRowElement({ children, ...props }: PlateElementProps) {
       {...props}
       as="tr"
       className={cn(
-        'group/row',
-        draggable.isDragging && 'opacity-45',
-        dropLine === 'top' &&
-          '[&>td]:border-t-2! [&>td]:border-t-action-accent! [&>th]:border-t-2! [&>th]:border-t-action-accent!',
-        dropLine === 'bottom' &&
-          '[&>td]:border-b-2! [&>td]:border-b-action-accent! [&>th]:border-b-2! [&>th]:border-b-action-accent!'
+        "group/row",
+        draggable.isDragging && "opacity-45",
+        dropLine === "top" &&
+          "[&>td]:border-t-2! [&>td]:border-t-action-accent! [&>th]:border-t-2! [&>th]:border-t-action-accent!",
+        dropLine === "bottom" &&
+          "[&>td]:border-b-2! [&>td]:border-b-action-accent! [&>th]:border-b-2! [&>th]:border-b-action-accent!",
       )}
       ref={useComposedRef(props.ref, draggable.previewRef, draggable.nodeRef)}
     >
@@ -270,7 +270,7 @@ export function TableRowElement({ children, ...props }: PlateElementProps) {
         >
           <button
             aria-label="Drag table row"
-            className="absolute top-1/2 left-0 z-40 flex size-5 -translate-y-1/2 cursor-grab items-center justify-center rounded-row border border-line bg-surface text-fg-muted opacity-0 shadow-sm outline-none transition-opacity hover:bg-surface-hover-bg hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-focus active:cursor-grabbing group-hover/row:opacity-100"
+            className="absolute top-1/2 left-0 z-40 flex size-5 -translate-y-1/2 cursor-grab items-center justify-center rounded-button border border-line bg-surface text-fg-muted opacity-0 shadow-sm outline-none transition-opacity hover:bg-surface-hover-bg hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-focus active:cursor-grabbing group-hover/row:opacity-100"
             contentEditable={false}
             data-plate-prevent-deselect
             onClick={() => editor.tf.select(element)}

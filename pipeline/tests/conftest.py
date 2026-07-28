@@ -1,4 +1,4 @@
-"""Shared test configuration: record-replay HTTP via VCR + a live-Postgres purge.
+"""Shared test configuration: VCR replay + ephemeral Docker infrastructure.
 
 Why record-replay
 -----------------
@@ -6,8 +6,8 @@ The pipeline's real cost is the model traffic: OpenRouter embeddings, DeepSeek
 LLM extraction/queries, Gemini VLM captions and the Modal MineRU parse call.
 We record those HTTP interactions ONCE into per-test YAML cassettes
 (``tests/cassettes/``) and replay them for free forever after. Postgres and
-Redis are raw TCP (not HTTP) so VCR never touches them — they stay live during
-tests and cost nothing.
+Redis are raw TCP (not HTTP), so cassette tests start fresh containers for
+each pytest invocation and tear them down when the session ends.
 
 Two modes (see ``tests/README.md``):
 - **replay** (default): ``EVO_TEST_RECORD`` unset. No network to model APIs;
@@ -16,9 +16,11 @@ Two modes (see ``tests/README.md``):
   + a deployed ``MODAL_PARSE_URL`` exported. Hits the real services and writes
   cassettes.
 
-Both modes need a live Postgres (+ Redis for the worker test), i.e. the compose
-DB on ``localhost:5432``.
+Both modes need Docker. The cassette fixture builds the custom pgvector+AGE
+image, starts a disposable Postgres and Redis container, and points the
+pipeline at their dynamically mapped ports.
 """
+
 from __future__ import annotations
 
 import json
@@ -33,18 +35,16 @@ import pytest
 # Environment MUST be set before any ``pipeline.*`` import (pipeline.config
 # snapshots os.environ at class-definition time). setdefault so a real
 # exported environment (record mode) always wins over these replay defaults.
+# Database and Redis URLs are installed by the cassette fixture after Docker
+# assigns fresh host ports.
 # --------------------------------------------------------------------------
 FIXTURES = Path(__file__).parent / "fixtures"
 CASSETTES = Path(__file__).parent / "cassettes"
 
 _TEST_WORKING_DIR = tempfile.mkdtemp(prefix="evo_test_rag_")
 
-os.environ.setdefault(
-    "DATABASE_URL", "postgres://evo:evo@localhost:5432/evo?sslmode=disable"
-)
 os.environ.setdefault("WORKING_DIR", _TEST_WORKING_DIR)
 os.environ.setdefault("INPUT_DIR", str(Path(_TEST_WORKING_DIR) / "inputs"))
-os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 # Deterministic ingest: no PG-cached extraction responses, so every run issues
 # the same LLM calls (record-replay depends on this).
@@ -74,18 +74,106 @@ os.environ["EVO_QUERY_MODEL_ALT"] = "deepseek-v4-flash"
 os.environ["EVO_MODEL_IMAGE_CAPTION"] = "gemini-3.1-flash-lite-preview"
 os.environ["OPENROUTER_BASE_URL"] = "https://openrouter.ai/api/v1"
 os.environ["DEEPSEEK_BASE_URL"] = "https://api.deepseek.com"
-os.environ["GEMINI_BASE_URL"] = "https://generativelanguage.googleapis.com/v1beta/openai/"
+os.environ["GEMINI_BASE_URL"] = (
+    "https://generativelanguage.googleapis.com/v1beta/openai/"
+)
 os.environ["EVO_PARSE_METHOD"] = "auto"
 
 # Dummy provider keys for replay (never sent anywhere — VCR intercepts). Real
 # keys come from the exported environment in record mode.
-for _k in ("OPENROUTER_API_KEY", "DEEPSEEK_API_KEY", "GOOGLE_API_KEY", "MODAL_PARSE_TOKEN"):
+for _k in (
+    "OPENROUTER_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "GOOGLE_API_KEY",
+    "MODAL_PARSE_TOKEN",
+):
     os.environ.setdefault(_k, "test-dummy-key")
 # Modal host is ignored by the matcher; only the ``/file_parse`` path matters.
 os.environ.setdefault("MODAL_PARSE_URL", "https://modal.test/file_parse")
 
 
 RECORD_MODE = os.getenv("EVO_TEST_RECORD", "none")
+
+
+# --------------------------------------------------------------------------
+# Ephemeral integration infrastructure
+# --------------------------------------------------------------------------
+def _configure_test_infrastructure(postgres, redis) -> None:
+    """Point imported pipeline modules at the freshly started containers."""
+    db_host = postgres.get_container_host_ip()
+    db_host = f"[{db_host}]" if ":" in db_host else db_host
+    db_port = postgres.get_exposed_port(5432)
+    redis_host = redis.get_container_host_ip()
+    redis_host = f"[{redis_host}]" if ":" in redis_host else redis_host
+    redis_port = redis.get_exposed_port(6379)
+
+    database_url = f"postgres://evo:evo@{db_host}:{db_port}/evo?sslmode=disable"
+    redis_url = f"redis://{redis_host}:{redis_port}/0"
+    os.environ.update(
+        {
+            "DATABASE_URL": database_url,
+            "REDIS_URL": redis_url,
+            "POSTGRES_HOST": db_host.strip("[]"),
+            "POSTGRES_PORT": str(db_port),
+            "POSTGRES_USER": "evo",
+            "POSTGRES_PASSWORD": "evo",
+            "POSTGRES_DATABASE": "evo",
+        }
+    )
+
+    # pipeline.config is imported while pytest collects test modules, before
+    # this fixture runs. Update its snapshot as well as the environment that
+    # LightRAG reads when each RAG instance is constructed.
+    from pipeline.config import cfg
+
+    cfg.dsn = database_url
+    cfg.redis_url = redis_url
+
+
+@pytest.fixture(scope="session")
+def _test_infra():
+    """Build and run fresh Postgres/Redis containers for cassette tests."""
+    from testcontainers.core.container import DockerContainer
+    from testcontainers.core.image import DockerImage
+    from testcontainers.core.wait_strategies import LogMessageWaitStrategy
+
+    repo_root = Path(__file__).resolve().parents[2]
+    postgres_image = DockerImage(
+        path=repo_root / "deploy" / "postgres",
+        tag=f"evo-pipeline-test-postgres:{uuid.uuid4().hex}",
+    )
+
+    with postgres_image as image:
+        postgres = DockerContainer(
+            str(image),
+            command=["postgres", "-c", "shared_preload_libraries=age"],
+            env={
+                "POSTGRES_USER": "evo",
+                "POSTGRES_PASSWORD": "evo",
+                "POSTGRES_DB": "evo",
+            },
+            ports=[5432],
+        ).waiting_for(
+            LogMessageWaitStrategy(
+                "database system is ready to accept connections"
+            ).with_startup_timeout(180)
+        )
+        with postgres:
+            redis = DockerContainer("redis:7-alpine", ports=[6379]).waiting_for(
+                LogMessageWaitStrategy("Ready to accept connections").with_startup_timeout(
+                    60
+                )
+            )
+            with redis:
+                _configure_test_infrastructure(postgres, redis)
+                yield
+
+
+def _ensure_tiktoken_encoding() -> None:
+    """Download LightRAG's public tokenizer data before VCR is enabled."""
+    import tiktoken
+
+    tiktoken.encoding_for_model("gpt-4o-mini")
 
 
 # --------------------------------------------------------------------------
@@ -209,6 +297,12 @@ def cassette(request, _vcr):
     path = CASSETTES / name
     if RECORD_MODE == "none" and not path.exists():
         pytest.skip(f"cassette {name} not recorded yet — run with EVO_TEST_RECORD=once")
+    # Resolve lazily so a missing cassette can skip without requiring Docker.
+    request.getfixturevalue("_test_infra")
+    # LightRAG initializes its tokenizer inside the cassette context. The
+    # public BPE download is not a model call and is intentionally not in the
+    # provider cassettes; populate tiktoken's local cache first.
+    _ensure_tiktoken_encoding()
     # allow_playback_repeats: concurrent entity extraction can fire an identical
     # prompt more than once; let a single recorded interaction satisfy them all.
     with _vcr.use_cassette(str(path), allow_playback_repeats=True):
@@ -241,21 +335,22 @@ def _purge_workspace(workspace: str) -> None:
 
     dsn = os.environ["DATABASE_URL"]
     graph = f"{workspace}_chunk_entity_relation"
-    with psycopg.connect(dsn, autocommit=True) as conn:
-        with conn.cursor() as cur:
-            for table in _LIGHTRAG_TABLES:
-                try:
-                    cur.execute(f"DELETE FROM {table} WHERE workspace = %s", (workspace,))
-                except psycopg.Error:
-                    conn.rollback()
+    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
+        for table in _LIGHTRAG_TABLES:
             try:
                 cur.execute(
-                    "SELECT 1 FROM ag_catalog.ag_graph WHERE name = %s", (graph,)
+                    f"DELETE FROM {table} WHERE workspace = %s", (workspace,)
                 )
-                if cur.fetchone():
-                    cur.execute("SELECT ag_catalog.drop_graph(%s, true)", (graph,))
             except psycopg.Error:
                 conn.rollback()
+        try:
+            cur.execute(
+                "SELECT 1 FROM ag_catalog.ag_graph WHERE name = %s", (graph,)
+            )
+            if cur.fetchone():
+                cur.execute("SELECT ag_catalog.drop_graph(%s, true)", (graph,))
+        except psycopg.Error:
+            conn.rollback()
 
 
 @pytest.fixture(autouse=True)
@@ -271,6 +366,7 @@ def _serial_graph_phase(monkeypatch):
     replay. Production keeps its real concurrency.
     """
     import asyncio as _asyncio
+
     import lightrag.operate as _operate
 
     real_semaphore = _asyncio.Semaphore

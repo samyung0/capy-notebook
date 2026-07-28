@@ -55,7 +55,7 @@ export function SearchDialog({
   open: boolean;
   setOpen: (open: boolean) => void;
 }) {
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState("");
   const debounced = useDebounced(q, 400);
   const { data, isFetching } = useSearch(debounced);
   const navigate = useNavigate();
@@ -65,7 +65,7 @@ export function SearchDialog({
     <Dialog
       onOpenChange={(isOpen) => {
         setOpen(isOpen);
-        if (isOpen) setQ('');
+        if (isOpen) setQ("");
       }}
       open={open}
     >
@@ -74,7 +74,7 @@ export function SearchDialog({
         className="top-[12vh] translate-y-0"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
-          (e.currentTarget as HTMLElement).querySelector('input')?.focus();
+          (e.currentTarget as HTMLElement).querySelector("input")?.focus();
         }}
         showCloseButton={false}
       >
@@ -100,14 +100,14 @@ export function SearchDialog({
               <SkeletonList className="p-1" count={5} rowHeight={48} />
             )}
             {!isFetching && !query && (
-              <div className="t-body absolute inset-0 flex items-center justify-center text-center text-fg-muted">
+              <div className="absolute inset-0 flex items-center justify-center text-center">
                 <span className="-translate-y-1/2">
                   {m.search_result_placeholder()}
                 </span>
               </div>
             )}
             {!isFetching && query && !data?.length && (
-              <div className="t-body absolute inset-0 flex items-center justify-center text-center text-fg-muted">
+              <div className="absolute inset-0 flex items-center justify-center text-center">
                 <span className="-translate-y-1/2">
                   No matches for "{query}".
                 </span>
@@ -127,7 +127,7 @@ export function SearchDialog({
                     type="button"
                   >
                     <span
-                      className="flex h-8 w-8 items-center justify-center rounded-row bg-surface-hover-bg text-fg-secondary"
+                      className="flex h-8 w-8 items-center justify-center rounded-button bg-surface-hover-bg text-fg-secondary"
                       style={c ? { background: c.bg, color: c.fg } : undefined}
                     >
                       <Icon name={KIND_ICON[r.kind]} size={16} />
@@ -188,42 +188,46 @@ function NotificationsBell() {
           variant="neutral"
         />
       </PopoverTrigger>
-      <PopoverContent className="w-80">
-        <Card border="solid" className="block p-1" radius="card">
+      <PopoverContent>
+        <Card
+          className="min-w-[320px] max-w-[480px] p-1 block"
+          border="solid"
+          radius="card"
+        >
           <div className="t-label border-divider border-b px-4 py-3 text-fg-muted">
             {m.notifications_title()}
           </div>
           <div className="max-h-96 overflow-auto">
             {!data?.length && (
-              <div className="t-body px-4 py-6 text-center text-fg-muted">
+              <div className="px-4 py-6 text-center text-fg-muted">
                 {m.notifications_empty()}
               </div>
             )}
             {data?.map((n) => {
               const content = (
                 <>
-                  <span className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-row text-solid-accent-1">
+                  <span className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-button text-solid-accent-1">
                     <Icon
                       name={
-                        n.kind === 'event'
-                          ? 'schedule'
-                          : n.kind === 'quiz'
-                            ? 'quiz'
-                            : n.kind === 'workspace_invite'
-                              ? 'workspaces'
-                              : 'bell'
+                        n.kind === "event"
+                          ? "schedule"
+                          : n.kind === "quiz"
+                            ? "quiz"
+                            : n.kind === "workspace_invite"
+                              ? "workspaces"
+                              : "bell"
                       }
                       size={20}
                     />
                   </span>
-                  <span className="t-body flex flex-col text-left">
+                  <span className="flex flex-col text-left">
                     <span className="font-semibold">{n.title}</span>
                     <span className="text-fg-secondary">{n.body}</span>
                   </span>
                 </>
               );
               const itemClass =
-                'flex w-full gap-3 border-b border-divider px-4 py-3 last:border-0';
+                "flex w-full gap-3 border-b border-divider px-4 py-3 last:border-0";
               return n.href ? (
                 <button
                   className={`${itemClass} hover:bg-surface-hover-bg`}
@@ -261,40 +265,40 @@ function ProfilePillInner({ onLogout }: { onLogout?: () => void }) {
         alignWidthToTrigger
         items={[
           {
-            icon: 'profile',
+            icon: "profile",
             label: m.profile_menu_profile(),
-            onClick: () => navigate({ to: '/profile' }),
+            onClick: () => navigate({ to: "/profile" }),
           },
           {
-            icon: 'settings',
+            icon: "settings",
             label: m.profile_menu_subscription(),
-            onClick: () => navigate({ to: '/subscription' }),
+            onClick: () => navigate({ to: "/subscription" }),
           },
           {
-            icon: 'settings',
+            icon: "settings",
             label: m.profile_menu_settings(),
-            onClick: () => navigate({ to: '/settings' }),
+            onClick: () => navigate({ to: "/settings" }),
           },
           {
-            icon: 'palette',
+            icon: "palette",
             label: m.settings_theme(),
             onClick: () => setThemeOpen(true),
           },
           {
             danger: true,
-            icon: 'logout',
+            icon: "logout",
             label: m.profile_menu_logout(),
             onClick: onLogout,
           },
         ]}
         trigger={
           <button
-            className="flex items-center gap-2.5 rounded-card bg-surface py-1 pr-3 pl-1 hover:bg-surface-hover-bg lg:rounded-pill"
+            className="flex items-center gap-2.5 bg-surface py-1 pr-3 pl-1 hover:bg-surface-hover-bg rounded-full"
             type="button"
           >
             <Avatar name={me?.name} size="md" src={me?.avatarUrl} />
             <span className="text-left">
-              <span className="block font-bold">{me?.name ?? '—'}</span>
+              <span className="block font-bold">{me?.name ?? "—"}</span>
             </span>
             <Icon className="text-fg-muted" name="chevronDown" size={16} />
           </button>

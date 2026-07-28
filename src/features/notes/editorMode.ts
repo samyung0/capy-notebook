@@ -12,8 +12,9 @@ export type NoteEditorStatus =
 export function noteEditorStatusLabel(
   status: NoteEditorStatus | null | undefined
 ): string | null {
+  console.log(status);
   if (!status) return null;
-  if (status.mode === 'suggestion') return status.dirty ? 'Unsaved' : 'Saved';
+  if (status.mode === "suggestion") return status.dirty ? "Drafting" : "Saved";
   switch (status.saveState) {
     case 'saved':
       return 'Saved';

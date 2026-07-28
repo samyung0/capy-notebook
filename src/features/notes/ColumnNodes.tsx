@@ -93,7 +93,7 @@ function ColumnFloatingToolbarContent() {
           <FloatingActionButton
             key={layout.value}
             label={layout.label}
-            // className="flex size-7 items-center justify-center rounded-row text-fg-muted hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-action"
+            // className="flex size-7 items-center justify-center rounded-button text-fg-muted hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-action"
             onClick={() => changeLayout(layout.widths)}
             type="button"
           >

@@ -106,7 +106,7 @@ export function ColorPicker({
           Document colors
         </span>
         <button
-          className="inline-flex h-7 items-center gap-1 rounded-row px-2 text-fg-secondary text-xs outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-focus"
+          className="inline-flex h-7 items-center gap-1 rounded-button px-2 text-fg-secondary text-xs outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-focus"
           data-plate-prevent-deselect
           onClick={onClear}
           onMouseDown={(event) => event.preventDefault()}
@@ -130,9 +130,9 @@ export function ColorPicker({
               aria-label={color.name}
               aria-selected={selected}
               className={cn(
-                'flex size-6 items-center justify-center rounded-pill border border-line-strong outline-none transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-focus',
+                "flex size-6 items-center justify-center rounded-full border border-line-strong outline-none transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-focus",
                 selected &&
-                  'ring-2 ring-action ring-offset-1 ring-offset-surface'
+                  "ring-2 ring-action ring-offset-1 ring-offset-surface",
               )}
               data-plate-prevent-deselect
               key={color.value}
@@ -146,8 +146,8 @@ export function ColorPicker({
               {selected && (
                 <Check
                   className={cn(
-                    'size-3.5 drop-shadow-sm',
-                    isBrightColor(color.value) ? 'text-black' : 'text-white'
+                    "size-3.5 drop-shadow-sm",
+                    isBrightColor(color.value) ? "text-black" : "text-white",
                   )}
                 />
               )}
@@ -162,7 +162,7 @@ export function ColorPicker({
           {customDraft}
           <input
             aria-label="Choose a custom color"
-            className="h-7 w-9 cursor-pointer rounded-row border border-line bg-transparent p-0.5"
+            className="h-7 w-9 cursor-pointer rounded-button border border-line bg-transparent p-0.5"
             data-plate-prevent-deselect
             defaultValue={customValue}
             ref={customInputRef}

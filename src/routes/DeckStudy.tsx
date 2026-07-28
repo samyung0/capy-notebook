@@ -19,13 +19,12 @@ import {
   IconButton,
   ProgressBar,
   Skeleton,
-  Text,
-} from '@/components/ui';
-import { CardEditModal } from '@/features/flashcards/CardEditModal';
-import { ShareDialog } from '@/features/workspace/ShareDialog';
-import { m } from '@/i18n';
-import { toastCloneError } from '@/lib/authToasts';
-import { cn } from '@/lib/cn';
+} from "@/components/ui";
+import { CardEditModal } from "@/features/flashcards/CardEditModal";
+import { ShareDialog } from "@/features/workspace/ShareDialog";
+import { m } from "@/i18n";
+import { toastCloneError } from "@/lib/authToasts";
+import { cn } from "@/lib/cn";
 import {
   isDue,
   isKnown,
@@ -33,19 +32,19 @@ import {
   reviewSrs,
   SRS_RATINGS,
   type SrsRating,
-} from '@/lib/srs';
+} from "@/lib/srs";
 
 const RATING_LABEL: Record<SrsRating, string> = {
-  again: 'Again',
-  easy: 'Easy',
-  good: 'Good',
-  hard: 'Hard',
+  again: "Again",
+  easy: "Easy",
+  good: "Good",
+  hard: "Hard",
 };
 const RATING_STYLE: Record<SrsRating, string> = {
-  again: 'border-tint-error text-tint-error-fg hover:bg-tint-error',
-  easy: 'border-tint-success text-tint-success-fg hover:bg-tint-success',
-  good: 'border-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1',
-  hard: 'border-tint-warning text-tint-warning-fg hover:bg-tint-warning',
+  again: "border-tint-error text-tint-error-fg hover:bg-tint-error",
+  easy: "border-tint-success text-tint-success-fg hover:bg-tint-success",
+  good: "border-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1",
+  hard: "border-tint-warning text-tint-warning-fg hover:bg-tint-warning",
 };
 
 export default function DeckStudy() {
@@ -73,12 +72,12 @@ export default function DeckStudy() {
   const [queue, setQueue] = useState<string[] | null>(null);
   const [sessionTotal, setSessionTotal] = useState(0);
   const [flipped, setFlipped] = useState(false);
-  const [editing, setEditing] = useState<Flashcard | 'new' | null>(null);
+  const [editing, setEditing] = useState<Flashcard | "new" | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
 
   const dueIds = useMemo(
     () => (cards ? cards.filter((c) => isDue(c.srs)).map((c) => c.id) : []),
-    [cards]
+    [cards],
   );
 
   // Seed the session queue once, from the currently-due cards.
@@ -110,8 +109,8 @@ export default function DeckStudy() {
           backTo="/flashcards"
           title={
             denied
-              ? 'This item is private or unavailable.'
-              : 'Unable to load deck.'
+              ? "This item is private or unavailable."
+              : "Unable to load deck."
           }
         />
       );
@@ -136,7 +135,7 @@ export default function DeckStudy() {
       if (!q) return q;
       const [head, ...rest] = q;
       // "Again" cycles the card back to the end of this session.
-      return rating === 'again' ? [...rest, head] : rest;
+      return rating === "again" ? [...rest, head] : rest;
     });
   }
 
@@ -156,9 +155,7 @@ export default function DeckStudy() {
       >
         <Icon name="chevronLeft" size={20} />
       </Link>
-      <Text className="flex-1 truncate" variant="subtitle">
-        {deck?.name}
-      </Text>
+      <h1 className="flex-1 truncate t-subtitle">{deck?.name}</h1>
       {isOwner ? (
         <>
           <IconButton
@@ -171,7 +168,7 @@ export default function DeckStudy() {
           <IconButton
             icon="plus"
             label={m.flashcards_add_card()}
-            onClick={() => setEditing('new')}
+            onClick={() => setEditing("new")}
             size="sm"
             variant="outline"
           />
@@ -182,17 +179,17 @@ export default function DeckStudy() {
           iconLeft="plus"
           onClick={() =>
             cloneDeck.mutate(deckId, {
-              onError: (err) => toastCloneError(err, 'deck'),
+              onError: (err) => toastCloneError(err, "deck"),
               onSuccess: (copy) =>
                 navigate({
                   params: { deckId: copy.id },
-                  to: '/flashcards/$deckId',
+                  to: "/flashcards/$deckId",
                 }),
             })
           }
           size="sm"
         >
-          {cloneDeck.isPending ? 'Cloning…' : 'Clone deck'}
+          {cloneDeck.isPending ? "Cloning…" : "Clone deck"}
         </Button>
       )}
     </div>
@@ -209,21 +206,21 @@ export default function DeckStudy() {
             <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-success text-tint-success-fg">
               <Icon name="check" size={30} />
             </span>
-            <Text variant="section">
+            <h2 className="t-large-card-title">
               {cards.length === 0
                 ? m.flashcards_empty_deck()
                 : m.flashcards_all_caught_up()}
-            </Text>
+            </h2>
             {cards.length > 0 && (
-              <Text tone="muted" variant="body">
+              <p className="text-fg-muted">
                 {m.flashcards_scheduled_hint({ count: notDue })}
-              </Text>
+              </p>
             )}
             <div className="mt-2 flex gap-3">
               {isOwner && (
                 <Button
                   iconLeft="plus"
-                  onClick={() => setEditing('new')}
+                  onClick={() => setEditing("new")}
                   variant="outline"
                 >
                   {m.flashcards_add_card()}
@@ -277,19 +274,13 @@ export default function DeckStudy() {
           onClick={() => setFlipped((f) => !f)}
           type="button"
         >
-          <Text tone="muted" variant="label">
+          <p className="t-label text-fg-muted">
             {flipped ? m.flashcards_answer() : m.flashcards_term()}
-          </Text>
-          <Text className="mt-3" variant="section">
-            {flipped ? card.back : card.front}
-          </Text>
-          <Text
-            className="mt-6 flex items-center gap-1"
-            tone="muted"
-            variant="meta"
-          >
+          </p>
+          <h2 className="mt-3 t-section">{flipped ? card.back : card.front}</h2>
+          <p className="mt-6 flex items-center gap-1 text-fg-muted t-meta">
             <Icon name="message" size={13} /> {m.flashcards_tap_flip()}
-          </Text>
+          </p>
         </button>
 
         {isOwner && (
@@ -316,8 +307,8 @@ export default function DeckStudy() {
             {SRS_RATINGS.map((r) => (
               <button
                 className={cn(
-                  'flex flex-col items-center gap-0.5 rounded-card border px-2 py-2.5 font-semibold text-sm transition-colors',
-                  RATING_STYLE[r]
+                  "flex flex-col items-center gap-0.5 rounded-card border px-2 py-2.5 font-semibold text-sm transition-colors",
+                  RATING_STYLE[r],
                 )}
                 key={r}
                 onClick={() => rate(r)}
@@ -345,7 +336,7 @@ export default function DeckStudy() {
 
       {isOwner && (
         <CardEditModal
-          card={editing === 'new' ? null : editing}
+          card={editing === "new" ? null : editing}
           deckId={deckId}
           onClose={() => setEditing(null)}
           open={editing !== null}
@@ -359,7 +350,7 @@ export default function DeckStudy() {
             updateDeck.mutateAsync({ id: deck.id, privacy })
           }
           open={shareOpen}
-          privacy={deck.privacy ?? 'private'}
+          privacy={deck.privacy ?? "private"}
           saving={updateDeck.isPending}
           title={`Share ${deck.name}`}
         />

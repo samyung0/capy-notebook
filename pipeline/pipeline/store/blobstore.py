@@ -8,13 +8,14 @@ keep working untouched, then deletes it once ingest is done.
 ``fetch_local`` is synchronous (boto3 + file IO block); the worker calls it via
 ``asyncio.to_thread`` so the event loop is never blocked.
 """
+
 from __future__ import annotations
 
 import logging
 import os
 import tempfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Tuple
 
 from ..config import cfg
 
@@ -38,7 +39,7 @@ def _s3_client():
     return _client
 
 
-def fetch_local(blob_path: str) -> Tuple[str, Callable[[], None]]:
+def fetch_local(blob_path: str) -> tuple[str, Callable[[], None]]:
     """Return ``(local_path, cleanup)`` for ``blob_path``.
 
     Downloads the B2 object to a temp file; ``cleanup`` deletes it.

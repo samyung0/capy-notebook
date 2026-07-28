@@ -7,7 +7,7 @@
    ============================================================ */
 
 /* ---------------- NOTION · LIGHT ---------------- */
-[data-style="notion"][data-theme="light"] {
+[data-style="notion"][data-theme="latte"] {
   --surface-page: #ffffff;
   --surface-canvas: #ffffff;
   --surface-card-bg: #ffffff;
@@ -91,7 +91,7 @@
 }
 
 /* ---------------- NOTION · DARK ---------------- */
-[data-style="notion"][data-theme="dark"] {
+[data-style="notion"][data-theme="mocha"] {
   --surface-page: #191919;
   --surface-canvas: #191919;
   --surface-card-bg: #202020;

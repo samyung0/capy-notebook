@@ -4,16 +4,16 @@ import { isApiError } from '@/api/client';
 import { useCloneQuiz, useQuiz, useSubmitAttempt } from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { PrivateOrUnavailable } from '@/components/app/PrivateOrUnavailable';
-import { Button, Icon, ProgressBar, Skeleton, Text } from '@/components/ui';
-import { userToast } from '@/components/ui/userToast';
+import { Button, Icon, ProgressBar, Skeleton } from "@/components/ui";
+import { userToast } from "@/components/ui/userToast";
 import {
   type Answer,
   emptyAnswer,
   gradeQuestion,
-} from '@/features/quizzes/grade';
-import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
-import { m } from '@/i18n';
-import { toastCloneError, toastSignInRequired } from '@/lib/authToasts';
+} from "@/features/quizzes/grade";
+import { QuestionRunner } from "@/features/quizzes/QuestionRunner";
+import { m } from "@/i18n";
+import { toastCloneError, toastSignInRequired } from "@/lib/authToasts";
 
 export default function QuizAttempt() {
   const params = useParams({ strict: false });
@@ -30,7 +30,7 @@ export default function QuizAttempt() {
   const score = useMemo(() => {
     if (!quiz) return { correct: 0, total: 0 };
     const correct = quiz.questions.filter((q) =>
-      gradeQuestion(q, answers[q.id])
+      gradeQuestion(q, answers[q.id]),
     ).length;
     return { correct, total: quiz.questions.length };
   }, [quiz, answers]);
@@ -54,8 +54,8 @@ export default function QuizAttempt() {
         backTo="/quizzes"
         title={
           denied
-            ? 'This item is private or unavailable.'
-            : 'Unable to load quiz.'
+            ? "This item is private or unavailable."
+            : "Unable to load quiz."
         }
       />
     );
@@ -68,7 +68,7 @@ export default function QuizAttempt() {
           <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-success text-tint-success-fg">
             <Icon name="check" size={30} />
           </span>
-          <Text variant="section">{m.quiz_no_questions()}</Text>
+          <p className="t-large-card-title">{m.quiz_no_questions()}</p>
           <Link preload="intent" to="/quizzes">
             <Button iconLeft="chevronLeft">{m.quiz_back()}</Button>
           </Link>
@@ -83,7 +83,7 @@ export default function QuizAttempt() {
   function finish() {
     if (!quiz) return;
     const wrong = quiz.questions.filter(
-      (qq) => !gradeQuestion(qq, answers[qq.id])
+      (qq) => !gradeQuestion(qq, answers[qq.id]),
     );
     submit.mutate(
       {
@@ -98,20 +98,20 @@ export default function QuizAttempt() {
         onError: (err) => {
           if (isApiError(err) && err.status === 401) {
             toastSignInRequired(
-              'Sign in to save your score',
-              'Create an account before recording a quiz attempt.'
+              "Sign in to save your score",
+              "Create an account before recording a quiz attempt.",
             );
             return;
           }
           userToast({
             description:
-              err instanceof Error ? err.message : 'Please try again.',
-            title: 'Could not save attempt',
-            variant: 'error',
+              err instanceof Error ? err.message : "Please try again.",
+            title: "Could not save attempt",
+            variant: "error",
           });
         },
         onSuccess: () => setDone(true),
-      }
+      },
     );
   }
 
@@ -123,16 +123,16 @@ export default function QuizAttempt() {
           <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-accent-1 text-tint-accent-1-fg">
             <Icon name="quiz" size={30} />
           </span>
-          <Text variant="page-title">
+          <p className="t-page-title">
             {score.correct} / {score.total}
-          </Text>
-          <Text tone="secondary" variant="body">
+          </p>
+          <p className="text-fg-muted t-body">
             You scored {pct}% on {quiz.name}.
-          </Text>
+          </p>
           <div className="w-full max-w-sm">
             <ProgressBar
               height={8}
-              tone={pct >= 70 ? 'green' : pct >= 55 ? 'amber' : 'coral'}
+              tone={pct >= 70 ? "green" : pct >= 55 ? "amber" : "coral"}
               value={pct}
             />
           </div>
@@ -146,19 +146,19 @@ export default function QuizAttempt() {
                 >
                   <Icon
                     className={
-                      ok ? 'text-tint-success-fg' : 'text-tint-error-fg'
+                      ok ? "text-tint-success-fg" : "text-tint-error-fg"
                     }
-                    name={ok ? 'check' : 'x'}
+                    name={ok ? "check" : "x"}
                     size={16}
                   />
                   <div className="flex-1">
-                    <Text variant="meta">
+                    <p className="t-meta">
                       {i + 1}. {qq.prompt}
-                    </Text>
+                    </p>
                     {!ok && qq.explanation && (
-                      <Text className="mt-1" tone="muted" variant="meta">
+                      <p className="mt-1 text-fg-muted t-meta">
                         {qq.explanation}
-                      </Text>
+                      </p>
                     )}
                   </div>
                 </div>
@@ -190,26 +190,26 @@ export default function QuizAttempt() {
               value={((idx + 1) / quiz.questions.length) * 100}
             />
           </div>
-          <Text className="tabular-nums" tone="muted" variant="meta">
+          <p className="tabular-nums text-fg-muted t-meta">
             {idx + 1} / {quiz.questions.length}
-          </Text>
+          </p>
           {!quiz.isOwner && (
             <Button
               disabled={cloneQuiz.isPending}
               iconLeft="plus"
               onClick={() =>
                 cloneQuiz.mutate(quizId, {
-                  onError: (err) => toastCloneError(err, 'quiz'),
+                  onError: (err) => toastCloneError(err, "quiz"),
                   onSuccess: (copy) =>
                     navigate({
                       params: { quizId: copy.id },
-                      to: '/quizzes/$quizId/attempt',
+                      to: "/quizzes/$quizId/attempt",
                     }),
                 })
               }
               size="sm"
             >
-              {cloneQuiz.isPending ? 'Cloning…' : 'Clone'}
+              {cloneQuiz.isPending ? "Cloning…" : "Clone"}
             </Button>
           )}
         </div>
@@ -245,7 +245,7 @@ export default function QuizAttempt() {
               onClick={finish}
               variant="accent"
             >
-              {submit.isPending ? 'Saving…' : 'Finish'}
+              {submit.isPending ? "Saving…" : "Finish"}
             </Button>
           )}
         </div>

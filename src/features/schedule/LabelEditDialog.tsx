@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { Label, UserColor } from '@/api/types';
-import { Button, Input, SimpleDialog, Text } from '@/components/ui';
-import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
-import { USER_COLORS, userColorPair } from '@/lib/userColor';
+import { Button, Input, SimpleDialog } from "@/components/ui";
+import { m } from "@/i18n";
+import { cn } from "@/lib/cn";
+import { USER_COLORS, userColorPair } from "@/lib/userColor";
 
 export interface LabelFormValues {
   color: UserColor;
@@ -48,9 +48,7 @@ export function LabelEditDialog({
     >
       <div className="flex flex-col gap-4">
         <label className="flex flex-col gap-1.5">
-          <Text tone="muted" variant="label">
-            Name
-          </Text>
+          <p className="t-label text-fg-muted">Name</p>
           <Input
             autoFocus
             onChange={(e) => setName(e.target.value)}
@@ -59,9 +57,7 @@ export function LabelEditDialog({
         </label>
 
         <div className="flex flex-col gap-1.5">
-          <Text tone="muted" variant="label">
-            Color
-          </Text>
+          <p className="t-label text-fg-muted">Color</p>
           <div className="flex gap-2">
             {USER_COLORS.map((c) => {
               const p = userColorPair(c);
@@ -69,9 +65,9 @@ export function LabelEditDialog({
                 <button
                   aria-label={c}
                   className={cn(
-                    'h-8 w-8 rounded-pill transition-transform',
+                    "h-8 w-8 rounded-full transition-transform",
                     color === c &&
-                      'ring-2 ring-action ring-offset-2 ring-offset-surface'
+                      "ring-2 ring-action ring-offset-2 ring-offset-surface",
                   )}
                   key={c}
                   onClick={() => setColor(c)}

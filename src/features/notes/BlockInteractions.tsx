@@ -119,11 +119,11 @@ function DraggableBlock(props: PlateElementProps) {
   return (
     <div
       className={cn(
-        'relative',
-        isDragging && 'opacity-50',
+        "relative",
+        isDragging && "opacity-50",
         getPluginByType(editor, element.type)?.node.isContainer
-          ? 'group/container'
-          : 'group'
+          ? "group/container"
+          : "group",
       )}
       onMouseEnter={() => {
         if (isDragging) return;
@@ -136,16 +136,16 @@ function DraggableBlock(props: PlateElementProps) {
     >
       {!isInTable && (
         <Gutter>
-          <div className={cn('flex h-[1.5em]', isInColumn && 'h-4')}>
+          <div className={cn("flex h-[1.5em]", isInColumn && "h-4")}>
             <div
               className={cn(
-                'pointer-events-auto relative mr-1 flex w-4.5 items-center',
-                isInColumn && 'mr-1.5'
+                "pointer-events-auto relative mr-1 flex w-4.5 items-center",
+                isInColumn && "mr-1.5",
               )}
             >
               <button
                 aria-label="Drag block"
-                className="absolute left-0 flex h-6 w-full cursor-grab items-center justify-center rounded-row p-0 text-fg-muted hover:bg-surface-hover-bg active:cursor-grabbing"
+                className="absolute left-0 flex h-6 w-full cursor-grab items-center justify-center rounded-button p-0 text-fg-muted hover:bg-surface-hover-bg active:cursor-grabbing"
                 contentEditable={false}
                 data-plate-prevent-deselect
                 ref={handleRef}

@@ -27,7 +27,7 @@ export default function CanvasEditor({
 
   return (
     <div className="h-full w-full">
-      <Excalidraw
+      {/* <Excalidraw
         initialData={{
           elements: (scene.elements as never) ?? [],
           scrollToContent: true,
@@ -36,8 +36,8 @@ export default function CanvasEditor({
           if (timer.current) clearTimeout(timer.current);
           timer.current = setTimeout(() => onChange({ elements }), 800);
         }}
-        theme={theme === 'dark' ? 'dark' : 'light'}
-      />
+        theme={theme === 'mocha' ? 'mocha' : 'latte'}
+      /> */}
     </div>
   );
 }

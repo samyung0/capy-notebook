@@ -31,7 +31,7 @@ export function OneDriveImportDialog({
       <div className="flex max-h-64 flex-col gap-1 overflow-auto">
         {(msFiles ?? []).map((f) => (
           <button
-            className="rounded-row px-3 py-2 text-left text-sm hover:bg-surface-hover-bg"
+            className="rounded-button px-3 py-2 text-left text-sm hover:bg-surface-hover-bg"
             key={f.id}
             onClick={() => importMicrosoft([f.id])}
             type="button"

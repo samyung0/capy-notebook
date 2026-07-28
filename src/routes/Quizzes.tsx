@@ -22,15 +22,14 @@ import {
   SkeletonCardGrid,
   SkeletonList,
   Tabs,
-  Text,
-} from '@/components/ui';
-import { ShareDialog } from '@/features/workspace/ShareDialog';
-import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
-import { usePortals } from '@/stores/portals';
+} from "@/components/ui";
+import { ShareDialog } from "@/features/workspace/ShareDialog";
+import { m } from "@/i18n";
+import { cn } from "@/lib/cn";
+import { usePortals } from "@/stores/portals";
 
-function scoreTone(pct: number): 'success' | 'warning' | 'error' {
-  return pct >= 70 ? 'success' : pct >= 55 ? 'warning' : 'error';
+function scoreTone(pct: number): "success" | "warning" | "error" {
+  return pct >= 70 ? "success" : pct >= 55 ? "warning" : "error";
 }
 
 function ReviewMistakesCard() {
@@ -40,27 +39,25 @@ function ReviewMistakesCard() {
   return (
     <Card
       border="solid"
-      className={cn('gap-3 p-4.5 xl:p-5.5', count === 0 && 'opacity-60')}
+      className={cn("gap-3 p-4.5 xl:p-5.5", count === 0 && "opacity-60")}
       interactive={count > 0}
       onClick={() =>
         count > 0 &&
         navigate({
-          params: { quizId: 'review_mistakes' },
-          to: '/quizzes/$quizId/attempt',
+          params: { quizId: "review_mistakes" },
+          to: "/quizzes/$quizId/attempt",
         })
       }
     >
       <span className="flex h-11 w-11 items-center justify-center rounded-card bg-tint-error text-tint-error-fg">
         <Icon name="help" size={20} />
       </span>
-      <Text className="mt-3 truncate" variant="card-title">
-        {m.quiz_review_mistakes()}
-      </Text>
-      <Text className="mt-1" tone="muted" variant="meta">
+      <p className="mt-3 truncate t-card-title">{m.quiz_review_mistakes()}</p>
+      <p className="mt-1 text-fg-muted t-meta">
         {count > 0
           ? m.quiz_review_mistakes_count({ count })
           : m.quiz_review_mistakes_empty()}
-      </Text>
+      </p>
     </Card>
   );
 }
@@ -92,16 +89,14 @@ function AllQuizzes() {
             <span className="flex h-11 w-11 items-center justify-center rounded-card bg-tint-accent-1 text-tint-accent-1-fg">
               <Icon name="quiz" size={20} />
             </span>
-            <Text className="mt-3 truncate" variant="card-title">
-              {q.name}
-            </Text>
+            <p className="mt-3 truncate t-card-title">{q.name}</p>
             <span className="mt-1 flex items-center gap-1 text-fg-muted text-xs">
-              <Icon name="book" size={13} /> {q.workspaceName || 'Standalone'}
+              <Icon name="book" size={13} /> {q.workspaceName || "Standalone"}
             </span>
-            <Text className="mt-1" tone="muted" variant="meta">
-              {q.questions.length} questions ·{' '}
-              {q.chapters.join(', ') || 'All chapters'}
-            </Text>
+            <p className="mt-1 text-fg-muted t-meta">
+              {q.questions.length} questions ·{" "}
+              {q.chapters.join(", ") || "All chapters"}
+            </p>
             <div
               className="absolute top-3 right-3"
               onClick={(e) => e.stopPropagation()}
@@ -109,36 +104,36 @@ function AllQuizzes() {
               <Menu
                 items={[
                   {
-                    icon: 'settings',
+                    icon: "settings",
                     label: m.action_edit(),
                     onClick: () =>
                       navigate({
                         params: { quizId: q.id },
-                        to: '/quizzes/$quizId/edit',
+                        to: "/quizzes/$quizId/edit",
                       }),
                   },
                   {
-                    icon: 'quiz',
-                    label: 'Start quiz',
+                    icon: "quiz",
+                    label: "Start quiz",
                     onClick: () =>
                       navigate({
                         params: { quizId: q.id },
-                        to: '/quizzes/$quizId/attempt',
+                        to: "/quizzes/$quizId/attempt",
                       }),
                   },
                   {
-                    icon: 'link',
-                    label: 'Share',
+                    icon: "link",
+                    label: "Share",
                     onClick: () => setSharing(q),
                   },
                   {
-                    icon: 'plus',
-                    label: 'Clone',
+                    icon: "plus",
+                    label: "Clone",
                     onClick: () => clone.mutate(q.id),
                   },
                   {
                     danger: true,
-                    icon: 'trash',
+                    icon: "trash",
                     label: m.action_delete(),
                     onClick: () =>
                       openConfirm({
@@ -166,7 +161,7 @@ function AllQuizzes() {
                 onClick={() =>
                   navigate({
                     params: { quizId: info.id },
-                    to: '/quizzes/$quizId/attempt',
+                    to: "/quizzes/$quizId/attempt",
                   })
                 }
               >
@@ -181,17 +176,17 @@ function AllQuizzes() {
       >
         {info && (
           <div className="flex flex-col gap-2">
-            <Text variant="body">
-              <b>{info.questions.length}</b> questions across{' '}
-              {info.chapters.length || 'all'} chapters.
-            </Text>
-            <Text tone="secondary" variant="body">
-              Workspace: {info.workspaceName || 'Standalone'}
-            </Text>
+            <p>
+              <b>{info.questions.length}</b> questions across{" "}
+              {info.chapters.length || "all"} chapters.
+            </p>
+            <p className="text-fg-secondary">
+              Workspace: {info.workspaceName || "Standalone"}
+            </p>
             {(info.timeLimitMin ?? 0) > 0 && (
-              <Text tone="secondary" variant="body">
+              <p className="text-fg-secondary">
                 Time limit: {info.timeLimitMin} min
-              </Text>
+              </p>
             )}
             <div className="mt-2 flex flex-wrap gap-1">
               {[...new Set(info.questions.map((q) => q.type))].map((t) => (
@@ -226,11 +221,7 @@ function PastAttempts() {
   const navigate = useNavigate();
   if (isLoading) return <SkeletonList count={6} rowHeight={52} />;
   if (!data?.length)
-    return (
-      <Text className="py-8 text-center" tone="muted" variant="body">
-        No attempts yet.
-      </Text>
-    );
+    return <p className="py-8 text-center text-fg-muted">No attempts yet.</p>;
 
   return (
     <div className="overflow-hidden rounded-card border border-line">
@@ -264,7 +255,7 @@ function PastAttempts() {
               onClick={() =>
                 navigate({
                   params: { attemptId: a.id },
-                  to: '/quizzes/attempts/$attemptId',
+                  to: "/quizzes/attempts/$attemptId",
                 })
               }
               size="sm"

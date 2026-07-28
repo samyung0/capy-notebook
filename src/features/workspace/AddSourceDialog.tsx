@@ -27,13 +27,12 @@ import {
   SelectValue,
   SimpleDialog,
   Tabs,
-  Text,
-} from '@/components/ui';
-import { userToast } from '@/components/ui/userToast';
-import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
-import { useProviderConnect } from '@/lib/useProviderConnect';
-import { usePortals } from '@/stores/portals';
+} from "@/components/ui";
+import { userToast } from "@/components/ui/userToast";
+import { m } from "@/i18n";
+import { cn } from "@/lib/cn";
+import { useProviderConnect } from "@/lib/useProviderConnect";
+import { usePortals } from "@/stores/portals";
 import {
   aggregateUploadPct,
   defaultParseMode,
@@ -42,14 +41,14 @@ import {
   isTextKind,
   type ParseMode,
   parseModeIssues,
-} from './sourceUpload';
+} from "./sourceUpload";
 
 /** Count a PDF's pages with pdfjs (already bundled via react-pdf, loaded on
  * demand). Returns null for non-PDFs and unreadable/encrypted files. */
 async function pdfPageCount(file: File): Promise<number | null> {
-  if (fileExt(file.name) !== 'pdf') return null;
+  if (fileExt(file.name) !== "pdf") return null;
   try {
-    const { pdfjs } = await import('react-pdf');
+    const { pdfjs } = await import("react-pdf");
     if (!pdfjs.GlobalWorkerOptions.workerSrc) {
       pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
     }
@@ -72,7 +71,7 @@ interface GooglePickerBuilder {
   addView: (v: unknown) => GooglePickerBuilder;
   build: () => { setVisible: (v: boolean) => void };
   setCallback: (
-    cb: (data: { action: string; docs?: { id: string }[] }) => void
+    cb: (data: { action: string; docs?: { id: string }[] }) => void,
   ) => GooglePickerBuilder;
   setOAuthToken: (t: string) => GooglePickerBuilder;
 }
@@ -82,9 +81,7 @@ declare global {
     google?: {
       picker: {
         ViewId: { DOCS: string };
-        DocsView: new (
-          viewId: string
-        ) => {
+        DocsView: new (viewId: string) => {
           setIncludeFolders: (v: boolean) => unknown;
         };
         PickerBuilder: new () => GooglePickerBuilder;
@@ -99,22 +96,22 @@ function loadGooglePicker(): Promise<void> {
       resolve();
       return;
     }
-    const script = document.createElement('script');
-    script.src = 'https://apis.google.com/js/api.js';
+    const script = document.createElement("script");
+    script.src = "https://apis.google.com/js/api.js";
     script.onload = () => {
       (
         window as unknown as {
           gapi: { load: (n: string, cb: () => void) => void };
         }
-      ).gapi.load('picker', () => resolve());
+      ).gapi.load("picker", () => resolve());
     };
-    script.onerror = () => reject(new Error('failed to load google picker'));
+    script.onerror = () => reject(new Error("failed to load google picker"));
     document.head.appendChild(script);
   });
 }
 
-const NO_CHAPTER = '__none__';
-const CREATE_CHAPTER = '__create__';
+const NO_CHAPTER = "__none__";
+const CREATE_CHAPTER = "__create__";
 
 function ChapterSelect({
   chapters,
@@ -183,7 +180,7 @@ interface PendingFile {
   chapterName: string | null;
   file: File;
   key: string;
-  kind: SourceFile['kind'];
+  kind: SourceFile["kind"];
   /** PDF page count via pdfjs; undefined = still counting, null = unknown. */
   pageCount?: number | null;
   parseMode: ParseMode;
@@ -199,13 +196,13 @@ function ParseModeSelect({
   policy: SourceUploadPolicy;
   onChange: (mode: ParseMode) => void;
 }) {
-  if (pending.kind === 'unknown') return;
+  if (pending.kind === "unknown") return;
   if (isTextKind(pending.kind, policy)) return;
   const issues = parseModeIssues(
     pending.file,
     pending.kind,
     policy,
-    pending.pageCount
+    pending.pageCount,
   );
   if (issues.advanced && issues.normal) return;
   return (
@@ -219,10 +216,10 @@ function ParseModeSelect({
       <SelectContent>
         <SelectGroup>
           <SelectItem disabled={!!issues.advanced} size="sm" value="advanced">
-            Advanced parsing{issues.advanced ? ` (${issues.advanced})` : ''}
+            Advanced parsing{issues.advanced ? ` (${issues.advanced})` : ""}
           </SelectItem>
           <SelectItem disabled={!!issues.normal} size="sm" value="normal">
-            Normal parsing{issues.normal ? ` (${issues.normal})` : ''}
+            Normal parsing{issues.normal ? ` (${issues.normal})` : ""}
           </SelectItem>
           <SelectItem size="sm" value="none">
             No parsing
@@ -251,7 +248,7 @@ function UploadFiles({
   const [files, setFiles] = useState<PendingFile[]>([]);
   // Row currently typing a new chapter name (replaces its chapter select).
   const [creatingKey, setCreatingKey] = useState<string | null>(null);
-  const [newChapterName, setNewChapterName] = useState('');
+  const [newChapterName, setNewChapterName] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(
@@ -259,16 +256,16 @@ function UploadFiles({
       for (const controller of uploadControllers.current.values())
         controller.abort();
     },
-    []
+    [],
   );
 
   function handleFiles(list: FileList | null) {
     if (!list?.length) return;
     if (!uploadPolicy) {
       userToast({
-        description: 'Please try again in a moment.',
-        title: 'Upload formats are still loading',
-        variant: 'error',
+        description: "Please try again in a moment.",
+        title: "Upload formats are still loading",
+        variant: "error",
       });
       return;
     }
@@ -283,43 +280,43 @@ function UploadFiles({
         parseMode: defaultParseMode(f, kind, uploadPolicy),
       };
     });
-    const added = candidates.filter((file) => file.kind !== 'unknown');
-    const rejected = candidates.filter((file) => file.kind === 'unknown');
+    const added = candidates.filter((file) => file.kind !== "unknown");
+    const rejected = candidates.filter((file) => file.kind === "unknown");
     if (rejected.length) {
       userToast({
-        description: rejected.map((file) => file.file.name).join(', '),
-        title: 'Unsupported file format',
-        variant: 'error',
+        description: rejected.map((file) => file.file.name).join(", "),
+        title: "Unsupported file format",
+        variant: "error",
       });
     }
     if (!added.length) {
-      if (inputRef.current) inputRef.current.value = '';
+      if (inputRef.current) inputRef.current.value = "";
       return;
     }
     setFiles((prev) => [...prev, ...added]);
-    if (inputRef.current) inputRef.current.value = '';
+    if (inputRef.current) inputRef.current.value = "";
     // Count PDF pages in the background; if the count invalidates the row's
     // current mode (normal + >20 pages), fall back to the best valid one.
     for (const row of added) {
-      if (fileExt(row.file.name) !== 'pdf') continue;
+      if (fileExt(row.file.name) !== "pdf") continue;
       void pdfPageCount(row.file).then((n) => {
         setFiles((prev) =>
           prev.map((f) => {
             if (f.key !== row.key) return f;
             const next: PendingFile = { ...f, pageCount: n };
             if (
-              f.parseMode !== 'none' &&
+              f.parseMode !== "none" &&
               parseModeIssues(f.file, f.kind, uploadPolicy, n)[f.parseMode]
             ) {
               next.parseMode = defaultParseMode(
                 f.file,
                 f.kind,
                 uploadPolicy,
-                n
+                n,
               );
             }
             return next;
-          })
+          }),
         );
       });
     }
@@ -327,7 +324,7 @@ function UploadFiles({
 
   function patchFile(key: string, patch: Partial<PendingFile>) {
     setFiles((prev) =>
-      prev.map((f) => (f.key === key ? { ...f, ...patch } : f))
+      prev.map((f) => (f.key === key ? { ...f, ...patch } : f)),
     );
   }
 
@@ -337,14 +334,14 @@ function UploadFiles({
     // Reuse an existing chapter when it is already loaded. New names travel
     // with the upload and are resolved atomically by the backend.
     const existing = chapters?.find(
-      (c) => c.name.toLowerCase() === name.toLowerCase()
+      (c) => c.name.toLowerCase() === name.toLowerCase(),
     );
     patchFile(key, {
       chapterId: existing?.id ?? null,
       chapterName: existing ? null : name,
     });
     setCreatingKey(null);
-    setNewChapterName('');
+    setNewChapterName("");
   }
 
   const handleUpload = async () => {
@@ -367,23 +364,23 @@ function UploadFiles({
             signal: controller.signal,
           })
           .finally(() => uploadControllers.current.delete(f.key));
-      })
+      }),
     );
     setIsSubmitting(false);
-    if (results.every((r) => r.status === 'fulfilled')) {
+    if (results.every((r) => r.status === "fulfilled")) {
       setFiles([]);
       setConfirmOpen(false);
       onClose?.();
     } else {
       const succeededKeys = new Set(
         batch
-          .filter((_, index) => results[index]?.status === 'fulfilled')
-          .map((file) => file.key)
+          .filter((_, index) => results[index]?.status === "fulfilled")
+          .map((file) => file.key),
       );
       setFiles((prev) => prev.filter((file) => !succeededKeys.has(file.key)));
       userToast({
-        title: 'Some files failed to upload',
-        variant: 'error',
+        title: "Some files failed to upload",
+        variant: "error",
       });
     }
   };
@@ -394,24 +391,24 @@ function UploadFiles({
     return `${(totalBytes / 1024 / 1024).toFixed(1)} MB`;
   };
   const normalParse = uploadPolicy?.parseModes.find(
-    (mode) => mode.mode === 'normal'
+    (mode) => mode.mode === "normal",
   );
   const advancedParse = uploadPolicy?.parseModes.find(
-    (mode) => mode.mode === 'advanced'
+    (mode) => mode.mode === "advanced",
   );
   const aggregateProgress = aggregateUploadPct(
-    files.map((file) => ({ size: file.file.size, uploadPct: file.uploadPct }))
+    files.map((file) => ({ size: file.file.size, uploadPct: file.uploadPct })),
   );
   const completedUploads = files.filter(
-    (file) => file.uploadPct === 100
+    (file) => file.uploadPct === 100,
   ).length;
 
   return (
-    <div className={cn('flex flex-col gap-4', className)}>
+    <div className={cn("flex flex-col gap-4", className)}>
       <button
         className={cn(
-          'flex flex-col items-center gap-2 rounded-card border-2 border-line border-dashed px-6 py-8 transition-colors hover:bg-surface-hover-bg',
-          files.length > 0 && 'py-4'
+          "flex flex-col items-center gap-2 rounded-card border-2 border-line border-dashed px-6 py-8 transition-colors hover:bg-surface-hover-bg",
+          files.length > 0 && "py-4",
         )}
         disabled={!uploadPolicy}
         onClick={() => inputRef.current?.click()}
@@ -465,7 +462,7 @@ function UploadFiles({
                   <span className="t-meta shrink-0 text-fg-muted">
                     {formatSize(f.file.size)}
                     {f.pageCount != null &&
-                      ` · ${f.pageCount} ${f.pageCount === 1 ? 'page' : 'pages'}`}
+                      ` · ${f.pageCount} ${f.pageCount === 1 ? "page" : "pages"}`}
                     {` · ${f.kind.toUpperCase()}`}
                   </span>
                   <div className="flex flex-1 items-center justify-end gap-2">
@@ -476,9 +473,9 @@ function UploadFiles({
                             autoFocus
                             onChange={(e) => setNewChapterName(e.target.value)}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter')
+                              if (e.key === "Enter")
                                 void confirmCreateChapter(f.key);
-                              if (e.key === 'Escape') setCreatingKey(null);
+                              if (e.key === "Escape") setCreatingKey(null);
                             }}
                             placeholder="New chapter name"
                             size="sm"
@@ -515,7 +512,7 @@ function UploadFiles({
                           }
                           onCreateRequest={() => {
                             setCreatingKey(f.key);
-                            setNewChapterName('');
+                            setNewChapterName("");
                           }}
                           value={f.chapterId}
                         />
@@ -548,10 +545,10 @@ function UploadFiles({
       )}
 
       <p className="t-meta pt-3 text-fg-muted">
-        OCR parsing (default) supports English and Chinese documents only (up to{' '}
-        {normalParse ? Math.round(normalParse.maxBytes / 1024 / 1024) : 10} MB /{' '}
-        {normalParse?.maxPages ?? 20} pages). VLM parsing accepts files up to{' '}
-        {advancedParse ? Math.round(advancedParse.maxBytes / 1024 / 1024) : 100}{' '}
+        OCR parsing (default) supports English and Chinese documents only (up to{" "}
+        {normalParse ? Math.round(normalParse.maxBytes / 1024 / 1024) : 10} MB /{" "}
+        {normalParse?.maxPages ?? 20} pages). VLM parsing accepts files up to{" "}
+        {advancedParse ? Math.round(advancedParse.maxBytes / 1024 / 1024) : 100}{" "}
         MB.
       </p>
       <ConfirmDialog
@@ -565,7 +562,7 @@ function UploadFiles({
         }}
         onConfirm={handleUpload}
         open={confirmOpen}
-        title={'Confirm Upload?'}
+        title={"Confirm Upload?"}
       >
         {isSubmitting && (
           <div className="mt-3 flex flex-col gap-1.5">
@@ -614,11 +611,11 @@ function ImportFiles({
 
   const connectProvider = useProviderConnect();
 
-  async function connect(provider: 'google' | 'microsoft') {
+  async function connect(provider: "google" | "microsoft") {
     if (USE_MSW) {
       importSources.mutate({
         chapterId: null,
-        fileIds: ['mock_drive_file'],
+        fileIds: ["mock_drive_file"],
         provider,
       });
       onClose();
@@ -633,9 +630,9 @@ function ImportFiles({
         description:
           err instanceof Error
             ? err.message
-            : 'Something went wrong. Please try again.',
+            : "Something went wrong. Please try again.",
         title: `Could not connect ${provider}`,
-        variant: 'error',
+        variant: "error",
       });
     }
   }
@@ -644,14 +641,14 @@ function ImportFiles({
     if (USE_MSW) {
       importSources.mutate({
         chapterId: null,
-        fileIds: ['mock_drive_file'],
-        provider: 'google',
+        fileIds: ["mock_drive_file"],
+        provider: "google",
       });
       onClose();
       return;
     }
     const { accessToken } = await api.get<{ accessToken: string }>(
-      '/integrations/google/picker-token'
+      "/integrations/google/picker-token",
     );
     await loadGooglePicker();
     const g = window.google!.picker;
@@ -661,11 +658,11 @@ function ImportFiles({
       .addView(view)
       .setOAuthToken(accessToken)
       .setCallback((data: { action: string; docs?: { id: string }[] }) => {
-        if (data.action === 'picked' && data.docs?.length) {
+        if (data.action === "picked" && data.docs?.length) {
           importSources.mutate({
             chapterId: null,
             fileIds: data.docs.map((d: { id: string }) => d.id),
-            provider: 'google',
+            provider: "google",
           });
           onClose();
         }
@@ -676,7 +673,7 @@ function ImportFiles({
 
   async function onGoogleClick() {
     if (!integrations?.google && !USE_MSW) {
-      connect('google');
+      connect("google");
       return;
     }
     await openGooglePicker();
@@ -684,7 +681,7 @@ function ImportFiles({
 
   function onMicrosoftClick() {
     if (!integrations?.microsoft && !USE_MSW) {
-      connect('microsoft');
+      connect("microsoft");
       return;
     }
     openMsImport(workspaceId);
@@ -710,9 +707,9 @@ function ImportFiles({
         </Button>
       </div>
       {!integrations?.google && !integrations?.microsoft && !USE_MSW && (
-        <Text className="text-center" tone="muted" variant="meta">
+        <p className="text-center t-meta text-fg-muted">
           Connect your cloud account on first use.
-        </Text>
+        </p>
       )}
     </div>
   );

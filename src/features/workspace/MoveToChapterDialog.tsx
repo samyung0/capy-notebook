@@ -40,7 +40,7 @@ export function MoveToChapterDialog({
         {chapters.length > 0 && (
           <>
             <button
-              className="flex w-full items-center gap-2 rounded-row px-2.5 py-2 text-left transition-colors hover:bg-surface-hover-bg"
+              className="flex w-full items-center gap-2 rounded-button px-2.5 py-2 text-left transition-colors hover:bg-surface-hover-bg"
               onClick={() => choose(null)}
               style={styleCls(currentChapterId === null)}
               type="button"
@@ -55,7 +55,7 @@ export function MoveToChapterDialog({
               const active = c.id === currentChapterId;
               return (
                 <button
-                  className="flex w-full items-center gap-2 rounded-row px-2.5 py-2 text-left transition-colors hover:bg-surface-hover-bg"
+                  className="flex w-full items-center gap-2 rounded-button px-2.5 py-2 text-left transition-colors hover:bg-surface-hover-bg"
                   key={c.id}
                   onClick={() => choose(c.id)}
                   style={styleCls(active)}

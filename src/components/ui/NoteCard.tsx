@@ -50,8 +50,8 @@ export function NoteCard({
   return (
     <div
       className={cn(
-        'flex min-h-[150px] flex-col gap-3 rounded-card-lg p-5',
-        className
+        "flex min-h-[150px] flex-col gap-3 rounded-card-lg p-5",
+        className,
       )}
       style={{ background: t.bg, color: t.fg, ...style }}
       {...rest}
@@ -61,10 +61,10 @@ export function NoteCard({
         {onMenu && (
           <button
             aria-label="Note options"
-            className="ml-auto flex h-[26px] w-[26px] items-center justify-center rounded-row"
+            className="ml-auto flex h-[26px] w-[26px] items-center justify-center rounded-button"
             onClick={onMenu}
             style={{
-              background: 'color-mix(in srgb, currentColor 14%, transparent)',
+              background: "color-mix(in srgb, currentColor 14%, transparent)",
             }}
             type="button"
           >

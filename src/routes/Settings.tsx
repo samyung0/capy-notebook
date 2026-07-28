@@ -1,10 +1,9 @@
 import { useState } from 'react';
 import { LocaleSwitcher } from '@/components/app/LocaleSwitcher';
 import { PageHeader, Panel } from '@/components/app/layout';
-import { SegmentedControl, Text } from '@/components/ui';
-import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
-import { STYLES, useTheme } from '@/theme/ThemeProvider';
+import { m } from "@/i18n";
+import { cn } from "@/lib/cn";
+import { STYLES, useTheme } from "@/theme/ThemeProvider";
 
 function Row({
   label,
@@ -15,7 +14,7 @@ function Row({
 }) {
   return (
     <div className="flex items-center justify-between border-divider border-b py-4 last:border-0">
-      <Text variant="subtitle">{label}</Text>
+      <p className="t-subtitle">{label}</p>
       {children}
     </div>
   );
@@ -23,26 +22,26 @@ function Row({
 
 export default function Settings() {
   const { theme, style, setTheme, setStyle } = useTheme();
-  const [privacy, setPrivacy] = useState('private');
+  const [privacy, setPrivacy] = useState("private");
 
   return (
     <Panel>
       <PageHeader showTopBar={false} title={m.profile_menu_settings()} />
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
         <div className="mx-auto max-w-2xl">
-          <Text className="mb-1 block" tone="muted" variant="label">
+          <p className="mb-1 block text-fg-muted t-label">
             {m.settings_appearance()}
-          </Text>
+          </p>
           <div className="rounded-card border border-line bg-surface px-5">
             <Row label={m.settings_theme()}>
-              <div className="flex gap-1 rounded-pill border border-line p-[3px]">
+              <div className="flex gap-1 rounded-full border border-line p-0.75">
                 {STYLES.map((t) => (
                   <button
                     className={cn(
-                      'rounded-pill px-3 py-1.5 font-semibold text-sm',
+                      "rounded-full px-3 py-1.5 font-semibold text-sm",
                       style === t.value
-                        ? 'bg-action text-action-fg'
-                        : 'text-fg-muted'
+                        ? "bg-action text-action-fg"
+                        : "text-fg-muted",
                     )}
                     key={t.value}
                     onClick={() => setStyle(t.value)}
@@ -53,38 +52,38 @@ export default function Settings() {
                 ))}
               </div>
             </Row>
-            <Row label={m.settings_mode()}>
+            {/* TODO: change */}
+            {/* <Row label={m.settings_mode()}>
               <SegmentedControl
-                onChange={(v) => setTheme(v as 'light' | 'dark')}
+                onChange={(v) => setTheme(v as "latte" | "mocha")}
                 options={[
-                  { label: m.mode_light(), value: 'light' },
-                  { label: m.mode_dark(), value: 'dark' },
+                  { label: m.mode_light(), value: "latte" },
+                  { label: m.mode_dark(), value: "mocha" },
                 ]}
                 size="sm"
                 value={theme}
               />
-            </Row>
+            </Row> */}
             <Row label={m.settings_language()}>
               <LocaleSwitcher />
             </Row>
           </div>
 
-          <Text className="mt-6 mb-1 block" tone="muted" variant="label">
-            Workspaces
-          </Text>
+          <p className="mt-6 mb-1 text-fg-muted t-label">Workspaces</p>
           <div className="rounded-card border border-line bg-surface px-5">
-            <Row label="Default visibility">
+            {/* TODO: change */}
+            {/* <Row label="Default visibility">
               <SegmentedControl
                 onChange={setPrivacy}
                 options={[
-                  { label: 'Private', value: 'private' },
-                  { label: 'Public', value: 'public' },
-                  { label: 'Shared link', value: 'link' },
+                  { label: "Private", value: "private" },
+                  { label: "Public", value: "public" },
+                  { label: "Shared link", value: "link" },
                 ]}
                 size="sm"
                 value={privacy}
               />
-            </Row>
+            </Row> */}
           </div>
         </div>
       </div>

@@ -237,7 +237,7 @@ export function ShareDialog({
         if (confirmingDangerous) e.preventDefault();
       }}
       open={open}
-      title={title ?? 'Share'}
+      title={title ?? "Share"}
     >
       <div className="flex flex-col gap-6">
         <div className="mt-3 flex items-center justify-between gap-3">
@@ -251,7 +251,7 @@ export function ShareDialog({
               onValueChange={(v) => handlePrivacyChange(v as Privacy)}
               value={privacy}
             >
-              <SelectTrigger loading={savingField === 'privacy'}>
+              <SelectTrigger loading={savingField === "privacy"}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -259,8 +259,8 @@ export function ShareDialog({
                   {privacyOptions.map((o) => (
                     <SelectItem
                       className={
-                        o.value === 'public' && shareRole === 'editor'
-                          ? 'text-tint-error-fg hover:bg-tint-error'
+                        o.value === "public" && shareRole === "editor"
+                          ? "text-tint-error-fg hover:bg-tint-error"
                           : undefined
                       }
                       key={o.value}
@@ -278,7 +278,7 @@ export function ShareDialog({
           </div>
         </div>
         {workspaceId &&
-          privacy !== 'private' &&
+          privacy !== "private" &&
           shareRole &&
           onShareRoleChange && (
             <div className="flex items-center justify-between gap-3">
@@ -294,7 +294,7 @@ export function ShareDialog({
                   }
                   value={shareRole}
                 >
-                  <SelectTrigger loading={savingField === 'shareRole'}>
+                  <SelectTrigger loading={savingField === "shareRole"}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -302,8 +302,8 @@ export function ShareDialog({
                       {SHARED_ROLE_OPTIONS.map((option) => (
                         <SelectItem
                           className={
-                            option.value === 'editor' && privacy === 'public'
-                              ? 'text-tint-error-fg hover:bg-tint-error'
+                            option.value === "editor" && privacy === "public"
+                              ? "text-tint-error-fg hover:bg-tint-error"
                               : undefined
                           }
                           key={option.value}
@@ -320,25 +320,25 @@ export function ShareDialog({
           )}
         {publicEditorActive && (
           <div
-            className="flex items-start gap-2.5 rounded-row border border-solid-error/30 bg-tint-error px-3 py-2.5 text-sm text-tint-error-fg"
+            className="flex items-start gap-2.5 rounded-button border border-solid-error/30 bg-tint-error px-3 py-2.5 text-sm text-tint-error-fg"
             role="alert"
           >
             <Icon className="mt-0.5 size-4.5 shrink-0" name="warning" />
             <p>{PUBLIC_EDITOR_WARNING}</p>
           </div>
         )}
-        {privacy !== 'private' && (
+        {privacy !== "private" && (
           <div className="flex items-center gap-2">
-            <div className="min-w-0 flex-1 truncate rounded-row border border-line bg-surface-hover-bg px-2.5 py-2 text-fg-secondary text-sm">
+            <div className="min-w-0 flex-1 truncate rounded-button border border-line bg-surface-hover-bg px-2.5 py-2 text-fg-secondary text-sm">
               {absoluteLink}
             </div>
             <Button
-              iconLeft={copied ? 'check' : 'link'}
+              iconLeft={copied ? "check" : "link"}
               onClick={copy}
               size="sm"
               variant="outline"
             >
-              {copied ? 'Copied' : 'Copy'}
+              {copied ? "Copied" : "Copy"}
             </Button>
           </div>
         )}

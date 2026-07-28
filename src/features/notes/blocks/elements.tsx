@@ -232,8 +232,8 @@ function StudyBlockAction({
     <button
       aria-label={label}
       className={cn(
-        'flex size-8 items-center justify-center rounded-row text-fg-secondary hover:bg-surface-hover-bg hover:text-fg [&_svg]:size-4',
-        danger && 'hover:text-tint-error-fg'
+        "flex size-8 items-center justify-center rounded-button text-fg-secondary hover:bg-surface-hover-bg hover:text-fg [&_svg]:size-4",
+        danger && "hover:text-tint-error-fg",
       )}
       data-plate-prevent-deselect
       onClick={onClick}

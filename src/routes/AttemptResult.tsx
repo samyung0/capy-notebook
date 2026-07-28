@@ -1,23 +1,16 @@
 import { Link, useParams } from '@tanstack/react-router';
 import { useAttempt } from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
-import {
-  Badge,
-  Button,
-  Icon,
-  ProgressBar,
-  Skeleton,
-  Text,
-} from '@/components/ui';
+import { Badge, Button, Icon, ProgressBar, Skeleton } from "@/components/ui";
 import {
   type Answer,
   emptyAnswer,
   gradeQuestion,
-} from '@/features/quizzes/grade';
-import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
+} from "@/features/quizzes/grade";
+import { QuestionRunner } from "@/features/quizzes/QuestionRunner";
 
-function scoreTone(pct: number): 'green' | 'amber' | 'coral' {
-  return pct >= 70 ? 'green' : pct >= 55 ? 'amber' : 'coral';
+function scoreTone(pct: number): "green" | "amber" | "coral" {
+  return pct >= 70 ? "green" : pct >= 55 ? "amber" : "coral";
 }
 
 export default function AttemptResult() {
@@ -42,7 +35,7 @@ export default function AttemptResult() {
           <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-error text-tint-error-fg">
             <Icon name="x" size={30} />
           </span>
-          <Text variant="section">This attempt is unavailable.</Text>
+          <h2 className="t-large-card-title">This attempt is unavailable.</h2>
           <Link preload="intent" to="/quizzes">
             <Button iconLeft="chevronLeft">Back to quizzes</Button>
           </Link>
@@ -66,19 +59,19 @@ export default function AttemptResult() {
             <Icon name="chevronLeft" size={20} />
           </Link>
           <div className="flex-1">
-            <Text variant="section">{attempt.quizName}</Text>
-            <Text tone="muted" variant="meta">
-              {attempt.workspaceName} ·{' '}
+            <h2 className="t-large-card-title">{attempt.quizName}</h2>
+            <p className="t-meta text-fg-muted">
+              {attempt.workspaceName} ·{" "}
               {new Date(attempt.takenAt).toLocaleString()}
-            </Text>
+            </p>
           </div>
           <Badge
             tone={
               attempt.pct >= 70
-                ? 'success'
+                ? "success"
                 : attempt.pct >= 55
-                  ? 'warning'
-                  : 'error'
+                  ? "warning"
+                  : "error"
             }
           >
             {attempt.correct}/{attempt.total} · {attempt.pct}%
@@ -105,18 +98,16 @@ export default function AttemptResult() {
                 >
                   <div className="mb-3 flex items-center gap-2">
                     <span
-                      aria-label={ok ? 'correct' : 'incorrect'}
+                      aria-label={ok ? "correct" : "incorrect"}
                       className={cnBadge(ok)}
                     >
                       <Icon
-                        name={ok ? 'check' : 'x'}
+                        name={ok ? "check" : "x"}
                         size={13}
                         strokeWidth={2.5}
                       />
                     </span>
-                    <Text tone="muted" variant="meta">
-                      Question {i + 1}
-                    </Text>
+                    <p className="t-meta text-fg-muted">Question {i + 1}</p>
                   </div>
                   <QuestionRunner
                     answer={a}
@@ -125,22 +116,18 @@ export default function AttemptResult() {
                     review
                   />
                   {q.explanation && (
-                    <Text
-                      className="mt-3 border-divider border-t pt-3"
-                      tone="muted"
-                      variant="meta"
-                    >
+                    <p className="mt-3 border-divider border-t pt-3 text-fg-muted t-meta">
                       {q.explanation}
-                    </Text>
+                    </p>
                   )}
                 </div>
               );
             })}
           </div>
         ) : (
-          <Text className="py-8 text-center" tone="muted" variant="body">
+          <p className="py-8 text-center text-fg-muted">
             No per-question breakdown was recorded for this attempt.
-          </Text>
+          </p>
         )}
 
         <div className="mt-6">
@@ -155,7 +142,7 @@ export default function AttemptResult() {
 
 function cnBadge(ok: boolean) {
   return [
-    'flex h-6 w-6 items-center justify-center rounded-pill text-white',
-    ok ? 'bg-solid-success' : 'bg-solid-error',
-  ].join(' ');
+    "flex h-6 w-6 items-center justify-center rounded-full text-white",
+    ok ? "bg-solid-success" : "bg-solid-error",
+  ].join(" ");
 }

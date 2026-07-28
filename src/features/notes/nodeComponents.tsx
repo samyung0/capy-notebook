@@ -86,24 +86,24 @@ export function FloatingActionButton({
   className,
   asChild = false,
   ...rest
-}: React.ComponentProps<'button'> & {
+}: React.ComponentProps<"button"> & {
   label: string;
   asChild?: boolean;
 }) {
-  const Component = asChild ? Slot.Root : 'button';
+  const Component = asChild ? Slot.Root : "button";
 
   return (
     <Component
       aria-label={label}
       className={cn(
-        'z-10 flex size-8 shrink-0 items-center justify-center rounded-row text-fg-secondary outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-action active:cursor-grabbing [&_svg]:size-4',
-        className
+        "z-10 flex size-8 shrink-0 items-center justify-center rounded-button text-fg-secondary outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-action active:cursor-grabbing [&_svg]:size-4",
+        className,
       )}
       data-plate-prevent-deselect
       onClick={onClick}
       onMouseDown={(event) => event.preventDefault()}
       title={label}
-      type={asChild ? undefined : 'button'}
+      type={asChild ? undefined : "button"}
       {...rest}
     >
       {children}
@@ -132,7 +132,7 @@ function Paragraph(props: PlateElementProps) {
     <PlateElement
       {...props}
       as="p"
-      className={cn(PARAGRAPH_CLASS, isNumberedList && 'before:left-6')}
+      className={cn(PARAGRAPH_CLASS, isNumberedList && "before:left-6")}
     >
       {props.children}
     </PlateElement>
@@ -162,7 +162,7 @@ function CodeBlock(props: PlateElementProps) {
   const editor = useEditorRef();
   const readOnly = useReadOnly();
   const [copied, setCopied] = useState(false);
-  const language = String((props.element as { lang?: string }).lang || 'auto');
+  const language = String((props.element as { lang?: string }).lang || "auto");
 
   useEffect(() => {
     if (!copied) return;
@@ -222,11 +222,11 @@ function CodeBlock(props: PlateElementProps) {
           </Select>
         )}
         <button
-          aria-label={copied ? 'Code copied' : 'Copy code'}
+          aria-label={copied ? "Code copied" : "Copy code"}
           className="flex size-6 items-center justify-center rounded-md bg-transparent text-fg-muted hover:bg-line/50 hover:text-fg focus-visible:ring-2 focus-visible:ring-action"
           data-plate-prevent-deselect
           onClick={() => void copy()}
-          title={copied ? 'Copied' : 'Copy code'}
+          title={copied ? "Copied" : "Copy code"}
           type="button"
         >
           {copied ? (
@@ -255,7 +255,7 @@ function LinkElement(props: PlateElementProps) {
     onClick: (event: ReactMouseEvent<HTMLAnchorElement>) => {
       event.preventDefault();
       if (!(event.ctrlKey || event.metaKey) || !linkProps.href) return;
-      window.open(linkProps.href, '_blank', 'noopener,noreferrer');
+      window.open(linkProps.href, "_blank", "noopener,noreferrer");
     },
     onKeyDown: (event: KeyboardEvent<HTMLAnchorElement>) => {
       if (event.ctrlKey || event.metaKey) setModifierDown(true);
@@ -268,9 +268,9 @@ function LinkElement(props: PlateElementProps) {
     onMouseLeave: () => setModifierDown(false),
     onMouseMove: (event: ReactMouseEvent<HTMLAnchorElement>) =>
       setModifierDown(event.ctrlKey || event.metaKey),
-    rel: linkProps.target === '_blank' ? 'noopener noreferrer' : undefined,
-    style: { cursor: modifierDown ? 'pointer' : 'text' },
-  } as PlateElementProps['attributes'];
+    rel: linkProps.target === "_blank" ? "noopener noreferrer" : undefined,
+    style: { cursor: modifierDown ? "pointer" : "text" },
+  } as PlateElementProps["attributes"];
 
   return (
     <PlateElement
@@ -317,13 +317,13 @@ function Lic(props: PlateElementProps) {
 
 /* callout */
 function CalloutIcon({ variant }: { variant: CalloutVariant }) {
-  const className = 'mt-0.5 size-5 shrink-0';
+  const className = "mt-0.5 size-5 shrink-0";
   switch (variant) {
-    case 'success':
+    case "success":
       return <CircleCheck aria-hidden className={className} />;
-    case 'warning':
+    case "warning":
       return <CircleAlert aria-hidden className={className} />;
-    case 'danger':
+    case "danger":
       return <CircleX aria-hidden className={className} />;
     default:
       return <Info aria-hidden className={className} />;
@@ -334,7 +334,7 @@ function Callout(props: PlateElementProps) {
   const editor = useEditorRef();
   const readOnly = useReadOnly();
   const variant = normalizeCalloutVariant(
-    (props.element as { variant?: unknown }).variant
+    (props.element as { variant?: unknown }).variant,
   );
 
   return (
@@ -343,7 +343,7 @@ function Callout(props: PlateElementProps) {
       className={cn(
         CALLOUT_CLASS,
         CALLOUT_VARIANT_CLASS[variant],
-        !readOnly && 'pr-28'
+        !readOnly && "pr-28",
       )}
       data-callout-variant={variant}
     >
@@ -353,7 +353,7 @@ function Callout(props: PlateElementProps) {
       <div className="min-w-0 flex-1 text-fg">{props.children}</div>
       {!readOnly && (
         <div
-          className="absolute top-2 right-2 rounded-row bg-surface/80"
+          className="absolute top-2 right-2 rounded-button bg-surface/80"
           contentEditable={false}
         >
           <Select

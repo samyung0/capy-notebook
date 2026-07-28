@@ -4,11 +4,11 @@ The worker PUBLISHes small JSON events to ``ingest:{workspaceId}``; the Go
 gateway SUBSCRIBEs and fans them out to the browser over SSE. Publishing is
 best-effort and fire-and-forget — a Redis hiccup must never fail an ingest job.
 """
+
 from __future__ import annotations
 
 import json
 import logging
-from typing import Optional
 
 import redis
 
@@ -16,10 +16,10 @@ from ..config import cfg
 
 log = logging.getLogger("evo.rag.progress")
 
-_client: Optional["redis.Redis"] = None
+_client: redis.Redis | None = None
 
 
-def _redis() -> "redis.Redis":
+def _redis() -> redis.Redis:
     global _client
     if _client is None:
         _client = redis.Redis.from_url(
@@ -51,5 +51,7 @@ def publish(
     }
     try:
         _redis().publish(channel(workspace_id), json.dumps(event))
-    except Exception:  # noqa: BLE001 — never let progress break ingest
-        log.warning("redis publish failed for %s/%s", workspace_id, file_id, exc_info=True)
+    except Exception:
+        log.warning(
+            "redis publish failed for %s/%s", workspace_id, file_id, exc_info=True
+        )

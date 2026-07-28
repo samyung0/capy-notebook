@@ -22,6 +22,7 @@ source's last value so future inserts can't collide with copied graphids.
 The LLM response cache (``lightrag_llm_cache``) is intentionally skipped — it
 is large and purely an ingest-cost optimisation.
 """
+
 from __future__ import annotations
 
 import logging
@@ -69,7 +70,7 @@ def _copy_lightrag_tables(cur, src: str, tgt: str) -> dict[str, int]:
         col_list = ", ".join(_quote(c) for c in cols)
         sel_list = ", ".join("%s" if c == "workspace" else _quote(c) for c in cols)
         cur.execute(
-            f"INSERT INTO {_quote(table)} ({col_list}) "  # noqa: S608 — idents quoted
+            f"INSERT INTO {_quote(table)} ({col_list}) "
             f"SELECT {sel_list} FROM {_quote(table)} WHERE workspace=%s "
             "ON CONFLICT DO NOTHING",
             (tgt, src),
@@ -123,18 +124,18 @@ def _copy_age_graph(cur, src_ws: str, tgt_ws: str) -> dict[str, int]:
 
         # Copy rows only when the target label is still empty (idempotency —
         # AGE label tables have no usable conflict target).
-        cur.execute(f"SELECT 1 FROM ONLY {_quote(tgt_g)}.{_quote(name)} LIMIT 1")  # noqa: S608
+        cur.execute(f"SELECT 1 FROM ONLY {_quote(tgt_g)}.{_quote(name)} LIMIT 1")
         if cur.fetchone() is not None:
             log.info("clone: %s.%s already has rows — skipping", tgt_g, name)
             continue
         if kind == "v":
             cur.execute(
-                f"INSERT INTO {_quote(tgt_g)}.{_quote(name)} (id, properties) "  # noqa: S608
+                f"INSERT INTO {_quote(tgt_g)}.{_quote(name)} (id, properties) "
                 f"SELECT id, properties FROM ONLY {_quote(src_g)}.{_quote(name)}"
             )
         else:
             cur.execute(
-                f"INSERT INTO {_quote(tgt_g)}.{_quote(name)} (id, start_id, end_id, properties) "  # noqa: S608
+                f"INSERT INTO {_quote(tgt_g)}.{_quote(name)} (id, start_id, end_id, properties) "
                 f"SELECT id, start_id, end_id, properties FROM ONLY {_quote(src_g)}.{_quote(name)}"
             )
         copied[name] = cur.rowcount
@@ -142,9 +143,12 @@ def _copy_age_graph(cur, src_ws: str, tgt_ws: str) -> dict[str, int]:
         # Bump the per-label entry-id sequence past the copied ids so future
         # inserts (LightRAG upserts) can't reuse a graphid.
         seq = f"{name}_id_seq"
-        cur.execute(f"SELECT last_value FROM {_quote(src_g)}.{_quote(seq)}")  # noqa: S608
+        cur.execute(f"SELECT last_value FROM {_quote(src_g)}.{_quote(seq)}")
         last = cur.fetchone()[0]
-        cur.execute("SELECT setval(%s::regclass, %s)", (f"{_quote(tgt_g)}.{_quote(seq)}", max(int(last), 1)))
+        cur.execute(
+            "SELECT setval(%s::regclass, %s)",
+            (f"{_quote(tgt_g)}.{_quote(seq)}", max(int(last), 1)),
+        )
     return copied
 
 
@@ -161,5 +165,7 @@ def clone_workspace_state(src_ws: str, tgt_ws: str) -> dict:
             cur.execute('SET search_path = ag_catalog, "$user", public')
             graph = _copy_age_graph(cur, src_ws, tgt_ws)
         conn.commit()
-    log.info("cloned workspace %s -> %s: tables=%s graph=%s", src_ws, tgt_ws, tables, graph)
+    log.info(
+        "cloned workspace %s -> %s: tables=%s graph=%s", src_ws, tgt_ws, tables, graph
+    )
     return {"tables": tables, "graph": graph}

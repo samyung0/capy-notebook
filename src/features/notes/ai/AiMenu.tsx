@@ -202,7 +202,7 @@ export function AiMenu() {
     <FloatingPortal>
       <div
         aria-label="AI commands"
-        className="z-50 w-[min(360px,calc(100vw-32px))] overflow-hidden rounded-row border border-line bg-surface shadow-pop"
+        className="z-50 w-[min(360px,calc(100vw-32px))] overflow-hidden rounded-button border border-line bg-surface shadow-pop"
         onPointerDown={(event) => event.stopPropagation()}
         ref={floating.refs.setFloating}
         role="dialog"
@@ -217,11 +217,11 @@ export function AiMenu() {
             disabled={loading}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
+              if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
                 submit(input);
               }
-              if (event.key === 'Escape')
+              if (event.key === "Escape")
                 editor.getApi(AIChatPlugin).aiChat.hide();
             }}
             placeholder="Ask AI anything"
@@ -229,7 +229,7 @@ export function AiMenu() {
           />
           <button
             aria-label="Close AI commands"
-            className="rounded-row p-1 text-fg-muted hover:bg-surface-hover-bg"
+            className="rounded-button p-1 text-fg-muted hover:bg-surface-hover-bg"
             onClick={() => editor.getApi(AIChatPlugin).aiChat.hide()}
             type="button"
           >
@@ -241,7 +241,7 @@ export function AiMenu() {
           <div className="flex items-center justify-between gap-2 p-3 text-fg-muted text-sm">
             <span className="flex items-center gap-2">
               <LoaderCircle className="size-4 animate-spin" />
-              {chat.status === 'submitted' ? 'Thinking…' : 'Writing…'}
+              {chat.status === "submitted" ? "Thinking…" : "Writing…"}
             </span>
             <Button
               onClick={() => editor.getApi(AIChatPlugin).aiChat.stop()}
@@ -287,8 +287,8 @@ export function AiMenu() {
               return (
                 <button
                   className={cn(
-                    'flex w-full items-center gap-2 rounded-row px-2 py-2 text-left text-fg text-sm',
-                    'hover:bg-surface-hover-bg'
+                    "flex w-full items-center gap-2 rounded-button px-2 py-2 text-left text-fg text-sm",
+                    "hover:bg-surface-hover-bg",
                   )}
                   key={action.id}
                   onClick={() =>
@@ -306,7 +306,7 @@ export function AiMenu() {
             })}
             {chat.messages.length > 0 && (
               <button
-                className="flex w-full items-center gap-2 rounded-row px-2 py-2 text-left text-fg text-sm hover:bg-surface-hover-bg"
+                className="flex w-full items-center gap-2 rounded-button px-2 py-2 text-left text-fg text-sm hover:bg-surface-hover-bg"
                 onClick={() => void editor.getApi(AIChatPlugin).aiChat.reload()}
                 type="button"
               >

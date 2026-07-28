@@ -16,6 +16,7 @@ The engine plugs into :class:`ExternalParserBase`, which supplies the shared
 raw-bundle cache / sidecar / full_docs persistence template used by the
 built-in MinerU and Docling engines.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -29,10 +30,9 @@ import tempfile
 import zipfile
 from collections.abc import Mapping
 from pathlib import Path, PurePosixPath
-from typing import Any, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import requests
-
 from lightrag.parser.external._base import ExternalParserBase
 from lightrag.parser.registry import ParserSpec, register_parser
 
@@ -223,14 +223,20 @@ def _extract_artifact(
     tmp = Path(tmp_name)
     try:
         blobstore.download_to(artifact_key, tmp)
-        log.info("downloading parse artifact key=%s bytes=%d", artifact_key, tmp.stat().st_size)
+        log.info(
+            "downloading parse artifact key=%s bytes=%d",
+            artifact_key,
+            tmp.stat().st_size,
+        )
         digest = hashlib.sha256(tmp.read_bytes()).hexdigest()
         if expected_sha256 and digest != expected_sha256:
             raise ModalParseError("parsed artifact checksum mismatch")
         with zipfile.ZipFile(tmp) as archive:
             names = set(archive.namelist())
             if "manifest.json" not in names or "content_list.json" not in names:
-                raise ModalParseError("parsed artifact is missing its manifest or content list")
+                raise ModalParseError(
+                    "parsed artifact is missing its manifest or content list"
+                )
             manifest = json.loads(archive.read("manifest.json"))
             if manifest.get("schema") != ARTIFACT_SCHEMA:
                 raise ModalParseError("unsupported parsed artifact schema")
@@ -309,7 +315,7 @@ def _fetch_bundle_sync(source_path: Path, upload_name: str, raw_dir: Path) -> No
         try:
             (images_dir / safe).write_bytes(base64.b64decode(b64))
             written.add(safe)
-        except Exception:  # noqa: BLE001 — a broken image must not kill the parse
+        except Exception:
             log.warning("failed writing extracted image %s", name, exc_info=True)
 
     # Point every image block at the bundle-relative location we just wrote so
@@ -329,7 +335,10 @@ def _fetch_bundle_sync(source_path: Path, upload_name: str, raw_dir: Path) -> No
         json.dumps(_bundle_signature(source_path)), encoding="utf-8"
     )
     log.info(
-        "parsed %s -> %d blocks, %d images", upload_name, len(content_list), len(written)
+        "parsed %s -> %d blocks, %d images",
+        upload_name,
+        len(content_list),
+        len(written),
     )
 
 
@@ -366,7 +375,7 @@ class ModalParser(ExternalParserBase):
     ) -> None:
         await asyncio.to_thread(_fetch_bundle_sync, source_path, upload_name, raw_dir)
 
-    def build_ir(self, raw_dir: Path, document_name: str) -> "IRDoc":
+    def build_ir(self, raw_dir: Path, document_name: str) -> IRDoc:
         from lightrag.parser.external.mineru import MinerUIRBuilder
 
         return MinerUIRBuilder().normalize_from_workdir(

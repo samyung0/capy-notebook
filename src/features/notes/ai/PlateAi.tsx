@@ -90,7 +90,7 @@ export function GhostText() {
       {/* <span className="ml-2 inline-flex gap-1 align-middle text-[10px]">
         <button
           type="button"
-          className="rounded-row border border-line bg-surface px-1.5 py-0.5 text-fg"
+          className="rounded-button border border-line bg-surface px-1.5 py-0.5 text-fg"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => editor.getTransforms(CopilotPlugin).copilot.accept()}
         >
@@ -98,7 +98,7 @@ export function GhostText() {
         </button>
         <button
           type="button"
-          className="rounded-row border border-line bg-surface px-1.5 py-0.5 text-fg-muted"
+          className="rounded-button border border-line bg-surface px-1.5 py-0.5 text-fg-muted"
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => editor.getApi(CopilotPlugin).copilot.reject()}
         >

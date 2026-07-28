@@ -12,22 +12,23 @@ Routing (per the project's existing spec):
 All providers are reached over the OpenAI-compatible API, so a single
 ``AsyncOpenAI`` client style works for every role.
 """
+
 from __future__ import annotations
 
 import contextvars
-from typing import Any, Callable, List, Optional
+from collections.abc import Callable
+from typing import Any
 
 import numpy as np
-from openai import AsyncOpenAI
-
-from lightrag.utils import EmbeddingFunc
 from lightrag.llm.openai import openai_complete_if_cache
+from lightrag.utils import EmbeddingFunc
+from openai import AsyncOpenAI
 
 from ..config import ProviderCfg, cfg
 
 # Per-request override for the query model (set by the retrieval service). The
 # ingest worker never touches it, so ingest always uses its fixed model.
-query_model_override: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+query_model_override: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "query_model_override", default=None
 )
 
@@ -38,12 +39,15 @@ def _client(p: ProviderCfg) -> AsyncOpenAI:
     key = f"{p.base_url}|{p.api_key[:8]}"
     client = _clients.get(key)
     if client is None:
-        client = AsyncOpenAI(api_key=p.api_key or "missing", base_url=p.base_url or None)
+        client = AsyncOpenAI(
+            api_key=p.api_key or "missing", base_url=p.base_url or None
+        )
         _clients[key] = client
     return client
 
 
 # --------------------------------------------------------------- embeddings
+
 
 def make_embedding_func() -> EmbeddingFunc:
     """OpenRouter Qwen3-Embedding-4B with the dimension pinned (matryoshka).
@@ -56,7 +60,7 @@ def make_embedding_func() -> EmbeddingFunc:
     dim = cfg.embedding_dim
     provider = cfg.embedding
 
-    async def _embed(texts: List[str]) -> np.ndarray:
+    async def _embed(texts: list[str]) -> np.ndarray:
         if not texts:
             return np.zeros((0, dim), dtype=np.float32)
         client = _client(provider)
@@ -79,14 +83,15 @@ def make_embedding_func() -> EmbeddingFunc:
 
 # ------------------------------------------------------------------- text LLM
 
+
 def make_llm_func(model: str) -> Callable:
     """A fixed-model DeepSeek text completion func (used for ingest)."""
     provider = cfg.llm
 
     async def llm_model_func(
         prompt: str,
-        system_prompt: Optional[str] = None,
-        history_messages: Optional[list] = None,
+        system_prompt: str | None = None,
+        history_messages: list | None = None,
         **kwargs: Any,
     ) -> str:
         return await openai_complete_if_cache(
@@ -114,8 +119,8 @@ def make_query_llm_func() -> Callable:
 
     async def llm_model_func(
         prompt: str,
-        system_prompt: Optional[str] = None,
-        history_messages: Optional[list] = None,
+        system_prompt: str | None = None,
+        history_messages: list | None = None,
         **kwargs: Any,
     ) -> str:
         chosen = query_model_override.get() or default
@@ -136,6 +141,7 @@ def make_query_llm_func() -> Callable:
 
 # ----------------------------------------------------------------- vlm role
 
+
 def make_vlm_func() -> Callable:
     """Gemini func for LightRAG's ``vlm`` role (i/t/e multimodal analysis).
 
@@ -150,8 +156,8 @@ def make_vlm_func() -> Callable:
 
     async def vlm_model_func(
         prompt: str,
-        system_prompt: Optional[str] = None,
-        history_messages: Optional[list] = None,
+        system_prompt: str | None = None,
+        history_messages: list | None = None,
         **kwargs: Any,
     ) -> str:
         return await openai_complete_if_cache(

@@ -160,9 +160,11 @@ export function TimeGrid({
             return (
               <div
                 className={cn(
-                  'relative flex-1',
-                  onCreateSlot && 'cursor-pointer',
-                  isToday && isWeek && 'overflow-hidden rounded-b-xl bg-page/70'
+                  "relative flex-1",
+                  onCreateSlot && "cursor-pointer",
+                  isToday &&
+                    isWeek &&
+                    "overflow-hidden rounded-b-xl bg-page/70",
                 )}
                 key={d.toDateString()}
                 onClick={(e) => handleSlotClick(d, e)}
@@ -189,7 +191,7 @@ export function TimeGrid({
                   hoverSlot?.day === d.toDateString() &&
                   hoverSlot.hour !== pendingSlot?.hour && (
                     <div
-                      className="pointer-events-none absolute right-1 left-1 z-1 flex items-center gap-1 rounded-row bg-tint-accent-1/30 px-2 font-semibold text-xs"
+                      className="pointer-events-none absolute right-1 left-1 z-1 flex items-center gap-1 rounded-button bg-tint-accent-1/30 px-2 font-semibold text-xs"
                       style={{ height: HOUR_H, top: hoverSlot.hour * HOUR_H }}
                     >
                       {/* the text will be hard to read, leave empty for now */}
@@ -200,11 +202,11 @@ export function TimeGrid({
                 {/* pending new-event highlight */}
                 {pendingSlot?.day === d.toDateString() && (
                   <div
-                    className="pointer-events-none absolute right-1 left-1 z-1 rounded-row"
+                    className="pointer-events-none absolute right-1 left-1 z-1 rounded-button"
                     style={{
-                      backgroundColor: 'var(--color-surface)',
+                      backgroundColor: "var(--color-surface)",
                       backgroundImage:
-                        'repeating-linear-gradient(45deg, color-mix(in srgb, var(--tint-accent-1-bg) 100%, transparent) 0, color-mix(in srgb, var(--tint-accent-1-bg) 100%, transparent) 6px, transparent 6px, transparent 12px)',
+                        "repeating-linear-gradient(45deg, color-mix(in srgb, var(--tint-accent-1-bg) 100%, transparent) 0, color-mix(in srgb, var(--tint-accent-1-bg) 100%, transparent) 6px, transparent 6px, transparent 12px)",
                       height: HOUR_H,
                       top: pendingSlot.hour * HOUR_H,
                     }}
@@ -216,7 +218,7 @@ export function TimeGrid({
                   const top = hourOf(ev.start) * HOUR_H;
                   const height = Math.max(
                     24,
-                    (hourOf(ev.end) - hourOf(ev.start)) * HOUR_H
+                    (hourOf(ev.end) - hourOf(ev.start)) * HOUR_H,
                   );
                   const content = (
                     <>
@@ -229,8 +231,8 @@ export function TimeGrid({
                     </>
                   );
                   const className = cn(
-                    'absolute right-1 left-1 z-2 flex flex-col overflow-hidden rounded-row px-2 py-1.5 text-left shadow-xs',
-                    selectedId === ev.id && 'ring-2 ring-fg'
+                    "absolute right-1 left-1 z-2 flex flex-col overflow-hidden rounded-button px-2 py-1.5 text-left shadow-xs",
+                    selectedId === ev.id && "ring-2 ring-fg",
                   );
                   const style = { background: c.bg, color: c.fg, height, top };
 

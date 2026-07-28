@@ -16,11 +16,10 @@ import {
   Menu,
   ProgressBar,
   SkeletonCardGrid,
-  Text,
-} from '@/components/ui';
-import { ShareDialog } from '@/features/workspace/ShareDialog';
-import { m } from '@/i18n';
-import { userColorPair } from '@/lib/userColor';
+} from "@/components/ui";
+import { ShareDialog } from "@/features/workspace/ShareDialog";
+import { m } from "@/i18n";
+import { userColorPair } from "@/lib/userColor";
 
 export default function Flashcards() {
   const { data, isLoading } = useDecks();
@@ -32,11 +31,11 @@ export default function Flashcards() {
 
   function newDeck() {
     createDeck.mutate(
-      { color: 'purple', name: 'New deck' },
+      { color: "purple", name: "New deck" },
       {
         onSuccess: (deck) =>
-          navigate({ params: { deckId: deck.id }, to: '/flashcards/$deckId' }),
-      }
+          navigate({ params: { deckId: deck.id }, to: "/flashcards/$deckId" }),
+      },
     );
   }
 
@@ -82,12 +81,10 @@ export default function Flashcards() {
                           </Badge>
                         )}
                       </div>
-                      <Text className="mt-3 truncate" variant="card-title">
-                        {d.name}
-                      </Text>
-                      <Text className="mt-0.5" tone="muted" variant="meta">
-                        {d.workspaceName || 'Standalone'}
-                      </Text>
+                      <p className="mt-3 truncate t-card-title">{d.name}</p>
+                      <p className="mt-0.5 text-fg-muted t-meta">
+                        {d.workspaceName || "Standalone"}
+                      </p>
                       <div className="mt-4">
                         <div className="mb-1 flex justify-between text-fg-muted text-xs">
                           <span>{d.cardCount} cards</span>
@@ -105,13 +102,13 @@ export default function Flashcards() {
                     <Menu
                       items={[
                         {
-                          icon: 'link',
-                          label: 'Share',
+                          icon: "link",
+                          label: "Share",
                           onClick: () => setSharing(d),
                         },
                         {
-                          icon: 'plus',
-                          label: 'Clone',
+                          icon: "plus",
+                          label: "Clone",
                           onClick: () => cloneDeck.mutate(d.id),
                         },
                       ]}
@@ -135,7 +132,7 @@ export default function Flashcards() {
             setSharing(deck);
           }}
           open
-          privacy={sharing.privacy ?? 'private'}
+          privacy={sharing.privacy ?? "private"}
           saving={updateDeck.isPending}
           title={`Share ${sharing.name}`}
         />

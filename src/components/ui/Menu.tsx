@@ -18,18 +18,18 @@ const menuVariants = cva('w-auto min-w-36 p-0', {
 });
 
 const menuItemVariants = cva(
-  'flex w-full items-center gap-1.5 rounded-row px-3 py-2 text-left font-semibold transition-colors disabled:opacity-40',
+  "flex w-full items-center gap-1.5 rounded-button px-3 py-2 text-left font-semibold transition-colors disabled:opacity-40",
   {
     defaultVariants: {
       danger: false,
     },
     variants: {
       danger: {
-        false: 'text-fg hover:bg-surface-hover-bg',
-        true: 'text-tint-error-fg hover:bg-tint-error',
+        false: "text-fg hover:bg-surface-hover-bg",
+        true: "text-tint-error-fg hover:bg-tint-error",
       },
     },
-  }
+  },
 );
 
 interface MenuItemBase {
@@ -44,12 +44,12 @@ export interface MenuItem extends MenuItemBase {
   baseUIRender?: (
     props: MenuItemBase,
     menuDefaultRenderItem: ReactElement,
-    key: number | string
+    key: number | string,
   ) => ReactNode;
 }
 
 export interface MenuProps extends VariantProps<typeof menuVariants> {
-  align?: 'start' | 'center' | 'end';
+  align?: "start" | "center" | "end";
   alignWidthToTrigger?: boolean;
   className?: string;
   iconContainerClassName?: string;
@@ -62,8 +62,8 @@ export interface MenuProps extends VariantProps<typeof menuVariants> {
 export function Menu({
   items,
   trigger,
-  align = 'end',
-  variant = 'default',
+  align = "end",
+  variant = "default",
   iconContainerClassName,
   alignWidthToTrigger,
   className,
@@ -75,11 +75,10 @@ export function Menu({
       <PopoverTrigger asChild>
         {trigger ?? (
           <IconButton
-            className={iconContainerClassName}
+            className={cn("p-2", iconContainerClassName)}
             icon="moreVertical"
             label="Open menu"
-            size="sm"
-            strokeWidth={3.5}
+            size="md"
             variant="ghost-hover"
           />
         )}

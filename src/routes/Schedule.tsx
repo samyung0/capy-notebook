@@ -8,25 +8,24 @@ import {
   HoverActions,
   Icon,
   IconButton,
-  SegmentedControl,
   Skeleton,
-} from '@/components/ui';
-import { MONTHS, weekDays } from '@/features/schedule/dateUtils';
-import { MiniCalendar } from '@/features/schedule/MiniCalendar';
-import { MonthView } from '@/features/schedule/MonthView';
-import { scheduleAutoScroll } from '@/features/schedule/scrollState';
-import { TimeGrid } from '@/features/schedule/TimeGrid';
-import { m } from '@/i18n';
-import { userColorPair } from '@/lib/userColor';
-import { usePortals } from '@/stores/portals';
+} from "@/components/ui";
+import { MONTHS, weekDays } from "@/features/schedule/dateUtils";
+import { MiniCalendar } from "@/features/schedule/MiniCalendar";
+import { MonthView } from "@/features/schedule/MonthView";
+import { scheduleAutoScroll } from "@/features/schedule/scrollState";
+import { TimeGrid } from "@/features/schedule/TimeGrid";
+import { m } from "@/i18n";
+import { userColorPair } from "@/lib/userColor";
+import { usePortals } from "@/stores/portals";
 
-type View = 'month' | 'week' | 'day';
+type View = "month" | "week" | "day";
 
 const LABEL_LIMIT = 7;
 
 export default function Schedule() {
   const navigate = useNavigate();
-  const { event: eventParam } = useSearch({ from: '/auth-shell/schedule' });
+  const { event: eventParam } = useSearch({ from: "/auth-shell/schedule" });
   const { data: events, isLoading } = useEvents();
   const { data: labels } = useLabels();
   const deleteLabel = useDeleteLabel();
@@ -35,7 +34,7 @@ export default function Schedule() {
   const openEventForm = usePortals((s) => s.openEventForm);
   const openEventDetail = usePortals((s) => s.openEventDetail);
   const eventDetail = usePortals((s) => s.eventDetail);
-  const [view, setView] = useState<View>('week');
+  const [view, setView] = useState<View>("week");
   const [month, setMonth] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date());
   const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -50,13 +49,13 @@ export default function Schedule() {
     () =>
       (events ?? []).filter(
         (e) =>
-          e.labelIds.length === 0 || e.labelIds.some((id) => !hidden.has(id))
+          e.labelIds.length === 0 || e.labelIds.some((id) => !hidden.has(id)),
       ),
-    [events, hidden]
+    [events, hidden],
   );
   const eventDays = useMemo(
     () => new Set((events ?? []).map((e) => new Date(e.start).toDateString())),
-    [events]
+    [events],
   );
 
   // open the details dialog when navigated here with an ?event=<id> param
@@ -69,13 +68,13 @@ export default function Schedule() {
     // only move the grid when the event day isn't already visible — avoids
     // re-rendering TimeGrid's day columns on every in-page event click.
     setSelected((prev) => {
-      if (view === 'week') {
+      if (view === "week") {
         const visible = weekDays(prev);
         return visible.some((d) => d.toDateString() === day.toDateString())
           ? prev
           : day;
       }
-      if (view === 'day') {
+      if (view === "day") {
         return prev.toDateString() === day.toDateString() ? prev : day;
       }
       return day;
@@ -94,11 +93,11 @@ export default function Schedule() {
     if (openedFromParam.current && wasOpen && !eventDetail) {
       openedFromParam.current = false;
       scheduleAutoScroll.rememberPosition(scrollRef.current?.scrollTop);
-      navigate({ replace: true, search: {}, to: '/schedule' });
+      navigate({ replace: true, search: {}, to: "/schedule" });
     }
   }, [eventDetail, navigate]);
 
-  const days = view === 'week' ? weekDays(selected) : [selected];
+  const days = view === "week" ? weekDays(selected) : [selected];
 
   const createAt = (start: Date, end: Date) =>
     openEventForm({ end: end.toISOString(), start: start.toISOString() });
@@ -106,7 +105,7 @@ export default function Schedule() {
     scheduleAutoScroll.rememberPosition(scrollRef.current?.scrollTop);
     openedFromParam.current = true;
     openEventDetail(event);
-    navigate({ search: { event: event.id }, to: '/schedule' });
+    navigate({ search: { event: event.id }, to: "/schedule" });
   };
   const createOnDay = (day: Date) => {
     const start = new Date(day);
@@ -117,13 +116,13 @@ export default function Schedule() {
 
   // Range mirrored in the mini calendar — whatever the main grid is showing.
   const range = useMemo(() => {
-    if (view === 'month') {
+    if (view === "month") {
       return {
         end: new Date(month.getFullYear(), month.getMonth() + 1, 0),
         start: new Date(month.getFullYear(), month.getMonth(), 1),
       };
     }
-    if (view === 'week') {
+    if (view === "week") {
       const wd = weekDays(selected);
       return { end: wd[6], start: wd[0] };
     }
@@ -158,7 +157,7 @@ export default function Schedule() {
           >
             <Icon
               className="text-fg-muted"
-              name={labelsOpen ? 'chevronDown' : 'chevronRight'}
+              name={labelsOpen ? "chevronDown" : "chevronRight"}
               size={16}
             />
             <span className="t-card-title font-semibold">Labels</span>
@@ -170,7 +169,7 @@ export default function Schedule() {
                   const on = !hidden.has(l.id);
                   return (
                     <div
-                      className="group relative flex items-center rounded-row py-1.5 pr-8 hover:bg-surface-hover-bg"
+                      className="group relative flex items-center rounded-button py-1.5 pr-8 hover:bg-surface-hover-bg"
                       key={l.id}
                     >
                       <button
@@ -189,21 +188,21 @@ export default function Schedule() {
                         type="button"
                       >
                         <span
-                          className="h-3.5 w-3.5 shrink-0 rounded-[4px]"
+                          className="h-3.5 w-3.5 shrink-0 rounded-sm"
                           style={{
                             background: on
                               ? userColorPair(l.color).bg
-                              : 'transparent',
+                              : "transparent",
                             border: on
-                              ? 'none'
-                              : '1.5px solid var(--border-strong)',
+                              ? "none"
+                              : "1.5px solid var(--border-strong)",
                           }}
                         />
                         <span
                           className={
                             on
-                              ? 'truncate text-fg text-sm'
-                              : 'truncate text-fg-muted text-sm'
+                              ? "truncate text-fg text-sm"
+                              : "truncate text-fg-muted text-sm"
                           }
                         >
                           {l.name}
@@ -213,13 +212,13 @@ export default function Schedule() {
                         className="absolute top-1/2 right-1 -translate-y-1/2"
                         items={[
                           {
-                            icon: 'write',
+                            icon: "write",
                             label: m.action_edit(),
                             onClick: () => openLabelEdit(l),
                           },
                           {
                             danger: true,
-                            icon: 'trash',
+                            icon: "trash",
                             label: m.action_delete(),
                             onClick: () =>
                               openConfirm({
@@ -232,15 +231,15 @@ export default function Schedule() {
                       />
                     </div>
                   );
-                }
+                },
               )}
               {(labels?.length ?? 0) > LABEL_LIMIT && (
                 <button
-                  className="mt-1 self-start rounded-row px-1.5 py-1 font-medium text-fg-muted text-sm hover:bg-surface-hover-bg hover:text-fg"
+                  className="mt-1 self-start rounded-button px-1.5 py-1 font-medium text-fg-muted text-sm hover:bg-surface-hover-bg hover:text-fg"
                   onClick={() => setShowAllLabels((s) => !s)}
                   type="button"
                 >
-                  {showAllLabels ? 'Show less' : `Show all (${labels?.length})`}
+                  {showAllLabels ? "Show less" : `Show all (${labels?.length})`}
                 </button>
               )}
             </div>
@@ -264,23 +263,24 @@ export default function Schedule() {
           title={`${MONTHS[month.getMonth()]} ${month.getFullYear()}`}
         />
         <div className="flex items-center gap-3 px-6 pb-3">
-          <SegmentedControl
+          {/* TODO: change */}
+          {/* <SegmentedControl
             onChange={(v) => setView(v as View)}
             options={[
-              { label: 'Month', value: 'month' },
-              { label: 'Week', value: 'week' },
-              { label: 'Day', value: 'day' },
+              { label: "Month", value: "month" },
+              { label: "Week", value: "week" },
+              { label: "Day", value: "day" },
             ]}
             size="sm"
             value={view}
             variant="ghost"
-          />
+          /> */}
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto px-3 pb-4" ref={scrollRef}>
           {isLoading ? (
             <Skeleton className="h-full min-h-[560px] w-full" />
-          ) : view === 'month' ? (
+          ) : view === "month" ? (
             <div className="h-full min-h-[560px]">
               <MonthView
                 events={visibleEvents}

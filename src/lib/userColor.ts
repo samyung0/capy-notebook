@@ -9,86 +9,78 @@ export interface ColorPair {
 
 const USER_COLOR_MAP: Record<UserColor, ColorPair> = {
   amber: {
-    bg: 'var(--color-solid-amber)',
-    fg: 'var(--color-solid-amber-fg)',
+    bg: "var(--usercolor-tint-amber)",
+    fg: "var(--usercolor-tint-amber-fg)",
   },
   blue: {
-    bg: 'var(--color-solid-blue)',
-    fg: 'var(--color-solid-blue-fg)',
+    bg: "var(--usercolor-tint-blue)",
+    fg: "var(--usercolor-tint-blue-fg)",
   },
   coral: {
-    bg: 'var(--color-solid-coral)',
-    fg: 'var(--color-solid-coral-fg)',
+    bg: "var(--usercolor-tint-coral)",
+    fg: "var(--usercolor-tint-coral-fg)",
   },
   graphite: {
-    bg: 'var(--color-solid-graphite)',
-    fg: 'var(--color-solid-graphite-fg)',
+    bg: "var(--usercolor-tint-graphite)",
+    fg: "var(--usercolor-tint-graphite-fg)",
   },
   green: {
-    bg: 'var(--color-solid-green)',
-    fg: 'var(--color-solid-green-fg)',
+    bg: "var(--usercolor-tint-green)",
+    fg: "var(--usercolor-tint-green-fg)",
   },
   purple: {
-    bg: 'var(--color-solid-purple)',
-    fg: 'var(--color-solid-purple-fg)',
+    bg: "var(--usercolor-tint-purple)",
+    fg: "var(--usercolor-tint-purple-fg)",
   },
   transparent: {
-    bg: 'transparent',
-    fg: 'var(--color-fg)',
+    bg: "transparent",
+    fg: "var(--color-fg)",
   },
 };
 
-// TODO: separate system vs user colors
-// TODO: convert all hex values to rgb/hsl so  no need for color mix
-const USER_COLOR_MAP_LIGHT: Record<UserColor, ColorPair> = {
+const USER_COLOR_MAP_DARK: Record<UserColor, ColorPair> = {
   amber: {
-    bg: 'var(--color-tint-warning)',
-    fg: 'var(--color-tint-warning-fg)',
-    hoverBg: 'color-mix(in srgb, var(--color-solid-warning) 30%, transparent)',
+    bg: "var(--usercolor-tint-amber-dark)",
+    fg: "var(--usercolor-tint-amber-dark-fg)",
   },
   blue: {
-    bg: 'var(--color-tint-info)',
-    fg: 'var(--color-tint-info-fg)',
-    hoverBg: 'color-mix(in srgb, var(--color-solid-info) 30%, transparent)',
+    bg: "var(--usercolor-tint-blue-dark)",
+    fg: "var(--usercolor-tint-blue-dark-fg)",
   },
   coral: {
-    bg: 'var(--color-tint-error)',
-    fg: 'var(--color-tint-error-fg)',
-    hoverBg: 'color-mix(in srgb, var(--color-solid-error) 30%, transparent)',
+    bg: "var(--usercolor-tint-coral-dark)",
+    fg: "var(--usercolor-tint-coral-dark-fg)",
   },
   graphite: {
-    bg: 'var(--color-action)',
-    fg: 'var(--color-action-fg)',
-    hoverBg: 'var(--color-action)',
+    bg: "var(--usercolor-tint-graphite-dark)",
+    fg: "var(--usercolor-tint-graphite-dark-fg)",
   },
   green: {
-    bg: 'var(--color-tint-accent-2)',
-    fg: 'var(--color-tint-accent-2-fg)',
-    hoverBg: 'color-mix(in srgb, var(--color-solid-accent-2) 30%, transparent)',
+    bg: "var(--usercolor-tint-green-dark)",
+    fg: "var(--usercolor-tint-green-dark-fg)",
   },
   purple: {
-    bg: 'var(--color-tint-accent-1)',
-    fg: 'var(--color-tint-accent-1-fg)',
-    hoverBg: 'color-mix(in srgb, var(--color-solid-accent-2) 30%, transparent)',
+    bg: "var(--usercolor-tint-purple-dark)",
+    fg: "var(--usercolor-tint-purple-dark-fg)",
   },
   transparent: {
-    bg: 'var(--color-tint-accent-1)',
-    fg: 'var(--color-tint-accent-1-fg)',
-    hoverBg: 'color-mix(in srgb, var(--color-solid-accent-1) 30%, transparent)',
+    // user purple for transparent? may need to adjust in future for other themes
+    bg: "var(--usercolor-tint-purple-dark)",
+    fg: "var(--usercolor-tint-purple-dark-fg)",
   },
 };
 
-export const DEFAULT_USER_COLOR = USER_COLOR_MAP['transparent'];
+export const DEFAULT_USER_COLOR = USER_COLOR_MAP["transparent"];
 
-export const DEFAULT_USER_COLOR_LIGHT = USER_COLOR_MAP_LIGHT['transparent'];
+export const DEFAULT_USER_COLOR_DARK = USER_COLOR_MAP_DARK["transparent"];
 
 export const userColorPair = (c?: UserColor): ColorPair =>
   c ? (USER_COLOR_MAP[c] ?? DEFAULT_USER_COLOR) : DEFAULT_USER_COLOR;
 
-export const userColorPairLight = (c?: UserColor): ColorPair =>
+export const userColorPairDark = (c?: UserColor): ColorPair =>
   c
-    ? (USER_COLOR_MAP_LIGHT[c] ?? DEFAULT_USER_COLOR_LIGHT)
-    : DEFAULT_USER_COLOR_LIGHT;
+    ? (USER_COLOR_MAP_DARK[c] ?? DEFAULT_USER_COLOR_DARK)
+    : DEFAULT_USER_COLOR_DARK;
 
 export const USER_COLORS: UserColor[] = [
   'green',

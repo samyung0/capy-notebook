@@ -7,6 +7,8 @@
    ============================================================ */
 
 [data-style="classroom"] {
+  --font-sans: "Fustat", system-ui, -apple-system, "Segoe UI", sans-serif;
+
   --display-font-size: 3.125rem;
   --display-font-weight: 800;
   --display-line-height: 1.15;
@@ -45,11 +47,9 @@
 
   --radius-input: 18px;
   --radius-button: 12px;
-  --radius-row: 12px;
   --radius-card: 18px;
   --radius-card-lg: 24px;
   --radius-card-xl: 28px;
-  --radius-pill: 9999px;
 }
 
 /* Dial the type scale down on phones so dense screens stay readable. */
@@ -68,7 +68,7 @@
 }
 
 /* ---------------- classroom · LIGHT ---------------- */
-[data-style="classroom"][data-theme="light"] {
+[data-style="classroom"][data-theme="latte"] {
   --surface-page: #f4f6f5; /* outer "device" */
   --surface-canvas: #f4f6f5; /* page wash behind inset cards */
   --surface-card-bg: #ffffff;
@@ -105,36 +105,45 @@
   /* system colors */
   --tint-success-bg: #e7f6ee;
   --tint-success-fg: #2f7d56;
-  --solid-success: #7bd9ab;
   --tint-info-bg: #e4ecf8;
   --tint-info-fg: #2e6bb0;
-  --solid-info: #8ec9f9;
   --tint-warning-bg: #f6ecdc;
   --tint-warning-fg: #a9772a;
-  --solid-warning: #ffcc61;
   --tint-error-bg: #fde7ea;
   --tint-error-fg: #b8475a;
-  --solid-error: #fd7287;
   --tint-accent-1-bg: #ece6f6;
   --tint-accent-1-fg: #5b4aa8;
   --tint-accent-2-bg: #e7f6ee;
   --tint-accent-2-fg: #2f7d56;
   --solid-accent-1: #8c7bd9;
   --solid-accent-2: #7bd9ab;
+  --solid-success: #7bd9ab;
+  --solid-info: #8ec9f9;
+  --solid-warning: #ffcc61;
+  --solid-error: #fd7287;
   /* user colors (used for assigned colors to workspaces/quiz/event/custom cards) */
-  /* TODO: provide a set of light colors with hover */
-  --solid-purple: #8c7bd9;
-  --solid-purple-fg: #ffffff;
-  --solid-green: #7bd9ab;
-  --solid-green-fg: #222222;
-  --solid-blue: #8ec9f9;
-  --solid-blue-fg: #222222;
-  --solid-amber: #f4c878;
-  --solid-amber-fg: #222222;
-  --solid-coral: #f49aa8;
-  --solid-coral-fg: #222222;
-  --solid-graphite: #2c302d;
-  --solid-graphite-fg: #ffffff;
+  --tint-purple: #8c7bd9;
+  --tint-purple-fg: #ffffff;
+  --tint-green: #7bd9ab;
+  --tint-green-fg: #222222;
+  --tint-blue: #8ec9f9;
+  --tint-blue-fg: #222222;
+  --tint-amber: #f4c878;
+  --tint-amber-fg: #222222;
+  --tint-coral: #f49aa8;
+  --tint-coral-fg: #222222;
+  --tint-graphite: #2c302d;
+  --tint-graphite-fg: #ffffff;
+  --tint-purple-dark: var(--tint-accent-1-bg);
+  --tint-purple-dark-fg: var(--tint-accent-1-fg);
+  --tint-green-dark: var(--tint-accent-2-bg);
+  --tint-green-dark-fg: var(--tint-accent-2-fg);
+  --tint-blue-dark: var(--tint-info-bg);
+  --tint-blue-dark-fg: var(--tint-info-fg);
+  --tint-amber-dark: var(--tint-warning-bg);
+  --tint-amber-dark-fg: var(--tint-warning-fg);
+  --tint-coral-dark: var(--tint-error-bg);
+  --tint-coral-dark-fg: var(--tint-error-fg);
 
   /* Shadows */
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.05);
@@ -147,7 +156,7 @@
 }
 
 /* ---------------- classroom · DARK ---------------- */
-[data-style="classroom"][data-theme="dark"] {
+[data-style="classroom"][data-theme="mocha"] {
   --surface-page: #121513;
   --surface-canvas: #0e100f;
   --surface-card-bg: #1c201e;

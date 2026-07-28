@@ -157,10 +157,10 @@ export function EventFormDialog({
                 return (
                   <button
                     className={cn(
-                      'flex items-center gap-1.5 rounded-pill border px-3 py-1 font-medium text-sm transition-colors',
+                      "flex items-center gap-1.5 rounded-full border px-3 py-1 font-medium text-sm transition-colors",
                       on
-                        ? 'border-transparent'
-                        : 'border-line text-fg-muted hover:text-fg'
+                        ? "border-transparent"
+                        : "border-line text-fg-muted hover:text-fg",
                     )}
                     key={l.id}
                     onClick={() => toggleLabel(l.id)}

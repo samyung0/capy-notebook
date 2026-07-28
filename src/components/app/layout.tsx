@@ -100,36 +100,21 @@ export function PageHeader({
     <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-6">
       <div
         className={cn(
-          'flex min-w-0 items-center gap-10 px-6 pt-6 pb-2',
-          className
+          "flex min-w-0 items-center gap-10 px-6 pt-6 pb-2",
+          className,
         )}
       >
-        <div className={cn('min-w-0 translate-y-px', titleClassName)}>
-          {typeof title === 'string' ? (
+        <div className={cn("min-w-0 translate-y-px", titleClassName)}>
+          {typeof title === "string" ? (
             <h1 className="t-page-title">{title}</h1>
           ) : (
             title
           )}
-          {subtitle && (
-            <p className="t-body mt-1 text-fg-secondary">{subtitle}</p>
-          )}
+          {subtitle && <p className="mt-1 text-fg-secondary">{subtitle}</p>}
         </div>
         {actions && <div className="flex items-center gap-2">{actions}</div>}
       </div>
       {showTopBar && <TopInsetBar />}
     </header>
-  );
-}
-
-/** Sort/filter control cluster shared by Workspaces, Quizzes, Schedule. */
-export function Toolbar({
-  children,
-  className,
-}: {
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={cn('flex items-center gap-2', className)}>{children}</div>
   );
 }

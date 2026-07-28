@@ -130,11 +130,11 @@ export function WorkspaceCardSkeleton() {
     <Card border="solid" className="gap-4 p-4.5 xl:p-5.5">
       <Skeleton className="size-11 rounded-card" />
       <div className="flex-1">
-        <Skeleton className="h-4.5 w-3/5 rounded-row" />
-        <Skeleton className="mt-2 h-3 w-2/5 rounded-row" />
+        <Skeleton className="h-4.5 w-3/5 rounded-button" />
+        <Skeleton className="mt-2 h-3 w-2/5 rounded-button" />
         <div className="mt-3.5 flex gap-1.5">
-          <Skeleton className="h-5 w-14 rounded-pill" />
-          <Skeleton className="h-5 w-10 rounded-pill" />
+          <Skeleton className="h-5 w-14 rounded-full" />
+          <Skeleton className="h-5 w-10 rounded-full" />
         </div>
       </div>
     </Card>

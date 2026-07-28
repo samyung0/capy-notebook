@@ -15,9 +15,13 @@ def test_parse_blob_relays_and_retries_once(monkeypatch):
     monkeypatch.setattr(mineru_lite.cfg, "mineru_relay_url", "https://relay.example")
     monkeypatch.setattr(mineru_lite.cfg, "mineru_relay_token", "secret")
     monkeypatch.setattr(mineru_lite.cfg, "mineru_relay_timeout", 10)
-    monkeypatch.setattr(mineru_lite, "_create_task", lambda _name: ("task-1", "https://upload.example"))
+    monkeypatch.setattr(
+        mineru_lite, "_create_task", lambda _name: ("task-1", "https://upload.example")
+    )
     monkeypatch.setattr(mineru_lite, "_poll_result", lambda task, _cb: f"done:{task}")
-    monkeypatch.setattr(blobstore, "presign_get", lambda *_args: "https://b2.example/source")
+    monkeypatch.setattr(
+        blobstore, "presign_get", lambda *_args: "https://b2.example/source"
+    )
     monkeypatch.setattr(mineru_lite.time, "sleep", lambda _seconds: None)
 
     responses = iter([_Response(502, "temporary"), _Response(200)])

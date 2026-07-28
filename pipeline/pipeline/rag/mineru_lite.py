@@ -15,11 +15,12 @@ Chinese + English only.
 
 Synchronous (requests); the worker calls it via ``asyncio.to_thread``.
 """
+
 from __future__ import annotations
 
 import logging
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import requests
 
@@ -66,7 +67,7 @@ def _create_task(file_name: str) -> tuple[str, str]:
 
 
 def _poll_result(
-    task_id: str, on_progress: Optional[Callable[[int], None]] = None
+    task_id: str, on_progress: Callable[[int], None] | None = None
 ) -> str:
     base = cfg.mineru_lite_base.rstrip("/")
     deadline = time.monotonic() + cfg.mineru_lite_timeout
@@ -101,7 +102,7 @@ def _poll_result(
 def parse_file(
     local_path: str,
     file_name: str,
-    on_progress: Optional[Callable[[int], None]] = None,
+    on_progress: Callable[[int], None] | None = None,
 ) -> str:
     """Parse a document with the MinerU lightweight API and return markdown.
 
@@ -125,7 +126,7 @@ def parse_file(
 def parse_blob(
     blob_path: str,
     file_name: str,
-    on_progress: Optional[Callable[[int], None]] = None,
+    on_progress: Callable[[int], None] | None = None,
 ) -> str:
     """Parse a B2 object, relaying its bytes through Cloudflare when enabled."""
     from ..store import blobstore
@@ -162,7 +163,11 @@ def parse_blob(
         if attempt == 0:
             time.sleep(1)
     if relay is None or relay.status_code >= 300:
-        detail = "network error" if relay is None else f"{relay.status_code}: {relay.text[:300]}"
+        detail = (
+            "network error"
+            if relay is None
+            else f"{relay.status_code}: {relay.text[:300]}"
+        )
         raise MineruLiteError(f"MinerU relay failed ({detail})")
     if on_progress:
         on_progress(25)

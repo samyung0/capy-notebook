@@ -8,12 +8,13 @@ The cache MUST live on a single long-lived event loop (the worker's
 ``asyncio.run(main)`` or FastAPI's loop): asyncpg pools are bound to the loop
 that created them.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
 from collections import OrderedDict
-from typing import Awaitable, Callable
+from collections.abc import Awaitable, Callable
 
 from lightrag import LightRAG
 
@@ -21,10 +22,12 @@ log = logging.getLogger("evo.rag.cache")
 
 
 class RagCache:
-    def __init__(self, builder: Callable[[str], Awaitable[LightRAG]], maxsize: int = 16):
+    def __init__(
+        self, builder: Callable[[str], Awaitable[LightRAG]], maxsize: int = 16
+    ):
         self._builder = builder
         self._maxsize = max(1, maxsize)
-        self._items: "OrderedDict[str, LightRAG]" = OrderedDict()
+        self._items: OrderedDict[str, LightRAG] = OrderedDict()
         self._lock = asyncio.Lock()
 
     async def get(self, workspace: str) -> LightRAG:
@@ -46,7 +49,7 @@ class RagCache:
             log.info("evicting LightRAG for workspace=%s", ws)
             try:
                 await rag.finalize_storages()
-            except Exception:  # noqa: BLE001 — best-effort cleanup
+            except Exception:
                 log.exception("error finalizing evicted workspace=%s", ws)
 
     async def close(self) -> None:
@@ -55,5 +58,5 @@ class RagCache:
                 _ws, rag = self._items.popitem(last=False)
                 try:
                     await rag.finalize_storages()
-                except Exception:  # noqa: BLE001
+                except Exception:
                     log.exception("error finalizing workspace during close")

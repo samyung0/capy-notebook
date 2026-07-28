@@ -1,80 +1,80 @@
 import type { CognitiveLevel, Question, QuestionType } from '@/api/types';
-import { Button, Checkbox, Icon, Input, Text } from '@/components/ui';
-import { cn } from '@/lib/cn';
-import { LEVEL_LABEL, LEVELS } from '@/lib/levels';
+import { Button, Checkbox, Icon, Input } from "@/components/ui";
+import { cn } from "@/lib/cn";
+import { LEVEL_LABEL, LEVELS } from "@/lib/levels";
 
 const Q_TYPES: QuestionType[] = [
-  'mcq',
-  'multi',
-  'boolean',
-  'fill',
-  'short',
-  'matching',
-  'ordering',
+  "mcq",
+  "multi",
+  "boolean",
+  "fill",
+  "short",
+  "matching",
+  "ordering",
 ];
 const Q_TYPE_LABEL: Record<QuestionType, string> = {
-  boolean: 'True / false',
-  fill: 'Fill blank',
-  matching: 'Matching',
-  mcq: 'Multiple choice',
-  multi: 'Multi-select',
-  ordering: 'Ordering',
-  short: 'Short answer',
+  boolean: "True / false",
+  fill: "Fill blank",
+  matching: "Matching",
+  mcq: "Multiple choice",
+  multi: "Multi-select",
+  ordering: "Ordering",
+  short: "Short answer",
 };
 
 const newId = () => `q_${Math.random().toString(36).slice(2, 9)}`;
 
 /** Build a blank question of the given type, preserving any shared fields. */
 export function createBlankQuestion(
-  type: QuestionType = 'mcq',
+  type: QuestionType = "mcq",
   base?: {
     id?: string;
     level?: CognitiveLevel;
     prompt?: string;
     explanation?: string;
-  }
+  },
 ): Question {
   const shared = {
     id: base?.id ?? newId(),
-    level: base?.level ?? ('recall' as const),
-    prompt: base?.prompt ?? '',
+    level: base?.level ?? ("recall" as const),
+    prompt: base?.prompt ?? "",
     ...(base?.explanation ? { explanation: base.explanation } : {}),
   };
   switch (type) {
-    case 'mcq':
+    case "mcq":
       return {
         ...shared,
         correct: [],
-        options: [{ value: '' }, { value: '' }],
-        type: 'mcq',
+        options: [{ value: "" }, { value: "" }],
+        type: "mcq",
       };
-    case 'multi':
+    case "multi":
       return {
         ...shared,
         correct: [],
-        options: [{ value: '' }, { value: '' }],
-        type: 'multi',
+        options: [{ value: "" }, { value: "" }],
+        type: "multi",
       };
-    case 'boolean':
-      return { ...shared, correct: true, type: 'boolean' };
-    case 'fill':
-      return { ...shared, accepted: [{ value: '' }], type: 'fill' };
-    case 'short':
-      return { ...shared, accepted: [{ value: '' }], type: 'short' };
-    case 'ordering':
+    case "boolean":
+      return { ...shared, correct: true, type: "boolean" };
+    case "fill":
+      return { ...shared, accepted: [{ value: "" }], type: "fill" };
+    case "short":
+      return { ...shared, accepted: [{ value: "" }], type: "short" };
+    case "ordering":
       return {
         ...shared,
-        items: [{ value: '' }, { value: '' }],
-        type: 'ordering',
+        items: [{ value: "" }, { value: "" }],
+        type: "ordering",
       };
-    case 'matching':
+    case "matching":
       return {
         ...shared,
         pairs: [
-          { left: '', right: '' },
-          { left: '', right: '' },
+          { left: "", right: "" },
+          { left: "", right: "" },
         ],
-        type: 'matching',
+        type: "matching",
       };
   }
 }
@@ -82,31 +82,31 @@ export function createBlankQuestion(
 export function isCompleteQuestion(question: Question): boolean {
   if (!question.prompt.trim()) return false;
   switch (question.type) {
-    case 'mcq':
-    case 'multi':
+    case "mcq":
+    case "multi":
       return (
         question.options.length >= 2 &&
         question.options.every((option) => option.value.trim()) &&
         question.correct.length >= 1 &&
-        (question.type === 'multi' || question.correct.length === 1) &&
+        (question.type === "multi" || question.correct.length === 1) &&
         question.correct.every(
-          (index) => index >= 0 && index < question.options.length
+          (index) => index >= 0 && index < question.options.length,
         )
       );
-    case 'boolean':
+    case "boolean":
       return true;
-    case 'fill':
-    case 'short':
+    case "fill":
+    case "short":
       return (
         question.accepted.length > 0 &&
         question.accepted.every((answer) => answer.value.trim())
       );
-    case 'ordering':
+    case "ordering":
       return (
         question.items.length >= 2 &&
         question.items.every((item) => item.value.trim())
       );
-    case 'matching':
+    case "matching":
       return (
         question.pairs.length >= 2 &&
         question.pairs.every((pair) => pair.left.trim() && pair.right.trim())
@@ -115,7 +115,7 @@ export function isCompleteQuestion(question: Question): boolean {
 }
 
 const selectClass =
-  'rounded-row border border-line bg-surface px-2 py-1.5 text-xs text-fg outline-none focus:border-line-strong';
+  "rounded-button border border-line bg-surface px-2 py-1.5 text-xs text-fg outline-none focus:border-line-strong";
 
 /**
  * Controlled quiz editor: name field + a list of type-specific question
@@ -149,7 +149,7 @@ export function QuizForm({
         id: q.id,
         level: q.level,
         prompt: q.prompt,
-      })
+      }),
     );
   }
   function addQuestion() {
@@ -163,9 +163,7 @@ export function QuizForm({
     <div className="flex flex-col gap-5">
       {showName && (
         <label className="flex flex-col gap-1.5">
-          <Text tone="muted" variant="label">
-            Quiz name
-          </Text>
+          <p className="t-label text-fg-muted">Quiz name</p>
           <Input onChange={(e) => onNameChange(e.target.value)} value={name} />
         </label>
       )}
@@ -217,7 +215,7 @@ export function QuizForm({
             value={q.prompt}
           />
 
-          {(q.type === 'mcq' || q.type === 'multi') && (
+          {(q.type === "mcq" || q.type === "multi") && (
             <div className="mt-3 flex flex-col gap-3">
               {q.options.map((opt, oi) => (
                 <div className="flex flex-col gap-1.5" key={oi}>
@@ -230,7 +228,7 @@ export function QuizForm({
                           : q.correct.filter((x) => x !== oi);
                         update(i, {
                           ...q,
-                          correct: q.type === 'mcq' ? (c ? [oi] : []) : correct,
+                          correct: q.type === "mcq" ? (c ? [oi] : []) : correct,
                         });
                       }}
                       size={20}
@@ -272,7 +270,7 @@ export function QuizForm({
                       update(i, { ...q, options });
                     }}
                     placeholder={`Why option ${oi + 1} is right / wrong (optional)`}
-                    value={opt.explanation ?? ''}
+                    value={opt.explanation ?? ""}
                     wrapperClassName="ml-7"
                   />
                 </div>
@@ -280,61 +278,59 @@ export function QuizForm({
               <AddRowButton
                 label="Add option"
                 onClick={() =>
-                  update(i, { ...q, options: [...q.options, { value: '' }] })
+                  update(i, { ...q, options: [...q.options, { value: "" }] })
                 }
               />
             </div>
           )}
 
-          {q.type === 'boolean' && (
+          {q.type === "boolean" && (
             <div className="mt-3 flex items-center gap-2">
-              <Text tone="muted" variant="meta">
-                Correct answer:
-              </Text>
+              <p className="t-meta text-fg-muted">Correct answer:</p>
               <Button
                 onClick={() => update(i, { ...q, correct: true })}
                 size="sm"
-                variant={q.correct ? 'accent' : 'outline'}
+                variant={q.correct ? "accent" : "outline"}
               >
                 True
               </Button>
               <Button
                 onClick={() => update(i, { ...q, correct: false })}
                 size="sm"
-                variant={q.correct ? 'outline' : 'accent'}
+                variant={q.correct ? "outline" : "accent"}
               >
                 False
               </Button>
             </div>
           )}
 
-          {(q.type === 'fill' || q.type === 'short') && (
+          {(q.type === "fill" || q.type === "short") && (
             <label className="mt-3 flex flex-col gap-1.5">
-              <Text tone="muted" variant="label">
+              <p className="t-label text-fg-muted">
                 Accepted answers (comma separated)
-              </Text>
+              </p>
               <Input
                 onChange={(e) =>
                   update(i, {
                     ...q,
                     accepted: e.target.value
-                      .split(',')
+                      .split(",")
                       .map((s) => ({ value: s.trim() })),
                   })
                 }
-                value={q.accepted.map((a) => a.value).join(', ')}
+                value={q.accepted.map((a) => a.value).join(", ")}
               />
             </label>
           )}
 
-          {q.type === 'ordering' && (
+          {q.type === "ordering" && (
             <div className="mt-3 flex flex-col gap-2">
-              <Text tone="muted" variant="label">
+              <p className="t-label text-fg-muted">
                 Items (listed in correct order)
-              </Text>
+              </p>
               {q.items.map((item, oi) => (
                 <div className="flex items-center gap-2" key={oi}>
-                  <span className="flex h-6 w-6 items-center justify-center rounded-pill bg-surface font-bold text-fg-secondary text-xs">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-surface font-bold text-fg-secondary text-xs">
                     {oi + 1}
                   </span>
                   <Input
@@ -366,23 +362,21 @@ export function QuizForm({
               <AddRowButton
                 label="Add item"
                 onClick={() =>
-                  update(i, { ...q, items: [...q.items, { value: '' }] })
+                  update(i, { ...q, items: [...q.items, { value: "" }] })
                 }
               />
             </div>
           )}
 
-          {q.type === 'matching' && (
+          {q.type === "matching" && (
             <div className="mt-3 flex flex-col gap-2">
-              <Text tone="muted" variant="label">
-                Pairs
-              </Text>
+              <p className="t-label text-fg-muted">Pairs</p>
               {q.pairs.map((p, oi) => (
                 <div className="flex items-center gap-2" key={oi}>
                   <Input
                     onChange={(e) => {
                       const pairs = q.pairs.map((x, xi) =>
-                        xi === oi ? { ...x, left: e.target.value } : x
+                        xi === oi ? { ...x, left: e.target.value } : x,
                       );
                       update(i, { ...q, pairs });
                     }}
@@ -394,7 +388,7 @@ export function QuizForm({
                   <Input
                     onChange={(e) => {
                       const pairs = q.pairs.map((x, xi) =>
-                        xi === oi ? { ...x, right: e.target.value } : x
+                        xi === oi ? { ...x, right: e.target.value } : x,
                       );
                       update(i, { ...q, pairs });
                     }}
@@ -423,7 +417,7 @@ export function QuizForm({
                 onClick={() =>
                   update(i, {
                     ...q,
-                    pairs: [...q.pairs, { left: '', right: '' }],
+                    pairs: [...q.pairs, { left: "", right: "" }],
                   })
                 }
               />
@@ -431,13 +425,11 @@ export function QuizForm({
           )}
 
           <label className="mt-3 flex flex-col gap-1.5">
-            <Text tone="muted" variant="label">
-              Explanation (optional)
-            </Text>
+            <p className="t-label text-fg-muted">Explanation (optional)</p>
             <Input
               onChange={(e) => update(i, { ...q, explanation: e.target.value })}
               placeholder="Shown after answering"
-              value={q.explanation ?? ''}
+              value={q.explanation ?? ""}
             />
           </label>
         </div>
@@ -460,8 +452,8 @@ function AddRowButton({
   return (
     <button
       className={cn(
-        'flex items-center gap-1 self-start rounded-pill border border-line border-dashed px-2.5 py-1',
-        'font-medium text-fg-secondary text-xs hover:bg-surface'
+        "flex items-center gap-1 self-start rounded-full border border-line border-dashed px-2.5 py-1",
+        "font-medium text-fg-secondary text-xs hover:bg-surface",
       )}
       onClick={onClick}
       type="button"

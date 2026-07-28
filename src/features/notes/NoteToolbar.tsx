@@ -693,8 +693,8 @@ function FontSizeControl() {
             aria-haspopup="listbox"
             aria-label={`Font size: ${cursorFontSize}`}
             className={cn(
-              'h-8 w-10 shrink-0 text-center font-semibold text-sm outline-none',
-              'bg-surface-hover-bg text-surface-dark-fg hover:bg-surface-dark focus-visible:ring-2 focus-visible:ring-focus'
+              "h-8 w-10 shrink-0 text-center font-semibold text-sm outline-none",
+              "bg-surface-hover-bg text-surface-dark-fg hover:bg-surface-dark focus-visible:ring-2 focus-visible:ring-focus",
             )}
             data-plate-prevent-deselect
             onMouseDown={(event) => event.preventDefault()}
@@ -718,10 +718,10 @@ function FontSizeControl() {
               <button
                 aria-selected={size === cursorFontSize}
                 className={cn(
-                  'flex h-8 w-full items-center justify-center rounded-row text-sm outline-none',
-                  'hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-focus',
+                  "flex h-8 w-full items-center justify-center rounded-button text-sm outline-none",
+                  "hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-focus",
                   size === cursorFontSize &&
-                    'bg-tint-accent-1 text-tint-accent-1-fg'
+                    "bg-tint-accent-1 text-tint-accent-1-fg",
                 )}
                 data-plate-prevent-deselect
                 key={size}
@@ -763,7 +763,7 @@ function FontColorControl({
   const [open, setOpen] = useState(false);
   const currentColor = useEditorSelector(
     (currentEditor) => currentEditor.api.mark(markKey) as string | undefined,
-    [markKey]
+    [markKey],
   );
 
   const applyColor = (color: string) => {
@@ -787,7 +787,7 @@ function FontColorControl({
           {icon}
           <span
             aria-hidden
-            className="absolute right-1.5 bottom-0.5 left-1.5 h-1 rounded-pill border border-line-strong"
+            className="absolute right-1.5 bottom-0.5 left-1.5 h-1 rounded-full border border-line-strong"
             style={{ backgroundColor: currentColor || fallbackColor }}
           />
         </ToolbarButton>
@@ -861,7 +861,7 @@ function BlockTypeMenu({ onBlock }: { onBlock: (type: string) => void }) {
   );
 }
 
-type ImportKind = 'markdown' | 'docx' | 'json';
+type ImportKind = "markdown" | "docx" | "json";
 
 const IMPORT_OPTIONS: Record<
   ImportKind,
@@ -869,18 +869,18 @@ const IMPORT_OPTIONS: Record<
 > = {
   docx: {
     accept:
-      '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    extensions: ['.docx'],
+      ".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    extensions: [".docx"],
     maxBytes: 25 * 1024 * 1024,
   },
   json: {
-    accept: '.json,.plate.json,application/json',
-    extensions: ['.json'],
+    accept: ".json,.plate.json,application/json",
+    extensions: [".json"],
     maxBytes: 10 * 1024 * 1024,
   },
   markdown: {
-    accept: '.md,.mdx,text/markdown,text/mdx',
-    extensions: ['.md', '.mdx'],
+    accept: ".md,.mdx,text/markdown,text/mdx",
+    extensions: [".md", ".mdx"],
     maxBytes: 5 * 1024 * 1024,
   },
 };
@@ -890,14 +890,14 @@ function validateImportFile(file: File, kind: ImportKind) {
   const name = file.name.toLowerCase();
 
   if (!option.extensions.some((extension) => name.endsWith(extension))) {
-    throw new Error(`Choose a ${option.extensions.join(' or ')} file.`);
+    throw new Error(`Choose a ${option.extensions.join(" or ")} file.`);
   }
   if (file.size === 0) {
-    throw new Error('The selected file is empty.');
+    throw new Error("The selected file is empty.");
   }
   if (file.size > option.maxBytes) {
     throw new Error(
-      `The selected file is larger than ${option.maxBytes / 1024 / 1024} MB.`
+      `The selected file is larger than ${option.maxBytes / 1024 / 1024} MB.`,
     );
   }
 }
@@ -924,10 +924,10 @@ function ImportMenu({
 
   const handleFile = async (
     event: React.ChangeEvent<HTMLInputElement>,
-    kind: ImportKind
+    kind: ImportKind,
   ) => {
     const file = event.target.files?.[0];
-    event.target.value = '';
+    event.target.value = "";
     if (!file) return;
 
     try {
@@ -938,9 +938,9 @@ function ImportMenu({
         description:
           cause instanceof Error
             ? cause.message
-            : 'The selected file could not be read.',
-        title: 'Import failed',
-        variant: 'error',
+            : "The selected file could not be read.",
+        title: "Import failed",
+        variant: "error",
       });
     }
   };
@@ -970,13 +970,13 @@ function ImportMenu({
         >
           <MenuRow
             label="Import Markdown (.md)"
-            onClick={() => chooseFile('markdown')}
+            onClick={() => chooseFile("markdown")}
           />
           <MenuRow
             label="Import Word (.docx)"
-            onClick={() => chooseFile('docx')}
+            onClick={() => chooseFile("docx")}
           />
-          <MenuRow label="Import JSON" onClick={() => chooseFile('json')} />
+          <MenuRow label="Import JSON" onClick={() => chooseFile("json")} />
         </PopoverContent>
       </Popover>
     </>
@@ -1002,8 +1002,8 @@ function ExportMenu({ editor }: { editor: AnyEditor }) {
           onClick={() =>
             downloadEditorText(
               exportMarkdownDocument(editor),
-              'document.md',
-              'text/markdown'
+              "document.md",
+              "text/markdown",
             )
           }
         />
@@ -1011,7 +1011,7 @@ function ExportMenu({ editor }: { editor: AnyEditor }) {
           label="Export Word (.docx)"
           onClick={() =>
             void exportDocxDocument(editor, MaterialKit as SlatePlugin[]).then(
-              (blob) => downloadEditorFile(blob, 'document.docx')
+              (blob) => downloadEditorFile(blob, "document.docx"),
             )
           }
         />
@@ -1022,10 +1022,10 @@ function ExportMenu({ editor }: { editor: AnyEditor }) {
               JSON.stringify(
                 { schemaVersion: 1, value: editor.children },
                 null,
-                2
+                2,
               ),
-              'document.plate.json',
-              'application/json'
+              "document.plate.json",
+              "application/json",
             )
           }
         />
@@ -1050,13 +1050,13 @@ function AlignMenu({ editor }: { editor: AnyEditor }) {
         align="start"
         className="flex w-auto gap-1 border border-line bg-surface p-1 shadow-pop"
       >
-        <ToolbarButton label="Align left" onClick={() => align('left')}>
+        <ToolbarButton label="Align left" onClick={() => align("left")}>
           <AlignLeft />
         </ToolbarButton>
-        <ToolbarButton label="Align center" onClick={() => align('center')}>
+        <ToolbarButton label="Align center" onClick={() => align("center")}>
           <AlignCenter />
         </ToolbarButton>
-        <ToolbarButton label="Align right" onClick={() => align('right')}>
+        <ToolbarButton label="Align right" onClick={() => align("right")}>
           <AlignRight />
         </ToolbarButton>
         {/* <ToolbarButton label="Justify" onClick={() => align('justify')}>
@@ -1072,7 +1072,7 @@ function TableMenu() {
   const { editor, tf } = useEditorPlugin(TablePlugin);
   const tableSelected = useEditorSelector(
     (currentEditor) => currentEditor.api.some({ match: { type: KEYS.table } }),
-    []
+    [],
   );
   const { canMerge, canSplit } = useTableMergeState();
 
@@ -1099,7 +1099,7 @@ function TableMenu() {
               <TablePicker
                 onInsert={(rowCount, colCount) => {
                   run(() =>
-                    tf.insert.table({ colCount, rowCount }, { select: true })
+                    tf.insert.table({ colCount, rowCount }, { select: true }),
                   );
                   setOpen(false);
                 }}
@@ -1212,20 +1212,20 @@ function TablePicker({
       aria-label={`Insert ${size.rowCount} by ${size.colCount} table`}
       className="m-0 flex flex-col gap-1 p-1 outline-none"
       onKeyDown={(event) => {
-        if (event.key === 'Enter' || event.key === ' ') {
+        if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           onInsert(size.rowCount, size.colCount);
           return;
         }
 
         const next = { ...size };
-        if (event.key === 'ArrowUp')
+        if (event.key === "ArrowUp")
           next.rowCount = Math.max(1, size.rowCount - 1);
-        else if (event.key === 'ArrowDown')
+        else if (event.key === "ArrowDown")
           next.rowCount = Math.min(dimension, size.rowCount + 1);
-        else if (event.key === 'ArrowLeft')
+        else if (event.key === "ArrowLeft")
           next.colCount = Math.max(1, size.colCount - 1);
-        else if (event.key === 'ArrowRight')
+        else if (event.key === "ArrowRight")
           next.colCount = Math.min(dimension, size.colCount + 1);
         else return;
 
@@ -1246,8 +1246,8 @@ function TablePicker({
               aria-label={`Insert ${row} by ${column} table`}
               aria-selected={active}
               className={cn(
-                'size-3.5 rounded-xs border border-line bg-surface outline-none',
-                active && 'border-action-accent bg-tint-accent-1'
+                "size-3.5 rounded-xs border border-line bg-surface outline-none",
+                active && "border-action-accent bg-tint-accent-1",
               )}
               key={`${row}:${column}`}
               onClick={() => onInsert(row, column)}
@@ -1277,7 +1277,7 @@ function MenuRow({
   className,
   onMouseDown,
   ...rest
-}: React.ComponentProps<'button'> & {
+}: React.ComponentProps<"button"> & {
   label: string;
   icon?: React.ReactNode;
   shortcut?: string;
@@ -1286,8 +1286,8 @@ function MenuRow({
   return (
     <button
       className={cn(
-        'flex w-full items-center gap-2 rounded-row px-2 py-1.5 text-left text-fg text-sm hover:bg-surface-hover-bg [&_svg]:size-4',
-        className
+        "flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left text-fg text-sm hover:bg-surface-hover-bg [&_svg]:size-4",
+        className,
       )}
       onClick={onClick}
       onMouseDown={(event) => {
@@ -1337,7 +1337,7 @@ function WidgetSettingsDialog() {
     >
       <button
         aria-label="Editor command settings"
-        className="inline-flex size-8 items-center justify-center rounded-row hover:bg-surface-hover-bg"
+        className="inline-flex size-8 items-center justify-center rounded-button hover:bg-surface-hover-bg"
         onClick={() => setOpen(true)}
         title="Editor command settings"
         type="button"

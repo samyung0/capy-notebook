@@ -4,6 +4,7 @@ Covers the bits we own around LightRAG's MinerU IR builder: registry wiring,
 the raw-bundle cache signature, image-path rewriting, and the bundle -> IR
 conversion. The Modal HTTP call itself is exercised in the cassette suite.
 """
+
 from __future__ import annotations
 
 import base64
@@ -39,8 +40,18 @@ def _write_bundle(raw_dir: Path) -> None:
             "table_caption": ["Table 1"],
             "page_idx": 1,
         },
-        {"type": "equation", "text": "$$e=mc^2$$", "text_format": "block", "page_idx": 1},
-        {"type": "image", "img_path": "images/fig1.png", "img_caption": ["Fig 1"], "page_idx": 2},
+        {
+            "type": "equation",
+            "text": "$$e=mc^2$$",
+            "text_format": "block",
+            "page_idx": 1,
+        },
+        {
+            "type": "image",
+            "img_path": "images/fig1.png",
+            "img_caption": ["Fig 1"],
+            "page_idx": 2,
+        },
     ]
     (raw_dir / "content_list.json").write_text(json.dumps(content), encoding="utf-8")
 
@@ -128,7 +139,9 @@ def test_fetch_bundle_rewrites_image_paths(tmp_path: Path, monkeypatch):
     src.write_bytes(b"pdf")
     raw = tmp_path / "doc.modal_raw"
     raw.mkdir()
-    monkeypatch.setattr(modal_parser.cfg, "modal_parse_url", "https://modal.test/file_parse")
+    monkeypatch.setattr(
+        modal_parser.cfg, "modal_parse_url", "https://modal.test/file_parse"
+    )
 
     modal_parser._fetch_bundle_sync(src, "doc.pdf", raw)
 
@@ -145,7 +158,9 @@ def test_fetch_bundle_raises_on_http_error(tmp_path: Path, monkeypatch):
         text = "boom"
 
     monkeypatch.setattr(modal_parser.requests, "post", lambda *a, **k: _Resp())
-    monkeypatch.setattr(modal_parser.cfg, "modal_parse_url", "https://modal.test/file_parse")
+    monkeypatch.setattr(
+        modal_parser.cfg, "modal_parse_url", "https://modal.test/file_parse"
+    )
 
     src = tmp_path / "doc.pdf"
     src.write_bytes(b"pdf")

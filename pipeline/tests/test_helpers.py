@@ -1,5 +1,6 @@
 """Offline unit tests for pure helper logic in the retrieval service and config
 (no network, no database)."""
+
 from __future__ import annotations
 
 import pipeline.retrieve.service as svc
@@ -24,7 +25,7 @@ def test_extract_json_fenced():
 
 
 def test_extract_json_embedded_array():
-    assert svc._extract_json('prefix [1, 2, 3] suffix') == [1, 2, 3]
+    assert svc._extract_json("prefix [1, 2, 3] suffix") == [1, 2, 3]
 
 
 def test_extract_json_garbage_returns_none():
@@ -33,7 +34,10 @@ def test_extract_json_garbage_returns_none():
 
 
 def test_strip_fence_mermaid():
-    assert svc._strip_fence("```mermaid\nflowchart LR\n A-->B\n```") == "flowchart LR\n A-->B"
+    assert (
+        svc._strip_fence("```mermaid\nflowchart LR\n A-->B\n```")
+        == "flowchart LR\n A-->B"
+    )
 
 
 def test_strip_fence_passthrough():
@@ -41,11 +45,17 @@ def test_strip_fence_passthrough():
 
 
 def test_cognitive_levels_from_levels():
-    assert svc._cognitive_levels(_Req(levels=["recall", "analysis"])) == ["recall", "analysis"]
+    assert svc._cognitive_levels(_Req(levels=["recall", "analysis"])) == [
+        "recall",
+        "analysis",
+    ]
 
 
 def test_cognitive_levels_legacy_difficulty():
-    assert svc._cognitive_levels(_Req(difficulty=["easy", "hard"])) == ["recall", "analysis"]
+    assert svc._cognitive_levels(_Req(difficulty=["easy", "hard"])) == [
+        "recall",
+        "analysis",
+    ]
 
 
 def test_cognitive_levels_default():
@@ -56,8 +66,15 @@ def test_new_srs_shape():
     srs = svc._new_srs()
     assert srs["state"] == 0 and srs["reps"] == 0
     assert set(srs) == {
-        "due", "stability", "difficulty", "elapsed_days",
-        "scheduled_days", "reps", "lapses", "state", "learning_steps",
+        "due",
+        "stability",
+        "difficulty",
+        "elapsed_days",
+        "scheduled_days",
+        "reps",
+        "lapses",
+        "state",
+        "learning_steps",
     }
 
 

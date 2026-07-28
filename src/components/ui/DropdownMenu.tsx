@@ -59,11 +59,11 @@ function DropdownMenuItem({
   return (
     <DropdownMenuPrimitive.Item
       className={cn(
-        'relative flex cursor-default select-none items-center gap-2 rounded-row px-2 py-1.5 text-sm outline-none',
-        'focus:bg-surface-hover-bg data-[highlighted]:bg-surface-hover-bg',
-        'data-[disabled]:pointer-events-none data-[disabled]:opacity-40',
-        'data-[inset]:pl-8 [&_svg]:size-4 [&_svg]:shrink-0',
-        className
+        "relative flex cursor-default select-none items-center gap-2 rounded-button px-2 py-1.5 text-sm outline-none",
+        "focus:bg-surface-hover-bg data-[highlighted]:bg-surface-hover-bg",
+        "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
+        "data-[inset]:pl-8 [&_svg]:size-4 [&_svg]:shrink-0",
+        className,
       )}
       data-inset={inset || undefined}
       data-slot="dropdown-menu-item"
@@ -82,10 +82,10 @@ function DropdownMenuCheckboxItem({
     <DropdownMenuPrimitive.CheckboxItem
       checked={checked}
       className={cn(
-        'relative flex cursor-default select-none items-center rounded-row py-1.5 pr-2 pl-8 text-sm outline-none',
-        'focus:bg-surface-hover-bg data-[highlighted]:bg-surface-hover-bg',
-        'data-[disabled]:pointer-events-none data-[disabled]:opacity-40',
-        className
+        "relative flex cursor-default select-none items-center rounded-button py-1.5 pr-2 pl-8 text-sm outline-none",
+        "focus:bg-surface-hover-bg data-[highlighted]:bg-surface-hover-bg",
+        "data-[disabled]:pointer-events-none data-[disabled]:opacity-40",
+        className,
       )}
       data-slot="dropdown-menu-checkbox-item"
       {...props}
@@ -106,7 +106,7 @@ function DropdownMenuSeparator({
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Separator>) {
   return (
     <DropdownMenuPrimitive.Separator
-      className={cn('-mx-1 my-1 h-px bg-divider', className)}
+      className={cn("-mx-1 my-1 h-px bg-divider", className)}
       data-slot="dropdown-menu-separator"
       {...props}
     />
@@ -114,7 +114,7 @@ function DropdownMenuSeparator({
 }
 
 function DropdownMenuSub(
-  props: React.ComponentProps<typeof DropdownMenuPrimitive.Sub>
+  props: React.ComponentProps<typeof DropdownMenuPrimitive.Sub>,
 ) {
   return <DropdownMenuPrimitive.Sub {...props} />;
 }
@@ -130,11 +130,11 @@ function DropdownMenuSubTrigger({
   return (
     <DropdownMenuPrimitive.SubTrigger
       className={cn(
-        'flex cursor-default select-none items-center gap-2 rounded-row px-2 py-1.5 text-sm outline-none',
-        'focus:bg-surface-hover-bg data-[highlighted]:bg-surface-hover-bg data-[state=open]:bg-surface-hover-bg',
-        'data-[disabled]:pointer-events-none data-[inset]:pl-8 data-[disabled]:opacity-40',
-        '[&_svg]:size-4 [&_svg]:shrink-0',
-        className
+        "flex cursor-default select-none items-center gap-2 rounded-button px-2 py-1.5 text-sm outline-none",
+        "focus:bg-surface-hover-bg data-[highlighted]:bg-surface-hover-bg data-[state=open]:bg-surface-hover-bg",
+        "data-[disabled]:pointer-events-none data-[inset]:pl-8 data-[disabled]:opacity-40",
+        "[&_svg]:size-4 [&_svg]:shrink-0",
+        className,
       )}
       data-inset={inset || undefined}
       data-slot="dropdown-menu-sub-trigger"

@@ -5,8 +5,7 @@
 @import "./tokens/themes/notion.css";
 @import "tw-animate-css";
 
-/* Drive dark variants off our [data-theme] attribute, not the class. */
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+@custom-variant dark (&:is(.dark *));
 
 /* ============================================================
    Tailwind bridge — semantic roles → utilities.
@@ -14,7 +13,8 @@
    runtime when [data-style]/[data-theme] change.
    ============================================================ */
 @theme inline {
-  --font-sans: "Fustat", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
 
   /* Surfaces → bg-* */
   --color-page: var(--surface-page);
@@ -71,27 +71,38 @@
 
   /* User colors (used for assigned colors to workspaces/quiz/event/custom cards) */
   /* TODO: in future include dynamic color palette so user have more options */
-  --color-solid-purple: var(--solid-purple);
-  --color-solid-purple-fg: var(--solid-purple-fg);
-  --color-solid-green: var(--solid-green);
-  --color-solid-green-fg: var(--solid-green-fg);
-  --color-solid-blue: var(--solid-blue);
-  --color-solid-blue-fg: var(--solid-blue-fg);
-  --color-solid-amber: var(--solid-amber);
-  --color-solid-amber-fg: var(--solid-amber-fg);
-  --color-solid-coral: var(--solid-coral);
-  --color-solid-coral-fg: var(--solid-coral-fg);
-  --color-solid-graphite: var(--solid-graphite);
-  --color-solid-graphite-fg: var(--solid-graphite-fg);
+  /* add user color solid if needed */
+  --usercolor-tint-purple: var(--tint-purple);
+  --usercolor-tint-purple-fg: var(--tint-purple-fg);
+  --usercolor-tint-green: var(--tint-green);
+  --usercolor-tint-green-fg: var(--tint-green-fg);
+  --usercolor-tint-blue: var(--tint-blue);
+  --usercolor-tint-blue-fg: var(--tint-blue-fg);
+  --usercolor-tint-amber: var(--tint-amber);
+  --usercolor-tint-amber-fg: var(--tint-amber-fg);
+  --usercolor-tint-coral: var(--tint-coral);
+  --usercolor-tint-coral-fg: var(--tint-coral-fg);
+  --usercolor-tint-graphite: var(--tint-graphite);
+  --usercolor-tint-graphite-fg: var(--tint-graphite-fg);
+  --usercolor-tint-purple-dark: var(--tint-purple-dark);
+  --usercolor-tint-purple-dark-fg: var(--tint-purple-dark-fg);
+  --usercolor-tint-green-dark: var(--tint-green-dark);
+  --usercolor-tint-green-dark-fg: var(--tint-green-dark-fg);
+  --usercolor-tint-blue-dark: var(--tint-blue-dark);
+  --usercolor-tint-blue-dark-fg: var(--tint-blue-dark-fg);
+  --usercolor-tint-amber-dark: var(--tint-amber-dark);
+  --usercolor-tint-amber-dark-fg: var(--tint-amber-dark-fg);
+  --usercolor-tint-coral-dark: var(--tint-coral-dark);
+  --usercolor-tint-coral-dark-fg: var(--tint-coral-dark-fg);
+  --usercolor-tint-graphite-dark: var(--tint-graphite-dark);
+  --usercolor-tint-graphite-dark-fg: var(--tint-graphite-dark-fg);
 
   /* Radii → rounded-* */
   --radius-input: var(--radius-input);
   --radius-button: var(--radius-button);
-  --radius-row: var(--radius-row);
   --radius-card: var(--radius-card);
   --radius-card-lg: var(--radius-card-lg);
   --radius-card-xl: var(--radius-card-xl);
-  --radius-pill: var(--radius-pill);
 
   /* Shadows → shadow-* */
   --shadow-xs: var(--shadow-xs);
@@ -102,7 +113,7 @@
 }
 
 [data-style="classroom"] {
-  --top-inset-bar-radius: var(--radius-row);
+  --top-inset-bar-radius: var(--radius-card);
   --top-inset-bar-height: 60px;
   --top-inset-bar-width: 100%;
   --top-inset-bar-inverted-radius-gap: 12px;
@@ -124,16 +135,9 @@
 
 /* ============================================================
    Typographic role classes — the single rendering path for text.
-   Use via the <Text>/<Heading> components to prevent size/color drift.
    ============================================================ */
 @layer components {
   [data-style="classroom"] {
-    .t-display {
-      font-size: var(--display-font-size, 3.125rem);
-      font-weight: var(--display-font-weight, 800);
-      line-height: var(--display-line-height, 1.15);
-      letter-spacing: var(--display-letter-spacing, -0.02rem);
-    }
     .t-page-title {
       font-size: var(--page-title-font-size, 1.75rem);
       font-weight: var(--page-title-font-weight, 800);
@@ -245,10 +249,7 @@
   body {
     position: relative; /* https://base-ui.com/react/overview/quick-start#ios-26-safari */
     font-family: var(--font-sans);
-    font-size: var(--body-font-size, 0.875rem);
-    font-weight: var(--body-font-weight, 400);
     -webkit-font-smoothing: antialiased;
-    line-height: var(--body-line-height, 1.5);
     color: var(--text-primary);
     background: var(--surface-page);
     text-rendering: optimizeLegibility; /* https://base-ui.com/react/overview/quick-start#ios-26-safari */

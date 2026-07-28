@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { Question } from '@/api/types';
-import { Button, Input, SimpleDialog, Text } from '@/components/ui';
-import { parseQuizFenceBody } from '@/features/materials/blocks';
+import { Button, Input, SimpleDialog } from "@/components/ui";
+import { parseQuizFenceBody } from "@/features/materials/blocks";
 import {
   createBlankQuestion,
   isCompleteQuestion,
   QuizForm,
-} from '@/features/quizzes/QuizForm';
-import { quizFenceBody } from './shared';
+} from "@/features/quizzes/QuizForm";
+import { quizFenceBody } from "./shared";
 
 /** Popup to author a typed ```quiz block inline in a note. */
 export function QuizDialog({
@@ -22,7 +22,7 @@ export function QuizDialog({
   onClose: () => void;
 }) {
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [timeLimit, setTimeLimit] = useState<string>('');
+  const [timeLimit, setTimeLimit] = useState<string>("");
 
   useEffect(() => {
     if (!open) return;
@@ -32,10 +32,10 @@ export function QuizDialog({
     setQuestions(
       parsed.questions.length
         ? structuredClone(parsed.questions)
-        : [createBlankQuestion()]
+        : [createBlankQuestion()],
     );
     setTimeLimit(
-      parsed.timeLimitMin == null ? '' : String(parsed.timeLimitMin)
+      parsed.timeLimitMin == null ? "" : String(parsed.timeLimitMin),
     );
   }, [open, initialCode]);
 
@@ -47,7 +47,7 @@ export function QuizDialog({
       quizFenceBody({
         questions,
         timeLimitMin: Number.isFinite(tl) && tl > 0 ? tl : undefined,
-      })
+      }),
     );
   }
 
@@ -59,7 +59,7 @@ export function QuizDialog({
             Cancel
           </Button>
           <Button disabled={!canSave} onClick={save}>
-            {initialCode ? 'Save' : 'Insert'}
+            {initialCode ? "Save" : "Insert"}
           </Button>
         </>
       }
@@ -69,9 +69,7 @@ export function QuizDialog({
     >
       <div className="flex max-h-[62vh] flex-col gap-4 overflow-auto pr-1">
         <label className="flex items-center gap-2">
-          <Text tone="muted" variant="label">
-            Time limit (min, optional)
-          </Text>
+          <p className="t-label text-fg-muted">Time limit (min, optional)</p>
           <Input
             className="w-24"
             onChange={(e) => setTimeLimit(e.target.value)}
@@ -87,9 +85,9 @@ export function QuizDialog({
           showName={false}
         />
         {!canSave && (
-          <Text tone="muted" variant="meta">
+          <p className="t-meta text-fg-muted">
             Complete every question and mark its correct answer before saving.
-          </Text>
+          </p>
         )}
       </div>
     </SimpleDialog>

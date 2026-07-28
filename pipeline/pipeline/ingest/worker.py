@@ -24,6 +24,7 @@ The whole worker runs on ONE asyncio event loop so the cached LightRAG asyncpg
 pools survive across jobs. Synchronous bits (psycopg queue ops, blob staging)
 are pushed to threads via ``asyncio.to_thread``.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -44,10 +45,10 @@ from lightrag.utils_pipeline import (
 )
 
 from ..config import cfg
-from ..store import db, blobstore
 from ..rag import mineru_lite, modal_parser, progress
 from ..rag.cache import RagCache
 from ..rag.factory import build_ingest_rag
+from ..store import blobstore, db
 
 log = logging.getLogger("evo.worker")
 
@@ -65,6 +66,7 @@ _STAGE_PCT = {
 
 # ----------------------------------------------------------- sync DB helpers
 # (run via asyncio.to_thread so the event loop is never blocked)
+
 
 def _claim_one() -> dict | None:
     with db.connect() as conn:
@@ -112,15 +114,13 @@ def _finish_fail(file_id: str | None, job_id: str, error: str) -> None:
 
 
 def _read_name(file_id: str) -> str:
-    with db.connect() as conn:
-        with conn.cursor() as cur:
-            return db.file_name(cur, file_id)
+    with db.connect() as conn, conn.cursor() as cur:
+        return db.file_name(cur, file_id)
 
 
 def _doc_owners(doc_id: str) -> list[str]:
-    with db.connect() as conn:
-        with conn.cursor() as cur:
-            return db.file_ids_for_doc_id(cur, doc_id)
+    with db.connect() as conn, conn.cursor() as cur:
+        return db.file_ids_for_doc_id(cur, doc_id)
 
 
 def _read_text(path: str) -> str:
@@ -129,6 +129,7 @@ def _read_text(path: str) -> str:
 
 
 # ----------------------------------------------------- naming / doc identity
+
 
 def _suffixed(name: str, n: int) -> str:
     p = Path(name)
@@ -163,7 +164,10 @@ async def _resolve_canonical_name(rag: LightRAG, file_id: str, name: str) -> str
 
 # ----------------------------------------------------------------- pipeline
 
-async def _publish_doc_progress(rag: LightRAG, ws: str, file_id: str, doc_id: str) -> None:
+
+async def _publish_doc_progress(
+    rag: LightRAG, ws: str, file_id: str, doc_id: str
+) -> None:
     """Poll doc_status while the pipeline runs and mirror it to the SSE bar."""
     last = ""
     try:
@@ -171,7 +175,9 @@ async def _publish_doc_progress(rag: LightRAG, ws: str, file_id: str, doc_id: st
             await asyncio.sleep(2.0)
             try:
                 doc = await rag.doc_status.get_by_id(doc_id)
-            except Exception:  # noqa: BLE001 — progress is best-effort
+            except Exception:
+                # Progress is best-effort; keep polling on transient failures.
+                log.debug("doc_status poll failed for %s", doc_id, exc_info=True)
                 continue
             if not doc:
                 continue
@@ -180,15 +186,17 @@ async def _publish_doc_progress(rag: LightRAG, ws: str, file_id: str, doc_id: st
                 last = status
                 pct = _STAGE_PCT.get(status)
                 if pct is not None:
-                    stage = "parsing" if status == str(DocStatus.PARSING.value) else "indexing"
+                    stage = (
+                        "parsing"
+                        if status == str(DocStatus.PARSING.value)
+                        else "indexing"
+                    )
                     progress.publish(ws, file_id, stage, pct)
     except asyncio.CancelledError:
         pass
 
 
-def _stage_remote_source(
-    ws: str, canonical: str, descriptor: dict
-) -> Path:
+def _stage_remote_source(ws: str, canonical: str, descriptor: dict) -> Path:
     """Stage a tiny B2 descriptor where LightRAG expects a source file."""
     dest_dir = input_dir_path() / ws
     dest_dir.mkdir(parents=True, exist_ok=True)
@@ -273,7 +281,9 @@ async def process_job(cache: RagCache, job: dict) -> None:
                 lambda pct: progress.publish(ws, file_id, "parsing", pct),
             )
             progress.publish(ws, file_id, "indexing", 60)
-            track_id = await rag.ainsert(input=md_text, ids=doc_id, file_paths=canonical)
+            track_id = await rag.ainsert(
+                input=md_text, ids=doc_id, file_paths=canonical
+            )
         else:
             if cfg.modal_b2_artifacts:
                 info = await asyncio.to_thread(blobstore.object_info, blob_path)
@@ -288,16 +298,12 @@ async def process_job(cache: RagCache, job: dict) -> None:
                 artifact_key, artifact_fingerprint = modal_parser.artifact_identity(
                     descriptor
                 )
-                await asyncio.to_thread(
-                    _stage_remote_source, ws, canonical, descriptor
-                )
+                await asyncio.to_thread(_stage_remote_source, ws, canonical, descriptor)
             else:
                 local_path, blob_cleanup = await asyncio.to_thread(
                     blobstore.fetch_local, blob_path
                 )
-                await asyncio.to_thread(
-                    _stage_local_source, ws, local_path, canonical
-                )
+                await asyncio.to_thread(_stage_local_source, ws, local_path, canonical)
             staged = True
             progress.publish(ws, file_id, "parsing", 15)
             track_id = await rag.apipeline_enqueue_documents(
@@ -308,7 +314,9 @@ async def process_job(cache: RagCache, job: dict) -> None:
                 # i/t/e: analyze images, tables and equations with the vlm role.
                 process_options="ite",
             )
-            poller = asyncio.create_task(_publish_doc_progress(rag, ws, file_id, doc_id))
+            poller = asyncio.create_task(
+                _publish_doc_progress(rag, ws, file_id, doc_id)
+            )
             try:
                 await rag.apipeline_process_enqueue_documents()
             finally:
@@ -392,7 +400,7 @@ async def main_async() -> None:
         while True:
             try:
                 job = await asyncio.to_thread(_claim_one)
-            except Exception:  # noqa: BLE001 — survive transient DB errors
+            except Exception:
                 log.exception("claim error")
                 await asyncio.sleep(cfg.poll_interval)
                 continue
@@ -406,16 +414,18 @@ async def main_async() -> None:
             try:
                 await process_job(cache, job)
                 log.info("job %s done", job["id"])
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 log.exception("ingest job %s failed", job["id"])
                 fid = payload.get("fileId")
                 ws = payload.get("workspaceId")
                 try:
                     await asyncio.to_thread(_finish_fail, fid, job["id"], str(exc))
-                except Exception:  # noqa: BLE001
+                except Exception:
                     log.exception("failed to record job failure")
                 if ws and fid:
-                    progress.publish(ws, fid, "failed", 100, status="failed", message=str(exc)[:200])
+                    progress.publish(
+                        ws, fid, "failed", 100, status="failed", message=str(exc)[:200]
+                    )
     finally:
         await cache.close()
 

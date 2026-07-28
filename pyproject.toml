@@ -29,12 +29,13 @@ dependencies = [
 
 [project.optional-dependencies]
 # vcrpy records the expensive LLM/embedding/VLM/Modal HTTP calls to YAML
-# cassettes so the suite replays them for free (see tests/README.md). Postgres
-# and Redis are plain TCP (not recorded) and stay live during tests — they cost
-# nothing. pytest-asyncio drives the async LightRAG entry points.
+# cassettes so the suite replays them for free (see pipeline/tests/README.md).
+# testcontainers starts fresh Postgres/Redis containers for cassette tests.
+# pytest-asyncio drives the async LightRAG entry points.
 test = [
   "pytest>=8.0",
   "pytest-asyncio>=0.24",
+  "testcontainers>=4.15.0",
   "vcrpy>=6.0",
 ]
 
@@ -46,12 +47,18 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-where = ["."]
+where = ["pipeline"]
 include = ["pipeline*"]
 
+[tool.ruff.lint.isort]
+# Keep first-party grouping stable whether Ruff is invoked from the repo root
+# (Cursor/IDE) or from pipeline/ (local CLI). Without this, `pipeline` is treated
+# as third-party at the root and I001 flips the blank line before local imports.
+known-first-party = ["pipeline"]
+
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["pipeline/tests"]
 asyncio_mode = "auto"
 markers = [
-  "cassette: integration test that replays recorded HTTP via a VCR cassette (needs live Postgres+Redis)",
+  "cassette: integration test that replays recorded HTTP via a VCR cassette (starts fresh Docker Postgres+Redis)",
 ]

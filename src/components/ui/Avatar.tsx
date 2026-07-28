@@ -32,15 +32,15 @@ export function Avatar({
   return (
     <span
       className={cn(
-        'inline-flex shrink-0 items-center justify-center overflow-hidden rounded-pill bg-tint-accent-1 font-bold text-tint-accent-1-fg',
-        className
+        "inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-tint-accent-1 font-bold text-tint-accent-1-fg",
+        className,
       )}
       style={{ fontSize: px * 0.4, height: px, width: px, ...style }}
       {...rest}
     >
       {src ? (
         <img
-          alt={name ?? ''}
+          alt={name ?? ""}
           className="h-full w-full object-cover"
           src={src}
         />

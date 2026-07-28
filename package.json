@@ -5,6 +5,8 @@
     "@clerk/react": "^6.11.3",
     "@excalidraw/excalidraw": "0.18.1",
     "@hookform/resolvers": "^5.4.0",
+    "@hugeicons/core-free-icons": "^4.2.3",
+    "@hugeicons/react": "^1.1.9",
     "@inlang/plugin-message-format": "^4.4.0",
     "@platejs/ai": "^53.3.0",
     "@platejs/autoformat": "^53.0.0",
@@ -115,7 +117,9 @@
     "gen:api": "orval",
     "gen:api:msw": "pnpm gen:openapi && pnpm gen:api",
     "gen:api:watch": "orval --watch",
-    "fix": "ultracite fix"
+    "fix": "ultracite fix",
+    "pipeline:test": "uv run --extra test pytest",
+    "pipeline:test:offline": "uv run --extra test pytest -q -m \"not cassette\""
   },
   "type": "module",
   "version": "0.1.0",

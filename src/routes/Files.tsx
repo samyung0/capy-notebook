@@ -8,10 +8,9 @@ import {
   Icon,
   SimpleDialog,
   SkeletonCardGrid,
-  Text,
-} from '@/components/ui';
-import { FileViewer } from '@/features/files/FileViewer';
-import { m } from '@/i18n';
+} from "@/components/ui";
+import { FileViewer } from "@/features/files/FileViewer";
+import { m } from "@/i18n";
 
 export default function Files() {
   const { data, isLoading } = useAllFiles();
@@ -37,12 +36,10 @@ export default function Files() {
                   <Icon name="files" size={18} />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <Text className="truncate" variant="subtitle">
-                    {f.name}
-                  </Text>
-                  <Text tone="muted" variant="meta">
+                  <p className="truncate t-subtitle">{f.name}</p>
+                  <p className="t-meta text-fg-muted">
                     {(f.sizeKb / 1024).toFixed(1)} MB
-                  </Text>
+                  </p>
                 </div>
                 <Badge size="sm" tone="neutral">
                   {f.kind}

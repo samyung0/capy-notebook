@@ -10,6 +10,7 @@ clobbering anything the operator set explicitly), and we pin
 (2560 for Qwen3-Embedding-4B) exceeds pgvector's 2000-dim cap for plain
 ``vector`` HNSW indexes (halfvec indexes up to 4000; requires pgvector >= 0.7.0).
 """
+
 from __future__ import annotations
 
 import os
@@ -63,7 +64,9 @@ class ProviderCfg:
 
 class Config:
     # ---- shared infra -----------------------------------------------------
-    dsn: str = _env("DATABASE_URL", "postgres://evo:evo@localhost:5432/evo?sslmode=disable")
+    dsn: str = _env(
+        "DATABASE_URL", "postgres://evo:evo@localhost:5432/evo?sslmode=disable"
+    )
     redis_url: str = _env("REDIS_URL", "redis://localhost:6379/0")
 
     # ---- Backblaze B2 blob storage ---------------------------------------
@@ -99,7 +102,9 @@ class Config:
     # ---- MinerU lightweight (free) cloud parse API ------------------------
     # Token-free, IP rate-limited "Agent" endpoints on mineru.net; used for
     # parseMode=normal jobs. 'ch' OCR pack = Chinese + English only.
-    mineru_lite_base: str = _env("MINERU_LITE_BASE_URL", "https://mineru.net/api/v1/agent")
+    mineru_lite_base: str = _env(
+        "MINERU_LITE_BASE_URL", "https://mineru.net/api/v1/agent"
+    )
     mineru_lite_language: str = _env("MINERU_LITE_LANGUAGE", "ch")
     mineru_lite_timeout: int = int(_env("MINERU_LITE_TIMEOUT", "600"))
     mineru_relay_url: str = _env("MINERU_RELAY_URL", "")
@@ -130,7 +135,8 @@ class Config:
     vision = ProviderCfg(
         api_key=_env("GOOGLE_API_KEY"),
         base_url=_env(
-            "GEMINI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai/"
+            "GEMINI_BASE_URL",
+            "https://generativelanguage.googleapis.com/v1beta/openai/",
         ),
     )
     vision_model: str = _env("EVO_MODEL_IMAGE_CAPTION", "gemini-3.1-flash-lite-preview")

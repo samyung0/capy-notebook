@@ -93,8 +93,8 @@ function SelectTrigger({
 function SelectContent({
   className,
   children,
-  position = 'popper',
-  align = 'center',
+  position = "popper",
+  align = "center",
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
   return (
@@ -102,12 +102,12 @@ function SelectContent({
       <SelectPrimitive.Content
         align={align}
         className={cn(
-          'data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=close]:fade-out-0 data-[state=close]:zoom-out-95 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 relative z-100 max-h-(--radix-select-content-available-height) min-w-36 origin-(--radix-select-content-transform-origin) overflow-y-auto overflow-x-hidden rounded-row border border-line bg-surface duration-100 data-[align-trigger=true]:animate-none data-[state=close]:animate-out data-[state=open]:animate-in',
-          position === 'popper' &&
-            'data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1',
-          className
+          "data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=close]:fade-out-0 data-[state=close]:zoom-out-95 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 relative z-100 max-h-(--radix-select-content-available-height) min-w-36 origin-(--radix-select-content-transform-origin) overflow-y-auto overflow-x-hidden rounded-button border border-line bg-surface duration-100 data-[align-trigger=true]:animate-none data-[state=close]:animate-out data-[state=open]:animate-in",
+          position === "popper" &&
+            "data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1",
+          className,
         )}
-        data-align-trigger={position === 'item-aligned'}
+        data-align-trigger={position === "item-aligned"}
         data-slot="select-content"
         position={position}
         {...props}
@@ -115,8 +115,8 @@ function SelectContent({
         <SelectScrollUpButton />
         <SelectPrimitive.Viewport
           className={cn(
-            'data-[position=popper]:h-(--radix-select-trigger-height) data-[position=popper]:w-full data-[position=popper]:min-w-(--radix-select-trigger-width)',
-            position === 'popper' && ''
+            "data-[position=popper]:h-(--radix-select-trigger-height) data-[position=popper]:w-full data-[position=popper]:min-w-(--radix-select-trigger-width)",
+            position === "popper" && "",
           )}
           data-position={position}
         >
@@ -134,7 +134,7 @@ function SelectLabel({
 }: React.ComponentProps<typeof SelectPrimitive.Label>) {
   return (
     <SelectPrimitive.Label
-      className={cn('t-label px-1.5 py-1', className)}
+      className={cn("t-label px-1.5 py-1", className)}
       data-slot="select-label"
       {...props}
     />
@@ -142,18 +142,18 @@ function SelectLabel({
 }
 
 const selectItemVariants = cva(
-  "relative flex w-full cursor-pointer select-none items-center gap-1.5 rounded-row bg-surface text-left font-medium text-fg outline-hidden transition-colors hover:bg-surface-hover-bg disabled:opacity-40 data-disabled:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+  "relative flex w-full cursor-pointer select-none items-center gap-1.5 rounded-button bg-surface text-left font-medium text-fg outline-hidden transition-colors hover:bg-surface-hover-bg disabled:opacity-40 data-disabled:pointer-events-none [&_svg:not([class*='size-'])]:size-4 [&_svg]:pointer-events-none [&_svg]:shrink-0 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
   {
     defaultVariants: {
-      size: 'md',
+      size: "md",
     },
     variants: {
       size: {
-        md: 'px-3.25 py-2.5',
-        sm: 'px-2.5 py-2 text-xs',
+        md: "px-3.25 py-2.5",
+        sm: "px-2.5 py-2 text-xs",
       },
     },
-  }
+  },
 );
 
 function SelectItem({

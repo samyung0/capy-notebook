@@ -1,19 +1,22 @@
 import { useEffect, useRef, useState } from 'react';
 import { getLocale } from '@/i18n';
+import { THEMES } from "@/theme/ThemeProvider";
 
 /** Lazily-initialized mermaid singleton so the (heavy) library is only loaded
  * when a diagram is actually rendered. */
-let mermaidPromise: Promise<typeof import('mermaid').default> | null = null;
+let mermaidPromise: Promise<typeof import("mermaid").default> | null = null;
 async function getMermaid() {
   if (!mermaidPromise) {
-    mermaidPromise = import('mermaid').then((mod) => {
+    mermaidPromise = import("mermaid").then((mod) => {
       const mermaid = mod.default;
-      const dark = document.documentElement.classList.contains('dark');
+      const dark = THEMES.filter((theme) => theme.isDark).some((theme) =>
+        document.documentElement.classList.contains(theme.value),
+      );
       mermaid.initialize({
-        fontFamily: 'inherit',
-        securityLevel: 'strict',
+        fontFamily: "inherit",
+        securityLevel: "strict",
         startOnLoad: false,
-        theme: dark ? 'dark' : 'default',
+        theme: dark ? "dark" : "default",
       });
       return mermaid;
     });
