@@ -1,9 +1,8 @@
-import { useState } from 'react';
 import { LocaleSwitcher } from '@/components/app/LocaleSwitcher';
 import { PageHeader, Panel } from '@/components/app/layout';
-import { m } from "@/i18n";
-import { cn } from "@/lib/cn";
-import { STYLES, useTheme } from "@/theme/ThemeProvider";
+import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
+import { STYLES, useTheme } from '@/theme/ThemeProvider';
 
 function Row({
   label,
@@ -21,15 +20,14 @@ function Row({
 }
 
 export default function Settings() {
-  const { theme, style, setTheme, setStyle } = useTheme();
-  const [privacy, setPrivacy] = useState("private");
+  const { style, setStyle } = useTheme();
 
   return (
     <Panel>
       <PageHeader showTopBar={false} title={m.profile_menu_settings()} />
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
         <div className="mx-auto max-w-2xl">
-          <p className="mb-1 block text-fg-muted t-label">
+          <p className="t-label mb-1 block text-fg-muted">
             {m.settings_appearance()}
           </p>
           <div className="rounded-card border border-line bg-surface px-5">
@@ -38,10 +36,10 @@ export default function Settings() {
                 {STYLES.map((t) => (
                   <button
                     className={cn(
-                      "rounded-full px-3 py-1.5 font-semibold text-sm",
+                      'rounded-full px-3 py-1.5 font-semibold text-sm',
                       style === t.value
-                        ? "bg-action text-action-fg"
-                        : "text-fg-muted",
+                        ? 'bg-action text-action-fg'
+                        : 'text-fg-muted'
                     )}
                     key={t.value}
                     onClick={() => setStyle(t.value)}
@@ -69,7 +67,7 @@ export default function Settings() {
             </Row>
           </div>
 
-          <p className="mt-6 mb-1 text-fg-muted t-label">Workspaces</p>
+          <p className="t-label mt-6 mb-1 text-fg-muted">Workspaces</p>
           <div className="rounded-card border border-line bg-surface px-5">
             {/* TODO: change */}
             {/* <Row label="Default visibility">

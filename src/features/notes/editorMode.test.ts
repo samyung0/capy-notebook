@@ -5,19 +5,12 @@ import {
   noteEditorStatusLabel,
 } from './editorMode';
 
-describe('suggestion mode plugin gates', () => {
-  it('prevents irreversible asset creation in suggestion mode', () => {
-    expect(canCreateExternalEditorAssets('suggestion')).toBe(false);
-    expect(isEditorCommandAllowed('suggestion', { widget: 'media' })).toBe(
-      false
-    );
-  });
-
-  it('keeps formatting and existing media renderers available', () => {
-    expect(isEditorCommandAllowed('suggestion', {})).toBe(true);
-    expect(isEditorCommandAllowed('suggestion', { widget: 'table' })).toBe(
-      true
-    );
+describe('comment mode plugin gates', () => {
+  it('prevents document and asset mutations in comment mode', () => {
+    expect(canCreateExternalEditorAssets('comment')).toBe(false);
+    expect(isEditorCommandAllowed('comment', { widget: 'media' })).toBe(false);
+    expect(isEditorCommandAllowed('comment', {})).toBe(false);
+    expect(isEditorCommandAllowed('comment', { widget: 'table' })).toBe(false);
   });
 
   it('allows asset commands in edit mode', () => {
@@ -37,25 +30,22 @@ describe('suggestion mode plugin gates', () => {
 });
 
 describe('noteEditorStatusLabel', () => {
-  it('formats edit and suggestion chrome status', () => {
+  it('formats collaboration status', () => {
     expect(noteEditorStatusLabel(null)).toBeNull();
     expect(noteEditorStatusLabel({ mode: 'edit', saveState: 'saved' })).toBe(
       'Saved'
     );
-    expect(noteEditorStatusLabel({ mode: 'edit', saveState: 'pending' })).toBe(
-      'Unsaved'
+    expect(
+      noteEditorStatusLabel({ mode: 'comment', saveState: 'connecting' })
+    ).toBe('Connecting…');
+    expect(noteEditorStatusLabel({ mode: 'edit', saveState: 'synced' })).toBe(
+      'Synced'
     );
-    expect(noteEditorStatusLabel({ mode: 'edit', saveState: 'saving' })).toBe(
-      'Saving…'
+    expect(noteEditorStatusLabel({ mode: 'edit', saveState: 'offline' })).toBe(
+      'Offline'
     );
     expect(noteEditorStatusLabel({ mode: 'edit', saveState: 'error' })).toBe(
-      'Save conflict or failure'
-    );
-    expect(noteEditorStatusLabel({ dirty: false, mode: 'suggestion' })).toBe(
-      'Saved'
-    );
-    expect(noteEditorStatusLabel({ dirty: true, mode: 'suggestion' })).toBe(
-      'Unsaved'
+      'Collaboration unavailable'
     );
   });
 });

@@ -100,12 +100,12 @@ export function PageHeader({
     <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-6">
       <div
         className={cn(
-          "flex min-w-0 items-center gap-10 px-6 pt-6 pb-2",
-          className,
+          'flex min-w-0 items-center gap-10 px-6 pt-6 pb-2',
+          className
         )}
       >
-        <div className={cn("min-w-0 translate-y-px", titleClassName)}>
-          {typeof title === "string" ? (
+        <div className={cn('min-w-0 translate-y-px', titleClassName)}>
+          {typeof title === 'string' ? (
             <h1 className="t-page-title">{title}</h1>
           ) : (
             title

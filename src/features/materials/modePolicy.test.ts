@@ -17,21 +17,21 @@ describe('materialModePolicy', () => {
     });
   });
 
-  it('allows commenters to suggest but not edit', () => {
+  it('allows commenters to comment but not edit', () => {
     expect(
       materialModePolicy('note', { canComment: true, canEdit: false })
     ).toEqual({
-      defaultMode: 'suggestion',
-      modes: ['suggestion', 'view'],
+      defaultMode: 'comment',
+      modes: ['comment', 'view'],
     });
   });
 
-  it('allows editors to edit, suggest, and view', () => {
+  it('allows editors to edit, comment, and view', () => {
     expect(
       materialModePolicy('note', { canComment: true, canEdit: true })
     ).toEqual({
       defaultMode: 'edit',
-      modes: ['edit', 'suggestion', 'view'],
+      modes: ['edit', 'comment', 'view'],
     });
   });
 
@@ -39,18 +39,18 @@ describe('materialModePolicy', () => {
     const capabilities = { canComment: true, canEdit: true };
     expect(materialModePolicy('quiz', capabilities)).toEqual({
       defaultMode: 'view',
-      modes: ['edit', 'suggestion', 'view'],
+      modes: ['edit', 'comment', 'view'],
     });
     expect(materialModePolicy('flashcards', capabilities)).toEqual({
       defaultMode: 'view',
-      modes: ['edit', 'suggestion', 'view'],
+      modes: ['edit', 'comment', 'view'],
     });
   });
 
   it('treats canEdit as authoritative even when canComment is false', () => {
     expect(
       materialModePolicy('note', { canComment: false, canEdit: true }).modes
-    ).toEqual(['edit', 'suggestion', 'view']);
+    ).toEqual(['edit', 'comment', 'view']);
   });
 
   it('falls back when a requested mode is no longer allowed', () => {

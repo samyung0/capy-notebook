@@ -20,18 +20,18 @@ export function ProgressBar({
   if (tone === 'transparent') tone = 'graphite';
   const pct = Math.max(0, Math.min(100, value));
   return (
-    <div className={cn("flex items-center gap-2", className)}>
+    <div className={cn('flex items-center gap-2', className)}>
       <div
         className="flex-1 overflow-hidden rounded-full bg-surface-hover-bg"
         style={{ height }}
       >
         <div
           className={cn(
-            "h-full rounded-full transition-[width] duration-400 ease-[cubic-bezier(.2,.7,.2,1)]",
+            'h-full rounded-full transition-[width] duration-400 ease-[cubic-bezier(.2,.7,.2,1)]'
           )}
           style={{
             backgroundColor:
-              userColorPair(tone)?.bg ?? userColorPair("graphite")?.bg,
+              userColorPair(tone)?.bg ?? userColorPair('graphite')?.bg,
             width: `${pct}%`,
           }}
         />

@@ -2,9 +2,9 @@ import { Link, useParams } from '@tanstack/react-router';
 import { lazy, Suspense } from 'react';
 import { useCanvas, useSaveCanvas } from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
-import { Icon, Skeleton } from "@/components/ui";
+import { Icon, Skeleton } from '@/components/ui';
 
-const CanvasEditor = lazy(() => import("@/features/thinking/CanvasEditor"));
+const CanvasEditor = lazy(() => import('@/features/thinking/CanvasEditor'));
 
 export default function Canvas() {
   const params = useParams({ strict: false });
@@ -22,7 +22,7 @@ export default function Canvas() {
         >
           <Icon name="chevronLeft" size={20} />
         </Link>
-        <p className="flex-1 t-subtitle">{canvas?.name ?? "Canvas"}</p>
+        <p className="t-subtitle flex-1">{canvas?.name ?? 'Canvas'}</p>
         {save.isPending && <p className="t-meta text-fg-muted">Saving…</p>}
       </div>
       <div className="min-h-0 flex-1">

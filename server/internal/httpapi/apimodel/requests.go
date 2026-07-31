@@ -78,13 +78,12 @@ type CreateMaterialReq struct {
 // empty-string sentinel is needed because JSON null is indistinguishable from
 // an omitted field with a single pointer.
 type UpdateMaterialReq struct {
-	Title            *string               `json:"title,omitempty"`
-	Content          *materialdoc.Envelope `json:"content,omitempty"`
-	ExpectedRevision *int64                `json:"expectedRevision,omitempty" minimum:"1" doc:"Required when changing title or content"`
-	ChapterID        *string               `json:"chapterId,omitempty" doc:"Chapter to file under; empty string unfiles; omit to leave unchanged"`
-	ScopeChapters    *[]string             `json:"scopeChapters,omitempty"`
-	ScopeFileIDs     *[]string             `json:"scopeFileIds,omitempty"`
-	Privacy          *store.Privacy        `json:"privacy,omitempty" doc:"Visibility (share standalone)"`
+	Title            *string        `json:"title,omitempty"`
+	ExpectedRevision *int64         `json:"expectedRevision,omitempty" minimum:"1" doc:"Required when changing title"`
+	ChapterID        *string        `json:"chapterId,omitempty" doc:"Chapter to file under; empty string unfiles; omit to leave unchanged"`
+	ScopeChapters    *[]string      `json:"scopeChapters,omitempty"`
+	ScopeFileIDs     *[]string      `json:"scopeFileIds,omitempty"`
+	Privacy          *store.Privacy `json:"privacy,omitempty" doc:"Visibility (share standalone)"`
 }
 
 type CreateWorkspaceInviteReq struct {
@@ -97,9 +96,12 @@ type UpdateWorkspaceMemberReq struct {
 }
 
 type CreateDiscussionReq struct {
-	BlockID     *string          `json:"blockId,omitempty"`
-	Anchor      map[string]any   `json:"anchor,omitempty"`
-	ContentRich []map[string]any `json:"contentRich"`
+	BlockID       *string          `json:"blockId,omitempty"`
+	AnchorStart   []byte           `json:"anchorStart,omitempty" maxLength:"4096"`
+	AnchorEnd     []byte           `json:"anchorEnd,omitempty" maxLength:"4096"`
+	AnchorVersion int              `json:"anchorVersion,omitempty" minimum:"1"`
+	AnchorQuote   string           `json:"anchorQuote,omitempty" maxLength:"1000"`
+	ContentRich   []map[string]any `json:"contentRich"`
 }
 
 type UpdateDiscussionReq struct {
@@ -113,17 +115,6 @@ type CreateCommentReq struct {
 
 type UpdateCommentReq struct {
 	ContentRich []map[string]any `json:"contentRich"`
-}
-
-type CommitMaterialSuggestionsReq struct {
-	Content          materialdoc.Envelope `json:"content" doc:"Complete Plate document containing suggestion metadata"`
-	ExpectedRevision int64                `json:"expectedRevision" minimum:"1"`
-}
-
-type ReviewMaterialSuggestionsReq struct {
-	Decision         materialdoc.SuggestionDecision `json:"decision" enum:"accept,reject"`
-	SuggestionIDs    []string                       `json:"suggestionIds,omitempty" doc:"Raw Plate suggestion IDs; empty resolves all pending suggestions"`
-	ExpectedRevision int64                          `json:"expectedRevision" minimum:"1"`
 }
 
 type CreateQuizReq struct {

@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import type { Label, UserColor } from '@/api/types';
-import { Button, Input, SimpleDialog } from "@/components/ui";
-import { m } from "@/i18n";
-import { cn } from "@/lib/cn";
-import { USER_COLORS, userColorPair } from "@/lib/userColor";
+import { Button, Input, SimpleDialog } from '@/components/ui';
+import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
+import { USER_COLORS, userColorPair } from '@/lib/userColor';
 
 export interface LabelFormValues {
   color: UserColor;
@@ -65,9 +65,9 @@ export function LabelEditDialog({
                 <button
                   aria-label={c}
                   className={cn(
-                    "h-8 w-8 rounded-full transition-transform",
+                    'h-8 w-8 rounded-full transition-transform',
                     color === c &&
-                      "ring-2 ring-action ring-offset-2 ring-offset-surface",
+                      'ring-2 ring-action ring-offset-2 ring-offset-surface'
                   )}
                   key={c}
                   onClick={() => setColor(c)}

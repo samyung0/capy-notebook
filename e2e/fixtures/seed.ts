@@ -95,7 +95,7 @@ export const seed = {
   reviewNote: {
     body: 'Original review sentence',
     id: 'note_e2e_review',
-    name: 'E2E Suggestion Review Note',
+    name: 'E2E Collaboration Review Note',
   },
   viewerNote: {
     body: 'Static viewer content',

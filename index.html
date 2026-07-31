@@ -1,5 +1,5 @@
 <!doctype html>
-<html data-theme="latte" data-style="classroom" lang="en">
+<html data-style="classroom" data-theme="latte" lang="en">
   <head>
     <meta charset="UTF-8">
     <link href="/favicon.svg" rel="icon" type="image/svg+xml">
@@ -7,8 +7,7 @@
     <meta content="light dark" name="color-scheme">
     <title>Evo Notes</title>
 
-    <script type="module" blocking="render">
-    'use strict';
+    <script blocking="render" type="module">
     (() => {
       try {
         const STYLES = ['classroom', 'notion'];
@@ -18,14 +17,12 @@
         const style = localStorage.getItem('evo.style');
         const theme = localStorage.getItem('evo.theme');
 
-        root.dataset.style =
-          STYLES.includes(style) ? style : 'classroom';
-        root.dataset.theme =
-          THEMES.includes(theme)
-            ? theme
-            : matchMedia('(prefers-color-scheme: dark)').matches
-              ? 'mocha'
-              : 'latte';
+        root.dataset.style = STYLES.includes(style) ? style : 'classroom';
+        root.dataset.theme = THEMES.includes(theme)
+          ? theme
+          : matchMedia('(prefers-color-scheme: dark)').matches
+            ? 'mocha'
+            : 'latte';
         if (DARKTHEMES.includes(theme)) {
           root.classList.add('dark');
         }

@@ -97,10 +97,10 @@ export function DashboardCalendar() {
               </span>
               <span
                 className={cn(
-                  "relative flex h-8 w-8 items-center justify-center rounded-button font-semibold text-[0.8rem] transition-colors",
-                  isToday && "bg-action font-bold text-action-fg",
-                  !isToday && isSel && "text-fg ring-[1.5px] ring-action",
-                  !isToday && !isSel && "text-fg hover:bg-surface-hover-bg",
+                  'relative flex h-8 w-8 items-center justify-center rounded-button font-semibold text-[0.8rem] transition-colors',
+                  isToday && 'bg-action font-bold text-action-fg',
+                  !isToday && isSel && 'text-fg ring-[1.5px] ring-action',
+                  !isToday && !isSel && 'text-fg hover:bg-surface-hover-bg'
                 )}
               >
                 {day.getDate()}

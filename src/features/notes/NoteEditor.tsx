@@ -1,32 +1,31 @@
+import { useMemo } from 'react';
 import {
   useMaterial,
+  useMaterialCollaborationToken,
   useMaterialDiscussions,
   useMe,
   useWorkspaceMembers,
-} from "@/api/hooks";
-import type { Material, WorkspaceRole } from "@/api/types";
-import { EmptyState, Spinner } from "@/components/ui";
-import { useMemo } from "react";
-import { FileLoading } from "../materials/CenterContent";
-import type { NoteEditorMode, NoteEditorStatus } from "./editorMode";
+} from '@/api/hooks';
+import type { Material, WorkspaceRole } from '@/api/types';
+import { EmptyState, Spinner } from '@/components/ui';
+import { FileLoading } from '../materials/CenterContent';
 import {
   EditorRuntimeProvider,
   type EditorRuntimeValue,
-} from "./EditorRuntime";
-import { NoteEditorCore } from "./NoteEditorCore";
+} from './EditorRuntime';
+import type { NoteEditorMode, NoteEditorStatus } from './editorMode';
+import { NoteEditorCore } from './NoteEditorCore';
 
 export function NoteEditor({
   materialId,
   mode,
   allowExternalAssets = false,
-  onSuggestionDirtyChange,
   onEditorStatusChange,
   collaborationActionsHost,
 }: {
   materialId: string;
   mode: NoteEditorMode;
   allowExternalAssets?: boolean;
-  onSuggestionDirtyChange?: (dirty: boolean) => void;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
   collaborationActionsHost?: HTMLElement | null;
 }) {
@@ -49,8 +48,8 @@ export function NoteEditor({
   }
 
   const modeAllowed =
-    (mode === "edit" && material.capabilities.canEdit) ||
-    (mode === "suggestion" &&
+    (mode === 'edit' && material.capabilities.canEdit) ||
+    (mode === 'comment' &&
       (material.capabilities.canEdit || material.capabilities.canComment));
   if (!modeAllowed) {
     return (
@@ -69,7 +68,6 @@ export function NoteEditor({
       material={material}
       mode={mode}
       onEditorStatusChange={onEditorStatusChange}
-      onSuggestionDirtyChange={onSuggestionDirtyChange}
     />
   );
 }
@@ -78,36 +76,48 @@ function CollaborativeNoteEditor({
   material,
   mode,
   allowExternalAssets,
-  onSuggestionDirtyChange,
   onEditorStatusChange,
   collaborationActionsHost,
 }: {
   material: Material;
   mode: NoteEditorMode;
   allowExternalAssets: boolean;
-  onSuggestionDirtyChange?: (dirty: boolean) => void;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
   collaborationActionsHost?: HTMLElement | null;
 }) {
   const me = useMe();
   const role: WorkspaceRole | null =
-    material.role ?? (material.isOwner ? "owner" : null);
+    material.role ?? (material.isOwner ? 'owner' : null);
   // Mentions/comments need the member directory for any collaborator, not only
   // owners who can manage invites (`canManageMembers`).
   const members = useWorkspaceMembers(material.workspaceId);
   const discussions = useMaterialDiscussions(material.id);
+  const collaborationToken = useMaterialCollaborationToken(material.id);
   const canEdit = material.capabilities.canEdit;
   const canComment = material.capabilities.canComment || canEdit;
   const users = useMemo(
     () =>
       Object.fromEntries(
-        (members.data ?? []).map((member) => [member.userId, member]),
+        (members.data ?? []).map((member) => [member.userId, member])
       ),
-    [members.data],
+    [members.data]
   );
 
-  if (me.isPending || members.isPending || discussions.isPending) {
+  if (
+    me.isPending ||
+    members.isPending ||
+    discussions.isPending ||
+    collaborationToken.isPending
+  ) {
     return <FileLoading />;
+  }
+  if (!collaborationToken.data) {
+    return (
+      <EmptyState
+        body="The live collaboration service is unavailable."
+        title="Unable to open material"
+      />
+    );
   }
 
   const runtime: EditorRuntimeValue = {
@@ -123,20 +133,18 @@ function CollaborativeNoteEditor({
 
   return (
     <EditorRuntimeProvider value={runtime}>
-      <div className="h-full overflow-hidden flex flex-col gap-0">
+      <div className="flex h-full flex-col gap-0 overflow-hidden">
         <NoteEditorCore
           allowExternalAssets={allowExternalAssets}
           collaborationActionsHost={collaborationActionsHost}
+          collaborationToken={collaborationToken.data}
           currentUserId={me.data?.id ?? null}
           discussions={discussions.data ?? []}
           material={material}
           mode={mode}
           onEditorStatusChange={onEditorStatusChange}
-          onSuggestionDirtyChange={onSuggestionDirtyChange}
           users={users}
         />
-        {/* TODO: replace this div with the suggestion summary */}
-        <div className="bg-red-500">dasdasdasdasdasdas</div>
       </div>
     </EditorRuntimeProvider>
   );

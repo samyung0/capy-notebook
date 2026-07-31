@@ -16,31 +16,6 @@ function renderMaterial(value: MaterialValue): string {
 }
 
 describe('static study-block renderers', () => {
-  it('renders pending insertions and removals from the shared marked head', () => {
-    const html = renderMaterial([
-      {
-        children: [
-          {
-            suggestion: true,
-            suggestion_remove: { id: 'remove', type: 'remove' },
-            text: 'removed',
-          },
-          {
-            suggestion: true,
-            suggestion_insert: { id: 'insert', type: 'insert' },
-            text: 'inserted',
-          },
-        ],
-        type: 'p',
-      },
-    ]);
-
-    expect(html).toContain('<del');
-    expect(html).toContain('line-through');
-    expect(html).toContain('<ins');
-    expect(html).toContain('text-solid-success');
-  });
-
   it('renders task lists with read-only checked state', () => {
     const html = renderMaterial([
       {

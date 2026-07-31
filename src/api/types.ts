@@ -28,7 +28,6 @@ import type {
   Discussion as GenDiscussion,
   Event as GenEvent,
   File as GenFile,
-  MaterialSuggestion as GenMaterialSuggestion,
   Quiz as GenQuiz,
   SearchResult as GenSearchResult,
   Workspace as GenWorkspace,
@@ -277,7 +276,6 @@ export interface Material {
   /** UTF-8 byte length of the persisted content JSON returned by the backend. */
   contentBytes?: number;
   createdAt: string;
-  hasPendingSuggestions?: boolean;
   id: string;
   /** Request-scoped: false when viewing someone else's shared material. */
   isOwner?: boolean;
@@ -313,15 +311,8 @@ export type MaterialComment = Omit<GenComment, 'contentRich' | 'replies'> & {
   replies: MaterialComment[];
 };
 
-export type MaterialSuggestion = GenMaterialSuggestion;
-
-export type MaterialDiscussion = Omit<
-  GenDiscussion,
-  'anchor' | 'comments' | 'suggestions'
-> & {
-  anchor: unknown;
+export type MaterialDiscussion = Omit<GenDiscussion, 'comments'> & {
   comments: MaterialComment[];
-  suggestions: MaterialSuggestion[];
 };
 
 export interface MaterialRevision {
@@ -333,8 +324,6 @@ export interface MaterialRevision {
   title: string;
 }
 
-export type { SuggestionStatus } from './gen/model';
-
 /** A row in the left-panel materials list. Aggregates markdown materials plus
  * the workspace's quizzes and decks into one flat (non chapter-scoped) list. */
 export type MaterialRefType = 'mindmap' | 'diagram' | 'quiz' | 'deck' | 'note';
@@ -342,7 +331,6 @@ export interface MaterialRef {
   /** Chapter this material is filed under (membership). null = unfiled. */
   chapterId: string | null;
   createdAt: string;
-  hasPendingSuggestions?: boolean;
   id: string;
   /** Shared ordering position among files and materials in the same bucket. */
   position: number;

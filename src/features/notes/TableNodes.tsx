@@ -254,12 +254,12 @@ export function TableRowElement({ children, ...props }: PlateElementProps) {
       {...props}
       as="tr"
       className={cn(
-        "group/row",
-        draggable.isDragging && "opacity-45",
-        dropLine === "top" &&
-          "[&>td]:border-t-2! [&>td]:border-t-action-accent! [&>th]:border-t-2! [&>th]:border-t-action-accent!",
-        dropLine === "bottom" &&
-          "[&>td]:border-b-2! [&>td]:border-b-action-accent! [&>th]:border-b-2! [&>th]:border-b-action-accent!",
+        'group/row',
+        draggable.isDragging && 'opacity-45',
+        dropLine === 'top' &&
+          '[&>td]:border-t-2! [&>td]:border-t-action-accent! [&>th]:border-t-2! [&>th]:border-t-action-accent!',
+        dropLine === 'bottom' &&
+          '[&>td]:border-b-2! [&>td]:border-b-action-accent! [&>th]:border-b-2! [&>th]:border-b-action-accent!'
       )}
       ref={useComposedRef(props.ref, draggable.previewRef, draggable.nodeRef)}
     >

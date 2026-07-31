@@ -13,14 +13,11 @@ import type {
 import { USE_MSW } from './auth';
 import { API_BASE, api, qk } from './client';
 import type {
-  CommitMaterialSuggestionsReq,
   CreateDeckReq,
   CreateEventReq,
   CreateQuizReq,
   CreateWorkspaceReq,
   MaterialUpdateResult,
-  ReviewMaterialSuggestionsReq,
-  SuggestionMutationResult,
   UpdateCardReq,
   UpdateChapterReq,
   UpdateQuizReq,
@@ -224,9 +221,11 @@ export function useCreateWorkspace() {
   return useMutation({
     mutationFn: (body: CreateWorkspaceReq) =>
       api.post<Workspace>('/workspaces', body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['workspaces'] });
-      qc.invalidateQueries({ queryKey: ['tags'] });
+    onSuccess: async () => {
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ['workspaces'] }),
+        qc.invalidateQueries({ queryKey: ['tags'] }),
+      ]);
     },
   });
 }
@@ -715,9 +714,8 @@ export function useCreateNote(wsId: string) {
   });
 }
 
-/** Patch a material's title/content/scope (used by the note editor autosave). */
+/** Patch material metadata. Content is authoritative in the Yjs room. */
 export interface UpdateMaterialInput {
-  content?: MaterialDocument;
   expectedRevision?: number;
   scopeChapters?: string[];
   scopeFileIds?: string[];
@@ -729,17 +727,11 @@ export function useUpdateMaterial(wsId: string) {
     mutationFn: ({ id, patch }: { id: string; patch: UpdateMaterialInput }) =>
       api.patch<MaterialUpdateResult>(`/materials/${id}`, patch),
     onSuccess: (result, { id, patch }) => {
-      // PATCH returns only persistence metadata. The client already owns the
-      // exact document it sent, so merge that immutable snapshot into cache
-      // instead of downloading and JSON-parsing the whole document again.
       qc.setQueryData<Material>(qk.material(id), (current) =>
         current
           ? {
               ...current,
               ...(patch.title === undefined ? {} : { title: patch.title }),
-              ...(patch.content === undefined
-                ? {}
-                : { content: patch.content }),
               ...(patch.scopeChapters === undefined
                 ? {}
                 : { scopeChapters: patch.scopeChapters }),
@@ -747,23 +739,11 @@ export function useUpdateMaterial(wsId: string) {
                 ? {}
                 : { scopeFileIds: patch.scopeFileIds }),
               contentBytes: result.contentBytes,
-              hasPendingSuggestions: result.hasPendingSuggestions,
               revision: result.revision,
               updatedAt: result.updatedAt,
             }
           : current
       );
-      qc.setQueryData<MaterialRef[]>(qk.materials(wsId), (refs) =>
-        refs?.map((ref) =>
-          ref.id === id
-            ? { ...ref, hasPendingSuggestions: result.hasPendingSuggestions }
-            : ref
-        )
-      );
-      // Content/revision/byte-count are absent from MaterialRef rows, so an
-      // autosave cannot make the workspace material list stale. Avoid a
-      // pointless list refetch after every save; metadata patches still need
-      // one because they can change titles or grouping.
       if (
         patch.title !== undefined ||
         patch.scopeChapters !== undefined ||
@@ -855,8 +835,11 @@ export function useCreateMaterialDiscussion(materialId: string) {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: {
+      anchorEnd?: string;
+      anchorQuote?: string;
+      anchorStart?: string;
+      anchorVersion?: number;
       blockId?: string;
-      anchor?: Record<string, unknown>;
       contentRich: MaterialValue;
     }) =>
       api.post<MaterialDiscussion>(
@@ -939,99 +922,39 @@ export const materialRevisionsQuery = (materialId: string) =>
 export const useMaterialRevisions = (materialId: string) =>
   useQuery(materialRevisionsQuery(materialId));
 
-async function refreshSuggestionMutation(
-  qc: QueryClient,
-  materialId: string,
-  result: SuggestionMutationResult
-) {
-  qc.setQueryData(
-    qk.materialDiscussions(materialId),
-    result.discussions as MaterialDiscussion[]
-  );
-  const material = await api.get<Material>(`/materials/${materialId}`);
-  qc.setQueryData(qk.material(materialId), material);
-  qc.setQueryData<MaterialRef[]>(qk.materials(material.workspaceId), (refs) =>
-    refs?.map((ref) =>
-      ref.id === materialId
-        ? { ...ref, hasPendingSuggestions: result.hasPendingSuggestions }
-        : ref
-    )
-  );
-  qc.invalidateQueries({ queryKey: qk.materialRevisions(materialId) });
-  return { material, result };
-}
-
-export function useCommitMaterialSuggestions(materialId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (body: CommitMaterialSuggestionsReq) => {
-      const result = await api.post<SuggestionMutationResult>(
-        `/materials/${materialId}/suggestion-commits`,
-        body
-      );
-      return refreshSuggestionMutation(qc, materialId, result);
-    },
-  });
-}
-
-export function useReviewMaterialSuggestions(materialId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (
-      body: Omit<ReviewMaterialSuggestionsReq, 'expectedRevision'> & {
-        expectedRevision?: number;
-      }
-    ) => {
-      const expectedRevision =
-        body.expectedRevision ??
-        qc.getQueryData<Material>(qk.material(materialId))?.revision ??
-        (await api.get<Material>(`/materials/${materialId}`)).revision ??
-        1;
-      const result = await api.post<SuggestionMutationResult>(
-        `/materials/${materialId}/suggestions/review`,
-        { ...body, expectedRevision } satisfies ReviewMaterialSuggestionsReq
-      );
-      return refreshSuggestionMutation(qc, materialId, result);
-    },
-  });
-}
-
-export function useWithdrawMaterialSuggestion(materialId: string) {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({
-      suggestionId,
-      expectedRevision,
-    }: {
-      suggestionId: string;
-      expectedRevision: number;
-    }) => {
-      const result = await api.del<SuggestionMutationResult>(
-        `/material-suggestions/${suggestionId}?expectedRevision=${expectedRevision}`
-      );
-      return refreshSuggestionMutation(qc, materialId, result);
-    },
-  });
-}
-
 export function useDeleteMaterialDiscussion(materialId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({
-      discussionId,
-      expectedRevision,
-    }: {
-      discussionId: string;
-      expectedRevision?: number;
-    }) => {
-      const query = expectedRevision
-        ? `?expectedRevision=${expectedRevision}`
-        : '';
-      const result = await api.del<SuggestionMutationResult>(
-        `/discussions/${discussionId}${query}`
-      );
-      return refreshSuggestionMutation(qc, materialId, result);
-    },
+    mutationFn: (discussionId: string) =>
+      api.del<void>(`/discussions/${discussionId}`),
+    onSuccess: () =>
+      qc.invalidateQueries({ queryKey: qk.materialDiscussions(materialId) }),
+  });
+}
+
+export interface MaterialCollaborationToken {
+  access: 'write' | 'comment';
+  expiresAt: number;
+  room: string;
+  token: string;
+  url: string;
+}
+
+export const getMaterialCollaborationToken = (materialId: string) =>
+  api.post<MaterialCollaborationToken>(
+    `/materials/${materialId}/collaboration-token`
+  );
+
+export function useMaterialCollaborationToken(
+  materialId: string,
+  enabled = true
+) {
+  return useQuery({
+    enabled: !!materialId && enabled,
+    queryFn: () => getMaterialCollaborationToken(materialId),
+    queryKey: ['material', materialId, 'collaboration-token'],
+    refetchInterval: 4 * 60 * 1000,
+    staleTime: 3 * 60 * 1000,
   });
 }
 

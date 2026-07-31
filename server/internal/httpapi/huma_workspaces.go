@@ -141,8 +141,12 @@ func (a *api) updateWorkspaceSharing(ctx context.Context, in *updateWorkspaceSha
 }
 
 func (a *api) deleteWorkspace(ctx context.Context, in *workspaceIDInput) (*Empty, error) {
+	materialIDs, _ := a.s.WorkspaceMaterialIDs(ctx, in.ID)
 	if err := a.s.DeleteWorkspace(ctx, userID(ctx), in.ID); err != nil {
 		return nil, hErr(err)
+	}
+	for _, materialID := range materialIDs {
+		a.publishMaterialEviction(ctx, materialID)
 	}
 	return &Empty{}, nil
 }

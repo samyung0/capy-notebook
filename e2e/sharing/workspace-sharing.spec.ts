@@ -265,43 +265,12 @@ test.describe('workspace sharing', () => {
       `/api/materials/${commenterFixture.id}`,
       {
         data: {
-          content: commenterBody.content,
           expectedRevision: commenterBody.revision,
+          title: 'Commenters cannot rename',
         },
       }
     );
     expect(commenterEdit.status()).toBe(403);
-
-    const submittedSuggestion = await otherApi.post(
-      `/api/materials/${commenterFixture.id}/suggestion-commits`,
-      {
-        data: {
-          content: {
-            schemaVersion: 1,
-            value: [
-              {
-                children: [
-                  { text: 'Shared commenter base text' },
-                  {
-                    suggestion: true,
-                    suggestion_shared_role: {
-                      id: 'shared-role-suggestion',
-                      type: 'insert',
-                      userId: 'u_other',
-                    },
-                    text: ' suggested text',
-                  },
-                ],
-                id: 'shared-role-commenter-body',
-                type: 'p',
-              },
-            ],
-          },
-          expectedRevision: commenterBody.revision,
-        },
-      }
-    );
-    expect(submittedSuggestion.status()).toBe(201);
 
     const editorFixture = await materialFactory.createNote({
       blockId: 'shared-role-editor-body',
@@ -320,22 +289,17 @@ test.describe('workspace sharing', () => {
       canView: true,
     });
 
-    const contentEdit = await otherApi.patch(
-      `/api/materials/${editorFixture.id}`,
-      {
-        data: {
-          content: editorBody.content,
-          expectedRevision: editorBody.revision,
-        },
-      }
+    const collaborationToken = await otherApi.post(
+      `/api/materials/${editorFixture.id}/collaboration-token`
     );
-    expect(contentEdit.status()).toBe(200);
+    expect(collaborationToken.status()).toBe(201);
+    expect(await collaborationToken.json()).toMatchObject({ access: 'write' });
 
     const metadataEdit = await otherApi.patch(
       `/api/materials/${editorFixture.id}`,
       {
         data: {
-          expectedRevision: (await contentEdit.json()).revision,
+          expectedRevision: editorBody.revision,
           title: 'Shared editor must not rename',
         },
       }

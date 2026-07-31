@@ -18,7 +18,6 @@ import {
   PlateElement,
   type PlateElementProps,
   useEditorPlugin,
-  type useEditorRef,
   withHOC,
 } from 'platejs/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -31,7 +30,6 @@ import {
 import { cn } from '@/lib/cn';
 import { useEditorRuntime } from './EditorRuntime';
 import { canCreateExternalEditorAssets } from './editorMode';
-import { insertEditorNode } from './insertEditorNode';
 import {
   acceptsPurpose,
   editorAssetPurpose,
@@ -156,10 +154,10 @@ export const MediaPlaceholderElement = withHOC(
       <PlateElement {...props} className="my-2">
         <div
           className={cn(
-            "flex min-h-18 items-center gap-3 rounded-card border border-line border-dashed bg-surface-hover-bg px-4 py-3",
+            'flex min-h-18 items-center gap-3 rounded-card border border-line border-dashed bg-surface-hover-bg px-4 py-3',
             canCreateAssets &&
               !uploading &&
-              "cursor-pointer hover:border-line-strong",
+              'cursor-pointer hover:border-line-strong'
           )}
           contentEditable={false}
           onClick={() => canCreateAssets && !uploading && openFilePicker()}
@@ -167,12 +165,12 @@ export const MediaPlaceholderElement = withHOC(
             if (
               canCreateAssets &&
               !uploading &&
-              (event.key === "Enter" || event.key === " ")
+              (event.key === 'Enter' || event.key === ' ')
             ) {
               openFilePicker();
             }
           }}
-          role={canCreateAssets ? "button" : undefined}
+          role={canCreateAssets ? 'button' : undefined}
           tabIndex={canCreateAssets ? 0 : undefined}
         >
           {uploading ? (
@@ -186,16 +184,16 @@ export const MediaPlaceholderElement = withHOC(
             </p>
             <p
               className={cn(
-                "text-fg-muted text-xs",
-                error && "text-solid-error",
+                'text-fg-muted text-xs',
+                error && 'text-solid-error'
               )}
             >
               {error ??
                 (uploading
                   ? `${progress}% uploaded`
                   : canCreateAssets
-                    ? "Choose, paste, or drop a file"
-                    : "Uploads are unavailable in suggestion mode")}
+                    ? 'Choose, paste, or drop a file'
+                    : 'Uploads are unavailable in comment mode')}
             </p>
             {uploading && (
               <div className="mt-2 h-1 overflow-hidden rounded-full bg-divider">
@@ -236,16 +234,4 @@ export function MediaAssetElement(props: PlateElementProps) {
       {props.children}
     </PlateElement>
   );
-}
-
-/** Exposed for the toolbar and slash menu. */
-export function insertMediaPlaceholder(
-  editor: ReturnType<typeof useEditorRef>,
-  type: MediaType
-) {
-  insertEditorNode(editor, {
-    children: [{ text: '' }],
-    mediaType: type,
-    type: KEYS.placeholder,
-  });
 }

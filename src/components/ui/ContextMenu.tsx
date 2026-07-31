@@ -54,11 +54,11 @@ function ContextMenuItem({
   return (
     <ContextMenuPrimitive.Item
       className={cn(
-        "relative flex cursor-default select-none items-center gap-2 rounded-button px-2 py-1.5 text-sm outline-none",
-        "focus:bg-surface-hover-bg data-highlighted:bg-surface-hover-bg",
-        "data-disabled:pointer-events-none data-disabled:opacity-40",
-        "data-inset:pl-8 [&_svg]:size-4 [&_svg]:shrink-0",
-        className,
+        'relative flex cursor-default select-none items-center gap-2 rounded-button px-2 py-1.5 text-sm outline-none',
+        'focus:bg-surface-hover-bg data-highlighted:bg-surface-hover-bg',
+        'data-disabled:pointer-events-none data-disabled:opacity-40',
+        'data-inset:pl-8 [&_svg]:size-4 [&_svg]:shrink-0',
+        className
       )}
       data-inset={inset || undefined}
       data-slot="context-menu-item"
@@ -73,7 +73,7 @@ function ContextMenuSeparator({
 }: React.ComponentProps<typeof ContextMenuPrimitive.Separator>) {
   return (
     <ContextMenuPrimitive.Separator
-      className={cn("-mx-1 my-1 h-px bg-divider", className)}
+      className={cn('-mx-1 my-1 h-px bg-divider', className)}
       data-slot="context-menu-separator"
       {...props}
     />
@@ -81,7 +81,7 @@ function ContextMenuSeparator({
 }
 
 function ContextMenuSub(
-  props: React.ComponentProps<typeof ContextMenuPrimitive.Sub>,
+  props: React.ComponentProps<typeof ContextMenuPrimitive.Sub>
 ) {
   return <ContextMenuPrimitive.Sub {...props} />;
 }
@@ -97,11 +97,11 @@ function ContextMenuSubTrigger({
   return (
     <ContextMenuPrimitive.SubTrigger
       className={cn(
-        "flex cursor-default select-none items-center gap-2 rounded-button px-2 py-1.5 text-sm outline-none",
-        "focus:bg-surface-hover-bg data-[state=open]:bg-surface-hover-bg data-highlighted:bg-surface-hover-bg",
-        "data-disabled:pointer-events-none data-inset:pl-8 data-disabled:opacity-40",
-        "[&_svg]:size-4 [&_svg]:shrink-0",
-        className,
+        'flex cursor-default select-none items-center gap-2 rounded-button px-2 py-1.5 text-sm outline-none',
+        'focus:bg-surface-hover-bg data-[state=open]:bg-surface-hover-bg data-highlighted:bg-surface-hover-bg',
+        'data-disabled:pointer-events-none data-inset:pl-8 data-disabled:opacity-40',
+        '[&_svg]:size-4 [&_svg]:shrink-0',
+        className
       )}
       data-inset={inset || undefined}
       data-slot="context-menu-sub-trigger"

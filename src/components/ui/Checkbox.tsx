@@ -3,47 +3,47 @@ import { cn } from '@/lib/cn';
 import { Icon } from './Icon';
 
 const checkboxVariants = cva(
-  "inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md border transition-colors",
+  'inline-flex shrink-0 cursor-pointer items-center justify-center rounded-md border transition-colors',
   {
     compoundVariants: [
       {
         checked: true,
-        class: "border-action bg-action text-action-fg",
-        tone: "dark",
+        class: 'border-action bg-action text-action-fg',
+        tone: 'dark',
       },
       {
         checked: true,
-        class: "border-solid-info bg-solid-info text-white",
-        tone: "blue",
+        class: 'border-solid-info bg-solid-info text-white',
+        tone: 'blue',
       },
       {
         checked: true,
-        class: "border-solid-success bg-solid-success text-white",
-        tone: "green",
+        class: 'border-solid-success bg-solid-success text-white',
+        tone: 'green',
       },
       {
         checked: true,
-        class: "border-accent bg-action-accent text-action-accent-fg",
-        tone: "purple",
+        class: 'border-accent bg-action-accent text-action-accent-fg',
+        tone: 'purple',
       },
     ],
     defaultVariants: {
       checked: false,
-      tone: "dark",
+      tone: 'dark',
     },
     variants: {
       checked: {
-        false: "border-line-strong bg-surface",
-        true: "",
+        false: 'border-line-strong bg-surface',
+        true: '',
       },
       tone: {
-        blue: "",
-        dark: "",
-        green: "",
-        purple: "",
+        blue: '',
+        dark: '',
+        green: '',
+        purple: '',
       },
     },
-  },
+  }
 );
 
 export interface CheckboxProps extends VariantProps<typeof checkboxVariants> {

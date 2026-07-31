@@ -93,6 +93,7 @@ func (a *api) updateWorkspaceMember(ctx context.Context, in *updateWorkspaceMemb
 	if err := a.s.SetWorkspaceMemberRole(ctx, in.ID, in.MemberID, in.Body.Role); err != nil {
 		return nil, collaborationError(err)
 	}
+	a.publishWorkspaceEvictions(ctx, in.ID)
 	return &Empty{}, nil
 }
 
@@ -103,5 +104,6 @@ func (a *api) removeWorkspaceMember(ctx context.Context, in *workspaceMemberInpu
 	if err := a.s.RemoveWorkspaceMember(ctx, in.ID, in.MemberID); err != nil {
 		return nil, collaborationError(err)
 	}
+	a.publishWorkspaceEvictions(ctx, in.ID)
 	return &Empty{}, nil
 }

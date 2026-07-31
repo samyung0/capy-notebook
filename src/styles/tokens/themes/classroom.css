@@ -19,18 +19,18 @@
   --page-title-line-height: 1.15;
   --page-title-letter-spacing: -0.02rem;
 
-  --section-font-size: 1.375rem;
-  --section-font-weight: 800;
-  --section-line-height: 1.35;
-  --section-letter-spacing: -0.02rem;
+  --large-card-title-font-size: 1.375rem;
+  --large-card-title-font-weight: 800;
+  --large-card-title-line-height: 1.35;
+  --large-card-title-letter-spacing: -0.02rem;
 
   --card-title-font-size: 1.125rem;
   --card-title-font-weight: 700;
   --card-title-line-height: 1.35;
 
   --subtitle-font-size: 1rem;
-  --subtitle-font-weight: 700;
-  --subtitle-line-height: 1.35;
+  --subtitle-font-weight: 600;
+  --subtitle-line-height: 1.45;
 
   --body-font-size: 0.875rem;
   --body-font-weight: 500;
@@ -70,12 +70,12 @@
 /* ---------------- classroom · LIGHT ---------------- */
 [data-style="classroom"][data-theme="latte"] {
   --surface-page: #f4f6f5; /* outer "device" */
+  --surface-page-hover: #e6e9ea;
   --surface-canvas: #f4f6f5; /* page wash behind inset cards */
   --surface-card-bg: #ffffff;
   --surface-card-fg: #222222;
   --surface-card-dark-bg: #e6e9ea; /* dark card */
   --surface-card-dark-fg: #222222;
-  --surface-card-border: #e6e6e6;
   --surface-card-hover-bg: #f7f8f8;
   --surface-card-dark-hover-bg: #f1f3f2;
   --surface-darker-bg: #e0e5e2;
@@ -107,9 +107,9 @@
   --tint-success-fg: #2f7d56;
   --tint-info-bg: #e4ecf8;
   --tint-info-fg: #2e6bb0;
-  --tint-warning-bg: #f6ecdc;
+  --tint-warning-bg: #f7f0e5;
   --tint-warning-fg: #a9772a;
-  --tint-error-bg: #fde7ea;
+  --tint-error-bg: #fdeaec;
   --tint-error-fg: #b8475a;
   --tint-accent-1-bg: #ece6f6;
   --tint-accent-1-fg: #5b4aa8;
@@ -120,7 +120,7 @@
   --solid-success: #7bd9ab;
   --solid-info: #8ec9f9;
   --solid-warning: #ffcc61;
-  --solid-error: #fd7287;
+  --solid-error: #f35a71;
   /* user colors (used for assigned colors to workspaces/quiz/event/custom cards) */
   --tint-purple: #8c7bd9;
   --tint-purple-fg: #ffffff;

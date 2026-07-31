@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useCreateCard, useUpdateCard } from '@/api/hooks';
 import type { Flashcard } from '@/api/types';
-import { Button, Input, SimpleDialog } from "@/components/ui";
+import { Button, Input, SimpleDialog } from '@/components/ui';
 
 /**
  * Create or edit a single flashcard. When `card` is provided the modal edits it,
@@ -18,15 +18,15 @@ export function CardEditModal({
   open: boolean;
   onClose: () => void;
 }) {
-  const [front, setFront] = useState("");
-  const [back, setBack] = useState("");
+  const [front, setFront] = useState('');
+  const [back, setBack] = useState('');
   const createCard = useCreateCard(deckId);
   const updateCard = useUpdateCard(deckId);
 
   useEffect(() => {
     if (open) {
-      setFront(card?.front ?? "");
-      setBack(card?.back ?? "");
+      setFront(card?.front ?? '');
+      setBack(card?.back ?? '');
     }
   }, [open, card]);
 
@@ -48,13 +48,13 @@ export function CardEditModal({
             Cancel
           </Button>
           <Button disabled={!canSave || pending} onClick={save}>
-            {card ? "Save" : "Add card"}
+            {card ? 'Save' : 'Add card'}
           </Button>
         </>
       }
       onClose={onClose}
       open={open}
-      title={card ? "Edit card" : "New card"}
+      title={card ? 'Edit card' : 'New card'}
       width={480}
     >
       <div className="flex flex-col gap-4">

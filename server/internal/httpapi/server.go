@@ -41,6 +41,8 @@ type Config struct {
 	StripePricePro      string
 	StripePriceTeam     string
 	AppURL              string
+	CollaborationSecret string
+	CollaborationURL    string
 }
 
 type api struct {

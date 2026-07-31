@@ -1,22 +1,18 @@
 import { useChat as useBaseChat } from '@ai-sdk/react';
-import { BaseAIPlugin, withAIBatch } from '@platejs/ai';
 import {
   AIChatPlugin,
   AIPlugin,
   aiCommentToRange,
-  applyAISuggestions,
-  applyTableCellSuggestion,
   CopilotPlugin,
-  getInsertPreviewStart,
-  streamInsertChunk,
   useChatChunk,
 } from '@platejs/ai/react';
-import { getCommentKey } from '@platejs/comment';
 import { serializeMd, stripMarkdown } from '@platejs/markdown';
 import { CursorOverlayPlugin } from '@platejs/selection/react';
-import { ElementApi, KEYS, PathApi, type TElement, TextApi } from 'platejs';
+import { slateRangeToRelativeRange, type YjsEditor } from '@slate-yjs/core';
+import { type TElement } from 'platejs';
 import { useEditorRef, usePluginOption } from 'platejs/react';
 import { useEffect, useMemo, useRef } from 'react';
+import * as Y from 'yjs';
 import { useCreateMaterialDiscussion } from '@/api/hooks';
 import {
   createPlateAiTransport,
@@ -24,8 +20,8 @@ import {
   plateAiFetch,
 } from '@/api/plateAiTransport';
 import { useEditorRuntime } from '../EditorRuntime';
-import { finalizeSuggestionValue } from '../suggestions';
 import { openAiMenu } from './aiMenuState';
+import { getAiPreview, setAiPreview } from './aiPreviewState';
 import {
   AiAnchorElement,
   AiCursorOverlay,
@@ -48,6 +44,12 @@ type PlateDataPart = {
   };
 };
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary);
+}
+
 function usePlateChat(workspaceId: string) {
   const editor = useEditorRef();
   const { materialId } = useEditorRuntime();
@@ -68,33 +70,50 @@ function usePlateChat(workspaceId: string) {
       if (part.type === 'data-table' && part.data) {
         const data = part.data as PlateDataPart['table'];
         if (data?.status === 'streaming' && data.cellUpdate) {
-          withAIBatch(editor, () =>
-            applyTableCellSuggestion(editor, data.cellUpdate!)
+          const current = getAiPreview(editor);
+          const updates = [...(current?.tableUpdates ?? [])];
+          const index = updates.findIndex(
+            (entry) => entry.id === data.cellUpdate?.id
           );
+          if (index >= 0) updates[index] = data.cellUpdate;
+          else updates.push(data.cellUpdate);
+          setAiPreview(editor, {
+            kind: 'table',
+            originalText: '',
+            proposedText: updates
+              .map((entry) => `${entry.id}: ${entry.content}`)
+              .join('\n'),
+            tableUpdates: updates,
+          });
         }
         return;
       }
       if (part.type === 'data-comment' && part.data) {
         const data = part.data as PlateDataPart['comment'];
-        if (!data?.comment || data.status !== 'streaming') return;
+        if (!data?.comment || data.status !== 'finished') return;
         const range = aiCommentToRange(editor, data.comment);
         if (!range) return;
+        const yjsEditor = editor as typeof editor & YjsEditor;
+        if (!yjsEditor.sharedRoot) return;
+        const relative = slateRangeToRelativeRange(
+          yjsEditor.sharedRoot,
+          editor,
+          range
+        );
         void createDiscussion
           .mutateAsync({
+            anchorEnd: bytesToBase64(Y.encodeRelativePosition(relative.focus)),
+            anchorQuote: editor.api.string(range).slice(0, 1000),
+            anchorStart: bytesToBase64(
+              Y.encodeRelativePosition(relative.anchor)
+            ),
+            anchorVersion: 1,
             blockId: data.comment.blockId,
             contentRich: [
               { children: [{ text: data.comment.comment }], type: 'p' },
             ],
           })
-          .then((discussion) => {
-            editor.tf.setNodes(
-              {
-                [KEYS.comment]: true,
-                [getCommentKey(discussion.id)]: true,
-              },
-              { at: range, match: TextApi.isText, split: true }
-            );
-          });
+          .catch(() => undefined);
       }
     },
     transport,
@@ -141,41 +160,61 @@ function createAiChatPlugin(workspaceId: string) {
       useChatChunk({
         onChunk: ({ chunk, isFirst, nodes, text }) => {
           if (isFirst && mode === 'insert') {
-            const { startBlock, startInEmptyParagraph } =
-              getInsertPreviewStart(editor);
-            editor.getTransforms(BaseAIPlugin).ai.beginPreview({
-              originalBlocks:
-                startInEmptyParagraph &&
-                startBlock &&
-                ElementApi.isElement(startBlock)
-                  ? [structuredClone(startBlock)]
-                  : [],
-            });
-            editor.tf.withoutSaving(() => {
-              editor.tf.insertNodes(
-                {
-                  children: [{ text: '' }],
-                  type: editor.getType(KEYS.aiChat),
-                },
-                { at: PathApi.next(editor.selection!.focus.path.slice(0, 1)) }
-              );
+            const block = editor.api.block({ highest: true })?.[0] as
+              | TElement
+              | undefined;
+            setAiPreview(editor, {
+              insertAfterId:
+                typeof block?.id === 'string' ? block.id : undefined,
+              kind: 'insert',
+              nodes: [],
+              originalText: '',
+              proposedText: '',
             });
             editor.setOption(AIChatPlugin, 'streaming', true);
           }
           if (mode === 'insert' && nodes.length > 0) {
-            editor.tf.withoutSaving(() => {
-              if (!getOption('streaming')) return;
-              editor.tf.withScrolling(() =>
-                streamInsertChunk(editor, chunk, {
-                  textProps: { [editor.getType(KEYS.ai)]: true },
-                })
-              );
-            });
+            const current = getAiPreview(editor);
+            if (getOption('streaming')) {
+              setAiPreview(editor, {
+                insertAfterId: current?.insertAfterId,
+                kind: 'insert',
+                nodes: [
+                  {
+                    children: [{ text: stripMarkdown(text || chunk) }],
+                    type: 'p',
+                  } as TElement,
+                ],
+                originalText: '',
+                proposedText: text || chunk,
+              });
+            }
           }
           if (toolName === 'edit' && mode === 'chat') {
-            withAIBatch(editor, () => applyAISuggestions(editor, text), {
-              split: isFirst,
-            });
+            const current = getAiPreview(editor);
+            const range =
+              editor.getOption(AIChatPlugin, 'chatSelection') ??
+              editor.selection;
+            if (!current && range) {
+              const yjsEditor = editor as typeof editor & YjsEditor;
+              if (yjsEditor.sharedRoot) {
+                setAiPreview(editor, {
+                  kind: 'edit',
+                  originalText: editor.api.string(range),
+                  proposedText: text,
+                  targetRange: slateRangeToRelativeRange(
+                    yjsEditor.sharedRoot,
+                    editor,
+                    range
+                  ),
+                });
+              }
+            } else if (current?.kind === 'edit') {
+              setAiPreview(editor, {
+                ...current,
+                proposedText: text,
+              });
+            }
           }
         },
         onFinish: () => editor.getApi(AIChatPlugin).aiChat.stop(),
@@ -205,7 +244,7 @@ function createCopilotPlugin(workspaceId: string) {
         const context = editor.api.block({ highest: true });
         if (!context) return '';
         return serializeMd(editor, {
-          value: finalizeSuggestionValue([context[0] as TElement], 'reject'),
+          value: [context[0] as TElement],
         });
       },
       renderGhostText: GhostText,

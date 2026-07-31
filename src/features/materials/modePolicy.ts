@@ -1,6 +1,6 @@
 import type { MaterialKind } from '@/api/types';
 
-export type MaterialMode = 'view' | 'edit' | 'suggestion';
+export type MaterialMode = 'view' | 'edit' | 'comment';
 
 export interface MaterialModeCapabilities {
   canComment: boolean;
@@ -19,7 +19,7 @@ export function materialModePolicy(
   const modes: MaterialMode[] = [];
 
   if (capabilities.canEdit) modes.push('edit');
-  if (capabilities.canEdit || capabilities.canComment) modes.push('suggestion');
+  if (capabilities.canEdit || capabilities.canComment) modes.push('comment');
   modes.push('view');
 
   return {
@@ -29,7 +29,7 @@ export function materialModePolicy(
         : capabilities.canEdit
           ? 'edit'
           : capabilities.canComment
-            ? 'suggestion'
+            ? 'comment'
             : 'view',
     modes,
   };
@@ -46,6 +46,6 @@ export function resolveMaterialMode(
 
 export function isInteractiveMaterialMode(
   mode: MaterialMode
-): mode is Extract<MaterialMode, 'edit' | 'suggestion'> {
-  return mode === 'edit' || mode === 'suggestion';
+): mode is Extract<MaterialMode, 'edit' | 'comment'> {
+  return mode === 'edit' || mode === 'comment';
 }

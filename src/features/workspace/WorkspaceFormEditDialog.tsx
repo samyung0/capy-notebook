@@ -1,6 +1,6 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, type FieldError, useForm } from 'react-hook-form';
 import type { UpdateWorkspaceReq } from '@/api/gen/model';
 import { UpdateWorkspaceBody } from '@/api/gen/validators';
 import type { Workspace } from '@/api/types';
@@ -32,19 +32,17 @@ export function WorkspaceFormEditDialog({
   workspace: UpdateWorkspaceReq;
   onSubmit: (v: UpdateWorkspaceReq) => Promise<Workspace | void>;
 }) {
-  const form = useForm<UpdateWorkspaceReq>({
-    defaultValues: {
-      color: workspace.color,
-      name: workspace.name,
-      tags: workspace.tags,
-    },
+  const {
+    formState: { isDirty, isValid, isSubmitting },
+    handleSubmit: formSubmit,
+    control,
+  } = useForm<UpdateWorkspaceReq>({
+    defaultValues: workspace,
+    mode: 'onChange',
     resolver: zodResolver(UpdateWorkspaceBody),
   });
 
-  const submitDisabled =
-    !form.formState.isDirty ||
-    !form.formState.isValid ||
-    form.formState.isSubmitting;
+  const submitDisabled = !isDirty || !isValid || isSubmitting;
 
   const handleSubmit = useCallback(
     async (v: UpdateWorkspaceReq) => {
@@ -74,7 +72,7 @@ export function WorkspaceFormEditDialog({
       open={open}
     >
       <DialogContent
-        className="top-1/2 -translate-y-1/2"
+        className="min-h-2/3"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
           (e.currentTarget as HTMLElement).querySelector('input')?.focus();
@@ -85,77 +83,101 @@ export function WorkspaceFormEditDialog({
         <DialogTitle>{'Edit Workspace'}</DialogTitle>
 
         <form
-          className="flex flex-col gap-5"
-          onSubmit={form.handleSubmit(handleSubmit)}
+          className="flex h-full flex-col"
+          onSubmit={formSubmit(handleSubmit)}
         >
-          <Controller
-            control={form.control}
-            name={'name'}
-            render={({ field, fieldState }) => (
-              <>
-                <label className="flex flex-col gap-1.5">
-                  <InputTitle required>Chapter</InputTitle>
-                  <Input
-                    {...field}
-                    aria-invalid={fieldState.invalid}
-                    autoComplete="off"
-                    autoFocus
-                    placeholder="Workspace name"
-                    required
-                  />
-                  {fieldState.invalid && (
-                    <InputError errors={[fieldState.error]} />
-                  )}
-                </label>
-              </>
-            )}
-          />
-          <Controller
-            control={form.control}
-            name={'tags'}
-            render={({ field, fieldState }) => (
-              <div className="flex flex-col gap-1.5">
-                <InputTitle>Tags</InputTitle>
-                <TagSelect
-                  invalid={fieldState.invalid}
-                  kind="workspace"
-                  onChange={field.onChange}
-                  value={field.value ?? []}
-                />
-                {fieldState.invalid && (
-                  <InputError errors={[fieldState.error]} />
-                )}
-              </div>
-            )}
-          />
-          <Controller
-            control={form.control}
-            name={'color'}
-            render={({ field, fieldState }) => (
-              <>
-                <div className="flex flex-col gap-1.5">
-                  <InputTitle>Color</InputTitle>
-                  <UserColorChooser
-                    aria-invalid={fieldState.invalid}
-                    onChange={field.onChange}
-                    selected={field.value}
-                  />
-                  {fieldState.invalid && (
-                    <InputError errors={[fieldState.error]} />
-                  )}
-                </div>
-              </>
-            )}
-          />
-          <DialogFooter>
+          <div className="flex flex-col gap-5">
+            <Controller
+              control={control}
+              name={'name'}
+              render={({ field, fieldState }) => (
+                <>
+                  <label className="flex flex-col gap-1.5">
+                    <InputTitle required>Chapter</InputTitle>
+                    <Input
+                      {...field}
+                      aria-invalid={fieldState.invalid}
+                      autoComplete="off"
+                      autoFocus
+                      placeholder="Workspace name"
+                      required
+                    />
+                    {fieldState.invalid && (
+                      <InputError errors={[fieldState.error]} />
+                    )}
+                  </label>
+                </>
+              )}
+            />
+            <Controller
+              control={control}
+              name={'tags'}
+              render={({ field, fieldState }) => {
+                const uniqueErrors = new Set();
+                let uniqueErrorsArray: FieldError[] = [];
+
+                if (fieldState.error) {
+                  uniqueErrorsArray = (
+                    fieldState.error as any as {
+                      value: FieldError;
+                    }[]
+                  )
+                    .map((error) => error.value)
+                    .filter((error) => {
+                      if (uniqueErrors.has(error.message)) return false;
+                      uniqueErrors.add(error.message);
+                      return true;
+                    });
+                }
+                return (
+                  <div className="flex flex-col gap-1.5">
+                    <InputTitle>Tags</InputTitle>
+                    <TagSelect
+                      invalid={fieldState.invalid}
+                      kind="workspace"
+                      onChange={field.onChange}
+                      value={field.value ?? []}
+                    />
+                    {fieldState.invalid && (
+                      <InputError errors={uniqueErrorsArray} />
+                    )}
+                  </div>
+                );
+              }}
+            />
+            <Controller
+              control={control}
+              name={'color'}
+              render={({ field, fieldState }) => (
+                <>
+                  <div className="flex flex-col gap-1.5">
+                    <InputTitle>Color</InputTitle>
+                    <UserColorChooser
+                      aria-invalid={fieldState.invalid}
+                      onChange={field.onChange}
+                      selected={field.value}
+                    />
+                    {fieldState.invalid && (
+                      <InputError errors={[fieldState.error]} />
+                    )}
+                  </div>
+                </>
+              )}
+            />
+          </div>
+          <DialogFooter className="mt-auto">
             <DialogClose asChild>
-              <Button onClick={() => setOpen(false)} variant="ghost-hover">
+              <Button
+                onClick={() => setOpen(false)}
+                size="lg"
+                variant="ghost-hover"
+              >
                 Cancel
               </Button>
             </DialogClose>
-            <Button disabled={submitDisabled}>
-              {!form.formState.isSubmitting && <span>{m.action_save()}</span>}
-              {form.formState.isSubmitting && (
+            <Button disabled={submitDisabled} size="lg">
+              {!isSubmitting && <span>{m.action_save()}</span>}
+              {isSubmitting && (
                 <span>
                   <Spinner />
                 </span>

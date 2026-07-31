@@ -27,6 +27,34 @@ bucket access and exits if those credentials are invalid.
 The server applies the embedded `migrations/0001_init.sql` development baseline
 (schema + seed) on startup; it is idempotent.
 
+## Collaboration authority
+
+The Hocuspocus service in `../collaboration` is authoritative for initialized
+material content. Configure the gateway with:
+
+```text
+COLLABORATION_SECRET=<same long random value as the sidecar>
+COLLABORATION_URL=ws://localhost:1234
+COLLABORATION_INTERNAL_URL=http://localhost:1234
+```
+
+`COLLABORATION_URL` is returned to browsers in short-lived room tokens.
+`COLLABORATION_INTERNAL_URL` is server-to-sidecar only and carries headless
+quiz/flashcard commands. Content mutations fail with 503 when an initialized
+Y.Doc cannot be reached; they never fall back to SQL.
+
+`material_yjs_documents.state` is the durable content authority.
+`materials.content` is an asynchronously checkpointed read projection used by
+static/study views, exports, and domain reads. The internal projection endpoint
+is authenticated with `X-Collaboration-Secret`, validates the Plate envelope,
+locks the material, rejects stale versions, advances the material revision, and
+reconciles flashcard stats.
+
+Comments remain relational. Their anchors are paired encoded Yjs relative
+positions plus stable block ID/version/quote fallback. Comment mutations publish
+Redis invalidations. Membership changes and deletions publish room eviction
+events.
+
 ## Layout
 
 - `cmd/api` — entrypoint (config, migrate, serve, graceful shutdown).

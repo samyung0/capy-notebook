@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import type { Task } from '@/api/types';
-import { Button, Input, SimpleDialog } from "@/components/ui";
-import { m } from "@/i18n";
+import { Button, Input, SimpleDialog } from '@/components/ui';
+import { m } from '@/i18n';
 
 export function TaskEditDialog({
   task,
@@ -12,7 +12,7 @@ export function TaskEditDialog({
   task: Task;
   open: boolean;
   onClose: () => void;
-  onSave: (patch: Pick<Task, "title">) => void;
+  onSave: (patch: Pick<Task, 'title'>) => void;
 }) {
   const [title, setTitle] = useState(task.title);
 

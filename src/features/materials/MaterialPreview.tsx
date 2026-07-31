@@ -1,11 +1,6 @@
 import { MarkdownPlugin } from '@platejs/markdown';
-import { createSlateEditor, createSlatePlugin } from 'platejs';
-import {
-  PlateStatic,
-  type SlateElementProps,
-  SlateLeaf,
-  type SlateLeafProps,
-} from 'platejs/static';
+import { createSlateEditor } from 'platejs';
+import { PlateStatic } from 'platejs/static';
 import { useMemo } from 'react';
 import { cn } from '@/lib/cn';
 import {
@@ -17,106 +12,7 @@ import {
 import { staticNoteComponents } from './staticNodeComponents';
 import { StaticMaterialKit } from './staticPlugins';
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === 'object' && !Array.isArray(value);
-}
-
-function suggestionOperations(node: Record<string, unknown>): string[] {
-  const result: string[] = [];
-  if (isRecord(node.suggestion) && typeof node.suggestion.type === 'string') {
-    result.push(node.suggestion.type);
-  }
-  for (const [key, value] of Object.entries(node)) {
-    if (
-      key.startsWith('suggestion_') &&
-      isRecord(value) &&
-      typeof value.type === 'string'
-    ) {
-      result.push(value.type);
-    }
-  }
-  return result;
-}
-
-function StaticSuggestionLeaf(props: SlateLeafProps) {
-  const operations = suggestionOperations(
-    props.leaf as Record<string, unknown>
-  );
-  const remove = operations.includes('remove');
-  const update =
-    operations.includes('update') || operations.includes('replace');
-  return (
-    <SlateLeaf
-      {...props}
-      as={remove ? 'del' : 'ins'}
-      className={cn(
-        'rounded-sm bg-tint-accent-2 text-solid-success no-underline',
-        update && 'ring-1 ring-action-accent/45',
-        remove &&
-          'bg-tint-error text-solid-error line-through decoration-solid-error'
-      )}
-    >
-      {props.children}
-    </SlateLeaf>
-  );
-}
-
-function StaticSuggestedBlock({
-  props,
-  operation,
-}: {
-  props: SlateElementProps;
-  operation: string;
-}) {
-  const remove = operation === 'remove';
-  const lineBreak = isRecord(
-    (props.element as Record<string, unknown>).suggestion
-  )
-    ? (props.element as Record<string, any>).suggestion.isLineBreak === true
-    : false;
-  return (
-    <div
-      className={cn(
-        'rounded-sm bg-tint-accent-2 text-solid-success',
-        lineBreak && 'after:ml-1 after:content-["↵"]',
-        remove &&
-          'bg-tint-error text-solid-error line-through decoration-solid-error'
-      )}
-      data-static-block-suggestion={operation}
-    >
-      {props.children}
-    </div>
-  );
-}
-
-const StaticSuggestionPlugin = createSlatePlugin({
-  key: 'suggestion',
-  node: { isLeaf: true },
-  render: {
-    aboveNodes: ({ element }) => {
-      const operations = suggestionOperations(
-        element as Record<string, unknown>
-      );
-      if (!operations.length) return;
-      const operation = operations.includes('remove')
-        ? 'remove'
-        : operations[0];
-      return (props) => (
-        <StaticSuggestedBlock
-          operation={operation}
-          props={props as unknown as SlateElementProps}
-        />
-      );
-    },
-    node: StaticSuggestionLeaf,
-  },
-});
-
-/**
- * Universal read-only material renderer. Pending Plate suggestion metadata is
- * rendered directly from the shared material head; it is never hidden or
- * reconstructed from collaboration rows.
- */
+/** Universal read-only renderer for the checkpointed material projection. */
 export function MaterialPreview({
   content,
   className,
@@ -128,7 +24,7 @@ export function MaterialPreview({
     () =>
       createSlateEditor({
         components: staticNoteComponents,
-        plugins: [...StaticMaterialKit, StaticSuggestionPlugin],
+        plugins: StaticMaterialKit,
       }),
     []
   );

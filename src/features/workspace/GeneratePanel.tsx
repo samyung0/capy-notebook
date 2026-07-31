@@ -8,23 +8,23 @@ import type {
   Quiz,
   SourceFile,
 } from '@/api/types';
-import { Button, Icon, type IconName } from '@/components/ui';
+import { Button, type IconName } from '@/components/ui';
+import { ButtonCard } from '@/components/ui/ButtonCard';
 import { userToast } from '@/components/ui/userToast';
 import type { OpenItem } from '@/features/materials/openItem';
 import { m } from '@/i18n';
 import { GenerateFormDialog, type GenerateMode } from './GenerateFormDialog';
-import { ButtonCard } from "@/components/ui/ButtonCard";
 
 type GenerateResultData =
-  | { kind: "flashcards"; deck?: Deck; cards?: unknown[] }
-  | { kind: "quiz"; quiz?: Quiz }
-  | { kind: "mindmap" | "diagram"; material?: Material };
+  | { kind: 'flashcards'; deck?: Deck; cards?: unknown[] }
+  | { kind: 'quiz'; quiz?: Quiz }
+  | { kind: 'mindmap' | 'diagram'; material?: Material };
 
 const TILES: [GenerateMode, IconName, string][] = [
-  ["flashcards", "flashcards", m.generate_flashcards()],
-  ["quiz", "quiz", m.generate_quiz()],
-  ["mindmap", "workspaces", "Mindmap"],
-  ["diagram", "chart", "Diagram"],
+  ['flashcards', 'flashcards', m.generate_flashcards()],
+  ['quiz', 'quiz', m.generate_quiz()],
+  ['mindmap', 'workspaces', 'Mindmap'],
+  ['diagram', 'chart', 'Diagram'],
 ];
 
 export function GeneratePanel({
@@ -52,18 +52,18 @@ export function GeneratePanel({
       setResult(r);
       // Reveal the freshly-generated artifact in the center pane.
       const materialId =
-        r.kind === "quiz"
+        r.kind === 'quiz'
           ? r.quiz?.id
-          : r.kind === "flashcards"
+          : r.kind === 'flashcards'
             ? r.deck?.id
             : r.material?.id;
-      if (materialId) onOpenItem?.({ id: materialId, kind: "material" });
+      if (materialId) onOpenItem?.({ id: materialId, kind: 'material' });
     } catch (error) {
       userToast({
         description:
-          error instanceof Error ? error.message : "Something went wrong.",
-        title: "Could not generate material",
-        variant: "error",
+          error instanceof Error ? error.message : 'Something went wrong.',
+        title: 'Could not generate material',
+        variant: 'error',
       });
     } finally {
       onGeneratingChange?.(null);
@@ -72,14 +72,13 @@ export function GeneratePanel({
 
   return (
     <div className="flex flex-col gap-4 overflow-auto p-4">
-      <h3 className="t-subtitle">{m.generate_title()}</h3>
       <div className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-4">
         {TILES.map(([k, icon, label]) => (
           <ButtonCard
-            icon={icon}
-            disabled={gen.isPending}
-            key={k}
             buttonText={label}
+            disabled={gen.isPending}
+            icon={icon}
+            key={k}
             onClick={() => {
               setResult(null);
               setMode(k);

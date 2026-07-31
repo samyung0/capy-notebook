@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { Question } from '@/api/types';
-import { Button, Input, SimpleDialog } from "@/components/ui";
-import { parseQuizFenceBody } from "@/features/materials/blocks";
+import { Button, Input, SimpleDialog } from '@/components/ui';
+import { parseQuizFenceBody } from '@/features/materials/blocks';
 import {
   createBlankQuestion,
   isCompleteQuestion,
   QuizForm,
-} from "@/features/quizzes/QuizForm";
-import { quizFenceBody } from "./shared";
+} from '@/features/quizzes/QuizForm';
+import { quizFenceBody } from './shared';
 
 /** Popup to author a typed ```quiz block inline in a note. */
 export function QuizDialog({
@@ -22,7 +22,7 @@ export function QuizDialog({
   onClose: () => void;
 }) {
   const [questions, setQuestions] = useState<Question[]>([]);
-  const [timeLimit, setTimeLimit] = useState<string>("");
+  const [timeLimit, setTimeLimit] = useState<string>('');
 
   useEffect(() => {
     if (!open) return;
@@ -32,10 +32,10 @@ export function QuizDialog({
     setQuestions(
       parsed.questions.length
         ? structuredClone(parsed.questions)
-        : [createBlankQuestion()],
+        : [createBlankQuestion()]
     );
     setTimeLimit(
-      parsed.timeLimitMin == null ? "" : String(parsed.timeLimitMin),
+      parsed.timeLimitMin == null ? '' : String(parsed.timeLimitMin)
     );
   }, [open, initialCode]);
 
@@ -47,7 +47,7 @@ export function QuizDialog({
       quizFenceBody({
         questions,
         timeLimitMin: Number.isFinite(tl) && tl > 0 ? tl : undefined,
-      }),
+      })
     );
   }
 
@@ -59,7 +59,7 @@ export function QuizDialog({
             Cancel
           </Button>
           <Button disabled={!canSave} onClick={save}>
-            {initialCode ? "Save" : "Insert"}
+            {initialCode ? 'Save' : 'Insert'}
           </Button>
         </>
       }

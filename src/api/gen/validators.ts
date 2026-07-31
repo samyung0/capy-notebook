@@ -418,65 +418,13 @@ export const CloneDeckResponse = zod.object({
 
 
 /**
- * @summary Soft-delete a discussion and reject pending marks
+ * @summary Soft-delete a comment discussion
  */
 export const DeleteMaterialDiscussionParams = zod.object({
   "id": zod.string()
 })
 
-export const DeleteMaterialDiscussionQueryParams = zod.object({
-  "expectedRevision": zod.number().optional()
-})
-
-export const DeleteMaterialDiscussionResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "contentBytes": zod.number().describe('UTF-8 byte length of persisted content JSON'),
-  "discussions": zod.array(zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "anchor": zod.unknown(),
-  "blockId": zod.string().optional(),
-  "comments": zod.array(zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "contentRich": zod.unknown(),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "discussionId": zod.string(),
-  "id": zod.string(),
-  "isDeleted": zod.boolean(),
-  "isEdited": zod.boolean(),
-  "parentCommentId": zod.string().optional(),
-  "replies": zod.array(zod.unknown()),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "userId": zod.string()
-})),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "id": zod.string(),
-  "isDeleted": zod.boolean(),
-  "isResolved": zod.boolean(),
-  "kind": zod.string(),
-  "materialId": zod.string(),
-  "suggestions": zod.array(zod.object({
-  "commitRevision": zod.number(),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "discussionId": zod.string(),
-  "id": zod.string(),
-  "isDeleted": zod.boolean(),
-  "plateSuggestionId": zod.string(),
-  "resolutionRevision": zod.number().optional(),
-  "reviewedAt": zod.iso.datetime({"offset":true}).optional(),
-  "reviewedBy": zod.string().optional(),
-  "status": zod.enum(['pending', 'accepted', 'rejected', 'withdrawn']),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "userId": zod.string()
-})),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "userId": zod.string()
-})),
-  "hasPendingSuggestions": zod.boolean(),
-  "id": zod.string(),
-  "revision": zod.number(),
-  "suggestionIds": zod.array(zod.string()),
-  "updatedAt": zod.iso.datetime({"offset":true})
-})
+export const DeleteMaterialDiscussionResponse = zod.void()
 
 
 /**
@@ -808,71 +756,6 @@ export const ListLabelsResponse = zod.array(ListLabelsResponseItem)
 
 
 /**
- * @summary Withdraw and reject a pending suggestion
- */
-export const WithdrawMaterialSuggestionParams = zod.object({
-  "id": zod.string()
-})
-
-
-
-
-export const WithdrawMaterialSuggestionQueryParams = zod.object({
-  "expectedRevision": zod.number().min(1).optional()
-})
-
-export const WithdrawMaterialSuggestionResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "contentBytes": zod.number().describe('UTF-8 byte length of persisted content JSON'),
-  "discussions": zod.array(zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "anchor": zod.unknown(),
-  "blockId": zod.string().optional(),
-  "comments": zod.array(zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "contentRich": zod.unknown(),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "discussionId": zod.string(),
-  "id": zod.string(),
-  "isDeleted": zod.boolean(),
-  "isEdited": zod.boolean(),
-  "parentCommentId": zod.string().optional(),
-  "replies": zod.array(zod.unknown()),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "userId": zod.string()
-})),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "id": zod.string(),
-  "isDeleted": zod.boolean(),
-  "isResolved": zod.boolean(),
-  "kind": zod.string(),
-  "materialId": zod.string(),
-  "suggestions": zod.array(zod.object({
-  "commitRevision": zod.number(),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "discussionId": zod.string(),
-  "id": zod.string(),
-  "isDeleted": zod.boolean(),
-  "plateSuggestionId": zod.string(),
-  "resolutionRevision": zod.number().optional(),
-  "reviewedAt": zod.iso.datetime({"offset":true}).optional(),
-  "reviewedBy": zod.string().optional(),
-  "status": zod.enum(['pending', 'accepted', 'rejected', 'withdrawn']),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "userId": zod.string()
-})),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "userId": zod.string()
-})),
-  "hasPendingSuggestions": zod.boolean(),
-  "id": zod.string(),
-  "revision": zod.number(),
-  "suggestionIds": zod.array(zod.string()),
-  "updatedAt": zod.iso.datetime({"offset":true})
-})
-
-
-/**
  * @summary Delete a material
  */
 export const DeleteMaterialParams = zod.object({
@@ -905,7 +788,6 @@ export const GetMaterialResponse = zod.object({
 }),
   "contentBytes": zod.number().describe('UTF-8 byte length of persisted content JSON'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "hasPendingSuggestions": zod.boolean(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "kind": zod.string(),
@@ -934,11 +816,7 @@ export const UpdateMaterialParams = zod.object({
 
 export const UpdateMaterialBody = zod.object({
   "chapterId": zod.string().optional().describe('Chapter to file under; empty string unfiles; omit to leave unchanged'),
-  "content": zod.object({
-  "schemaVersion": zod.number(),
-  "value": zod.array(zod.record(zod.string(), zod.unknown())).nullable()
-}).optional(),
-  "expectedRevision": zod.number().min(1).optional().describe('Required when changing title or content'),
+  "expectedRevision": zod.number().min(1).optional().describe('Required when changing title'),
   "privacy": zod.enum(['private', 'public', 'link']).optional().describe('Visibility (share standalone)'),
   "scopeChapters": zod.array(zod.string()).optional(),
   "scopeFileIds": zod.array(zod.string()).optional(),
@@ -948,7 +826,6 @@ export const UpdateMaterialBody = zod.object({
 export const UpdateMaterialResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "contentBytes": zod.number().describe('UTF-8 byte length of persisted content JSON'),
-  "hasPendingSuggestions": zod.boolean(),
   "id": zod.string(),
   "revision": zod.number(),
   "updatedAt": zod.iso.datetime({"offset":true})
@@ -978,7 +855,6 @@ export const CloneMaterialResponse = zod.object({
 }),
   "contentBytes": zod.number().describe('UTF-8 byte length of persisted content JSON'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "hasPendingSuggestions": zod.boolean(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "kind": zod.string(),
@@ -996,7 +872,24 @@ export const CloneMaterialResponse = zod.object({
 
 
 /**
- * @summary List nested material discussions
+ * @summary Create a short-lived material room token
+ */
+export const CreateMaterialCollaborationTokenParams = zod.object({
+  "id": zod.string()
+})
+
+export const CreateMaterialCollaborationTokenResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "access": zod.enum(['write', 'comment']),
+  "expiresAt": zod.number(),
+  "room": zod.string(),
+  "token": zod.string(),
+  "url": zod.string()
+})
+
+
+/**
+ * @summary List nested material comment discussions
  */
 export const ListMaterialDiscussionsParams = zod.object({
   "id": zod.string()
@@ -1004,7 +897,10 @@ export const ListMaterialDiscussionsParams = zod.object({
 
 export const ListMaterialDiscussionsResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "anchor": zod.unknown(),
+  "anchorEnd": zod.string().optional(),
+  "anchorQuote": zod.string(),
+  "anchorStart": zod.string().optional(),
+  "anchorVersion": zod.number(),
   "blockId": zod.string().optional(),
   "comments": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
@@ -1023,22 +919,7 @@ export const ListMaterialDiscussionsResponseItem = zod.object({
   "id": zod.string(),
   "isDeleted": zod.boolean(),
   "isResolved": zod.boolean(),
-  "kind": zod.string(),
   "materialId": zod.string(),
-  "suggestions": zod.array(zod.object({
-  "commitRevision": zod.number(),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "discussionId": zod.string(),
-  "id": zod.string(),
-  "isDeleted": zod.boolean(),
-  "plateSuggestionId": zod.string(),
-  "resolutionRevision": zod.number().optional(),
-  "reviewedAt": zod.iso.datetime({"offset":true}).optional(),
-  "reviewedBy": zod.string().optional(),
-  "status": zod.enum(['pending', 'accepted', 'rejected', 'withdrawn']),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "userId": zod.string()
-})),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
 })
@@ -1052,15 +933,30 @@ export const CreateMaterialDiscussionParams = zod.object({
   "id": zod.string()
 })
 
+export const createMaterialDiscussionBodyAnchorEndMax = 4096;
+
+export const createMaterialDiscussionBodyAnchorQuoteMax = 1000;
+
+export const createMaterialDiscussionBodyAnchorStartMax = 4096;
+
+
+
+
 export const CreateMaterialDiscussionBody = zod.object({
-  "anchor": zod.record(zod.string(), zod.unknown()).optional(),
+  "anchorEnd": zod.string().max(createMaterialDiscussionBodyAnchorEndMax).optional(),
+  "anchorQuote": zod.string().max(createMaterialDiscussionBodyAnchorQuoteMax).optional(),
+  "anchorStart": zod.string().max(createMaterialDiscussionBodyAnchorStartMax).optional(),
+  "anchorVersion": zod.number().min(1).optional(),
   "blockId": zod.string().optional(),
   "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).nullable()
 })
 
 export const CreateMaterialDiscussionResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "anchor": zod.unknown(),
+  "anchorEnd": zod.string().optional(),
+  "anchorQuote": zod.string(),
+  "anchorStart": zod.string().optional(),
+  "anchorVersion": zod.number(),
   "blockId": zod.string().optional(),
   "comments": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
@@ -1079,22 +975,7 @@ export const CreateMaterialDiscussionResponse = zod.object({
   "id": zod.string(),
   "isDeleted": zod.boolean(),
   "isResolved": zod.boolean(),
-  "kind": zod.string(),
   "materialId": zod.string(),
-  "suggestions": zod.array(zod.object({
-  "commitRevision": zod.number(),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "discussionId": zod.string(),
-  "id": zod.string(),
-  "isDeleted": zod.boolean(),
-  "plateSuggestionId": zod.string(),
-  "resolutionRevision": zod.number().optional(),
-  "reviewedAt": zod.iso.datetime({"offset":true}).optional(),
-  "reviewedBy": zod.string().optional(),
-  "status": zod.enum(['pending', 'accepted', 'rejected', 'withdrawn']),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "userId": zod.string()
-})),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
 })
@@ -1115,150 +996,13 @@ export const ListMaterialRevisionsResponseItem = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "createdBy": zod.string().optional(),
   "eventMetadata": zod.record(zod.string(), zod.unknown()),
-  "eventType": zod.enum(['create', 'edit', 'suggestion_commit', 'suggestion_accept', 'suggestion_reject']),
-  "hasPendingSuggestions": zod.boolean(),
+  "eventType": zod.enum(['create', 'edit']),
   "materialId": zod.string(),
   "parentRevision": zod.number().optional(),
   "revision": zod.number(),
   "title": zod.string()
 })
 export const ListMaterialRevisionsResponse = zod.array(ListMaterialRevisionsResponseItem)
-
-
-/**
- * @summary Commit marked material suggestions
- */
-export const CommitMaterialSuggestionsParams = zod.object({
-  "id": zod.string()
-})
-
-
-
-
-export const CommitMaterialSuggestionsBody = zod.object({
-  "content": zod.object({
-  "schemaVersion": zod.number(),
-  "value": zod.array(zod.record(zod.string(), zod.unknown())).nullable()
-}).describe('Complete Plate document containing suggestion metadata'),
-  "expectedRevision": zod.number().min(1)
-})
-
-export const CommitMaterialSuggestionsResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "contentBytes": zod.number().describe('UTF-8 byte length of persisted content JSON'),
-  "discussions": zod.array(zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "anchor": zod.unknown(),
-  "blockId": zod.string().optional(),
-  "comments": zod.array(zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "contentRich": zod.unknown(),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "discussionId": zod.string(),
-  "id": zod.string(),
-  "isDeleted": zod.boolean(),
-  "isEdited": zod.boolean(),
-  "parentCommentId": zod.string().optional(),
-  "replies": zod.array(zod.unknown()),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "userId": zod.string()
-})),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "id": zod.string(),
-  "isDeleted": zod.boolean(),
-  "isResolved": zod.boolean(),
-  "kind": zod.string(),
-  "materialId": zod.string(),
-  "suggestions": zod.array(zod.object({
-  "commitRevision": zod.number(),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "discussionId": zod.string(),
-  "id": zod.string(),
-  "isDeleted": zod.boolean(),
-  "plateSuggestionId": zod.string(),
-  "resolutionRevision": zod.number().optional(),
-  "reviewedAt": zod.iso.datetime({"offset":true}).optional(),
-  "reviewedBy": zod.string().optional(),
-  "status": zod.enum(['pending', 'accepted', 'rejected', 'withdrawn']),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "userId": zod.string()
-})),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "userId": zod.string()
-})),
-  "hasPendingSuggestions": zod.boolean(),
-  "id": zod.string(),
-  "revision": zod.number(),
-  "suggestionIds": zod.array(zod.string()),
-  "updatedAt": zod.iso.datetime({"offset":true})
-})
-
-
-/**
- * @summary Accept or reject selected or all suggestions
- */
-export const ReviewMaterialSuggestionsParams = zod.object({
-  "id": zod.string()
-})
-
-
-
-
-export const ReviewMaterialSuggestionsBody = zod.object({
-  "decision": zod.enum(['accept', 'reject']),
-  "expectedRevision": zod.number().min(1),
-  "suggestionIds": zod.array(zod.string()).nullish().describe('Raw Plate suggestion IDs; empty resolves all pending suggestions')
-})
-
-export const ReviewMaterialSuggestionsResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "contentBytes": zod.number().describe('UTF-8 byte length of persisted content JSON'),
-  "discussions": zod.array(zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "anchor": zod.unknown(),
-  "blockId": zod.string().optional(),
-  "comments": zod.array(zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "contentRich": zod.unknown(),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "discussionId": zod.string(),
-  "id": zod.string(),
-  "isDeleted": zod.boolean(),
-  "isEdited": zod.boolean(),
-  "parentCommentId": zod.string().optional(),
-  "replies": zod.array(zod.unknown()),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "userId": zod.string()
-})),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "id": zod.string(),
-  "isDeleted": zod.boolean(),
-  "isResolved": zod.boolean(),
-  "kind": zod.string(),
-  "materialId": zod.string(),
-  "suggestions": zod.array(zod.object({
-  "commitRevision": zod.number(),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "discussionId": zod.string(),
-  "id": zod.string(),
-  "isDeleted": zod.boolean(),
-  "plateSuggestionId": zod.string(),
-  "resolutionRevision": zod.number().optional(),
-  "reviewedAt": zod.iso.datetime({"offset":true}).optional(),
-  "reviewedBy": zod.string().optional(),
-  "status": zod.enum(['pending', 'accepted', 'rejected', 'withdrawn']),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "userId": zod.string()
-})),
-  "updatedAt": zod.iso.datetime({"offset":true}),
-  "userId": zod.string()
-})),
-  "hasPendingSuggestions": zod.boolean(),
-  "id": zod.string(),
-  "revision": zod.number(),
-  "suggestionIds": zod.array(zod.string()),
-  "updatedAt": zod.iso.datetime({"offset":true})
-})
 
 
 /**
@@ -2056,7 +1800,6 @@ export const ListMaterialsParams = zod.object({
 export const ListMaterialsResponseItem = zod.object({
   "chapterId": zod.string().nullable(),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "hasPendingSuggestions": zod.boolean(),
   "id": zod.string(),
   "position": zod.number(),
   "title": zod.string(),
@@ -2099,7 +1842,6 @@ export const CreateMaterialResponse = zod.object({
 }),
   "contentBytes": zod.number().describe('UTF-8 byte length of persisted content JSON'),
   "createdAt": zod.iso.datetime({"offset":true}),
-  "hasPendingSuggestions": zod.boolean(),
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "kind": zod.string(),
@@ -2218,4 +1960,36 @@ export const GetWorkspaceStatsResponse = zod.object({
   "chapters": zod.number(),
   "files": zod.number(),
   "quizzes": zod.number()
+})
+
+
+/**
+ * @summary Project a durably stored Yjs document
+ */
+export const ProjectMaterialYjsDocumentParams = zod.object({
+  "id": zod.string()
+})
+
+export const ProjectMaterialYjsDocumentHeader = zod.object({
+  "X-Collaboration-Secret": zod.string().optional()
+})
+
+
+
+
+export const ProjectMaterialYjsDocumentBody = zod.object({
+  "checkpointIds": zod.array(zod.string()).nullish(),
+  "content": zod.object({
+  "schemaVersion": zod.number(),
+  "value": zod.array(zod.record(zod.string(), zod.unknown())).nullable()
+}),
+  "yjsVersion": zod.number().min(1)
+})
+
+export const ProjectMaterialYjsDocumentResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "contentBytes": zod.number().describe('UTF-8 byte length of persisted content JSON'),
+  "id": zod.string(),
+  "revision": zod.number(),
+  "updatedAt": zod.iso.datetime({"offset":true})
 })

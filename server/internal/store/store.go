@@ -7,7 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/http"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -25,7 +28,16 @@ var ErrConflict = errors.New("revision conflict")
 // role. Shared-resource probing still uses ErrNotFound.
 var ErrForbidden = errors.New("forbidden")
 
-type Store struct{ pool *pgxpool.Pool }
+// ErrAuthorityUnavailable means an initialized Y.Doc could not be mutated
+// through the collaboration authority. Callers must fail closed with 503.
+var ErrAuthorityUnavailable = errors.New("collaboration authority unavailable")
+
+type Store struct {
+	pool                *pgxpool.Pool
+	collaborationURL    string
+	collaborationSecret string
+	collaborationHTTP   *http.Client
+}
 
 func New(ctx context.Context, dsn string) (*Store, error) {
 	pool, err := pgxpool.New(ctx, dsn)
@@ -35,10 +47,20 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 	if err := pool.Ping(ctx); err != nil {
 		return nil, fmt.Errorf("ping: %w", err)
 	}
-	return &Store{pool: pool}, nil
+	return &Store{
+		pool:              pool,
+		collaborationHTTP: &http.Client{Timeout: 20 * time.Second},
+	}, nil
 }
 
 func (s *Store) Close() { s.pool.Close() }
+
+// ConfigureCollaboration enables Yjs-authoritative commands for initialized
+// materials. The URL is the sidecar's internal HTTP origin.
+func (s *Store) ConfigureCollaboration(rawURL, secret string) {
+	s.collaborationURL = strings.TrimRight(rawURL, "/")
+	s.collaborationSecret = secret
+}
 
 // Migrate applies every embedded *.sql migration in filename order. The files
 // are written idempotently (IF NOT EXISTS / ON CONFLICT) so re-running is safe.

@@ -26,6 +26,40 @@ services:
       timeout: 3s
       retries: 20
 
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  collaboration:
+    build:
+      context: ..
+      dockerfile: collaboration/Dockerfile
+    environment:
+      API_URL: http://server:8080
+      COLLABORATION_ALLOWED_ORIGINS: ${E2E_BASE_URL:-http://127.0.0.1:5174}
+      COLLABORATION_SECRET: ${COLLABORATION_SECRET:-e2e-collaboration-secret}
+      DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
+      REDIS_URL: redis://redis:6379/0
+      PORT: "1234"
+    ports:
+      - "127.0.0.1:${E2E_COLLABORATION_PORT:-11234}:1234"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:1234/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+
   server:
     build:
       context: ../server
@@ -40,11 +74,21 @@ services:
       E2E_AUTH_SECRET: ${E2E_AUTH_SECRET:?E2E_AUTH_SECRET is required}
       E2E_AUTH_USER_IDS: u_owner,u_editor,u_commenter,u_viewer,u_other
       APP_URL: ${APP_URL:-http://localhost:5173}
-      # No B2 / pipeline / redis required for sharing-access tests.
+      REDIS_URL: redis://redis:6379/0
+      COLLABORATION_SECRET: ${COLLABORATION_SECRET:-e2e-collaboration-secret}
+      COLLABORATION_URL: ws://127.0.0.1:${E2E_COLLABORATION_PORT:-11234}
+      COLLABORATION_INTERNAL_URL: http://collaboration:1234
     ports:
       - "127.0.0.1:${E2E_API_PORT:-18080}:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
 volumes:

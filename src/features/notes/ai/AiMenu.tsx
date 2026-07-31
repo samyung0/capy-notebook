@@ -1,4 +1,4 @@
-import { AIChatPlugin, AIPlugin } from '@platejs/ai/react';
+import { AIChatPlugin } from '@platejs/ai/react';
 import {
   FloatingPortal,
   flip,
@@ -28,9 +28,10 @@ import {
   useEditorSelector,
   usePluginOption,
 } from 'platejs/react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui';
 import { cn } from '@/lib/cn';
+import { applyAiPreview, setAiPreview, useAiPreview } from './aiPreviewState';
 
 interface AiAction {
   icon: typeof Sparkles;
@@ -96,10 +97,10 @@ export function AiMenu() {
   const open = usePluginOption(AIChatPlugin, 'open');
   const chat = usePluginOption(AIChatPlugin, 'chat');
   const chatSelection = usePluginOption(AIChatPlugin, 'chatSelection');
-  const mode = usePluginOption(AIChatPlugin, 'mode');
-  const toolName = usePluginOption(AIChatPlugin, 'toolName');
   const streaming = usePluginOption(AIChatPlugin, 'streaming');
+  const preview = useAiPreview(editor);
   const [input, setInput] = useState('');
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const loading =
     chat.status === 'streaming' || chat.status === 'submitted' || streaming;
 
@@ -148,16 +149,6 @@ export function AiMenu() {
   useEffect(() => {
     floating.update?.();
   }, [floating.update, open]);
-
-  const hasPreview = useMemo(
-    () =>
-      editor.getTransforms(AIPlugin).ai.hasPreview() ||
-      (!loading &&
-        toolName === 'edit' &&
-        mode === 'chat' &&
-        chat.messages.length > 0),
-    [chat.messages.length, editor, loading, mode, toolName]
-  );
 
   if (!open) return null;
 
@@ -217,11 +208,11 @@ export function AiMenu() {
             disabled={loading}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
+              if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
                 submit(input);
               }
-              if (event.key === "Escape")
+              if (event.key === 'Escape')
                 editor.getApi(AIChatPlugin).aiChat.hide();
             }}
             placeholder="Ask AI anything"
@@ -241,7 +232,7 @@ export function AiMenu() {
           <div className="flex items-center justify-between gap-2 p-3 text-fg-muted text-sm">
             <span className="flex items-center gap-2">
               <LoaderCircle className="size-4 animate-spin" />
-              {chat.status === "submitted" ? "Thinking…" : "Writing…"}
+              {chat.status === 'submitted' ? 'Thinking…' : 'Writing…'}
             </span>
             <Button
               onClick={() => editor.getApi(AIChatPlugin).aiChat.stop()}
@@ -251,15 +242,27 @@ export function AiMenu() {
               Stop
             </Button>
           </div>
-        ) : hasPreview ? (
-          <div className="flex items-center justify-between gap-2 p-2">
-            <span className="px-1 text-fg-muted text-sm">
-              Review the AI preview
-            </span>
-            <div className="flex gap-1">
+        ) : preview ? (
+          <div className="flex flex-col gap-2 p-2">
+            <p className="px-1 font-medium text-sm">Review the AI preview</p>
+            <div className="max-h-56 overflow-auto rounded-card border border-divider bg-surface-secondary p-2 font-mono text-xs">
+              {preview.originalText && (
+                <p className="whitespace-pre-wrap bg-tint-error text-solid-error line-through">
+                  {preview.originalText}
+                </p>
+              )}
+              <p className="whitespace-pre-wrap bg-tint-success text-solid-success">
+                {preview.proposedText || 'Generated block changes'}
+              </p>
+            </div>
+            {previewError && (
+              <p className="px-1 text-sm text-solid-error">{previewError}</p>
+            )}
+            <div className="flex justify-end gap-1">
               <Button
                 onClick={() => {
-                  editor.getTransforms(AIPlugin).ai.undo();
+                  setAiPreview(editor, null);
+                  setPreviewError(null);
                   editor.getApi(AIChatPlugin).aiChat.hide();
                 }}
                 size="sm"
@@ -269,9 +272,17 @@ export function AiMenu() {
               </Button>
               <Button
                 onClick={() => {
-                  editor.getTransforms(AIChatPlugin).aiChat.accept();
-                  editor.getTransforms(AIPlugin).ai.acceptPreview();
-                  editor.getApi(AIChatPlugin).aiChat.hide();
+                  try {
+                    applyAiPreview(editor);
+                    setPreviewError(null);
+                    editor.getApi(AIChatPlugin).aiChat.hide();
+                  } catch (cause) {
+                    setPreviewError(
+                      cause instanceof Error
+                        ? cause.message
+                        : 'The target changed; retry the AI command'
+                    );
+                  }
                 }}
                 size="sm"
                 variant="accent"
@@ -287,8 +298,8 @@ export function AiMenu() {
               return (
                 <button
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-button px-2 py-2 text-left text-fg text-sm",
-                    "hover:bg-surface-hover-bg",
+                    'flex w-full items-center gap-2 rounded-button px-2 py-2 text-left text-fg text-sm',
+                    'hover:bg-surface-hover-bg'
                   )}
                   key={action.id}
                   onClick={() =>

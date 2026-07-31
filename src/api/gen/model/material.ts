@@ -21,7 +21,6 @@ export interface Material {
   /** UTF-8 byte length of persisted content JSON */
   contentBytes: number;
   createdAt: string;
-  hasPendingSuggestions: boolean;
   id: string;
   isOwner: boolean;
   kind: string;

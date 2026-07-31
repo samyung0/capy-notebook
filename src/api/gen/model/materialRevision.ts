@@ -14,7 +14,6 @@ export interface MaterialRevision {
   createdBy?: string;
   eventMetadata: MaterialRevisionEventMetadata;
   eventType: MaterialRevisionEvent;
-  hasPendingSuggestions: boolean;
   materialId: string;
   parentRevision?: number;
   revision: number;

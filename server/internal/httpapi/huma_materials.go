@@ -67,20 +67,6 @@ func materialWithAccess(material store.Material, role store.WorkspaceRole) apimo
 	return apimodel.FromMaterial(material)
 }
 
-// sharedMaterialPatchAllowed is deliberately narrow: effective shared editors
-// may only replace the versioned Plate document under optimistic concurrency.
-// Metadata, filing, scope, visibility, title, and deletion remain explicit
-// member operations.
-func sharedMaterialPatchAllowed(body apimodel.UpdateMaterialReq) bool {
-	return body.Content != nil &&
-		body.ExpectedRevision != nil &&
-		body.Title == nil &&
-		body.ChapterID == nil &&
-		body.ScopeChapters == nil &&
-		body.ScopeFileIDs == nil &&
-		body.Privacy == nil
-}
-
 func (a *api) listMaterials(ctx context.Context, in *workspaceIDInput) (*materialRefsOutput, error) {
 	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
 		return nil, hErr(err)
@@ -120,11 +106,6 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 	raw, err := materialdoc.Marshal(content)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
-	}
-	if pending, err := materialdoc.HasPendingSuggestions(raw); err != nil {
-		return nil, huma.Error400BadRequest(err.Error())
-	} else if pending {
-		return nil, huma.Error400BadRequest("new materials cannot contain pending suggestions")
 	}
 	if err := materialdoc.ValidateKind(raw, kind); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -172,30 +153,14 @@ func (a *api) updateMaterial(
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	if !access.Explicit && !sharedMaterialPatchAllowed(in.Body) {
+	if !access.Explicit {
 		return nil, collaborationError(store.ErrForbidden)
 	}
-	if (in.Body.Title != nil || in.Body.Content != nil) && in.Body.ExpectedRevision == nil {
-		return nil, huma.Error400BadRequest("expectedRevision is required when changing title or content")
-	}
-	var content *string
-	if in.Body.Content != nil {
-		raw, err := materialdoc.Marshal(*in.Body.Content)
-		if err != nil {
-			return nil, huma.Error400BadRequest(err.Error())
-		}
-		current, err := a.s.GetMaterial(ctx, in.ID)
-		if err != nil {
-			return nil, hErr(err)
-		}
-		if err := materialdoc.ValidateKind(raw, current.Kind); err != nil {
-			return nil, huma.Error400BadRequest(err.Error())
-		}
-		content = &raw
+	if in.Body.Title != nil && in.Body.ExpectedRevision == nil {
+		return nil, huma.Error400BadRequest("expectedRevision is required when changing title")
 	}
 	patch := store.MaterialPatch{
 		Title:            in.Body.Title,
-		Content:          content,
 		ScopeChapters:    in.Body.ScopeChapters,
 		ScopeFileIDs:     in.Body.ScopeFileIDs,
 		Privacy:          in.Body.Privacy,
@@ -223,12 +188,14 @@ func (a *api) updateMaterial(
 		}
 		return nil, hErr(err)
 	}
+	if in.Body.Privacy != nil {
+		a.publishMaterialEviction(ctx, in.ID)
+	}
 	return &materialUpdateOutput{Body: apimodel.MaterialUpdateResult{
-		ID:                    res.ID,
-		Revision:              res.Revision,
-		ContentBytes:          len(res.Content),
-		HasPendingSuggestions: res.HasPendingSuggestions,
-		UpdatedAt:             res.UpdatedAt,
+		ID:           res.ID,
+		Revision:     res.Revision,
+		ContentBytes: len(res.Content),
+		UpdatedAt:    res.UpdatedAt,
 	}}, nil
 }
 
@@ -239,5 +206,6 @@ func (a *api) deleteMaterial(ctx context.Context, in *materialIDInput) (*Empty, 
 	if err := a.s.DeleteMaterial(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
+	a.publishMaterialEviction(ctx, in.ID)
 	return &Empty{}, nil
 }

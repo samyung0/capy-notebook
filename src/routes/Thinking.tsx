@@ -1,8 +1,8 @@
 import { Link } from '@tanstack/react-router';
 import { useCanvases, useCreateCanvas } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Card, Icon, IconButton, SkeletonCardGrid } from "@/components/ui";
-import { m } from "@/i18n";
+import { Card, Icon, IconButton, SkeletonCardGrid } from '@/components/ui';
+import { m } from '@/i18n';
 
 export default function Thinking() {
   const { data, isLoading } = useCanvases();
@@ -16,7 +16,7 @@ export default function Thinking() {
             icon="plus"
             label="New canvas"
             onClick={() => {
-              const n = prompt("Canvas name");
+              const n = prompt('Canvas name');
               if (n) create.mutate(n);
             }}
             variant="dark"
@@ -46,19 +46,19 @@ export default function Thinking() {
                     style={{
                       background:
                         i % 2
-                          ? "var(--note-purple-bg)"
-                          : "var(--note-green-bg)",
+                          ? 'var(--note-purple-bg)'
+                          : 'var(--note-green-bg)',
                       color:
                         i % 2
-                          ? "var(--note-purple-fg)"
-                          : "var(--note-green-fg)",
+                          ? 'var(--note-purple-fg)'
+                          : 'var(--note-green-fg)',
                     }}
                   >
                     <Icon name="write" size={28} />
                   </div>
                   <div className="p-4">
-                    <p className="truncate t-subtitle">{c.name}</p>
-                    <p className="mt-0.5 t-meta text-fg-muted">
+                    <p className="t-subtitle truncate">{c.name}</p>
+                    <p className="t-meta mt-0.5 text-fg-muted">
                       Updated {new Date(c.updatedAt).toLocaleDateString()}
                     </p>
                   </div>

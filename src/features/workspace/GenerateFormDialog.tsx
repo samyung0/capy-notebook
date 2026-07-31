@@ -14,54 +14,54 @@ import {
   DialogFooter,
   DialogTitle,
   Spinner,
-} from "@/components/ui";
-import { m } from "@/i18n";
-import { cn } from "@/lib/cn";
-import { LEVEL_LABEL, LEVELS } from "@/lib/levels";
+} from '@/components/ui';
+import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
+import { LEVEL_LABEL, LEVELS } from '@/lib/levels';
 
-export type GenerateMode = "flashcards" | "quiz" | "mindmap" | "diagram";
+export type GenerateMode = 'flashcards' | 'quiz' | 'mindmap' | 'diagram';
 
 const Q_TYPES: QuestionType[] = [
-  "mcq",
-  "multi",
-  "boolean",
-  "fill",
-  "short",
-  "matching",
-  "ordering",
+  'mcq',
+  'multi',
+  'boolean',
+  'fill',
+  'short',
+  'matching',
+  'ordering',
 ];
 const Q_TYPE_LABEL: Record<QuestionType, string> = {
-  boolean: "True / false",
-  fill: "Fill blank",
-  matching: "Matching",
-  mcq: "Multiple choice",
-  multi: "Multi-select",
-  ordering: "Ordering",
-  short: "Short answer",
+  boolean: 'True / false',
+  fill: 'Fill blank',
+  matching: 'Matching',
+  mcq: 'Multiple choice',
+  multi: 'Multi-select',
+  ordering: 'Ordering',
+  short: 'Short answer',
 };
 
 const DIAGRAM_TYPES: DiagramType[] = [
-  "auto",
-  "flowchart",
-  "sequence",
-  "class",
-  "state",
-  "er",
+  'auto',
+  'flowchart',
+  'sequence',
+  'class',
+  'state',
+  'er',
 ];
 const DIAGRAM_LABEL: Record<DiagramType, string> = {
-  auto: "Auto",
-  class: "Class",
-  er: "Entity-relation",
-  flowchart: "Flowchart",
-  sequence: "Sequence",
-  state: "State",
+  auto: 'Auto',
+  class: 'Class',
+  er: 'Entity-relation',
+  flowchart: 'Flowchart',
+  sequence: 'Sequence',
+  state: 'State',
 };
 
 const MODE_LABEL: Record<GenerateMode, string> = {
-  diagram: "diagram",
-  flashcards: "flashcards",
-  mindmap: "mindmap",
-  quiz: "quiz",
+  diagram: 'diagram',
+  flashcards: 'flashcards',
+  mindmap: 'mindmap',
+  quiz: 'quiz',
 };
 
 function Chip({
@@ -76,10 +76,10 @@ function Chip({
   return (
     <button
       className={cn(
-        "rounded-full border px-2.5 py-1 font-medium text-xs transition-colors",
+        'rounded-full border px-2.5 py-1 font-medium text-xs transition-colors',
         active
-          ? "border-accent bg-action-accent text-action-accent-fg"
-          : "border-line bg-surface text-fg-secondary hover:bg-surface-hover-bg",
+          ? 'border-accent bg-action-accent text-action-accent-fg'
+          : 'border-line bg-surface text-fg-secondary hover:bg-surface-hover-bg'
       )}
       onClick={onClick}
       type="button"
@@ -163,30 +163,30 @@ export function GenerateFormDialog({
   const [chapterScope, setChapterScope] = useState<string[]>([]);
   const [fileScope, setFileScope] = useState<string[]>([]);
   const [count, setCount] = useState(10);
-  const [style, setStyle] = useState<"term-def" | "qa" | "cloze">("term-def");
-  const [types, setTypes] = useState<QuestionType[]>(["mcq", "boolean"]);
+  const [style, setStyle] = useState<'term-def' | 'qa' | 'cloze'>('term-def');
+  const [types, setTypes] = useState<QuestionType[]>(['mcq', 'boolean']);
   const [levels, setLevels] = useState<CognitiveLevel[]>([
-    "recall",
-    "application",
+    'recall',
+    'application',
   ]);
-  const [detail, setDetail] = useState<"brief" | "standard" | "detailed">(
-    "standard",
+  const [detail, setDetail] = useState<'brief' | 'standard' | 'detailed'>(
+    'standard'
   );
-  const [diagramType, setDiagramType] = useState<DiagramType>("auto");
+  const [diagramType, setDiagramType] = useState<DiagramType>('auto');
 
   const readyFiles = files.filter(
-    (f) => f.status !== "processing" && f.status !== "failed",
+    (f) => f.status !== 'processing' && f.status !== 'failed'
   );
 
   async function run() {
     const scope = { chapters: chapterScope, fileIds: fileScope };
     let opts: GenerateOptions;
-    if (mode === "flashcards")
-      opts = { count, kind: "flashcards", style, ...scope };
-    else if (mode === "quiz")
-      opts = { count, kind: "quiz", levels, types, ...scope };
-    else if (mode === "mindmap") opts = { detail, kind: "mindmap", ...scope };
-    else opts = { diagramType, kind: "diagram", ...scope };
+    if (mode === 'flashcards')
+      opts = { count, kind: 'flashcards', style, ...scope };
+    else if (mode === 'quiz')
+      opts = { count, kind: 'quiz', levels, types, ...scope };
+    else if (mode === 'mindmap') opts = { detail, kind: 'mindmap', ...scope };
+    else opts = { diagramType, kind: 'diagram', ...scope };
     await onGenerate(opts);
   }
 
@@ -209,7 +209,7 @@ export function GenerateFormDialog({
                     setChapterScope((s) =>
                       s.includes(c.id)
                         ? s.filter((x) => x !== c.id)
-                        : [...s, c.id],
+                        : [...s, c.id]
                     )
                   }
                 >
@@ -233,7 +233,7 @@ export function GenerateFormDialog({
                     setFileScope((s) =>
                       s.includes(f.id)
                         ? s.filter((x) => x !== f.id)
-                        : [...s, f.id],
+                        : [...s, f.id]
                     )
                   }
                 >
@@ -251,18 +251,18 @@ export function GenerateFormDialog({
             )}
           </div>
 
-          {mode === "flashcards" && (
+          {mode === 'flashcards' && (
             <>
               <CountRow onChange={setCount} value={count} />
               <OptionRow
                 label="Style"
                 onChange={(v) => setStyle(v as typeof style)}
-                options={["term-def", "qa", "cloze"]}
+                options={['term-def', 'qa', 'cloze']}
                 value={style}
               />
             </>
           )}
-          {mode === "quiz" && (
+          {mode === 'quiz' && (
             <>
               <CountRow onChange={setCount} value={count} />
               <div className="flex flex-col gap-1.5">
@@ -274,7 +274,7 @@ export function GenerateFormDialog({
                       key={t}
                       onClick={() =>
                         setTypes((s) =>
-                          s.includes(t) ? s.filter((x) => x !== t) : [...s, t],
+                          s.includes(t) ? s.filter((x) => x !== t) : [...s, t]
                         )
                       }
                     >
@@ -294,7 +294,7 @@ export function GenerateFormDialog({
                         setLevels((s) =>
                           s.includes(lvl)
                             ? s.filter((x) => x !== lvl)
-                            : [...s, lvl],
+                            : [...s, lvl]
                         )
                       }
                     >
@@ -305,15 +305,15 @@ export function GenerateFormDialog({
               </div>
             </>
           )}
-          {mode === "mindmap" && (
+          {mode === 'mindmap' && (
             <OptionRow
               label="Detail"
               onChange={(v) => setDetail(v as typeof detail)}
-              options={["brief", "standard", "detailed"]}
+              options={['brief', 'standard', 'detailed']}
               value={detail}
             />
           )}
-          {mode === "diagram" && (
+          {mode === 'diagram' && (
             <div className="flex flex-col gap-1.5">
               <p className="t-label text-fg-muted">Diagram type</p>
               <div className="flex flex-wrap gap-1.5">
@@ -340,8 +340,8 @@ export function GenerateFormDialog({
             Cancel
           </Button>
           <Button
-            disabled={pending || (mode === "quiz" && !types.length)}
-            iconLeft={pending ? undefined : "sparkles"}
+            disabled={pending || (mode === 'quiz' && !types.length)}
+            iconLeft={pending ? undefined : 'sparkles'}
             onClick={run}
           >
             {pending ? <Spinner /> : `Generate ${MODE_LABEL[mode]}`}

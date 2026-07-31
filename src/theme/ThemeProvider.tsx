@@ -9,7 +9,7 @@ import {
 } from 'react';
 
 export type Style = 'classroom' | 'notion';
-export type Theme = "latte" | "mocha";
+export type Theme = 'latte' | 'mocha';
 
 export const STYLES: {
   value: Style;
@@ -17,11 +17,11 @@ export const STYLES: {
   supportedThemes: Theme[];
 }[] = [
   {
-    label: "Classroom",
-    value: "classroom",
-    supportedThemes: ["latte", "mocha"],
+    label: 'Classroom',
+    supportedThemes: ['latte', 'mocha'],
+    value: 'classroom',
   },
-  { label: "Notion", value: "notion", supportedThemes: ["latte", "mocha"] },
+  { label: 'Notion', supportedThemes: ['latte', 'mocha'], value: 'notion' },
 ];
 
 export const THEMES: {
@@ -30,37 +30,37 @@ export const THEMES: {
   displayColor: string;
   isDark: boolean;
 }[] = [
-  { label: "Latte", value: "latte", displayColor: "#fafafa", isDark: false },
-  { label: "Mocha", value: "mocha", displayColor: "#222222", isDark: true },
+  { displayColor: '#fafafa', isDark: false, label: 'Latte', value: 'latte' },
+  { displayColor: '#222222', isDark: true, label: 'Mocha', value: 'mocha' },
 ];
 
 interface ThemeState {
+  isDark: boolean;
   setStyle: (m: Style) => void;
   setTheme: (t: Theme) => void;
   style: Style;
   theme: Theme;
-  isDark: boolean;
 }
 
 const ThemeContext = createContext<ThemeState | null>(null);
 
-const STYLE_KEY = "evo.style";
-const THEME_KEY = "evo.theme";
+const STYLE_KEY = 'evo.style';
+const THEME_KEY = 'evo.theme';
 
 function readStored<T extends string>(
   key: string,
   allowed: T[],
-  fallback: T,
+  fallback: T
 ): T {
-  if (typeof localStorage === "undefined") return fallback;
+  if (typeof localStorage === 'undefined') return fallback;
   const v = localStorage.getItem(key) as T | null;
   return v && allowed.includes(v) ? v : fallback;
 }
 
 function prefersDark(): boolean {
   return (
-    typeof window !== "undefined" &&
-    window.matchMedia?.("(prefers-color-scheme: dark)").matches
+    typeof window !== 'undefined' &&
+    window.matchMedia?.('(prefers-color-scheme: dark)').matches
   );
 }
 
@@ -69,15 +69,15 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     readStored<Style>(
       STYLE_KEY,
       STYLES.map((s) => s.value),
-      "classroom",
-    ),
+      'classroom'
+    )
   );
   const [theme, setThemeState] = useState<Theme>(() =>
     readStored<Theme>(
       THEME_KEY,
       THEMES.map((t) => t.value),
-      prefersDark() ? "mocha" : "latte",
-    ),
+      prefersDark() ? 'mocha' : 'latte'
+    )
   );
 
   useEffect(() => {
@@ -85,8 +85,8 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     root.dataset.style = style;
     root.dataset.theme = theme;
     if (THEMES.find((t) => t.value === theme)?.isDark)
-      root.classList.add("dark");
-    else root.classList.remove("dark");
+      root.classList.add('dark');
+    else root.classList.remove('dark');
   }, [style, theme]);
 
   const setStyle = useCallback((t: Style) => {
@@ -101,13 +101,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo(
     () => ({
+      isDark: THEMES.find((t) => t.value === theme)?.isDark ?? false,
       setStyle,
       setTheme,
       style,
       theme,
-      isDark: THEMES.find((t) => t.value === theme)?.isDark ?? false,
     }),
-    [theme, style, setTheme, setStyle],
+    [theme, style, setTheme, setStyle]
   );
 
   return (

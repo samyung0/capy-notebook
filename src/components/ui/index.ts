@@ -69,7 +69,7 @@ export {
   PopoverTitle,
   PopoverTrigger,
 } from './Popover';
-export { ProgressBar } from "./ProgressBar";
+export { ProgressBar } from './ProgressBar';
 export {
   Select,
   SelectContent,
@@ -81,10 +81,10 @@ export {
   SelectSeparator,
   SelectTrigger,
   SelectValue,
-} from "./Select";
-export { Switch } from "./Switch";
-export { Tabs } from "./Tabs";
-export { TagSelect } from "./TagSelect";
+} from './Select';
+export { Switch } from './Switch';
+export { Tabs } from './Tabs';
+export { TagSelect } from './TagSelect';
 export { Textarea } from './TextArea';
 export { UserColorChooser } from './UserColorChooser';
 export { WorkspaceCard, WorkspaceCardSkeleton } from './WorkspaceCard';

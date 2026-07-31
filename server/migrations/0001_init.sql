@@ -115,7 +115,6 @@ CREATE TABLE IF NOT EXISTS materials (
   color          text NOT NULL DEFAULT 'green',
   clone_count    int    NOT NULL DEFAULT 0,
   revision       bigint NOT NULL DEFAULT 1,
-  has_pending_suggestions boolean NOT NULL DEFAULT false,
   created_at     timestamptz NOT NULL DEFAULT now(),
   updated_at     timestamptz NOT NULL DEFAULT now(),
   updated_by     text REFERENCES users(id) ON DELETE SET NULL,
@@ -134,22 +133,41 @@ CREATE INDEX IF NOT EXISTS materials_user_idx ON materials(user_id, kind, create
 
 CREATE TABLE IF NOT EXISTS material_revisions (
   material_id            text NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
+  -- One mutable snapshot per UTC day. Saves during the same day replace this
+  -- row; materials.revision remains the per-mutation concurrency counter.
+  version_date           date NOT NULL,
   revision               bigint NOT NULL,
   parent_revision        bigint,
   event_type             text NOT NULL DEFAULT 'create'
-                           CHECK (event_type IN ('create','edit','suggestion_commit','suggestion_accept','suggestion_reject')),
+                           CHECK (event_type IN ('create','edit')),
   title                  text NOT NULL,
   content                jsonb NOT NULL,
-  has_pending_suggestions boolean NOT NULL DEFAULT false,
   event_metadata         jsonb NOT NULL DEFAULT '{}'::jsonb
                            CHECK (jsonb_typeof(event_metadata) = 'object'),
   created_by             text REFERENCES users(id) ON DELETE SET NULL,
   created_at             timestamptz NOT NULL DEFAULT now(),
   CHECK (parent_revision IS NULL OR parent_revision < revision),
-  PRIMARY KEY (material_id, revision)
+  PRIMARY KEY (material_id, version_date),
+  UNIQUE (material_id, revision)
 );
-CREATE INDEX IF NOT EXISTS material_revisions_created_idx
-  ON material_revisions(material_id, created_at DESC);
+
+-- The encoded Y.Doc is the authoritative material-content state after lazy
+-- initialization. materials.content is an asynchronously updated read model.
+CREATE TABLE IF NOT EXISTS material_yjs_documents (
+  material_id       text PRIMARY KEY REFERENCES materials(id) ON DELETE CASCADE,
+  room_schema       integer NOT NULL DEFAULT 1 CHECK (room_schema > 0),
+  state             bytea NOT NULL,
+  stored_version    bigint NOT NULL DEFAULT 1 CHECK (stored_version > 0),
+  projected_version bigint NOT NULL DEFAULT 0 CHECK (projected_version >= 0),
+  projection_error  text,
+  created_at        timestamptz NOT NULL DEFAULT now(),
+  updated_at        timestamptz NOT NULL DEFAULT now(),
+  projected_at      timestamptz,
+  CHECK (projected_version <= stored_version)
+);
+CREATE INDEX IF NOT EXISTS material_yjs_projection_pending_idx
+  ON material_yjs_documents(updated_at)
+  WHERE projected_version < stored_version;
 
 -- Per-card FSRS scheduling state (shape mirrors SrsState in src/api/types.ts),
 -- keyed by the flashcard element id inside the material document.
@@ -326,24 +344,27 @@ CREATE UNIQUE INDEX IF NOT EXISTS notifications_workspace_invite_idx
   WHERE workspace_invite_id IS NOT NULL;
 
 -- ============================================================================
--- Collaboration: discussions, comments, suggestions
+-- Collaboration: comment discussions and comments
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS material_discussions (
   id          text PRIMARY KEY,
   material_id text NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
-  kind        text NOT NULL DEFAULT 'comment'
-                CHECK (kind IN ('comment','suggestion')),
   block_id    text,
-  anchor      jsonb NOT NULL DEFAULT '{}'::jsonb
-                CHECK (jsonb_typeof(anchor) = 'object'),
+  anchor_start bytea,
+  anchor_end   bytea,
+  anchor_version integer NOT NULL DEFAULT 1 CHECK (anchor_version > 0),
+  anchor_quote text NOT NULL DEFAULT '',
   created_by  text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   is_resolved boolean NOT NULL DEFAULT false,
   deleted_at  timestamptz,
   deleted_by  text REFERENCES users(id) ON DELETE SET NULL,
   created_at  timestamptz NOT NULL DEFAULT now(),
   updated_at  timestamptz NOT NULL DEFAULT now(),
-  CHECK (kind <> 'suggestion' OR block_id IS NOT NULL)
+  CHECK ((anchor_start IS NULL) = (anchor_end IS NULL)),
+  CHECK (anchor_start IS NULL OR (octet_length(anchor_start) BETWEEN 1 AND 4096)),
+  CHECK (anchor_end IS NULL OR (octet_length(anchor_end) BETWEEN 1 AND 4096)),
+  CHECK (length(anchor_quote) <= 1000)
 );
 CREATE INDEX IF NOT EXISTS material_discussions_material_idx
   ON material_discussions(material_id, created_at) WHERE deleted_at IS NULL;
@@ -365,40 +386,6 @@ CREATE INDEX IF NOT EXISTS material_comments_discussion_idx
   ON material_comments(discussion_id, created_at) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS material_comments_parent_idx
   ON material_comments(parent_comment_id, created_at) WHERE parent_comment_id IS NOT NULL;
-
-CREATE TABLE IF NOT EXISTS material_suggestions (
-  id                  text PRIMARY KEY,
-  discussion_id       text NOT NULL REFERENCES material_discussions(id) ON DELETE CASCADE,
-  plate_suggestion_id text NOT NULL,
-  commit_revision     bigint NOT NULL,
-  resolution_revision bigint,
-  status              text NOT NULL DEFAULT 'pending'
-                        CHECK (status IN ('pending','accepted','rejected','withdrawn')),
-  user_id             text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  reviewed_by         text REFERENCES users(id) ON DELETE SET NULL,
-  reviewed_at         timestamptz,
-  deleted_at          timestamptz,
-  deleted_by          text REFERENCES users(id) ON DELETE SET NULL,
-  created_at          timestamptz NOT NULL DEFAULT now(),
-  updated_at          timestamptz NOT NULL DEFAULT now(),
-  UNIQUE (discussion_id, plate_suggestion_id),
-  CHECK (
-    (status = 'pending' AND resolution_revision IS NULL)
-    OR
-    (status IN ('accepted','rejected','withdrawn') AND resolution_revision IS NOT NULL)
-  ),
-  CHECK (
-    (status IN ('accepted','rejected') AND reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL)
-    OR
-    (status IN ('pending','withdrawn') AND reviewed_by IS NULL AND reviewed_at IS NULL)
-  )
-);
-CREATE INDEX IF NOT EXISTS material_suggestions_material_idx
-  ON material_suggestions(discussion_id, status, created_at) WHERE deleted_at IS NULL;
-CREATE INDEX IF NOT EXISTS material_suggestions_plate_idx
-  ON material_suggestions(plate_suggestion_id, status);
-CREATE INDEX IF NOT EXISTS material_suggestions_author_idx
-  ON material_suggestions(user_id, created_at);
 
 -- ============================================================================
 -- AI chat persistence. Conversations are workspace-scoped: RAG grounding runs
@@ -653,15 +640,16 @@ INSERT INTO materials (id, user_id, workspace_id, workspace_name, kind, title, c
    '{}', '{}', 'private', 'amber', now())
 ON CONFLICT (id) DO NOTHING;
 
--- Every material needs a revision-1 snapshot (suggestions FK against it).
+-- Every seeded material starts with one daily version snapshot.
 INSERT INTO material_revisions (
-  material_id, revision, parent_revision, event_type, title, content,
-  has_pending_suggestions, event_metadata, created_by, created_at
+  material_id, version_date, revision, parent_revision, event_type, title, content,
+  event_metadata, created_by, created_at
 )
-SELECT id, revision, NULL, 'create', title, content,
-       has_pending_suggestions, '{}'::jsonb, user_id, created_at
+SELECT id, (created_at AT TIME ZONE 'UTC')::date, revision, NULL, 'create', title, content,
+       '{}'::jsonb, user_id, created_at
 FROM materials
-ON CONFLICT (material_id, revision) DO NOTHING;
+WHERE id IN ('qz_1','qz_2','qz_3','dk_1','dk_2','dk_3')
+ON CONFLICT (material_id, version_date) DO NOTHING;
 
 -- FSRS state per seeded card: already-known cards get a plausible "review"
 -- state that isn't due yet (so knownPct / dueCount look realistic); the rest

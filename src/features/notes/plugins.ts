@@ -117,7 +117,7 @@ import { customBlockPlugins } from './blocks/plugins';
 import type { EditorCollaborationOptions } from './Collaboration';
 import {
   buildCollaborationPlugins,
-  suggestionSafeTrailingBlockPlugin,
+  collaborationTrailingBlockPlugin,
 } from './collaborationPlugins';
 import {
   canCreateExternalEditorAssets,
@@ -127,7 +127,9 @@ import { LinkFloatingToolbar } from './LinkFloatingToolbar';
 import { MediaPlaceholderElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
 import { noteMarkdownPlugin } from './markdown';
+import { remoteCursorDecorationPlugin } from './RemoteCursors';
 import { SlashInputElement } from './SlashInput';
+import { stableElementIdsPlugin } from './stableElementIds';
 
 // Plugin-derived editor types are intentionally wider than Plate's base tuple.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -572,7 +574,7 @@ export interface BuildPluginsOptions extends EditorCollaborationOptions {
  * parser or renderer plugin is ever unloaded. */
 export function buildPlugins(options: BuildPluginsOptions): AnyPlugin[] {
   return [
-    ...(options.allowExternalAssets
+    ...(options.mode === 'edit' && options.allowExternalAssets
       ? buildAiPlugins(options.workspaceId)
       : // The AI plugin set registers its own CursorOverlay variant; non-AI
         // editors still need the overlay for selection feedback in dialogs.
@@ -581,26 +583,35 @@ export function buildPlugins(options: BuildPluginsOptions): AnyPlugin[] {
             render: { afterEditable: EditorCursorOverlay },
           }),
         ]),
+    stableElementIdsPlugin,
+    remoteCursorDecorationPlugin,
     ...MaterialKit,
     ...buildCollaborationPlugins(options),
-    ...SlashKit,
-    AutoformatPlugin,
-    createSaveShortcutPlugin(options.onSave),
-    ...buildBlockInteractionKit(options.mode, options.allowExternalAssets),
-    ExitBreakPlugin.configure({
-      shortcuts: {
-        insert: { keys: 'mod+enter' },
-        insertBefore: { keys: 'mod+shift+enter' },
-      },
-    }),
-    suggestionSafeTrailingBlockPlugin,
-    BlockPlaceholderPlugin.configure({
-      options: {
-        className:
-          'before:absolute before:cursor-text before:text-placeholder before:text-sm before:leading-[2] before:font-normal before:content-[attr(placeholder)]',
-        placeholders: { [KEYS.p]: 'Type  /  for commands ...' },
-        query: ({ path }) => path.length === 1,
-      },
-    }),
+    ...(options.mode === 'edit'
+      ? [
+          ...SlashKit,
+          AutoformatPlugin,
+          createSaveShortcutPlugin(options.onSave),
+          ...buildBlockInteractionKit(
+            options.mode,
+            options.allowExternalAssets
+          ),
+          ExitBreakPlugin.configure({
+            shortcuts: {
+              insert: { keys: 'mod+enter' },
+              insertBefore: { keys: 'mod+shift+enter' },
+            },
+          }),
+          collaborationTrailingBlockPlugin,
+          BlockPlaceholderPlugin.configure({
+            options: {
+              className:
+                'before:absolute before:cursor-text before:text-placeholder before:text-sm before:leading-[2] before:font-normal before:content-[attr(placeholder)]',
+              placeholders: { [KEYS.p]: 'Type  /  for commands ...' },
+              query: ({ path }) => path.length === 1,
+            },
+          }),
+        ]
+      : []),
   ];
 }

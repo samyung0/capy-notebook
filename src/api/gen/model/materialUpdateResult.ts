@@ -10,7 +10,6 @@ export interface MaterialUpdateResult {
   readonly $schema?: string;
   /** UTF-8 byte length of persisted content JSON */
   contentBytes: number;
-  hasPendingSuggestions: boolean;
   id: string;
   revision: number;
   updatedAt: string;

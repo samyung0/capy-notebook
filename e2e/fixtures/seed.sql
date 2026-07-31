@@ -149,8 +149,8 @@ INSERT INTO materials (
   ),
   (
     'note_e2e_review', 'u_owner', 'ws_e2e_edit', 'E2E Editable Link Workspace', 'note',
-    'E2E Suggestion Review Note',
-    '{"schemaVersion":1,"value":[{"type":"h1","id":"note_e2e_review:title","children":[{"text":"E2E Suggestion Review Note"}]},{"type":"p","id":"note_e2e_review:body","children":[{"text":"Original review sentence"}]}]}'::jsonb,
+    'E2E Collaboration Review Note',
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"note_e2e_review:title","children":[{"text":"E2E Collaboration Review Note"}]},{"type":"p","id":"note_e2e_review:body","children":[{"text":"Original review sentence"}]}]}'::jsonb,
     'ch_e2e_edit', '{}', '{}', 'private', 'coral', now(), now(), 1, 'u_owner'
   )
 ON CONFLICT (id) DO UPDATE SET
@@ -160,15 +160,14 @@ ON CONFLICT (id) DO UPDATE SET
   title = EXCLUDED.title,
   content = EXCLUDED.content,
   privacy = EXCLUDED.privacy,
-  revision = 1,
-  has_pending_suggestions = false;
+  revision = 1;
 
 INSERT INTO material_revisions (
-  material_id, revision, parent_revision, event_type, title, content,
-  has_pending_suggestions, event_metadata, created_by, created_at
+  material_id, version_date, revision, parent_revision, event_type, title, content,
+  event_metadata, created_by, created_at
 )
-SELECT id, revision, NULL, 'create', title, content,
-       has_pending_suggestions, '{}'::jsonb, user_id, created_at
+SELECT id, (created_at AT TIME ZONE 'UTC')::date, revision, NULL, 'create', title, content,
+       '{}'::jsonb, user_id, created_at
 FROM materials
 WHERE id IN (
   'qz_e2e_private', 'qz_e2e_link', 'qz_e2e_public', 'qz_e2e_mutate',
@@ -176,14 +175,15 @@ WHERE id IN (
   'note_e2e_private', 'note_e2e_link', 'note_e2e_public', 'note_e2e_comment',
   'note_e2e_edit', 'note_e2e_review'
 )
-ON CONFLICT (material_id, revision) DO UPDATE SET
+ON CONFLICT (material_id, version_date) DO UPDATE SET
+  revision = EXCLUDED.revision,
   title = EXCLUDED.title,
   content = EXCLUDED.content,
   parent_revision = EXCLUDED.parent_revision,
   event_type = EXCLUDED.event_type,
-  has_pending_suggestions = EXCLUDED.has_pending_suggestions,
   event_metadata = EXCLUDED.event_metadata,
-  created_by = EXCLUDED.created_by;
+  created_by = EXCLUDED.created_by,
+  created_at = EXCLUDED.created_at;
 
 INSERT INTO card_stats (card_id, material_id, srs, known) VALUES
   ('c_e2e_priv_1', 'dk_e2e_private', '{"due":"1970-01-01T00:00:00Z","stability":0,"difficulty":0,"elapsed_days":0,"scheduled_days":0,"reps":0,"lapses":0,"state":0,"last_review":null}'::jsonb, false),

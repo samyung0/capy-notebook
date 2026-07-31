@@ -1,29 +1,35 @@
 import type { MaterialMode } from '@/features/materials/modePolicy';
 
-export type NoteEditorMode = Extract<MaterialMode, 'edit' | 'suggestion'>;
+export type NoteEditorMode = Extract<MaterialMode, 'edit' | 'comment'>;
 
-export type NoteEditorSaveState = 'saved' | 'pending' | 'saving' | 'error';
+export type NoteEditorSaveState =
+  | 'connecting'
+  | 'synced'
+  | 'saved'
+  | 'offline'
+  | 'error';
 
 /** Transient chrome status for the note editor (header, not toolbar). */
-export type NoteEditorStatus =
-  | { mode: 'edit'; saveState: NoteEditorSaveState }
-  | { mode: 'suggestion'; dirty: boolean };
+export type NoteEditorStatus = {
+  mode: NoteEditorMode;
+  saveState: NoteEditorSaveState;
+};
 
 export function noteEditorStatusLabel(
   status: NoteEditorStatus | null | undefined
 ): string | null {
-  console.log(status);
   if (!status) return null;
-  if (status.mode === "suggestion") return status.dirty ? "Drafting" : "Saved";
   switch (status.saveState) {
+    case 'connecting':
+      return 'Connecting…';
+    case 'synced':
+      return 'Synced';
     case 'saved':
       return 'Saved';
-    case 'pending':
-      return 'Unsaved';
-    case 'saving':
-      return 'Saving…';
+    case 'offline':
+      return 'Offline';
     case 'error':
-      return 'Save conflict or failure';
+      return 'Collaboration unavailable';
   }
 }
 
@@ -39,6 +45,7 @@ export function isEditorCommandAllowed(
   command: { widget?: string },
   structurallyAllowed = true
 ): boolean {
+  if (mode !== 'edit') return false;
   return (
     canCreateExternalEditorAssets(mode, structurallyAllowed) ||
     command.widget !== 'media'

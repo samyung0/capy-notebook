@@ -18,12 +18,12 @@ export function ToolbarButton({
       aria-label={label}
       aria-pressed={active}
       className={cn(
-        "relative inline-flex size-8 shrink-0 items-center justify-center gap-1 rounded-button px-0.5 outline-none",
-        "hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-focus",
-        "disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-4",
-        "select-none whitespace-nowrap font-semibold outline-none transition-all duration-150",
+        'relative inline-flex size-8 shrink-0 items-center justify-center gap-1 rounded-button px-0.5 outline-none',
+        'hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-focus',
+        'disabled:pointer-events-none disabled:opacity-40 [&_svg]:size-4',
+        'select-none whitespace-nowrap font-semibold outline-none transition-all duration-150',
         // active && 'bg-tint-accent-1/35 text-tint-accent-1-fg',
-        className,
+        className
       )}
       data-plate-prevent-deselect
       data-slot="button"

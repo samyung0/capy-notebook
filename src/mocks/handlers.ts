@@ -1,5 +1,4 @@
 import { delay, HttpResponse, http } from 'msw';
-import type { SuggestionMutationResult } from '@/api/gen/model';
 import type {
   Chapter,
   Deck,
@@ -9,7 +8,6 @@ import type {
   MaterialDiscussion,
   MaterialRef,
   MaterialRefType,
-  MaterialSuggestion,
   Question,
   Quiz,
   SearchResult,
@@ -31,11 +29,6 @@ import {
   mermaidNode,
   quizNode,
 } from '@/features/materials/document';
-import {
-  finalizeSuggestionValue,
-  resolveSuggestions,
-  scanSuggestions,
-} from '@/features/notes/suggestions';
 import { getFileKind } from '@/features/workspace/sourceUpload';
 import { isKnown, newSrsState } from '@/lib/srs';
 import * as db from './db';
@@ -74,7 +67,6 @@ interface MockInviteCandidate {
 }
 
 const mockDiscussions: MaterialDiscussion[] = [];
-const mockSuggestions: MaterialSuggestion[] = [];
 const mockWorkspaceInvites: MockWorkspaceInvite[] = [];
 const mockWorkspaceMembers: WorkspaceMember[] = [];
 const mockInviteCandidates: MockInviteCandidate[] = [
@@ -126,42 +118,12 @@ async function hydrateEditorState(materialId: string) {
   };
   const material = db.materials.find((item) => item.id === materialId);
   if (material) Object.assign(material, state.material);
-  const previousDiscussionIds = new Set(
-    mockDiscussions
-      .filter((item) => item.materialId === materialId)
-      .map((item) => item.id)
-  );
   for (let index = mockDiscussions.length - 1; index >= 0; index--) {
     if (mockDiscussions[index].materialId === materialId)
       mockDiscussions.splice(index, 1);
   }
-  for (let index = mockSuggestions.length - 1; index >= 0; index--) {
-    if (previousDiscussionIds.has(mockSuggestions[index].discussionId)) {
-      mockSuggestions.splice(index, 1);
-    }
-  }
   const discussions = structuredClone(state.discussions);
   mockDiscussions.push(...discussions);
-  mockSuggestions.push(
-    ...discussions.flatMap((discussion) => discussion.suggestions)
-  );
-}
-
-function mockSuggestionResult(
-  material: Material,
-  suggestionIds: string[]
-): SuggestionMutationResult {
-  return {
-    contentBytes: material.contentBytes ?? 0,
-    discussions: mockDiscussions.filter(
-      (discussion) => discussion.materialId === material.id
-    ),
-    hasPendingSuggestions: material.hasPendingSuggestions ?? false,
-    id: material.id,
-    revision: material.revision ?? 1,
-    suggestionIds,
-    updatedAt: material.updatedAt ?? new Date().toISOString(),
-  };
 }
 
 const mockNodeText = (node: unknown): string => {
@@ -175,7 +137,7 @@ const materialCards = (material: Material) =>
   typeof material.content === 'string'
     ? parseFlashcardsBlock(material.content).cards
     : flashcardsElementToCards(
-        finalizeSuggestionValue(material.content.value, 'reject').find(
+        material.content.value.find(
           (node) => node.type === 'flashcards'
         ) as FlashcardsElement
       );
@@ -784,7 +746,6 @@ export const handlers = [
       .map((mt) => ({
         chapterId: mt.chapterId ?? null,
         createdAt: mt.createdAt,
-        hasPendingSuggestions: mt.hasPendingSuggestions ?? false,
         id: mt.id,
         position: mt.position ?? 0,
         title: mt.title,
@@ -835,14 +796,13 @@ export const handlers = [
     if (!mt) return new HttpResponse(null, { status: 404 });
     const body = (await request.json().catch(() => ({}))) as {
       title?: string;
-      content?: Material['content'];
       expectedRevision?: number;
       chapterId?: string;
       scopeChapters?: string[];
       scopeFileIds?: string[];
     };
     if (
-      (body.title != null || body.content != null) &&
+      body.title != null &&
       body.expectedRevision != null &&
       body.expectedRevision !== (mt.revision ?? 1)
     ) {
@@ -852,13 +812,7 @@ export const handlers = [
       );
     }
     if (body.title != null) mt.title = body.title;
-    if (body.content != null) {
-      mt.content = createMaterialDocument(body.content.value);
-      mt.hasPendingSuggestions = scanSuggestions(mt.content.value).length > 0;
-      db.refreshMaterialContentBytes(mt);
-    }
-    if (body.title != null || body.content != null)
-      mt.revision = (mt.revision ?? 1) + 1;
+    if (body.title != null) mt.revision = (mt.revision ?? 1) + 1;
     // Empty-string sentinel unfiles; a real id files it; omitted leaves it.
     if (body.chapterId != null)
       mt.chapterId = body.chapterId === '' ? null : body.chapterId;
@@ -887,12 +841,18 @@ export const handlers = [
   http.post('/api/materials/:id/discussions', async ({ params, request }) => {
     const body = (await request.json()) as {
       blockId?: string;
-      anchor?: Record<string, unknown>;
+      anchorEnd?: string;
+      anchorQuote?: string;
+      anchorStart?: string;
+      anchorVersion?: number;
       contentRich: MaterialDiscussion['comments'][number]['contentRich'];
     };
     const now = new Date().toISOString();
     const discussion: MaterialDiscussion = {
-      anchor: body.anchor ?? {},
+      anchorEnd: body.anchorEnd,
+      anchorQuote: body.anchorQuote ?? '',
+      anchorStart: body.anchorStart,
+      anchorVersion: body.anchorVersion ?? 1,
       blockId: body.blockId,
       comments: [
         {
@@ -911,9 +871,7 @@ export const handlers = [
       id: uid('discussion'),
       isDeleted: false,
       isResolved: false,
-      kind: 'comment',
       materialId: String(params.id),
-      suggestions: [],
       updatedAt: now,
       userId: db.user.id,
     };
@@ -959,47 +917,12 @@ export const handlers = [
     discussion.updatedAt = new Date().toISOString();
     return new HttpResponse(null, { status: 204 });
   }),
-  http.delete('/api/discussions/:id', async ({ params, request }) => {
+  http.delete('/api/discussions/:id', async ({ params }) => {
     const discussion = mockDiscussions.find((item) => item.id === params.id);
-    const material = db.materials.find(
-      (item) => item.id === discussion?.materialId
-    );
-    if (!discussion || !material)
-      return new HttpResponse(null, { status: 404 });
-    const pendingIds = discussion.suggestions
-      .filter((item) => item.status === 'pending')
-      .map((item) => item.plateSuggestionId);
-    if (pendingIds.length) {
-      const expected = Number(
-        new URL(request.url).searchParams.get('expectedRevision')
-      );
-      if (expected !== (material.revision ?? 1)) {
-        return HttpResponse.json(
-          { message: 'material revision is stale' },
-          { status: 409 }
-        );
-      }
-      const resolved = resolveSuggestions(
-        material.content.value,
-        'reject',
-        pendingIds
-      );
-      material.content = createMaterialDocument(resolved.value);
-      material.revision = (material.revision ?? 1) + 1;
-      material.hasPendingSuggestions = resolved.hasPendingSuggestions;
-      for (const suggestion of discussion.suggestions) {
-        if (suggestion.status === 'pending') suggestion.status = 'rejected';
-      }
-      db.refreshMaterialContentBytes(material);
-    }
+    if (!discussion) return new HttpResponse(null, { status: 404 });
     discussion.isDeleted = true;
-    await persistEditorState(material.id);
-    return HttpResponse.json(
-      mockSuggestionResult(
-        material,
-        discussion.suggestions.map((item) => item.id)
-      )
-    );
+    await persistEditorState(discussion.materialId);
+    return new HttpResponse(null, { status: 204 });
   }),
   http.patch('/api/comments/:id', async ({ params, request }) => {
     const body = (await request.json()) as {
@@ -1030,182 +953,6 @@ export const handlers = [
       return new HttpResponse(null, { status: 204 });
     }
     return new HttpResponse(null, { status: 404 });
-  }),
-  http.post(
-    '/api/materials/:id/suggestion-commits',
-    async ({ params, request }) => {
-      const material = db.materials.find((item) => item.id === params.id);
-      if (!material) return new HttpResponse(null, { status: 404 });
-      const body = (await request.json()) as {
-        content: Material['content'];
-        expectedRevision: number;
-      };
-      if (body.expectedRevision !== (material.revision ?? 1)) {
-        return HttpResponse.json(
-          { message: 'material revision is stale' },
-          { status: 409 }
-        );
-      }
-      const topLevelIds = new Set<string>();
-      const hasInvalidBlockId = body.content.value.some((block) => {
-        const id =
-          typeof block.id === 'string' && block.id.trim() ? block.id : null;
-        if (!id || topLevelIds.has(id)) return true;
-        topLevelIds.add(id);
-        return false;
-      });
-      const changes = scanSuggestions(body.content.value);
-      if (hasInvalidBlockId || changes.length === 0) {
-        return HttpResponse.json(
-          { message: 'suggestion commit requires stable block IDs' },
-          { status: 400 }
-        );
-      }
-      const now = new Date().toISOString();
-      const nextRevision = (material.revision ?? 1) + 1;
-      const committedIds = new Set<string>();
-      for (const change of changes) {
-        committedIds.add(change.plateSuggestionId);
-        const existingDiscussion = mockDiscussions.find(
-          (entry) =>
-            entry.materialId === material.id &&
-            entry.blockId === change.blockId &&
-            entry.kind === 'suggestion' &&
-            entry.suggestions.some(
-              (suggestion) =>
-                suggestion.plateSuggestionId === change.plateSuggestionId &&
-                suggestion.status === 'pending'
-            )
-        );
-        const existingSuggestion = existingDiscussion?.suggestions.find(
-          (entry) =>
-            entry.plateSuggestionId === change.plateSuggestionId &&
-            entry.status === 'pending'
-        );
-        if (existingSuggestion) {
-          existingSuggestion.commitRevision = nextRevision;
-          existingSuggestion.updatedAt = now;
-          continue;
-        }
-        const discussion: MaterialDiscussion = {
-          anchor: { blockId: change.blockId },
-          blockId: change.blockId,
-          comments: [],
-          createdAt: now,
-          id: uid('discussion'),
-          isDeleted: false,
-          isResolved: false,
-          kind: 'suggestion',
-          materialId: material.id,
-          suggestions: [],
-          updatedAt: now,
-          userId: db.user.id,
-        };
-        const suggestion: MaterialSuggestion = {
-          commitRevision: nextRevision,
-          createdAt: now,
-          discussionId: discussion.id,
-          id: uid('suggestion'),
-          isDeleted: false,
-          plateSuggestionId: change.plateSuggestionId,
-          status: 'pending',
-          updatedAt: now,
-          userId: db.user.id,
-        };
-        discussion.suggestions.push(suggestion);
-        mockDiscussions.unshift(discussion);
-        mockSuggestions.unshift(suggestion);
-      }
-      material.content = createMaterialDocument(body.content.value);
-      material.revision = nextRevision;
-      material.hasPendingSuggestions =
-        scanSuggestions(body.content.value).length > 0;
-      material.updatedAt = now;
-      db.refreshMaterialContentBytes(material);
-      await persistEditorState(material.id);
-      return HttpResponse.json(
-        mockSuggestionResult(material, [...committedIds].sort()),
-        {
-          status: 201,
-        }
-      );
-    }
-  ),
-  http.post(
-    '/api/materials/:id/suggestions/review',
-    async ({ params, request }) => {
-      const material = db.materials.find((item) => item.id === params.id);
-      if (!material) return new HttpResponse(null, { status: 404 });
-      const body = (await request.json()) as {
-        decision: 'accept' | 'reject';
-        suggestionIds?: string[];
-        expectedRevision: number;
-      };
-      if (body.expectedRevision !== (material.revision ?? 1)) {
-        return HttpResponse.json(
-          { message: 'material revision is stale' },
-          { status: 409 }
-        );
-      }
-      const resolved = resolveSuggestions(
-        material.content.value,
-        body.decision,
-        body.suggestionIds
-      );
-      const now = new Date().toISOString();
-      material.content = createMaterialDocument(resolved.value);
-      material.revision = (material.revision ?? 1) + 1;
-      material.hasPendingSuggestions = resolved.hasPendingSuggestions;
-      material.updatedAt = now;
-      db.refreshMaterialContentBytes(material);
-      const ids: string[] = [];
-      for (const suggestion of mockSuggestions) {
-        if (
-          !resolved.resolvedIds.includes(suggestion.plateSuggestionId) ||
-          suggestion.status !== 'pending'
-        )
-          continue;
-        suggestion.status =
-          body.decision === 'accept' ? 'accepted' : 'rejected';
-        suggestion.reviewedBy = db.user.id;
-        suggestion.reviewedAt = now;
-        suggestion.updatedAt = now;
-        suggestion.resolutionRevision = material.revision;
-        ids.push(suggestion.plateSuggestionId);
-      }
-      await persistEditorState(material.id);
-      return HttpResponse.json(mockSuggestionResult(material, ids));
-    }
-  ),
-  http.delete('/api/material-suggestions/:id', async ({ params, request }) => {
-    const suggestion = mockSuggestions.find((item) => item.id === params.id);
-    const discussion = mockDiscussions.find(
-      (item) => item.id === suggestion?.discussionId
-    );
-    const material = db.materials.find(
-      (item) => item.id === discussion?.materialId
-    );
-    if (!suggestion || !material)
-      return new HttpResponse(null, { status: 404 });
-    const expected = Number(
-      new URL(request.url).searchParams.get('expectedRevision')
-    );
-    if (expected !== (material.revision ?? 1)) {
-      return HttpResponse.json(
-        { message: 'material revision is stale' },
-        { status: 409 }
-      );
-    }
-    const resolved = resolveSuggestions(material.content.value, 'reject', [
-      suggestion.plateSuggestionId,
-    ]);
-    material.content = createMaterialDocument(resolved.value);
-    material.revision = (material.revision ?? 1) + 1;
-    material.hasPendingSuggestions = resolved.hasPendingSuggestions;
-    suggestion.status = 'withdrawn';
-    suggestion.isDeleted = true;
-    await persistEditorState(material.id);
-    return HttpResponse.json(mockSuggestionResult(material, [suggestion.id]));
   }),
   http.get('/api/source-upload-policy', async () => {
     await latency();

@@ -23,10 +23,10 @@ export function UserColorChooser({
             aria-label={c}
             aria-pressed={isSelected}
             className={cn(
-              "flex h-8 w-8 items-center justify-center rounded-full hover:scale-105 transition-transform",
-              isTransparent && "border border-line-strong text-fg-muted",
+              'flex h-8 w-8 items-center justify-center rounded-full transition-transform hover:scale-105',
+              isTransparent && 'border border-line-strong text-fg-muted',
               isSelected &&
-                "ring-2 ring-action ring-offset-2 ring-offset-surface",
+                'ring-2 ring-action ring-offset-2 ring-offset-surface'
             )}
             key={c}
             onClick={() => onChange(c)}

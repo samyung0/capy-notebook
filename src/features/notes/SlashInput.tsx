@@ -150,7 +150,7 @@ export function SlashInputElement(
         <span>/</span>
         <span className="relative min-w-2">
           <span aria-hidden className="invisible whitespace-pre">
-            {query || "\u200b"}
+            {query || '\u200b'}
           </span>
           <input
             {...inputProps}
@@ -168,19 +168,19 @@ export function SlashInputElement(
             onKeyDown={(event) => {
               inputProps.onKeyDown?.(event);
               if (event.defaultPrevented) return;
-              if (event.key === "ArrowDown") {
+              if (event.key === 'ArrowDown') {
                 event.preventDefault();
                 setActiveIndex(
-                  (index) => (index + 1) % Math.max(1, commands.length),
+                  (index) => (index + 1) % Math.max(1, commands.length)
                 );
-              } else if (event.key === "ArrowUp") {
+              } else if (event.key === 'ArrowUp') {
                 event.preventDefault();
                 setActiveIndex(
                   (index) =>
                     (index - 1 + Math.max(1, commands.length)) %
-                    Math.max(1, commands.length),
+                    Math.max(1, commands.length)
                 );
-              } else if (event.key === "Enter" && commands.length) {
+              } else if (event.key === 'Enter' && commands.length) {
                 event.preventDefault();
                 select(activeIndex);
               }

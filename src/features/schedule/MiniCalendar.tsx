@@ -35,7 +35,6 @@ export function MiniCalendar({
   rangeEnd,
 }: MiniCalendarProps) {
   const [picking, setPicking] = useState(false);
-  const today = new Date();
   const grid = monthGrid(month);
   const hasRange = !!(rangeStart && rangeEnd);
   const rs = rangeStart ? startOfDay(rangeStart).getTime() : 0;
@@ -83,7 +82,7 @@ export function MiniCalendar({
               className="rounded-button p-1 text-fg-muted hover:bg-surface-hover-bg"
               onClick={() =>
                 onMonthChange(
-                  new Date(month.getFullYear() - 1, month.getMonth(), 1),
+                  new Date(month.getFullYear() - 1, month.getMonth(), 1)
                 )
               }
               type="button"
@@ -96,7 +95,7 @@ export function MiniCalendar({
               className="rounded-button p-1 text-fg-muted hover:bg-surface-hover-bg"
               onClick={() =>
                 onMonthChange(
-                  new Date(month.getFullYear() + 1, month.getMonth(), 1),
+                  new Date(month.getFullYear() + 1, month.getMonth(), 1)
                 )
               }
               type="button"
@@ -108,10 +107,10 @@ export function MiniCalendar({
             {MONTHS.map((mo, i) => (
               <button
                 className={cn(
-                  "rounded-button py-1.5 font-medium text-xs hover:bg-surface-hover-bg",
+                  'rounded-button py-1.5 font-medium text-xs hover:bg-surface-hover-bg',
                   i === month.getMonth()
-                    ? "bg-action text-action-fg"
-                    : "text-fg",
+                    ? 'bg-action text-action-fg'
+                    : 'text-fg'
                 )}
                 key={mo}
                 onClick={() => {
@@ -140,8 +139,7 @@ export function MiniCalendar({
           <div className="grid grid-cols-7 gap-x-0 gap-y-0.5">
             {grid.map((day, i) => {
               const inMonth = day.getMonth() === month.getMonth();
-              const isToday = sameDay(day, today);
-              const isSel = sameDay(day, selected);
+              const isHighlighted = sameDay(day, selected);
               const isRange = hasRange && inRange(day);
               const isRangeStart = !!rangeStart && sameDay(day, rangeStart);
               const isRangeEnd = !!rangeEnd && sameDay(day, rangeEnd);
@@ -149,11 +147,11 @@ export function MiniCalendar({
               return (
                 <button
                   className={cn(
-                    "relative flex h-8 items-center justify-center transition-colors",
+                    'relative flex h-8 items-center justify-center transition-colors',
                     // connected range band — spans the full cell so adjacent days touch
-                    isRange && "bg-page",
-                    isRange && isRangeStart && "rounded-l-row",
-                    isRange && isRangeEnd && "rounded-r-row",
+                    isRange && 'bg-page',
+                    isRange && isRangeStart && 'rounded-l-row',
+                    isRange && isRangeEnd && 'rounded-r-row'
                   )}
                   key={i}
                   onClick={() => onSelect(day)}
@@ -161,27 +159,23 @@ export function MiniCalendar({
                 >
                   <span
                     className={cn(
-                      "flex h-8 w-8 items-center justify-center rounded-button text-[0.8rem]",
-                      isToday && "bg-action font-bold text-action-fg",
-                      !isToday && isRange && "font-semibold text-fg",
-                      !isToday &&
+                      'flex h-8 w-8 items-center justify-center rounded-button text-[0.8rem]',
+                      isHighlighted && 'bg-action font-bold text-action-fg',
+                      !isHighlighted && isRange && 'font-semibold text-fg',
+                      !isHighlighted &&
                         !isRange &&
                         hasRange &&
-                        "hover:bg-surface-hover-bg",
-                      !isToday &&
-                        !hasRange &&
-                        isSel &&
-                        "ring-[1.5px] ring-action",
-                      !isToday &&
+                        'hover:bg-surface-hover-bg',
+                      !isHighlighted &&
                         !isRange &&
                         (inMonth
-                          ? "text-fg hover:bg-surface-hover-bg"
-                          : "text-fg-muted hover:bg-surface-hover-bg"),
+                          ? 'text-fg hover:bg-surface-hover-bg'
+                          : 'text-fg-muted hover:bg-surface-hover-bg')
                     )}
                   >
                     {day.getDate()}
                   </span>
-                  {hasEvent && !isToday && (
+                  {hasEvent && !isHighlighted && (
                     <span className="absolute bottom-1 h-1 w-1 rounded-full bg-solid-accent-1" />
                   )}
                 </button>

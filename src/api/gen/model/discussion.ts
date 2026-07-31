@@ -5,21 +5,21 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { Comment } from './comment.ts';
-import type { MaterialSuggestion } from './materialSuggestion.ts';
 
 export interface Discussion {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  anchor: unknown;
+  anchorEnd?: string;
+  anchorQuote: string;
+  anchorStart?: string;
+  anchorVersion: number;
   blockId?: string;
   comments: Comment[];
   createdAt: string;
   id: string;
   isDeleted: boolean;
   isResolved: boolean;
-  kind: string;
   materialId: string;
-  suggestions: MaterialSuggestion[];
   updatedAt: string;
   userId: string;
 }

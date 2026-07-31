@@ -1,11 +1,6 @@
-import {
-  useDeck,
-  useFile,
-  useMaterial,
-  useQuiz,
-  useReviewMaterialSuggestions,
-} from "@/api/hooks";
-import type { MaterialKind } from "@/api/types";
+import { useNavigate } from '@tanstack/react-router';
+import { useDeck, useFile, useMaterial, useQuiz } from '@/api/hooks';
+import type { MaterialKind } from '@/api/types';
 import {
   Button,
   Icon,
@@ -17,31 +12,30 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui";
+} from '@/components/ui';
 import {
   clampImageZoom,
   IMAGE_MAX_ZOOM,
   IMAGE_MIN_ZOOM,
   IMAGE_ZOOM_STEP,
   isImageFile,
-} from "@/features/files/fileUtils";
+} from '@/features/files/fileUtils';
 import {
   type NoteEditorStatus,
   noteEditorStatusLabel,
-} from "@/features/notes/editorMode";
-import { cn } from "@/lib/cn";
-import { useNavigate } from "@tanstack/react-router";
+} from '@/features/notes/editorMode';
+import { cn } from '@/lib/cn';
+import {
+  MATERIALMODE_ICON,
+  MATERIALMODE_LABEL,
+  materialIcon,
+} from './materialIconMappings';
 import {
   isInteractiveMaterialMode,
   type MaterialMode,
   materialModePolicy,
-} from "./modePolicy";
-import type { OpenItem } from "./openItem";
-import {
-  materialIcon,
-  MATERIALMODE_ICON,
-  MATERIALMODE_LABEL,
-} from "./materialIconMappings";
+} from './modePolicy';
+import type { OpenItem } from './openItem';
 
 function useHeader(item: OpenItem): {
   icon: IconName;
@@ -51,18 +45,18 @@ function useHeader(item: OpenItem): {
   modeOptions?: { value: MaterialMode; label: string }[];
   defaultMode?: MaterialMode;
 } {
-  const file = useFile(item.kind === "file" ? item.id : null);
-  const material = useMaterial(item.kind === "material" ? item.id : null);
-  if (item.kind === "file") {
+  const file = useFile(item.kind === 'file' ? item.id : null);
+  const material = useMaterial(item.kind === 'material' ? item.id : null);
+  if (item.kind === 'file') {
     return {
-      icon: "files",
+      icon: 'files',
       showImageZoom: !!file.data && isImageFile(file.data),
       title: file.data?.name,
     };
   }
   const mt = material.data;
   if (!mt)
-    return { icon: "workspaces", showImageZoom: false, title: undefined };
+    return { icon: 'workspaces', showImageZoom: false, title: undefined };
   return {
     defaultMode: materialModePolicy(mt.kind, mt.capabilities).defaultMode,
     icon: materialIcon(mt.kind),
@@ -71,7 +65,7 @@ function useHeader(item: OpenItem): {
       (value) => ({
         label: MATERIALMODE_LABEL[value],
         value,
-      }),
+      })
     ),
     showImageZoom: false,
     title: mt.title,
@@ -82,10 +76,10 @@ function DeckPreviewActions({ deckId }: { deckId: string }) {
   const deck = useDeck(deckId);
   const navigate = useNavigate();
   const summary = deck.data
-    ? `${deck.data.cardCount} card${deck.data.cardCount === 1 ? "" : "s"} · ${deck.data.knownPct}% known`
+    ? `${deck.data.cardCount} card${deck.data.cardCount === 1 ? '' : 's'} · ${deck.data.knownPct}% known`
     : deck.isLoading
-      ? "Loading deck details…"
-      : "Flashcards";
+      ? 'Loading deck details…'
+      : 'Flashcards';
 
   return (
     <div
@@ -97,7 +91,7 @@ function DeckPreviewActions({ deckId }: { deckId: string }) {
       <Button
         iconRight="arrowRight"
         onClick={() =>
-          navigate({ params: { deckId }, to: "/flashcards/$deckId" })
+          navigate({ params: { deckId }, to: '/flashcards/$deckId' })
         }
         size="sm"
         variant="ghost-hover"
@@ -112,14 +106,14 @@ function QuizPreviewActions({ quizId }: { quizId: string }) {
   const quiz = useQuiz(quizId);
   const navigate = useNavigate();
   const summary = quiz.data
-    ? `${quiz.data.questions.length} question${quiz.data.questions.length === 1 ? "" : "s"}${
+    ? `${quiz.data.questions.length} question${quiz.data.questions.length === 1 ? '' : 's'}${
         quiz.data.timeLimitMin == null
-          ? ""
+          ? ''
           : ` · Time limit: ${quiz.data.timeLimitMin} min`
       }`
     : quiz.isLoading
-      ? "Loading quiz details…"
-      : "Quiz";
+      ? 'Loading quiz details…'
+      : 'Quiz';
 
   return (
     <div
@@ -132,7 +126,7 @@ function QuizPreviewActions({ quizId }: { quizId: string }) {
         className="font-medium text-sm"
         iconRight="arrowRight"
         onClick={() =>
-          navigate({ params: { quizId }, to: "/quizzes/$quizId/attempt" })
+          navigate({ params: { quizId }, to: '/quizzes/$quizId/attempt' })
         }
         size="sm"
         variant="ghost-hover"
@@ -150,61 +144,9 @@ function MaterialViewActions({
   materialId: string;
   kind: MaterialKind;
 }) {
-  if (kind === "quiz") return <QuizPreviewActions quizId={materialId} />;
-  if (kind === "flashcards") return <DeckPreviewActions deckId={materialId} />;
+  if (kind === 'quiz') return <QuizPreviewActions quizId={materialId} />;
+  if (kind === 'flashcards') return <DeckPreviewActions deckId={materialId} />;
   return null;
-}
-
-function BulkSuggestionActions({
-  materialId,
-  onReviewed,
-}: {
-  materialId: string;
-  onReviewed: () => void;
-}) {
-  const { data: material } = useMaterial(materialId);
-  const review = useReviewMaterialSuggestions(materialId);
-  if (!material?.capabilities.canEdit || !material.hasPendingSuggestions)
-    return null;
-
-  const run = (decision: "accept" | "reject") => {
-    // TODO: use dialog instead of window.confirm
-    if (
-      !window.confirm(
-        `${decision === "accept" ? "Accept" : "Reject"} all pending suggestions in this material?`,
-      )
-    ) {
-      return;
-    }
-    review.mutate(
-      {
-        decision,
-        expectedRevision: material.revision ?? 1,
-      },
-      { onSuccess: onReviewed },
-    );
-  };
-
-  return (
-    <div className="flex items-center gap-1">
-      <Button
-        disabled={review.isPending}
-        onClick={() => run("accept")}
-        size="sm"
-        variant="ghost-hover"
-      >
-        Accept all
-      </Button>
-      <Button
-        disabled={review.isPending}
-        onClick={() => run("reject")}
-        size="sm"
-        variant="ghost-hover"
-      >
-        Reject all
-      </Button>
-    </div>
-  );
 }
 
 export function Header({
@@ -215,7 +157,6 @@ export function Header({
   onMaterialModeChange,
   editorStatus,
   collaborationActionsRef,
-  onBulkReviewed,
 }: {
   item: OpenItem;
   imageZoom: number;
@@ -224,7 +165,6 @@ export function Header({
   onMaterialModeChange: (mode: MaterialMode) => void;
   editorStatus: NoteEditorStatus | null;
   collaborationActionsRef: (node: HTMLDivElement | null) => void;
-  onBulkReviewed: () => void;
 }) {
   // TODO: magic wand for summary/AI related stuff, then some tool box? same action menu
   const { icon, title, materialKind, showImageZoom, modeOptions, defaultMode } =
@@ -237,17 +177,17 @@ export function Header({
   return (
     <div className="flex h-14 items-center gap-3 border-divider border-b px-5 py-4">
       <div className="flex items-center gap-1">
-      <Icon name={icon} />
-        <h2 className="t-subtitle min-w-0 flex-1 ml-1 translate-y-px truncate">
-          {title ?? "--"}
+        <Icon name={icon} />
+        <h2 className="t-subtitle ml-1 min-w-0 flex-1 translate-y-px truncate">
+          {title ?? '--'}
         </h2>
         {statusLabel && (
           <span
             className={cn(
-              "px-1 self-end text-fg-muted text-xs",
-              editorStatus?.mode === "edit" &&
-                editorStatus.saveState === "error" &&
-                "text-solid-error",
+              '-translate-y-px self-end px-1 text-fg-muted text-xs leading-(--subtitle-line-height)',
+              editorStatus?.mode === 'edit' &&
+                editorStatus.saveState === 'error' &&
+                'text-solid-error'
             )}
             role="status"
           >
@@ -256,13 +196,7 @@ export function Header({
         )}
       </div>
       <div className="ml-auto flex items-center gap-2">
-        {item.kind === "material" && (
-          <BulkSuggestionActions
-            materialId={item.id}
-            onReviewed={onBulkReviewed}
-          />
-        )}
-        {item.kind === "material" && activeMode === "view" && materialKind && (
+        {item.kind === 'material' && activeMode === 'view' && materialKind && (
           <MaterialViewActions kind={materialKind} materialId={item.id} />
         )}
         {activeMode && isInteractiveMaterialMode(activeMode) && (

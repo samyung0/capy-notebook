@@ -250,128 +250,14 @@ func TestDiagramContract(t *testing.T) {
 	}
 }
 
-func TestSuggestionTreeScansInlineAndBlockMetadata(t *testing.T) {
-	raw := `{"schemaVersion":1,"value":[
-		{"type":"p","id":"block-a","children":[
-			{"text":"old","suggestion":true,"suggestion_remove":{"id":"remove","type":"remove","userId":"u"}},
-			{"text":"new","suggestion":true,"suggestion_insert":{"id":"insert","type":"insert","userId":"u"}}
-		]},
-		{"type":"p","id":"block-b","suggestion":{"id":"whole","type":"insert","userId":"u"},"children":[{"text":"block"}]},
-		{"type":"p","id":"block-c","suggestion":{"id":"line","type":"insert","isLineBreak":true},"children":[{"text":""}]}
-	]}`
-	changes, err := ScanSuggestions(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(changes) != 4 {
-		t.Fatalf("changes = %#v", changes)
-	}
-	if changes[0].BlockID != "block-a" || changes[0].PlateSuggestionID != "insert" ||
-		changes[1].BlockID != "block-a" || changes[1].PlateSuggestionID != "remove" {
-		t.Fatalf("inline insertion was not projected: %#v", changes[0])
-	}
-	if changes[2].BlockID != "block-b" || changes[2].PlateSuggestionID != "whole" {
-		t.Fatalf("block suggestion was not projected: %#v", changes[2])
-	}
-	if changes[3].BlockID != "block-c" || changes[3].PlateSuggestionID != "line" {
-		t.Fatalf("line-break suggestion was not projected: %#v", changes[3])
-	}
-}
-
-func TestSuggestionTreeDeduplicatesPairedReplacement(t *testing.T) {
-	raw := `{"schemaVersion":1,"value":[{"type":"p","id":"block-a","children":[
-		{"text":"old","suggestion":true,"suggestion_replace":{"id":"replace","type":"remove"}},
-		{"text":"new","suggestion":true,"suggestion_replace":{"id":"replace","type":"insert"}}
-	]}]}`
-	changes, err := ScanSuggestions(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(changes) != 1 || changes[0].BlockID != "block-a" ||
-		changes[0].PlateSuggestionID != "replace" {
-		t.Fatalf("paired replacement was not deduplicated correctly: %#v", changes)
-	}
-}
-
-func TestSuggestionTreeRequiresStableTopLevelBlockID(t *testing.T) {
-	raw := `{"schemaVersion":1,"value":[{"type":"p","children":[
-		{"text":"new","suggestion":true,"suggestion_insert":{"id":"insert","type":"insert"}}
-	]}]}`
-	if _, err := ScanSuggestions(raw); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("missing top-level block id error = %v, want invalid", err)
-	}
-}
-
-func TestSuggestionProjectionSupportsTargetedReviewAndUpdates(t *testing.T) {
-	raw := `{"schemaVersion":1,"value":[{"type":"p","id":"block","children":[
-		{"text":"old","bold":true,"suggestion":true,
-		 "suggestion_style":{"id":"style","type":"update","properties":{"bold":true},"newProperties":{"italic":true}}},
-		{"text":" remove","suggestion":true,"suggestion_remove":{"id":"remove","type":"remove"}},
-		{"text":" insert","suggestion":true,"suggestion_insert":{"id":"insert","type":"insert"}}
-	]}]}`
-
-	accepted, resolved, pending, err := ResolveSuggestions(raw, []string{"style"}, AcceptSuggestions)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(resolved, []string{"style"}) || !pending {
-		t.Fatalf("resolved=%v pending=%v", resolved, pending)
-	}
-	doc, _ := Parse(accepted)
-	leaf := doc.Value[0]["children"].([]any)[0].(map[string]any)
-	if leaf["italic"] != true || leaf["bold"] != nil || leaf["suggestion_style"] != nil {
-		t.Fatalf("update acceptance was not applied cleanly: %#v", leaf)
-	}
-
-	rejected, err := RejectProjection(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	doc, _ = Parse(rejected)
-	children := doc.Value[0]["children"].([]any)
-	if len(children) != 2 || children[0].(map[string]any)["bold"] != true ||
-		children[1].(map[string]any)["text"] != " remove" {
-		t.Fatalf("reject projection is wrong: %#v", children)
-	}
-	if has, err := HasPendingSuggestions(rejected); err != nil || has {
-		t.Fatalf("reject projection remains pending: has=%v err=%v", has, err)
-	}
-}
-
-func TestSuggestionProjectionPreservesNonEmptySlateStructure(t *testing.T) {
-	raw := `{"schemaVersion":1,"value":[{"type":"p","id":"only",
-		"suggestion":{"id":"inserted-block","type":"insert"},
-		"children":[{"text":""}]}]}`
-	rejected, _, pending, err := ResolveSuggestions(raw, nil, RejectSuggestions)
-	if err != nil {
-		t.Fatal(err)
-	}
-	doc, err := Parse(rejected)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pending || len(doc.Value) != 1 || doc.Value[0]["type"] != "p" {
-		t.Fatalf("invalid fallback document: %#v pending=%v", doc, pending)
-	}
-}
-
-func TestRejectProjectionCoalescesEquivalentSplitTextLeaves(t *testing.T) {
-	raw := `{"schemaVersion":1,"value":[{"type":"p","id":"split","children":[
-		{"text":"before "},
-		{"text":"old","suggestion":true,"suggestion_replace":{"id":"replace","type":"remove"}},
-		{"text":"new","suggestion":true,"suggestion_replace":{"id":"replace","type":"insert"}},
-		{"text":" after"}
-	]}]}`
-	rejected, err := RejectProjection(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	doc, err := Parse(rejected)
-	if err != nil {
-		t.Fatal(err)
-	}
-	children := doc.Value[0]["children"].([]any)
-	if len(children) != 1 || children[0].(map[string]any)["text"] != "before old after" {
-		t.Fatalf("split leaves were not canonicalized: %#v", children)
+func TestSuggestionPropertiesAreRejected(t *testing.T) {
+	for _, raw := range []string{
+		`{"schemaVersion":1,"value":[{"type":"p","id":"block","children":[{"text":"x","suggestion":true}]}]}`,
+		`{"schemaVersion":1,"value":[{"type":"p","id":"block","children":[{"text":"x","suggestion_insert":{"id":"old"}}]}]}`,
+		`{"schemaVersion":1,"value":[{"type":"p","id":"block","suggestion":{"id":"old"},"children":[{"text":"x"}]}]}`,
+	} {
+		if _, err := Parse(raw); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("obsolete suggestion metadata error = %v, want invalid", err)
+		}
 	}
 }

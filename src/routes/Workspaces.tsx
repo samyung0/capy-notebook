@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useTags, useWorkspaces } from '@/api/hooks';
-import { PageHeader, PanelWithInvertedRadius } from "@/components/app/layout";
+import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import {
   Badge,
   Button,
@@ -14,16 +14,16 @@ import {
   SkeletonCardGrid,
   UserColorChooser,
   WorkspaceCard,
-} from "@/components/ui";
-import { m } from "@/i18n";
-import { cn } from "@/lib/cn";
-import { usePortals } from "@/stores/portals";
+} from '@/components/ui';
+import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
+import { usePortals } from '@/stores/portals';
 
 const SORTS = [
-  { label: m.workspaces_sort_accessed, value: "accessed" },
-  { label: m.workspaces_sort_created, value: "created" },
-  { label: m.workspaces_sort_chapters, value: "chapters" },
-  { label: m.workspaces_sort_files, value: "files" },
+  { label: m.workspaces_sort_accessed, value: 'accessed' },
+  { label: m.workspaces_sort_created, value: 'created' },
+  { label: m.workspaces_sort_chapters, value: 'chapters' },
+  { label: m.workspaces_sort_files, value: 'files' },
 ];
 
 function toggleIn(list: string[], value: string) {
@@ -33,7 +33,7 @@ function toggleIn(list: string[], value: string) {
 }
 
 export default function Workspaces() {
-  const [sort, setSort] = useState("accessed");
+  const [sort, setSort] = useState('accessed');
   const [colorFilters, setColorFilters] = useState<string[]>([]);
   const [tagFilters, setTagFilters] = useState<string[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -43,19 +43,19 @@ export default function Workspaces() {
     sort,
     tag: tagFilters,
   });
-  const { data: tags = [] } = useTags("workspace");
+  const { data: tags = [] } = useTags('workspace');
   const openWorkspaceCreate = usePortals((s) => s.openWorkspaceCreate);
 
   const sortLabel = useMemo(
-    () => SORTS.find((s) => s.value === sort)?.label() ?? "",
-    [sort],
+    () => SORTS.find((s) => s.value === sort)?.label() ?? '',
+    [sort]
   );
   const hasFilters = colorFilters.length > 0 || tagFilters.length > 0;
   const filterLabel = useMemo(() => {
     const parts = [...colorFilters, ...tagFilters];
     if (!parts.length) return m.workspaces_filter();
-    if (parts.length <= 2) return parts.join(" · ");
-    return `${parts.slice(0, 2).join(" · ")} +${parts.length - 2}`;
+    if (parts.length <= 2) return parts.join(' · ');
+    return `${parts.slice(0, 2).join(' · ')} +${parts.length - 2}`;
   }, [colorFilters, tagFilters]);
 
   return (
@@ -73,7 +73,7 @@ export default function Workspaces() {
         title={m.workspaces_title()}
       />
 
-      <div className="flex items-center justify-between gap-3 px-6">
+      <div className="-mb-3 flex items-center justify-between gap-3 px-6">
         <div className="flex items-center gap-2">
           <Menu
             align="start"
@@ -144,11 +144,11 @@ export default function Workspaces() {
                           >
                             <Badge
                               className={cn(
-                                "transition-colors",
-                                !active && "hover:bg-surface-hover-bg",
+                                'transition-colors',
+                                !active && 'hover:bg-surface-hover-bg'
                               )}
                               size="sm"
-                              tone={active ? "dark" : "neutral"}
+                              tone={active ? 'dark' : 'neutral'}
                             >
                               {t.value}
                             </Badge>
@@ -177,7 +177,7 @@ export default function Workspaces() {
         </div>
       </div>
 
-      <div className="min-h-0 w-full flex-1 overflow-auto px-6 pt-3 pb-6">
+      <div className="min-h-0 w-full flex-1 overflow-auto px-6 pt-2 pb-6">
         {isLoading ? (
           <SkeletonCardGrid count={9} />
         ) : (

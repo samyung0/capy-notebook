@@ -6,7 +6,7 @@ export function Spinner({ className }: { className?: string }) {
   return (
     <svg
       aria-label="Loading"
-      className={cn("size-4.5 animate-spin", className)}
+      className={cn('isolate size-4.5 animate-spin leading-none', className)}
       data-slot="spinner"
       fill="none"
       role="status"
@@ -32,8 +32,8 @@ export function Skeleton({
   return (
     <div
       className={cn(
-        "animate-pulse rounded-button bg-surface-hover-bg",
-        className,
+        'animate-pulse rounded-button bg-surface-hover-bg',
+        className
       )}
       style={style}
     />
@@ -55,14 +55,14 @@ export function SkeletonCardGrid({
     <div
       aria-label="Loading"
       className={cn(
-        "grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4",
-        className,
+        'grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4',
+        className
       )}
       role="status"
     >
       {Array.from({ length: count }).map((_, i) => (
         <Skeleton
-          className={cn("rounded-card-lg", cardClassName)}
+          className={cn('rounded-card-lg', cardClassName)}
           key={i}
           style={{ height: cardHeight }}
         />
@@ -85,12 +85,12 @@ export function SkeletonList({
   return (
     <div
       aria-label="Loading"
-      className={cn("flex flex-col gap-2", className)}
+      className={cn('flex flex-col gap-2', className)}
       role="status"
     >
       {Array.from({ length: count }).map((_, i) => (
         <Skeleton
-          className={cn("rounded-button", rowClassName)}
+          className={cn('rounded-button', rowClassName)}
           key={i}
           style={{ height: rowHeight }}
         />

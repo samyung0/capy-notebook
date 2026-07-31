@@ -30,7 +30,7 @@ import type { NoteBlockDialogsApi } from './blocks/dialogContext';
 import { customBlockNode } from './blocks/shared';
 import { toggleEditorBlock } from './editorTransforms';
 import { insertEditorNode, type NoteEditorInstance } from './insertEditorNode';
-import { insertMediaPlaceholder } from './MediaNodes';
+import { insertMediaPlaceholder } from './insertMediaPlaceholder';
 import type { WidgetGroupId } from './noteEditorPrefs';
 import { COLUMN_LAYOUTS } from './richBlockConfig';
 

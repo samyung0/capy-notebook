@@ -41,14 +41,11 @@ import {
   quizElementToBlock,
   quizNode,
 } from '@/features/materials/document';
-import { finalizeSuggestionValue } from '@/features/notes/suggestions';
 import { isDue, isKnown, newSrsState, reviewSrs } from '@/lib/srs';
 import {
   buildEditorNoteValue,
-  buildSuggestNoteValue,
   EDITOR_NOTE,
   EDITOR_WORKSPACE_ID,
-  SUGGEST_NOTE,
 } from './editorSeed';
 import {
   buildLargePerfDocument,
@@ -1258,47 +1255,22 @@ seedDecks.forEach((d, i) => {
 });
 /* ---------------- editor matrix fixtures (e2e/editor) ---------------- */
 if (import.meta.env.VITE_E2E_EDITOR_SEED === 'true') {
-  materials.push(
-    {
-      capabilities: ownerCapabilities,
-      chapterId: null,
-      content: createMaterialDocument(buildEditorNoteValue() as MaterialValue),
-      createdAt: days(1),
-      id: EDITOR_NOTE.id,
-      kind: 'note',
-      privacy: 'private',
-      revision: 1,
-      role: 'owner',
-      scopeChapters: [],
-      scopeFileIds: [],
-      title: EDITOR_NOTE.title,
-      workspaceId: EDITOR_WORKSPACE_ID,
-      workspaceName: 'Biology 101',
-    },
-    {
-      capabilities: {
-        canComment: true,
-        canEdit: false,
-        canManageMembers: false,
-        canView: true,
-      },
-      chapterId: null,
-      content: createMaterialDocument(buildSuggestNoteValue() as MaterialValue),
-      createdAt: days(1),
-      id: SUGGEST_NOTE.id,
-      kind: 'note',
-      privacy: 'private',
-      revision: 1,
-      // Commenter capabilities: the note opens in suggestion mode, mirroring
-      // how a shared commenter sees it (materialModePolicy defaultMode).
-      role: 'commenter',
-      scopeChapters: [],
-      scopeFileIds: [],
-      title: SUGGEST_NOTE.title,
-      workspaceId: EDITOR_WORKSPACE_ID,
-      workspaceName: 'Biology 101',
-    }
-  );
+  materials.push({
+    capabilities: ownerCapabilities,
+    chapterId: null,
+    content: createMaterialDocument(buildEditorNoteValue() as MaterialValue),
+    createdAt: days(1),
+    id: EDITOR_NOTE.id,
+    kind: 'note',
+    privacy: 'private',
+    revision: 1,
+    role: 'owner',
+    scopeChapters: [],
+    scopeFileIds: [],
+    title: EDITOR_NOTE.title,
+    workspaceId: EDITOR_WORKSPACE_ID,
+    workspaceName: 'Biology 101',
+  });
 }
 
 /* ---------------- perf harness fixtures (e2e/perf) ---------------- */
@@ -1330,12 +1302,11 @@ for (const material of materials) refreshMaterialContentBytes(material);
 
 /** Derive the typed Quiz view from a quiz material (questions from the fence). */
 export function quizFromMaterial(mt: Material): Quiz {
-  const cleanValue = finalizeSuggestionValue(mt.content.value, 'reject');
   const { questions, timeLimitMin } =
     typeof mt.content === 'string'
       ? parseQuizBlock(mt.content)
       : quizElementToBlock(
-          cleanValue.find((node) => node.type === 'quiz') as QuizElement
+          mt.content.value.find((node) => node.type === 'quiz') as QuizElement
         );
   return {
     chapters: mt.scopeChapters,
@@ -1353,12 +1324,11 @@ export function quizFromMaterial(mt: Material): Quiz {
 
 /** Derive the typed cards for a flashcards material (fence + cardStats join). */
 export function cardsFromMaterial(mt: Material): Flashcard[] {
-  const cleanValue = finalizeSuggestionValue(mt.content.value, 'reject');
   const cards =
     typeof mt.content === 'string'
       ? parseFlashcardsBlock(mt.content).cards
       : flashcardsElementToCards(
-          cleanValue.find(
+          mt.content.value.find(
             (node) => node.type === 'flashcards'
           ) as FlashcardsElement
         );

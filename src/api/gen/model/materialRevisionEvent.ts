@@ -11,7 +11,4 @@ export type MaterialRevisionEvent = typeof MaterialRevisionEvent[keyof typeof Ma
 export const MaterialRevisionEvent = {
   create: 'create',
   edit: 'edit',
-  suggestion_commit: 'suggestion_commit',
-  suggestion_accept: 'suggestion_accept',
-  suggestion_reject: 'suggestion_reject',
 } as const;

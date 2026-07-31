@@ -4,13 +4,19 @@
  * Evo Notes API
  * OpenAPI spec version: 0.1.0
  */
-import type { CreateDiscussionReqAnchor } from './createDiscussionReqAnchor.ts';
 import type { CreateDiscussionReqContentRichItem } from './createDiscussionReqContentRichItem.ts';
 
 export interface CreateDiscussionReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  anchor?: CreateDiscussionReqAnchor;
+  /** @maxLength 4096 */
+  anchorEnd?: string;
+  /** @maxLength 1000 */
+  anchorQuote?: string;
+  /** @maxLength 4096 */
+  anchorStart?: string;
+  /** @minimum 1 */
+  anchorVersion?: number;
   blockId?: string;
   /** @nullable */
   contentRich: CreateDiscussionReqContentRichItem[] | null;

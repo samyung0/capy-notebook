@@ -10,7 +10,6 @@ import {
   type MaterialNode,
   type MaterialValue,
 } from '@/features/materials/document';
-import { finalizeSuggestionValue } from './suggestions';
 
 type MarkdownEditor = PlateEditor & {
   getApi: (plugin: typeof MarkdownPlugin) => {
@@ -72,7 +71,7 @@ export function importJsonDocument(
 
 export function exportMarkdownDocument(editor: PlateEditor): string {
   return serializeMd(editor, {
-    value: finalizeSuggestionValue(editor.children as MaterialValue, 'reject'),
+    value: editor.children as MaterialValue,
   });
 }
 
@@ -93,12 +92,9 @@ export async function exportDocxDocument(
   plugins: SlatePlugin[]
 ): Promise<Blob> {
   const { exportToDocx } = await loadDocxIo();
-  return exportToDocx(
-    finalizeSuggestionValue(editor.children as MaterialValue, 'reject'),
-    {
-      editorPlugins: plugins,
-    }
-  );
+  return exportToDocx(editor.children as MaterialValue, {
+    editorPlugins: plugins,
+  });
 }
 
 export function downloadEditorFile(blob: Blob, filename: string) {

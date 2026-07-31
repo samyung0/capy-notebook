@@ -168,17 +168,16 @@ type Material struct {
 	Title         string `json:"title"`
 	// Content is the encoded materialdoc.Envelope stored as jsonb. The API
 	// model decodes it so clients receive an object rather than a JSON string.
-	Content               string    `json:"-"`
-	ChapterID             *string   `json:"chapterId"` // null = unfiled (not omitempty)
-	Position              int64     `json:"position"`
-	ScopeChapters         []string  `json:"scopeChapters" nullable:"false"`
-	ScopeFileIDs          []string  `json:"scopeFileIds" nullable:"false"`
-	Privacy               Privacy   `json:"privacy"`
-	Color                 UserColor `json:"color,omitempty"` // decks only; presentation tint
-	CreatedAt             time.Time `json:"createdAt"`
-	UpdatedAt             time.Time `json:"updatedAt"`
-	Revision              int64     `json:"revision"`
-	HasPendingSuggestions bool      `json:"hasPendingSuggestions"`
+	Content       string    `json:"-"`
+	ChapterID     *string   `json:"chapterId"` // null = unfiled (not omitempty)
+	Position      int64     `json:"position"`
+	ScopeChapters []string  `json:"scopeChapters" nullable:"false"`
+	ScopeFileIDs  []string  `json:"scopeFileIds" nullable:"false"`
+	Privacy       Privacy   `json:"privacy"`
+	Color         UserColor `json:"color,omitempty"` // decks only; presentation tint
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+	Revision      int64     `json:"revision"`
 	// IsOwner is request-scoped (not persisted): true when the requester owns
 	// the parent workspace, false for link/public shared reads.
 	IsOwner      bool               `json:"isOwner"`
@@ -212,16 +211,15 @@ func (Material) TransformSchema(r huma.Registry, schema *huma.Schema) *huma.Sche
 }
 
 type MaterialRevision struct {
-	MaterialID            string                `json:"materialId"`
-	Revision              int64                 `json:"revision"`
-	ParentRevision        *int64                `json:"parentRevision,omitempty"`
-	EventType             MaterialRevisionEvent `json:"eventType"`
-	Title                 string                `json:"title"`
-	Content               string                `json:"-"`
-	HasPendingSuggestions bool                  `json:"hasPendingSuggestions"`
-	EventMetadata         json.RawMessage       `json:"-"`
-	CreatedBy             *string               `json:"createdBy,omitempty"`
-	CreatedAt             time.Time             `json:"createdAt"`
+	MaterialID     string                `json:"materialId"`
+	Revision       int64                 `json:"revision"`
+	ParentRevision *int64                `json:"parentRevision,omitempty"`
+	EventType      MaterialRevisionEvent `json:"eventType"`
+	Title          string                `json:"title"`
+	Content        string                `json:"-"`
+	EventMetadata  json.RawMessage       `json:"-"`
+	CreatedBy      *string               `json:"createdBy,omitempty"`
+	CreatedAt      time.Time             `json:"createdAt"`
 }
 
 type WorkspaceMember struct {
@@ -248,47 +246,20 @@ type WorkspaceInvite struct {
 	CreatedAt     time.Time     `json:"createdAt"`
 }
 
-type SuggestionStatus string
-
-const (
-	SuggestionPending   SuggestionStatus = "pending"
-	SuggestionAccepted  SuggestionStatus = "accepted"
-	SuggestionRejected  SuggestionStatus = "rejected"
-	SuggestionWithdrawn SuggestionStatus = "withdrawn"
-)
-
-func (SuggestionStatus) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "SuggestionStatus", "pending", "accepted", "rejected", "withdrawn")
-}
-
-type MaterialSuggestion struct {
-	ID                 string           `json:"id"`
-	DiscussionID       string           `json:"discussionId"`
-	PlateSuggestionID  string           `json:"plateSuggestionId"`
-	CommitRevision     int64            `json:"commitRevision"`
-	ResolutionRevision *int64           `json:"resolutionRevision,omitempty"`
-	UserID             string           `json:"userId"`
-	Status             SuggestionStatus `json:"status"`
-	ReviewedBy         *string          `json:"reviewedBy,omitempty"`
-	ReviewedAt         *time.Time       `json:"reviewedAt,omitempty"`
-	IsDeleted          bool             `json:"isDeleted"`
-	CreatedAt          time.Time        `json:"createdAt"`
-	UpdatedAt          time.Time        `json:"updatedAt"`
-}
-
 type Discussion struct {
-	ID          string               `json:"id"`
-	MaterialID  string               `json:"materialId"`
-	Kind        string               `json:"kind"`
-	BlockID     *string              `json:"blockId,omitempty"`
-	Anchor      json.RawMessage      `json:"anchor"`
-	CreatedBy   string               `json:"userId"`
-	IsResolved  bool                 `json:"isResolved"`
-	IsDeleted   bool                 `json:"isDeleted"`
-	CreatedAt   time.Time            `json:"createdAt"`
-	UpdatedAt   time.Time            `json:"updatedAt"`
-	Suggestions []MaterialSuggestion `json:"suggestions" nullable:"false"`
-	Comments    []Comment            `json:"comments" nullable:"false"`
+	ID            string    `json:"id"`
+	MaterialID    string    `json:"materialId"`
+	BlockID       *string   `json:"blockId,omitempty"`
+	AnchorStart   []byte    `json:"anchorStart,omitempty"`
+	AnchorEnd     []byte    `json:"anchorEnd,omitempty"`
+	AnchorVersion int       `json:"anchorVersion"`
+	AnchorQuote   string    `json:"anchorQuote"`
+	CreatedBy     string    `json:"userId"`
+	IsResolved    bool      `json:"isResolved"`
+	IsDeleted     bool      `json:"isDeleted"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+	Comments      []Comment `json:"comments" nullable:"false"`
 }
 
 type Comment struct {
@@ -308,13 +279,12 @@ type Comment struct {
 // markdown materials plus the workspace's quizzes and decks. ChapterID lets the
 // tree group refs under their chapter (null = unfiled).
 type MaterialRef struct {
-	ID                    string    `json:"id"`
-	Type                  string    `json:"type"` // mindmap | diagram | quiz | deck
-	Title                 string    `json:"title"`
-	ChapterID             *string   `json:"chapterId"`
-	Position              int64     `json:"position"`
-	CreatedAt             time.Time `json:"createdAt"`
-	HasPendingSuggestions bool      `json:"hasPendingSuggestions"`
+	ID        string    `json:"id"`
+	Type      string    `json:"type"` // mindmap | diagram | quiz | deck
+	Title     string    `json:"title"`
+	ChapterID *string   `json:"chapterId"`
+	Position  int64     `json:"position"`
+	CreatedAt time.Time `json:"createdAt"`
 }
 
 type ContentOrderItem struct {

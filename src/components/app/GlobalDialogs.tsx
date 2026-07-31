@@ -58,6 +58,8 @@ export function GlobalDialogs() {
   const isTopBarSearchOpen = usePortals((s) => s.isTopBarSearchOpen);
   const setTopBarSearchOpen = usePortals((s) => s.setTopBarSearchOpen);
 
+  // TODO: split dialog into individual components to reduce re-rendering cost
+
   return (
     <>
       {/* TODO: fix the workspace create and edit dialog */}
@@ -78,7 +80,8 @@ export function GlobalDialogs() {
           onSubmit={async (v) => {
             if (!workspaceId) {
               userToast({
-                description: 'This should not happen. Please refresh the page.',
+                description:
+                  'Oops. You should not be seeing this. Please refresh the page.',
                 title: 'Cannot find workspace',
                 variant: 'error',
               });

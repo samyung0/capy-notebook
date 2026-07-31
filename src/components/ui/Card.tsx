@@ -3,40 +3,41 @@ import { Slot } from 'radix-ui';
 import type { ElementType } from 'react';
 import { cn } from '@/lib/cn';
 
-const cardVariants = cva("flex flex-col items-stretch gap-2 p-5.5", {
+const cardVariants = cva('flex flex-col items-stretch gap-2 p-5.5', {
   defaultVariants: {
-    border: "none",
-    radius: "card",
-    theme: "light",
+    border: 'none',
+    radius: 'card',
+    theme: 'light',
   },
   variants: {
     border: {
-      dashed: "border-[1.5px] border-line-strong border-dashed",
-      none: "",
-      solid: "border border-line",
+      dashed: 'border-[1.5px] border-line-strong border-dashed',
+      none: '',
+      solid: 'border border-line',
     },
     radius: {
-      button: "rounded-button",
-      card: "rounded-card",
-      "card-lg": "rounded-card-lg",
-      "card-xl": "rounded-card-xl",
-      none: "rounded-none",
-      panel: "rounded-card-lg",
-      row: "rounded-button",
-      unset: "",
+      button: 'rounded-button',
+      card: 'rounded-card',
+      'card-lg': 'rounded-card-lg',
+      'card-xl': 'rounded-card-xl',
+      none: 'rounded-none',
+      panel: 'rounded-card-lg',
+      row: 'rounded-button',
+      unset: '',
     },
     theme: {
-      gray: "bg-surface-dark text-surface-dark-fg hover:bg-surface-dark-hover-bg",
+      gray: 'bg-surface-dark text-surface-dark-fg hover:bg-surface-dark-hover-bg',
       light:
-        "bg-surface text-surface-fg transition-colors hover:bg-surface-hover-bg",
-      page: "bg-page text-surface-fg",
-      transparent: "bg-transparent text-surface-fg",
+        'bg-surface text-surface-fg transition-colors hover:bg-surface-hover-bg',
+      page: 'bg-page text-surface-fg',
+      transparent: 'bg-transparent text-surface-fg',
     },
   },
 });
 
 export interface CardProps
-  extends React.ComponentProps<"div">, VariantProps<typeof cardVariants> {
+  extends React.ComponentProps<'div'>,
+    VariantProps<typeof cardVariants> {
   asChild?: boolean;
   hoverBackgroundColorChange?: boolean;
   interactive?: boolean;
@@ -44,9 +45,9 @@ export interface CardProps
 }
 
 export function Card({
-  radius = "card",
-  theme = "light",
-  border = "none",
+  radius = 'card',
+  theme = 'light',
+  border = 'none',
   hoverBackgroundColorChange = false,
   interactive,
   raised,
@@ -55,16 +56,16 @@ export function Card({
   asChild,
   ...rest
 }: CardProps) {
-  const Tag = (asChild ? Slot.Root : "div") as ElementType;
+  const Tag = (asChild ? Slot.Root : 'div') as ElementType;
   return (
     <Tag
       className={cn(
         cardVariants({ border, radius, theme }),
-        raised && "shadow-card",
+        raised && 'shadow-card',
         interactive &&
-          "cursor-pointer transition-all duration-100 hover:-translate-y-0.5 hover:shadow-card",
-        (!hoverBackgroundColorChange || !interactive) && "hover:bg-unset", //todo
-        className,
+          'cursor-pointer transition-all duration-100 hover:-translate-y-0.5 hover:shadow-card active:scale-[0.98]',
+        (!hoverBackgroundColorChange || !interactive) && 'hover:bg-unset', //todo
+        className
       )}
       data-border={border}
       data-radius={radius}

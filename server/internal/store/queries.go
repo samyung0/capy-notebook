@@ -697,12 +697,12 @@ func (s *Store) DeleteFile(ctx context.Context, id string) error {
 
 /* ------------------------------------------------------------- materials */
 
-const materialCols = `id, COALESCE(workspace_id,''), workspace_name, kind, title, content, chapter_id, position, scope_chapters, scope_file_ids, privacy, color, created_at, updated_at, revision, has_pending_suggestions`
-const materialColsM = `m.id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.position, m.scope_chapters, m.scope_file_ids, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.has_pending_suggestions`
+const materialCols = `id, COALESCE(workspace_id,''), workspace_name, kind, title, content, chapter_id, position, scope_chapters, scope_file_ids, privacy, color, created_at, updated_at, revision`
+const materialColsM = `m.id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.position, m.scope_chapters, m.scope_file_ids, m.privacy, m.color, m.created_at, m.updated_at, m.revision`
 
 func scanMaterial(row pgx.Row) (Material, error) {
 	var mt Material
-	err := row.Scan(&mt.ID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.Position, &mt.ScopeChapters, &mt.ScopeFileIDs, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.HasPendingSuggestions)
+	err := row.Scan(&mt.ID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.Position, &mt.ScopeChapters, &mt.ScopeFileIDs, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision)
 	if mt.ScopeChapters == nil {
 		mt.ScopeChapters = []string{}
 	}
@@ -736,13 +736,6 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 		return Material{}, err
 	}
 	mt.Content = content
-	mt.HasPendingSuggestions, err = materialdoc.HasPendingSuggestions(content)
-	if err != nil {
-		return Material{}, err
-	}
-	if mt.HasPendingSuggestions {
-		return Material{}, fmt.Errorf("%w: new materials cannot contain pending suggestions", materialdoc.ErrInvalid)
-	}
 	var cardIDs []string
 	if mt.Kind == "flashcards" {
 		cards, err := materialdoc.ExtractFlashcards(content)
@@ -767,16 +760,21 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 		return Material{}, err
 	}
 	defer tx.Rollback(ctx)
-	_, err = tx.Exec(ctx, `INSERT INTO materials (id, user_id, workspace_id, workspace_name, kind, title, content, chapter_id, scope_chapters, scope_file_ids, privacy, color, updated_by, has_pending_suggestions)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-		mt.ID, ownerID, nullStr(mt.WorkspaceID), mt.WorkspaceName, mt.Kind, mt.Title, json.RawMessage(mt.Content), mt.ChapterID, mt.ScopeChapters, mt.ScopeFileIDs, mt.Privacy, mt.Color, ownerID, mt.HasPendingSuggestions)
+	_, err = tx.Exec(ctx, `INSERT INTO materials (id, user_id, workspace_id, workspace_name, kind, title, content, chapter_id, scope_chapters, scope_file_ids, privacy, color, updated_by)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+		mt.ID, ownerID, nullStr(mt.WorkspaceID), mt.WorkspaceName, mt.Kind, mt.Title, json.RawMessage(mt.Content), mt.ChapterID, mt.ScopeChapters, mt.ScopeFileIDs, mt.Privacy, mt.Color, ownerID)
 	if err != nil {
 		return Material{}, err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO material_revisions
-		(material_id, revision, parent_revision, event_type, title, content, has_pending_suggestions, event_metadata, created_by)
-		VALUES ($1,1,NULL,'create',$2,$3,$4,'{}',$5) ON CONFLICT DO NOTHING`,
-		mt.ID, mt.Title, json.RawMessage(mt.Content), mt.HasPendingSuggestions, ownerID); err != nil {
+	if err := upsertMaterialRevisionTx(ctx, tx, MaterialRevision{
+		MaterialID:    mt.ID,
+		Revision:      1,
+		EventType:     RevisionCreate,
+		Title:         mt.Title,
+		Content:       mt.Content,
+		EventMetadata: json.RawMessage(`{}`),
+		CreatedBy:     &ownerID,
+	}); err != nil {
 		return Material{}, err
 	}
 	if mt.Kind == "flashcards" {
@@ -828,10 +826,8 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	args := []any{}
 	var contentKind string
 	var contentCardIDs []string
-	var contentHasPending bool
-	var currentContent string
-	var existingHasPending bool
 	var contentBaseRevision int64
+	var currentContent string
 	i := 1
 	add := func(col string, val any) {
 		sets = append(sets, fmt.Sprintf("%s=$%d", col, i))
@@ -842,9 +838,9 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		add("title", *p.Title)
 	}
 	if p.Content != nil {
-		if err := s.pool.QueryRow(ctx, `SELECT kind, content, has_pending_suggestions, revision
+		if err := s.pool.QueryRow(ctx, `SELECT kind, revision, content
 			FROM materials WHERE id=$1`, id).
-			Scan(&contentKind, &currentContent, &existingHasPending, &contentBaseRevision); err != nil {
+			Scan(&contentKind, &contentBaseRevision, &currentContent); err != nil {
 			if isNoRows(err) {
 				return Material{}, ErrNotFound
 			}
@@ -853,27 +849,17 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		if err := materialdoc.ValidateKind(*p.Content, contentKind); err != nil {
 			return Material{}, err
 		}
-		pending, err := materialdoc.HasPendingSuggestions(*p.Content)
+		handled, err := s.applyAuthoritativeContentCommand(
+			ctx, id, currentContent, *p.Content,
+		)
 		if err != nil {
 			return Material{}, err
 		}
-		contentHasPending = pending
-		if existingHasPending {
-			currentChanges, err := materialdoc.ScanSuggestions(currentContent)
-			if err != nil {
-				return Material{}, err
-			}
-			nextChanges, err := materialdoc.ScanSuggestions(*p.Content)
-			if err != nil {
-				return Material{}, err
-			}
-			if !containsAllSuggestionIDs(
-				uniquePlateSuggestionIDs(nextChanges),
-				uniquePlateSuggestionIDs(currentChanges),
-			) {
-				return Material{}, fmt.Errorf("%w: material edit removed pending review IDs", ErrConflict)
-			}
+		if handled {
+			p.Content = nil
 		}
+	}
+	if p.Content != nil {
 		if contentKind == "flashcards" {
 			cards, err := materialdoc.ExtractFlashcards(*p.Content)
 			if err != nil {
@@ -885,7 +871,6 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 			}
 		}
 		add("content", json.RawMessage(*p.Content))
-		add("has_pending_suggestions", contentHasPending)
 	}
 	if p.ChapterID != nil {
 		add("chapter_id", *p.ChapterID)
@@ -978,13 +963,27 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		return Material{}, ErrNotFound
 	}
 	if documentChanged {
-		if _, err := tx.Exec(ctx, `INSERT INTO material_revisions
-			(material_id, revision, parent_revision, event_type, title, content,
-			 has_pending_suggestions, event_metadata, created_by)
-			SELECT id, revision, revision-1, 'edit', title, content,
-			       has_pending_suggestions, $3, NULLIF($2,'')
-			FROM materials WHERE id=$1`,
-			id, p.UpdatedBy, eventMetadata); err != nil {
+		var snapshot MaterialRevision
+		var parentRevision int64
+		if err := tx.QueryRow(ctx, `SELECT id, revision, revision-1, title, content,
+			updated_at
+			FROM materials WHERE id=$1`, id).Scan(
+			&snapshot.MaterialID,
+			&snapshot.Revision,
+			&parentRevision,
+			&snapshot.Title,
+			&snapshot.Content,
+			&snapshot.CreatedAt,
+		); err != nil {
+			return Material{}, err
+		}
+		snapshot.ParentRevision = &parentRevision
+		snapshot.EventType = RevisionEdit
+		snapshot.EventMetadata = eventMetadata
+		if p.UpdatedBy != "" {
+			snapshot.CreatedBy = &p.UpdatedBy
+		}
+		if err := upsertMaterialRevisionTx(ctx, tx, snapshot); err != nil {
 			return Material{}, err
 		}
 	}
@@ -1015,8 +1014,7 @@ func (s *Store) MaterialWorkspaceID(ctx context.Context, id string) (string, err
 // as the legacy ref type "deck".
 func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRef, error) {
 	out := []MaterialRef{}
-	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at,
-		has_pending_suggestions
+	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at
 		FROM materials WHERE workspace_id=$1 ORDER BY position, created_at DESC`, wsID)
 	if err != nil {
 		return nil, err
@@ -1031,7 +1029,6 @@ func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRe
 			&r.ChapterID,
 			&r.Position,
 			&r.CreatedAt,
-			&r.HasPendingSuggestions,
 		); err != nil {
 			return nil, err
 		}

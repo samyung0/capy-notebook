@@ -21,19 +21,15 @@ func TestCollaborationContractsAreRegistered(t *testing.T) {
 		"/api/workspaces/{id}/invites:",
 		"/api/workspace-invites/{token}/accept:",
 		"/api/materials/{id}/revisions:",
-		"/api/materials/{id}/suggestion-commits:",
-		"/api/materials/{id}/suggestions/review:",
-		"/api/material-suggestions/{id}:",
 		"/api/materials/{id}/discussions:",
+		"/api/materials/{id}/collaboration-token:",
 		"/api/discussions/{id}/comments:",
+		"/internal/collaboration/materials/{id}/projection:",
 		"/api/source-upload-policy:",
 		"expectedRevision:",
-		"suggestionIds:",
-		"plateSuggestionId:",
-		"commitRevision:",
-		"resolutionRevision:",
 		"parentCommentId:",
-		"hasPendingSuggestions:",
+		"anchorStart:",
+		"anchorEnd:",
 		"eventType:",
 		"eventMetadata:",
 		"shareRole:",
@@ -60,41 +56,15 @@ func TestCollaborationContractsAreRegistered(t *testing.T) {
 		"operation:",
 		"previewBefore:",
 		"previewAfter:",
+		"suggestionIds:",
+		"plateSuggestionId:",
+		"hasPendingSuggestions:",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Errorf("OpenAPI contract still exposes %q", forbidden)
 		}
 	}
 }
-
-func TestSharedMaterialPatchAllowList(t *testing.T) {
-	content := materialdoc.Empty()
-	revision := int64(3)
-	if !sharedMaterialPatchAllowed(apimodel.UpdateMaterialReq{
-		Content: &content, ExpectedRevision: &revision,
-	}) {
-		t.Fatal("content-only optimistic patch should be allowed")
-	}
-	title := "renamed"
-	chapter := "ch_1"
-	scope := []string{"ch_1"}
-	privacy := store.PrivacyPublic
-	for name, body := range map[string]apimodel.UpdateMaterialReq{
-		"missing content":  {ExpectedRevision: &revision},
-		"missing revision": {Content: &content},
-		"title":            {Content: &content, ExpectedRevision: &revision, Title: &title},
-		"chapter":          {Content: &content, ExpectedRevision: &revision, ChapterID: &chapter},
-		"scope":            {Content: &content, ExpectedRevision: &revision, ScopeChapters: &scope},
-		"privacy":          {Content: &content, ExpectedRevision: &revision, Privacy: &privacy},
-	} {
-		t.Run(name, func(t *testing.T) {
-			if sharedMaterialPatchAllowed(body) {
-				t.Fatalf("shared editor patch unexpectedly allowed: %#v", body)
-			}
-		})
-	}
-}
-
 func TestMaterialResponseIncludesDecodedContent(t *testing.T) {
 	raw, err := materialdoc.Marshal(materialdoc.Empty())
 	if err != nil {
@@ -140,24 +110,6 @@ func TestMaterialUpdateResultDoesNotEchoContent(t *testing.T) {
 		t.Fatalf("unexpected update acknowledgement: %s", encoded)
 	}
 }
-
-func TestMaterialRefExposesPendingSuggestions(t *testing.T) {
-	encoded, err := json.Marshal(apimodel.MaterialRef{
-		ID: "mat_1", Type: "note", Title: "Pending",
-		HasPendingSuggestions: true,
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var body map[string]any
-	if err := json.Unmarshal(encoded, &body); err != nil {
-		t.Fatal(err)
-	}
-	if body["hasPendingSuggestions"] != true {
-		t.Fatalf("material ref omitted pending state: %s", encoded)
-	}
-}
-
 func TestInviteCreateRequestUsesPrivateIdentifier(t *testing.T) {
 	encoded, err := json.Marshal(apimodel.CreateWorkspaceInviteReq{
 		Identifier: "person@example.com",

@@ -8,7 +8,7 @@ import { defineConfig, devices } from '@playwright/test';
  * Like the perf harness (and unlike the functional sharing suite) this runs
  * against the Vite dev server with MSW mocks — no Docker stack. Everything the
  * matrix asserts (block selection, context menu, drag handles, mentions,
- * suggestions, formatting) is client-side Plate behavior; MSW supplies
+ * collaboration, formatting) is client-side Plate behavior; MSW supplies
  * deterministic materials/members/discussions endpoints.
  *
  * Isolation: the mock db is page-module state, so every page.goto() starts

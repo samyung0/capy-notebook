@@ -42,7 +42,7 @@ function Toast(props: ToastProps) {
     >
       {showCloseButton && (
         <IconButton
-          className="absolute -top-2 -left-2 rounded-md p-1 [&>svg]:size-3"
+          className="absolute -top-2 -left-2"
           icon="x"
           onClick={() => {
             sonnerToast.dismiss(id);
@@ -55,42 +55,32 @@ function Toast(props: ToastProps) {
       )}
       <div className="items-top flex flex-1 gap-1.5">
         {variant === 'error' && (
-          <Icon
-            className="mr-2 size-5 -translate-y-px"
-            name="error"
-            strokeWidth={2}
-          />
+          <Icon className="mr-2 size-5" name="error" strokeWidth={2} />
         )}
         {variant === 'warning' && (
-          <Icon
-            className="mr-2 size-5 -translate-y-px"
-            name="warning"
-            strokeWidth={2}
-          />
+          <Icon className="mr-2 size-5" name="warning" strokeWidth={2} />
         )}
         {variant === 'success' && (
-          <Icon
-            className="mr-2 size-5 -translate-y-px"
-            name="check"
-            strokeWidth={2}
-          />
+          <Icon className="mr-2 size-5" name="check" strokeWidth={2} />
         )}
         <div className="w-full">
           <p
             className={cn(
-              'flex items-start font-medium',
+              'flex items-start font-semibold',
               (variant === 'warning' || variant === 'error') && 'font-bold'
             )}
           >
             <span>{title}</span>
           </p>
-          <p className="mt-1 text-fg-muted">{description}</p>
+          <p className="mt-1 font-medium text-fg-muted text-sm">
+            {description}
+          </p>
         </div>
       </div>
       {button && (
         <div className="ml-5 shrink-0">
           <Button
-            className="translate-y-1 rounded-md px-2.5 py-1"
+            className="translate-y-1 rounded-md px-2.5"
             onClick={() => {
               button.onClick();
               sonnerToast.dismiss(id);

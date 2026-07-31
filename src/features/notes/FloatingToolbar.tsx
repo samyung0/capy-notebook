@@ -148,8 +148,8 @@ function FloatingButton({
       aria-label={label}
       aria-pressed={active}
       className={cn(
-        "flex h-8 shrink-0 items-center gap-1 rounded-button px-2 text-fg-secondary hover:bg-surface-hover-bg hover:text-fg [&_svg]:size-4",
-        active && "bg-tint-accent-1 text-tint-accent-1-fg",
+        'flex h-8 shrink-0 items-center gap-1 rounded-button px-2 text-fg-secondary hover:bg-surface-hover-bg hover:text-fg [&_svg]:size-4',
+        active && 'bg-tint-accent-1 text-tint-accent-1-fg'
       )}
       data-plate-prevent-deselect
       onClick={onClick}

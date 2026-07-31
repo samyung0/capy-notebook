@@ -84,10 +84,10 @@ export default function SheetView({ url }: { url: string }) {
           {sheets.map((s, i) => (
             <button
               className={cn(
-                "rounded-button px-2.5 py-1 text-sm transition-colors",
+                'rounded-button px-2.5 py-1 text-sm transition-colors',
                 i === active
-                  ? "bg-surface-dark font-medium text-fg"
-                  : "text-fg-muted hover:bg-surface-hover-bg",
+                  ? 'bg-surface-dark font-medium text-fg'
+                  : 'text-fg-muted hover:bg-surface-hover-bg'
               )}
               key={s.name}
               onClick={() => setActive(i)}
@@ -103,7 +103,7 @@ export default function SheetView({ url }: { url: string }) {
           <tbody>
             {rows.map((row, ri) => (
               <tr
-                className={ri === 0 ? "bg-surface-dark font-medium" : undefined}
+                className={ri === 0 ? 'bg-surface-dark font-medium' : undefined}
                 key={ri}
               >
                 {row.slice(0, MAX_COLS).map((cell, ci) => (
@@ -111,7 +111,7 @@ export default function SheetView({ url }: { url: string }) {
                     className="max-w-90 truncate border border-line px-2.5 py-1.5"
                     key={ci}
                   >
-                    {cell == null ? "" : String(cell)}
+                    {cell == null ? '' : String(cell)}
                   </td>
                 ))}
               </tr>

@@ -16,13 +16,6 @@ export const EDITOR_NOTE = {
   title: 'Editor matrix note',
 };
 
-export const SUGGEST_NOTE = {
-  body: 'Original suggestion sentence',
-  headingText: 'Suggestion matrix heading',
-  id: 'mat_e2e_suggest',
-  title: 'Suggestion matrix note',
-};
-
 export function buildEditorNoteValue() {
   return [
     {
@@ -43,21 +36,6 @@ export function buildEditorNoteValue() {
     {
       children: [{ text: EDITOR_NOTE.thirdParagraph }],
       id: `${EDITOR_NOTE.id}:third`,
-      type: 'p',
-    },
-  ];
-}
-
-export function buildSuggestNoteValue() {
-  return [
-    {
-      children: [{ text: SUGGEST_NOTE.headingText }],
-      id: `${SUGGEST_NOTE.id}:title`,
-      type: 'h1',
-    },
-    {
-      children: [{ text: SUGGEST_NOTE.body }],
-      id: `${SUGGEST_NOTE.id}:body`,
       type: 'p',
     },
   ];

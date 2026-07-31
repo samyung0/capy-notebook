@@ -6,8 +6,6 @@ import { Badge } from './Badge';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 
-const MAX_LEN = 50;
-
 type Option =
   | { type: 'create'; value: string }
   | { type: 'existing'; tag: Tag };
@@ -62,7 +60,7 @@ export function TagSelect({
     q.length > 0 &&
     (selectedKeys.has(q.toLowerCase()) ||
       catalog.some((t) => t.value.toLowerCase() === q.toLowerCase()));
-  const canCreate = q.length > 0 && q.length <= MAX_LEN && !hasExact;
+  const canCreate = q.length > 0 && !hasExact;
 
   const options: Option[] = [];
   if (canCreate) options.push({ type: 'create', value: q });
@@ -117,17 +115,16 @@ export function TagSelect({
     <div className="relative">
       <div
         className={cn(
-          "flex flex-wrap items-center gap-1.5 rounded-input border border-line bg-surface px-1 py-0.5 transition-[colors,border] duration-150 focus-within:border-line-strong",
-          invalid && "border-2 border-solid-error",
+          'flex flex-wrap items-center gap-1.5 rounded-input border border-line bg-surface px-1.5 py-1.5 transition-[colors,border] duration-150 focus-within:border-line-strong',
+          invalid && 'border-[1.5px] border-solid-error'
         )}
         onClick={() => inputRef.current?.focus()}
       >
         {selected.map((t, i) => (
           <Badge
-            key={`${t.id ?? "new"}:${t.value}:${i}`}
+            key={`${t.id ?? 'new'}:${t.value}:${i}`}
             size="md"
             tone="neutral"
-            // className="inline-flex items-center gap-1 rounded-full bg-page py-0.5 pr-1 pl-2 text-xs font-bold text-surface-fg"
           >
             # {t.value}
             <IconButton
@@ -140,15 +137,14 @@ export function TagSelect({
               }}
               size="xs"
               type="button"
-              variant="ghost-hover"
+              variant="ghost"
             />
           </Badge>
         ))}
         <input
           aria-invalid={invalid}
           autoComplete="off"
-          className="min-w-32 flex-1 border-none bg-transparent px-2 py-2 outline-none placeholder:text-placeholder"
-          maxLength={MAX_LEN}
+          className="t-body min-w-32 flex-1 border-none bg-transparent px-2 py-1.5 outline-none placeholder:text-placeholder"
           onBlur={() => {
             blurTimer.current = setTimeout(() => setOpen(false), 120);
           }}
@@ -159,7 +155,7 @@ export function TagSelect({
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={onKeyDown}
-          placeholder={selected.length ? "" : placeholder}
+          placeholder={selected.length ? '' : placeholder}
           ref={inputRef}
           value={query}
         />
@@ -176,28 +172,28 @@ export function TagSelect({
         >
           {options.map((opt, i) => {
             const isActive = i === activeIdx;
-            const key = opt.type === "create" ? "__create__" : opt.tag.id;
+            const key = opt.type === 'create' ? '__create__' : opt.tag.id;
             return (
               <li key={key}>
                 <button
                   className={cn(
-                    "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm",
+                    'flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm',
                     isActive
-                      ? "bg-surface-hover-bg"
-                      : "hover:bg-surface-hover-bg",
+                      ? 'bg-surface-hover-bg'
+                      : 'hover:bg-surface-hover-bg'
                   )}
                   onClick={() => commit(opt)}
                   onMouseEnter={() => setActive(i)}
                   type="button"
                 >
-                  {opt.type === "create" ? (
+                  {opt.type === 'create' ? (
                     <>
                       <Icon
                         className="size-4 -translate-y-px text-fg-muted"
                         name="plus"
                       />
                       <span>
-                        Create{" "}
+                        Create{' '}
                         <span className="font-medium">“{opt.value}”</span>
                       </span>
                     </>

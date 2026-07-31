@@ -92,26 +92,18 @@ func TestCommentContentMustBePlateNodes(t *testing.T) {
 	}
 }
 
-func TestCommentAnchorRejectsCollapsedAndMalformedRanges(t *testing.T) {
-	valid := map[string]any{
-		"anchor": map[string]any{"path": []any{float64(0), float64(0)}, "offset": float64(1)},
-		"focus":  map[string]any{"path": []any{float64(0), float64(0)}, "offset": float64(4)},
+func TestCommentRelativeAnchorBounds(t *testing.T) {
+	if err := validateRelativeAnchor([]byte{1}, []byte{2}, 1, "quoted text"); err != nil {
+		t.Fatalf("valid relative anchor was rejected: %v", err)
 	}
-	if err := validateCommentAnchor(valid); err != nil {
-		t.Fatalf("valid comment range was rejected: %v", err)
+	if err := validateRelativeAnchor([]byte{1}, nil, 1, ""); err == nil {
+		t.Fatal("half of a relative range was accepted")
 	}
-	for _, invalid := range []map[string]any{
-		{
-			"anchor": map[string]any{"path": []any{float64(0)}, "offset": float64(2)},
-			"focus":  map[string]any{"path": []any{float64(0)}, "offset": float64(2)},
-		},
-		{
-			"anchor": map[string]any{"path": []any{float64(0)}, "offset": float64(1)},
-		},
-	} {
-		if err := validateCommentAnchor(invalid); err == nil {
-			t.Fatalf("invalid comment range was accepted: %#v", invalid)
-		}
+	if err := validateRelativeAnchor([]byte{1}, []byte{2}, 0, ""); err == nil {
+		t.Fatal("invalid anchor version was accepted")
+	}
+	if err := validateRelativeAnchor(make([]byte, maxRelativePositionBytes+1), []byte{2}, 1, ""); err == nil {
+		t.Fatal("oversized relative position was accepted")
 	}
 }
 

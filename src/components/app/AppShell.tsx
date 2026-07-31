@@ -10,17 +10,19 @@ const WORKSPACE_PATH_PATTERN = /^\/workspaces\/[^/]+$/;
 export function AppShell() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // Opened-workspace view collapses the nav to the icon rail to relieve crowding.
-  const hidden = WORKSPACE_PATH_PATTERN.test(pathname);
+  const hideSidebar = WORKSPACE_PATH_PATTERN.test(pathname);
 
   useEffect(() => {
     if (pathname !== '/schedule') scheduleAutoScroll.reset();
   }, [pathname]);
 
   return (
-    <div className="flex h-dvh overflow-hidden bg-page t-body text-fg">
-      <div className={cn("hidden lg:flex", hidden && "hidden!")}>
-        <Sidebar collapsed={false} />
-      </div>
+    <div className="t-body flex h-dvh overflow-hidden bg-page text-fg">
+      {!hideSidebar && (
+        <div className={cn('hidden lg:flex')}>
+          <Sidebar collapsed={false} />
+        </div>
+      )}
       <main className="h-full min-w-0 flex-1 overflow-hidden p-1.5 sm:p-2.5">
         <Outlet />
       </main>

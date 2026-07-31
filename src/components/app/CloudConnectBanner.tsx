@@ -1,29 +1,29 @@
 import { useState } from 'react';
 import { USE_MSW } from '@/api/auth';
 import { useIntegrations } from '@/api/hooks';
-import { Button } from "@/components/ui";
-import { m } from "@/i18n";
-import { useProviderConnect } from "@/lib/useProviderConnect";
+import { Button } from '@/components/ui';
+import { m } from '@/i18n';
+import { useProviderConnect } from '@/lib/useProviderConnect';
 
-const DISMISS_KEY = "evo_cloud_connect_dismissed";
+const DISMISS_KEY = 'evo_cloud_connect_dismissed';
 
 export function CloudConnectBanner() {
   const { data: integrations } = useIntegrations();
   const connectProvider = useProviderConnect();
   const [dismissed, setDismissed] = useState(
-    () => localStorage.getItem(DISMISS_KEY) === "1",
+    () => localStorage.getItem(DISMISS_KEY) === '1'
   );
 
   if (dismissed || USE_MSW) return null;
   if (integrations?.google && integrations?.microsoft) return null;
 
   function dismiss() {
-    localStorage.setItem(DISMISS_KEY, "1");
+    localStorage.setItem(DISMISS_KEY, '1');
     setDismissed(true);
   }
 
   function connect() {
-    void connectProvider(integrations?.google ? "microsoft" : "google");
+    void connectProvider(integrations?.google ? 'microsoft' : 'google');
   }
 
   return (

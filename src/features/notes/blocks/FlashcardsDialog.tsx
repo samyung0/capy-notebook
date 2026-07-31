@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { Button, IconButton, Input, SimpleDialog } from "@/components/ui";
+import { Button, IconButton, Input, SimpleDialog } from '@/components/ui';
 import {
   type FlashcardContent,
   parseFlashcardsFenceBody,
-} from "@/features/materials/blocks";
-import { uid } from "@/lib/id";
-import { flashcardsFenceBody } from "./shared";
+} from '@/features/materials/blocks';
+import { uid } from '@/lib/id';
+import { flashcardsFenceBody } from './shared';
 
 /** Small popup to author a ```flashcards block inline in a note. Emits the
  * fence body (YAML) via onSave. */
@@ -28,7 +28,7 @@ export function FlashcardsDialog({
       ? parseFlashcardsFenceBody(initialCode).cards
       : [];
     setCards(
-      parsed.length ? parsed : [{ back: "", front: "", id: uid("card") }],
+      parsed.length ? parsed : [{ back: '', front: '', id: uid('card') }]
     );
   }, [open, initialCode]);
 
@@ -36,7 +36,7 @@ export function FlashcardsDialog({
     setCards((cs) => cs.map((c, idx) => (idx === i ? { ...c, ...patch } : c)));
   }
   function add() {
-    setCards((cs) => [...cs, { back: "", front: "", id: uid("card") }]);
+    setCards((cs) => [...cs, { back: '', front: '', id: uid('card') }]);
   }
   function remove(i: number) {
     setCards((cs) => cs.filter((_, idx) => idx !== i));

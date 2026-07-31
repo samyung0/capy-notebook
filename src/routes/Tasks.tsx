@@ -1,7 +1,7 @@
 import { useTasks, useToggleTask } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Checkbox, SkeletonList } from "@/components/ui";
-import { m } from "@/i18n";
+import { Checkbox, SkeletonList } from '@/components/ui';
+import { m } from '@/i18n';
 
 export default function Tasks() {
   const { data, isLoading } = useTasks();
@@ -9,9 +9,9 @@ export default function Tasks() {
 
   const groups = (data ?? []).reduce<Record<string, typeof data>>((acc, t) => {
     const day = new Date(t.dueDate).toLocaleDateString(undefined, {
-      day: "numeric",
-      month: "short",
-      weekday: "long",
+      day: 'numeric',
+      month: 'short',
+      weekday: 'long',
     });
     const tasksForDay = acc[day];
     if (tasksForDay) {
@@ -34,7 +34,7 @@ export default function Tasks() {
           <div className="mx-auto flex max-w-2xl flex-col gap-6">
             {Object.entries(groups).map(([day, list]) => (
               <section key={day}>
-                <p className="mb-2 block text-fg-muted t-label">{day}</p>
+                <p className="t-label mb-2 block text-fg-muted">{day}</p>
                 <div className="flex flex-col gap-1">
                   {list?.map((t) => (
                     <button
@@ -48,8 +48,8 @@ export default function Tasks() {
                         <span
                           className={
                             t.done
-                              ? "block font-medium text-fg-muted line-through"
-                              : "block font-medium text-fg"
+                              ? 'block font-medium text-fg-muted line-through'
+                              : 'block font-medium text-fg'
                           }
                         >
                           {t.title}

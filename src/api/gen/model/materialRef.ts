@@ -9,7 +9,6 @@ export interface MaterialRef {
   /** @nullable */
   chapterId: string | null;
   createdAt: string;
-  hasPendingSuggestions: boolean;
   id: string;
   position: number;
   title: string;

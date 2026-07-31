@@ -18,6 +18,7 @@
 
   /* Surfaces → bg-* */
   --color-page: var(--surface-page);
+  --color-page-hover: var(--surface-page-hover);
   /* TODO: bg-muted instead of using bg-surface-hover-bg */
 
   --color-surface: var(--surface-card-bg);
@@ -133,57 +134,60 @@
   }
 }
 
-/* ============================================================
-   Typographic role classes — the single rendering path for text.
-   ============================================================ */
+@utility top-inset-bar-shape {
+  width: var(--top-inset-bar-width);
+  height: var(--top-inset-bar-height);
+  border-radius: var(--top-inset-bar-radius);
+}
+
+@utility t-page-title {
+  font-size: var(--page-title-font-size);
+  font-weight: var(--page-title-font-weight);
+  line-height: var(--page-title-font-line-height);
+  letter-spacing: var(--page-title-letter-spacing);
+}
+
+@utility t-large-card-title {
+  font-size: var(--large-card-title-font-size);
+  font-weight: var(--large-card-title-font-weight);
+  line-height: var(--large-card-title-font-line-height);
+  letter-spacing: var(--large-card-title-font-letter-spacing);
+}
+
+
+@utility t-card-title {
+  font-size: var(--card-title-font-size);
+  font-weight: var(--card-title-font-weight);
+  line-height: var(--card-title-line-height);
+  letter-spacing: var(--card-title-letter-spacing);
+}
+
+@utility t-subtitle {
+  font-size: var(--subtitle-font-size);
+  font-weight: var(--subtitle-font-weight);
+  line-height: var(--subtitle-font-line-height);
+}
+
+@utility t-body {
+  font-size: var(--body-font-size);
+  font-weight: var(--body-font-weight);
+  line-height: var(--body-line-height);
+}
+
+@utility t-label {
+  font-size: var(--label-font-size);
+  font-weight: var(--label-font-weight);
+  line-height: var(--label-line-height);
+  letter-spacing: var(--label-letter-spacing);
+}
+
+@utility t-meta {
+  font-size: var(--meta-font-size);
+  font-weight: var(--meta-font-weight);
+  line-height: var(--meta-line-height);
+}
+
 @layer components {
-  [data-style="classroom"] {
-    .t-page-title {
-      font-size: var(--page-title-font-size, 1.75rem);
-      font-weight: var(--page-title-font-weight, 800);
-      line-height: var(--page-title-font-line-height, 1.15);
-      letter-spacing: var(--page-title-letter-spacing, -0.02rem);
-    }
-    .t-large-card-title {
-      font-size: var(--section-font-size, 1.375rem);
-      font-weight: var(--section-font-weight, 800);
-      line-height: var(--section-font-line-height, 1.35);
-      letter-spacing: var(--section-font-letter-spacing, -0.03rem);
-    }
-    .t-card-title {
-      font-size: var(--card-title-font-size, 1.125rem);
-      font-weight: var(--card-title-font-weight, 700);
-      line-height: var(--card-title-line-height, 1.35);
-    }
-    .t-subtitle {
-      font-size: var(--font-subtitle-size, 1rem);
-      font-weight: var(--font-subtitle-weight, 600);
-      line-height: var(--font-subtitle-line-height, 1.35);
-    }
-    .t-body {
-      font-size: var(--body-font-size, 0.875rem);
-      font-weight: var(--body-font-weight, 400);
-      line-height: var(--body-line-height, 1.5);
-    }
-    .t-label {
-      font-size: var(--label-font-size, 0.75rem);
-      font-weight: var(--label-font-weight, 600);
-      line-height: var(--label-font-line-height, 1);
-      letter-spacing: var(--label-letter-spacing, 0.03rem);
-    }
-    .t-meta {
-      font-size: var(--meta-font-size, 0.875rem);
-      font-weight: var(--meta-font-weight, 400);
-      line-height: var(--meta-line-height, 1.2);
-    }
-  }
-
-  .top-inset-bar-shape {
-    width: var(--top-inset-bar-width);
-    height: var(--top-inset-bar-height);
-    border-radius: var(--top-inset-bar-radius);
-  }
-
   .inverted-radius-large-panel-container {
     position: relative;
   }
@@ -238,6 +242,9 @@
    Base layer
    ============================================================ */
 @layer base {
+  html {
+    font-size: 16px;
+  }
   html,
   body,
   #root {
@@ -265,6 +272,9 @@
   }
   button {
     cursor: pointer;
+  }
+  input, select, optgroup, textarea, ::file-selector-button {
+    @apply t-body
   }
 }
 

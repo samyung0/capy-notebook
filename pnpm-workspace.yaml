@@ -1,3 +1,9 @@
+packages:
+  - .
+  - collaboration
+
+injectWorkspacePackages: true
+
 allowBuilds:
   canvas: true
   esbuild: true

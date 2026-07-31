@@ -14,8 +14,8 @@ import type {
   Canvas,
   Chapter,
   CloneWorkspaceResp,
+  CollaborationTokenResponse,
   Comment,
-  CommitMaterialSuggestionsReq,
   Conversation,
   CreateAttemptReq,
   CreateCanvasReq,
@@ -30,7 +30,6 @@ import type {
   CreateWorkspaceInviteReq,
   CreateWorkspaceReq,
   Deck,
-  DeleteMaterialDiscussionParams,
   Discussion,
   ErrorModel,
   Event,
@@ -46,6 +45,7 @@ import type {
   MaterialUpdateResult,
   Message,
   Notification,
+  ProjectMaterialReq,
   PublicDeck,
   PublicQuiz,
   PublicWorkspace,
@@ -53,12 +53,10 @@ import type {
   RecentFile,
   ReorderChaptersReq,
   ReorderContentReq,
-  ReviewMaterialSuggestionsReq,
   SaveCanvasReq,
   SearchParams,
   SearchResult,
   SourceUploadPolicy,
-  SuggestionMutationResult,
   Tag,
   Task,
   URLResp,
@@ -76,7 +74,6 @@ import type {
   UpdateWorkspaceReq,
   UpdateWorkspaceSharingReq,
   User,
-  WithdrawMaterialSuggestionParams,
   Workspace,
   WorkspaceMember,
   WorkspaceStats
@@ -1121,17 +1118,17 @@ export const cloneDeck = async (id: string, options?: RequestInit): Promise<clon
 
 
 
-export type deleteMaterialDiscussionResponse200 = {
-  data: SuggestionMutationResult
-  status: 200
+export type deleteMaterialDiscussionResponse204 = {
+  data: void
+  status: 204
 }
 
 export type deleteMaterialDiscussionResponseDefault = {
   data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
+  status: Exclude<HTTPStatusCodes, 204>
 }
 
-export type deleteMaterialDiscussionResponseSuccess = (deleteMaterialDiscussionResponse200) & {
+export type deleteMaterialDiscussionResponseSuccess = (deleteMaterialDiscussionResponse204) & {
   headers: Headers;
 };
 export type deleteMaterialDiscussionResponseError = (deleteMaterialDiscussionResponseDefault) & {
@@ -1140,29 +1137,20 @@ export type deleteMaterialDiscussionResponseError = (deleteMaterialDiscussionRes
 
 export type deleteMaterialDiscussionResponse = (deleteMaterialDiscussionResponseSuccess | deleteMaterialDiscussionResponseError)
 
-export const getDeleteMaterialDiscussionUrl = (id: string,
-    params?: DeleteMaterialDiscussionParams,) => {
-  const normalizedParams = new URLSearchParams();
+export const getDeleteMaterialDiscussionUrl = (id: string,) => {
 
-  Object.entries(params || {}).forEach(([key, value]) => {
 
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
 
-  const stringifiedParams = normalizedParams.toString();
 
-  return stringifiedParams.length > 0 ? `/api/discussions/${id}?${stringifiedParams}` : `/api/discussions/${id}`
+  return `/api/discussions/${id}`
 }
 
 /**
- * @summary Soft-delete a discussion and reject pending marks
+ * @summary Soft-delete a comment discussion
  */
-export const deleteMaterialDiscussion = async (id: string,
-    params?: DeleteMaterialDiscussionParams, options?: RequestInit): Promise<deleteMaterialDiscussionResponse> => {
+export const deleteMaterialDiscussion = async (id: string, options?: RequestInit): Promise<deleteMaterialDiscussionResponse> => {
 
-  const res = await fetch(getDeleteMaterialDiscussionUrl(id,params),
+  const res = await fetch(getDeleteMaterialDiscussionUrl(id),
   {
     ...options,
     method: 'DELETE'
@@ -1174,7 +1162,7 @@ export const deleteMaterialDiscussion = async (id: string,
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: deleteMaterialDiscussionResponse['data'] = body ? JSON.parse(body) : {}
+  const data: deleteMaterialDiscussionResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as deleteMaterialDiscussionResponse
 }
 
@@ -2084,65 +2072,6 @@ export const listLabels = async ( options?: RequestInit): Promise<listLabelsResp
 
 
 
-export type withdrawMaterialSuggestionResponse200 = {
-  data: SuggestionMutationResult
-  status: 200
-}
-
-export type withdrawMaterialSuggestionResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type withdrawMaterialSuggestionResponseSuccess = (withdrawMaterialSuggestionResponse200) & {
-  headers: Headers;
-};
-export type withdrawMaterialSuggestionResponseError = (withdrawMaterialSuggestionResponseDefault) & {
-  headers: Headers;
-};
-
-export type withdrawMaterialSuggestionResponse = (withdrawMaterialSuggestionResponseSuccess | withdrawMaterialSuggestionResponseError)
-
-export const getWithdrawMaterialSuggestionUrl = (id: string,
-    params?: WithdrawMaterialSuggestionParams,) => {
-  const normalizedParams = new URLSearchParams();
-
-  Object.entries(params || {}).forEach(([key, value]) => {
-
-    if (value !== undefined) {
-      normalizedParams.append(key, value === null ? 'null' : String(value))
-    }
-  });
-
-  const stringifiedParams = normalizedParams.toString();
-
-  return stringifiedParams.length > 0 ? `/api/material-suggestions/${id}?${stringifiedParams}` : `/api/material-suggestions/${id}`
-}
-
-/**
- * @summary Withdraw and reject a pending suggestion
- */
-export const withdrawMaterialSuggestion = async (id: string,
-    params?: WithdrawMaterialSuggestionParams, options?: RequestInit): Promise<withdrawMaterialSuggestionResponse> => {
-
-  const res = await fetch(getWithdrawMaterialSuggestionUrl(id,params),
-  {
-    ...options,
-    method: 'DELETE'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: withdrawMaterialSuggestionResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as withdrawMaterialSuggestionResponse
-}
-
-
-
 export type deleteMaterialResponse204 = {
   data: void
   status: 204
@@ -2344,6 +2273,56 @@ export const cloneMaterial = async (id: string, options?: RequestInit): Promise<
 
 
 
+export type createMaterialCollaborationTokenResponse201 = {
+  data: CollaborationTokenResponse
+  status: 201
+}
+
+export type createMaterialCollaborationTokenResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createMaterialCollaborationTokenResponseSuccess = (createMaterialCollaborationTokenResponse201) & {
+  headers: Headers;
+};
+export type createMaterialCollaborationTokenResponseError = (createMaterialCollaborationTokenResponseDefault) & {
+  headers: Headers;
+};
+
+export type createMaterialCollaborationTokenResponse = (createMaterialCollaborationTokenResponseSuccess | createMaterialCollaborationTokenResponseError)
+
+export const getCreateMaterialCollaborationTokenUrl = (id: string,) => {
+
+
+
+
+  return `/api/materials/${id}/collaboration-token`
+}
+
+/**
+ * @summary Create a short-lived material room token
+ */
+export const createMaterialCollaborationToken = async (id: string, options?: RequestInit): Promise<createMaterialCollaborationTokenResponse> => {
+
+  const res = await fetch(getCreateMaterialCollaborationTokenUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createMaterialCollaborationTokenResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createMaterialCollaborationTokenResponse
+}
+
+
+
 export type listMaterialDiscussionsResponse200 = {
   data: Discussion[] | null
   status: 200
@@ -2372,7 +2351,7 @@ export const getListMaterialDiscussionsUrl = (id: string,) => {
 }
 
 /**
- * @summary List nested material discussions
+ * @summary List nested material comment discussions
  */
 export const listMaterialDiscussions = async (id: string, options?: RequestInit): Promise<listMaterialDiscussionsResponse> => {
 
@@ -2491,108 +2470,6 @@ export const listMaterialRevisions = async (id: string, options?: RequestInit): 
 
   const data: listMaterialRevisionsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listMaterialRevisionsResponse
-}
-
-
-
-export type commitMaterialSuggestionsResponse201 = {
-  data: SuggestionMutationResult
-  status: 201
-}
-
-export type commitMaterialSuggestionsResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
-}
-
-export type commitMaterialSuggestionsResponseSuccess = (commitMaterialSuggestionsResponse201) & {
-  headers: Headers;
-};
-export type commitMaterialSuggestionsResponseError = (commitMaterialSuggestionsResponseDefault) & {
-  headers: Headers;
-};
-
-export type commitMaterialSuggestionsResponse = (commitMaterialSuggestionsResponseSuccess | commitMaterialSuggestionsResponseError)
-
-export const getCommitMaterialSuggestionsUrl = (id: string,) => {
-
-
-
-
-  return `/api/materials/${id}/suggestion-commits`
-}
-
-/**
- * @summary Commit marked material suggestions
- */
-export const commitMaterialSuggestions = async (id: string,
-    commitMaterialSuggestionsReq: NonReadonly<CommitMaterialSuggestionsReq>, options?: RequestInit): Promise<commitMaterialSuggestionsResponse> => {
-
-  const res = await fetch(getCommitMaterialSuggestionsUrl(id),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(commitMaterialSuggestionsReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: commitMaterialSuggestionsResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as commitMaterialSuggestionsResponse
-}
-
-
-
-export type reviewMaterialSuggestionsResponse200 = {
-  data: SuggestionMutationResult
-  status: 200
-}
-
-export type reviewMaterialSuggestionsResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type reviewMaterialSuggestionsResponseSuccess = (reviewMaterialSuggestionsResponse200) & {
-  headers: Headers;
-};
-export type reviewMaterialSuggestionsResponseError = (reviewMaterialSuggestionsResponseDefault) & {
-  headers: Headers;
-};
-
-export type reviewMaterialSuggestionsResponse = (reviewMaterialSuggestionsResponseSuccess | reviewMaterialSuggestionsResponseError)
-
-export const getReviewMaterialSuggestionsUrl = (id: string,) => {
-
-
-
-
-  return `/api/materials/${id}/suggestions/review`
-}
-
-/**
- * @summary Accept or reject selected or all suggestions
- */
-export const reviewMaterialSuggestions = async (id: string,
-    reviewMaterialSuggestionsReq: NonReadonly<ReviewMaterialSuggestionsReq>, options?: RequestInit): Promise<reviewMaterialSuggestionsResponse> => {
-
-  const res = await fetch(getReviewMaterialSuggestionsUrl(id),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(reviewMaterialSuggestionsReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: reviewMaterialSuggestionsResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as reviewMaterialSuggestionsResponse
 }
 
 
@@ -4731,4 +4608,55 @@ export const getWorkspaceStats = async (id: string, options?: RequestInit): Prom
 
   const data: getWorkspaceStatsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getWorkspaceStatsResponse
+}
+
+
+
+export type projectMaterialYjsDocumentResponse200 = {
+  data: MaterialUpdateResult
+  status: 200
+}
+
+export type projectMaterialYjsDocumentResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type projectMaterialYjsDocumentResponseSuccess = (projectMaterialYjsDocumentResponse200) & {
+  headers: Headers;
+};
+export type projectMaterialYjsDocumentResponseError = (projectMaterialYjsDocumentResponseDefault) & {
+  headers: Headers;
+};
+
+export type projectMaterialYjsDocumentResponse = (projectMaterialYjsDocumentResponseSuccess | projectMaterialYjsDocumentResponseError)
+
+export const getProjectMaterialYjsDocumentUrl = (id: string,) => {
+
+
+
+
+  return `/internal/collaboration/materials/${id}/projection`
+}
+
+/**
+ * @summary Project a durably stored Yjs document
+ */
+export const projectMaterialYjsDocument = async (id: string,
+    projectMaterialReq: NonReadonly<ProjectMaterialReq>, options?: RequestInit): Promise<projectMaterialYjsDocumentResponse> => {
+
+  const res = await fetch(getProjectMaterialYjsDocumentUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(projectMaterialReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: projectMaterialYjsDocumentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as projectMaterialYjsDocumentResponse
 }

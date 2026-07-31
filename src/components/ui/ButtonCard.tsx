@@ -1,14 +1,13 @@
-import { cn } from "@/lib/cn";
-import { Button, ButtonProps } from "./Button";
-import { Icon, IconName } from "./Icon";
-import { ReactNode } from "react";
+import type { ReactNode } from 'react';
+import { cn } from '@/lib/cn';
+import { Button, type ButtonProps } from './Button';
+import { Icon, type IconName } from './Icon';
 
 export function ButtonCard({
   className,
   buttonText,
-  size = "lg",
-  flex = "col",
-  variant = "outline",
+  flex = 'col',
+  variant = 'outline',
   icon,
   componentAfterText,
   componentBeforeText,
@@ -21,18 +20,18 @@ export function ButtonCard({
   componentAfterText?: ReactNode;
 }) {
   return (
-    <Button asChild size={size} variant={variant}>
+    <Button asChild size={'lg'} variant={variant}>
       <button
         className={cn(
-          "flex max-h-22 min-w-30 items-center justify-center transition-[transform,box-shadow] hover:-translate-y-0.5 hover:bg-initial hover:shadow-card",
+          'flex h-auto max-h-22 min-w-30 items-center justify-center rounded-card! px-6.5 py-5 transition-[transform,box-shadow] hover:-translate-y-0.5 hover:bg-initial hover:shadow-card',
           flex === 'col' && 'flex-col gap-2',
           flex === 'row' && 'flex-row gap-2.5',
-          className,
+          className
         )}
         type="button"
         {...rest}
       >
-        {icon && <Icon name={icon} size={22} className="size-5.5" />}
+        {icon && <Icon className="size-5.5" name={icon} size={22} />}
         {componentBeforeText}
         <span className="font-semibold tracking-wide">{buttonText}</span>
         {componentAfterText}

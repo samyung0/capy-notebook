@@ -27,6 +27,9 @@ loadLocalEnv();
 
 const randomPort = () => randomInt(20_000, 45_000);
 const apiPort = Number(process.env.E2E_API_PORT ?? randomPort());
+const collaborationPort = Number(
+  process.env.E2E_COLLABORATION_PORT ?? randomPort()
+);
 const dbPort = Number(process.env.E2E_DB_PORT ?? randomPort());
 const vitePort = Number(process.env.E2E_VITE_PORT ?? randomPort());
 const apiUrl = process.env.E2E_API_URL ?? `http://127.0.0.1:${apiPort}`;
@@ -42,6 +45,7 @@ const urlPort = (value: string) => {
 };
 
 process.env.E2E_API_PORT = urlPort(apiUrl);
+process.env.E2E_COLLABORATION_PORT = String(collaborationPort);
 process.env.E2E_DB_PORT = String(dbPort);
 process.env.E2E_VITE_PORT = urlPort(baseURL);
 process.env.E2E_API_URL = apiUrl;

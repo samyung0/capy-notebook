@@ -2,7 +2,10 @@ package httpapi
 
 import (
 	"context"
+	"crypto/subtle"
+	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/evonotes/server/internal/httpapi/apimodel"
@@ -14,9 +17,6 @@ type materialRevisionsOutput struct{ Body []apimodel.MaterialRevision }
 type discussionsOutput struct{ Body []apimodel.Discussion }
 type discussionOutput struct{ Body apimodel.Discussion }
 type commentOutput struct{ Body apimodel.Comment }
-type suggestionMutationOutput struct {
-	Body apimodel.SuggestionMutationResult
-}
 
 type createDiscussionInput struct {
 	ID   string `path:"id"`
@@ -25,11 +25,6 @@ type createDiscussionInput struct {
 
 type discussionIDInput struct {
 	ID string `path:"id"`
-}
-
-type deleteDiscussionInput struct {
-	ID               string `path:"id"`
-	ExpectedRevision int64  `query:"expectedRevision,omitempty"`
 }
 
 type updateDiscussionInput struct {
@@ -47,34 +42,50 @@ type updateCommentBodyInput struct {
 	Body apimodel.UpdateCommentReq
 }
 
-type commitMaterialSuggestionsInput struct {
-	ID   string `path:"id"`
-	Body apimodel.CommitMaterialSuggestionsReq
+type collaborationTokenInput struct {
+	ID string `path:"id"`
 }
 
-type reviewMaterialSuggestionsInput struct {
-	ID   string `path:"id"`
-	Body apimodel.ReviewMaterialSuggestionsReq
+type collaborationTokenResponse struct {
+	Token     string `json:"token"`
+	Room      string `json:"room"`
+	URL       string `json:"url"`
+	Access    string `json:"access" enum:"write,comment"`
+	ExpiresAt int64  `json:"expiresAt"`
 }
 
-type deleteMaterialSuggestionInput struct {
-	ID               string `path:"id"`
-	ExpectedRevision int64  `query:"expectedRevision" minimum:"1"`
+type collaborationTokenOutput struct {
+	Body collaborationTokenResponse
+}
+
+type projectMaterialReq struct {
+	Content       materialdoc.Envelope `json:"content"`
+	YjsVersion    int64                `json:"yjsVersion" minimum:"1"`
+	CheckpointIDs []string             `json:"checkpointIds,omitempty"`
+}
+
+type projectMaterialInput struct {
+	ID     string `path:"id"`
+	Secret string `header:"X-Collaboration-Secret"`
+	Body   projectMaterialReq
+}
+
+type projectMaterialOutput struct {
+	Body apimodel.MaterialUpdateResult
 }
 
 func (a *api) registerCollaboration(api huma.API) {
 	const tag = "Material collaboration"
 	reg(api, http.MethodGet, "/api/materials/{id}/revisions", "listMaterialRevisions", tag, "List material revisions", http.StatusOK, a.listMaterialRevisions)
-	regWithMaxBody(api, http.MethodPost, "/api/materials/{id}/suggestion-commits", "commitMaterialSuggestions", tag, "Commit marked material suggestions", http.StatusCreated, materialRequestMaxBytes, a.commitMaterialSuggestions)
-	regWithMaxBody(api, http.MethodPost, "/api/materials/{id}/suggestions/review", "reviewMaterialSuggestions", tag, "Accept or reject selected or all suggestions", http.StatusOK, materialRequestMaxBytes, a.reviewMaterialSuggestions)
-	reg(api, http.MethodDelete, "/api/material-suggestions/{id}", "withdrawMaterialSuggestion", tag, "Withdraw and reject a pending suggestion", http.StatusOK, a.withdrawMaterialSuggestion)
-	reg(api, http.MethodGet, "/api/materials/{id}/discussions", "listMaterialDiscussions", tag, "List nested material discussions", http.StatusOK, a.listMaterialDiscussions)
+	reg(api, http.MethodGet, "/api/materials/{id}/discussions", "listMaterialDiscussions", tag, "List nested material comment discussions", http.StatusOK, a.listMaterialDiscussions)
 	reg(api, http.MethodPost, "/api/materials/{id}/discussions", "createMaterialDiscussion", tag, "Create a comment discussion", http.StatusCreated, a.createMaterialDiscussion)
 	reg(api, http.MethodPatch, "/api/discussions/{id}", "updateMaterialDiscussion", tag, "Resolve or reopen a comment discussion", http.StatusNoContent, a.updateMaterialDiscussion)
-	reg(api, http.MethodDelete, "/api/discussions/{id}", "deleteMaterialDiscussion", tag, "Soft-delete a discussion and reject pending marks", http.StatusOK, a.deleteMaterialDiscussion)
+	reg(api, http.MethodDelete, "/api/discussions/{id}", "deleteMaterialDiscussion", tag, "Soft-delete a comment discussion", http.StatusNoContent, a.deleteMaterialDiscussion)
 	reg(api, http.MethodPost, "/api/discussions/{id}/comments", "createMaterialComment", tag, "Add a comment or one-level reply", http.StatusCreated, a.createMaterialComment)
 	reg(api, http.MethodPatch, "/api/comments/{id}", "updateMaterialComment", tag, "Edit an authored comment", http.StatusOK, a.updateMaterialComment)
 	reg(api, http.MethodDelete, "/api/comments/{id}", "deleteMaterialComment", tag, "Soft-delete a comment", http.StatusNoContent, a.deleteMaterialComment)
+	reg(api, http.MethodPost, "/api/materials/{id}/collaboration-token", "createMaterialCollaborationToken", tag, "Create a short-lived material room token", http.StatusCreated, a.createMaterialCollaborationToken)
+	regWithMaxBody(api, http.MethodPost, "/internal/collaboration/materials/{id}/projection", "projectMaterialYjsDocument", tag, "Project a durably stored Yjs document", http.StatusOK, materialRequestMaxBytes, a.projectMaterialYjsDocument)
 }
 
 func (a *api) listMaterialRevisions(ctx context.Context, in *materialIDInput) (*materialRevisionsOutput, error) {
@@ -92,81 +103,61 @@ func (a *api) listMaterialRevisions(ctx context.Context, in *materialIDInput) (*
 	return &materialRevisionsOutput{Body: out}, nil
 }
 
-func (a *api) commitMaterialSuggestions(
+func (a *api) createMaterialCollaborationToken(
 	ctx context.Context,
-	in *commitMaterialSuggestionsInput,
-) (*suggestionMutationOutput, error) {
-	if err := a.s.AssertMaterialCommenter(ctx, userID(ctx), in.ID); err != nil {
+	in *collaborationTokenInput,
+) (*collaborationTokenOutput, error) {
+	uid := userID(ctx)
+	role, err := a.s.MaterialEffectiveRole(ctx, uid, in.ID)
+	if err != nil {
 		return nil, collaborationError(err)
+	}
+	access := ""
+	switch {
+	case store.RoleCanEdit(role):
+		access = "write"
+	case store.RoleCanComment(role):
+		access = "comment"
+	default:
+		return nil, collaborationError(store.ErrForbidden)
+	}
+	me, _ := a.s.Me(ctx, uid)
+	room := "material:" + in.ID + ":schema:1"
+	claims := newCollaborationClaims(uid, room, access, me.Name, me.AvatarURL, randID("collab"))
+	token, err := signCollaborationToken(a.cfg.CollaborationSecret, claims)
+	if err != nil {
+		return nil, huma.Error503ServiceUnavailable("collaboration service unavailable", err)
+	}
+	return &collaborationTokenOutput{Body: collaborationTokenResponse{
+		Token: token, Room: room, URL: a.cfg.CollaborationURL, Access: access,
+		ExpiresAt: claims.ExpiresAt,
+	}}, nil
+}
+
+func (a *api) projectMaterialYjsDocument(
+	ctx context.Context,
+	in *projectMaterialInput,
+) (*projectMaterialOutput, error) {
+	if a.cfg.CollaborationSecret == "" ||
+		subtle.ConstantTimeCompare([]byte(in.Secret), []byte(a.cfg.CollaborationSecret)) != 1 {
+		return nil, huma.Error401Unauthorized("invalid collaboration service secret")
 	}
 	raw, err := materialdoc.Marshal(in.Body.Content)
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	result, err := a.s.CommitMaterialSuggestions(
-		ctx,
-		in.ID,
-		userID(ctx),
-		raw,
-		in.Body.ExpectedRevision,
-	)
+	material, err := a.s.ProjectMaterialContent(ctx, in.ID, raw, in.Body.YjsVersion)
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	return mutationOutput(result), nil
-}
-
-func (a *api) reviewMaterialSuggestions(
-	ctx context.Context,
-	in *reviewMaterialSuggestionsInput,
-) (*suggestionMutationOutput, error) {
-	if err := a.s.AssertMaterialEditor(ctx, userID(ctx), in.ID); err != nil {
-		return nil, collaborationError(err)
-	}
-	result, err := a.s.ReviewMaterialSuggestions(
-		ctx,
-		in.ID,
-		userID(ctx),
-		in.Body.Decision,
-		in.Body.SuggestionIDs,
-		in.Body.ExpectedRevision,
-	)
-	if err != nil {
-		return nil, collaborationError(err)
-	}
-	return mutationOutput(result), nil
-}
-
-func (a *api) withdrawMaterialSuggestion(
-	ctx context.Context,
-	in *deleteMaterialSuggestionInput,
-) (*suggestionMutationOutput, error) {
-	resource, err := a.s.SuggestionResource(ctx, in.ID)
-	if err != nil {
-		return nil, collaborationError(err)
-	}
-	role, err := a.s.MaterialEffectiveRole(ctx, userID(ctx), resource.MaterialID)
-	if err != nil {
-		return nil, collaborationError(err)
-	}
-	if resource.Status != store.SuggestionPending ||
-		(resource.UserID != userID(ctx) && !store.RoleCanEdit(role)) {
-		return nil, collaborationError(store.ErrForbidden)
-	}
-	result, err := a.s.WithdrawMaterialSuggestion(
-		ctx,
-		in.ID,
-		userID(ctx),
-		in.ExpectedRevision,
-	)
-	if err != nil {
-		return nil, collaborationError(err)
-	}
-	return mutationOutput(result), nil
+	return &projectMaterialOutput{Body: apimodel.MaterialUpdateResult{
+		ID: material.ID, Revision: material.Revision, ContentBytes: len(material.Content),
+		UpdatedAt: material.UpdatedAt,
+	}}, nil
 }
 
 func (a *api) listMaterialDiscussions(ctx context.Context, in *materialIDInput) (*discussionsOutput, error) {
-	if _, err := a.s.MaterialAccess(ctx, userID(ctx), in.ID); err != nil {
+	if err := a.s.AssertMaterialCommenter(ctx, userID(ctx), in.ID); err != nil {
 		return nil, collaborationError(err)
 	}
 	rows, err := a.s.ListCollaborationDiscussions(ctx, in.ID)
@@ -185,12 +176,16 @@ func (a *api) createMaterialDiscussion(ctx context.Context, in *createDiscussion
 		in.ID,
 		userID(ctx),
 		in.Body.BlockID,
-		apimodel.EncodeRaw(in.Body.Anchor),
+		in.Body.AnchorStart,
+		in.Body.AnchorEnd,
+		in.Body.AnchorVersion,
+		in.Body.AnchorQuote,
 		apimodel.EncodeRaw(in.Body.ContentRich),
 	)
 	if err != nil {
 		return nil, collaborationError(err)
 	}
+	a.publishCommentInvalidation(ctx, in.ID)
 	return &discussionOutput{Body: discussion}, nil
 }
 
@@ -205,13 +200,11 @@ func (a *api) updateMaterialDiscussion(ctx context.Context, in *updateDiscussion
 	if err := a.s.SetCollaborationDiscussionResolved(ctx, in.ID, in.Body.IsResolved); err != nil {
 		return nil, collaborationError(err)
 	}
+	a.publishCommentInvalidation(ctx, resource.MaterialID)
 	return &Empty{}, nil
 }
 
-func (a *api) deleteMaterialDiscussion(
-	ctx context.Context,
-	in *deleteDiscussionInput,
-) (*suggestionMutationOutput, error) {
+func (a *api) deleteMaterialDiscussion(ctx context.Context, in *discussionIDInput) (*Empty, error) {
 	resource, err := a.s.DiscussionResource(ctx, in.ID)
 	if err != nil {
 		return nil, collaborationError(err)
@@ -223,15 +216,11 @@ func (a *api) deleteMaterialDiscussion(
 	if resource.UserID != userID(ctx) && !store.RoleCanEdit(role) {
 		return nil, collaborationError(store.ErrForbidden)
 	}
-	var expectedRevision *int64
-	if in.ExpectedRevision > 0 {
-		expectedRevision = &in.ExpectedRevision
-	}
-	result, err := a.s.SoftDeleteDiscussion(ctx, in.ID, userID(ctx), expectedRevision)
-	if err != nil {
+	if err := a.s.SoftDeleteDiscussion(ctx, in.ID, userID(ctx)); err != nil {
 		return nil, collaborationError(err)
 	}
-	return mutationOutput(result), nil
+	a.publishCommentInvalidation(ctx, resource.MaterialID)
+	return &Empty{}, nil
 }
 
 func (a *api) createMaterialComment(ctx context.Context, in *createCommentInput) (*commentOutput, error) {
@@ -243,15 +232,13 @@ func (a *api) createMaterialComment(ctx context.Context, in *createCommentInput)
 		return nil, collaborationError(err)
 	}
 	comment, err := a.s.AddNestedComment(
-		ctx,
-		in.ID,
-		userID(ctx),
-		in.Body.ParentCommentID,
+		ctx, in.ID, userID(ctx), in.Body.ParentCommentID,
 		apimodel.EncodeRaw(in.Body.ContentRich),
 	)
 	if err != nil {
 		return nil, collaborationError(err)
 	}
+	a.publishCommentInvalidation(ctx, resource.MaterialID)
 	return &commentOutput{Body: comment}, nil
 }
 
@@ -267,14 +254,12 @@ func (a *api) updateMaterialComment(ctx context.Context, in *updateCommentBodyIn
 		return nil, collaborationError(err)
 	}
 	comment, err := a.s.EditOwnComment(
-		ctx,
-		in.ID,
-		userID(ctx),
-		apimodel.EncodeRaw(in.Body.ContentRich),
+		ctx, in.ID, userID(ctx), apimodel.EncodeRaw(in.Body.ContentRich),
 	)
 	if err != nil {
 		return nil, collaborationError(err)
 	}
+	a.publishCommentInvalidation(ctx, resource.MaterialID)
 	return &commentOutput{Body: comment}, nil
 }
 
@@ -293,19 +278,38 @@ func (a *api) deleteMaterialComment(ctx context.Context, in *discussionIDInput) 
 	if err := a.s.SoftDeleteComment(ctx, in.ID, userID(ctx)); err != nil {
 		return nil, collaborationError(err)
 	}
+	a.publishCommentInvalidation(ctx, resource.MaterialID)
 	return &Empty{}, nil
 }
 
-func mutationOutput(result store.SuggestionMutation) *suggestionMutationOutput {
-	return &suggestionMutationOutput{Body: apimodel.SuggestionMutationResult{
-		MaterialUpdateResult: apimodel.MaterialUpdateResult{
-			ID:                    result.Material.ID,
-			Revision:              result.Material.Revision,
-			ContentBytes:          len(result.Material.Content),
-			HasPendingSuggestions: result.Material.HasPendingSuggestions,
-			UpdatedAt:             result.Material.UpdatedAt,
-		},
-		SuggestionIDs: result.SuggestionIDs,
-		Discussions:   result.Discussions,
-	}}
+func (a *api) publishCommentInvalidation(ctx context.Context, materialID string) {
+	if a.rdb == nil {
+		return
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"type": "comments-invalidated", "materialId": materialID,
+		"at": time.Now().UTC().UnixMilli(),
+	})
+	_ = a.rdb.Publish(ctx, "evo:collaboration:comments", payload).Err()
+}
+
+func (a *api) publishMaterialEviction(ctx context.Context, materialID string) {
+	if a.rdb == nil {
+		return
+	}
+	payload, _ := json.Marshal(map[string]any{
+		"type": "access-changed", "materialId": materialID,
+		"at": time.Now().UTC().UnixMilli(),
+	})
+	_ = a.rdb.Publish(ctx, "evo:collaboration:evict", payload).Err()
+}
+
+func (a *api) publishWorkspaceEvictions(ctx context.Context, workspaceID string) {
+	ids, err := a.s.WorkspaceMaterialIDs(ctx, workspaceID)
+	if err != nil {
+		return
+	}
+	for _, id := range ids {
+		a.publishMaterialEviction(ctx, id)
+	}
 }

@@ -102,23 +102,12 @@ func (r ShareRole) WorkspaceRole() WorkspaceRole {
 type MaterialRevisionEvent string
 
 const (
-	RevisionCreate           MaterialRevisionEvent = "create"
-	RevisionEdit             MaterialRevisionEvent = "edit"
-	RevisionSuggestionCommit MaterialRevisionEvent = "suggestion_commit"
-	RevisionSuggestionAccept MaterialRevisionEvent = "suggestion_accept"
-	RevisionSuggestionReject MaterialRevisionEvent = "suggestion_reject"
+	RevisionCreate MaterialRevisionEvent = "create"
+	RevisionEdit   MaterialRevisionEvent = "edit"
 )
 
 func (MaterialRevisionEvent) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(
-		r,
-		"MaterialRevisionEvent",
-		"create",
-		"edit",
-		"suggestion_commit",
-		"suggestion_accept",
-		"suggestion_reject",
-	)
+	return enumRef(r, "MaterialRevisionEvent", "create", "edit")
 }
 
 // PlanTier is the account subscription tier.

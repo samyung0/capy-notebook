@@ -70,14 +70,14 @@ export function QuizOptionView({
       <span className="flex items-center gap-3">
         <span
           className={cn(
-            "flex h-5 w-5 shrink-0 items-center justify-center rounded-full border",
+            'flex h-5 w-5 shrink-0 items-center justify-center rounded-full border',
             highlighted
-              ? "border-solid-success bg-solid-success text-white"
+              ? 'border-solid-success bg-solid-success text-white'
               : orderedItem
-                ? "border-0 bg-surface-hover-bg font-bold text-fg-secondary text-xs"
+                ? 'border-0 bg-surface-hover-bg font-bold text-fg-secondary text-xs'
                 : matchingPair
-                  ? "border-line-strong text-fg-muted"
-                  : "border-line-strong",
+                  ? 'border-line-strong text-fg-muted'
+                  : 'border-line-strong'
           )}
           contentEditable={false}
         >
@@ -86,7 +86,7 @@ export function QuizOptionView({
           ) : orderedItem ? (
             optionNumber
           ) : matchingPair ? (
-            "↔"
+            '↔'
           ) : null}
         </span>
         <span className="wrap-break-word min-w-0">{children}</span>

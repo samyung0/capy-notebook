@@ -1,30 +1,30 @@
-import { MaterialKind } from "@/api/types";
-import { IconName } from "@/components/ui";
-import { MaterialMode } from "./modePolicy";
+import type { MaterialKind } from '@/api/types';
+import type { IconName } from '@/components/ui';
+import type { MaterialMode } from './modePolicy';
 
 export function materialIcon(kind: MaterialKind): IconName {
   switch (kind) {
-    case "diagram":
-      return "diagram";
-    case "quiz":
-      return "quiz";
-    case "flashcards":
-      return "flashcards";
-    case "note":
-      return "write";
+    case 'diagram':
+      return 'diagram';
+    case 'quiz':
+      return 'quiz';
+    case 'flashcards':
+      return 'flashcards';
+    case 'note':
+      return 'write';
     default:
-      return "workspaces";
+      return 'workspaces';
   }
 }
 
 export const MATERIALMODE_ICON: Record<MaterialMode, IconName> = {
-  edit: "write",
-  suggestion: "suggestionEdit",
-  view: "view",
+  comment: 'message',
+  edit: 'write',
+  view: 'view',
 };
 
 export const MATERIALMODE_LABEL: Record<MaterialMode, string> = {
-  edit: "Edit",
-  suggestion: "Suggestion",
-  view: "View",
+  comment: 'Comment',
+  edit: 'Edit',
+  view: 'View',
 };

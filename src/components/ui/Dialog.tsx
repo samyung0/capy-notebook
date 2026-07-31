@@ -1,6 +1,7 @@
 import { useRouterState } from '@tanstack/react-router';
 import { Dialog as DialogPrimitive } from 'radix-ui';
 import * as React from 'react';
+import { useRef } from 'react';
 import { Card } from '@/components/ui/Card';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -66,7 +67,7 @@ function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Content
         className={cn(
-          'data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 fixed top-1/2 left-1/2 z-50 grid w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 px-4 outline-none duration-100 data-[state=closed]:animate-out data-[state=open]:animate-in',
+          'data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 fixed top-1/2 left-1/2 z-50 grid max-h-[88dvh] w-full max-w-2xl -translate-x-1/2 -translate-y-1/2 px-4 outline-none duration-100 data-[state=closed]:animate-out data-[state=open]:animate-in',
           className
         )}
         data-slot="dialog-content"
@@ -93,7 +94,7 @@ function DialogContent({
         >
           <div
             className={cn(
-              'flex max-h-[88vh] w-full flex-col items-stretch gap-0 overflow-auto p-5.5',
+              'flex h-full max-h-[88dvh] w-full flex-col items-stretch gap-0 overflow-auto p-5.5',
               cardScrollContainerClassName
             )}
           >
@@ -141,7 +142,7 @@ function DialogFooter({
   return (
     <div
       className={cn(
-        '-mx-4 -mb-4 flex flex-col-reverse gap-2 p-4 sm:flex-row sm:justify-end',
+        '-mx-4 -mb-2 flex flex-col-reverse gap-2 p-4 sm:flex-row sm:justify-end',
         className
       )}
       data-slot="dialog-footer"
@@ -188,9 +189,17 @@ function SimpleDialog({
     typeof DialogPrimitive.Content
   >['onEscapeKeyDown'];
 }) {
+  const originalPathname = useRef<string | null>(null);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   React.useEffect(() => {
+    if (
+      originalPathname.current === null ||
+      originalPathname.current === pathname
+    ) {
+      originalPathname.current = pathname;
+      return;
+    }
     onClose();
   }, [pathname]);
 
@@ -248,6 +257,7 @@ function ConfirmDialog({
           <Button
             disabled={isSubmitting}
             onClick={onClose}
+            size="lg"
             variant="ghost-hover"
           >
             Cancel
@@ -258,6 +268,7 @@ function ConfirmDialog({
               onConfirm();
               if (closeOnConfirm) onClose();
             }}
+            size="lg"
             variant={danger ? 'danger' : 'accent'}
           >
             {!isSubmitting && <span>{confirmLabel ?? m.action_confirm()}</span>}

@@ -3,9 +3,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuiz, useUpdateQuiz } from '@/api/hooks';
 import type { Question } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Button, Skeleton } from "@/components/ui";
-import { userToast } from "@/components/ui/userToast";
-import { QuizForm } from "@/features/quizzes/QuizForm";
+import { Button, Skeleton } from '@/components/ui';
+import { userToast } from '@/components/ui/userToast';
+import { QuizForm } from '@/features/quizzes/QuizForm';
 
 export default function QuizEdit() {
   const params = useParams({ strict: false });
@@ -14,7 +14,7 @@ export default function QuizEdit() {
   const { data: quiz, isLoading } = useQuiz(quizId);
   const update = useUpdateQuiz();
 
-  const [name, setName] = useState("");
+  const [name, setName] = useState('');
   const [questions, setQuestions] = useState<Question[]>([]);
   const seeded = useRef(false);
 
@@ -28,7 +28,7 @@ export default function QuizEdit() {
   }, [quiz]);
 
   function back() {
-    navigate({ to: "/quizzes" });
+    navigate({ to: '/quizzes' });
   }
 
   async function save() {
@@ -38,9 +38,9 @@ export default function QuizEdit() {
     } catch (err) {
       userToast({
         description:
-          err instanceof Error ? err.message : "Something went wrong.",
-        title: "Could not save quiz",
-        variant: "error",
+          err instanceof Error ? err.message : 'Something went wrong.',
+        title: 'Could not save quiz',
+        variant: 'error',
       });
     }
   }
@@ -63,11 +63,11 @@ export default function QuizEdit() {
               iconLeft="check"
               onClick={save}
             >
-              {update.isPending ? "Saving…" : "Save"}
+              {update.isPending ? 'Saving…' : 'Save'}
             </Button>
           </>
         }
-        title={name || "Edit quiz"}
+        title={name || 'Edit quiz'}
       />
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
         {isLoading || !seeded.current ? (

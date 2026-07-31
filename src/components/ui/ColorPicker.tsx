@@ -130,9 +130,9 @@ export function ColorPicker({
               aria-label={color.name}
               aria-selected={selected}
               className={cn(
-                "flex size-6 items-center justify-center rounded-full border border-line-strong outline-none transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-focus",
+                'flex size-6 items-center justify-center rounded-full border border-line-strong outline-none transition-transform hover:scale-110 focus-visible:ring-2 focus-visible:ring-focus',
                 selected &&
-                  "ring-2 ring-action ring-offset-1 ring-offset-surface",
+                  'ring-2 ring-action ring-offset-1 ring-offset-surface'
               )}
               data-plate-prevent-deselect
               key={color.value}
@@ -146,8 +146,8 @@ export function ColorPicker({
               {selected && (
                 <Check
                   className={cn(
-                    "size-3.5 drop-shadow-sm",
-                    isBrightColor(color.value) ? "text-black" : "text-white",
+                    'size-3.5 drop-shadow-sm',
+                    isBrightColor(color.value) ? 'text-black' : 'text-white'
                   )}
                 />
               )}

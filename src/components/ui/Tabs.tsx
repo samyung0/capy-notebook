@@ -33,7 +33,7 @@ export function Tabs({
         return (
           <button
             className={cn(
-              '-mb-px px-3 py-2 font-semibold transition-colors',
+              '-mb-px px-3 py-2 font-semibold text-sm transition-colors',
               bottomBorder && 'border-b-2',
               active
                 ? 'border-action font-bold text-fg'

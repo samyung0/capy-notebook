@@ -1,7 +1,7 @@
 import { useMe } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Avatar, Badge, Card, Icon } from "@/components/ui";
-import { m } from "@/i18n";
+import { Avatar, Badge, Card, Icon } from '@/components/ui';
+import { m } from '@/i18n';
 
 export default function Profile() {
   const { data: me } = useMe();
@@ -13,7 +13,7 @@ export default function Profile() {
           <Card className="flex items-center gap-5 p-5.5" radius="card-lg">
             <Avatar name={me?.name} size={72} src={me?.avatarUrl} />
             <div className="min-w-0">
-              <p className="t-large-card-title">{me?.name ?? "—"}</p>
+              <p className="t-large-card-title">{me?.name ?? '—'}</p>
               <p>{me?.email}</p>
               {me?.classLabel && (
                 <Badge className="mt-2" size="sm" tone="accent-1">

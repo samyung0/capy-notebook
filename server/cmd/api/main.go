@@ -116,6 +116,10 @@ func main() {
 		log.Fatalf("db connect: %v", err)
 	}
 	defer st.Close()
+	st.ConfigureCollaboration(
+		env("COLLABORATION_INTERNAL_URL", ""),
+		env("COLLABORATION_SECRET", ""),
+	)
 
 	blobStore, err := openBlobStore(appEnv)
 	if err != nil {
@@ -172,6 +176,32 @@ func main() {
 		}
 	}()
 
+	go func() {
+		prune := func() {
+			count, err := st.PruneMaterialRevisions(ctx)
+			if err != nil {
+				if ctx.Err() == nil {
+					log.Printf("prune material revisions: %v", err)
+				}
+				return
+			}
+			if count > 0 {
+				log.Printf("pruned %d material revision(s)", count)
+			}
+		}
+		prune()
+		ticker := time.NewTicker(24 * time.Hour)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				prune()
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	cfg := httpapi.Config{
 		ClerkSecretKey:      env("CLERK_SECRET_KEY", ""),
 		ClerkWebhookSecret:  env("CLERK_WEBHOOK_SECRET", ""),
@@ -185,6 +215,8 @@ func main() {
 		StripePricePro:      env("STRIPE_PRICE_PRO", ""),
 		StripePriceTeam:     env("STRIPE_PRICE_TEAM", ""),
 		AppURL:              appURL,
+		CollaborationSecret: env("COLLABORATION_SECRET", "dev-collaboration-secret"),
+		CollaborationURL:    env("COLLABORATION_URL", "ws://localhost:1234"),
 	}
 
 	srv := &http.Server{

@@ -10,7 +10,7 @@ import {
   Calendar04Icon,
   Cancel01Icon,
   ChartColumnBigIcon,
-  ChatEdit01Icon,
+  ChartRelationshipIcon,
   CheckIcon,
   CheckListIcon,
   ChevronDownIcon,
@@ -22,8 +22,8 @@ import {
   Crown03Icon,
   DashboardSquare01Icon,
   Delete02Icon,
-  Edit02Icon,
-  EyeIcon,
+  Edit04Icon,
+  FileEditIcon,
   FileEmpty02Icon,
   FileExclamationPointIcon,
   FilterIcon,
@@ -40,6 +40,7 @@ import {
   Mic01Icon,
   MinimizeIcon,
   MoreVerticalIcon,
+  PencilEdit02Icon,
   PlusSignIcon,
   Search01Icon,
   SearchAddIcon,
@@ -50,11 +51,12 @@ import {
   Upload01Icon,
   User02Icon,
   ViewIcon,
-} from "@hugeicons/core-free-icons";
-import { HugeiconsIcon, IconSvgElement } from "@hugeicons/react";
-import type { CSSProperties } from "react";
+} from '@hugeicons/core-free-icons';
+import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
+import type { CSSProperties } from 'react';
 
 const HugeIcons = {
+  alert: Alert02Icon,
   arrowRight: ArrowRight02Icon,
   bell: BellIcon,
   book: BookOpen01Icon,
@@ -62,25 +64,22 @@ const HugeIcons = {
   chart: ChartColumnBigIcon,
   check: CheckIcon,
   chevronDown: ChevronDownIcon,
-  chevronUp: ChevronUpIcon,
   chevronLeft: ChevronLeftIcon,
   chevronRight: ChevronRightIcon,
+  chevronUp: ChevronUpIcon,
   clock: Clock01Icon,
   collapse: CollapseIcon,
   dashboard: DashboardSquare01Icon,
-  alert: Alert02Icon,
-  view: ViewIcon,
+  diagram: FlowSquareIcon,
   error: Alert02Icon,
   fileError: FileExclamationPointIcon,
   files: FileEmpty02Icon,
   filter: FilterIcon,
   flashcards: [
-    "M5 7h11a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2z",
-    "M8 4h11a2 2 0 012 2v8",
+    'M5 7h11a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2z',
+    'M8 4h11a2 2 0 012 2v8',
   ],
   globe: Globe02Icon,
-  diagram: FlowSquareIcon,
-  suggestionEdit: ChatEdit01Icon,
   help: HelpCircleIcon,
   link: Link04Icon,
   list: LeftToRightListBulletIcon,
@@ -91,29 +90,33 @@ const HugeIcons = {
   menu: Menu01Icon,
   message: Message01Icon,
   microphone: Mic01Icon,
+  mindmap: ChartRelationshipIcon,
   minimize: MinimizeIcon,
   moreVertical: MoreVerticalIcon,
+  newFile: FileEditIcon,
+  newNote: PencilEdit02Icon,
   palette: [
-    "M12 3.5a8.5 8.5 0 00-.5 17c1 0 1.5-.8 1.5-1.6 0-1.2-1-1.6-1-2.6 0-.8.7-1.3 1.5-1.3H15a5 5 0 005-5C20 6.5 16.4 3.5 12 3.5z",
-    "M7.5 12.5h.01",
-    "M9.5 8.5h.01",
-    "M14 8h.01",
+    'M12 3.5a8.5 8.5 0 00-.5 17c1 0 1.5-.8 1.5-1.6 0-1.2-1-1.6-1-2.6 0-.8.7-1.3 1.5-1.3H15a5 5 0 005-5C20 6.5 16.4 3.5 12 3.5z',
+    'M7.5 12.5h.01',
+    'M9.5 8.5h.01',
+    'M14 8h.01',
   ],
   plus: PlusSignIcon,
+  premium: Crown03Icon,
   profile: User02Icon,
   quiz: HelpSquareIcon,
   schedule: Calendar04Icon,
   search: Search01Icon,
   send: ChevronRightIcon,
   settings: Settings01Icon,
-  premium: Crown03Icon,
   sparkles: SparklesIcon,
   todo: CheckListIcon,
   trash: Delete02Icon,
   upload: Upload01Icon,
+  view: ViewIcon,
   warning: AlertCircleIcon,
   workspaces: Book02Icon,
-  write: Edit02Icon,
+  write: Edit04Icon,
   x: Cancel01Icon,
   zoomIn: SearchAddIcon,
   zoomOut: SearchMinusIcon,
@@ -121,7 +124,7 @@ const HugeIcons = {
 
 export type IconName = keyof typeof HugeIcons;
 
-export type IconProps = React.ComponentProps<"svg"> & {
+export type IconProps = React.ComponentProps<'svg'> & {
   className?: string;
   name: IconName;
   size?: number;
@@ -137,8 +140,8 @@ export function Icon({
   style,
   ...rest
 }: IconProps) {
-  const el = HugeIcons[name] ?? HugeIcons["x"];
-  if (Array.isArray(el) && el.every((d) => typeof d === "string")) {
+  const el = HugeIcons[name] ?? HugeIcons['x'];
+  if (Array.isArray(el) && el.every((d) => typeof d === 'string')) {
     return (
       <svg
         aria-hidden
@@ -149,7 +152,7 @@ export function Icon({
         strokeLinecap="round"
         strokeLinejoin="round"
         strokeWidth={strokeWidth}
-        style={{ display: "block", flex: "0 0 auto", ...style }}
+        style={{ display: 'block', flex: '0 0 auto', ...style }}
         viewBox="0 0 24 24"
         width={size}
         {...rest}
@@ -159,23 +162,22 @@ export function Icon({
         ))}
       </svg>
     );
-  } else {
-    return (
-      <HugeiconsIcon
-        aria-hidden
-        className={className}
-        fill="none"
-        height={size}
-        color="currentColor"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={strokeWidth}
-        style={{ display: "block", flex: "0 0 auto", ...style }}
-        viewBox="0 0 24 24"
-        width={size}
-        icon={el as IconSvgElement}
-        {...rest}
-      />
-    );
   }
+  return (
+    <HugeiconsIcon
+      aria-hidden
+      className={className}
+      color="currentColor"
+      fill="none"
+      height={size}
+      icon={el as IconSvgElement}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth={strokeWidth}
+      style={{ display: 'block', flex: '0 0 auto', ...style }}
+      viewBox="0 0 24 24"
+      width={size}
+      {...rest}
+    />
+  );
 }

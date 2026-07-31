@@ -264,6 +264,36 @@ components:
         - workspace
         - ragCloned
       type: object
+    CollaborationTokenResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CollaborationTokenResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        access:
+          enum:
+            - write
+            - comment
+          type: string
+        expiresAt:
+          format: int64
+          type: integer
+        room:
+          type: string
+        token:
+          type: string
+        url:
+          type: string
+      required:
+        - token
+        - room
+        - url
+        - access
+        - expiresAt
+      type: object
     Comment:
       additionalProperties: false
       properties:
@@ -306,26 +336,6 @@ components:
         - createdAt
         - updatedAt
         - replies
-      type: object
-    CommitMaterialSuggestionsReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/CommitMaterialSuggestionsReq.json
-          format: uri
-          readOnly: true
-          type: string
-        content:
-          $ref: "#/components/schemas/Envelope"
-          description: Complete Plate document containing suggestion metadata
-        expectedRevision:
-          format: int64
-          minimum: 1
-          type: integer
-      required:
-        - content
-        - expectedRevision
       type: object
     ContentOrderItem:
       additionalProperties: false
@@ -492,9 +502,21 @@ components:
           format: uri
           readOnly: true
           type: string
-        anchor:
-          additionalProperties: {}
-          type: object
+        anchorEnd:
+          format: base64
+          maxLength: 4096
+          type: string
+        anchorQuote:
+          maxLength: 1000
+          type: string
+        anchorStart:
+          format: base64
+          maxLength: 4096
+          type: string
+        anchorVersion:
+          format: int64
+          minimum: 1
+          type: integer
         blockId:
           type: string
         contentRich:
@@ -694,7 +716,17 @@ components:
           format: uri
           readOnly: true
           type: string
-        anchor: {}
+        anchorEnd:
+          format: base64
+          type: string
+        anchorQuote:
+          type: string
+        anchorStart:
+          format: base64
+          type: string
+        anchorVersion:
+          format: int64
+          type: integer
         blockId:
           type: string
         comments:
@@ -710,14 +742,8 @@ components:
           type: boolean
         isResolved:
           type: boolean
-        kind:
-          type: string
         materialId:
           type: string
-        suggestions:
-          items:
-            $ref: "#/components/schemas/MaterialSuggestion"
-          type: array
         updatedAt:
           format: date-time
           type: string
@@ -726,14 +752,13 @@ components:
       required:
         - id
         - materialId
-        - kind
-        - anchor
+        - anchorVersion
+        - anchorQuote
         - userId
         - isResolved
         - isDeleted
         - createdAt
         - updatedAt
-        - suggestions
         - comments
       type: object
     Envelope:
@@ -988,8 +1013,6 @@ components:
         createdAt:
           format: date-time
           type: string
-        hasPendingSuggestions:
-          type: boolean
         id:
           type: string
         isOwner:
@@ -1039,7 +1062,6 @@ components:
         - createdAt
         - updatedAt
         - revision
-        - hasPendingSuggestions
         - isOwner
         - capabilities
       type: object
@@ -1052,8 +1074,6 @@ components:
         createdAt:
           format: date-time
           type: string
-        hasPendingSuggestions:
-          type: boolean
         id:
           type: string
         position:
@@ -1070,7 +1090,6 @@ components:
         - chapterId
         - position
         - createdAt
-        - hasPendingSuggestions
       type: object
     MaterialRevision:
       additionalProperties: false
@@ -1087,8 +1106,6 @@ components:
           type: object
         eventType:
           $ref: "#/components/schemas/MaterialRevisionEvent"
-        hasPendingSuggestions:
-          type: boolean
         materialId:
           type: string
         parentRevision:
@@ -1105,7 +1122,6 @@ components:
         - eventType
         - title
         - content
-        - hasPendingSuggestions
         - eventMetadata
         - createdAt
       type: object
@@ -1113,53 +1129,7 @@ components:
       enum:
         - create
         - edit
-        - suggestion_commit
-        - suggestion_accept
-        - suggestion_reject
       type: string
-    MaterialSuggestion:
-      additionalProperties: false
-      properties:
-        commitRevision:
-          format: int64
-          type: integer
-        createdAt:
-          format: date-time
-          type: string
-        discussionId:
-          type: string
-        id:
-          type: string
-        isDeleted:
-          type: boolean
-        plateSuggestionId:
-          type: string
-        resolutionRevision:
-          format: int64
-          type: integer
-        reviewedAt:
-          format: date-time
-          type: string
-        reviewedBy:
-          type: string
-        status:
-          $ref: "#/components/schemas/SuggestionStatus"
-        updatedAt:
-          format: date-time
-          type: string
-        userId:
-          type: string
-      required:
-        - id
-        - discussionId
-        - plateSuggestionId
-        - commitRevision
-        - userId
-        - status
-        - isDeleted
-        - createdAt
-        - updatedAt
-      type: object
     MaterialUpdateResult:
       additionalProperties: false
       properties:
@@ -1173,8 +1143,6 @@ components:
           description: UTF-8 byte length of persisted content JSON
           format: int64
           type: integer
-        hasPendingSuggestions:
-          type: boolean
         id:
           type: string
         revision:
@@ -1187,7 +1155,6 @@ components:
         - id
         - revision
         - contentBytes
-        - hasPendingSuggestions
         - updatedAt
       type: object
     Message:
@@ -1264,6 +1231,30 @@ components:
         - public
         - link
       type: string
+    ProjectMaterialReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ProjectMaterialReq.json
+          format: uri
+          readOnly: true
+          type: string
+        checkpointIds:
+          items:
+            type: string
+          nullable: true
+          type: array
+        content:
+          $ref: "#/components/schemas/Envelope"
+        yjsVersion:
+          format: int64
+          minimum: 1
+          type: integer
+      required:
+        - content
+        - yjsVersion
+      type: object
     PublicDeck:
       additionalProperties: false
       properties:
@@ -1513,34 +1504,6 @@ components:
         - chapterId
         - items
       type: object
-    ReviewMaterialSuggestionsReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/ReviewMaterialSuggestionsReq.json
-          format: uri
-          readOnly: true
-          type: string
-        decision:
-          enum:
-            - accept
-            - reject
-          type: string
-        expectedRevision:
-          format: int64
-          minimum: 1
-          type: integer
-        suggestionIds:
-          description: Raw Plate suggestion IDs; empty resolves all pending suggestions
-          items:
-            type: string
-          nullable: true
-          type: array
-      required:
-        - decision
-        - expectedRevision
-      type: object
     SaveCanvasReq:
       additionalProperties: false
       properties:
@@ -1706,53 +1669,6 @@ components:
         - past_due
         - canceled
         - trialing
-      type: string
-    SuggestionMutationResult:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SuggestionMutationResult.json
-          format: uri
-          readOnly: true
-          type: string
-        contentBytes:
-          description: UTF-8 byte length of persisted content JSON
-          format: int64
-          type: integer
-        discussions:
-          items:
-            $ref: "#/components/schemas/Discussion"
-          type: array
-        hasPendingSuggestions:
-          type: boolean
-        id:
-          type: string
-        revision:
-          format: int64
-          type: integer
-        suggestionIds:
-          items:
-            type: string
-          type: array
-        updatedAt:
-          format: date-time
-          type: string
-      required:
-        - suggestionIds
-        - discussions
-        - id
-        - revision
-        - contentBytes
-        - hasPendingSuggestions
-        - updatedAt
-      type: object
-    SuggestionStatus:
-      enum:
-        - pending
-        - accepted
-        - rejected
-        - withdrawn
       type: string
     Tag:
       additionalProperties: false
@@ -1953,10 +1869,8 @@ components:
         chapterId:
           description: Chapter to file under; empty string unfiles; omit to leave unchanged
           type: string
-        content:
-          $ref: "#/components/schemas/Envelope"
         expectedRevision:
-          description: Required when changing title or content
+          description: Required when changing title
           format: int64
           minimum: 1
           type: integer
@@ -2745,26 +2659,16 @@ paths:
           required: true
           schema:
             type: string
-        - explode: false
-          in: query
-          name: expectedRevision
-          schema:
-            format: int64
-            type: integer
       responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuggestionMutationResult"
-          description: OK
+        "204":
+          description: No Content
         default:
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Soft-delete a discussion and reject pending marks
+      summary: Soft-delete a comment discussion
       tags:
         - Material collaboration
     patch:
@@ -3187,38 +3091,6 @@ paths:
       summary: List labels
       tags:
         - Schedule
-  /api/material-suggestions/{id}:
-    delete:
-      operationId: withdrawMaterialSuggestion
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-        - explode: false
-          in: query
-          name: expectedRevision
-          schema:
-            format: int64
-            minimum: 1
-            type: integer
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuggestionMutationResult"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Withdraw and reject a pending suggestion
-      tags:
-        - Material collaboration
   /api/materials/{id}:
     delete:
       operationId: deleteMaterial
@@ -3319,6 +3191,31 @@ paths:
       summary: Clone a shared material
       tags:
         - Sharing
+  /api/materials/{id}/collaboration-token:
+    post:
+      operationId: createMaterialCollaborationToken
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollaborationTokenResponse"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Create a short-lived material room token
+      tags:
+        - Material collaboration
   /api/materials/{id}/discussions:
     get:
       operationId: listMaterialDiscussions
@@ -3344,7 +3241,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: List nested material discussions
+      summary: List nested material comment discussions
       tags:
         - Material collaboration
     post:
@@ -3403,68 +3300,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: List material revisions
-      tags:
-        - Material collaboration
-  /api/materials/{id}/suggestion-commits:
-    post:
-      operationId: commitMaterialSuggestions
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/CommitMaterialSuggestionsReq"
-        required: true
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuggestionMutationResult"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Commit marked material suggestions
-      tags:
-        - Material collaboration
-  /api/materials/{id}/suggestions/review:
-    post:
-      operationId: reviewMaterialSuggestions
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ReviewMaterialSuggestionsReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/SuggestionMutationResult"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Accept or reject selected or all suggestions
       tags:
         - Material collaboration
   /api/me:
@@ -4575,3 +4410,38 @@ paths:
       summary: Workspace stats
       tags:
         - Workspaces
+  /internal/collaboration/materials/{id}/projection:
+    post:
+      operationId: projectMaterialYjsDocument
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: header
+          name: X-Collaboration-Secret
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectMaterialReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MaterialUpdateResult"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Project a durably stored Yjs document
+      tags:
+        - Material collaboration

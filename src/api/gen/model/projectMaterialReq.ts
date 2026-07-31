@@ -6,11 +6,12 @@
  */
 import type { Envelope } from './envelope.ts';
 
-export interface CommitMaterialSuggestionsReq {
+export interface ProjectMaterialReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** Complete Plate document containing suggestion metadata */
+  /** @nullable */
+  checkpointIds?: string[] | null;
   content: Envelope;
   /** @minimum 1 */
-  expectedRevision: number;
+  yjsVersion: number;
 }

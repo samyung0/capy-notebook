@@ -1,16 +1,16 @@
 import { Link, useParams } from '@tanstack/react-router';
 import { useAttempt } from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
-import { Badge, Button, Icon, ProgressBar, Skeleton } from "@/components/ui";
+import { Badge, Button, Icon, ProgressBar, Skeleton } from '@/components/ui';
 import {
   type Answer,
   emptyAnswer,
   gradeQuestion,
-} from "@/features/quizzes/grade";
-import { QuestionRunner } from "@/features/quizzes/QuestionRunner";
+} from '@/features/quizzes/grade';
+import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 
-function scoreTone(pct: number): "green" | "amber" | "coral" {
-  return pct >= 70 ? "green" : pct >= 55 ? "amber" : "coral";
+function scoreTone(pct: number): 'green' | 'amber' | 'coral' {
+  return pct >= 70 ? 'green' : pct >= 55 ? 'amber' : 'coral';
 }
 
 export default function AttemptResult() {
@@ -61,17 +61,17 @@ export default function AttemptResult() {
           <div className="flex-1">
             <h2 className="t-large-card-title">{attempt.quizName}</h2>
             <p className="t-meta text-fg-muted">
-              {attempt.workspaceName} ·{" "}
+              {attempt.workspaceName} ·{' '}
               {new Date(attempt.takenAt).toLocaleString()}
             </p>
           </div>
           <Badge
             tone={
               attempt.pct >= 70
-                ? "success"
+                ? 'success'
                 : attempt.pct >= 55
-                  ? "warning"
-                  : "error"
+                  ? 'warning'
+                  : 'error'
             }
           >
             {attempt.correct}/{attempt.total} · {attempt.pct}%
@@ -98,11 +98,11 @@ export default function AttemptResult() {
                 >
                   <div className="mb-3 flex items-center gap-2">
                     <span
-                      aria-label={ok ? "correct" : "incorrect"}
+                      aria-label={ok ? 'correct' : 'incorrect'}
                       className={cnBadge(ok)}
                     >
                       <Icon
-                        name={ok ? "check" : "x"}
+                        name={ok ? 'check' : 'x'}
                         size={13}
                         strokeWidth={2.5}
                       />
@@ -116,7 +116,7 @@ export default function AttemptResult() {
                     review
                   />
                   {q.explanation && (
-                    <p className="mt-3 border-divider border-t pt-3 text-fg-muted t-meta">
+                    <p className="t-meta mt-3 border-divider border-t pt-3 text-fg-muted">
                       {q.explanation}
                     </p>
                   )}
@@ -142,7 +142,7 @@ export default function AttemptResult() {
 
 function cnBadge(ok: boolean) {
   return [
-    "flex h-6 w-6 items-center justify-center rounded-full text-white",
-    ok ? "bg-solid-success" : "bg-solid-error",
-  ].join(" ");
+    'flex h-6 w-6 items-center justify-center rounded-full text-white',
+    ok ? 'bg-solid-success' : 'bg-solid-error',
+  ].join(' ');
 }

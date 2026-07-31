@@ -12,7 +12,7 @@ import {
   DrawerTrigger,
   IconButton,
   LogoMark,
-} from "../ui";
+} from '../ui';
 
 interface NavItem {
   exact?: boolean;
@@ -23,32 +23,32 @@ interface NavItem {
 
 function items(): { general: NavItem[]; tools: NavItem[]; bottom: NavItem[] } {
   return {
-    bottom: [{ icon: "help", label: m.nav_support(), to: "/support" }],
+    bottom: [{ icon: 'help', label: m.nav_support(), to: '/support' }],
     general: [
-      { exact: true, icon: "dashboard", label: m.nav_dashboard(), to: "/" },
-      { icon: "workspaces", label: m.nav_workspaces(), to: "/workspaces" },
-      { icon: "schedule", label: m.nav_schedule(), to: "/schedule" },
+      { exact: true, icon: 'dashboard', label: m.nav_dashboard(), to: '/' },
+      { icon: 'workspaces', label: m.nav_workspaces(), to: '/workspaces' },
+      { icon: 'schedule', label: m.nav_schedule(), to: '/schedule' },
       ...(features.explore
         ? [
             {
-              icon: "globe" as IconName,
+              icon: 'globe' as IconName,
               label: m.nav_explore(),
-              to: "/explore",
+              to: '/explore',
             },
           ]
         : []),
     ],
     tools: [
-      { icon: "quiz", label: m.nav_quizzes(), to: "/quizzes" },
-      { icon: "flashcards", label: m.nav_flashcards(), to: "/flashcards" },
-      { icon: "files", label: m.nav_files(), to: "/files" },
-      { icon: "todo", label: m.nav_tasks(), to: "/tasks" },
+      { icon: 'quiz', label: m.nav_quizzes(), to: '/quizzes' },
+      { icon: 'flashcards', label: m.nav_flashcards(), to: '/flashcards' },
+      { icon: 'files', label: m.nav_files(), to: '/files' },
+      { icon: 'todo', label: m.nav_tasks(), to: '/tasks' },
       ...(features.thinking
         ? [
             {
-              icon: "notes" as IconName,
+              icon: 'notes' as IconName,
               label: m.nav_thinking(),
-              to: "/thinking",
+              to: '/thinking',
             },
           ]
         : []),
@@ -58,7 +58,7 @@ function items(): { general: NavItem[]; tools: NavItem[]; bottom: NavItem[] } {
 
 function isActive(pathname: string, item: NavItem): boolean {
   if (item.exact) return pathname === item.to;
-  return pathname === item.to || pathname.startsWith(item.to + "/");
+  return pathname === item.to || pathname.startsWith(item.to + '/');
 }
 
 function Row({
@@ -75,11 +75,11 @@ function Row({
   return (
     <Link
       className={cn(
-        "flex items-center rounded-button transition-colors",
-        collapsed ? "h-10 w-10 justify-center" : "w-full gap-3 px-3 py-2",
+        'flex items-center rounded-button transition-colors',
+        collapsed ? 'h-10 w-10 justify-center' : 'w-full gap-3 px-3 py-2',
         active
-          ? "bg-action font-bold text-action-fg"
-          : "font-medium text-fg hover:bg-surface-dark-hover-bg",
+          ? 'bg-action font-bold text-action-fg'
+          : 'font-medium text-fg hover:bg-page-hover'
       )}
       onClick={onNavigate}
       preload="intent"
@@ -88,7 +88,7 @@ function Row({
     >
       <Icon name={item.icon} size={19} />
       {!collapsed && (
-        <span className={cn("translate-y-px font-semibold")}>{item.label}</span>
+        <span className={cn('translate-y-px font-semibold')}>{item.label}</span>
       )}
     </Link>
   );
@@ -144,8 +144,8 @@ export function Sidebar({
     <Card
       asChild
       className={cn(
-        "m-2.5 mr-0 ml-1 flex w-52 shrink-0 items-stretch gap-0 overflow-y-auto px-2.5 py-4",
-        className,
+        'm-2.5 mr-0 ml-1 flex w-52 shrink-0 items-stretch gap-0 overflow-y-auto px-2.5 py-4',
+        className
       )}
       radius="card-xl"
       theme="page"
@@ -156,7 +156,7 @@ export function Sidebar({
             <LogoMark size={36} />
             <h1
               className={cn(
-                "t-card-title translate-y-px font-extrabold tracking-tight",
+                't-card-title translate-y-px font-extrabold tracking-tight'
               )}
             >
               {m.app_name()}

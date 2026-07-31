@@ -167,6 +167,11 @@ func validateNode(node map[string]any, depth int, count *int) error {
 	if depth > maxDepth || *count > maxNodes {
 		return errors.New("document complexity limit exceeded")
 	}
+	for key := range node {
+		if key == "suggestion" || strings.HasPrefix(key, "suggestion_") {
+			return fmt.Errorf("obsolete suggestion property %q is not allowed", key)
+		}
+	}
 	if text, ok := node["text"]; ok {
 		if _, ok := text.(string); !ok {
 			return errors.New("text leaf must contain a string")

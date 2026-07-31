@@ -1,6 +1,7 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { type ReactElement, type ReactNode, useState } from 'react';
 import { cn } from '@/lib/cn';
+import { BASE_BUTTON_STYLE } from './Button';
 import { Card } from './Card';
 import { Icon, type IconName } from './Icon';
 import { IconButton } from './IconButton';
@@ -18,18 +19,21 @@ const menuVariants = cva('w-auto min-w-36 p-0', {
 });
 
 const menuItemVariants = cva(
-  "flex w-full items-center gap-1.5 rounded-button px-3 py-2 text-left font-semibold transition-colors disabled:opacity-40",
+  cn(
+    BASE_BUTTON_STYLE,
+    'flex w-full justify-start gap-2 px-2.5 py-2 font-medium leading-(--body-line-height)'
+  ),
   {
     defaultVariants: {
       danger: false,
     },
     variants: {
       danger: {
-        false: "text-fg hover:bg-surface-hover-bg",
-        true: "text-tint-error-fg hover:bg-tint-error",
+        false: 'text-fg hover:bg-surface-hover-bg',
+        true: 'text-tint-error-fg hover:bg-tint-error',
       },
     },
-  },
+  }
 );
 
 interface MenuItemBase {
@@ -44,12 +48,12 @@ export interface MenuItem extends MenuItemBase {
   baseUIRender?: (
     props: MenuItemBase,
     menuDefaultRenderItem: ReactElement,
-    key: number | string,
+    key: number | string
   ) => ReactNode;
 }
 
 export interface MenuProps extends VariantProps<typeof menuVariants> {
-  align?: "start" | "center" | "end";
+  align?: 'start' | 'center' | 'end';
   alignWidthToTrigger?: boolean;
   className?: string;
   iconContainerClassName?: string;
@@ -62,8 +66,8 @@ export interface MenuProps extends VariantProps<typeof menuVariants> {
 export function Menu({
   items,
   trigger,
-  align = "end",
-  variant = "default",
+  align = 'end',
+  variant = 'default',
   iconContainerClassName,
   alignWidthToTrigger,
   className,
@@ -75,7 +79,7 @@ export function Menu({
       <PopoverTrigger asChild>
         {trigger ?? (
           <IconButton
-            className={cn("p-2", iconContainerClassName)}
+            className={cn('p-2', iconContainerClassName)}
             icon="moreVertical"
             label="Open menu"
             size="md"
@@ -90,7 +94,11 @@ export function Menu({
         data-slot="menu"
         data-variant={variant}
       >
-        <Card border="solid" className="block p-1" radius="card">
+        <Card
+          border="solid"
+          className="block min-w-[140px] p-1 py-1.5"
+          radius="card"
+        >
           {items.map((it, i) => {
             const defaultRenderItem = (
               <button
@@ -105,7 +113,7 @@ export function Menu({
                 role="menuitem"
                 type="button"
               >
-                {it.icon && <Icon className="size-5" name={it.icon} />}
+                {it.icon && <Icon className="-translate-y-px" name={it.icon} />}
                 <span className="translate-y-px">{it.label}</span>
               </button>
             );

@@ -11,9 +11,9 @@ export function Switch({ checked = false, onChange, className }: SwitchProps) {
     <button
       aria-checked={checked}
       className={cn(
-        "relative h-6 w-10 rounded-full transition-colors",
-        checked ? "bg-action" : "bg-line-strong",
-        className,
+        'relative h-6 w-10 rounded-full transition-colors',
+        checked ? 'bg-action' : 'bg-line-strong',
+        className
       )}
       onClick={() => onChange?.(!checked)}
       role="switch"

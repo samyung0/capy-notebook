@@ -211,9 +211,24 @@ func (s *Store) AcceptWorkspaceInvite(ctx context.Context, token, userID string)
 }
 
 func (s *Store) ListMaterialRevisions(ctx context.Context, materialID string) ([]MaterialRevision, error) {
-	rows, err := s.pool.Query(ctx, `SELECT material_id, revision, parent_revision, event_type,
-		title, content, has_pending_suggestions, event_metadata, created_by, created_at
-		FROM material_revisions WHERE material_id=$1 ORDER BY revision DESC`, materialID)
+	rows, err := s.pool.Query(ctx, `WITH retention AS (
+		SELECT CASE WHEN u.plan_tier IN ('pro','team')
+			THEN $2::bigint ELSE $3::bigint
+		END AS revision_limit
+		FROM materials m
+		JOIN users u ON u.id=m.user_id
+		WHERE m.id=$1
+	)
+		SELECT material_id, revision, parent_revision, event_type,
+		title, content, event_metadata, created_by, created_at
+		FROM material_revisions
+		WHERE material_id=$1
+		ORDER BY version_date DESC
+		LIMIT COALESCE((SELECT revision_limit FROM retention), $3)`,
+		materialID,
+		premiumMaterialRevisionLimit,
+		freeMaterialRevisionLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -223,7 +238,7 @@ func (s *Store) ListMaterialRevisions(ctx context.Context, materialID string) ([
 		var revision MaterialRevision
 		if err := rows.Scan(&revision.MaterialID, &revision.Revision, &revision.ParentRevision,
 			&revision.EventType, &revision.Title, &revision.Content,
-			&revision.HasPendingSuggestions, &revision.EventMetadata,
+			&revision.EventMetadata,
 			&revision.CreatedBy, &revision.CreatedAt); err != nil {
 			return nil, err
 		}

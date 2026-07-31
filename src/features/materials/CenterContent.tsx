@@ -1,26 +1,26 @@
-import { useFile, useMaterial } from "@/api/hooks";
-import type { UserColor } from "@/api/types";
-import { Icon, ProgressBar, Spinner } from "@/components/ui";
-import { FileViewer } from "@/features/files/FileViewer";
-import { IMAGE_MIN_ZOOM } from "@/features/files/fileUtils";
-import { type NoteEditorStatus } from "@/features/notes/editorMode";
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { MaterialPreview } from "./MaterialPreview";
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { useFile, useMaterial } from '@/api/hooks';
+import type { UserColor } from '@/api/types';
+import { Icon, ProgressBar, Spinner } from '@/components/ui';
+import { FileViewer } from '@/features/files/FileViewer';
+import { IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
+import type { NoteEditorStatus } from '@/features/notes/editorMode';
+import { Header } from './CenterContentHeader';
+import { MaterialPreview } from './MaterialPreview';
 import {
   isInteractiveMaterialMode,
   type MaterialMode,
   materialModePolicy,
   resolveMaterialMode,
-} from "./modePolicy";
-import type { OpenItem } from "./openItem";
-import { Header } from "./CenterContentHeader";
+} from './modePolicy';
+import type { OpenItem } from './openItem';
 
 /* Interactive Plate is the heaviest chunk in this route. View mode
  * deliberately never loads it. */
 const NoteEditor = lazy(() =>
-  import("@/features/notes/NoteEditor").then((m) => ({
+  import('@/features/notes/NoteEditor').then((m) => ({
     default: m.NoteEditor,
-  })),
+  }))
 );
 
 /** The center pane. Dispatches on the currently-open item — a source file or a
@@ -31,48 +31,26 @@ export function CenterContent({
   item,
   readOnly = false,
   color,
-  onSuggestionDirtyChange,
 }: {
   item: OpenItem | null;
   readOnly?: boolean;
   color?: UserColor;
-  onSuggestionDirtyChange?: (dirty: boolean) => void;
 }) {
   const [imageZoom, setImageZoom] = useState(IMAGE_MIN_ZOOM);
   const [materialMode, setMaterialMode] = useState<MaterialMode | null>(null);
-  const [suggestionDirty, setSuggestionDirty] = useState(false);
   const [editorStatus, setEditorStatus] = useState<NoteEditorStatus | null>(
-    null,
+    null
   );
-  const [collaborationVersion, setCollaborationVersion] = useState(0);
   const [collaborationActionsHost, setCollaborationActionsHost] =
     useState<HTMLDivElement | null>(null);
-  const updateSuggestionDirty = useCallback(
-    (dirty: boolean) => {
-      setSuggestionDirty(dirty);
-      onSuggestionDirtyChange?.(dirty);
-    },
-    [onSuggestionDirtyChange],
-  );
 
   useEffect(() => {
     setImageZoom(IMAGE_MIN_ZOOM);
     setMaterialMode(null);
-    updateSuggestionDirty(false);
     setEditorStatus(null);
-    setCollaborationVersion(0);
-  }, [item?.kind, item?.id, updateSuggestionDirty]);
+  }, [item?.kind, item?.id]);
 
   const changeMaterialMode = (nextMode: MaterialMode) => {
-    if (
-      suggestionDirty &&
-      !window.confirm(
-        "Discard the unsubmitted suggestion draft and change modes?",
-      )
-    ) {
-      return;
-    }
-    updateSuggestionDirty(false);
     setEditorStatus(null);
     setMaterialMode(nextMode);
   };
@@ -88,23 +66,20 @@ export function CenterContent({
         imageZoom={imageZoom}
         item={item}
         materialMode={materialMode}
-        onBulkReviewed={() => setCollaborationVersion((version) => version + 1)}
         onImageZoomChange={setImageZoom}
         onMaterialModeChange={changeMaterialMode}
       />
       <div className="relative min-h-0 flex-1 overflow-auto">
-        {item.kind === "material" && (
+        {item.kind === 'material' && (
           <MaterialBody
             allowExternalAssets={!readOnly}
             collaborationActionsHost={collaborationActionsHost}
-            key={`${item.id}:${collaborationVersion}`}
             materialId={item.id}
             mode={materialMode}
             onEditorStatusChange={setEditorStatus}
-            onSuggestionDirtyChange={updateSuggestionDirty}
           />
         )}
-        {item.kind === "file" && (
+        {item.kind === 'file' && (
           <FileBody
             color={color}
             fileId={item.id}
@@ -121,14 +96,12 @@ function MaterialBody({
   materialId,
   mode,
   allowExternalAssets,
-  onSuggestionDirtyChange,
   onEditorStatusChange,
   collaborationActionsHost,
 }: {
   materialId: string;
   mode: MaterialMode | null;
   allowExternalAssets: boolean;
-  onSuggestionDirtyChange: (dirty: boolean) => void;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
   collaborationActionsHost: HTMLDivElement | null;
 }) {
@@ -144,7 +117,7 @@ function MaterialBody({
 
   return (
     <div className="h-full min-h-0">
-      {activeMode === "view" && (
+      {activeMode === 'view' && (
         <div className="h-full min-h-0 overflow-auto">
           <MaterialPreview
             className="mx-auto max-w-[700px]"
@@ -161,7 +134,6 @@ function MaterialBody({
             materialId={materialId}
             mode={activeMode}
             onEditorStatusChange={onEditorStatusChange}
-            onSuggestionDirtyChange={onSuggestionDirtyChange}
           />
         </Suspense>
       )}
@@ -202,7 +174,7 @@ export function FileError() {
         <Icon className="size-6.5" name="warning" />
       </span>
       <div className="flex flex-col items-center justify-center gap-1.5 text-center">
-        <p className="t-card-title font-bold mt-1">Something went wrong</p>
+        <p className="t-card-title mt-1 font-bold">Something went wrong</p>
         <p>We can't load the file. The file maybe missing or deleted.</p>
       </div>
     </div>
@@ -216,7 +188,7 @@ export function FileEmpty() {
         <Icon className="size-6.5" name="warning" />
       </span>
       <div className="flex flex-col items-center justify-center gap-1.5 text-center">
-        <p className="t-card-title font-bold mt-1">Something went wrong</p>
+        <p className="t-card-title mt-1 font-bold">Something went wrong</p>
         <p>The file is empty or corrupted. Please reupload and try again.</p>
       </div>
     </div>
@@ -237,7 +209,7 @@ function FileBody({
   const { data: file, isLoading, isError } = useFile(fileId);
   if (isLoading) return <FileLoading />;
   if (!isLoading && isError) return <FileError />;
-  if (file?.status === "processing") {
+  if (file?.status === 'processing') {
     return (
       <div className="grid h-full place-items-center">
         <div className="flex w-64 -translate-y-1/2 flex-col items-center gap-3">
@@ -253,7 +225,7 @@ function FileBody({
       </div>
     );
   }
-  if (file?.status === "failed") {
+  if (file?.status === 'failed') {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 font-semibold text-solid-error">
         <p className="mt-3">Unable to process file {file.name}.</p>

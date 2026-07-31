@@ -43,6 +43,12 @@ func hErr(err error) error {
 	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrForbidden) {
 		return huma.Error404NotFound("not found")
 	}
+	if errors.Is(err, store.ErrAuthorityUnavailable) {
+		return huma.Error503ServiceUnavailable(
+			"collaboration authority unavailable",
+			err,
+		)
+	}
 	return huma.Error500InternalServerError(err.Error())
 }
 

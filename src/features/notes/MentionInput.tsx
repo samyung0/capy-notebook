@@ -139,7 +139,7 @@ export function MentionInputElement(
         </span>
         <span className="relative min-w-4">
           <span aria-hidden className="invisible whitespace-pre">
-            {query || "\u200b"}
+            {query || '\u200b'}
           </span>
           <input
             {...inputProps}
@@ -169,19 +169,19 @@ export function MentionInputElement(
             onKeyDown={(event) => {
               inputProps.onKeyDown?.(event);
               if (event.defaultPrevented) return;
-              if (event.key === "ArrowDown") {
+              if (event.key === 'ArrowDown') {
                 event.preventDefault();
                 setActiveIndex(
-                  (index) => (index + 1) % Math.max(1, matches.length),
+                  (index) => (index + 1) % Math.max(1, matches.length)
                 );
-              } else if (event.key === "ArrowUp") {
+              } else if (event.key === 'ArrowUp') {
                 event.preventDefault();
                 setActiveIndex(
                   (index) =>
                     (index - 1 + Math.max(1, matches.length)) %
-                    Math.max(1, matches.length),
+                    Math.max(1, matches.length)
                 );
-              } else if (event.key === "Enter") {
+              } else if (event.key === 'Enter') {
                 event.preventDefault();
                 select(activeIndex);
               }
