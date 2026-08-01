@@ -280,6 +280,8 @@ export interface Material {
   /** Request-scoped: false when viewing someone else's shared material. */
   isOwner?: boolean;
   kind: MaterialKind;
+  maxDepth?: number;
+  nodeCount?: number;
   /** Shared ordering position among files and materials in the same bucket. */
   position?: number;
   privacy: Privacy;

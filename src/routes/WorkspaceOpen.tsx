@@ -30,16 +30,16 @@ import { Panel } from '@/components/app/layout';
 import { PrivateOrUnavailable } from '@/components/app/PrivateOrUnavailable';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { Button } from '@/components/ui/Button';
+import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
-import { SkeletonList } from '@/components/ui/feedback';
-import { Tabs } from '@/components/ui/Tabs';
 import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
 } from '@/components/ui/Resizable';
+import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
 import { FileListItem } from '@/features/files/FileListItem';
 import { CenterContent } from '@/features/materials/CenterContent';

@@ -16,6 +16,7 @@ import (
 type replaceBlockCommand struct {
 	Type             string         `json:"type"`
 	MaterialID       string         `json:"materialId"`
+	Room             string         `json:"room"`
 	ExpectedBlock    map[string]any `json:"expectedBlock"`
 	ReplacementBlock map[string]any `json:"replacementBlock"`
 }
@@ -91,8 +92,13 @@ func (s *Store) applyAuthoritativeContentCommand(
 	if expectedBlock == nil {
 		return true, nil
 	}
+	roomForCommand, err := s.MaterialRoom(ctx, materialID)
+	if err != nil {
+		return true, err
+	}
 	body, err := json.Marshal(replaceBlockCommand{
 		Type: "replace-block", MaterialID: materialID,
+		Room: roomForCommand,
 		ExpectedBlock: expectedBlock, ReplacementBlock: replacementBlock,
 	})
 	if err != nil {

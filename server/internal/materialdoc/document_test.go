@@ -160,6 +160,25 @@ func TestRewriteFlashcardIDsStripsRuntimeCommentMarks(t *testing.T) {
 	}
 }
 
+func TestMarshalUsesJavaScriptCompatibleUTF8Escaping(t *testing.T) {
+	raw, err := Marshal(Envelope{
+		SchemaVersion: SchemaVersion,
+		Value: []map[string]any{{
+			"type":     "p",
+			"children": []any{textLeaf("<>&\u2028\u2029")},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw, "<>&\u2028\u2029") ||
+		strings.Contains(raw, `\u003c`) ||
+		strings.Contains(raw, `\u2028`) ||
+		strings.Contains(raw, `\u2029`) {
+		t.Fatalf("JSON escaping does not match JSON.stringify: %q", raw)
+	}
+}
+
 func TestValidationRejectsOpaqueAndVoidCustomElements(t *testing.T) {
 	cases := []Envelope{
 		{
@@ -228,6 +247,37 @@ func TestValidationAcceptsJSONDecodedTimeLimit(t *testing.T) {
 	}
 	if err := Validate(doc); err != nil {
 		t.Fatalf("JSON-decoded Plate document should validate: %v", err)
+	}
+}
+
+func TestValidationAcceptsYouTubeEmbedAndRejectsUploadedVideo(t *testing.T) {
+	valid := Envelope{
+		SchemaVersion: 1,
+		Value: []map[string]any{{
+			"type": "video", "provider": "youtube", "videoId": "dQw4w9WgXcQ",
+			"children": []any{textLeaf("")},
+		}},
+	}
+	if err := Validate(valid); err != nil {
+		t.Fatalf("YouTube embed should validate: %v", err)
+	}
+	for _, node := range []map[string]any{
+		{
+			"type": "video", "provider": "youtube", "videoId": "short",
+			"children": []any{textLeaf("")},
+		},
+		{
+			"type": "video", "provider": "upload", "videoId": "dQw4w9WgXcQ",
+			"children": []any{textLeaf("")},
+		},
+		{
+			"type": "video", "provider": "youtube", "videoId": "dQw4w9WgXcQ",
+			"assetId": "asset-1", "children": []any{textLeaf("")},
+		},
+	} {
+		if err := Validate(Envelope{SchemaVersion: 1, Value: []map[string]any{node}}); !errors.Is(err, ErrInvalid) {
+			t.Fatalf("invalid video node accepted: %v", err)
+		}
 	}
 }
 

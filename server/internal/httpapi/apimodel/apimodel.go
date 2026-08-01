@@ -111,6 +111,8 @@ type Material struct {
 	Title         string                   `json:"title"`
 	Content       materialdoc.Envelope     `json:"content"`
 	ContentBytes  int                      `json:"contentBytes" doc:"UTF-8 byte length of persisted content JSON"`
+	NodeCount     int                      `json:"nodeCount"`
+	MaxDepth      int                      `json:"maxDepth"`
 	ChapterID     *string                  `json:"chapterId"`
 	Position      int64                    `json:"position"`
 	ScopeChapters []string                 `json:"scopeChapters" nullable:"false"`
@@ -133,6 +135,8 @@ type MaterialUpdateResult struct {
 	ID           string    `json:"id"`
 	Revision     int64     `json:"revision"`
 	ContentBytes int       `json:"contentBytes" doc:"UTF-8 byte length of persisted content JSON"`
+	NodeCount    int       `json:"nodeCount"`
+	MaxDepth     int       `json:"maxDepth"`
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
@@ -143,7 +147,8 @@ func FromMaterial(m store.Material) Material {
 	}
 	return Material{
 		ID: m.ID, WorkspaceID: m.WorkspaceID, WorkspaceName: m.WorkspaceName,
-		Kind: m.Kind, Title: m.Title, Content: content, ContentBytes: len(m.Content), ChapterID: m.ChapterID,
+		Kind: m.Kind, Title: m.Title, Content: content, ContentBytes: len(m.Content),
+		NodeCount: m.NodeCount, MaxDepth: m.MaxDepth, ChapterID: m.ChapterID,
 		Position:      m.Position,
 		ScopeChapters: m.ScopeChapters, ScopeFileIDs: m.ScopeFileIDs,
 		Privacy: m.Privacy, Color: m.Color, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,

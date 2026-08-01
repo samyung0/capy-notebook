@@ -32,14 +32,15 @@ CREATE TABLE IF NOT EXISTS users (
   clerk_id            text UNIQUE,
   stripe_customer_id  text UNIQUE,
   subscription_status text NOT NULL DEFAULT 'none',
-  plan_tier           text NOT NULL DEFAULT 'free',
+  plan_tier           text NOT NULL DEFAULT 'free'
+    CHECK (plan_tier IN ('free', 'pro')),
   created_at          timestamptz NOT NULL DEFAULT now(),
   updated_at          timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS workspaces (
   id               text PRIMARY KEY,
-  user_id          text REFERENCES users(id),
+  user_id          text NOT NULL REFERENCES users(id),
   name             text NOT NULL,
   color            text NOT NULL DEFAULT 'green',
   privacy          text NOT NULL DEFAULT 'private',
@@ -65,10 +66,12 @@ CREATE INDEX IF NOT EXISTS chapters_ws_idx ON chapters(workspace_id);
 CREATE TABLE IF NOT EXISTS files (
   id                    text PRIMARY KEY,
   workspace_id          text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  user_id               text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   chapter_id            text REFERENCES chapters(id) ON DELETE SET NULL,
   name                  text NOT NULL,
   kind                  text NOT NULL DEFAULT 'pdf',
-  size_kb               int  NOT NULL DEFAULT 0,
+  position              bigint NOT NULL DEFAULT 0,
+  size_bytes            bigint NOT NULL DEFAULT 0 CHECK (size_bytes >= 0),
   added_at              timestamptz NOT NULL DEFAULT now(),
   status                text NOT NULL DEFAULT 'ready',   -- processing | ready | failed
   parser                text,
@@ -86,8 +89,14 @@ CREATE TABLE IF NOT EXISTS files (
   parsed_parser_version text,
   source_etag           text
 );
+ALTER TABLE files
+  ADD COLUMN IF NOT EXISTS position bigint NOT NULL DEFAULT 0;
+ALTER TABLE files
+  ALTER COLUMN position TYPE bigint USING position::bigint,
+  ALTER COLUMN position SET DEFAULT 0;
 CREATE INDEX IF NOT EXISTS files_ws_idx ON files(workspace_id);
 CREATE INDEX IF NOT EXISTS files_chapter_idx ON files(chapter_id);
+CREATE INDEX IF NOT EXISTS files_user_idx ON files(user_id);
 
 -- ============================================================================
 -- Materials — the universal Plate-document envelope for study artifacts
@@ -100,6 +109,7 @@ CREATE TABLE IF NOT EXISTS materials (
   -- provenance / container membership (standalone materials have none).
   user_id        text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   workspace_id   text REFERENCES workspaces(id) ON DELETE CASCADE,
+  owner_user_id  text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   workspace_name text NOT NULL DEFAULT '',
   -- Membership: which chapter the material is filed under in the workspace
   -- tree (mirrors files.chapter_id). Nullable = unfiled; unfiles on chapter
@@ -113,6 +123,10 @@ CREATE TABLE IF NOT EXISTS materials (
   scope_file_ids text[] NOT NULL DEFAULT '{}',
   privacy        text NOT NULL DEFAULT 'private',
   color          text NOT NULL DEFAULT 'green',
+  position       bigint NOT NULL DEFAULT 0,
+  size_bytes     bigint NOT NULL DEFAULT 0 CHECK (size_bytes >= 0),
+  node_count     int NOT NULL DEFAULT 0 CHECK (node_count >= 0),
+  max_depth      int NOT NULL DEFAULT 0 CHECK (max_depth >= 0),
   clone_count    int    NOT NULL DEFAULT 0,
   revision       bigint NOT NULL DEFAULT 1,
   created_at     timestamptz NOT NULL DEFAULT now(),
@@ -126,10 +140,16 @@ CREATE TABLE IF NOT EXISTS materials (
     AND jsonb_typeof(content->'value') = 'array'
   )
 );
+ALTER TABLE materials
+  ADD COLUMN IF NOT EXISTS position bigint NOT NULL DEFAULT 0;
+ALTER TABLE materials
+  ALTER COLUMN position TYPE bigint USING position::bigint,
+  ALTER COLUMN position SET DEFAULT 0;
 CREATE INDEX IF NOT EXISTS materials_ws_idx ON materials(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS materials_chapter_idx ON materials(chapter_id);
 CREATE INDEX IF NOT EXISTS materials_privacy_idx ON materials(privacy, kind) WHERE privacy = 'public';
 CREATE INDEX IF NOT EXISTS materials_user_idx ON materials(user_id, kind, created_at DESC);
+CREATE INDEX IF NOT EXISTS materials_owner_idx ON materials(owner_user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS material_revisions (
   material_id            text NOT NULL REFERENCES materials(id) ON DELETE CASCADE,
@@ -465,7 +485,9 @@ CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status, created_at);
 CREATE TABLE IF NOT EXISTS upload_sessions (
   id            text PRIMARY KEY,
   workspace_id  text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  user_id       text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   chapter_id    text REFERENCES chapters(id) ON DELETE SET NULL,
+  chapter_name  text NOT NULL DEFAULT '',
   object_path   text NOT NULL UNIQUE,
   final_path    text NOT NULL UNIQUE,
   name          text NOT NULL,
@@ -480,6 +502,8 @@ CREATE TABLE IF NOT EXISTS upload_sessions (
   expires_at    timestamptz NOT NULL,
   completed_at  timestamptz
 );
+ALTER TABLE upload_sessions
+  ADD COLUMN IF NOT EXISTS chapter_name text NOT NULL DEFAULT '';
 CREATE INDEX IF NOT EXISTS upload_sessions_expiry_idx
   ON upload_sessions(status, expires_at);
 
@@ -490,10 +514,11 @@ CREATE INDEX IF NOT EXISTS upload_sessions_expiry_idx
 CREATE TABLE IF NOT EXISTS editor_assets (
   id           text PRIMARY KEY,
   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  user_id      text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   created_by   text REFERENCES users(id) ON DELETE SET NULL,
   name         text NOT NULL CHECK (length(name) BETWEEN 1 AND 255),
-  purpose      text NOT NULL CHECK (purpose IN ('image','audio','video','pdf','file')),
-  object_path  text NOT NULL UNIQUE,
+  purpose      text NOT NULL CHECK (purpose IN ('image','audio','pdf','file')),
+  object_path  text NOT NULL,
   content_type text NOT NULL,
   size_bytes   bigint NOT NULL CHECK (size_bytes > 0),
   status       text NOT NULL DEFAULT 'pending'
@@ -505,12 +530,13 @@ CREATE TABLE IF NOT EXISTS editor_assets (
   CHECK (
     (purpose='image' AND size_bytes <= 20971520) OR
     (purpose='audio' AND size_bytes <= 104857600) OR
-    (purpose='video' AND size_bytes <= 524288000) OR
     (purpose='pdf' AND size_bytes <= 52428800) OR
     (purpose='file' AND size_bytes <= 104857600)
   ),
   CHECK ((status='ready') = (completed_at IS NOT NULL))
 );
+ALTER TABLE editor_assets
+  DROP CONSTRAINT IF EXISTS editor_assets_object_path_key;
 CREATE INDEX IF NOT EXISTS editor_assets_workspace_idx
   ON editor_assets(workspace_id, status);
 
@@ -518,6 +544,7 @@ CREATE TABLE IF NOT EXISTS editor_asset_uploads (
   id            text PRIMARY KEY,
   asset_id      text NOT NULL UNIQUE,
   workspace_id  text NOT NULL,
+  user_id       text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   object_path   text NOT NULL UNIQUE,
   content_type  text NOT NULL,
   declared_size bigint NOT NULL CHECK (declared_size > 0),
@@ -532,6 +559,304 @@ CREATE TABLE IF NOT EXISTS editor_asset_uploads (
 );
 CREATE INDEX IF NOT EXISTS editor_asset_uploads_expiry_idx
   ON editor_asset_uploads(status, expires_at);
+
+-- ============================================================================
+-- Logical storage accounting
+-- ============================================================================
+
+-- The counter is deliberately separate from users. Material saves append to
+-- user_storage_deltas instead of taking this row lock; creation gates fold the
+-- pending deltas into their read before deciding whether to allow a write.
+CREATE TABLE IF NOT EXISTS user_storage (
+  user_id        text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  used_bytes     bigint NOT NULL DEFAULT 0,
+  reserved_bytes bigint NOT NULL DEFAULT 0,
+  updated_at     timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS user_storage_deltas (
+  id         bigserial PRIMARY KEY,
+  user_id    text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  delta_bytes bigint NOT NULL,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS user_storage_deltas_user_idx
+  ON user_storage_deltas(user_id, id);
+
+CREATE OR REPLACE FUNCTION ensure_user_storage_row(p_user_id text)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF p_user_id IS NULL OR p_user_id = '' THEN
+    RAISE EXCEPTION 'storage owner is required';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM users WHERE id = p_user_id) THEN
+    RETURN;
+  END IF;
+  INSERT INTO user_storage (user_id)
+  VALUES (p_user_id)
+  ON CONFLICT (user_id) DO NOTHING;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION adjust_user_storage_used(p_user_id text, p_delta bigint)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM ensure_user_storage_row(p_user_id);
+  UPDATE user_storage
+  SET used_bytes = GREATEST(0, used_bytes + p_delta),
+      updated_at = now()
+  WHERE user_id = p_user_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION adjust_user_storage_reserved(p_user_id text, p_delta bigint)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM ensure_user_storage_row(p_user_id);
+  UPDATE user_storage
+  SET reserved_bytes = GREATEST(0, reserved_bytes + p_delta),
+      updated_at = now()
+  WHERE user_id = p_user_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION append_user_storage_delta(p_user_id text, p_delta bigint)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF p_delta = 0 THEN
+    RETURN;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM users WHERE id = p_user_id) THEN
+    RETURN;
+  END IF;
+  PERFORM ensure_user_storage_row(p_user_id);
+  INSERT INTO user_storage_deltas (user_id, delta_bytes)
+  VALUES (p_user_id, p_delta);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION set_file_storage_owner()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  SELECT w.user_id INTO NEW.user_id
+  FROM workspaces w
+  WHERE w.id = NEW.workspace_id;
+  IF NEW.user_id IS NULL THEN
+    RAISE EXCEPTION 'workspace % has no storage owner', NEW.workspace_id;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION set_upload_storage_owner()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  SELECT w.user_id INTO NEW.user_id
+  FROM workspaces w
+  WHERE w.id = NEW.workspace_id;
+  IF NEW.user_id IS NULL THEN
+    RAISE EXCEPTION 'workspace % has no storage owner', NEW.workspace_id;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION set_editor_asset_storage_owner()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  SELECT w.user_id INTO NEW.user_id
+  FROM workspaces w
+  WHERE w.id = NEW.workspace_id;
+  IF NEW.user_id IS NULL THEN
+    RAISE EXCEPTION 'workspace % has no storage owner', NEW.workspace_id;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION prepare_material_storage_fields()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF NEW.workspace_id IS NULL THEN
+    NEW.owner_user_id = NEW.user_id;
+  ELSE
+    SELECT w.user_id INTO NEW.owner_user_id
+    FROM workspaces w
+    WHERE w.id = NEW.workspace_id;
+  END IF;
+  IF NEW.owner_user_id IS NULL THEN
+    RAISE EXCEPTION 'material % has no storage owner', NEW.id;
+  END IF;
+  NEW.size_bytes = octet_length(NEW.content::text);
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION account_file_storage()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    PERFORM adjust_user_storage_used(NEW.user_id, NEW.size_bytes);
+  ELSIF TG_OP = 'DELETE' THEN
+    PERFORM adjust_user_storage_used(OLD.user_id, -OLD.size_bytes);
+  ELSIF OLD.user_id IS DISTINCT FROM NEW.user_id THEN
+    PERFORM adjust_user_storage_used(OLD.user_id, -OLD.size_bytes);
+    PERFORM adjust_user_storage_used(NEW.user_id, NEW.size_bytes);
+  ELSIF OLD.size_bytes IS DISTINCT FROM NEW.size_bytes THEN
+    PERFORM adjust_user_storage_used(NEW.user_id, NEW.size_bytes - OLD.size_bytes);
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION account_material_storage()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF TG_OP = 'INSERT' THEN
+    PERFORM adjust_user_storage_used(NEW.owner_user_id, NEW.size_bytes);
+  ELSIF TG_OP = 'DELETE' THEN
+    -- Material edits are ledger-backed. Keep deletion in the same ledger so
+    -- a pending growth delta cannot be stranded above a clamped base counter.
+    PERFORM append_user_storage_delta(OLD.owner_user_id, -OLD.size_bytes);
+  ELSIF OLD.owner_user_id IS DISTINCT FROM NEW.owner_user_id THEN
+    PERFORM append_user_storage_delta(OLD.owner_user_id, -OLD.size_bytes);
+    PERFORM append_user_storage_delta(NEW.owner_user_id, NEW.size_bytes);
+  ELSIF OLD.size_bytes IS DISTINCT FROM NEW.size_bytes THEN
+    PERFORM append_user_storage_delta(NEW.owner_user_id, NEW.size_bytes - OLD.size_bytes);
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION account_upload_reservation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  old_pending boolean := false;
+  new_pending boolean := false;
+BEGIN
+  IF TG_OP <> 'INSERT' THEN
+    old_pending := OLD.status = 'pending';
+  END IF;
+  IF TG_OP <> 'DELETE' THEN
+    new_pending := NEW.status = 'pending';
+  END IF;
+
+  IF old_pending AND NOT new_pending THEN
+    PERFORM adjust_user_storage_reserved(OLD.user_id, -OLD.declared_size);
+  ELSIF NOT old_pending AND new_pending THEN
+    PERFORM adjust_user_storage_reserved(NEW.user_id, NEW.declared_size);
+  ELSIF old_pending AND new_pending
+    AND OLD.declared_size IS DISTINCT FROM NEW.declared_size THEN
+    PERFORM adjust_user_storage_reserved(
+      NEW.user_id, NEW.declared_size - OLD.declared_size
+    );
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION account_editor_asset_storage()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  old_ready boolean := false;
+  new_ready boolean := false;
+BEGIN
+  IF TG_OP <> 'INSERT' THEN
+    old_ready := OLD.status = 'ready';
+  END IF;
+  IF TG_OP <> 'DELETE' THEN
+    new_ready := NEW.status = 'ready';
+  END IF;
+  IF TG_OP = 'INSERT' AND new_ready THEN
+    PERFORM adjust_user_storage_used(NEW.user_id, NEW.size_bytes);
+  ELSIF TG_OP = 'DELETE' AND old_ready THEN
+    PERFORM adjust_user_storage_used(OLD.user_id, -OLD.size_bytes);
+  ELSIF TG_OP = 'UPDATE' AND OLD.user_id IS DISTINCT FROM NEW.user_id THEN
+    IF old_ready THEN
+      PERFORM adjust_user_storage_used(OLD.user_id, -OLD.size_bytes);
+    END IF;
+    IF new_ready THEN
+      PERFORM adjust_user_storage_used(NEW.user_id, NEW.size_bytes);
+    END IF;
+  ELSIF TG_OP = 'UPDATE' AND old_ready AND NOT new_ready THEN
+    PERFORM adjust_user_storage_used(OLD.user_id, -OLD.size_bytes);
+  ELSIF TG_OP = 'UPDATE' AND NOT old_ready AND new_ready THEN
+    PERFORM adjust_user_storage_used(NEW.user_id, NEW.size_bytes);
+  ELSIF TG_OP = 'UPDATE' AND old_ready AND new_ready
+    AND OLD.size_bytes IS DISTINCT FROM NEW.size_bytes THEN
+    PERFORM adjust_user_storage_used(NEW.user_id, NEW.size_bytes - OLD.size_bytes);
+  END IF;
+  RETURN NULL;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS files_storage_owner_before ON files;
+CREATE TRIGGER files_storage_owner_before
+BEFORE INSERT OR UPDATE OF workspace_id ON files
+FOR EACH ROW EXECUTE FUNCTION set_file_storage_owner();
+DROP TRIGGER IF EXISTS files_storage_after ON files;
+CREATE TRIGGER files_storage_after
+AFTER INSERT OR UPDATE OR DELETE ON files
+FOR EACH ROW EXECUTE FUNCTION account_file_storage();
+
+DROP TRIGGER IF EXISTS upload_sessions_storage_owner_before ON upload_sessions;
+CREATE TRIGGER upload_sessions_storage_owner_before
+BEFORE INSERT OR UPDATE OF workspace_id ON upload_sessions
+FOR EACH ROW EXECUTE FUNCTION set_upload_storage_owner();
+DROP TRIGGER IF EXISTS upload_sessions_reservation_after ON upload_sessions;
+CREATE TRIGGER upload_sessions_reservation_after
+AFTER UPDATE OR DELETE ON upload_sessions
+FOR EACH ROW EXECUTE FUNCTION account_upload_reservation();
+
+DROP TRIGGER IF EXISTS editor_assets_storage_owner_before ON editor_assets;
+CREATE TRIGGER editor_assets_storage_owner_before
+BEFORE INSERT OR UPDATE OF workspace_id ON editor_assets
+FOR EACH ROW EXECUTE FUNCTION set_editor_asset_storage_owner();
+DROP TRIGGER IF EXISTS editor_asset_uploads_storage_owner_before ON editor_asset_uploads;
+CREATE TRIGGER editor_asset_uploads_storage_owner_before
+BEFORE INSERT OR UPDATE OF workspace_id ON editor_asset_uploads
+FOR EACH ROW EXECUTE FUNCTION set_editor_asset_storage_owner();
+DROP TRIGGER IF EXISTS editor_asset_uploads_reservation_after ON editor_asset_uploads;
+CREATE TRIGGER editor_asset_uploads_reservation_after
+AFTER UPDATE OR DELETE ON editor_asset_uploads
+FOR EACH ROW EXECUTE FUNCTION account_upload_reservation();
+DROP TRIGGER IF EXISTS editor_assets_storage_after ON editor_assets;
+CREATE TRIGGER editor_assets_storage_after
+AFTER INSERT OR UPDATE OR DELETE ON editor_assets
+FOR EACH ROW EXECUTE FUNCTION account_editor_asset_storage();
+
+DROP TRIGGER IF EXISTS materials_storage_before ON materials;
+CREATE TRIGGER materials_storage_before
+BEFORE INSERT OR UPDATE OF user_id, workspace_id, content ON materials
+FOR EACH ROW EXECUTE FUNCTION prepare_material_storage_fields();
+DROP TRIGGER IF EXISTS materials_storage_after ON materials;
+CREATE TRIGGER materials_storage_after
+AFTER INSERT OR UPDATE OR DELETE ON materials
+FOR EACH ROW EXECUTE FUNCTION account_material_storage();
 
 -- ============================================================================
 -- Seed data — mirrors src/mocks/db.ts so the real backend starts with the same
@@ -567,9 +892,9 @@ INSERT INTO chapters (id, workspace_id, name, position) VALUES
   ('ch_c2', 'ws_calc', 'Sequences & series',       1)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO files (id, workspace_id, chapter_id, name, kind, size_kb, added_at, status, url, content) VALUES
-  ('f_1', 'ws_bio',  'ch_1', 'Cell structure.pdf',       'pdf',   2480, now()-interval '20 day', 'ready', 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf', NULL),
-  ('f_2', 'ws_bio',  'ch_1', 'Organelles cheatsheet.md', 'md',      14, now()-interval '19 day', 'ready', NULL, '# Organelles
+INSERT INTO files (id, workspace_id, chapter_id, name, kind, size_bytes, added_at, status, url, content) VALUES
+  ('f_1', 'ws_bio',  'ch_1', 'Cell structure.pdf',       'pdf',   2480 * 1024, now()-interval '20 day', 'ready', 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf', NULL),
+  ('f_2', 'ws_bio',  'ch_1', 'Organelles cheatsheet.md', 'md',      14 * 1024, now()-interval '19 day', 'ready', NULL, '# Organelles
 
 - **Nucleus** — stores DNA, controls the cell.
 - **Mitochondria** — the powerhouse; ATP via respiration.
@@ -577,11 +902,11 @@ INSERT INTO files (id, workspace_id, chapter_id, name, kind, size_kb, added_at, 
 - **Golgi apparatus** — packaging & shipping.
 
 The cell membrane is a *phospholipid bilayer* that controls what enters and leaves.'),
-  ('f_3', 'ws_bio',  'ch_2', 'Osmosis notes.txt',        'txt',      6, now()-interval '18 day', 'ready', NULL, 'Osmosis is the diffusion of water across a semi-permeable membrane from low to high solute concentration.'),
-  ('f_4', 'ws_bio',  'ch_3', 'Mendelian genetics.pdf',   'pdf',   1890, now()-interval '15 day', 'ready', 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf', NULL),
-  ('f_5', 'ws_bio',  NULL,   'Punnett squares.png',      'image',  420, now()-interval '14 day', 'ready', NULL, NULL),
-  ('f_6', 'ws_calc', 'ch_c1','Integration by parts.pdf', 'pdf',    980, now()-interval '10 day', 'ready', 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf', NULL),
-  ('f_7', 'ws_calc', 'ch_c2','Taylor series.md',         'md',      11, now()-interval '9 day',  'ready', NULL, '# Taylor series
+  ('f_3', 'ws_bio',  'ch_2', 'Osmosis notes.txt',        'txt',      6 * 1024, now()-interval '18 day', 'ready', NULL, 'Osmosis is the diffusion of water across a semi-permeable membrane from low to high solute concentration.'),
+  ('f_4', 'ws_bio',  'ch_3', 'Mendelian genetics.pdf',   'pdf',   1890 * 1024, now()-interval '15 day', 'ready', 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf', NULL),
+  ('f_5', 'ws_bio',  NULL,   'Punnett squares.png',      'image',  420 * 1024, now()-interval '14 day', 'ready', NULL, NULL),
+  ('f_6', 'ws_calc', 'ch_c1','Integration by parts.pdf', 'pdf',    980 * 1024, now()-interval '10 day', 'ready', 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf', NULL),
+  ('f_7', 'ws_calc', 'ch_c2','Taylor series.md',         'md',      11 * 1024, now()-interval '9 day',  'ready', NULL, '# Taylor series
 
 A function f(x) near a point a:
 

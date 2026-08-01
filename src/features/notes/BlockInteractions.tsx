@@ -33,7 +33,17 @@ import {
   useSelected,
 } from 'platejs/react';
 import * as React from 'react';
-import { ContextMenu, ContextMenuContent, ContextMenuGroup, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger } from '@/components/ui/ContextMenu';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuGroup,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
+  ContextMenuTrigger,
+} from '@/components/ui/ContextMenu';
 import { cn } from '@/lib/cn';
 import { openAiMenu } from './ai/aiMenuState';
 import { useEditorRuntime } from './EditorRuntime';

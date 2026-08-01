@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { isStorageQuotaError } from '@/api/client';
 import { useGenerate } from '@/api/hooks';
 import type {
   Chapter,
@@ -9,8 +10,8 @@ import type {
   SourceFile,
 } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import type { IconName } from '@/components/ui/Icon';
 import { ButtonCard } from '@/components/ui/ButtonCard';
+import type { IconName } from '@/components/ui/Icon';
 import { userToast } from '@/components/ui/userToast';
 import type { OpenItem } from '@/features/materials/openItem';
 import { m } from '@/i18n';
@@ -61,9 +62,14 @@ export function GeneratePanel({
       if (materialId) onOpenItem?.({ id: materialId, kind: 'material' });
     } catch (error) {
       userToast({
-        description:
-          error instanceof Error ? error.message : 'Something went wrong.',
-        title: 'Could not generate material',
+        description: isStorageQuotaError(error)
+          ? 'Delete content or upgrade to Pro before generating more material.'
+          : error instanceof Error
+            ? error.message
+            : 'Something went wrong.',
+        title: isStorageQuotaError(error)
+          ? 'Storage limit reached'
+          : 'Could not generate material',
         variant: 'error',
       });
     } finally {

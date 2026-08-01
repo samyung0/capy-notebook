@@ -9,6 +9,20 @@ import (
 	"github.com/evonotes/server/internal/materialdoc"
 )
 
+func (s *Store) MaterialRoom(ctx context.Context, materialID string) (string, error) {
+	var schema int
+	err := s.pool.QueryRow(ctx, `SELECT COALESCE(
+		(SELECT room_schema FROM material_yjs_documents WHERE material_id=$1), 1)
+		FROM materials WHERE id=$1`, materialID).Scan(&schema)
+	if isNoRows(err) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("material:%s:schema:%d", materialID, schema), nil
+}
+
 // WorkspaceMaterialIDs returns room identities that must be evicted when
 // workspace membership or workspace lifecycle permissions change.
 func (s *Store) WorkspaceMaterialIDs(ctx context.Context, workspaceID string) ([]string, error) {
@@ -80,12 +94,19 @@ func (s *Store) ProjectMaterialContent(
 			materialID, err.Error())
 		return Material{}, err
 	}
-
+	metrics, err := materialdoc.Metrics(content)
+	if err != nil {
+		_, _ = tx.Exec(ctx, `UPDATE material_yjs_documents
+			SET projection_error=$2, updated_at=now() WHERE material_id=$1`,
+			materialID, err.Error())
+		return Material{}, err
+	}
 	now := time.Now().UTC()
 	nextRevision := revision + 1
 	if _, err := tx.Exec(ctx, `UPDATE materials
-		SET content=$2, revision=$3, updated_at=$4
-		WHERE id=$1`, materialID, json.RawMessage(content), nextRevision, now); err != nil {
+		SET content=$2, node_count=$3, max_depth=$4, revision=$5, updated_at=$6
+		WHERE id=$1`, materialID, json.RawMessage(content), metrics.NodeCount,
+		metrics.MaxDepth, nextRevision, now); err != nil {
 		return Material{}, err
 	}
 	parentRevision := revision

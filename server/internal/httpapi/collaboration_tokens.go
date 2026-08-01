@@ -40,7 +40,7 @@ func signCollaborationToken(secret string, claims collaborationClaims) (string, 
 	return signingInput + "." + base64.RawURLEncoding.EncodeToString(mac.Sum(nil)), nil
 }
 
-func newCollaborationClaims(userID, room, access, name, avatarURL, tokenID string) collaborationClaims {
+func newCollaborationClaims(userID, room, access, name, avatarURL, tokenID string, schema int) collaborationClaims {
 	now := time.Now().UTC()
 	return collaborationClaims{
 		Audience:  "evo-collaboration",
@@ -51,7 +51,7 @@ func newCollaborationClaims(userID, room, access, name, avatarURL, tokenID strin
 		Subject:   userID,
 		Room:      room,
 		Access:    access,
-		Schema:    1,
+		Schema:    schema,
 		Name:      name,
 		AvatarURL: avatarURL,
 	}

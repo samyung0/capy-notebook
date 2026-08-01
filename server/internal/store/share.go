@@ -423,6 +423,238 @@ func cloneMaterialRelations(
 	return nil
 }
 
+type workspaceCloneChapter struct {
+	id       string
+	name     string
+	position int
+}
+
+type workspaceCloneFile struct {
+	id, name, kind, status              string
+	chapterID, parser, engine, blobPath *string
+	url, content, docID                 *string
+	sizeBytes                           int64
+	position                            int64
+}
+
+type workspaceCloneAsset struct {
+	oldID, newID                           string
+	name, purpose, objectPath, contentType string
+	status                                 string
+	sizeBytes                              int64
+	etag                                   string
+	createdAt                              time.Time
+	completedAt                            *time.Time
+}
+
+type workspaceCloneMaterial struct {
+	material  Material
+	content   string
+	metrics   materialdoc.DocumentMetrics
+	sizeBytes int64
+	cardIDs   []string
+	cardIDMap map[string]string
+}
+
+type workspaceCloneSnapshot struct {
+	chapters  []workspaceCloneChapter
+	files     []workspaceCloneFile
+	assets    []workspaceCloneAsset
+	materials []workspaceCloneMaterial
+	bytes     int64
+}
+
+func (s *Store) snapshotWorkspaceForClone(
+	ctx context.Context,
+	workspaceID string,
+) (workspaceCloneSnapshot, error) {
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
+	if err != nil {
+		return workspaceCloneSnapshot{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	var exists bool
+	if err := tx.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM workspaces WHERE id=$1)`,
+		workspaceID,
+	).Scan(&exists); err != nil {
+		return workspaceCloneSnapshot{}, err
+	}
+	if !exists {
+		return workspaceCloneSnapshot{}, ErrNotFound
+	}
+
+	var snapshot workspaceCloneSnapshot
+	rows, err := tx.Query(ctx,
+		`SELECT id, name, position FROM chapters
+		 WHERE workspace_id=$1 ORDER BY position`,
+		workspaceID,
+	)
+	if err != nil {
+		return workspaceCloneSnapshot{}, err
+	}
+	for rows.Next() {
+		var chapter workspaceCloneChapter
+		if err := rows.Scan(&chapter.id, &chapter.name, &chapter.position); err != nil {
+			rows.Close()
+			return workspaceCloneSnapshot{}, err
+		}
+		snapshot.chapters = append(snapshot.chapters, chapter)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return workspaceCloneSnapshot{}, err
+	}
+	rows.Close()
+
+	rows, err = tx.Query(ctx,
+		`SELECT id, name, purpose, object_path, content_type, size_bytes,
+			status, COALESCE(etag,''), created_at, completed_at
+		 FROM editor_assets
+		 WHERE workspace_id=$1 AND status='ready'
+		 ORDER BY created_at`,
+		workspaceID,
+	)
+	if err != nil {
+		return workspaceCloneSnapshot{}, err
+	}
+	for rows.Next() {
+		var asset workspaceCloneAsset
+		if err := rows.Scan(
+			&asset.oldID,
+			&asset.name,
+			&asset.purpose,
+			&asset.objectPath,
+			&asset.contentType,
+			&asset.sizeBytes,
+			&asset.status,
+			&asset.etag,
+			&asset.createdAt,
+			&asset.completedAt,
+		); err != nil {
+			rows.Close()
+			return workspaceCloneSnapshot{}, err
+		}
+		asset.newID = uid("asset")
+		snapshot.bytes += asset.sizeBytes
+		snapshot.assets = append(snapshot.assets, asset)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return workspaceCloneSnapshot{}, err
+	}
+	rows.Close()
+
+	rows, err = tx.Query(ctx,
+		`SELECT id, chapter_id, position, name, kind, size_bytes, status,
+			parser, engine, blob_path, url, content, doc_id
+		 FROM files WHERE workspace_id=$1 ORDER BY added_at`,
+		workspaceID,
+	)
+	if err != nil {
+		return workspaceCloneSnapshot{}, err
+	}
+	for rows.Next() {
+		var file workspaceCloneFile
+		if err := rows.Scan(
+			&file.id,
+			&file.chapterID,
+			&file.position,
+			&file.name,
+			&file.kind,
+			&file.sizeBytes,
+			&file.status,
+			&file.parser,
+			&file.engine,
+			&file.blobPath,
+			&file.url,
+			&file.content,
+			&file.docID,
+		); err != nil {
+			rows.Close()
+			return workspaceCloneSnapshot{}, err
+		}
+		snapshot.bytes += file.sizeBytes
+		snapshot.files = append(snapshot.files, file)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return workspaceCloneSnapshot{}, err
+	}
+	rows.Close()
+
+	assetIDs := make(map[string]string, len(snapshot.assets))
+	for _, asset := range snapshot.assets {
+		assetIDs[asset.oldID] = asset.newID
+	}
+	rows, err = tx.Query(ctx,
+		`SELECT `+materialCols+`
+		 FROM materials WHERE workspace_id=$1 ORDER BY created_at`,
+		workspaceID,
+	)
+	if err != nil {
+		return workspaceCloneSnapshot{}, err
+	}
+	for rows.Next() {
+		material, err := scanMaterial(rows)
+		if err != nil {
+			rows.Close()
+			return workspaceCloneSnapshot{}, err
+		}
+		content := material.Content
+		cardIDMap := map[string]string{}
+		var cardIDs []string
+		if material.Kind == "flashcards" {
+			content, cardIDs, err = rewriteCardIDsWithMap(content, cardIDMap)
+			if err != nil {
+				rows.Close()
+				return workspaceCloneSnapshot{}, err
+			}
+		}
+		if len(assetIDs) > 0 {
+			content, err = materialdoc.RewriteEditorAssetIDs(content, assetIDs)
+			if err != nil {
+				rows.Close()
+				return workspaceCloneSnapshot{}, err
+			}
+		}
+		metrics, err := materialdoc.Metrics(content)
+		if err != nil {
+			rows.Close()
+			return workspaceCloneSnapshot{}, err
+		}
+		snapshot.materials = append(snapshot.materials, workspaceCloneMaterial{
+			material:  material,
+			content:   content,
+			metrics:   metrics,
+			cardIDs:   cardIDs,
+			cardIDMap: cardIDMap,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return workspaceCloneSnapshot{}, err
+	}
+	rows.Close()
+
+	for i := range snapshot.materials {
+		sizeBytes, err := storageJSONSizeTx(
+			ctx, tx, snapshot.materials[i].content,
+		)
+		if err != nil {
+			return workspaceCloneSnapshot{}, err
+		}
+		snapshot.materials[i].sizeBytes = sizeBytes
+		snapshot.bytes += sizeBytes
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return workspaceCloneSnapshot{}, err
+	}
+	return snapshot, nil
+}
+
 // CloneWorkspace deep-copies a shared workspace (chapters, files, materials,
 // fresh card stats) into a new workspace owned by userID. Blobs are shared by
 // reference (blob_path is copied, objects are never deleted on file delete).
@@ -438,12 +670,19 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 	if err != nil {
 		return Workspace{}, err
 	}
+	snapshot, err := s.snapshotWorkspaceForClone(ctx, srcID)
+	if err != nil {
+		return Workspace{}, err
+	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Workspace{}, err
 	}
 	defer tx.Rollback(ctx)
+	if err := s.gateStorageTx(ctx, tx, userID, snapshot.bytes); err != nil {
+		return Workspace{}, err
+	}
 
 	newID := uid("ws")
 	name := src.Name
@@ -469,32 +708,11 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 	// Chapters (old id -> new id).
 	chapterMap := map[string]string{}
 	{
-		rows, err := tx.Query(ctx, `SELECT id, name, position FROM chapters WHERE workspace_id=$1 ORDER BY position`, srcID)
-		if err != nil {
-			return Workspace{}, err
-		}
-		type ch struct {
-			id, name string
-			pos      int
-		}
-		var chapters []ch
-		for rows.Next() {
-			var c ch
-			if err := rows.Scan(&c.id, &c.name, &c.pos); err != nil {
-				rows.Close()
-				return Workspace{}, err
-			}
-			chapters = append(chapters, c)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return Workspace{}, err
-		}
-		for _, c := range chapters {
+		for _, c := range snapshot.chapters {
 			nid := uid("ch")
 			chapterMap[c.id] = nid
 			if _, err := tx.Exec(ctx, `INSERT INTO chapters (id, workspace_id, name, position) VALUES ($1,$2,$3,$4)`,
-				nid, newID, c.name, c.pos); err != nil {
+				nid, newID, c.name, c.position); err != nil {
 				return Workspace{}, err
 			}
 		}
@@ -504,32 +722,7 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 	// row copy (keyed by workspace) keeps the file <-> document link intact.
 	fileMap := map[string]string{}
 	{
-		rows, err := tx.Query(ctx, `SELECT id, chapter_id, position, name, kind, size_kb, status, parser, engine, blob_path, url, content, doc_id
-			FROM files WHERE workspace_id=$1 ORDER BY added_at`, srcID)
-		if err != nil {
-			return Workspace{}, err
-		}
-		type file struct {
-			id, name, kind, status              string
-			chapterID, parser, engine, blobPath *string
-			url, content, docID                 *string
-			sizeKb                              int
-			position                            int64
-		}
-		var files []file
-		for rows.Next() {
-			var f file
-			if err := rows.Scan(&f.id, &f.chapterID, &f.position, &f.name, &f.kind, &f.sizeKb, &f.status, &f.parser, &f.engine, &f.blobPath, &f.url, &f.content, &f.docID); err != nil {
-				rows.Close()
-				return Workspace{}, err
-			}
-			files = append(files, f)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return Workspace{}, err
-		}
-		for _, f := range files {
+		for _, f := range snapshot.files {
 			nid := uid("f")
 			fileMap[f.id] = nid
 			var chapterID *string
@@ -543,34 +736,35 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 				u := "/api/files/" + nid + "/raw"
 				url = &u
 			}
-			if _, err := tx.Exec(ctx, `INSERT INTO files (id, workspace_id, chapter_id, position, name, kind, size_kb, added_at, status, parser, engine, blob_path, url, content, doc_id)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
-				nid, newID, chapterID, f.position, f.name, f.kind, f.sizeKb, time.Now().UTC(), f.status, f.parser, f.engine, f.blobPath, url, f.content, f.docID); err != nil {
+			if _, err := tx.Exec(ctx, `INSERT INTO files
+				(id, workspace_id, user_id, chapter_id, position, name, kind, size_bytes, added_at, status, parser, engine, blob_path, url, content, doc_id)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.parser, f.engine, f.blobPath, url, f.content, f.docID); err != nil {
 				return Workspace{}, err
 			}
 		}
 	}
 
+	// Ready editor assets are logical resources too. Their blob paths remain
+	// shared, but each clone receives a new asset row and therefore its own
+	// quota charge. Material content was rewritten to these IDs in the
+	// snapshot phase.
+	for _, asset := range snapshot.assets {
+		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
+			(id, workspace_id, user_id, created_by, name, purpose, object_path,
+			 content_type, size_bytes, status, etag, created_at, completed_at)
+			VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,'ready',$9,$10,$11)`,
+			asset.newID, newID, userID, asset.name, asset.purpose,
+			asset.objectPath, asset.contentType, asset.sizeBytes, asset.etag,
+			asset.createdAt, asset.completedAt); err != nil {
+			return Workspace{}, err
+		}
+	}
+
 	// Materials (clone lands private; flashcards get fresh card ids + stats).
 	{
-		rows, err := tx.Query(ctx, `SELECT `+materialCols+` FROM materials WHERE workspace_id=$1 ORDER BY created_at`, srcID)
-		if err != nil {
-			return Workspace{}, err
-		}
-		var materials []Material
-		for rows.Next() {
-			mt, err := scanMaterial(rows)
-			if err != nil {
-				rows.Close()
-				return Workspace{}, err
-			}
-			materials = append(materials, mt)
-		}
-		rows.Close()
-		if err := rows.Err(); err != nil {
-			return Workspace{}, err
-		}
-		for _, mt := range materials {
+		for _, materialSnapshot := range snapshot.materials {
+			mt := materialSnapshot.material
 			nid := uid("mat")
 			var chapterID *string
 			if mt.ChapterID != nil {
@@ -584,30 +778,28 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 					scopeFiles = append(scopeFiles, mapped)
 				}
 			}
-			content := mt.Content
-			var cardIDs []string
-			cardIDMap := map[string]string{}
-			if mt.Kind == "flashcards" {
-				if content, cardIDs, err = rewriteCardIDsWithMap(mt.Content, cardIDMap); err != nil {
-					return Workspace{}, err
-				}
-			}
-			if _, err := tx.Exec(ctx, `INSERT INTO materials (id, user_id, workspace_id, workspace_name, kind, title, content, chapter_id, position, scope_chapters, scope_file_ids, privacy, color, updated_at, revision, updated_by)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$2)`,
-				nid, userID, newID, name, mt.Kind, mt.Title, json.RawMessage(content), chapterID, mt.Position, mt.ScopeChapters, scopeFiles, mt.Color, mt.UpdatedAt, mt.Revision); err != nil {
+			content := materialSnapshot.content
+			metrics := materialSnapshot.metrics
+			if _, err := tx.Exec(ctx, `INSERT INTO materials
+				(id, user_id, owner_user_id, workspace_id, workspace_name, kind, title, content,
+				 chapter_id, position, scope_chapters, scope_file_ids, privacy, color, node_count, max_depth, updated_at, revision, updated_by)
+				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2)`,
+				nid, userID, newID, name, mt.Kind, mt.Title, json.RawMessage(content), chapterID,
+				mt.Position, mt.ScopeChapters, scopeFiles, mt.Color, metrics.NodeCount,
+				metrics.MaxDepth, mt.UpdatedAt, mt.Revision); err != nil {
 				return Workspace{}, err
 			}
 			rewrite := func(value string) (string, error) { return value, nil }
 			if mt.Kind == "flashcards" {
 				rewrite = func(value string) (string, error) {
-					rewritten, _, err := rewriteCardIDsWithMap(value, cardIDMap)
+					rewritten, _, err := rewriteCardIDsWithMap(value, materialSnapshot.cardIDMap)
 					return rewritten, err
 				}
 			}
 			if err := cloneMaterialRelations(ctx, tx, mt.ID, nid, rewrite); err != nil {
 				return Workspace{}, err
 			}
-			for _, cid := range cardIDs {
+			for _, cid := range materialSnapshot.cardIDs {
 				if _, err := tx.Exec(ctx, `INSERT INTO card_stats (card_id, material_id, srs, known) VALUES ($1,$2,$3,false)`,
 					cid, nid, newSrsBytes()); err != nil {
 					return Workspace{}, err
@@ -644,17 +836,31 @@ func (s *Store) CloneMaterial(ctx context.Context, userID, matID string) (Materi
 			return Material{}, err
 		}
 	}
+	metrics, err := materialdoc.Metrics(content)
+	if err != nil {
+		return Material{}, err
+	}
 
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Material{}, err
 	}
 	defer tx.Rollback(ctx)
+	storedSize, err := storageJSONSizeTx(ctx, tx, content)
+	if err != nil {
+		return Material{}, err
+	}
+	if err := s.gateStorageTx(ctx, tx, userID, storedSize); err != nil {
+		return Material{}, err
+	}
 
 	nid := uid("mat")
-	if _, err := tx.Exec(ctx, `INSERT INTO materials (id, user_id, workspace_id, workspace_name, kind, title, content, scope_chapters, scope_file_ids, privacy, color, updated_at, revision, updated_by)
-		VALUES ($1,$2,NULL,'',$3,$4,$5,$6,'{}','private',$7,$8,$9,$2)`,
-		nid, userID, src.Kind, src.Title, json.RawMessage(content), src.ScopeChapters, src.Color, src.UpdatedAt, src.Revision); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO materials
+		(id, user_id, owner_user_id, workspace_id, workspace_name, kind, title, content,
+		 scope_chapters, scope_file_ids, privacy, color, node_count, max_depth, updated_at, revision, updated_by)
+		VALUES ($1,$2,$2,NULL,'',$3,$4,$5,$6,'{}','private',$7,$8,$9,$10,$11,$2)`,
+		nid, userID, src.Kind, src.Title, json.RawMessage(content), src.ScopeChapters,
+		src.Color, metrics.NodeCount, metrics.MaxDepth, src.UpdatedAt, src.Revision); err != nil {
 		return Material{}, err
 	}
 	rewrite := func(value string) (string, error) { return value, nil }

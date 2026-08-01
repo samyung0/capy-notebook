@@ -9,9 +9,9 @@ import {
   type Theme,
   useTheme,
 } from '@/theme/ThemeProvider';
+import { ButtonCard } from '../ui/ButtonCard';
 import { Card } from '../ui/Card';
 import { InputTitle } from '../ui/Input';
-import { ButtonCard } from '../ui/ButtonCard';
 
 const ThemeChooser = ({
   selected,

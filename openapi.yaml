@@ -157,7 +157,6 @@ components:
         planTier:
           enum:
             - pro
-            - team
           type: string
       required:
         - planTier
@@ -176,11 +175,23 @@ components:
         renewalAt:
           format: date-time
           type: string
+        storageLimitBytes:
+          format: int64
+          type: integer
+        storageReservedBytes:
+          format: int64
+          type: integer
+        storageUsedBytes:
+          format: int64
+          type: integer
         subscriptionStatus:
           $ref: "#/components/schemas/SubscriptionStatus"
       required:
         - planTier
         - subscriptionStatus
+        - storageUsedBytes
+        - storageReservedBytes
+        - storageLimitBytes
       type: object
     Canvas:
       additionalProperties: false
@@ -889,7 +900,7 @@ components:
         position:
           format: int64
           type: integer
-        sizeKb:
+        sizeBytes:
           format: int64
           type: integer
         status:
@@ -905,7 +916,7 @@ components:
         - position
         - name
         - kind
-        - sizeKb
+        - sizeBytes
         - addedAt
       type: object
     FileKind:
@@ -917,7 +928,6 @@ components:
         - txt
         - sheet
         - slides
-        - video
         - audio
         - json
         - unknown
@@ -1019,6 +1029,12 @@ components:
           type: boolean
         kind:
           type: string
+        maxDepth:
+          format: int64
+          type: integer
+        nodeCount:
+          format: int64
+          type: integer
         position:
           format: int64
           type: integer
@@ -1054,6 +1070,8 @@ components:
         - title
         - content
         - contentBytes
+        - nodeCount
+        - maxDepth
         - chapterId
         - position
         - scopeChapters
@@ -1145,6 +1163,12 @@ components:
           type: integer
         id:
           type: string
+        maxDepth:
+          format: int64
+          type: integer
+        nodeCount:
+          format: int64
+          type: integer
         revision:
           format: int64
           type: integer
@@ -1155,6 +1179,8 @@ components:
         - id
         - revision
         - contentBytes
+        - nodeCount
+        - maxDepth
         - updatedAt
       type: object
     Message:
@@ -1223,7 +1249,6 @@ components:
       enum:
         - free
         - pro
-        - team
       type: string
     Privacy:
       enum:

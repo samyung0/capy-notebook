@@ -18,7 +18,7 @@ export interface File {
   kind: FileKind;
   name: string;
   position: number;
-  sizeKb: number;
+  sizeBytes: number;
   status?: FileStatus;
   url?: string;
   workspaceId: string;

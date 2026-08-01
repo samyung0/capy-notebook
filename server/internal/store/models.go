@@ -86,7 +86,7 @@ type File struct {
 	Position    int64      `json:"position"`
 	Name        string     `json:"name"`
 	Kind        FileKind   `json:"kind"`
-	SizeKb      int        `json:"sizeKb"`
+	SizeBytes   int64      `json:"sizeBytes"`
 	AddedAt     time.Time  `json:"addedAt"`
 	Status      FileStatus `json:"status,omitempty"`
 	URL         *string    `json:"url,omitempty"`
@@ -162,6 +162,7 @@ type Flashcard struct {
 type Material struct {
 	ID            string `json:"id"`
 	UserID        string `json:"-"`
+	OwnerUserID   string `json:"-"`
 	WorkspaceID   string `json:"workspaceId"`
 	WorkspaceName string `json:"workspaceName"`
 	Kind          string `json:"kind"` // mindmap | diagram | quiz | flashcards
@@ -178,6 +179,9 @@ type Material struct {
 	CreatedAt     time.Time `json:"createdAt"`
 	UpdatedAt     time.Time `json:"updatedAt"`
 	Revision      int64     `json:"revision"`
+	SizeBytes     int64     `json:"-"`
+	NodeCount     int       `json:"-"`
+	MaxDepth      int       `json:"-"`
 	// IsOwner is request-scoped (not persisted): true when the requester owns
 	// the parent workspace, false for link/public shared reads.
 	IsOwner      bool               `json:"isOwner"`

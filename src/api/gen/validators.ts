@@ -52,8 +52,11 @@ export const GetAttemptResponse = zod.object({
  */
 export const GetBillingResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "planTier": zod.enum(['free', 'pro', 'team']),
+  "planTier": zod.enum(['free', 'pro']),
   "renewalAt": zod.iso.datetime({"offset":true}).optional(),
+  "storageLimitBytes": zod.number(),
+  "storageReservedBytes": zod.number(),
+  "storageUsedBytes": zod.number(),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
 
@@ -62,7 +65,7 @@ export const GetBillingResponse = zod.object({
  * @summary Start checkout
  */
 export const BillingCheckoutBody = zod.object({
-  "planTier": zod.enum(['pro', 'team'])
+  "planTier": zod.enum(['pro'])
 })
 
 export const BillingCheckoutResponse = zod.object({
@@ -633,10 +636,10 @@ export const ListAllFilesResponseItem = zod.object({
   "chapterId": zod.string().nullable(),
   "content": zod.string().optional(),
   "id": zod.string(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'video', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.number(),
-  "sizeKb": zod.number(),
+  "sizeBytes": zod.number(),
   "status": zod.enum(['processing', 'ready', 'failed']).optional(),
   "url": zod.string().optional(),
   "workspaceId": zod.string()
@@ -667,10 +670,10 @@ export const GetFileResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "content": zod.string().optional(),
   "id": zod.string(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'video', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.number(),
-  "sizeKb": zod.number(),
+  "sizeBytes": zod.number(),
   "status": zod.enum(['processing', 'ready', 'failed']).optional(),
   "url": zod.string().optional(),
   "workspaceId": zod.string()
@@ -695,10 +698,10 @@ export const UpdateFileResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "content": zod.string().optional(),
   "id": zod.string(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'video', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.number(),
-  "sizeKb": zod.number(),
+  "sizeBytes": zod.number(),
   "status": zod.enum(['processing', 'ready', 'failed']).optional(),
   "url": zod.string().optional(),
   "workspaceId": zod.string()
@@ -791,6 +794,8 @@ export const GetMaterialResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "kind": zod.string(),
+  "maxDepth": zod.number(),
+  "nodeCount": zod.number(),
   "position": zod.number(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "revision": zod.number(),
@@ -827,6 +832,8 @@ export const UpdateMaterialResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "contentBytes": zod.number().describe('UTF-8 byte length of persisted content JSON'),
   "id": zod.string(),
+  "maxDepth": zod.number(),
+  "nodeCount": zod.number(),
   "revision": zod.number(),
   "updatedAt": zod.iso.datetime({"offset":true})
 })
@@ -858,6 +865,8 @@ export const CloneMaterialResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "kind": zod.string(),
+  "maxDepth": zod.number(),
+  "nodeCount": zod.number(),
   "position": zod.number(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "revision": zod.number(),
@@ -1015,7 +1024,7 @@ export const GetMeResponse = zod.object({
   "email": zod.string(),
   "id": zod.string(),
   "name": zod.string(),
-  "planTier": zod.enum(['free', 'pro', 'team']),
+  "planTier": zod.enum(['free', 'pro']),
   "streak": zod.number(),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
@@ -1245,7 +1254,7 @@ export const GetSourceUploadPolicyResponse = zod.object({
   "allowNoExtension": zod.boolean(),
   "kinds": zod.array(zod.object({
   "extensions": zod.array(zod.string()),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'video', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "text": zod.boolean()
 })),
   "maxBytes": zod.number(),
@@ -1761,10 +1770,10 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "chapterId": zod.string().nullable(),
   "content": zod.string().optional(),
   "id": zod.string(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'video', 'audio', 'json', 'unknown']),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.number(),
-  "sizeKb": zod.number(),
+  "sizeBytes": zod.number(),
   "status": zod.enum(['processing', 'ready', 'failed']).optional(),
   "url": zod.string().optional(),
   "workspaceId": zod.string()
@@ -1845,6 +1854,8 @@ export const CreateMaterialResponse = zod.object({
   "id": zod.string(),
   "isOwner": zod.boolean(),
   "kind": zod.string(),
+  "maxDepth": zod.number(),
+  "nodeCount": zod.number(),
   "position": zod.number(),
   "privacy": zod.enum(['private', 'public', 'link']),
   "revision": zod.number(),
@@ -1990,6 +2001,8 @@ export const ProjectMaterialYjsDocumentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "contentBytes": zod.number().describe('UTF-8 byte length of persisted content JSON'),
   "id": zod.string(),
+  "maxDepth": zod.number(),
+  "nodeCount": zod.number(),
   "revision": zod.number(),
   "updatedAt": zod.iso.datetime({"offset":true})
 })

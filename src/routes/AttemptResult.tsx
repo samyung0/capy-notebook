@@ -3,9 +3,9 @@ import { useAttempt } from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import { Skeleton } from '@/components/ui/feedback';
 import {
   type Answer,
   emptyAnswer,

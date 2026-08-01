@@ -12,5 +12,8 @@ export interface BillingInfo {
   readonly $schema?: string;
   planTier: PlanTier;
   renewalAt?: string;
+  storageLimitBytes: number;
+  storageReservedBytes: number;
+  storageUsedBytes: number;
   subscriptionStatus: SubscriptionStatus;
 }

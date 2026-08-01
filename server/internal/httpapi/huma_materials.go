@@ -111,6 +111,7 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	res, err := a.s.CreateMaterial(ctx, store.Material{
+		UserID:        userID(ctx),
 		WorkspaceID:   in.ID,
 		WorkspaceName: ws.Name,
 		Kind:          kind,
@@ -195,6 +196,8 @@ func (a *api) updateMaterial(
 		ID:           res.ID,
 		Revision:     res.Revision,
 		ContentBytes: len(res.Content),
+		NodeCount:    res.NodeCount,
+		MaxDepth:     res.MaxDepth,
 		UpdatedAt:    res.UpdatedAt,
 	}}, nil
 }

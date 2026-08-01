@@ -427,7 +427,6 @@ func TestStripeWebhook_SubscriptionUpdated_ProTier(t *testing.T) {
 	srv := newTestServer(t, f, Config{
 		StripeWebhookSecret: testStripeSecret,
 		StripePricePro:      "price_pro_123",
-		StripePriceTeam:     "price_team_123",
 	})
 
 	body := stripeBody(t, "evt_sub_1", "customer.subscription.updated", map[string]any{

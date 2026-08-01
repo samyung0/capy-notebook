@@ -10,7 +10,7 @@ export interface CollaborationClaims {
   jti: string;
   name?: string;
   room: string;
-  schema: 1;
+  schema: number;
   sub: string;
 }
 
@@ -23,7 +23,7 @@ export interface CollaborationContext {
   userId: string;
 }
 
-const MATERIAL_ROOM_PATTERN = /^material:[A-Za-z0-9_-]+:schema:1$/;
+const MATERIAL_ROOM_PATTERN = /^material:[A-Za-z0-9_-]+:schema:(\d+)$/;
 
 function decodeJsonPart<T>(part: string): T {
   return JSON.parse(Buffer.from(part, 'base64url').toString('utf8')) as T;
@@ -51,13 +51,20 @@ export function verifyCollaborationToken(
   }
 
   const claims = decodeJsonPart<CollaborationClaims>(encodedPayload);
-  const validRoom = MATERIAL_ROOM_PATTERN.test(expectedRoom);
+  const roomMatch = MATERIAL_ROOM_PATTERN.exec(expectedRoom);
+  const expectedSchema = roomMatch ? Number(roomMatch[1]) : 0;
   if (
-    !validRoom ||
+    roomMatch &&
+    (claims.room !== expectedRoom || claims.schema !== expectedSchema)
+  ) {
+    throw new Error('collaboration room mismatch');
+  }
+  if (
+    !roomMatch ||
+    !Number.isSafeInteger(expectedSchema) ||
+    expectedSchema < 1 ||
     claims.aud !== 'evo-collaboration' ||
     claims.iss !== 'evo-api' ||
-    claims.room !== expectedRoom ||
-    claims.schema !== 1 ||
     (claims.access !== 'write' && claims.access !== 'comment') ||
     !claims.sub ||
     !claims.jti ||

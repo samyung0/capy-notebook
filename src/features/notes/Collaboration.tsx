@@ -29,9 +29,13 @@ import type {
   WorkspaceMember,
 } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { InputTitle } from '@/components/ui/Input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
 import { SimpleDialog } from '@/components/ui/Dialog';
+import { InputTitle } from '@/components/ui/Input';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/Popover';
 import { Textarea } from '@/components/ui/TextArea';
 import type { MaterialValue } from '@/features/materials/document';
 import { cn } from '@/lib/cn';

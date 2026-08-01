@@ -1,6 +1,11 @@
 export interface CollaborationConfig {
   allowedOrigins: Set<string>;
   apiUrl: string;
+  compactionFloorBytes: number;
+  compactionIdleMs: number;
+  compactionIntervalMs: number;
+  compactionMaxRooms: number;
+  compactionMultiplier: number;
   databaseUrl: string;
   debounceMs: number;
   host: string;
@@ -39,6 +44,26 @@ export function loadConfig(): CollaborationConfig {
   return {
     allowedOrigins: new Set(origins),
     apiUrl: required('API_URL').replace(TRAILING_SLASH, ''),
+    compactionFloorBytes: positiveInteger(
+      'COLLABORATION_COMPACTION_FLOOR_BYTES',
+      256 * 1024
+    ),
+    compactionIdleMs: positiveInteger(
+      'COLLABORATION_COMPACTION_IDLE_MS',
+      60 * 60 * 1000
+    ),
+    compactionIntervalMs: positiveInteger(
+      'COLLABORATION_COMPACTION_INTERVAL_MS',
+      15 * 60 * 1000
+    ),
+    compactionMaxRooms: positiveInteger(
+      'COLLABORATION_COMPACTION_MAX_ROOMS',
+      10
+    ),
+    compactionMultiplier: positiveInteger(
+      'COLLABORATION_COMPACTION_MULTIPLIER',
+      4
+    ),
     databaseUrl: required('DATABASE_URL'),
     debounceMs: positiveInteger('COLLABORATION_DEBOUNCE_MS', 2000),
     host: process.env.HOST?.trim() || '0.0.0.0',

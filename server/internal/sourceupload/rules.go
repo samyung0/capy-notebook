@@ -29,7 +29,6 @@ var explicitKindExtensions = map[string][]string{
 	"image":  {"png", "jpg", "jpeg", "jp2", "webp", "gif", "bmp", "svg", "avif"},
 	"sheet":  {"xls", "xlsx", "csv"},
 	"slides": {"ppt", "pptx"},
-	"video":  {"mp4", "webm", "mov", "mkv", "avi", "m4v"},
 	"audio":  {"mp3", "wav", "m4a", "ogg", "flac", "aac"},
 	"json":   {"json", "map"},
 }

@@ -9,7 +9,6 @@ const explicitExtensions: Record<string, string[]> = {
   pdf: ['pdf'],
   sheet: ['xls', 'xlsx', 'csv'],
   slides: ['ppt', 'pptx'],
-  video: ['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v'],
 };
 
 const textExtensions = `
@@ -48,7 +47,6 @@ const kindOrder: FileKind[] = [
   'txt',
   'sheet',
   'slides',
-  'video',
   'audio',
   'json',
 ];

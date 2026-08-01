@@ -52,6 +52,12 @@ import {
 
 const NOTE_PLACEHOLDER = 'Type  /  for commands ...';
 const CHECKPOINT_MAP = 'evo:checkpoints';
+const COLLABORATION_ROOM_ERROR = /room|schema|stale/i;
+
+function materialValueSizeBytes(value: MaterialValue) {
+  return new TextEncoder().encode(JSON.stringify({ schemaVersion: 1, value }))
+    .byteLength;
+}
 
 function cursorColor(userId: string | null) {
   let hash = 0;
@@ -62,13 +68,16 @@ function cursorColor(userId: string | null) {
 }
 
 function DocumentStatsFooter({
+  limitError,
   metrics,
   contentBytes,
 }: {
+  limitError: string | null;
   metrics: MaterialDocumentMetrics;
   contentBytes: number | null;
 }) {
-  if (!shouldShowDocumentStats(metrics, contentBytes)) return null;
+  if (!limitError && !shouldShowDocumentStats(metrics, contentBytes))
+    return null;
   return (
     <div
       aria-label="Document statistics"
@@ -98,6 +107,9 @@ function DocumentStatsFooter({
         ).toLocaleString()}{' '}
         KB
       </span>
+      {limitError && (
+        <span className="font-medium text-solid-error">{limitError}</span>
+      )}
     </div>
   );
 }
@@ -147,6 +159,11 @@ function NoteEditorContent({
             ...remoteCursorRangesForEntry(entry, remoteCursors),
           ] as never
         }
+        onKeyDown={(event) => {
+          if (event.key !== 'End' || event.shiftKey) return;
+          event.preventDefault();
+          editor.tf.select(editor.api.end([]));
+        }}
         placeholder={showEditorPlaceholder ? NOTE_PLACEHOLDER : undefined}
         readOnly={readOnly}
       />
@@ -161,6 +178,7 @@ export function NoteEditorCore({
   users,
   discussions,
   currentUserId,
+  currentUserName,
   collaborationToken,
   onEditorStatusChange,
   collaborationActionsHost,
@@ -174,12 +192,16 @@ export function NoteEditorCore({
   >;
   discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>['data']>;
   currentUserId: string | null;
+  currentUserName: string | null;
   collaborationToken: MaterialCollaborationToken;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
   collaborationActionsHost?: HTMLElement | null;
 }) {
   const queryClient = useQueryClient();
-  const ydoc = useMemo(() => new Y.Doc({ gc: true }), []);
+  const ydoc = useMemo(
+    () => new Y.Doc({ gc: true }),
+    [collaborationToken.room]
+  );
   const checkpointTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingCheckpoint = useRef<string | null>(null);
   const initialValue =
@@ -187,10 +209,13 @@ export function NoteEditorCore({
     ([{ children: [{ text: '' }], type: 'p' }] as MaterialValue);
   const [documentMetrics, setDocumentMetrics] =
     useState<MaterialDocumentMetrics>(() => countMaterialMetrics(initialValue));
+  const [documentLimitError, setDocumentLimitError] = useState<string | null>(
+    null
+  );
   const [_saveState, setSaveState] =
     useState<NoteEditorStatus['saveState']>('connecting');
   const name = currentUserId
-    ? (users[currentUserId]?.name ?? 'Collaborator')
+    ? (users[currentUserId]?.name ?? currentUserName ?? 'Collaborator')
     : 'Collaborator';
 
   const setStatus = useCallback(
@@ -216,6 +241,14 @@ export function NoteEditorCore({
           onDisconnect: () => setStatus('offline'),
           onError: ({ error }) => {
             console.warn('Yjs collaboration provider error:', error);
+            if (
+              error instanceof Error &&
+              COLLABORATION_ROOM_ERROR.test(error.message)
+            ) {
+              void queryClient.invalidateQueries({
+                queryKey: ['material', material.id, 'collaboration-token'],
+              });
+            }
             setStatus('error');
           },
           onSyncChange: ({ isSynced }) => {
@@ -230,6 +263,8 @@ export function NoteEditorCore({
                     const event = JSON.parse(payload) as {
                       checkpointIds?: string[];
                       materialId?: string;
+                      newRoom?: string;
+                      room?: string;
                       type?: string;
                     };
                     if (
@@ -257,6 +292,20 @@ export function NoteEditorCore({
                     ) {
                       queryClient.invalidateQueries({
                         queryKey: qk.material(material.id),
+                      });
+                    }
+                    if (
+                      (event.type === 'compaction-evict' ||
+                        event.type === 'compaction-complete') &&
+                      (event.room === collaborationToken.room ||
+                        event.materialId === material.id)
+                    ) {
+                      void queryClient.invalidateQueries({
+                        queryKey: [
+                          'material',
+                          material.id,
+                          'collaboration-token',
+                        ],
                       });
                     }
                   } catch {
@@ -358,7 +407,35 @@ export function NoteEditorCore({
 
   const scheduleCheckpoint = useCallback(() => {
     if (mode !== 'edit') return;
-    setDocumentMetrics(countMaterialMetrics(editor.children as MaterialValue));
+    const value = editor.children as MaterialValue;
+    const metrics = countMaterialMetrics(value);
+    setDocumentMetrics(metrics);
+    if (
+      materialValueSizeBytes(value) > MATERIAL_DOCUMENT_LIMITS.maxContentBytes
+    ) {
+      setDocumentLimitError(
+        `Document exceeds the ${contentSizeKilobytes(
+          MATERIAL_DOCUMENT_LIMITS.maxContentBytes
+        ).toLocaleString()} KB limit. Undo or remove content to continue.`
+      );
+      if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
+      return;
+    }
+    if (metrics.nodeCount > MATERIAL_DOCUMENT_LIMITS.maxNodes) {
+      setDocumentLimitError(
+        `Document exceeds the ${MATERIAL_DOCUMENT_LIMITS.maxNodes.toLocaleString()} node limit.`
+      );
+      if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
+      return;
+    }
+    if (metrics.maxDepth > MATERIAL_DOCUMENT_LIMITS.maxDepth) {
+      setDocumentLimitError(
+        `Document exceeds the ${MATERIAL_DOCUMENT_LIMITS.maxDepth}-level nesting limit.`
+      );
+      if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
+      return;
+    }
+    setDocumentLimitError(null);
     if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
     checkpointTimer.current = setTimeout(() => {
       const marker = crypto.randomUUID();
@@ -398,6 +475,7 @@ export function NoteEditorCore({
                 />
                 <DocumentStatsFooter
                   contentBytes={material.contentBytes ?? null}
+                  limitError={documentLimitError}
                   metrics={documentMetrics}
                 />
               </div>

@@ -24,6 +24,8 @@ export interface Material {
   id: string;
   isOwner: boolean;
   kind: string;
+  maxDepth: number;
+  nodeCount: number;
   position: number;
   privacy: Privacy;
   revision: number;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { USE_MSW } from '@/api/auth';
-import { api } from '@/api/client';
+import { api, isStorageQuotaError } from '@/api/client';
 import {
   useChapters,
   useImportSources,
@@ -10,12 +10,25 @@ import {
 } from '@/api/hooks';
 import type { Chapter, SourceFile, SourceUploadPolicy } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { ConfirmDialog, DialogClose, DialogFooter, SimpleDialog } from '@/components/ui/Dialog';
+import {
+  ConfirmDialog,
+  DialogClose,
+  DialogFooter,
+  SimpleDialog,
+} from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import { Select, SelectContent, SelectGroup, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from '@/components/ui/Select';
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectSeparator,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/Select';
 import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
@@ -369,8 +382,17 @@ function UploadFiles({
           .map((file) => file.key)
       );
       setFiles((prev) => prev.filter((file) => !succeededKeys.has(file.key)));
+      const quotaFailure = results.find(
+        (result) =>
+          result.status === 'rejected' && isStorageQuotaError(result.reason)
+      );
       userToast({
-        title: 'Some files failed to upload',
+        description: quotaFailure
+          ? 'Delete content or upgrade to Pro before uploading more.'
+          : undefined,
+        title: quotaFailure
+          ? 'Storage limit reached'
+          : 'Some files failed to upload',
         variant: 'error',
       });
     }
@@ -411,7 +433,7 @@ function UploadFiles({
           <Icon className="size-7" name="upload" />
           <p className="t-subtitle">Upload from your computer</p>
           <p className="t-meta text-fg-muted">
-            PDF, Office, Markdown, text, images, audio or video
+            PDF, Office, Markdown, text, images or audio
           </p>
         </button>
         <input
@@ -618,13 +640,30 @@ function ImportFiles({
 
   const connectProvider = useProviderConnect();
 
+  function handleImportError(error: unknown) {
+    userToast({
+      description: isStorageQuotaError(error)
+        ? 'Delete content or upgrade to Pro before importing more.'
+        : error instanceof Error
+          ? error.message
+          : 'Something went wrong. Please try again.',
+      title: isStorageQuotaError(error)
+        ? 'Storage limit reached'
+        : 'Import failed',
+      variant: 'error',
+    });
+  }
+
   async function connect(provider: 'google' | 'microsoft') {
     if (USE_MSW) {
-      importSources.mutate({
-        chapterId: null,
-        fileIds: ['mock_drive_file'],
-        provider,
-      });
+      importSources.mutate(
+        {
+          chapterId: null,
+          fileIds: ['mock_drive_file'],
+          provider,
+        },
+        { onError: handleImportError }
+      );
       onClose();
       return;
     }
@@ -646,11 +685,14 @@ function ImportFiles({
 
   async function openGooglePicker() {
     if (USE_MSW) {
-      importSources.mutate({
-        chapterId: null,
-        fileIds: ['mock_drive_file'],
-        provider: 'google',
-      });
+      importSources.mutate(
+        {
+          chapterId: null,
+          fileIds: ['mock_drive_file'],
+          provider: 'google',
+        },
+        { onError: handleImportError }
+      );
       onClose();
       return;
     }
@@ -666,11 +708,14 @@ function ImportFiles({
       .setOAuthToken(accessToken)
       .setCallback((data: { action: string; docs?: { id: string }[] }) => {
         if (data.action === 'picked' && data.docs?.length) {
-          importSources.mutate({
-            chapterId: null,
-            fileIds: data.docs.map((d: { id: string }) => d.id),
-            provider: 'google',
-          });
+          importSources.mutate(
+            {
+              chapterId: null,
+              fileIds: data.docs.map((d: { id: string }) => d.id),
+              provider: 'google',
+            },
+            { onError: handleImportError }
+          );
           onClose();
         }
       })
@@ -739,7 +784,7 @@ export function AddSourceDialog({
   const [mode, setMode] = useState('upload');
   return (
     <SimpleDialog
-      className="min-h-[600px] max-w-3xl"
+      className="min-h-150 max-w-3xl"
       onClose={onClose}
       open={open}
       title="Add file"

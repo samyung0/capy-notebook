@@ -73,6 +73,7 @@ import {
   QuizQuestionHeader,
   quizOptionClassName,
 } from './QuizBlock';
+import { YouTubeEmbed, type YouTubeNode } from './YouTubeEmbed';
 
 /* ------------------------------------------------------------- helpers */
 
@@ -315,6 +316,24 @@ function MediaAssetElement(props: SlateElementProps) {
   );
 }
 
+function YouTubeElement(props: SlateElementProps) {
+  const element = props.element as unknown as YouTubeNode;
+  return (
+    <SlateElement {...props} className="my-3">
+      <div contentEditable={false}>
+        {element.videoId ? (
+          <YouTubeEmbed videoId={element.videoId} />
+        ) : (
+          <p className="rounded-card border border-solid-error/30 p-3 text-sm text-solid-error">
+            This YouTube embed is missing a video ID.
+          </p>
+        )}
+      </div>
+      {props.children}
+    </SlateElement>
+  );
+}
+
 /* ------------------------------------------------------------- study blocks */
 
 function BlockShell({
@@ -501,5 +520,5 @@ export const staticNoteComponents = {
   tr: element('tr'),
   ul: element('ul', UL_CLASS),
   underline: mark('u'),
-  video: MediaAssetElement,
+  video: YouTubeElement,
 } as const;

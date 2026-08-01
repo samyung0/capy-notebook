@@ -41,7 +41,6 @@ func (a *api) getSourceUploadPolicy(
 		store.FileTxt,
 		store.FileSheet,
 		store.FileSlides,
-		store.FileVideo,
 		store.FileAudio,
 		store.FileJson,
 	}

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -48,6 +49,24 @@ func hErr(err error) error {
 			"collaboration authority unavailable",
 			err,
 		)
+	}
+	var quota *store.QuotaExceededError
+	if errors.As(err, &quota) {
+		return &huma.ErrorModel{
+			Status: http.StatusForbidden,
+			Title:  http.StatusText(http.StatusForbidden),
+			Detail: "storage quota exceeded",
+			Errors: []*huma.ErrorDetail{{
+				Message: "storage_quota_exceeded",
+				Value: map[string]any{
+					"storageUsedBytes":      quota.UsedBytes,
+					"storageReservedBytes":  quota.ReservedBytes,
+					"storageRequestedBytes": quota.RequestedBytes,
+					"storageLimitBytes":     quota.LimitBytes,
+					"ownerUserId":           quota.UserID,
+				},
+			}},
+		}
 	}
 	return huma.Error500InternalServerError(err.Error())
 }

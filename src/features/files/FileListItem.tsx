@@ -3,18 +3,15 @@ import { useDeleteFile, useMoveFile, useUpdateFile } from '@/api/hooks';
 import type { Chapter, SourceFile, UserColor } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
+import { Spinner } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import { Spinner } from '@/components/ui/feedback';
 import { MoveToChapterDialog } from '@/features/workspace/MoveToChapterDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-
-function formatSize(kb: number): string {
-  return kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`;
-}
+import { formatFileSize } from './fileUtils';
 
 /** A file row in the workspace sidebar. Opens the file in the center pane, shows
  * ingest progress, and exposes a hover action menu (rename / properties /
@@ -165,7 +162,7 @@ export function FileListItem({
         <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
           <Row label="Name" value={file.name} />
           <Row label="Type" value={file.kind.toUpperCase()} />
-          <Row label="Size" value={formatSize(file.sizeKb)} />
+          <Row label="Size" value={formatFileSize(file.sizeBytes)} />
           <Row label="Status" value={file.status ?? 'ready'} />
           <Row label="Added" value={new Date(file.addedAt).toLocaleString()} />
         </dl>

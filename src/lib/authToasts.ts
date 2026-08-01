@@ -1,4 +1,4 @@
-import { isApiError } from '@/api/client';
+import { isApiError, isStorageQuotaError } from '@/api/client';
 import { userToast } from '@/components/ui/userToast';
 
 /** Safe same-origin return path for post-auth redirect. */
@@ -14,6 +14,15 @@ export function toastCloneError(
   err: unknown,
   kind: 'workspace' | 'quiz' | 'deck'
 ) {
+  if (isStorageQuotaError(err)) {
+    userToast({
+      description:
+        'This content is larger than the available storage. Delete content or upgrade to Pro before cloning.',
+      title: 'Storage limit reached',
+      variant: 'error',
+    });
+    return;
+  }
   if (isApiError(err) && err.status === 401) {
     userToast({
       button: {

@@ -41,13 +41,6 @@ var editorAssetRules = map[string]editorAssetRule{
 			".aac": {"audio/aac"},
 		},
 	},
-	"video": {
-		maxBytes: 500 << 20,
-		mimes: map[string][]string{
-			".mp4": {"video/mp4"}, ".webm": {"video/webm"},
-			".mov": {"video/quicktime"}, ".m4v": {"video/x-m4v", "video/mp4"},
-		},
-	},
 	"pdf": {
 		maxBytes: 50 << 20,
 		mimes:    map[string][]string{".pdf": {"application/pdf"}},
@@ -65,6 +58,13 @@ var editorAssetRules = map[string]editorAssetRule{
 			".pptx": {"application/vnd.openxmlformats-officedocument.presentationml.presentation"},
 		},
 	},
+}
+
+func editorAssetMaxBytes(rule editorAssetRule) int64 {
+	if rule.maxBytes > store.FreeStorageLimitBytes {
+		return store.FreeStorageLimitBytes
+	}
+	return rule.maxBytes
 }
 
 type reserveEditorAssetRequest struct {
@@ -94,10 +94,11 @@ func validateEditorAssetMetadata(in reserveEditorAssetRequest) (name, ext, conte
 	}
 	rule, ok := editorAssetRules[in.Purpose]
 	if !ok {
-		return "", "", "", errors.New("purpose must be image, audio, video, pdf, or file")
+		return "", "", "", errors.New("purpose must be image, audio, pdf, or file")
 	}
-	if in.SizeBytes <= 0 || in.SizeBytes > rule.maxBytes {
-		return "", "", "", fmt.Errorf("%s uploads must be between 1 byte and %d MB", in.Purpose, rule.maxBytes>>20)
+	maxBytes := editorAssetMaxBytes(rule)
+	if in.SizeBytes <= 0 || in.SizeBytes > maxBytes {
+		return "", "", "", fmt.Errorf("%s uploads must be between 1 byte and %d MB", in.Purpose, maxBytes>>20)
 	}
 	ext = strings.ToLower(filepath.Ext(name))
 	allowedMimes, ok := rule.mimes[ext]
@@ -139,22 +140,23 @@ func (a *api) reserveEditorAsset(w http.ResponseWriter, r *http.Request) {
 
 	assetID := randID("asset")
 	uploadID := randID("eau")
-	objectPath := editorAssetObjectKey(assetID, ext)
-	signed, err := a.blob.PresignPut(r.Context(), objectPath, contentType)
+	uploadPath := "editor-assets/incoming/" + uploadID + "/" + randID("blob") + ext
+	finalPath := editorAssetObjectKey(assetID, ext)
+	signed, err := a.blob.PresignPut(r.Context(), uploadPath, contentType)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
 	asset, upload, err := a.s.CreateEditorAssetReservation(r.Context(), store.NewEditorAssetReservation{
 		AssetID: assetID, UploadID: uploadID, WorkspaceID: wsID, CreatedBy: uid(r),
-		Name: name, Purpose: in.Purpose, ObjectPath: objectPath, ContentType: contentType,
+		Name: name, Purpose: in.Purpose, ObjectPath: uploadPath, FinalPath: finalPath, ContentType: contentType,
 		DeclaredSize: in.SizeBytes, ExpiresAt: signed.ExpiresAt,
 	})
 	if err != nil {
+		_ = a.blob.Delete(r.Context(), uploadPath)
 		a.fail(w, err)
 		return
 	}
-	go a.cleanupExpiredEditorAssetUploads()
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"assetId": asset.ID, "uploadId": upload.ID, "url": signed.URL, "method": "PUT",
 		"headers": signed.Headers, "expiresAt": signed.ExpiresAt,
@@ -209,6 +211,11 @@ func (a *api) completeEditorAssetUpload(w http.ResponseWriter, r *http.Request) 
 		a.fail(w, errors.New("blob store not configured"))
 		return
 	}
+	asset, err := a.s.GetEditorAsset(r.Context(), upload.AssetID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
 	if time.Now().UTC().After(upload.ExpiresAt) {
 		a.rejectEditorAssetUpload(r.Context(), upload)
 		writeJSON(w, http.StatusGone, map[string]string{"message": store.ErrEditorAssetUploadExpired.Error()})
@@ -216,9 +223,14 @@ func (a *api) completeEditorAssetUpload(w http.ResponseWriter, r *http.Request) 
 	}
 
 	info, err := a.blob.Head(r.Context(), upload.ObjectPath)
+	fromFinalPath := false
 	if err != nil {
-		writeJSON(w, http.StatusConflict, map[string]string{"message": "uploaded object is not available"})
-		return
+		info, err = a.blob.Head(r.Context(), asset.ObjectPath)
+		fromFinalPath = err == nil
+		if err != nil {
+			writeJSON(w, http.StatusConflict, map[string]string{"message": "uploaded object is not available"})
+			return
+		}
 	}
 	actualType, typeErr := normalizeMediaType(info.ContentType)
 	if info.Size != upload.DeclaredSize || typeErr != nil || actualType != upload.ContentType {
@@ -226,12 +238,11 @@ func (a *api) completeEditorAssetUpload(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "uploaded object does not match the reservation"})
 		return
 	}
-	asset, err := a.s.GetEditorAsset(r.Context(), upload.AssetID)
-	if err != nil {
-		a.fail(w, err)
-		return
+	sourcePath := upload.ObjectPath
+	if fromFinalPath {
+		sourcePath = asset.ObjectPath
 	}
-	prefix, err := a.blob.ReadPrefix(r.Context(), upload.ObjectPath, 512)
+	prefix, err := a.blob.ReadPrefix(r.Context(), sourcePath, 512)
 	if err != nil {
 		a.fail(w, fmt.Errorf("inspect editor asset: %w", err))
 		return
@@ -240,6 +251,12 @@ func (a *api) completeEditorAssetUpload(w http.ResponseWriter, r *http.Request) 
 		a.rejectEditorAssetUpload(r.Context(), upload)
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "uploaded content does not match its file type"})
 		return
+	}
+	if !fromFinalPath {
+		if err := a.blob.Promote(r.Context(), upload.ObjectPath, asset.ObjectPath); err != nil {
+			a.fail(w, err)
+			return
+		}
 	}
 	asset, err = a.s.FinalizeEditorAssetUpload(r.Context(), uploadID, info.ETag)
 	if errors.Is(err, store.ErrEditorAssetUploadExpired) || errors.Is(err, store.ErrEditorAssetUploadState) {
@@ -286,8 +303,10 @@ func (a *api) resolveEditorAsset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *api) rejectEditorAssetUpload(ctx context.Context, upload store.EditorAssetUpload) {
-	if err := a.blob.Delete(ctx, upload.ObjectPath); err == nil {
-		_ = a.s.MarkEditorAssetUploadExpired(ctx, upload.ID)
+	_ = a.s.MarkEditorAssetUploadExpired(ctx, upload.ID)
+	_ = a.blob.Delete(ctx, upload.ObjectPath)
+	if objectPath, err := a.s.EditorAssetObjectPath(ctx, upload.AssetID); err == nil {
+		_ = a.blob.Delete(ctx, objectPath)
 	}
 }
 
@@ -299,10 +318,13 @@ func (a *api) cleanupExpiredEditorAssetUploads() {
 		return
 	}
 	for _, upload := range uploads {
-		if err := a.blob.Delete(ctx, upload.ObjectPath); err != nil {
+		if err := a.s.MarkEditorAssetUploadExpired(ctx, upload.ID); err != nil {
 			continue
 		}
-		_ = a.s.MarkEditorAssetUploadExpired(ctx, upload.ID)
+		_ = a.blob.Delete(ctx, upload.ObjectPath)
+		if asset, err := a.s.GetEditorAsset(ctx, upload.AssetID); err == nil {
+			_ = a.blob.Delete(ctx, asset.ObjectPath)
+		}
 	}
 	_ = a.s.PruneEditorAssetUploads(ctx)
 }
@@ -345,15 +367,6 @@ func editorAssetSignatureAllowed(purpose, ext string, data []byte) bool {
 		return len(data) >= 2 && data[0] == 0xff && data[1]&0xf6 == 0xf0
 	case ".m4a":
 		return isISOBaseMedia && (isoBrand == "M4A " || isoBrand == "M4B " || isoBrand == "f4a ")
-	case ".mp4":
-		return isISOBaseMedia && (isoBrand == "isom" || isoBrand == "iso2" ||
-			isoBrand == "mp41" || isoBrand == "mp42" || isoBrand == "avc1")
-	case ".m4v":
-		return isISOBaseMedia && (isoBrand == "M4V " || isoBrand == "mp42")
-	case ".mov":
-		return isISOBaseMedia && isoBrand == "qt  "
-	case ".webm":
-		return has([]byte{0x1a, 0x45, 0xdf, 0xa3})
 	case ".pdf":
 		return has([]byte("%PDF-"))
 	case ".doc", ".xls", ".ppt":

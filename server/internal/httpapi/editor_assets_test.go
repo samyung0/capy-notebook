@@ -59,7 +59,6 @@ func TestEditorAssetSignatureAllowed(t *testing.T) {
 		{"jpeg", "image", ".jpg", []byte{0xff, 0xd8, 0xff, 0xe0}, true},
 		{"webp", "image", ".webp", []byte("RIFF1234WEBP"), true},
 		{"pdf", "pdf", ".pdf", []byte("%PDF-1.7"), true},
-		{"webm", "video", ".webm", []byte{0x1a, 0x45, 0xdf, 0xa3}, true},
 		{"docx", "file", ".docx", []byte{'P', 'K', 0x03, 0x04}, true},
 		{"utf8 text", "file", ".txt", []byte("hello"), true},
 		{"binary text", "file", ".txt", []byte{'a', 0, 'b'}, false},

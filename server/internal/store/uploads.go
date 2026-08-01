@@ -17,6 +17,7 @@ var (
 type UploadSession struct {
 	ID           string
 	WorkspaceID  string
+	UserID       string
 	ChapterID    *string
 	ChapterName  string
 	ObjectPath   string
@@ -47,12 +48,27 @@ type NewUploadSession struct {
 }
 
 func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (UploadSession, error) {
-	_, err := s.pool.Exec(ctx, `INSERT INTO upload_sessions
-		(id, workspace_id, chapter_id, chapter_name, object_path, final_path, name, kind, content_type, declared_size, parse_mode, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-		in.ID, in.WorkspaceID, in.ChapterID, in.ChapterName, in.ObjectPath, in.FinalPath,
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return UploadSession{}, err
+	}
+	defer tx.Rollback(ctx)
+	ownerID, err := s.storageOwnerTx(ctx, tx, in.WorkspaceID)
+	if err != nil {
+		return UploadSession{}, err
+	}
+	if err := s.reserveStorageTx(ctx, tx, ownerID, in.DeclaredSize); err != nil {
+		return UploadSession{}, err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO upload_sessions
+		(id, workspace_id, user_id, chapter_id, chapter_name, object_path, final_path, name, kind, content_type, declared_size, parse_mode, expires_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+		in.ID, in.WorkspaceID, ownerID, in.ChapterID, in.ChapterName, in.ObjectPath, in.FinalPath,
 		in.Name, in.Kind, in.ContentType, in.DeclaredSize, in.ParseMode, in.ExpiresAt)
 	if err != nil {
+		return UploadSession{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
 		return UploadSession{}, err
 	}
 	return s.GetUploadSession(ctx, in.ID)
@@ -60,13 +76,13 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 
 func scanUploadSession(row interface{ Scan(...any) error }) (UploadSession, error) {
 	var u UploadSession
-	err := row.Scan(&u.ID, &u.WorkspaceID, &u.ChapterID, &u.ChapterName, &u.ObjectPath, &u.FinalPath,
+	err := row.Scan(&u.ID, &u.WorkspaceID, &u.UserID, &u.ChapterID, &u.ChapterName, &u.ObjectPath, &u.FinalPath,
 		&u.Name, &u.Kind, &u.ContentType, &u.DeclaredSize, &u.ParseMode,
 		&u.Status, &u.FileID, &u.ExpiresAt)
 	return u, err
 }
 
-const uploadSessionCols = `id, workspace_id, chapter_id, chapter_name, object_path, final_path,
+const uploadSessionCols = `id, workspace_id, user_id, chapter_id, chapter_name, object_path, final_path,
 	name, kind, content_type, declared_size, parse_mode, status, file_id, expires_at`
 
 func (s *Store) GetUploadSession(ctx context.Context, id string) (UploadSession, error) {
@@ -87,6 +103,17 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 	}
 	defer tx.Rollback(ctx)
 
+	var ownerID string
+	if err := tx.QueryRow(ctx, `SELECT user_id FROM upload_sessions WHERE id=$1`, uploadID).
+		Scan(&ownerID); err != nil {
+		if isNoRows(err) {
+			return File{}, ErrNotFound
+		}
+		return File{}, err
+	}
+	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
+		return File{}, err
+	}
 	u, err := scanUploadSession(tx.QueryRow(ctx,
 		`SELECT `+uploadSessionCols+` FROM upload_sessions WHERE id=$1 FOR UPDATE`, uploadID))
 	if isNoRows(err) {
@@ -119,9 +146,9 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 		status = "ready"
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, chapter_id, name, kind, size_kb, added_at, status, parser, engine, blob_path, url, source_etag)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-		fileID, u.WorkspaceID, chapterID, u.Name, u.Kind, int(u.DeclaredSize/1024),
+		(id, workspace_id, user_id, chapter_id, name, kind, size_bytes, added_at, status, parser, engine, blob_path, url, source_etag)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+		fileID, u.WorkspaceID, u.UserID, chapterID, u.Name, u.Kind, u.DeclaredSize,
 		now, status, parser, engine, u.FinalPath, fileURL, sourceETag)
 	if err != nil {
 		return File{}, err
@@ -151,7 +178,7 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 	}
 	return File{
 		ID: fileID, WorkspaceID: u.WorkspaceID, ChapterID: chapterID,
-		Name: u.Name, Kind: FileKind(u.Kind), SizeKb: int(u.DeclaredSize / 1024),
+		Name: u.Name, Kind: FileKind(u.Kind), SizeBytes: u.DeclaredSize,
 		AddedAt: now, Status: FileStatus(status), URL: &fileURL,
 	}, nil
 }
@@ -178,9 +205,39 @@ func (s *Store) ExpiredUploadSessions(ctx context.Context, limit int) ([]UploadS
 }
 
 func (s *Store) MarkUploadExpired(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE upload_sessions SET status='expired'
-		WHERE id=$1 AND status='pending'`)
-	return err
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var userID string
+	var declaredSize int64
+	err = tx.QueryRow(ctx, `SELECT user_id, declared_size
+		FROM upload_sessions WHERE id=$1 AND status='pending'`, id).
+		Scan(&userID, &declaredSize)
+	if isNoRows(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := s.lockStorageRowTx(ctx, tx, userID); err != nil {
+		return err
+	}
+	err = tx.QueryRow(ctx, `SELECT declared_size
+		FROM upload_sessions WHERE id=$1 AND status='pending' FOR UPDATE`, id).
+		Scan(&declaredSize)
+	if isNoRows(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE upload_sessions SET status='expired'
+		WHERE id=$1 AND status='pending'`, id); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 func (s *Store) PruneUploadSessions(ctx context.Context) error {
@@ -200,6 +257,17 @@ func (s *Store) DeleteFileWithOrphanedBlobs(ctx context.Context, id string) ([]s
 	}
 	defer tx.Rollback(ctx)
 	var source, parsed *string
+	var userID string
+	err = tx.QueryRow(ctx, `SELECT user_id FROM files WHERE id=$1`, id).Scan(&userID)
+	if isNoRows(err) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := s.lockStorageRowTx(ctx, tx, userID); err != nil {
+		return nil, err
+	}
 	err = tx.QueryRow(ctx, `SELECT blob_path, parsed_blob_path FROM files
 		WHERE id=$1 FOR UPDATE`, id).Scan(&source, &parsed)
 	if isNoRows(err) {

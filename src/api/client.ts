@@ -6,14 +6,30 @@ import { authHeaders } from './auth';
 
 export const API_BASE = '/api';
 
+export interface ApiErrorBody {
+  code?: string;
+  detail?: string;
+  message?: string;
+  [key: string]: unknown;
+}
+
 /** Typed HTTP failure so callers can branch on status (404 private, 401, …). */
 export class ApiError extends Error {
+  readonly body: ApiErrorBody | null;
+  readonly code: string | null;
   readonly status: number;
   readonly statusText: string;
 
-  constructor(status: number, statusText: string, detail?: string) {
+  constructor(
+    status: number,
+    statusText: string,
+    detail?: string,
+    body: ApiErrorBody | null = null
+  ) {
     super(`${status} ${statusText}${detail ? ` — ${detail}` : ''}`);
     this.name = 'ApiError';
+    this.body = body;
+    this.code = body?.code ?? null;
     this.status = status;
     this.statusText = statusText;
   }
@@ -21,6 +37,31 @@ export class ApiError extends Error {
 
 export function isApiError(err: unknown): err is ApiError {
   return err instanceof ApiError;
+}
+
+export function isStorageQuotaError(err: unknown): err is ApiError {
+  return isApiError(err) && err.code === 'storage_quota_exceeded';
+}
+
+function parseErrorBody(value: unknown): ApiErrorBody | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const body = value as ApiErrorBody & {
+    errors?: Array<{ message?: string; value?: unknown }>;
+  };
+  const quotaError = body.errors?.find(
+    (error) => error.message === 'storage_quota_exceeded'
+  );
+  const details =
+    typeof quotaError?.value === 'object' && quotaError.value !== null
+      ? quotaError.value
+      : {};
+  return quotaError
+    ? { ...body, ...details, code: 'storage_quota_exceeded' }
+    : body;
+}
+
+function errorDetail(body: ApiErrorBody | null) {
+  return body?.message ?? body?.detail;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -34,13 +75,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!res.ok) {
-    let detail = '';
+    let body: ApiErrorBody | null = null;
     try {
-      detail = (await res.json())?.message ?? '';
+      body = parseErrorBody(await res.json());
     } catch {
       /* ignore */
     }
-    throw new ApiError(res.status, res.statusText, detail || undefined);
+    throw new ApiError(res.status, res.statusText, errorDetail(body), body);
   }
   if (res.status === 204) return undefined as T;
   const body = await res.text();
@@ -79,15 +120,13 @@ async function upload<T>(
     };
     xhr.onload = () => {
       if (xhr.status < 200 || xhr.status >= 300) {
-        let detail = '';
+        let body: ApiErrorBody | null = null;
         try {
-          detail =
-            (JSON.parse(xhr.responseText) as { message?: string })?.message ??
-            '';
+          body = parseErrorBody(JSON.parse(xhr.responseText));
         } catch {
           /* ignore */
         }
-        fail(new ApiError(xhr.status, xhr.statusText, detail || undefined));
+        fail(new ApiError(xhr.status, xhr.statusText, errorDetail(body), body));
         return;
       }
       if (xhr.status === 204 || !xhr.responseText) {

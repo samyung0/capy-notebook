@@ -39,7 +39,6 @@ type Config struct {
 	StripeSecretKey     string
 	StripeWebhookSecret string
 	StripePricePro      string
-	StripePriceTeam     string
 	AppURL              string
 	CollaborationSecret string
 	CollaborationURL    string
@@ -140,6 +139,19 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "not found"})
 		return
 	}
+	var quota *store.QuotaExceededError
+	if errors.As(err, &quota) {
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"code":                  "storage_quota_exceeded",
+			"message":               "storage quota exceeded",
+			"storageUsedBytes":      quota.UsedBytes,
+			"storageReservedBytes":  quota.ReservedBytes,
+			"storageRequestedBytes": quota.RequestedBytes,
+			"storageLimitBytes":     quota.LimitBytes,
+			"ownerUserId":           quota.UserID,
+		})
+		return
+	}
 	writeJSON(w, http.StatusInternalServerError, map[string]string{"message": err.Error()})
 }
 
@@ -202,7 +214,7 @@ func (a *api) addSource(w http.ResponseWriter, r *http.Request) {
 	if b.Kind == "" {
 		b.Kind = "pdf"
 	}
-	res, err := a.s.AddSource(r.Context(), id(r), b.Name, b.Kind, b.ChapterID, randInt(200, 3200))
+	res, err := a.s.AddSource(r.Context(), id(r), b.Name, b.Kind, b.ChapterID, int64(randInt(200, 3200)))
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -291,16 +303,18 @@ func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if parseMode == parseModeNone && !sourceupload.IsTextKind(kind) {
-		res, err := a.s.CreateSourceReady(r.Context(), id(r), name, kind, chapterID, chapterName, int(size/1024), blobPath)
+		res, err := a.s.CreateSourceReady(r.Context(), id(r), name, kind, chapterID, chapterName, size, blobPath)
 		if err != nil {
+			_ = a.blob.Delete(r.Context(), blobPath)
 			a.fail(w, err)
 			return
 		}
 		writeJSON(w, 201, res)
 		return
 	}
-	res, _, err := a.s.CreateSourceWithJob(r.Context(), id(r), name, kind, chapterID, chapterName, int(size/1024), blobPath, a.parser, a.engine, parseMode)
+	res, _, err := a.s.CreateSourceWithJob(r.Context(), id(r), name, kind, chapterID, chapterName, size, blobPath, a.parser, a.engine, parseMode)
 	if err != nil {
+		_ = a.blob.Delete(r.Context(), blobPath)
 		a.fail(w, err)
 		return
 	}
@@ -451,7 +465,10 @@ func (a *api) generate(w http.ResponseWriter, r *http.Request) {
 
 	userID := uid(r)
 	if a.pipe != nil {
-		if payload, ok := a.generateViaPipe(r.Context(), userID, wsID, wsName, &opts); ok {
+		if payload, ok, err := a.generateViaPipe(r.Context(), userID, wsID, wsName, &opts); err != nil {
+			a.fail(w, err)
+			return
+		} else if ok {
 			writeJSON(w, 200, payload)
 			return
 		}
@@ -512,7 +529,11 @@ func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts)
 // generateViaPipe asks the retrieval service to produce grounded output, then
 // persists it (quiz -> quizzes, flashcards -> deck+cards, mindmap/diagram ->
 // materials) so every artifact shows up in the workspace materials list.
-func (a *api) generateViaPipe(ctx context.Context, userID, wsID, wsName string, opts *generateOpts) (any, bool) {
+func (a *api) generateViaPipe(
+	ctx context.Context,
+	userID, wsID, wsName string,
+	opts *generateOpts,
+) (any, bool, error) {
 	fileIDs, chapterNames := a.resolveScope(ctx, wsID, opts)
 	body := map[string]any{
 		"workspaceId": wsID, "kind": opts.Kind, "length": opts.Length, "format": opts.Format,
@@ -522,13 +543,13 @@ func (a *api) generateViaPipe(ctx context.Context, userID, wsID, wsName string, 
 	}
 	raw, err := a.pipe.PostRaw(ctx, "/generate", body)
 	if err != nil {
-		return nil, false
+		return nil, false, nil
 	}
 	var head struct {
 		Kind string `json:"kind"`
 	}
 	if json.Unmarshal(raw, &head) != nil {
-		return nil, false
+		return nil, false, nil
 	}
 	switch head.Kind {
 	case "quiz":
@@ -552,9 +573,9 @@ func (a *api) generateViaPipe(ctx context.Context, userID, wsID, wsName string, 
 			Questions: qp.Questions, Privacy: "private", TimeLimitMin: qp.TimeLimitMin,
 		})
 		if err != nil {
-			return nil, false
+			return nil, false, err
 		}
-		return map[string]any{"kind": "quiz", "quiz": quiz}, true
+		return map[string]any{"kind": "quiz", "quiz": quiz}, true, nil
 	case "flashcards":
 		var fp struct {
 			Cards []struct {
@@ -569,9 +590,9 @@ func (a *api) generateViaPipe(ctx context.Context, userID, wsID, wsName string, 
 		}
 		res, err := a.persistDeck(ctx, userID, wsID, wsName, fronts)
 		if err != nil {
-			return nil, false
+			return nil, false, err
 		}
-		return res, true
+		return res, true, nil
 	case "mindmap", "diagram":
 		var mp struct {
 			Title   string `json:"title"`
@@ -580,15 +601,15 @@ func (a *api) generateViaPipe(ctx context.Context, userID, wsID, wsName string, 
 		_ = json.Unmarshal(raw, &mp)
 		res, err := a.persistMaterial(ctx, wsID, wsName, head.Kind, mp.Title, mp.Content, opts, chapterNames)
 		if err != nil {
-			return nil, false
+			return nil, false, err
 		}
-		return res, true
+		return res, true, nil
 	}
 	var m map[string]any
 	if json.Unmarshal(raw, &m) != nil {
-		return nil, false
+		return nil, false, nil
 	}
-	return m, true
+	return m, true, nil
 }
 
 // generateLocal is the offline fallback (and the mock-parity generator).
@@ -622,25 +643,11 @@ func (a *api) generateLocal(ctx context.Context, userID, wsID, wsName string, op
 // persistDeck creates a real deck + cards so generated flashcards appear in the
 // library and the workspace materials list.
 func (a *api) persistDeck(ctx context.Context, userID, wsID, wsName string, cards [][2]string) (any, error) {
-	deck, err := a.s.CreateDeck(ctx, userID, wsName+" flashcards", "green", wsID)
+	deck, err := a.s.CreateDeckWithCards(
+		ctx, userID, wsName+" flashcards", "green", wsID, cards,
+	)
 	if err != nil {
 		return nil, err
-	}
-	existing, err := a.s.ListCards(ctx, deck.ID)
-	if err != nil {
-		return nil, err
-	}
-	for i, c := range cards {
-		if i == 0 && len(existing) == 1 && existing[0].Front == "" && existing[0].Back == "" {
-			front, back := c[0], c[1]
-			if _, err := a.s.UpdateCard(ctx, existing[0].ID, store.CardPatch{Front: &front, Back: &back}); err != nil {
-				return nil, err
-			}
-			continue
-		}
-		if _, err := a.s.CreateCard(ctx, deck.ID, c[0], c[1]); err != nil {
-			return nil, err
-		}
 	}
 	out, err := a.s.ListCards(ctx, deck.ID)
 	if err != nil {

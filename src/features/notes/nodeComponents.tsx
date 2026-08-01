@@ -34,6 +34,7 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { Katex } from '@/features/materials/Katex';
+import { YouTubeEmbedElement } from '@/features/materials/YouTubeEmbed';
 import { cn } from '@/lib/cn';
 import { Column, ColumnGroup } from './ColumnNodes';
 import { MediaAssetElement } from './MediaNodes';
@@ -589,5 +590,5 @@ export const noteComponents = {
   tr: TableRowElement,
   ul: Ul,
   underline: mark('u'),
-  video: MediaAssetElement,
+  video: YouTubeEmbedElement,
 } as const;

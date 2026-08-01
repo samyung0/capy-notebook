@@ -11,13 +11,22 @@ import {
 import type { SearchKind } from '@/api/types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
-import { Dialog, DialogClose, DialogContent, DialogTitle } from '@/components/ui/Dialog';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogTitle,
+} from '@/components/ui/Dialog';
+import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { Menu } from '@/components/ui/Menu';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
-import { SkeletonList } from '@/components/ui/feedback';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/Popover';
 import { cn } from '@/lib/cn';
 import { useDebounced } from '@/lib/useDebounced';
 import { userColorPair } from '@/lib/userColor';

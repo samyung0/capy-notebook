@@ -8,7 +8,12 @@ import type {
   SourceFile,
 } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { Dialog, DialogContent, DialogFooter, DialogTitle } from '@/components/ui/Dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';

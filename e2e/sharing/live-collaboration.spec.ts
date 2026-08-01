@@ -58,8 +58,6 @@ test.describe('live Yjs collaboration', () => {
     await expect(
       ownerPage.getByText(`${body}${suffix}`, { exact: true })
     ).toBeVisible();
-    await expect(ownerPage.locator('[data-slate-editor="true"]')).toHaveCount(
-      0
-    );
+    await expect(ownerPage.locator('[contenteditable="true"]')).toHaveCount(0);
   });
 });

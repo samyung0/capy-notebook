@@ -1,11 +1,12 @@
 import type { EditorAsset, EditorAssetPurpose } from '@/api/editorAssets';
 
+const VIDEO_EXTENSIONS = new Set(['avi', 'm4v', 'mkv', 'mov', 'mp4', 'webm']);
+
 export const MEDIA_ACCEPT: Record<EditorAssetPurpose, string> = {
   audio: 'audio/*',
   file: '*/*',
   image: 'image/*',
   pdf: 'application/pdf',
-  video: 'video/*',
 };
 
 export function editorAssetPurpose(
@@ -13,7 +14,6 @@ export function editorAssetPurpose(
 ): EditorAssetPurpose {
   if (file.type.startsWith('image/')) return 'image';
   if (file.type.startsWith('audio/')) return 'audio';
-  if (file.type.startsWith('video/')) return 'video';
   if (
     file.type === 'application/pdf' ||
     file.name.toLowerCase().endsWith('.pdf')
@@ -22,14 +22,17 @@ export function editorAssetPurpose(
   return 'file';
 }
 
+export function isVideoFile(file: Pick<File, 'type' | 'name'>) {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  return (
+    file.type.startsWith('video/') || VIDEO_EXTENSIONS.has(extension ?? '')
+  );
+}
+
 export function plateMediaType(
   purpose: EditorAssetPurpose
-): 'img' | 'audio' | 'video' | 'file' {
-  return purpose === 'image'
-    ? 'img'
-    : purpose === 'audio' || purpose === 'video'
-      ? purpose
-      : 'file';
+): 'img' | 'audio' | 'file' {
+  return purpose === 'image' ? 'img' : purpose === 'audio' ? purpose : 'file';
 }
 
 /** Stable persisted representation. Signed URLs and local blob URLs never
@@ -50,5 +53,8 @@ export function acceptsPurpose(
   file: Pick<File, 'type' | 'name'>,
   purpose: EditorAssetPurpose
 ) {
-  return purpose === 'file' || editorAssetPurpose(file) === purpose;
+  return (
+    !isVideoFile(file) &&
+    (purpose === 'file' || editorAssetPurpose(file) === purpose)
+  );
 }

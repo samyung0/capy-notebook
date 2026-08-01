@@ -4,10 +4,11 @@ import type { SourceFile } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
-import { Icon } from '@/components/ui/Icon';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
+import { Icon } from '@/components/ui/Icon';
 import { FileViewer } from '@/features/files/FileViewer';
+import { formatFileSize } from '@/features/files/fileUtils';
 import { m } from '@/i18n';
 
 export default function Files() {
@@ -36,7 +37,7 @@ export default function Files() {
                 <div className="min-w-0 flex-1">
                   <p className="t-subtitle truncate">{f.name}</p>
                   <p className="t-meta text-fg-muted">
-                    {(f.sizeKb / 1024).toFixed(1)} MB
+                    {formatFileSize(f.sizeBytes)}
                   </p>
                 </div>
                 <Badge size="sm">{f.kind}</Badge>

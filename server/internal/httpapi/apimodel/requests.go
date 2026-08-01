@@ -205,7 +205,7 @@ type SaveCanvasReq struct {
 }
 
 type BillingCheckoutReq struct {
-	PlanTier string `json:"planTier" enum:"pro,team"`
+	PlanTier string `json:"planTier" enum:"pro"`
 }
 
 /* --------------------------------------------------------- small responses */

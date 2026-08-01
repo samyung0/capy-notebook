@@ -244,7 +244,6 @@ func TestMaterialVersionRetentionUsesOwnerTier(t *testing.T) {
 	}{
 		{name: "free", tier: PlanFree, limit: freeMaterialRevisionLimit},
 		{name: "pro", tier: PlanPro, limit: premiumMaterialRevisionLimit},
-		{name: "team", tier: PlanTeam, limit: premiumMaterialRevisionLimit},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, _, material := createRevisionTestMaterial(t, s, test.tier)

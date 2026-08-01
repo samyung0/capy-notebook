@@ -106,7 +106,6 @@ func (a *api) createSourceUpload(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	go a.cleanupExpiredUploads()
 	log.Printf("direct upload reserved upload=%s workspace=%s bytes=%d mode=%s",
 		session.ID, wsID, session.DeclaredSize, session.ParseMode)
 	writeJSON(w, http.StatusCreated, map[string]any{
@@ -191,11 +190,11 @@ func (a *api) cleanupExpiredUploads() {
 		return
 	}
 	for _, session := range sessions {
-		if err := a.blob.Delete(ctx, session.ObjectPath); err != nil {
+		if err := a.s.MarkUploadExpired(ctx, session.ID); err != nil {
 			continue
 		}
+		_ = a.blob.Delete(ctx, session.ObjectPath)
 		_ = a.blob.Delete(ctx, session.FinalPath)
-		_ = a.s.MarkUploadExpired(ctx, session.ID)
 	}
 	_ = a.s.PruneUploadSessions(ctx)
 }

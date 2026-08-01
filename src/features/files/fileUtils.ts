@@ -27,6 +27,13 @@ export function fileExt(name: string) {
   return name.includes('.') ? (name.split('.').pop()?.toLowerCase() ?? '') : '';
 }
 
+export function formatFileSize(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
+}
+
 export function isImageFile(file: Pick<SourceFile, 'kind' | 'name'>) {
   return file.kind === 'image' || IMAGE_EXTS.has(fileExt(file.name));
 }

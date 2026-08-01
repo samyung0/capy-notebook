@@ -11,14 +11,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 )
 
 const (
-	SchemaVersion = 1
-	maxDocument   = 2 << 20
-	maxDepth      = 64
-	maxNodes      = 10000
+	SchemaVersion    = 1
+	MaxDocumentBytes = 2 << 20
+	MaxDepth         = 64
+	MaxNodes         = 10000
+	maxDocument      = MaxDocumentBytes
+	maxDepth         = MaxDepth
+	maxNodes         = MaxNodes
 )
 
 var ErrInvalid = errors.New("invalid material document")
@@ -26,12 +30,19 @@ var ErrInvalid = errors.New("invalid material document")
 var (
 	questionTypes   = set("mcq", "multi", "boolean", "fill", "short", "matching", "ordering")
 	cognitiveLevels = set("recall", "application", "analysis")
+	youtubeVideoID  = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 )
 
 // Envelope is the generic versioned JSON value persisted in materials.content.
 type Envelope struct {
 	SchemaVersion int              `json:"schemaVersion"`
 	Value         []map[string]any `json:"value"`
+}
+
+type DocumentMetrics struct {
+	SizeBytes int
+	NodeCount int
+	MaxDepth  int
 }
 
 // Card is the plain-text API projection of one authored flashcard. Scheduling
@@ -53,16 +64,63 @@ func Empty() Envelope {
 	}
 }
 
+func marshalCanonicalJSON(value any) ([]byte, error) {
+	var buffer bytes.Buffer
+	encoder := json.NewEncoder(&buffer)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(value); err != nil {
+		return nil, err
+	}
+	encoded := bytes.TrimSuffix(buffer.Bytes(), []byte{'\n'})
+	// Match JSON.stringify for the two JavaScript line-separator characters
+	// that encoding/json escapes even when HTML escaping is disabled.
+	encoded = bytes.ReplaceAll(encoded, []byte(`\u2028`), []byte("\u2028"))
+	encoded = bytes.ReplaceAll(encoded, []byte(`\u2029`), []byte("\u2029"))
+	return encoded, nil
+}
+
 func Marshal(doc Envelope) (string, error) {
 	if err := Validate(doc); err != nil {
 		return "", err
 	}
 	doc.Value = stripRuntimeCommentMarks(doc.Value)
-	b, err := json.Marshal(doc)
+	b, err := marshalCanonicalJSON(doc)
 	if err == nil && len(b) > maxDocument {
 		return "", fmt.Errorf("%w: document size", ErrInvalid)
 	}
 	return string(b), err
+}
+
+// Metrics validates a canonical document and returns the serialized size and
+// shape metrics used by storage accounting and the editor properties view.
+func Metrics(raw string) (DocumentMetrics, error) {
+	doc, err := Parse(raw)
+	if err != nil {
+		return DocumentMetrics{}, err
+	}
+	normalized := stripRuntimeCommentMarks(doc.Value)
+	encoded, err := marshalCanonicalJSON(Envelope{
+		SchemaVersion: doc.SchemaVersion,
+		Value:         normalized,
+	})
+	if err != nil {
+		return DocumentMetrics{}, err
+	}
+	metrics := DocumentMetrics{SizeBytes: len(encoded)}
+	for _, node := range normalized {
+		measureNode(node, 0, &metrics)
+	}
+	return metrics, nil
+}
+
+func measureNode(node map[string]any, depth int, metrics *DocumentMetrics) {
+	metrics.NodeCount++
+	if depth > metrics.MaxDepth {
+		metrics.MaxDepth = depth
+	}
+	for _, child := range children(node) {
+		measureNode(child, depth+1, metrics)
+	}
 }
 
 func stripRuntimeCommentMarks(nodes []map[string]any) []map[string]any {
@@ -219,6 +277,24 @@ func validateNode(node map[string]any, depth int, count *int) error {
 		return validateFlashcard(node)
 	case "mermaid", "diagram", "mindmap":
 		return validateDiagram(node)
+	case "video":
+		return validateYouTube(node)
+	}
+	return nil
+}
+
+func validateYouTube(node map[string]any) error {
+	if node["provider"] != "youtube" {
+		return errors.New("video provider must be youtube")
+	}
+	videoID, ok := node["videoId"].(string)
+	if !ok || !youtubeVideoID.MatchString(videoID) {
+		return errors.New("videoId must be a valid YouTube video ID")
+	}
+	for _, key := range []string{"assetId", "url", "src"} {
+		if _, exists := node[key]; exists {
+			return fmt.Errorf("YouTube video cannot contain %s", key)
+		}
 	}
 	return nil
 }
@@ -813,6 +889,31 @@ func RewriteFlashcardIDs(raw string, idMap map[string]string, mint func() string
 	}
 	result, err := Marshal(doc)
 	return result, ids, err
+}
+
+// RewriteEditorAssetIDs updates embedded media references when a workspace is
+// cloned. Asset rows are copied with new logical IDs while their physical blob
+// paths may remain shared.
+func RewriteEditorAssetIDs(raw string, idMap map[string]string) (string, error) {
+	doc, err := Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	var rewrite func(map[string]any)
+	rewrite = func(node map[string]any) {
+		if assetID, ok := node["assetId"].(string); ok {
+			if replacement := idMap[assetID]; replacement != "" {
+				node["assetId"] = replacement
+			}
+		}
+		for _, child := range children(node) {
+			rewrite(child)
+		}
+	}
+	for _, node := range doc.Value {
+		rewrite(node)
+	}
+	return Marshal(doc)
 }
 
 func replaceCustom(raw, replacement, typ string, preserve func(map[string]any, map[string]any)) (string, error) {

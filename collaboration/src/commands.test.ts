@@ -41,6 +41,7 @@ describe('headless collaboration commands', () => {
       expectedBlock: quiz,
       materialId: 'material-1',
       replacementBlock: replacement,
+      room: 'material:material-1:schema:1',
       type: 'replace-block',
     });
 
@@ -59,6 +60,7 @@ describe('headless collaboration commands', () => {
         expectedBlock: { ...live, children: [{ text: 'Old' }] },
         materialId: 'material-1',
         replacementBlock: { ...live, children: [{ text: 'Replacement' }] },
+        room: 'material:material-1:schema:1',
         type: 'replace-block',
       })
     ).toThrow('changed concurrently');

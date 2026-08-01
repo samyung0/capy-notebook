@@ -5,12 +5,17 @@ import type { CreateWorkspaceReq } from '@/api/gen/model';
 import { CreateWorkspaceBody } from '@/api/gen/validators';
 import type { Workspace } from '@/api/types';
 import { Button } from '@/components/ui/Button';
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogTitle } from '@/components/ui/Dialog';
-import { Input, InputError } from '@/components/ui/Input';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
+import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { TagSelect } from '@/components/ui/TagSelect';
 import { UserColorChooser } from '@/components/ui/UserColorChooser';
-import { InputTitle } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 

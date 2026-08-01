@@ -5,6 +5,8 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -122,8 +124,17 @@ func (a *api) createMaterialCollaborationToken(
 		return nil, collaborationError(store.ErrForbidden)
 	}
 	me, _ := a.s.Me(ctx, uid)
-	room := "material:" + in.ID + ":schema:1"
-	claims := newCollaborationClaims(uid, room, access, me.Name, me.AvatarURL, randID("collab"))
+	room, err := a.s.MaterialRoom(ctx, in.ID)
+	if err != nil {
+		return nil, collaborationError(err)
+	}
+	schema := 1
+	if _, _, found := strings.Cut(room, ":schema:"); found {
+		if parsed, parseErr := strconv.Atoi(room[strings.LastIndex(room, ":")+1:]); parseErr == nil {
+			schema = parsed
+		}
+	}
+	claims := newCollaborationClaims(uid, room, access, me.Name, me.AvatarURL, randID("collab"), schema)
 	token, err := signCollaborationToken(a.cfg.CollaborationSecret, claims)
 	if err != nil {
 		return nil, huma.Error503ServiceUnavailable("collaboration service unavailable", err)
@@ -152,6 +163,7 @@ func (a *api) projectMaterialYjsDocument(
 	}
 	return &projectMaterialOutput{Body: apimodel.MaterialUpdateResult{
 		ID: material.ID, Revision: material.Revision, ContentBytes: len(material.Content),
+		NodeCount: material.NodeCount, MaxDepth: material.MaxDepth,
 		UpdatedAt: material.UpdatedAt,
 	}}, nil
 }
@@ -286,10 +298,14 @@ func (a *api) publishCommentInvalidation(ctx context.Context, materialID string)
 	if a.rdb == nil {
 		return
 	}
-	payload, _ := json.Marshal(map[string]any{
+	event := map[string]any{
 		"type": "comments-invalidated", "materialId": materialID,
 		"at": time.Now().UTC().UnixMilli(),
-	})
+	}
+	if room, err := a.s.MaterialRoom(ctx, materialID); err == nil {
+		event["room"] = room
+	}
+	payload, _ := json.Marshal(event)
 	_ = a.rdb.Publish(ctx, "evo:collaboration:comments", payload).Err()
 }
 
@@ -297,10 +313,14 @@ func (a *api) publishMaterialEviction(ctx context.Context, materialID string) {
 	if a.rdb == nil {
 		return
 	}
-	payload, _ := json.Marshal(map[string]any{
+	event := map[string]any{
 		"type": "access-changed", "materialId": materialID,
 		"at": time.Now().UTC().UnixMilli(),
-	})
+	}
+	if room, err := a.s.MaterialRoom(ctx, materialID); err == nil {
+		event["room"] = room
+	}
+	payload, _ := json.Marshal(event)
 	_ = a.rdb.Publish(ctx, "evo:collaboration:evict", payload).Err()
 }
 

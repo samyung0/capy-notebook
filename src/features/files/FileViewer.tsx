@@ -14,7 +14,6 @@ const MaterialPreview = lazy(() =>
   }))
 );
 
-const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v']);
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'm4a', 'ogg', 'flac', 'aac']);
 const SHEET_EXTS = new Set(['xlsx', 'xls', 'csv']);
 
@@ -83,21 +82,6 @@ export function FileViewer({
         url={file.url}
         zoom={imageZoom}
       />
-    );
-  }
-
-  if (file.kind === 'video' || VIDEO_EXTS.has(ext)) {
-    if (!file.url) return <FileEmpty />;
-    return (
-      <div className="grid h-full w-full place-items-center p-6">
-        <video
-          className="mx-auto max-h-full max-w-full rounded-card bg-black"
-          controls
-          src={file.url}
-        >
-          Your browser can't play this video.
-        </video>
-      </div>
     );
   }
 

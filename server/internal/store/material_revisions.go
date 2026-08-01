@@ -66,12 +66,12 @@ func pruneMaterialRevisionsTx(ctx context.Context, tx pgx.Tx, materialID string)
 	_, err := tx.Exec(ctx, `WITH ranked AS (
 		SELECT mr.version_date,
 			row_number() OVER (ORDER BY mr.version_date DESC) AS position,
-			CASE WHEN u.plan_tier IN ('pro','team')
+			CASE WHEN u.plan_tier = 'pro'
 				THEN $2::bigint ELSE $3::bigint
 			END AS retention_limit
 		FROM material_revisions mr
 		JOIN materials m ON m.id=mr.material_id
-		JOIN users u ON u.id=m.user_id
+		JOIN users u ON u.id=m.owner_user_id
 		WHERE mr.material_id=$1
 	)
 	DELETE FROM material_revisions mr
@@ -94,12 +94,12 @@ func (s *Store) PruneMaterialRevisions(ctx context.Context) (int64, error) {
 			row_number() OVER (
 				PARTITION BY mr.material_id ORDER BY mr.version_date DESC
 			) AS position,
-			CASE WHEN u.plan_tier IN ('pro','team')
+			CASE WHEN u.plan_tier = 'pro'
 				THEN $1::bigint ELSE $2::bigint
 			END AS retention_limit
 		FROM material_revisions mr
 		JOIN materials m ON m.id=mr.material_id
-		JOIN users u ON u.id=m.user_id
+		JOIN users u ON u.id=m.owner_user_id
 	)
 	DELETE FROM material_revisions mr
 	USING ranked

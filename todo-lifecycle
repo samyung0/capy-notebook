@@ -10,7 +10,9 @@ subscription todo #4; schema todo #5.
 
 1. b2 object deletion
 ---------------------
-Nothing deletes B2 objects today outside of `DeleteFileWithOrphanedBlobs`.
+Permanent file/editor-asset objects are not deleted today; the upload sweeper
+only deletes temporary source/editor upload objects. `DeleteFileWithOrphanedBlobs`
+is the existing permanent-file pattern.
 
 - `DeleteWorkspace` is a bare `DELETE FROM workspaces` relying on FK cascade,
   so files/materials/editor_assets rows vanish and their blobs are orphaned.

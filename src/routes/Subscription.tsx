@@ -1,17 +1,37 @@
 import { useState } from 'react';
-import { useBillingCheckout, useBillingPortal, useMe } from '@/api/hooks';
+import {
+  useBilling,
+  useBillingCheckout,
+  useBillingPortal,
+  useMe,
+} from '@/api/hooks';
 import type { PlanTier } from '@/api/types';
 import { PageHeader, Panel } from '@/components/app/layout';
 import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
+const STORAGE_LIMITS = {
+  free: 100 * 1024 * 1024,
+  pro: 1024 * 1024 * 1024,
+} as const;
+
+function storageLimitLabel(bytes: number) {
+  const unit = bytes >= 1024 ** 3 ? 'GB' : 'MB';
+  const divisor = unit === 'GB' ? 1024 ** 3 : 1024 ** 2;
+  return `${Math.round(bytes / divisor)} ${unit}`;
+}
+
+function formatBytes(bytes: number) {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
+  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
+  return `${Math.round(bytes / 1024)} KiB`;
+}
+
 function planLabel(tier: PlanTier) {
   switch (tier) {
     case 'pro':
       return m.subscription_plan_pro();
-    case 'team':
-      return m.subscription_plan_team();
     default:
       return m.subscription_plan_free();
   }
@@ -22,25 +42,21 @@ const PLANS: {
   bullets: string[];
 }[] = [
   {
-    bullets: ['3 workspaces', '50 MB uploads', 'Basic chat'],
+    bullets: [
+      '3 workspaces',
+      `${storageLimitLabel(STORAGE_LIMITS.free)} storage`,
+      'Basic chat',
+    ],
     tier: 'free',
   },
   {
     bullets: [
       'Unlimited workspaces',
-      '5 GB uploads',
+      `${storageLimitLabel(STORAGE_LIMITS.pro)} storage`,
       'AI generate',
       'Priority ingest',
     ],
     tier: 'pro',
-  },
-  {
-    bullets: [
-      'Everything in Pro',
-      'Shared workspaces',
-      'Admin controls (coming soon)',
-    ],
-    tier: 'team',
   },
 ];
 
@@ -90,6 +106,7 @@ function PlanCard({
 
 export default function Subscription() {
   const { data: me } = useMe();
+  const { data: billing } = useBilling();
   const checkout = useBillingCheckout();
   const portal = useBillingPortal();
   const [busy, setBusy] = useState<PlanTier | null>(null);
@@ -117,6 +134,14 @@ export default function Subscription() {
               {planLabel(me?.planTier ?? 'free')} ·{' '}
               {me?.subscriptionStatus ?? 'none'}
             </p>
+            {billing && (
+              <p className="mt-2 text-fg-muted text-sm">
+                Storage: {formatBytes(billing.storageUsedBytes)} of{' '}
+                {formatBytes(billing.storageLimitBytes)}
+                {billing.storageReservedBytes > 0 &&
+                  ` (${formatBytes(billing.storageReservedBytes)} reserved)`}
+              </p>
+            )}
             {me?.subscriptionStatus === 'active' && (
               <Button
                 className="mt-3"
@@ -133,7 +158,7 @@ export default function Subscription() {
           <p className="t-label mb-3 text-fg-muted">
             {m.subscription_plans_heading()}
           </p>
-          <div className="grid gap-4 md:grid-cols-3">
+          <div className="grid gap-4 md:grid-cols-2">
             {PLANS.map((p) => (
               <PlanCard
                 bullets={p.bullets}

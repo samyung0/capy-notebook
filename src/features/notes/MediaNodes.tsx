@@ -6,7 +6,6 @@ import {
 import {
   FileAudio,
   FileText,
-  FileVideo,
   Image,
   LoaderCircle,
   Upload,
@@ -22,6 +21,7 @@ import {
 } from 'platejs/react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFilePicker } from 'use-file-picker';
+import { isStorageQuotaError } from '@/api/client';
 import { uploadEditorAsset } from '@/api/editorAssets';
 import {
   type MediaAssetNode,
@@ -33,6 +33,7 @@ import { canCreateExternalEditorAssets } from './editorMode';
 import {
   acceptsPurpose,
   editorAssetPurpose,
+  isVideoFile,
   MEDIA_ACCEPT,
   mediaNodeFromAsset,
   type plateMediaType,
@@ -47,13 +48,11 @@ const PLACEHOLDER_COPY: Record<
   audio: { icon: FileAudio, label: 'Add audio' },
   file: { icon: FileText, label: 'Add a file' },
   img: { icon: Image, label: 'Add an image' },
-  video: { icon: FileVideo, label: 'Add video' },
 };
 
 function purposeForMediaType(type: string) {
   if (type === KEYS.img) return 'image' as const;
   if (type === KEYS.audio) return 'audio' as const;
-  if (type === KEYS.video) return 'video' as const;
   return 'file' as const;
 }
 
@@ -81,6 +80,10 @@ export const MediaPlaceholderElement = withHOC(
     const replaceCurrentPlaceholder = useCallback(
       async (file: File) => {
         if (!canCreateAssets) return;
+        if (isVideoFile(file)) {
+          setError('Video uploads are disabled. Use YouTube embed instead.');
+          return;
+        }
         if (!acceptsPurpose(file, purpose)) {
           setError(`Choose a ${purpose} file.`);
           return;
@@ -116,7 +119,13 @@ export const MediaPlaceholderElement = withHOC(
           api.placeholder.removeUploadingFile(element.id as string);
         } catch (cause) {
           if (!controller.signal.aborted) {
-            setError(cause instanceof Error ? cause.message : 'Upload failed');
+            setError(
+              isStorageQuotaError(cause)
+                ? 'Storage limit reached. Delete content or upgrade to Pro.'
+                : cause instanceof Error
+                  ? cause.message
+                  : 'Upload failed'
+            );
           }
         } finally {
           if (abortRef.current === controller) abortRef.current = null;

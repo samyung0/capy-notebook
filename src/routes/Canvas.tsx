@@ -2,8 +2,8 @@ import { Link, useParams } from '@tanstack/react-router';
 import { lazy, Suspense } from 'react';
 import { useCanvas, useSaveCanvas } from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
-import { Icon } from '@/components/ui/Icon';
 import { Skeleton } from '@/components/ui/feedback';
+import { Icon } from '@/components/ui/Icon';
 
 const CanvasEditor = lazy(() => import('@/features/thinking/CanvasEditor'));
 

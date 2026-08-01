@@ -11,5 +11,4 @@ export type PlanTier = typeof PlanTier[keyof typeof PlanTier];
 export const PlanTier = {
   free: 'free',
   pro: 'pro',
-  team: 'team',
 } as const;

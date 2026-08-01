@@ -42,7 +42,6 @@ import {
   BaseAudioPlugin,
   BaseFilePlugin,
   BaseImagePlugin,
-  BaseVideoPlugin,
 } from '@platejs/media';
 import { BaseMentionPlugin } from '@platejs/mention';
 import {
@@ -94,6 +93,10 @@ const StaticEquationPlugin = createSlatePlugin({
 const StaticInlineEquationPlugin = createSlatePlugin({
   key: KEYS.inlineEquation,
   node: { isElement: true, isInline: true, isVoid: true },
+});
+const StaticYouTubePlugin = createSlatePlugin({
+  key: 'video',
+  node: { isElement: true, type: 'video' },
 });
 
 /* List rendering parity with the editable surface (see notes/plugins.ts):
@@ -232,7 +235,7 @@ export const StaticMaterialKit: AnyPlugin[] = [
   BaseTableCellHeaderPlugin,
   BaseTocPlugin,
   BaseImagePlugin,
-  BaseVideoPlugin,
+  StaticYouTubePlugin,
   BaseAudioPlugin,
   BaseFilePlugin,
   BaseCalloutPlugin,

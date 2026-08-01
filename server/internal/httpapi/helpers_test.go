@@ -18,7 +18,6 @@ func TestKindFromName(t *testing.T) {
 		"photo.JPEG":      "image",
 		"data.csv":        "sheet",
 		"deck.pptx":       "slides",
-		"clip.mp4":        "video",
 		"talk.mp3":        "audio",
 		"noext":           "unknown",
 	}

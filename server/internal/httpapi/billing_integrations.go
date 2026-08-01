@@ -79,12 +79,13 @@ func (a *api) importSources(w http.ResponseWriter, r *http.Request) {
 		}
 		var f store.File
 		if mode == parseModeNone {
-			// Formats no parser supports (video/audio/…) land ready, view-only.
-			f, err = a.s.CreateSourceReady(r.Context(), wsID, name, kind, body.ChapterID, "", len(data)/1024, blobPath)
+			// Formats no parser supports (audio/…) land ready, view-only.
+			f, err = a.s.CreateSourceReady(r.Context(), wsID, name, kind, body.ChapterID, "", int64(len(data)), blobPath)
 		} else {
-			f, _, err = a.s.CreateSourceWithJob(r.Context(), wsID, name, kind, body.ChapterID, "", len(data)/1024, blobPath, a.parser, a.engine, mode)
+			f, _, err = a.s.CreateSourceWithJob(r.Context(), wsID, name, kind, body.ChapterID, "", int64(len(data)), blobPath, a.parser, a.engine, mode)
 		}
 		if err != nil {
+			_ = a.blob.Delete(r.Context(), blobPath)
 			a.fail(w, err)
 			return
 		}

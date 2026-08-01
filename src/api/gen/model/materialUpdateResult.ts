@@ -11,6 +11,8 @@ export interface MaterialUpdateResult {
   /** UTF-8 byte length of persisted content JSON */
   contentBytes: number;
   id: string;
+  maxDepth: number;
+  nodeCount: number;
   revision: number;
   updatedAt: string;
 }

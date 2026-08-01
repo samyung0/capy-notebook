@@ -1,6 +1,6 @@
 import { api } from './client';
 
-export type EditorAssetPurpose = 'image' | 'audio' | 'video' | 'pdf' | 'file';
+export type EditorAssetPurpose = 'image' | 'audio' | 'pdf' | 'file';
 
 export interface EditorAsset {
   assetId: string;

@@ -116,11 +116,10 @@ type PlanTier string
 const (
 	PlanFree PlanTier = "free"
 	PlanPro  PlanTier = "pro"
-	PlanTeam PlanTier = "team"
 )
 
 func (PlanTier) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "PlanTier", "free", "pro", "team")
+	return enumRef(r, "PlanTier", "free", "pro")
 }
 
 // SubscriptionStatus mirrors the Stripe subscription lifecycle.
@@ -149,14 +148,13 @@ const (
 	FileTxt     FileKind = "txt"
 	FileSheet   FileKind = "sheet"
 	FileSlides  FileKind = "slides"
-	FileVideo   FileKind = "video"
 	FileAudio   FileKind = "audio"
 	FileJson    FileKind = "json"
 	FileUnknown FileKind = "unknown"
 )
 
 func (FileKind) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "FileKind", "pdf", "doc", "md", "image", "txt", "sheet", "slides", "video", "audio", "json", "unknown")
+	return enumRef(r, "FileKind", "pdf", "doc", "md", "image", "txt", "sheet", "slides", "audio", "json", "unknown")
 }
 
 // FileStatus is the ingest lifecycle state.

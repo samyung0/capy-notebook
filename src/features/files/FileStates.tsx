@@ -1,5 +1,5 @@
-import { Icon } from '@/components/ui/Icon';
 import { Spinner } from '@/components/ui/feedback';
+import { Icon } from '@/components/ui/Icon';
 
 export function FileLoading() {
   return (

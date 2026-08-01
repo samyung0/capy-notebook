@@ -14,9 +14,11 @@ var (
 type EditorAsset struct {
 	ID          string     `json:"assetId"`
 	WorkspaceID string     `json:"workspaceId"`
+	UserID      string     `json:"-"`
 	CreatedBy   *string    `json:"-"`
 	Name        string     `json:"name"`
 	Purpose     string     `json:"purpose"`
+	ObjectPath  string     `json:"-"`
 	ContentType string     `json:"contentType"`
 	SizeBytes   int64      `json:"sizeBytes"`
 	Status      string     `json:"status"`
@@ -29,6 +31,7 @@ type EditorAssetUpload struct {
 	ID           string
 	AssetID      string
 	WorkspaceID  string
+	UserID       string
 	ObjectPath   string
 	ContentType  string
 	DeclaredSize int64
@@ -44,6 +47,7 @@ type NewEditorAssetReservation struct {
 	Name         string
 	Purpose      string
 	ObjectPath   string
+	FinalPath    string
 	ContentType  string
 	DeclaredSize int64
 	ExpiresAt    time.Time
@@ -56,18 +60,29 @@ func (s *Store) CreateEditorAssetReservation(ctx context.Context, in NewEditorAs
 	}
 	defer tx.Rollback(ctx)
 
+	ownerID, err := s.storageOwnerTx(ctx, tx, in.WorkspaceID)
+	if err != nil {
+		return EditorAsset{}, EditorAssetUpload{}, err
+	}
+	if err := s.reserveStorageTx(ctx, tx, ownerID, in.DeclaredSize); err != nil {
+		return EditorAsset{}, EditorAssetUpload{}, err
+	}
+	finalPath := in.FinalPath
+	if finalPath == "" {
+		finalPath = in.ObjectPath
+	}
 	if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
-		(id, workspace_id, created_by, name, purpose, object_path, content_type, size_bytes, status)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending')`,
-		in.AssetID, in.WorkspaceID, in.CreatedBy, in.Name, in.Purpose, in.ObjectPath,
-		in.ContentType, in.DeclaredSize); err != nil {
+		(id, workspace_id, user_id, created_by, name, purpose, object_path, content_type, size_bytes, status)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending')`,
+		in.AssetID, in.WorkspaceID, ownerID, in.CreatedBy, in.Name, in.Purpose,
+		finalPath, in.ContentType, in.DeclaredSize); err != nil {
 		return EditorAsset{}, EditorAssetUpload{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO editor_asset_uploads
-		(id, asset_id, workspace_id, object_path, content_type, declared_size, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-		in.UploadID, in.AssetID, in.WorkspaceID, in.ObjectPath, in.ContentType,
-		in.DeclaredSize, in.ExpiresAt); err != nil {
+		(id, asset_id, workspace_id, user_id, object_path, content_type, declared_size, expires_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		in.UploadID, in.AssetID, in.WorkspaceID, ownerID, in.ObjectPath,
+		in.ContentType, in.DeclaredSize, in.ExpiresAt); err != nil {
 		return EditorAsset{}, EditorAssetUpload{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -81,13 +96,13 @@ func (s *Store) CreateEditorAssetReservation(ctx context.Context, in NewEditorAs
 	return asset, upload, err
 }
 
-const editorAssetCols = `id, workspace_id, created_by, name, purpose, content_type,
-	size_bytes, status, COALESCE(etag,''), created_at, completed_at`
+const editorAssetCols = `id, workspace_id, user_id, created_by, name, purpose, object_path,
+	content_type, size_bytes, status, COALESCE(etag,''), created_at, completed_at`
 
 func scanEditorAsset(row interface{ Scan(...any) error }) (EditorAsset, error) {
 	var asset EditorAsset
-	err := row.Scan(&asset.ID, &asset.WorkspaceID, &asset.CreatedBy, &asset.Name,
-		&asset.Purpose, &asset.ContentType, &asset.SizeBytes, &asset.Status,
+	err := row.Scan(&asset.ID, &asset.WorkspaceID, &asset.UserID, &asset.CreatedBy, &asset.Name,
+		&asset.Purpose, &asset.ObjectPath, &asset.ContentType, &asset.SizeBytes, &asset.Status,
 		&asset.ETag, &asset.CreatedAt, &asset.CompletedAt)
 	return asset, err
 }
@@ -110,12 +125,12 @@ func (s *Store) EditorAssetObjectPath(ctx context.Context, assetID string) (stri
 	return objectPath, err
 }
 
-const editorAssetUploadCols = `id, asset_id, workspace_id, object_path, content_type,
+const editorAssetUploadCols = `id, asset_id, workspace_id, user_id, object_path, content_type,
 	declared_size, status, expires_at`
 
 func scanEditorAssetUpload(row interface{ Scan(...any) error }) (EditorAssetUpload, error) {
 	var upload EditorAssetUpload
-	err := row.Scan(&upload.ID, &upload.AssetID, &upload.WorkspaceID,
+	err := row.Scan(&upload.ID, &upload.AssetID, &upload.WorkspaceID, &upload.UserID,
 		&upload.ObjectPath, &upload.ContentType, &upload.DeclaredSize,
 		&upload.Status, &upload.ExpiresAt)
 	return upload, err
@@ -140,6 +155,17 @@ func (s *Store) FinalizeEditorAssetUpload(ctx context.Context, uploadID, etag st
 	}
 	defer tx.Rollback(ctx)
 
+	var ownerID string
+	if err := tx.QueryRow(ctx, `SELECT user_id FROM editor_asset_uploads WHERE id=$1`, uploadID).
+		Scan(&ownerID); err != nil {
+		if isNoRows(err) {
+			return EditorAsset{}, ErrNotFound
+		}
+		return EditorAsset{}, err
+	}
+	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
+		return EditorAsset{}, err
+	}
 	upload, err := scanEditorAssetUpload(tx.QueryRow(ctx,
 		`SELECT `+editorAssetUploadCols+` FROM editor_asset_uploads WHERE id=$1 FOR UPDATE`, uploadID))
 	if isNoRows(err) {
@@ -207,9 +233,24 @@ func (s *Store) MarkEditorAssetUploadExpired(ctx context.Context, uploadID strin
 	}
 	defer tx.Rollback(ctx)
 	var assetID string
+	var userID string
+	var declaredSize int64
+	err = tx.QueryRow(ctx, `SELECT asset_id, user_id, declared_size
+		FROM editor_asset_uploads
+		WHERE id=$1 AND status='pending'`, uploadID).
+		Scan(&assetID, &userID, &declaredSize)
+	if isNoRows(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := s.lockStorageRowTx(ctx, tx, userID); err != nil {
+		return err
+	}
 	err = tx.QueryRow(ctx, `UPDATE editor_asset_uploads
 		SET status='expired' WHERE id=$1 AND status='pending'
-		RETURNING asset_id`, uploadID).Scan(&assetID)
+		RETURNING asset_id, user_id, declared_size`, uploadID).Scan(&assetID, &userID, &declaredSize)
 	if isNoRows(err) {
 		return nil
 	}

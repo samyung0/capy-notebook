@@ -28,7 +28,7 @@ Endpoints:
 
 ## Persistence and recovery
 
-Rooms are named `material:{id}:schema:1`. The first load initializes the
+Rooms are named `material:{id}:schema:{epoch}`. The first load initializes the
 `content` Y.XmlText from `materials.content` under a PostgreSQL advisory/row
 lock. After that, the binary Y.Doc is never reconstructed from JSON.
 
@@ -39,6 +39,11 @@ projection to Go; rows where projection lags are retried periodically.
 
 On restart, the exact stored binary update is loaded. Redis synchronizes
 document and awareness updates between replicas but is not persistence.
+
+Idle, oversized rooms are compacted from the projected Plate value when no
+clients are connected. Compaction clears transient checkpoints and increments
+the room epoch so clients receive a fresh Y.Doc instead of merging stale
+history.
 
 Graceful SIGINT/SIGTERM handling flushes pending Hocuspocus stores before
 closing PostgreSQL and Redis connections.

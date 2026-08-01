@@ -2,7 +2,7 @@ import { FileText, LoaderCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { resolveEditorAsset } from '@/api/editorAssets';
 
-/** Persisted media node shape (img/video/audio/file elements). */
+/** Persisted media node shape for workspace-backed asset elements. */
 export interface MediaAssetNode {
   assetId?: string;
   name?: string;
@@ -69,14 +69,6 @@ export function MediaAssetView({ element }: { element: MediaAssetNode }) {
         <img
           alt={element.name || asset.name}
           className="mx-auto h-auto max-w-full rounded-card"
-          src={asset.url}
-          style={{ width: element.width }}
-        />
-      )}
-      {asset.status === 'ready' && element.type === 'video' && (
-        <video
-          className="mx-auto max-h-[70vh] max-w-full rounded-card"
-          controls
           src={asset.url}
           style={{ width: element.width }}
         />

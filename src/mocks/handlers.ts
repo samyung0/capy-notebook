@@ -1038,7 +1038,7 @@ export const handlers = [
       id: uid('f'),
       kind,
       name,
-      sizeKb: Math.round(200 + Math.random() * 3000),
+      sizeBytes: Math.round(200 + Math.random() * 3000) * 1024,
       // Mirror the real backend: uploads start 'processing' and the client
       // animates progress (useUploadSource) before flipping to 'ready'.
       status: 'processing',
@@ -2033,7 +2033,7 @@ export const handlers = [
           ingestPct: 0,
           kind: 'pdf' as const,
           name: `${body.provider}-import-${i + 1}.pdf`,
-          sizeKb: 512,
+          sizeBytes: 512 * 1024,
           status: 'processing' as const,
           workspaceId: wsId,
         };

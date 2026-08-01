@@ -14,7 +14,10 @@ import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
-import { WorkspaceCard, WorkspaceCardSkeleton } from '@/components/ui/WorkspaceCard';
+import {
+  WorkspaceCard,
+  WorkspaceCardSkeleton,
+} from '@/components/ui/WorkspaceCard';
 import { DashboardCalendar } from '@/features/schedule/DashboardCalendar';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';

@@ -12,7 +12,6 @@ import (
 type Config struct {
 	SecretKey   string
 	PricePro    string
-	PriceTeam   string
 	AppURL      string
 	WebhookSecret string
 }
@@ -23,12 +22,10 @@ func Init(cfg Config) {
 	}
 }
 
-func PriceForTier(tier, pricePro, priceTeam string) string {
+func PriceForTier(tier, pricePro string) string {
 	switch tier {
 	case "pro":
 		return pricePro
-	case "team":
-		return priceTeam
 	default:
 		return ""
 	}
@@ -77,12 +74,10 @@ func CreatePortalSession(customerID, returnURL string) (string, error) {
 	return s.URL, nil
 }
 
-func PlanTierFromPrice(priceID string, pricePro, priceTeam string) string {
+func PlanTierFromPrice(priceID string, pricePro string) string {
 	switch priceID {
 	case pricePro:
 		return "pro"
-	case priceTeam:
-		return "team"
 	default:
 		return "free"
 	}

@@ -16,7 +16,6 @@ export const FileKind = {
   txt: 'txt',
   sheet: 'sheet',
   slides: 'slides',
-  video: 'video',
   audio: 'audio',
   json: 'json',
   unknown: 'unknown',

@@ -71,7 +71,6 @@ import {
   FilePlugin,
   ImagePlugin,
   PlaceholderPlugin,
-  VideoPlugin,
 } from '@platejs/media/react';
 import { MentionInputPlugin, MentionPlugin } from '@platejs/mention/react';
 import {
@@ -106,6 +105,7 @@ import {
 import { createElement } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
+import { YouTubeEmbedElement } from '@/features/materials/YouTubeEmbed';
 import { openAiMenu } from './ai/aiMenuState';
 import { buildAiPlugins } from './ai/aiPlugins';
 import { BlockContextMenu, BlockDraggable } from './BlockInteractions';
@@ -428,7 +428,10 @@ const SlashKit = [
 
 const MediaKit = [
   ImagePlugin.configure({ options: { disableUploadInsert: true } }),
-  VideoPlugin,
+  createPlatePlugin({
+    key: 'video',
+    node: { isElement: true, type: 'video' },
+  }).withComponent(YouTubeEmbedElement),
   AudioPlugin,
   FilePlugin,
   PlaceholderPlugin.configure({

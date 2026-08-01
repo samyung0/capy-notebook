@@ -181,7 +181,7 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 		status := billing.SubscriptionStatus(sub.Status)
 		planTier := "free"
 		if len(sub.Items.Data) > 0 && sub.Items.Data[0].Price != nil {
-			planTier = billing.PlanTierFromPrice(sub.Items.Data[0].Price.ID, a.cfg.StripePricePro, a.cfg.StripePriceTeam)
+			planTier = billing.PlanTierFromPrice(sub.Items.Data[0].Price.ID, a.cfg.StripePricePro)
 		}
 		if event.Type == "customer.subscription.deleted" {
 			status = "canceled"

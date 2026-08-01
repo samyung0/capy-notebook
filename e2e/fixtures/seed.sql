@@ -53,14 +53,14 @@ INSERT INTO chapters (id, workspace_id, name, position) VALUES
   ('ch_e2e_mutate',  'ws_e2e_mutate',  'Mutate chapter',  0)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO files (id, workspace_id, chapter_id, name, kind, size_kb, added_at, status, content) VALUES
-  ('f_e2e_private', 'ws_e2e_private', 'ch_e2e_private', 'secret-notes.md', 'md', 1, now(), 'ready',
+INSERT INTO files (id, workspace_id, chapter_id, name, kind, size_bytes, added_at, status, content) VALUES
+  ('f_e2e_private', 'ws_e2e_private', 'ch_e2e_private', 'secret-notes.md', 'md', 1024, now(), 'ready',
    '# Secret private notes\nOnly owner and editor should see this.'),
-  ('f_e2e_link', 'ws_e2e_link', 'ch_e2e_link', 'shared-notes.md', 'md', 1, now(), 'ready',
+  ('f_e2e_link', 'ws_e2e_link', 'ch_e2e_link', 'shared-notes.md', 'md', 1024, now(), 'ready',
    '# Shared link notes\nAnyone with the link can read this.'),
-  ('f_e2e_public', 'ws_e2e_public', 'ch_e2e_public', 'public-notes.md', 'md', 1, now(), 'ready',
+  ('f_e2e_public', 'ws_e2e_public', 'ch_e2e_public', 'public-notes.md', 'md', 1024, now(), 'ready',
    '# Public notes\nDiscoverable on Explore.'),
-  ('f_e2e_edit', 'ws_e2e_edit', 'ch_e2e_edit', 'editable-notes.md', 'md', 1, now(), 'ready',
+  ('f_e2e_edit', 'ws_e2e_edit', 'ch_e2e_edit', 'editable-notes.md', 'md', 1024, now(), 'ready',
    '# Editable shared notes\nMaterial content may be edited by signed-in visitors.')
 ON CONFLICT (id) DO NOTHING;
 

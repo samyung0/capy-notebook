@@ -4,11 +4,15 @@ import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { Menu } from '@/components/ui/Menu';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
-import { SkeletonCardGrid } from '@/components/ui/feedback';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/Popover';
 import { UserColorChooser } from '@/components/ui/UserColorChooser';
 import { WorkspaceCard } from '@/components/ui/WorkspaceCard';
 import { m } from '@/i18n';

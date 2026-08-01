@@ -202,6 +202,64 @@ func main() {
 		}
 	}()
 
+	go func() {
+		cleanup := func() {
+			uploads, err := st.ExpiredUploadSessions(ctx, 100)
+			if err != nil {
+				if ctx.Err() == nil {
+					log.Printf("list expired source uploads: %v", err)
+				}
+				return
+			}
+			for _, upload := range uploads {
+				if err := st.MarkUploadExpired(ctx, upload.ID); err != nil {
+					log.Printf("release source upload %s: %v", upload.ID, err)
+					continue
+				}
+				if err := blobStore.Delete(ctx, upload.ObjectPath); err != nil {
+					log.Printf("delete expired source upload %s: %v", upload.ID, err)
+				}
+				if err := blobStore.Delete(ctx, upload.FinalPath); err != nil {
+					log.Printf("delete expired source final object %s: %v", upload.ID, err)
+				}
+			}
+			assetUploads, err := st.ExpiredEditorAssetUploads(ctx, 100)
+			if err != nil {
+				if ctx.Err() == nil {
+					log.Printf("list expired editor uploads: %v", err)
+				}
+			} else {
+				for _, upload := range assetUploads {
+					if err := st.MarkEditorAssetUploadExpired(ctx, upload.ID); err != nil {
+						log.Printf("release editor upload %s: %v", upload.ID, err)
+						continue
+					}
+					if err := blobStore.Delete(ctx, upload.ObjectPath); err != nil {
+						log.Printf("delete expired editor upload %s: %v", upload.ID, err)
+					}
+					if asset, err := st.GetEditorAsset(ctx, upload.AssetID); err == nil {
+						if err := blobStore.Delete(ctx, asset.ObjectPath); err != nil {
+							log.Printf("delete expired editor asset %s: %v", asset.ID, err)
+						}
+					}
+				}
+			}
+			_ = st.PruneUploadSessions(ctx)
+			_ = st.PruneEditorAssetUploads(ctx)
+		}
+		cleanup()
+		ticker := time.NewTicker(time.Minute)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ticker.C:
+				cleanup()
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
 	cfg := httpapi.Config{
 		ClerkSecretKey:      env("CLERK_SECRET_KEY", ""),
 		ClerkWebhookSecret:  env("CLERK_WEBHOOK_SECRET", ""),
@@ -213,7 +271,6 @@ func main() {
 		StripeSecretKey:     env("STRIPE_SECRET_KEY", ""),
 		StripeWebhookSecret: env("STRIPE_WEBHOOK_SECRET", ""),
 		StripePricePro:      env("STRIPE_PRICE_PRO", ""),
-		StripePriceTeam:     env("STRIPE_PRICE_TEAM", ""),
 		AppURL:              appURL,
 		CollaborationSecret: env("COLLABORATION_SECRET", "dev-collaboration-secret"),
 		CollaborationURL:    env("COLLABORATION_URL", "ws://localhost:1234"),

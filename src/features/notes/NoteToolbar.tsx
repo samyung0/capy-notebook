@@ -19,9 +19,9 @@ import {
   ChevronDown,
   Code2,
   Combine,
+  ExternalLink,
   FileAudio,
   FileText,
-  FileVideo,
   Grid3X3,
   Heading1,
   Heading2,
@@ -62,10 +62,28 @@ import {
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ColorPicker } from '@/components/ui/ColorPicker';
-import { Dialog, DialogContent, DialogFooter, DialogTitle } from '@/components/ui/Dialog';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from '@/components/ui/DropdownMenu';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogTitle,
+} from '@/components/ui/Dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/components/ui/DropdownMenu';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/Popover';
 import { Switch } from '@/components/ui/Switch';
 import { userToast } from '@/components/ui/userToast';
 import { cn } from '@/lib/cn';
@@ -102,6 +120,7 @@ import {
 import { MaterialKit } from './plugins';
 import { getHiddenToolbarGroupIndexes } from './responsiveToolbar';
 import { ToolbarButton } from './ToolBarButton';
+import { insertYouTubeEmbed } from './youtube';
 
 // TODO: what is this
 // Plate's plugin transforms are intentionally richer than its base editor type.
@@ -513,30 +532,57 @@ export function NoteToolbar({
           </ToolbarGroup>
           {canCreateAssets && enabled.media && (
             <ToolbarGroup>
-              <ToolbarButton
-                label="Upload image"
-                onClick={() => insertMediaPlaceholder(editor, 'img')}
-              >
-                <Image />
-              </ToolbarButton>
-              <ToolbarButton
-                label="Upload video"
-                onClick={() => insertMediaPlaceholder(editor, 'video')}
-              >
-                <FileVideo />
-              </ToolbarButton>
-              <ToolbarButton
-                label="Upload audio"
-                onClick={() => insertMediaPlaceholder(editor, 'audio')}
-              >
-                <FileAudio />
-              </ToolbarButton>
-              <ToolbarButton
-                label="Upload file"
-                onClick={() => insertMediaPlaceholder(editor, 'file')}
-              >
-                <FileText />
-              </ToolbarButton>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    aria-label="Insert media"
+                    className={cn(
+                      'relative inline-flex size-8 shrink-0 items-center justify-center gap-1 rounded-button px-0.5 outline-none',
+                      'hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-focus',
+                      'select-none whitespace-nowrap font-semibold outline-none transition-all duration-150'
+                    )}
+                    data-plate-prevent-deselect
+                    onMouseDown={(event) => event.preventDefault()}
+                    title="Insert media"
+                    type="button"
+                  >
+                    <Image />
+                    <ChevronDown className="absolute! right-0.5! bottom-0! size-2.5!" />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start">
+                  <DropdownMenuGroup>
+                    <DropdownMenuItem
+                      onSelect={() => insertMediaPlaceholder(editor, 'img')}
+                    >
+                      <Image />
+                      Upload image
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => insertMediaPlaceholder(editor, 'audio')}
+                    >
+                      <FileAudio />
+                      Upload audio
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() => insertMediaPlaceholder(editor, 'file')}
+                    >
+                      <FileText />
+                      Upload file
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={() =>
+                        dialogs.openYouTube(undefined, (videoId) => {
+                          insertYouTubeEmbed(editor, videoId);
+                        })
+                      }
+                    >
+                      <ExternalLink />
+                      YouTube embed
+                    </DropdownMenuItem>
+                  </DropdownMenuGroup>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </ToolbarGroup>
           )}
           {canComment && collaboration && (

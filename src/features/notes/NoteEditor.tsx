@@ -139,7 +139,9 @@ function CollaborativeNoteEditor({
           collaborationActionsHost={collaborationActionsHost}
           collaborationToken={collaborationToken.data}
           currentUserId={me.data?.id ?? null}
+          currentUserName={me.data?.name ?? null}
           discussions={discussions.data ?? []}
+          key={collaborationToken.data.room}
           material={material}
           mode={mode}
           onEditorStatusChange={onEditorStatusChange}

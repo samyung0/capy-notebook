@@ -4,9 +4,9 @@ import {
   CircleAlert,
   Columns2,
   Columns3,
+  ExternalLink,
   FileAudio,
   FileText,
-  FileVideo,
   Heading1,
   Heading2,
   Heading3,
@@ -33,6 +33,7 @@ import { insertEditorNode, type NoteEditorInstance } from './insertEditorNode';
 import { insertMediaPlaceholder } from './insertMediaPlaceholder';
 import type { WidgetGroupId } from './noteEditorPrefs';
 import { COLUMN_LAYOUTS } from './richBlockConfig';
+import { insertYouTubeEmbed } from './youtube';
 
 export { insertEditorNode, type NoteEditorInstance } from './insertEditorNode';
 
@@ -275,12 +276,15 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     widget: 'media',
   },
   {
-    description: 'Upload a video through workspace storage',
+    description: 'Embed a YouTube video without uploading it',
     group: 'media',
-    icon: FileVideo,
-    id: 'video',
-    label: 'Video',
-    run: (editor) => insertMediaPlaceholder(editor, 'video'),
+    icon: ExternalLink,
+    id: 'youtube',
+    label: 'YouTube embed',
+    run: (editor, dialogs) =>
+      dialogs?.openYouTube(undefined, (videoId) => {
+        insertYouTubeEmbed(editor, videoId);
+      }),
     widget: 'media',
   },
   {

@@ -134,7 +134,8 @@ const CUSTOM_TYPES = new Set([
   'mermaid',
   'mermaid_caption',
 ]);
-const MEDIA_TYPES = new Set(['img', 'image', 'audio', 'video', 'file']);
+const MEDIA_TYPES = new Set(['img', 'image', 'audio', 'file']);
+const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 const QUESTION_TYPES = new Set<QuestionType>([
   'mcq',
   'multi',
@@ -250,6 +251,16 @@ function validateCustomElement(element: MaterialElement): boolean {
 }
 
 function validateMediaElement(element: MaterialElement): boolean {
+  if (element.type === 'video') {
+    return (
+      element.provider === 'youtube' &&
+      typeof element.videoId === 'string' &&
+      YOUTUBE_VIDEO_ID.test(element.videoId) &&
+      element.assetId == null &&
+      element.url == null &&
+      element.src == null
+    );
+  }
   if (!MEDIA_TYPES.has(element.type)) return true;
   return (
     typeof element.assetId === 'string' &&

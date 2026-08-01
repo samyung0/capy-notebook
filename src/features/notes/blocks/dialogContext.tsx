@@ -7,14 +7,17 @@ import {
   useRef,
   useState,
 } from 'react';
+import { YouTubeDialog } from '../YouTubeDialog';
 import { FlashcardsDialog } from './FlashcardsDialog';
 import { QuizDialog } from './QuizDialog';
 
 type SaveFn = (code: string) => void;
+type SaveYouTubeFn = (videoId: string) => void;
 
 export interface NoteBlockDialogsApi {
   openFlashcards: (initialCode: string | undefined, onSave: SaveFn) => void;
   openQuiz: (initialCode: string | undefined, onSave: SaveFn) => void;
+  openYouTube: (initialUrl: string | undefined, onSave: SaveYouTubeFn) => void;
 }
 
 const Ctx = createContext<NoteBlockDialogsApi | null>(null);
@@ -37,7 +40,9 @@ export function NoteBlockDialogsProvider({
 }) {
   const [quiz, setQuiz] = useState<{ code?: string } | null>(null);
   const [flash, setFlash] = useState<{ code?: string } | null>(null);
+  const [youtube, setYouTube] = useState<{ url?: string } | null>(null);
   const saveRef = useRef<SaveFn>(() => {});
+  const youtubeSaveRef = useRef<SaveYouTubeFn>(() => {});
 
   const openQuiz = useCallback(
     (initialCode: string | undefined, onSave: SaveFn) => {
@@ -53,10 +58,17 @@ export function NoteBlockDialogsProvider({
     },
     []
   );
+  const openYouTube = useCallback(
+    (initialUrl: string | undefined, onSave: SaveYouTubeFn) => {
+      youtubeSaveRef.current = onSave;
+      setYouTube({ url: initialUrl });
+    },
+    []
+  );
 
   const api = useMemo<NoteBlockDialogsApi>(
-    () => ({ openFlashcards, openQuiz }),
-    [openQuiz, openFlashcards]
+    () => ({ openFlashcards, openQuiz, openYouTube }),
+    [openFlashcards, openQuiz, openYouTube]
   );
 
   useEffect(() => {
@@ -86,6 +98,15 @@ export function NoteBlockDialogsProvider({
           setFlash(null);
         }}
         open={!!flash}
+      />
+      <YouTubeDialog
+        initialUrl={youtube?.url}
+        onClose={() => setYouTube(null)}
+        onSave={(videoId) => {
+          youtubeSaveRef.current(videoId);
+          setYouTube(null);
+        }}
+        open={!!youtube}
       />
     </Ctx.Provider>
   );

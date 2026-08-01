@@ -152,4 +152,20 @@ describe('Universal Plate material documents', () => {
       })
     ).toBe(true);
   });
+
+  it('accepts only validated YouTube video nodes', () => {
+    const node = {
+      children: [{ text: '' }],
+      provider: 'youtube',
+      type: 'video',
+      videoId: 'dQw4w9WgXcQ',
+    };
+    expect(isMaterialDocument({ schemaVersion: 1, value: [node] })).toBe(true);
+    expect(
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [{ ...node, videoId: 'not-valid' }],
+      })
+    ).toBe(false);
+  });
 });

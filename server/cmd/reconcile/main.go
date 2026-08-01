@@ -21,11 +21,6 @@ func main() {
 	dsn := env("DATABASE_URL", "postgres://evo:evo@localhost:5432/evo?sslmode=disable")
 	stripeKey := env("STRIPE_SECRET_KEY", "")
 	pricePro := env("STRIPE_PRICE_PRO", "")
-	priceTeam := env("STRIPE_PRICE_TEAM", "")
-	if stripeKey == "" {
-		log.Fatal("STRIPE_SECRET_KEY required")
-	}
-	billing.Init(billing.Config{SecretKey: stripeKey})
 
 	ctx := context.Background()
 	st, err := store.New(ctx, dsn)
@@ -33,6 +28,18 @@ func main() {
 		log.Fatalf("db: %v", err)
 	}
 	defer st.Close()
+
+	repaired, err := st.ReconcileStorage(ctx)
+	if err != nil {
+		log.Fatalf("storage reconciliation: %v", err)
+	}
+	log.Printf("storage reconciliation repaired %d user(s)", repaired)
+
+	if stripeKey == "" {
+		log.Println("reconcile complete (Stripe disabled)")
+		return
+	}
+	billing.Init(billing.Config{SecretKey: stripeKey})
 
 	rows, err := st.ListStripeCustomers(ctx)
 	if err != nil {
@@ -50,7 +57,7 @@ func main() {
 		if sub != nil {
 			wantStatus = billing.SubscriptionStatus(sub.Status)
 			if len(sub.Items.Data) > 0 && sub.Items.Data[0].Price != nil {
-				wantTier = billing.PlanTierFromPrice(sub.Items.Data[0].Price.ID, pricePro, priceTeam)
+				wantTier = billing.PlanTierFromPrice(sub.Items.Data[0].Price.ID, pricePro)
 			}
 		}
 		if row.Status != wantStatus || row.PlanTier != wantTier {

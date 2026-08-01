@@ -10,5 +10,4 @@ export type BillingCheckoutReqPlanTier = typeof BillingCheckoutReqPlanTier[keyof
 
 export const BillingCheckoutReqPlanTier = {
   pro: 'pro',
-  team: 'team',
 } as const;

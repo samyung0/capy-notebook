@@ -144,7 +144,7 @@ func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*u
 	if err != nil {
 		return nil, hErr(err)
 	}
-	priceID := billing.PriceForTier(in.Body.PlanTier, a.cfg.StripePricePro, a.cfg.StripePriceTeam)
+	priceID := billing.PriceForTier(in.Body.PlanTier, a.cfg.StripePricePro)
 	if priceID == "" {
 		return nil, huma.Error503ServiceUnavailable("stripe price not configured")
 	}

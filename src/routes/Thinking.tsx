@@ -2,9 +2,9 @@ import { Link } from '@tanstack/react-router';
 import { useCanvases, useCreateCanvas } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { Card } from '@/components/ui/Card';
+import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
-import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 
 export default function Thinking() {

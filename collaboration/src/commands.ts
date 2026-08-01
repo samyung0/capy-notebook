@@ -7,6 +7,7 @@ export interface ReplaceBlockCommand {
   expectedBlock: Record<string, unknown>;
   materialId: string;
   replacementBlock: Record<string, unknown>;
+  room: string;
   type: 'replace-block';
 }
 
@@ -84,6 +85,7 @@ export function isCollaborationCommand(
   return (
     command.type === 'replace-block' &&
     typeof command.materialId === 'string' &&
+    typeof command.room === 'string' &&
     !!command.expectedBlock &&
     typeof command.expectedBlock === 'object' &&
     !!command.replacementBlock &&

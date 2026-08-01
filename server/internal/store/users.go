@@ -7,9 +7,12 @@ import (
 )
 
 type BillingInfo struct {
-	PlanTier           PlanTier           `json:"planTier"`
-	SubscriptionStatus SubscriptionStatus `json:"subscriptionStatus"`
-	RenewalAt          *time.Time         `json:"renewalAt,omitempty"`
+	PlanTier             PlanTier           `json:"planTier"`
+	SubscriptionStatus   SubscriptionStatus `json:"subscriptionStatus"`
+	RenewalAt            *time.Time         `json:"renewalAt,omitempty"`
+	StorageUsedBytes     int64              `json:"storageUsedBytes"`
+	StorageReservedBytes int64              `json:"storageReservedBytes"`
+	StorageLimitBytes    int64              `json:"storageLimitBytes"`
 }
 
 // IntegrationsStatus reflects Clerk external-account links (not local rows).
@@ -144,7 +147,17 @@ func (s *Store) GetBilling(ctx context.Context, userID string) (BillingInfo, err
 	if isNoRows(err) {
 		return b, ErrNotFound
 	}
-	return b, err
+	if err != nil {
+		return b, err
+	}
+	usage, err := s.StorageUsage(ctx, userID)
+	if err != nil {
+		return b, err
+	}
+	b.StorageUsedBytes = usage.UsedBytes
+	b.StorageReservedBytes = usage.ReservedBytes
+	b.StorageLimitBytes = usage.LimitBytes
+	return b, nil
 }
 
 func (s *Store) GetStripeCustomerID(ctx context.Context, userID string) (string, error) {

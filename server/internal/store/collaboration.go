@@ -212,11 +212,11 @@ func (s *Store) AcceptWorkspaceInvite(ctx context.Context, token, userID string)
 
 func (s *Store) ListMaterialRevisions(ctx context.Context, materialID string) ([]MaterialRevision, error) {
 	rows, err := s.pool.Query(ctx, `WITH retention AS (
-		SELECT CASE WHEN u.plan_tier IN ('pro','team')
+		SELECT CASE WHEN u.plan_tier = 'pro'
 			THEN $2::bigint ELSE $3::bigint
 		END AS revision_limit
 		FROM materials m
-		JOIN users u ON u.id=m.user_id
+		JOIN users u ON u.id=m.owner_user_id
 		WHERE m.id=$1
 	)
 		SELECT material_id, revision, parent_revision, event_type,

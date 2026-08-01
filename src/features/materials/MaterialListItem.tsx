@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import type { Chapter, MaterialRef, MaterialRefType } from '@/api/types';
+import { Spinner } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon, type IconName } from '@/components/ui/Icon';
-import { Spinner } from '@/components/ui/feedback';
 import { MoveToChapterDialog } from '@/features/workspace/MoveToChapterDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
