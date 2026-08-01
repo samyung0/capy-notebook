@@ -1,7 +1,8 @@
 import { Link } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useEvents, useLabels } from '@/api/hooks';
-import { Button, IconButton } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { IconButton } from '@/components/ui/IconButton';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { usePortals } from '@/stores/portals';

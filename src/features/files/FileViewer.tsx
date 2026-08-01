@@ -1,14 +1,18 @@
 import { lazy, type ReactNode, Suspense } from 'react';
 import type { SourceFile } from '@/api/types';
-import { Icon } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
 import { ImageViewer } from '@/features/files/ImageViewer';
-import { MaterialPreview } from '@/features/materials/MaterialPreview';
-import { FileEmpty, FileLoading } from '../materials/CenterContent';
+import { FileEmpty, FileLoading } from './FileStates';
 import { fileExt, IMAGE_MIN_ZOOM, isImageFile } from './fileUtils';
 
 const PdfView = lazy(() => import('./PdfView'));
 const SheetView = lazy(() => import('./SheetView'));
 const DocxView = lazy(() => import('./DocxView'));
+const MaterialPreview = lazy(() =>
+  import('@/features/materials/MaterialPreview').then((m) => ({
+    default: m.MaterialPreview,
+  }))
+);
 
 const VIDEO_EXTS = new Set(['mp4', 'webm', 'mov', 'mkv', 'avi', 'm4v']);
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'm4a', 'ogg', 'flac', 'aac']);
@@ -124,7 +128,7 @@ export function FileViewer({
   // markdown files still preview instead of falling to "unsupported".
   if (file.kind === 'md') {
     if (file.content == null) return <FileEmpty />;
-    return (
+    return lazyView(
       <MaterialPreview className="mx-auto max-w-175" content={file.content} />
     );
   }

@@ -7,14 +7,9 @@ import type {
   QuestionType,
   SourceFile,
 } from '@/api/types';
-import {
-  Button,
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogTitle,
-  Spinner,
-} from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { Dialog, DialogContent, DialogFooter, DialogTitle } from '@/components/ui/Dialog';
+import { Spinner } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { LEVEL_LABEL, LEVELS } from '@/lib/levels';

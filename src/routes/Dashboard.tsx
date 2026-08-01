@@ -10,14 +10,11 @@ import { CloudConnectBanner } from '@/components/app/CloudConnectBanner';
 import { Panel } from '@/components/app/layout';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import DashboardDefaultBanner from '@/components/banners/DashboardDefaultBanner';
-import {
-  Button,
-  Checkbox,
-  HoverActions,
-  Icon,
-  WorkspaceCard,
-  WorkspaceCardSkeleton,
-} from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { Checkbox } from '@/components/ui/Checkbox';
+import { HoverActions } from '@/components/ui/HoverActions';
+import { Icon } from '@/components/ui/Icon';
+import { WorkspaceCard, WorkspaceCardSkeleton } from '@/components/ui/WorkspaceCard';
 import { DashboardCalendar } from '@/features/schedule/DashboardCalendar';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -130,7 +127,7 @@ function TasksCard() {
         )}
         {visible.map((t) => (
           <div
-            className="group flex items-start gap-3 rounded-button px-1 py-2 hover:bg-surface-hover-bg"
+            className="group relative flex items-start gap-3 rounded-button px-1 py-2 hover:bg-surface-hover-bg"
             key={t.id}
           >
             <Checkbox
@@ -148,8 +145,8 @@ function TasksCard() {
                 <span
                   className={cn(
                     t.done
-                      ? 'block font-semibold text-fg-muted line-through'
-                      : 'block font-semibold text-fg',
+                      ? 'font-semibold text-fg-muted line-through'
+                      : 'font-semibold text-fg',
                     'line-clamp-2',
                     !t.meta && 'translate-y-1'
                   )}
@@ -157,11 +154,13 @@ function TasksCard() {
                   {t.title}
                 </span>
                 {t.meta && (
-                  <span className="block text-fg-muted">{t.meta}</span>
+                  <span className="line-clamp-2 text-fg-muted">{t.meta}</span>
                 )}
               </span>
             </button>
             <HoverActions
+              className="absolute right-0"
+              iconContainerClassName="bg-surface-hover-bg/60 hover:bg-surface-dark"
               items={[
                 {
                   icon: 'write',
@@ -217,7 +216,7 @@ export default function Dashboard() {
         {/* <ThinkingSection /> */}
       </Panel>
 
-      <div className="order-first flex h-auto min-h-0 w-full shrink-0 flex-col gap-2.5 overflow-visible lg:order-last lg:h-full lg:min-h-full lg:w-[300px] lg:overflow-hidden xl:w-[360px]">
+      <div className="order-first flex h-auto min-h-0 w-(--top-inset-bar-width) shrink-0 flex-col gap-2.5 overflow-visible lg:order-last lg:h-full lg:min-h-full lg:overflow-hidden">
         <TopInsetBar />
         <Panel
           className="hidden min-h-0 flex-1 lg:flex"

@@ -7,8 +7,8 @@ import {
   useWorkspaceMembers,
 } from '@/api/hooks';
 import type { Material, WorkspaceRole } from '@/api/types';
-import { EmptyState, Spinner } from '@/components/ui';
-import { FileLoading } from '../materials/CenterContent';
+import { EmptyState, Spinner } from '@/components/ui/feedback';
+import { FileLoading } from '@/features/files/FileStates';
 import {
   EditorRuntimeProvider,
   type EditorRuntimeValue,

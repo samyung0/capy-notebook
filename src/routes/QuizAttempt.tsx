@@ -4,7 +4,10 @@ import { isApiError } from '@/api/client';
 import { useCloneQuiz, useQuiz, useSubmitAttempt } from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { PrivateOrUnavailable } from '@/components/app/PrivateOrUnavailable';
-import { Button, Icon, ProgressBar, Skeleton } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
+import { ProgressBar } from '@/components/ui/ProgressBar';
+import { Skeleton } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import {
   type Answer,

@@ -1,7 +1,11 @@
 import { Link, useParams } from '@tanstack/react-router';
 import { useAttempt } from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
-import { Badge, Button, Icon, ProgressBar, Skeleton } from '@/components/ui';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
+import { ProgressBar } from '@/components/ui/ProgressBar';
+import { Skeleton } from '@/components/ui/feedback';
 import {
   type Answer,
   emptyAnswer,

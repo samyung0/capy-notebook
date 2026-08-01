@@ -57,7 +57,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
             </p>
             <div className="mt-3 flex flex-wrap gap-1">
               {workspace.tags.slice(0, 3).map((t) => (
-                <Badge key={t.value} size="sm" tone="neutral">
+                <Badge key={t.value} size="sm">
                   # {t.value}
                 </Badge>
               ))}

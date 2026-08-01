@@ -933,7 +933,7 @@ export const tasks: Task[] = [
     done: false,
     dueDate: todayAt(23),
     id: 'tk_1',
-    meta: 'Biology 101',
+    meta: 'Biology 101 this is again a really long meta just to make sure everything works',
     title:
       'Read Chapter 3 — Genetics b labdl ab lb la this is really long I guess just to make sure everything works',
   },
@@ -957,6 +957,14 @@ export const tasks: Task[] = [
     id: 'tk_4',
     meta: 'World History',
     title: 'Outline history essay',
+  },
+  {
+    done: false,
+    dueDate: todayAt(23),
+    id: 'tk_5',
+    meta: 'Biology 101 this is again a really long meta just to make sure everything works',
+    title:
+      'Read Chapter 3 — Genetics b labdl ab lb la this is really long I guess just to make sure everything works',
   },
 ];
 

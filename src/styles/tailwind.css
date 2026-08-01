@@ -19,7 +19,6 @@
   /* Surfaces → bg-* */
   --color-page: var(--surface-page);
   --color-page-hover: var(--surface-page-hover);
-  /* TODO: bg-muted instead of using bg-surface-hover-bg */
 
   --color-surface: var(--surface-card-bg);
   --color-surface-hover-bg: var(--surface-card-hover-bg);
@@ -114,7 +113,7 @@
 }
 
 [data-style="classroom"] {
-  --top-inset-bar-radius: var(--radius-card);
+  --top-inset-bar-radius: var(--radius-card-lg);
   --top-inset-bar-height: 60px;
   --top-inset-bar-width: 100%;
   --top-inset-bar-inverted-radius-gap: 12px;
@@ -122,7 +121,7 @@
 
 @media (min-width: 1024px) {
   [data-style="classroom"] {
-    --top-inset-bar-width: 300px;
+    --top-inset-bar-width: 330px;
     --top-inset-bar-radius: var(--radius-card-lg);
   }
 }

@@ -101,6 +101,16 @@ function runBackendAccessTests() {
   }
 }
 
+function shutDownCompose() {
+  if (process.env.E2E_KEEP_STACK === 'true') return;
+  console.error('[e2e] shutting down docker compose…');
+  try {
+    compose(['down', '-v', '--remove-orphans']);
+  } catch (cleanupErr) {
+    console.error('[e2e] cleanup failed:', cleanupErr);
+  }
+}
+
 export default async function globalSetup() {
   if (process.env.E2E_SKIP_COMPOSE === 'true') {
     await Promise.all([waitForHealth(), waitForHealth(collaborationUrl)]);
@@ -110,11 +120,17 @@ export default async function globalSetup() {
   }
 
   console.log('[e2e] starting docker compose…');
-  compose(['up', '--build', '-d']);
-  await Promise.all([waitForHealth(), waitForHealth(collaborationUrl)]);
-  console.log('[e2e] applying seed…');
-  applySeed();
-  console.log('[e2e] running backend access tests…');
-  runBackendAccessTests();
-  console.log('[e2e] ready');
+  try {
+    compose(['up', '--build', '-d']);
+    await Promise.all([waitForHealth(), waitForHealth(collaborationUrl)]);
+    console.log('[e2e] applying seed…');
+    applySeed();
+    console.log('[e2e] running backend access tests…');
+    runBackendAccessTests();
+    console.log('[e2e] ready');
+  } catch (err) {
+    // Playwright skips globalTeardown when setup throws, so tear down here.
+    shutDownCompose();
+    throw err;
+  }
 }

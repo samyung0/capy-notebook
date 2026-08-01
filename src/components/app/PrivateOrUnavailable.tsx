@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { Panel } from '@/components/app/layout';
-import { Button, Icon } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
 
 /** Non-disclosing empty state for private/missing shared resources. */
 export function PrivateOrUnavailable({

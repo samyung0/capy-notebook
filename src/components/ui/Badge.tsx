@@ -17,7 +17,7 @@ const badgeVariants = cva(
         dark: 'bg-action text-action-fg',
         error: 'bg-tint-error text-tint-error-fg',
         info: 'bg-tint-info text-tint-info-fg',
-        neutral: 'bg-page text-surface-fg',
+        page: 'bg-page text-surface-fg',
         success: 'bg-tint-success text-tint-success-fg',
         warning: 'bg-tint-warning text-tint-warning-fg',
       },
@@ -33,7 +33,7 @@ export interface BadgeProps
 }
 
 export function Badge({
-  tone = 'neutral',
+  tone = 'page',
   size = 'md',
   uppercase,
   className,

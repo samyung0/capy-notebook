@@ -1,6 +1,9 @@
 import { useMe } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Avatar, Badge, Card, Icon } from '@/components/ui';
+import { Avatar } from '@/components/ui/Avatar';
+import { Badge } from '@/components/ui/Badge';
+import { Card } from '@/components/ui/Card';
+import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 
 export default function Profile() {

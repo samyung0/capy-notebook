@@ -12,14 +12,12 @@ import {
 import type { Flashcard } from '@/api/types';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { PrivateOrUnavailable } from '@/components/app/PrivateOrUnavailable';
-import {
-  Badge,
-  Button,
-  Icon,
-  IconButton,
-  ProgressBar,
-  Skeleton,
-} from '@/components/ui';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
+import { ProgressBar } from '@/components/ui/ProgressBar';
+import { Skeleton } from '@/components/ui/feedback';
 import { CardEditModal } from '@/features/flashcards/CardEditModal';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { m } from '@/i18n';
@@ -264,7 +262,7 @@ export default function DeckStudy() {
               value={(done / Math.max(1, sessionTotal)) * 100}
             />
           </div>
-          <Badge size="sm" tone="neutral">
+          <Badge size="sm">
             {queue.length} {m.flashcards_left()}
           </Badge>
         </div>
@@ -323,11 +321,7 @@ export default function DeckStudy() {
           </div>
         ) : (
           <div className="mt-3">
-            <Button
-              fullWidth
-              onClick={() => setFlipped(true)}
-              variant="primary"
-            >
+            <Button fullWidth onClick={() => setFlipped(true)}>
               {m.flashcards_show_answer()}
             </Button>
           </div>

@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { Panel } from '@/components/app/layout';
-import { Button, Spinner } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { Spinner } from '@/components/ui/feedback';
 
 /** Non-disclosing empty state for private/missing shared resources. */
 export function LoadingLarge({

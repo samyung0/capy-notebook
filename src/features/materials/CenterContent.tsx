@@ -1,12 +1,13 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { useFile, useMaterial } from '@/api/hooks';
 import type { UserColor } from '@/api/types';
-import { Icon, ProgressBar, Spinner } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
+import { ProgressBar } from '@/components/ui/ProgressBar';
+import { FileError, FileLoading } from '@/features/files/FileStates';
 import { FileViewer } from '@/features/files/FileViewer';
 import { IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { Header } from './CenterContentHeader';
-import { MaterialPreview } from './MaterialPreview';
 import {
   isInteractiveMaterialMode,
   type MaterialMode,
@@ -21,6 +22,11 @@ const NoteEditor = lazy(() =>
   import('@/features/notes/NoteEditor').then((m) => ({
     default: m.NoteEditor,
   }))
+);
+
+/* Static Plate preview is still heavy — keep it out of the PDF / media path. */
+const MaterialPreview = lazy(() =>
+  import('./MaterialPreview').then((m) => ({ default: m.MaterialPreview }))
 );
 
 /** The center pane. Dispatches on the currently-open item — a source file or a
@@ -119,10 +125,12 @@ function MaterialBody({
     <div className="h-full min-h-0">
       {activeMode === 'view' && (
         <div className="h-full min-h-0 overflow-auto">
-          <MaterialPreview
-            className="mx-auto max-w-[700px]"
-            content={material.content}
-          />
+          <Suspense fallback={<FileLoading />}>
+            <MaterialPreview
+              className="mx-auto max-w-[700px]"
+              content={material.content}
+            />
+          </Suspense>
         </div>
       )}
       {isInteractiveMaterialMode(activeMode) && (
@@ -155,43 +163,6 @@ function EmptyCenter() {
         </div>
       </div>
     </>
-  );
-}
-
-export function FileLoading() {
-  return (
-    <div className="flex h-full flex-1 flex-col items-center justify-center gap-3">
-      <Spinner className="size-6.5" />
-      <p>Loading preview...</p>
-    </div>
-  );
-}
-
-export function FileError() {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-3">
-      <span className="flex size-12 items-center justify-center rounded-card-lg bg-tint-error text-tint-error-fg">
-        <Icon className="size-6.5" name="warning" />
-      </span>
-      <div className="flex flex-col items-center justify-center gap-1.5 text-center">
-        <p className="t-card-title mt-1 font-bold">Something went wrong</p>
-        <p>We can't load the file. The file maybe missing or deleted.</p>
-      </div>
-    </div>
-  );
-}
-
-export function FileEmpty() {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-3">
-      <span className="flex size-12 items-center justify-center rounded-card-lg bg-tint-error text-tint-error-fg">
-        <Icon className="size-6.5" name="warning" />
-      </span>
-      <div className="flex flex-col items-center justify-center gap-1.5 text-center">
-        <p className="t-card-title mt-1 font-bold">Something went wrong</p>
-        <p>The file is empty or corrupted. Please reupload and try again.</p>
-      </div>
-    </div>
   );
 }
 

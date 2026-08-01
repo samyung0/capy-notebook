@@ -35,7 +35,7 @@ import {
   useSelected,
 } from 'platejs/react';
 import { useMemo, useRef } from 'react';
-import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui';
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/Popover';
 import { cn } from '@/lib/cn';
 import { FloatingActionButton } from './nodeComponents';
 import {

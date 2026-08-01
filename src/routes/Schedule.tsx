@@ -3,13 +3,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDeleteLabel, useEvents, useLabels } from '@/api/hooks';
 import type { CalendarEvent } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import {
-  Card,
-  HoverActions,
-  Icon,
-  IconButton,
-  Skeleton,
-} from '@/components/ui';
+import { Card } from '@/components/ui/Card';
+import { HoverActions } from '@/components/ui/HoverActions';
+import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
+import { Skeleton } from '@/components/ui/feedback';
 import { MONTHS, weekDays } from '@/features/schedule/dateUtils';
 import { MiniCalendar } from '@/features/schedule/MiniCalendar';
 import { MonthView } from '@/features/schedule/MonthView';
@@ -256,7 +254,7 @@ export default function Schedule() {
               label="New event"
               onClick={() => openEventForm()}
               size="lg"
-              variant="gray"
+              variant="page"
             />
           }
           showTopBar

@@ -10,13 +10,13 @@ import {
 } from 'platejs/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
+import { qk } from '@/api/client';
 import {
   getMaterialCollaborationToken,
   type MaterialCollaborationToken,
   type useMaterialDiscussions,
   type useWorkspaceMembers,
 } from '@/api/hooks';
-import { qk } from '@/api/client';
 import type { Material } from '@/api/types';
 import {
   countMaterialMetrics,
@@ -187,7 +187,7 @@ export function NoteEditorCore({
     ([{ children: [{ text: '' }], type: 'p' }] as MaterialValue);
   const [documentMetrics, setDocumentMetrics] =
     useState<MaterialDocumentMetrics>(() => countMaterialMetrics(initialValue));
-  const [saveState, setSaveState] =
+  const [_saveState, setSaveState] =
     useState<NoteEditorStatus['saveState']>('connecting');
   const name = currentUserId
     ? (users[currentUserId]?.name ?? 'Collaborator')

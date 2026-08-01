@@ -22,13 +22,13 @@ const iconButtonVariants = cva(BASE_BUTTON_STYLE, {
       'accent-light':
         'bg-tint-accent-1 text-tint-accent-1-fg hover:bg-solid-accent-1/30',
       dark: 'bg-action text-action-fg outline-offset-2 hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-action focus-visible:ring-0',
-      'dark-gray': 'bg-surface-dark text-fg hover:bg-surface-dark-hover-bg',
       ghost: 'bg-transparent text-fg',
       'ghost-hover': 'bg-transparent text-fg hover:bg-surface-hover-bg',
-      gray: 'bg-page text-fg hover:bg-surface-dark',
-      neutral: 'bg-surface text-surface-fg hover:bg-surface-hover-bg',
       outline:
         'border border-line bg-surface text-fg hover:bg-surface-hover-bg',
+      page: 'bg-page text-fg hover:bg-page-hover',
+      surface: 'bg-surface text-surface-fg hover:bg-surface-hover-bg',
+      'surface-dark': 'bg-surface-dark text-fg hover:bg-surface-dark-hover-bg',
     },
   },
 });

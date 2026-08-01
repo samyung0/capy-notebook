@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Skeleton } from '@/components/ui';
+import { Skeleton } from '@/components/ui/feedback';
 import { cn } from '@/lib/cn';
 
 type Cell = string | number | boolean | null;

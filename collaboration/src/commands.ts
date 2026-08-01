@@ -1,5 +1,5 @@
-import { withYjs, YjsEditor, yTextToSlateElement } from '@slate-yjs/core';
 import { isDeepStrictEqual } from 'node:util';
+import { withYjs, YjsEditor, yTextToSlateElement } from '@slate-yjs/core';
 import { createEditor, Editor, Element, Transforms } from 'slate';
 import * as Y from 'yjs';
 

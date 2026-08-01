@@ -31,7 +31,7 @@ export function HoverActions({
     >
       <Menu
         align={align}
-        iconContainerClassName={iconContainerClassName}
+        iconContainerClassName={cn('p-1.5', iconContainerClassName)}
         items={items}
       />
     </div>

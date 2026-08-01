@@ -89,14 +89,34 @@ high PRIORITIES:
 - editor ask AI (TODO: verify if this works at all)
 - editor voice transcribe (TODO: verify if transcribe works at all)
 - website realtime convo llm (TODO: not implemented yet)
-28. workspaceopen, read only does not have the chat panel, we should scope chat sessions/histories to per user and per workspace so users dont see the chat sessions of other people. then reenable the chat panel (disable generate if read only)
-29. check that readonly cannot add sources
+1.   add in user_id to files, we need to track storage usage of files to users
+2.   attempts & mistake table:
+   - userid should reference user table? on delete null
+   - instead of quiz_id in attempts, use material_id and reference material (sql cannot ensure that the kind is quiz, but it allows for cascade delete, ensure kind correctness goes to application logic)
+3.  implement mail and notification service with user has read funcitonality for in app/platform notification
+4.  check that readonly cannot add sources
+5.  for materials file scopes/chapter scope, use name instead of id if we are not referencing them.
+6.  editor_assets should get merged to the files table to unify storage usage tracking and management, same with merging editor_asset_uploads to upload_sessions
+7.  There are also no composite constraints ensuring that a referenced chapter belongs to the same workspace as a file, material, or upload session?
+8.  I think better to disallow actually removing the user record, and instead set flags like is_deleted or is_disabled.
+9.  I think discussion table is not necessary? move discussion_id, block_id, anchors into comments table, render the discussion blocks if any comment is present on the block_id instead (need to check what purpose the discussion table serves), deleting parent comment should also delete child comment? UI rendering of comments should check for infinite self referencing comment, though shouldnt happen but should be handled
+10. rn delete behavior on user to materials and deleting workspacing to files/materials are cascade, but if either user or workspace exists (user exist meaning is_deleted flag is false), then the files and materials should still exist since they cna viewed with either just user_id or workspace_id. but if both are deleted then the files and materials in the workspace should be deleted (also make sure uploading files are cancelled, session upload record should be deleted on cascade). if this behavior is not enforceable through schemas, then move to application logic (add relevant test cases) For tags, tags should have no cascade on delete, it shouldnt block user account deletion (rn it has no on delete) And on workspace/files/materials deletion, delete the associating tags_entity, if no tag_entity reference a tag, delete the tag as well. Comments should have user id on delete null, preserve comments
+11. upon user account deletion, if they have active subscription make them cancel first before they can delete. For subscription expirations, it should leave a buffer period for user to move files out of the platform and warn them in mails & notification on subscription cancel, 3 days before deletion and after deleteion (if account is already deleted then dont give buffer period and directly perm delete file). when user account deletes, flip the flag instead of actually removing the record, default deletes the events,tasks,canvases,event labels, AI conversations, default DO NOT delete comments,oauth_connections. let user choose whether to delete all workspaces and assets. if yes. this removes all workspaces which triggers aplication logic to delete files and materials that have both user_id and workspace_id, other files and materials that do not have workspace_id should also be deleted (check schema todo number 4). ensure that entities_tag and tags are deleted as well. if they choose not to delete workspace, then lock the workspace to prevent further edit, and check if they have an active subscription with persistent usage quotas (right now just storage) exceeding free tier limits, warn them files can get permanently deleted without warnings/buffer periods.
 
 subscription todo
-
 1. free user gets 7 days of content version histories (materials.revision), after that it gets auto deleted, premium users get 30 days
-2. free user gets 1GB free storage space (includes all files, plate json, assets uploaded through plate), prob need some reconciliation jobs by calculating using blackblaze api (? does this incur bucket usages) vs backend recorded storage usages
+2. free user gets 100MB free storage space (includes all files, plate json, assets uploaded through plate), prob need some reconciliation jobs by calculating using blackblaze api (? does this incur bucket usages) vs backend recorded storage usages, premium gets 5GB
 3. token usages (reconciliation from telementry?)
+4. if subscription expires, it should leave a buffer period for user to move files out of the platform (if account is already deleted (db user record should always preserve and use flags like is_deleted) then dont give buffer period) (since premium users should get more storage space, after that perm delete files )
+5. what is assistant role in AI convo message?
+6. find a better way to structure jobs? use some queues instead of just pg records? it seems veyr vulnerable to attacks if we just store and run the job content in jsonb.
+
+schema todo
+1. squash the schemas (not just merge the files, but destructively modify the base sql, no existing servers/data)
+2. why events use array text for label id?
+3. workspaceopen, read only does not have the chat panel, we should scope chat sessions/histories to per user and per workspace so users dont see the chat sessions of other people. then reenable the chat panel (disable generate if read only), conversations user_id doesnt have declared foreign key
+4. remove todo due date for now
+5. ensure that a file record always exist as long as the actual file content is still there (we may need a weekly cleaning job to remove actual files which dont have a file record)
 
 rag system caution
 chapter scoped query/filtering is only soft steered using prompt, underlying reason why hard filtering during query is quite impossible is because after ingestion, an entity can be pointed to by multiple documents

@@ -7,7 +7,7 @@ const cardVariants = cva('flex flex-col items-stretch gap-2 p-5.5', {
   defaultVariants: {
     border: 'none',
     radius: 'card',
-    theme: 'light',
+    theme: 'surface',
   },
   variants: {
     border: {
@@ -26,10 +26,11 @@ const cardVariants = cva('flex flex-col items-stretch gap-2 p-5.5', {
       unset: '',
     },
     theme: {
-      gray: 'bg-surface-dark text-surface-dark-fg hover:bg-surface-dark-hover-bg',
-      light:
-        'bg-surface text-surface-fg transition-colors hover:bg-surface-hover-bg',
       page: 'bg-page text-surface-fg',
+      surface:
+        'bg-surface text-surface-fg transition-colors hover:bg-surface-hover-bg',
+      'surface-dark':
+        'bg-surface-dark text-surface-dark-fg hover:bg-surface-dark-hover-bg',
       transparent: 'bg-transparent text-surface-fg',
     },
   },
@@ -46,7 +47,7 @@ export interface CardProps
 
 export function Card({
   radius = 'card',
-  theme = 'light',
+  theme = 'surface',
   border = 'none',
   hoverBackgroundColorChange = false,
   interactive,

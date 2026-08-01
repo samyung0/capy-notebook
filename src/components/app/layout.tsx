@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Card } from '@/components/ui';
+import { Card } from '@/components/ui/Card';
 import { cn } from '@/lib/cn';
 import { TopInsetBar } from './TopInsetBar';
 
@@ -35,7 +35,6 @@ export function PanelWithInvertedRadius({
             className
           )}
           radius="card-xl"
-          theme="light"
         >
           <div />
         </Card>
@@ -61,7 +60,6 @@ export function Panel({
       asChild
       className={cn('h-full overflow-hidden p-0 shadow-card', className)}
       radius="card-xl"
-      theme="light"
     >
       <section>
         <div

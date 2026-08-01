@@ -7,7 +7,7 @@ import {
   useUpdateTask,
   useUpdateWorkspace,
 } from '@/api/hooks';
-import { ConfirmDialog } from '@/components/ui';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { EventDetailDialog } from '@/features/schedule/EventDetailDialog';
 import { EventFormDialog } from '@/features/schedule/EventFormDialog';
 import { LabelEditDialog } from '@/features/schedule/LabelEditDialog';

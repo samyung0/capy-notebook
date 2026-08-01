@@ -2,13 +2,11 @@ import { useState } from 'react';
 import { useAllFiles } from '@/api/hooks';
 import type { SourceFile } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import {
-  Badge,
-  Card,
-  Icon,
-  SimpleDialog,
-  SkeletonCardGrid,
-} from '@/components/ui';
+import { Badge } from '@/components/ui/Badge';
+import { Card } from '@/components/ui/Card';
+import { Icon } from '@/components/ui/Icon';
+import { SimpleDialog } from '@/components/ui/Dialog';
+import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { FileViewer } from '@/features/files/FileViewer';
 import { m } from '@/i18n';
 
@@ -41,9 +39,7 @@ export default function Files() {
                     {(f.sizeKb / 1024).toFixed(1)} MB
                   </p>
                 </div>
-                <Badge size="sm" tone="neutral">
-                  {f.kind}
-                </Badge>
+                <Badge size="sm">{f.kind}</Badge>
               </Card>
             ))}
           </div>

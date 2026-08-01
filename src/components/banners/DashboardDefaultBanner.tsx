@@ -1,4 +1,5 @@
-import { Card, Icon } from '../ui';
+import { Card } from '../ui/Card';
+import { Icon } from '../ui/Icon';
 
 export default function DefaultBanner() {
   return (
@@ -10,7 +11,7 @@ export default function DefaultBanner() {
         <p className="t-subtitle font-bold text-tint-accent-1-fg">
           Turn your sources into summaries, flashcards & quizzes
         </p>
-        <p className="mt-1 text-tint-accent-1-fg/80">
+        <p className="mt-1 text-tint-accent-1-fg">
           Upload a file, then chat or generate — grounded in your own materials.
         </p>
       </div>

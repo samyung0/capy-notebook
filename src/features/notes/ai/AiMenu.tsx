@@ -29,7 +29,7 @@ import {
   usePluginOption,
 } from 'platejs/react';
 import { useEffect, useState } from 'react';
-import { Button } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/cn';
 import { applyAiPreview, setAiPreview, useAiPreview } from './aiPreviewState';
 

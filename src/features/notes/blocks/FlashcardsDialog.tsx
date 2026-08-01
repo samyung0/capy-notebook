@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Button, IconButton, Input, SimpleDialog } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { IconButton } from '@/components/ui/IconButton';
+import { Input } from '@/components/ui/Input';
+import { SimpleDialog } from '@/components/ui/Dialog';
 import {
   type FlashcardContent,
   parseFlashcardsFenceBody,

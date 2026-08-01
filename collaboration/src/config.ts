@@ -11,6 +11,8 @@ export interface CollaborationConfig {
   secret: string;
 }
 
+const TRAILING_SLASH = /\/$/;
+
 function required(name: string): string {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} is required`);
@@ -36,7 +38,7 @@ export function loadConfig(): CollaborationConfig {
   }
   return {
     allowedOrigins: new Set(origins),
-    apiUrl: required('API_URL').replace(/\/$/, ''),
+    apiUrl: required('API_URL').replace(TRAILING_SLASH, ''),
     databaseUrl: required('DATABASE_URL'),
     debounceMs: positiveInteger('COLLABORATION_DEBOUNCE_MS', 2000),
     host: process.env.HOST?.trim() || '0.0.0.0',

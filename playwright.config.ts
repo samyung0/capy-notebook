@@ -6,6 +6,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 
+// TODO: use existing packages for loading env?
 function loadLocalEnv() {
   const envFile = path.join(root, 'e2e', '.env');
   if (!existsSync(envFile)) return;

@@ -1,5 +1,5 @@
 import { YjsEditor } from '@slate-yjs/core';
-import { ElementApi, createSlatePlugin } from 'platejs';
+import { createSlatePlugin, ElementApi } from 'platejs';
 
 type EditorOperation = {
   node?: unknown;
@@ -30,8 +30,7 @@ export const stableElementIdsPlugin = createSlatePlugin({
   extendEditor: ({ editor }) => {
     const apply = editor.apply as (operation: EditorOperation) => void;
     editor.apply = ((operation: EditorOperation) => {
-      const local =
-        !YjsEditor.isYjsEditor(editor) || YjsEditor.isLocal(editor);
+      const local = !YjsEditor.isYjsEditor(editor) || YjsEditor.isLocal(editor);
       if (local && operation.type === 'insert_node' && operation.node) {
         operation.node = addStableIds(operation.node);
       }

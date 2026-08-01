@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useCreateCard, useUpdateCard } from '@/api/hooks';
 import type { Flashcard } from '@/api/types';
-import { Button, Input, SimpleDialog } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { SimpleDialog } from '@/components/ui/Dialog';
 
 /**
  * Create or edit a single flashcard. When `card` is provided the modal edits it,

@@ -1,7 +1,7 @@
 import {
   CursorEditor,
-  relativeRangeToSlateRange,
   type CursorEditor as CursorEditorType,
+  relativeRangeToSlateRange,
   type YjsEditor,
 } from '@slate-yjs/core';
 import type { Path } from 'platejs';
@@ -107,8 +107,6 @@ export function remoteCursorRangesForEntry(
     const focus = range.focus as { path: Path } | undefined;
     if (!(anchor && focus)) return false;
     const current = path.join('.');
-    return (
-      current >= anchor.path.join('.') && current <= focus.path.join('.')
-    );
+    return current >= anchor.path.join('.') && current <= focus.path.join('.');
   });
 }

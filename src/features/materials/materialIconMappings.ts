@@ -1,5 +1,5 @@
 import type { MaterialKind } from '@/api/types';
-import type { IconName } from '@/components/ui';
+import type { IconName } from '@/components/ui/Icon';
 import type { MaterialMode } from './modePolicy';
 
 export function materialIcon(kind: MaterialKind): IconName {

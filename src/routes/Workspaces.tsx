@@ -1,20 +1,16 @@
 import { useMemo, useState } from 'react';
 import { useTags, useWorkspaces } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import {
-  Badge,
-  Button,
-  Card,
-  Icon,
-  IconButton,
-  Menu,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-  SkeletonCardGrid,
-  UserColorChooser,
-  WorkspaceCard,
-} from '@/components/ui';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
+import { Menu } from '@/components/ui/Menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
+import { SkeletonCardGrid } from '@/components/ui/feedback';
+import { UserColorChooser } from '@/components/ui/UserColorChooser';
+import { WorkspaceCard } from '@/components/ui/WorkspaceCard';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { usePortals } from '@/stores/portals';
@@ -67,7 +63,7 @@ export default function Workspaces() {
             label={m.action_new_workspace()}
             onClick={() => openWorkspaceCreate()}
             size="lg"
-            variant="gray"
+            variant="page"
           />
         }
         title={m.workspaces_title()}
@@ -148,7 +144,7 @@ export default function Workspaces() {
                                 !active && 'hover:bg-surface-hover-bg'
                               )}
                               size="sm"
-                              tone={active ? 'dark' : 'neutral'}
+                              tone={active ? 'dark' : 'page'}
                             >
                               {t.value}
                             </Badge>

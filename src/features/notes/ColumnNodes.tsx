@@ -21,7 +21,7 @@ import {
   useSelected,
 } from 'platejs/react';
 import type { CSSProperties } from 'react';
-import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui';
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/Popover';
 import { cn } from '@/lib/cn';
 import { FloatingActionButton } from './nodeComponents';
 import { COLUMN_CLASS, COLUMN_GROUP_CLASS } from './nodeStyles';

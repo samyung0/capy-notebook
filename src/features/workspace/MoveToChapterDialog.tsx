@@ -1,5 +1,6 @@
 import type { Chapter, UserColor } from '@/api/types';
-import { Icon, SimpleDialog } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
+import { SimpleDialog } from '@/components/ui/Dialog';
 import { userColorPair } from '@/lib/userColor';
 
 /** Chapter picker for moving a file or material into a chapter (membership).

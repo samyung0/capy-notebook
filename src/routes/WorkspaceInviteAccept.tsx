@@ -1,7 +1,8 @@
 import { useNavigate, useParams } from '@tanstack/react-router';
 import { useAcceptWorkspaceInvite } from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
-import { Button, Icon } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { Icon } from '@/components/ui/Icon';
 
 export default function WorkspaceInviteAccept() {
   const { token } = useParams({ strict: false }) as { token: string };

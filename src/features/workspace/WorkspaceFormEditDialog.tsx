@@ -4,19 +4,12 @@ import { Controller, type FieldError, useForm } from 'react-hook-form';
 import type { UpdateWorkspaceReq } from '@/api/gen/model';
 import { UpdateWorkspaceBody } from '@/api/gen/validators';
 import type { Workspace } from '@/api/types';
-import {
-  Button,
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogFooter,
-  DialogTitle,
-  Input,
-  InputError,
-  Spinner,
-  TagSelect,
-  UserColorChooser,
-} from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { Dialog, DialogClose, DialogContent, DialogFooter, DialogTitle } from '@/components/ui/Dialog';
+import { Input, InputError } from '@/components/ui/Input';
+import { Spinner } from '@/components/ui/feedback';
+import { TagSelect } from '@/components/ui/TagSelect';
+import { UserColorChooser } from '@/components/ui/UserColorChooser';
 import { InputTitle } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';

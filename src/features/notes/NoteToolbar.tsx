@@ -60,29 +60,13 @@ import {
   useEditorSelector,
 } from 'platejs/react';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
-import {
-  Button,
-  ColorPicker,
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogTitle,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-  Input,
-  InputError,
-  InputTitle,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-  Switch,
-} from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { ColorPicker } from '@/components/ui/ColorPicker';
+import { Dialog, DialogContent, DialogFooter, DialogTitle } from '@/components/ui/Dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from '@/components/ui/DropdownMenu';
+import { Input, InputError, InputTitle } from '@/components/ui/Input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
+import { Switch } from '@/components/ui/Switch';
 import { userToast } from '@/components/ui/userToast';
 import { cn } from '@/lib/cn';
 import { openAiMenu } from './ai/aiMenuState';

@@ -1,6 +1,6 @@
 import {
-  relativeRangeToSlateRange,
   type RelativeRange,
+  relativeRangeToSlateRange,
   type YjsEditor,
   YjsEditor as YjsEditorApi,
 } from '@slate-yjs/core';
@@ -98,7 +98,7 @@ export function applyAiPreview(editor: PlateEditor) {
     throw new Error('The collaborative document is not ready');
   }
 
-  let editRange = null;
+  let editRange: ReturnType<typeof relativeRangeToSlateRange> = null;
   if (preview.kind === 'edit') {
     if (!preview.targetRange) throw new Error('The AI target is unavailable');
     editRange = relativeRangeToSlateRange(

@@ -9,7 +9,8 @@ import {
   type Theme,
   useTheme,
 } from '@/theme/ThemeProvider';
-import { Card, InputTitle } from '../ui';
+import { Card } from '../ui/Card';
+import { InputTitle } from '../ui/Input';
 import { ButtonCard } from '../ui/ButtonCard';
 
 const ThemeChooser = ({
@@ -172,7 +173,7 @@ export function ThemeSwitchDrawer({
             className
           )}
           radius="card-xl"
-          theme="gray"
+          theme="surface-dark"
         >
           <aside>
             <div className="flex flex-col gap-6">

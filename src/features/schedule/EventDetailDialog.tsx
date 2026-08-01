@@ -1,12 +1,8 @@
 import type { CalendarEvent, Label } from '@/api/types';
-import {
-  Badge,
-  Dialog,
-  DialogContent,
-  DialogTitle,
-  Icon,
-  IconButton,
-} from '@/components/ui';
+import { Badge } from '@/components/ui/Badge';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/Dialog';
+import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
 import { fmtTime } from './dateUtils';
 
 export function EventDetailDialog({
@@ -53,7 +49,7 @@ export function EventDetailDialog({
                   {event.labelIds.map((id) => {
                     const l = labels.find((x) => x.id === id);
                     return l ? (
-                      <Badge key={id} size="sm" tone="neutral">
+                      <Badge key={id} size="sm">
                         # {l.name}
                       </Badge>
                     ) : null;

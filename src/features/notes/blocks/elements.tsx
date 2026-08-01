@@ -15,7 +15,7 @@ import {
   useReadOnly,
 } from 'platejs/react';
 import { useEffect } from 'react';
-import { Button } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
 import {
   type FlashcardElement as FlashcardNode,
   type FlashcardsElement as FlashcardsNode,

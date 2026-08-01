@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import type { Label, UserColor } from '@/api/types';
-import { Button, Input, SimpleDialog } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { SimpleDialog } from '@/components/ui/Dialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { USER_COLORS, userColorPair } from '@/lib/userColor';

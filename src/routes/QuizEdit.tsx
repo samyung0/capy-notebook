@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuiz, useUpdateQuiz } from '@/api/hooks';
 import type { Question } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Button, Skeleton } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { Skeleton } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { QuizForm } from '@/features/quizzes/QuizForm';
 

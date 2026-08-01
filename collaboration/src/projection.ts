@@ -3,12 +3,15 @@ import type { YjsDocumentStore } from './persistence.js';
 export class ProjectionService {
   private timer: NodeJS.Timeout | null = null;
   private running = false;
+  private readonly store: YjsDocumentStore;
+  private readonly apiUrl: string;
+  private readonly secret: string;
 
-  constructor(
-    private readonly store: YjsDocumentStore,
-    private readonly apiUrl: string,
-    private readonly secret: string
-  ) {}
+  constructor(store: YjsDocumentStore, apiUrl: string, secret: string) {
+    this.store = store;
+    this.apiUrl = apiUrl;
+    this.secret = secret;
+  }
 
   async project(
     materialId: string,

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { USE_MSW } from '@/api/auth';
 import { useIntegrations } from '@/api/hooks';
-import { Button } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { useProviderConnect } from '@/lib/useProviderConnect';
 
@@ -36,7 +36,7 @@ export function CloudConnectBanner() {
         <Button onClick={dismiss} size="sm" variant="ghost">
           {m.cloud_connect_dismiss()}
         </Button>
-        <Button onClick={connect} size="sm" variant="primary">
+        <Button onClick={connect} size="sm">
           {m.cloud_connect_action()}
         </Button>
       </div>

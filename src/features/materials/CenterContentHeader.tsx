@@ -1,18 +1,10 @@
 import { useNavigate } from '@tanstack/react-router';
 import { useDeck, useFile, useMaterial, useQuiz } from '@/api/hooks';
 import type { MaterialKind } from '@/api/types';
-import {
-  Button,
-  Icon,
-  IconButton,
-  type IconName,
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { Icon, type IconName } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/Select';
 import {
   clampImageZoom,
   IMAGE_MAX_ZOOM,

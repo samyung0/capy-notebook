@@ -1,5 +1,8 @@
 import type { CognitiveLevel, Question, QuestionType } from '@/api/types';
-import { Button, Checkbox, Icon, Input } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { Checkbox } from '@/components/ui/Checkbox';
+import { Icon } from '@/components/ui/Icon';
+import { Input } from '@/components/ui/Input';
 import { cn } from '@/lib/cn';
 import { LEVEL_LABEL, LEVELS } from '@/lib/levels';
 

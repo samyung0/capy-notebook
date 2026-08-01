@@ -713,7 +713,8 @@ INSERT INTO tasks (id, user_id, title, meta, done, due_date) VALUES
   ('tk_1', 'u_1', 'Read Chapter 3 — Genetics',      'Biology 101',              false, date_trunc('day', now())+interval '23 hour'),
   ('tk_2', 'u_1', 'Finish integration worksheet',   'Calculus II · 12 problems',false, date_trunc('day', now())+interval '23 hour'),
   ('tk_3', 'u_1', 'Review flashcards',              'Cell organelles',          true,  date_trunc('day', now())+interval '23 hour'),
-  ('tk_4', 'u_1', 'Outline history essay',          'World History',            false, date_trunc('day', now())+interval '1 day 23 hour')
+  ('tk_4', 'u_1', 'Outline history essay this is a very long task title just to test how UI can handle',          'World History this is a very long task title just to test how UI can handle',            false, date_trunc('day', now())+interval '1 day 23 hour'),
+  ('tk_5', 'u_1', 'Outline history essay 2',          'World History 2',            false, date_trunc('day', now())+interval '1 day 23 hour')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO notifications (id, user_id, kind, title, body, at, read) VALUES

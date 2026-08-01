@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Skeleton } from '@/components/ui';
+import { Skeleton } from '@/components/ui/feedback';
 
 /** Word (.docx) viewer. docx-preview is imported on demand so it stays out of
  * the main bundle. Legacy binary .doc files are not supported. */

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import type { Question } from '@/api/types';
-import { Button, Input, SimpleDialog } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { SimpleDialog } from '@/components/ui/Dialog';
 import { parseQuizFenceBody } from '@/features/materials/blocks';
 import {
   createBlankQuestion,

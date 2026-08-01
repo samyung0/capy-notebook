@@ -1,7 +1,7 @@
 import { Mic } from 'lucide-react';
 import { useEditorRef } from 'platejs/react';
 import { useCallback } from 'react';
-import { Spinner } from '@/components/ui';
+import { Spinner } from '@/components/ui/feedback';
 import { cn } from '@/lib/cn';
 import { ToolbarButton } from '../ToolBarButton';
 import { useVoiceInput } from './useVoiceInput';

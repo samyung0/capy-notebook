@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { Icon, IconButton } from '@/components/ui';
+import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
 import { cn } from '@/lib/cn';
 import {
   addMonths,

@@ -9,7 +9,7 @@ export const BASE_BUTTON_STYLE =
 const buttonVariants = cva(BASE_BUTTON_STYLE, {
   defaultVariants: {
     size: 'md',
-    variant: 'primary',
+    variant: 'dark',
   },
   variants: {
     size: {
@@ -22,14 +22,12 @@ const buttonVariants = cva(BASE_BUTTON_STYLE, {
         'border border-transparent bg-action-accent text-action-accent-fg hover:bg-action-accent-hover',
       danger:
         'border border-transparent bg-solid-error text-surface hover:brightness-95',
+      dark: 'border border-transparent bg-action text-action-fg outline-offset-2 hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-action focus-visible:ring-0',
       ghost: 'border-none text-fg',
       'ghost-hover': 'border-none text-fg hover:bg-surface-hover-bg/80',
       'ghost-link': 'border-none text-link hover:text-link-hover',
-      gray: 'bg-surface-hover-bg text-surface-dark-fg hover:bg-surface-dark',
       outline:
         'border border-line bg-surface text-fg hover:bg-surface-hover-bg/80',
-      primary:
-        'border border-transparent bg-action text-action-fg outline-offset-2 hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-action focus-visible:ring-0',
       surface:
         'border border-transparent bg-surface text-fg hover:bg-surface-hover-bg',
     },
@@ -67,7 +65,7 @@ const InlineIcon = ({
 
 export function Button({
   children,
-  variant = 'primary',
+  variant = 'dark',
   size = 'md',
   iconLeft,
   iconRight,

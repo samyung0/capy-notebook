@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { PageHeader, Panel } from '@/components/app/layout';
-import { Button, Card, Icon, type IconName } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 
 const CHANNELS: {

@@ -1,3 +1,9 @@
+## Getting Started
+
+### Code Changes
+
+- run `pnpm run fmt` and `pnpm run fix` to fix according to biome rules
+
 ## Common Pitfalls
 
 ### Frontend

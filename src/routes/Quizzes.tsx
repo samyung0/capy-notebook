@@ -11,18 +11,15 @@ import {
 } from '@/api/hooks';
 import type { Attempt, Quiz } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import {
-  Badge,
-  Button,
-  Card,
-  Icon,
-  IconButton,
-  Menu,
-  SimpleDialog,
-  SkeletonCardGrid,
-  SkeletonList,
-  Tabs,
-} from '@/components/ui';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
+import { Menu } from '@/components/ui/Menu';
+import { SimpleDialog } from '@/components/ui/Dialog';
+import { SkeletonCardGrid, SkeletonList } from '@/components/ui/feedback';
+import { Tabs } from '@/components/ui/Tabs';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -190,7 +187,7 @@ function AllQuizzes() {
             )}
             <div className="mt-2 flex flex-wrap gap-1">
               {[...new Set(info.questions.map((q) => q.type))].map((t) => (
-                <Badge key={t} size="sm" tone="neutral">
+                <Badge key={t} size="sm">
                   {t}
                 </Badge>
               ))}
@@ -298,7 +295,7 @@ export default function Quizzes() {
             label={m.action_new_quiz()}
             onClick={newQuiz}
             size="lg"
-            variant="gray"
+            variant="page"
           />
         }
         title={m.nav_quizzes()}

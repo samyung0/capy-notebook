@@ -23,6 +23,8 @@ export interface CollaborationContext {
   userId: string;
 }
 
+const MATERIAL_ROOM_PATTERN = /^material:[A-Za-z0-9_-]+:schema:1$/;
+
 function decodeJsonPart<T>(part: string): T {
   return JSON.parse(Buffer.from(part, 'base64url').toString('utf8')) as T;
 }
@@ -49,7 +51,7 @@ export function verifyCollaborationToken(
   }
 
   const claims = decodeJsonPart<CollaborationClaims>(encodedPayload);
-  const validRoom = /^material:[A-Za-z0-9_-]+:schema:1$/.test(expectedRoom);
+  const validRoom = MATERIAL_ROOM_PATTERN.test(expectedRoom);
   if (
     !validRoom ||
     claims.aud !== 'evo-collaboration' ||

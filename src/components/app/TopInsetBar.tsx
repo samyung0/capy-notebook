@@ -9,22 +9,15 @@ import {
   useSearch,
 } from '@/api/hooks';
 import type { SearchKind } from '@/api/types';
-import {
-  Avatar,
-  Card,
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogTitle,
-  Icon,
-  IconButton,
-  Input,
-  Menu,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-  SkeletonList,
-} from '@/components/ui';
+import { Avatar } from '@/components/ui/Avatar';
+import { Card } from '@/components/ui/Card';
+import { Dialog, DialogClose, DialogContent, DialogTitle } from '@/components/ui/Dialog';
+import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
+import { Input } from '@/components/ui/Input';
+import { Menu } from '@/components/ui/Menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
+import { SkeletonList } from '@/components/ui/feedback';
 import { cn } from '@/lib/cn';
 import { useDebounced } from '@/lib/useDebounced';
 import { userColorPair } from '@/lib/userColor';
@@ -185,7 +178,7 @@ function NotificationsBell() {
             if (unread) markRead.mutate();
           }}
           size="md"
-          variant="neutral"
+          variant="surface"
         />
       </PopoverTrigger>
       <PopoverContent>
@@ -328,7 +321,7 @@ export function TopInsetBar({ className }: { className?: string }) {
         className
       )}
       radius="unset"
-      theme="gray"
+      theme="surface-dark"
     >
       <div className="flex min-w-0 flex-1 items-center gap-2.5">
         <MobileNavDrawer className="lg:hidden" />

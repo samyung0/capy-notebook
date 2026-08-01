@@ -8,7 +8,8 @@ import type {
   Quiz,
   SourceFile,
 } from '@/api/types';
-import { Button, type IconName } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import type { IconName } from '@/components/ui/Icon';
 import { ButtonCard } from '@/components/ui/ButtonCard';
 import { userToast } from '@/components/ui/userToast';
 import type { OpenItem } from '@/features/materials/openItem';

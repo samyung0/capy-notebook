@@ -1,6 +1,7 @@
 import { useTasks, useToggleTask } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import { Checkbox, SkeletonList } from '@/components/ui';
+import { Checkbox } from '@/components/ui/Checkbox';
+import { SkeletonList } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 
 export default function Tasks() {

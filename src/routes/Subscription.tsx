@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useBillingCheckout, useBillingPortal, useMe } from '@/api/hooks';
 import type { PlanTier } from '@/api/types';
 import { PageHeader, Panel } from '@/components/app/layout';
-import { Button } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
@@ -80,7 +80,7 @@ function PlanCard({
         ))}
       </ul>
       {tier !== 'free' && !current && onUpgrade && (
-        <Button disabled={loading} onClick={onUpgrade} variant="primary">
+        <Button disabled={loading} onClick={onUpgrade}>
           {m.subscription_upgrade()}
         </Button>
       )}

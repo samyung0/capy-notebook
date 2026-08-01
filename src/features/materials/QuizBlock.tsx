@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type { CognitiveLevel, QuestionType } from '@/api/types';
-import { Badge, Icon } from '@/components/ui';
+import { Badge } from '@/components/ui/Badge';
+import { Icon } from '@/components/ui/Icon';
 import {
   QUIZ_REVIEW_OPTION_CLASS,
   QUIZ_REVIEW_OPTION_CORRECT_CLASS,

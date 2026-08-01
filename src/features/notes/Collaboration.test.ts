@@ -1,9 +1,9 @@
 import {
   slateNodesToInsertDelta,
   slateRangeToRelativeRange,
-  type YjsEditor as YjsEditorType,
   withYjs,
   YjsEditor,
+  type YjsEditor as YjsEditorType,
 } from '@slate-yjs/core';
 import { createSlateEditor } from 'platejs';
 import { describe, expect, it } from 'vitest';
@@ -30,8 +30,10 @@ describe('relative comment decorations', () => {
     const plateEditor = createSlateEditor({
       value: [{ children: [{ text: '' }], id: 'initial', type: 'p' }],
     });
-    const editor = withYjs(plateEditor as never, root) as unknown as typeof plateEditor &
-      YjsEditorType;
+    const editor = withYjs(
+      plateEditor as never,
+      root
+    ) as unknown as typeof plateEditor & YjsEditorType;
     YjsEditor.connect(editor);
     const relative = slateRangeToRelativeRange(root, editor, {
       anchor: { offset: 0, path: [0, 0] },

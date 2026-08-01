@@ -5,14 +5,10 @@ import { Icon, type IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { features } from '@/lib/features';
-import {
-  Card,
-  Drawer,
-  DrawerContent,
-  DrawerTrigger,
-  IconButton,
-  LogoMark,
-} from '../ui';
+import { Card } from '../ui/Card';
+import { Drawer, DrawerContent, DrawerTrigger } from '../ui/Drawer';
+import { IconButton } from '../ui/IconButton';
+import { LogoMark } from '../ui/Logo';
 
 interface NavItem {
   exact?: boolean;
@@ -114,7 +110,7 @@ export function Sidebar({
         asChild
         className="m-2.5 mr-0 flex w-15 shrink-0 items-stretch gap-0 overflow-y-auto px-2.5 py-4"
         radius="row"
-        theme="gray"
+        theme="surface-dark"
       >
         <nav>
           <LogoMark size={36} />

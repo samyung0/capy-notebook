@@ -8,15 +8,13 @@ import {
 } from '@/api/hooks';
 import type { Deck } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import {
-  Badge,
-  Card,
-  Icon,
-  IconButton,
-  Menu,
-  ProgressBar,
-  SkeletonCardGrid,
-} from '@/components/ui';
+import { Badge } from '@/components/ui/Badge';
+import { Card } from '@/components/ui/Card';
+import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
+import { Menu } from '@/components/ui/Menu';
+import { ProgressBar } from '@/components/ui/ProgressBar';
+import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { m } from '@/i18n';
 import { userColorPair } from '@/lib/userColor';

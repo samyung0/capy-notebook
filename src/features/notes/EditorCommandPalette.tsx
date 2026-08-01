@@ -1,7 +1,7 @@
 import { MessageSquarePlus, Search, X } from 'lucide-react';
 import { useEditorRef } from 'platejs/react';
 import { useEffect, useMemo, useState } from 'react';
-import { Button } from '@/components/ui';
+import { Button } from '@/components/ui/Button';
 import { useOptionalNoteBlockDialogs } from './blocks/dialogContext';
 import { useCollaborationActions } from './Collaboration';
 import { useEditorRuntime } from './EditorRuntime';

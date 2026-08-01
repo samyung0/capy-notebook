@@ -195,9 +195,7 @@ test.describe('shared material modes', () => {
             anchorQuote: '',
             anchorVersion: 1,
             blockId: 'role-matrix-block',
-            contentRich: [
-              { children: [{ text: 'feedback' }], type: 'p' },
-            ],
+            contentRich: [{ children: [{ text: 'feedback' }], type: 'p' }],
           },
         }
       );

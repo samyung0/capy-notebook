@@ -1,16 +1,13 @@
 import { useState } from 'react';
 import { useDeleteFile, useMoveFile, useUpdateFile } from '@/api/hooks';
 import type { Chapter, SourceFile, UserColor } from '@/api/types';
-import {
-  Button,
-  ConfirmDialog,
-  HoverActions,
-  Icon,
-  Input,
-  ProgressBar,
-  SimpleDialog,
-  Spinner,
-} from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
+import { HoverActions } from '@/components/ui/HoverActions';
+import { Icon } from '@/components/ui/Icon';
+import { Input } from '@/components/ui/Input';
+import { ProgressBar } from '@/components/ui/ProgressBar';
+import { Spinner } from '@/components/ui/feedback';
 import { MoveToChapterDialog } from '@/features/workspace/MoveToChapterDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -59,7 +56,7 @@ export function FileListItem({
     <div className="flex flex-col">
       <div
         className={cn(
-          'group relative flex items-center rounded-button pr-8 hover:bg-surface-hover-bg',
+          'group relative flex items-center rounded-button hover:bg-surface-hover-bg',
           active && 'bg-surface-hover-bg'
         )}
       >
@@ -80,7 +77,7 @@ export function FileListItem({
           />
           <span
             className={cn(
-              'line-clamp-2 flex-1 translate-y-px',
+              'line-clamp-1 flex-1 translate-y-px truncate',
               failed && 'text-solid-error'
             )}
           >
@@ -95,7 +92,7 @@ export function FileListItem({
         {!readOnly && (
           <HoverActions
             className="absolute top-1/2 right-1 -translate-y-1/2"
-            iconContainerClassName="hover:bg-unset"
+            iconContainerClassName="bg-surface-hover-bg/60 hover:bg-surface-dark"
             items={[
               {
                 icon: 'write',

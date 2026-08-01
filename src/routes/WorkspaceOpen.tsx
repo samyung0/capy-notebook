@@ -29,14 +29,12 @@ import { LoadingLarge } from '@/components/app/LoadingLarge';
 import { Panel } from '@/components/app/layout';
 import { PrivateOrUnavailable } from '@/components/app/PrivateOrUnavailable';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
-import {
-  Button,
-  HoverActions,
-  Icon,
-  IconButton,
-  SkeletonList,
-  Tabs,
-} from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { HoverActions } from '@/components/ui/HoverActions';
+import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
+import { SkeletonList } from '@/components/ui/feedback';
+import { Tabs } from '@/components/ui/Tabs';
 import {
   ResizableHandle,
   ResizablePanel,
@@ -585,7 +583,7 @@ export default function WorkspaceOpen() {
                               )
                             }
                             size={'xs'}
-                            variant={'neutral'}
+                            variant={'surface'}
                           />
                           <IconButton
                             className="rounded-md px-0.5 py-1"
@@ -598,7 +596,7 @@ export default function WorkspaceOpen() {
                               })
                             }
                             size={'xs'}
-                            variant={'neutral'}
+                            variant={'surface'}
                           />
                         </div>
                       )}
@@ -623,13 +621,14 @@ export default function WorkspaceOpen() {
                                 name={expanded ? 'chevronDown' : 'chevronRight'}
                                 size={15}
                               />
-                              <span className="translate-y-px truncate font-semibold">
+                              <span className="line-clamp-1 translate-y-px truncate font-semibold">
                                 {ch.name}
                               </span>
                             </button>
                             {!readOnly && (
                               <HoverActions
                                 className="absolute top-1/2 right-1 -translate-y-1/2"
+                                iconContainerClassName="bg-surface-hover-bg/60 hover:bg-surface-dark"
                                 items={[
                                   {
                                     icon: 'write',

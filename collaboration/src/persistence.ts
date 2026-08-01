@@ -43,7 +43,11 @@ function checkpoints(document: Y.Doc): string[] {
 }
 
 export class YjsDocumentStore {
-  constructor(private readonly pool: Pool) {}
+  private readonly pool: Pool;
+
+  constructor(pool: Pool) {
+    this.pool = pool;
+  }
 
   async load(room: string, target: Y.Doc): Promise<void> {
     const materialId = materialIdFromRoom(room);

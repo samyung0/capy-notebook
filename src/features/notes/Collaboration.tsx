@@ -28,15 +28,11 @@ import type {
   MaterialDiscussion,
   WorkspaceMember,
 } from '@/api/types';
-import {
-  Button,
-  InputTitle,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-  SimpleDialog,
-  Textarea,
-} from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { InputTitle } from '@/components/ui/Input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/Popover';
+import { SimpleDialog } from '@/components/ui/Dialog';
+import { Textarea } from '@/components/ui/TextArea';
 import type { MaterialValue } from '@/features/materials/document';
 import { cn } from '@/lib/cn';
 import { canReplyAtDepth } from './canReplyAtDepth';

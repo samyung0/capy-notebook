@@ -9,7 +9,7 @@ import {
 import { serializeMd, stripMarkdown } from '@platejs/markdown';
 import { CursorOverlayPlugin } from '@platejs/selection/react';
 import { slateRangeToRelativeRange, type YjsEditor } from '@slate-yjs/core';
-import { type TElement } from 'platejs';
+import type { TElement } from 'platejs';
 import { useEditorRef, usePluginOption } from 'platejs/react';
 import { useEffect, useMemo, useRef } from 'react';
 import * as Y from 'yjs';

@@ -1,21 +1,21 @@
-import { Redis as RedisExtension } from '@hocuspocus/extension-redis';
-import { Server } from '@hocuspocus/server';
 import { timingSafeEqual } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { Redis as RedisExtension } from '@hocuspocus/extension-redis';
+import { Server } from '@hocuspocus/server';
 import { Redis as IORedis } from 'ioredis';
 import { Pool } from 'pg';
 import * as Y from 'yjs';
 import {
   assertAllowedOrigin,
-  claimsContext,
   type CollaborationContext,
+  claimsContext,
   verifyCollaborationToken,
 } from './auth.js';
-import { loadConfig } from './config.js';
 import {
   applyCollaborationCommand,
   isCollaborationCommand,
 } from './commands.js';
+import { loadConfig } from './config.js';
 import { materialIdFromRoom, YjsDocumentStore } from './persistence.js';
 import { ProjectionService } from './projection.js';
 
@@ -80,11 +80,6 @@ const server = new Server<CollaborationContext>({
   maxPendingDocuments: 8,
   maxUnauthenticatedQueueMessages: 64,
   maxUnauthenticatedQueueSize: 512 * 1024,
-  quiet: true,
-  stopOnSignals: false,
-  unloadImmediately: false,
-  websocketOptions: { maxPayload: config.maxPayloadBytes },
-  yDocOptions: { gc: true, gcFilter: () => true },
   async onAuthenticate({ connectionConfig, documentName, request, token }) {
     try {
       assertAllowedOrigin(request, config.allowedOrigins);
@@ -103,11 +98,6 @@ const server = new Server<CollaborationContext>({
       );
       throw error;
     }
-  },
-  async onTokenSync({ connection, documentName, token }) {
-    const claims = verifyCollaborationToken(token, config.secret, documentName);
-    connection.context = claimsContext(claims);
-    connection.readOnly = claims.access === 'comment';
   },
   async onLoadDocument({ document, documentName }) {
     await store.load(documentName, document);
@@ -158,6 +148,16 @@ const server = new Server<CollaborationContext>({
       throw error;
     }
   },
+  async onTokenSync({ connection, documentName, token }) {
+    const claims = verifyCollaborationToken(token, config.secret, documentName);
+    connection.context = claimsContext(claims);
+    connection.readOnly = claims.access === 'comment';
+  },
+  quiet: true,
+  stopOnSignals: false,
+  unloadImmediately: false,
+  websocketOptions: { maxPayload: config.maxPayloadBytes },
+  yDocOptions: { gc: true, gcFilter: () => true },
 });
 
 async function handleHttpRequest(

@@ -1,5 +1,5 @@
 import { useWorkspaceStats } from '@/api/hooks';
-import { SimpleDialog } from '@/components/ui';
+import { SimpleDialog } from '@/components/ui/Dialog';
 
 export function WorkspaceStatsDialog({
   id,

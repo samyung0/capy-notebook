@@ -9,25 +9,14 @@ import {
   useUploadSource,
 } from '@/api/hooks';
 import type { Chapter, SourceFile, SourceUploadPolicy } from '@/api/types';
-import {
-  Button,
-  ConfirmDialog,
-  DialogClose,
-  DialogFooter,
-  Icon,
-  IconButton,
-  Input,
-  ProgressBar,
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectSeparator,
-  SelectTrigger,
-  SelectValue,
-  SimpleDialog,
-  Tabs,
-} from '@/components/ui';
+import { Button } from '@/components/ui/Button';
+import { ConfirmDialog, DialogClose, DialogFooter, SimpleDialog } from '@/components/ui/Dialog';
+import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
+import { Input } from '@/components/ui/Input';
+import { ProgressBar } from '@/components/ui/ProgressBar';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from '@/components/ui/Select';
+import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';

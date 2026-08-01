@@ -121,11 +121,7 @@ export function TagSelect({
         onClick={() => inputRef.current?.focus()}
       >
         {selected.map((t, i) => (
-          <Badge
-            key={`${t.id ?? 'new'}:${t.value}:${i}`}
-            size="md"
-            tone="neutral"
-          >
+          <Badge key={`${t.id ?? 'new'}:${t.value}:${i}`} size="md">
             # {t.value}
             <IconButton
               aria-label={`Remove ${t.value}`}

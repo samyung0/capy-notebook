@@ -9,14 +9,12 @@ import {
   useExploreWorkspaces,
 } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
-import {
-  Badge,
-  Button,
-  Card,
-  Icon,
-  SkeletonCardGrid,
-  Tabs,
-} from '@/components/ui';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { Icon } from '@/components/ui/Icon';
+import { SkeletonCardGrid } from '@/components/ui/feedback';
+import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
 import { userColorPair } from '@/lib/userColor';
 
@@ -104,9 +102,7 @@ export default function Explore() {
                   by {q.author} · {q.clones.toLocaleString()} clones
                 </p>
                 <div className="mt-2">
-                  <Badge size="sm" tone="neutral">
-                    {q.questions.length} questions
-                  </Badge>
+                  <Badge size="sm">{q.questions.length} questions</Badge>
                 </div>
                 <Button
                   className="mt-3"
@@ -143,9 +139,7 @@ export default function Explore() {
                   by {deck.author} · {deck.clones.toLocaleString()} clones
                 </p>
                 <div className="mt-2">
-                  <Badge size="sm" tone="neutral">
-                    {deck.cardCount} cards
-                  </Badge>
+                  <Badge size="sm">{deck.cardCount} cards</Badge>
                 </div>
                 <Button
                   className="mt-3"
