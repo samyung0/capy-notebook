@@ -1,0 +1,16 @@
+Evo Notes
+
+
+已移出工作区
+
+你已被工作区所有者移出 {{.WorkspaceName}}。
+
+{{.WorkspaceName}}
+
+打开 Evo Notes {{.OpenURL}}
+
+----------------------------------------
+
+你收到这封邮件是因为 Evo Notes 工作区成员身份发生了变化。
+
+{{.UnsubscribeText}} {{.UnsubscribeURL}}

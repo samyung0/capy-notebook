@@ -15,6 +15,7 @@ import secrets
 from typing import Any
 
 import psycopg
+from psycopg.types.json import Jsonb
 
 from ..config import cfg
 
@@ -93,11 +94,42 @@ def file_names_for_ids(cur, file_ids: list[str]) -> list[str]:
     return [row[0] for row in cur.fetchall()]
 
 
-def add_notification(cur, kind: str, title: str, body: str) -> None:
+def add_notification(
+    cur,
+    file_id: str,
+    kind: str,
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    cur.execute("SELECT user_id, workspace_id FROM files WHERE id=%s", (file_id,))
+    owner = cur.fetchone()
+    if not owner:
+        raise ValueError(f"cannot notify for missing file {file_id}")
+    user_id, workspace_id = owner
+    notification_id = uid("nt")
+    href = f"/workspaces/{workspace_id}?file={file_id}"
     cur.execute(
-        "INSERT INTO notifications (id, kind, title, body) VALUES (%s,%s,%s,%s)",
-        (uid("nt"), kind, title, body),
+        """INSERT INTO notifications
+            (id, user_id, kind, data, href, workspace_id)
+        VALUES (%s,%s,%s,%s,%s,%s)
+        RETURNING id, at""",
+        (
+            notification_id,
+            user_id,
+            kind,
+            Jsonb(data),
+            href,
+            workspace_id,
+        ),
     )
+    row = cur.fetchone()
+    return {
+        "at": row[1].isoformat(),
+        "data": data,
+        "href": href,
+        "id": row[0],
+        "kind": kind,
+        "userId": user_id,
+    }
 
 
 def file_name(cur, file_id: str) -> str:

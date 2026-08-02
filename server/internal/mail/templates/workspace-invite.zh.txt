@@ -1,0 +1,18 @@
+Evo Notes
+
+
+你有一个工作区邀请
+
+你好，
+
+你已受邀加入 Evo Notes 工作区 {{.WorkspaceName}}。
+
+查看邀请 {{.InviteURL}}
+
+如果按钮无法使用，请打开此链接： {{.InviteURL}}
+
+----------------------------------------
+
+你收到这封邮件是因为有人邀请你加入 Evo Notes 工作区。
+
+{{.UnsubscribeText}} {{.UnsubscribeURL}}

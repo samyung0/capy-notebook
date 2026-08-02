@@ -140,41 +140,6 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	return out, nil
 }
 
-func (s *Store) Notifications(ctx context.Context, userID string) ([]Notification, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, body, at, read, COALESCE(href,'')
-		FROM notifications n
-		WHERE n.user_id=$1
-			AND (
-				n.workspace_invite_id IS NULL
-				OR EXISTS (
-					SELECT 1 FROM workspace_invites wi
-					WHERE wi.id=n.workspace_invite_id
-						AND wi.accepted_at IS NULL
-						AND wi.revoked_at IS NULL
-						AND wi.expires_at>now()
-				)
-			)
-		ORDER BY at DESC`, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := []Notification{}
-	for rows.Next() {
-		var n Notification
-		if err := rows.Scan(&n.ID, &n.Kind, &n.Title, &n.Body, &n.At, &n.Read, &n.Href); err != nil {
-			return nil, err
-		}
-		out = append(out, n)
-	}
-	return out, rows.Err()
-}
-
-func (s *Store) MarkNotificationsRead(ctx context.Context, userID string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE notifications SET read=true WHERE user_id=$1 AND read=false`, userID)
-	return err
-}
-
 /* --------------------------------------------------------------- workspaces */
 
 const wsCols = `w.id, w.name, w.color, w.privacy, w.share_role,
@@ -452,39 +417,80 @@ func (s *Store) UpdateWorkspaceSharing(
 }
 
 func (s *Store) DeleteWorkspace(ctx context.Context, userID, id string) error {
+	_, err := s.DeleteWorkspaceWithResult(ctx, userID, id)
+	return err
+}
+
+func (s *Store) DeleteWorkspaceWithResult(ctx context.Context, userID, id string) ([]NotificationRemoval, error) {
 	if err := s.AssertWorkspaceOwner(ctx, userID, id); err != nil {
-		return err
+		return nil, err
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer tx.Rollback(ctx)
 	var ownerID string
 	if err := tx.QueryRow(ctx, `SELECT user_id FROM workspaces
 		WHERE id=$1`, id).Scan(&ownerID); err != nil {
 		if isNoRows(err) {
-			return ErrNotFound
+			return nil, ErrNotFound
 		}
-		return err
+		return nil, err
 	}
 	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
-		return err
+		return nil, err
 	}
 	if err := tx.QueryRow(ctx, `SELECT user_id FROM workspaces
 		WHERE id=$1 FOR UPDATE`, id).Scan(&ownerID); err != nil {
 		if isNoRows(err) {
-			return ErrNotFound
+			return nil, ErrNotFound
 		}
-		return err
+		return nil, err
 	}
 	if ownerID != userID {
-		return ErrForbidden
+		return nil, ErrForbidden
+	}
+	rows, err := tx.Query(ctx, `SELECT user_id, id
+		FROM notifications WHERE workspace_id=$1`, id)
+	if err != nil {
+		return nil, err
+	}
+	removed := []NotificationRemoval{}
+	for rows.Next() {
+		var item NotificationRemoval
+		if err := rows.Scan(&item.UserID, &item.ID); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		removed = append(removed, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, err
+	}
+	rows.Close()
+	if _, err := tx.Exec(ctx, `DELETE FROM email_outbox
+		WHERE template='workspace-invite'
+			AND status='pending'
+			AND payload->>'inviteId' IN (
+				SELECT id FROM workspace_invites WHERE workspace_id=$1
+			)`, id); err != nil {
+		return nil, err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM email_outbox
+		WHERE template IN ('workspace-role-changed','workspace-member-removed')
+			AND status='pending'
+			AND payload->>'workspaceId'=$1`, id); err != nil {
+		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM workspaces WHERE id=$1`, id); err != nil {
-		return err
+		return nil, err
 	}
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return removed, nil
 }
 
 /* ----------------------------------------------------------- chapters/files */

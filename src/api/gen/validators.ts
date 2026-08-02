@@ -1023,11 +1023,22 @@ export const GetMeResponse = zod.object({
   "classLabel": zod.string().optional(),
   "email": zod.string(),
   "id": zod.string(),
+  "locale": zod.string(),
   "name": zod.string(),
   "planTier": zod.enum(['free', 'pro']),
   "streak": zod.number(),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
+
+
+/**
+ * @summary Set account locale
+ */
+export const SetLocaleBody = zod.object({
+  "locale": zod.enum(['en', 'zh'])
+})
+
+export const SetLocaleResponse = zod.void()
 
 
 /**
@@ -1049,24 +1060,80 @@ export const GetMistakesResponse = zod.object({
 
 
 /**
+ * @summary Get notification preferences
+ */
+export const GetNotificationPrefsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "emailMembership": zod.boolean(),
+  "emailWorkspaceInvite": zod.boolean()
+})
+
+
+/**
+ * @summary Set notification preferences
+ */
+export const SetNotificationPrefsBody = zod.object({
+  "emailMembership": zod.boolean(),
+  "emailWorkspaceInvite": zod.boolean()
+})
+
+export const SetNotificationPrefsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "emailMembership": zod.boolean(),
+  "emailWorkspaceInvite": zod.boolean()
+})
+
+
+/**
  * @summary List notifications
  */
-export const ListNotificationsResponseItem = zod.object({
+export const listNotificationsQueryLimitDefault = 50;
+export const listNotificationsQueryLimitMax = 100;
+
+
+
+export const ListNotificationsQueryParams = zod.object({
+  "limit": zod.number().min(1).max(listNotificationsQueryLimitMax).default(listNotificationsQueryLimitDefault),
+  "before": zod.string().optional()
+})
+
+export const ListNotificationsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
   "at": zod.iso.datetime({"offset":true}),
-  "body": zod.string(),
+  "data": zod.unknown(),
   "href": zod.string().optional(),
   "id": zod.string(),
-  "kind": zod.enum(['event', 'quiz', 'system', 'workspace_invite']),
-  "read": zod.boolean(),
-  "title": zod.string()
+  "kind": zod.enum(['event', 'quiz', 'system', 'workspace_invite', 'workspace_role_changed', 'workspace_member_removed']),
+  "readAt": zod.iso.datetime({"offset":true}).optional()
+})),
+  "next": zod.string().optional()
 })
-export const ListNotificationsResponse = zod.array(ListNotificationsResponseItem)
 
 
 /**
  * @summary Mark notifications read
  */
 export const ReadNotificationsResponse = zod.void()
+
+
+/**
+ * @summary Unread notification count
+ */
+export const GetUnreadNotificationCountResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "count": zod.number()
+})
+
+
+/**
+ * @summary Mark one notification read
+ */
+export const ReadNotificationParams = zod.object({
+  "id": zod.string()
+})
+
+export const ReadNotificationResponse = zod.void()
 
 
 /**

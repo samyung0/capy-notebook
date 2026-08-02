@@ -69,6 +69,8 @@ type (
 	Event              = store.Event
 	Task               = store.Task
 	Notification       = store.Notification
+	NotificationPage   = store.NotificationPage
+	NotificationPrefs  = store.NotificationPrefs
 	Canvas             = store.Canvas
 	SearchResult       = store.SearchResult
 	WorkspaceStats     = store.WorkspaceStats

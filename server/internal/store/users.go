@@ -26,12 +26,21 @@ type IntegrationsStatus struct {
 func (s *Store) Me(ctx context.Context, userID string) (User, error) {
 	var u User
 	row := s.pool.QueryRow(ctx, `SELECT id, name, email, COALESCE(avatar_url,''), COALESCE(class_label,''), streak,
-		plan_tier, subscription_status FROM users WHERE id=$1`, userID)
-	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.AvatarURL, &u.ClassLabel, &u.Streak, &u.PlanTier, &u.SubscriptionStatus)
+		locale, plan_tier, subscription_status FROM users WHERE id=$1`, userID)
+	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.AvatarURL, &u.ClassLabel, &u.Streak,
+		&u.Locale, &u.PlanTier, &u.SubscriptionStatus)
 	if isNoRows(err) {
 		return u, ErrNotFound
 	}
 	return u, err
+}
+
+func (s *Store) SetLocale(ctx context.Context, userID, locale string) error {
+	if locale != "en" && locale != "zh" {
+		return ErrForbidden
+	}
+	_, err := s.pool.Exec(ctx, `UPDATE users SET locale=$2, updated_at=now() WHERE id=$1`, userID, locale)
+	return err
 }
 
 // UpsertUserFromClerk inserts or updates a user. The returned bool is true only

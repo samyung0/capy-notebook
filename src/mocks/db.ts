@@ -13,6 +13,7 @@ import type {
   Flashcard,
   Label,
   Material,
+  NotificationPrefs,
   PublicDeck,
   PublicQuiz,
   PublicWorkspace,
@@ -142,6 +143,7 @@ export const user: User = {
   classLabel: 'Grade 11 · Science',
   email: 'kate@evonotes.app',
   id: 'u_1',
+  locale: 'en',
   name: 'Kate Malone',
   planTier: 'pro',
   streak: 0,
@@ -961,29 +963,40 @@ export const tasks: Task[] = [
 export const notifications: AppNotification[] = [
   {
     at: hours(1),
-    body: 'Starts at 11:00 in Room 124.',
+    data: {
+      code: 'event_starting',
+      eventName: 'Calculus tutorial',
+      location: 'Room 124',
+      time: '11:00',
+    },
     id: 'nt_1',
     kind: 'event',
-    read: false,
-    title: 'Calculus tutorial soon',
   },
   {
     at: hours(5),
-    body: 'Cell biology basics — 8/10.',
+    data: {
+      code: 'quiz_attempt_graded',
+      quizName: 'Cell biology basics',
+      score: '8/10',
+    },
     id: 'nt_2',
     kind: 'quiz',
-    read: false,
-    title: 'New attempt graded',
   },
   {
     at: days(1),
-    body: 'Upload your first source to get started.',
+    data: {
+      code: 'welcome',
+    },
     id: 'nt_3',
     kind: 'system',
-    read: true,
-    title: 'Welcome to Evo Notes',
+    readAt: days(1),
   },
 ];
+
+export const notificationPrefs: NotificationPrefs = {
+  emailMembership: true,
+  emailWorkspaceInvite: true,
+};
 
 export const canvases: ThinkingCanvas[] = [
   { id: 'cv_1', name: 'Bio mind map', updatedAt: hours(4) },

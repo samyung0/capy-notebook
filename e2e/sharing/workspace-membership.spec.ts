@@ -1,5 +1,6 @@
 import { expect, test } from '../fixtures/actors';
 import { apiEndsWith, waitForApi } from '../helpers/api';
+import { waitForEmail } from '../helpers/mail';
 
 test.describe('workspace invitations', () => {
   test('private exact-identifier invite is visible only to its recipient', async ({
@@ -52,23 +53,35 @@ test.describe('workspace invitations', () => {
 
     const notificationResponse = await commenterApi.get('/api/notifications');
     expect(notificationResponse.status()).toBe(200);
-    const notifications = (await notificationResponse.json()) as Array<{
-      kind: string;
-      href?: string;
-    }>;
+    const notifications = (
+      (await notificationResponse.json()) as {
+        items: Array<{ data?: unknown; kind: string; href?: string }>;
+      }
+    ).items;
     const notification = notifications.find(
       (item) => item.kind === 'workspace_invite'
     );
     expect(notification?.href).toMatch(/^\/workspace-invites\//);
-    const token = notification!.href!.split('/').at(-1)!;
+    expect(notification?.data).not.toHaveProperty('invitePath');
+    expect(notification?.data).not.toHaveProperty('token');
+    const reference = notification!.href!.split('/').at(-1)!;
+    expect(reference).toMatch(/^inv_[0-9a-f]{10}$/);
+
+    // The email is the only place the plaintext token exists; the in-app
+    // notification links by invite id instead. Accepting with the emailed
+    // token is left to the UI flow below so the invite stays consumable once.
+    const email = await waitForEmail(commenterApi, 'commenter@evonotes.test');
+    const emailedToken = email.text.match(/\/workspace-invites\/([\w-]+)/)?.[1];
+    expect(emailedToken).toMatch(/^[\w-]{32}$/);
+    expect(emailedToken).not.toBe(reference);
 
     const wrongAccount = await otherApi.post(
-      `/api/workspace-invites/${token}/accept`
+      `/api/workspace-invites/${reference}/accept`
     );
     expect(wrongAccount.status()).toBe(403);
 
     await commenterPage.goto('/workspaces');
-    await commenterPage.getByRole('button', { name: 'Notifications' }).click();
+    await commenterPage.getByRole('button', { name: /notifications/i }).click();
     await commenterPage
       .getByRole('button', { name: /Workspace invitation/ })
       .click();
@@ -76,7 +89,7 @@ test.describe('workspace invitations', () => {
 
     const acceptResponse = waitForApi(
       commenterPage,
-      apiEndsWith(`/api/workspace-invites/${token}/accept`, 'POST')
+      apiEndsWith(`/api/workspace-invites/${reference}/accept`, 'POST')
     );
     await commenterPage
       .getByRole('button', { name: 'Accept invitation' })

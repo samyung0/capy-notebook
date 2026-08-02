@@ -16,6 +16,7 @@ import (
 
 	"github.com/evonotes/server/internal/blob"
 	"github.com/evonotes/server/internal/httpapi"
+	"github.com/evonotes/server/internal/mail"
 	"github.com/evonotes/server/internal/pipeline"
 	"github.com/evonotes/server/internal/store"
 )
@@ -38,6 +39,32 @@ func envInt(key string, def int) int {
 		}
 	}
 	return def
+}
+
+func strongEmailSecret(value string) bool {
+	if len(value) < 32 {
+		return false
+	}
+	var classes uint8
+	for _, ch := range value {
+		switch {
+		case ch >= 'a' && ch <= 'z':
+			classes |= 1
+		case ch >= 'A' && ch <= 'Z':
+			classes |= 2
+		case ch >= '0' && ch <= '9':
+			classes |= 4
+		default:
+			classes |= 8
+		}
+	}
+	count := 0
+	for mask := uint8(1); mask <= 8; mask <<= 1 {
+		if classes&mask != 0 {
+			count++
+		}
+	}
+	return count >= 3
 }
 
 func openBlobStore(appEnv string) (blob.Store, error) {
@@ -89,6 +116,15 @@ func main() {
 	engine := env("EVO_ENGINE", "linearrag")
 	appURL := env("APP_URL", "http://localhost:5173")
 	appEnv := env("APP_ENV", "development")
+	emailBackend := env("EMAIL_BACKEND", "")
+	resendAPIKey := env("RESEND_API_KEY", "")
+	emailFrom := env("EMAIL_FROM", "")
+	emailReplyTo := env("EMAIL_REPLY_TO", "")
+	emailUnsubscribeSecret := env("EMAIL_UNSUBSCRIBE_SECRET", "")
+	if (emailBackend == "resend" || (emailBackend == "" && resendAPIKey != "")) &&
+		!strongEmailSecret(emailUnsubscribeSecret) {
+		log.Fatal("EMAIL_UNSUBSCRIBE_SECRET must be at least 32 bytes and contain at least 3 character classes when email delivery is enabled")
+	}
 
 	e2eAuth := envBool("E2E_AUTH")
 	e2eSecret := env("E2E_AUTH_SECRET", "")
@@ -150,15 +186,33 @@ func main() {
 		log.Println("migrations applied")
 	}
 
+	emailSender, err := newEmailSender(appEnv, emailBackend, resendAPIKey, emailFrom, emailReplyTo)
+	if err != nil {
+		log.Fatalf("email sender: %v", err)
+	}
+	// E2E asserts on delivered mail over HTTP rather than by parsing container
+	// stdout, which depends on the log driver and on flush timing.
+	var mailRecorder *mail.RecordingSender
+	if appEnv == "e2e" {
+		mailRecorder = mail.NewRecordingSender(emailSender)
+		emailSender = mailRecorder
+	}
+	emailDispatcherDone := make(chan struct{})
+	go func() {
+		defer close(emailDispatcherDone)
+		runEmailDispatcher(ctx, st, emailSender, normalizeAppURL(appURL), emailUnsubscribeSecret)
+	}()
+
 	go func() {
 		expire := func() {
-			count, err := st.ExpireWorkspaceInvites(ctx)
+			removed, count, err := st.ExpireWorkspaceInvitesWithResult(ctx)
 			if err != nil {
 				if ctx.Err() == nil {
 					log.Printf("expire workspace invites: %v", err)
 				}
 				return
 			}
+			publishNotificationRemovals(ctx, rdb, removed)
 			if count > 0 {
 				log.Printf("expired %d workspace invite(s)", count)
 			}
@@ -261,19 +315,23 @@ func main() {
 	}()
 
 	cfg := httpapi.Config{
-		ClerkSecretKey:      env("CLERK_SECRET_KEY", ""),
-		ClerkWebhookSecret:  env("CLERK_WEBHOOK_SECRET", ""),
-		AuthDisabled:        envBool("AUTH_DISABLED"),
-		DevUserID:           env("DEV_USER_ID", "u_1"),
-		E2EAuth:             e2eAuth,
-		E2ESecret:           e2eSecret,
-		E2EUserIDs:          e2eUserIDs,
-		StripeSecretKey:     env("STRIPE_SECRET_KEY", ""),
-		StripeWebhookSecret: env("STRIPE_WEBHOOK_SECRET", ""),
-		StripePricePro:      env("STRIPE_PRICE_PRO", ""),
-		AppURL:              appURL,
-		CollaborationSecret: env("COLLABORATION_SECRET", "dev-collaboration-secret"),
-		CollaborationURL:    env("COLLABORATION_URL", "ws://localhost:1234"),
+		ClerkSecretKey:         env("CLERK_SECRET_KEY", ""),
+		ClerkWebhookSecret:     env("CLERK_WEBHOOK_SECRET", ""),
+		AuthDisabled:           envBool("AUTH_DISABLED"),
+		DevUserID:              env("DEV_USER_ID", "u_1"),
+		E2EAuth:                e2eAuth,
+		E2ESecret:              e2eSecret,
+		E2EUserIDs:             e2eUserIDs,
+		StripeSecretKey:        env("STRIPE_SECRET_KEY", ""),
+		StripeWebhookSecret:    env("STRIPE_WEBHOOK_SECRET", ""),
+		StripePricePro:         env("STRIPE_PRICE_PRO", ""),
+		AppURL:                 appURL,
+		EmailUnsubscribeSecret: emailUnsubscribeSecret,
+		CollaborationSecret:    env("COLLABORATION_SECRET", "dev-collaboration-secret"),
+		CollaborationURL:       env("COLLABORATION_URL", "ws://localhost:1234"),
+	}
+	if mailRecorder != nil {
+		cfg.MailRecorder = mailRecorder
 	}
 
 	srv := &http.Server{
@@ -297,5 +355,10 @@ func main() {
 	cancelRuntime()
 	shutCtx, cancelShutdown := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancelShutdown()
+	select {
+	case <-emailDispatcherDone:
+	case <-shutCtx.Done():
+		log.Println("email dispatcher did not stop before shutdown deadline")
+	}
 	_ = srv.Shutdown(shutCtx)
 }

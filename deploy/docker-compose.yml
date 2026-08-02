@@ -81,6 +81,7 @@ services:
       DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
       ADDR: ":8080"
       MIGRATE: "true"
+      APP_ENV: ${APP_ENV:-development}
       # Backblaze B2 source-object storage.
       B2_ENDPOINT: ${B2_ENDPOINT:-}
       B2_REGION: ${B2_REGION:-}
@@ -99,6 +100,11 @@ services:
       EVO_ENGINE: ${EVO_ENGINE:-lightrag}
       PIPELINE_URL: http://retrieval:8001
       APP_URL: ${APP_URL:-http://localhost:5173}
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-}
+      EMAIL_UNSUBSCRIBE_SECRET: ${EMAIL_UNSUBSCRIBE_SECRET:-}
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
       CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:-}
       AUTH_DISABLED: ${AUTH_DISABLED:-true}

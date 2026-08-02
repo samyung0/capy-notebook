@@ -19,6 +19,7 @@ type User struct {
 	AvatarURL          string             `json:"avatarUrl,omitempty"`
 	ClassLabel         string             `json:"classLabel,omitempty"`
 	Streak             int                `json:"streak"`
+	Locale             string             `json:"locale"`
 	PlanTier           PlanTier           `json:"planTier"`
 	SubscriptionStatus SubscriptionStatus `json:"subscriptionStatus"`
 }
@@ -321,13 +322,22 @@ type Task struct {
 }
 
 type Notification struct {
-	ID    string           `json:"id"`
-	Kind  NotificationKind `json:"kind"`
-	Title string           `json:"title"`
-	Body  string           `json:"body"`
-	At    time.Time        `json:"at"`
-	Read  bool             `json:"read"`
-	Href  string           `json:"href,omitempty"`
+	ID     string           `json:"id"`
+	Kind   NotificationKind `json:"kind"`
+	Data   json.RawMessage  `json:"data"`
+	At     time.Time        `json:"at"`
+	ReadAt *time.Time       `json:"readAt,omitempty"`
+	Href   string           `json:"href,omitempty"`
+	// These fields are used internally when publishing cache events and are not
+	// part of the public notification response.
+	UserID            string `json:"-"`
+	WorkspaceID       string `json:"-"`
+	WorkspaceInviteID string `json:"-"`
+}
+
+type NotificationPrefs struct {
+	EmailWorkspaceInvite bool `json:"emailWorkspaceInvite"`
+	EmailMembership      bool `json:"emailMembership"`
 }
 
 type Canvas struct {

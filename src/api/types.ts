@@ -43,6 +43,8 @@ export type {
   IntegrationsStatus,
   Label,
   Notification as AppNotification,
+  NotificationPage,
+  NotificationPrefs,
   SourceUploadPolicy,
   SrsState,
   Tag,
@@ -50,6 +52,7 @@ export type {
   Task,
   User,
 } from './gen/model';
+
 /* ---------------- enums & scalars (straight from the generated spec) ---------------- */
 export {
   FileKind,

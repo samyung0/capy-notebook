@@ -204,6 +204,12 @@ export const handlers = [
     await latency();
     return HttpResponse.json(db.user);
   }),
+  http.patch('/api/me/locale', async ({ request }) => {
+    const body = (await request.json()) as { locale?: string };
+    if (body.locale === 'en' || body.locale === 'zh')
+      db.user.locale = body.locale;
+    return new HttpResponse(null, { status: 204 });
+  }),
 
   /* ---------------- global search ---------------- */
   http.get('/api/search', async ({ request }) => {
@@ -270,15 +276,46 @@ export const handlers = [
   }),
 
   /* ---------------- notifications ---------------- */
-  http.get('/api/notifications', async () => {
+  http.get('/api/notifications', async ({ request }) => {
     await latency();
-    return HttpResponse.json(db.notifications);
+    const params = new URL(request.url).searchParams;
+    const limit = Math.min(Number(params.get('limit') ?? 50), 100);
+    const before = Number(params.get('before') ?? 0);
+    const start = Number.isFinite(before) && before > 0 ? before : 0;
+    const items = db.notifications.slice(start, start + limit);
+    const next =
+      start + limit < db.notifications.length
+        ? String(start + limit)
+        : undefined;
+    return HttpResponse.json({ items, ...(next ? { next } : {}) });
+  }),
+  http.get('/api/notifications/unread-count', () =>
+    HttpResponse.json({
+      count: db.notifications.filter((notification) => !notification.readAt)
+        .length,
+    })
+  ),
+  http.post('/api/notifications/:id/read', ({ params }) => {
+    const notification = db.notifications.find((item) => item.id === params.id);
+    if (notification) notification.readAt = new Date().toISOString();
+    return new HttpResponse(null, { status: 204 });
   }),
   http.post('/api/notifications/read', async () => {
+    const readAt = new Date().toISOString();
     db.notifications.forEach((notification) => {
-      notification.read = true;
+      notification.readAt ??= readAt;
     });
     return new HttpResponse(null, { status: 204 });
+  }),
+  http.get('/api/notification-prefs', () =>
+    HttpResponse.json(db.notificationPrefs)
+  ),
+  http.patch('/api/notification-prefs', async ({ request }) => {
+    Object.assign(
+      db.notificationPrefs,
+      (await request.json()) as typeof db.notificationPrefs
+    );
+    return HttpResponse.json(db.notificationPrefs);
   }),
 
   /* ---------------- tags ---------------- */
@@ -459,7 +496,7 @@ export const handlers = [
         expiresAt: new Date(
           now.getTime() + 7 * 24 * 60 * 60 * 1000
         ).toISOString(),
-        id: uid('invite'),
+        id: uid('inv'),
         invitedUserId: candidate.id,
         role: body.role,
         token: uid('invite-token'),
@@ -467,27 +504,33 @@ export const handlers = [
       };
       mockWorkspaceInvites.push(invite);
     }
-    const href = `/workspace-invites/${invite.token}`;
-    const existingNotification = db.notifications.find((notification) =>
-      notification.href?.startsWith('/workspace-invites/')
-    );
-    if (existingNotification) {
-      Object.assign(existingNotification, {
-        at: now.toISOString(),
-        body: 'You’ve been invited to join this workspace.',
-        href,
-        read: false,
-      });
-    } else {
-      db.notifications.unshift({
-        at: now.toISOString(),
-        body: 'You’ve been invited to join this workspace.',
-        href,
-        id: uid('notification'),
-        kind: 'workspace_invite',
-        read: false,
-        title: 'Workspace invitation',
-      });
+    if (invite.invitedUserId === db.user.id) {
+      const href = `/workspace-invites/${invite.id}`;
+      const workspaceName =
+        db.workspaces.find((workspace) => workspace.id === workspaceId)?.name ??
+        'this workspace';
+      const existingNotification = db.notifications.find(
+        (notification) =>
+          notification.data &&
+          typeof notification.data === 'object' &&
+          (notification.data as { inviteId?: string }).inviteId === invite.id
+      );
+      if (existingNotification) {
+        Object.assign(existingNotification, {
+          at: now.toISOString(),
+          data: { inviteId: invite.id, workspaceName },
+          href,
+          readAt: undefined,
+        });
+      } else {
+        db.notifications.unshift({
+          at: now.toISOString(),
+          data: { inviteId: invite.id, workspaceName },
+          href,
+          id: uid('notification'),
+          kind: 'workspace_invite',
+        });
+      }
     }
     return new HttpResponse(null, { status: 202 });
   }),
@@ -501,6 +544,22 @@ export const handlers = [
       if (!member) return new HttpResponse(null, { status: 404 });
       const body = (await request.json()) as { role: WorkspaceMember['role'] };
       member.role = body.role;
+      const workspaceName =
+        db.workspaces.find((workspace) => workspace.id === params.id)?.name ??
+        'this workspace';
+      if (params.memberId === db.user.id) {
+        db.notifications.unshift({
+          at: new Date().toISOString(),
+          data: {
+            role: body.role,
+            workspaceId: params.id,
+            workspaceName,
+          },
+          href: `/workspaces/${params.id}`,
+          id: uid('notification'),
+          kind: 'workspace_role_changed',
+        });
+      }
       return new HttpResponse(null, { status: 204 });
     }
   ),
@@ -511,13 +570,30 @@ export const handlers = [
     );
     if (index < 0) return new HttpResponse(null, { status: 404 });
     mockWorkspaceMembers.splice(index, 1);
+    const workspaceName =
+      db.workspaces.find((workspace) => workspace.id === params.id)?.name ??
+      'this workspace';
+    if (params.memberId === db.user.id) {
+      db.notifications.unshift({
+        at: new Date().toISOString(),
+        data: { workspaceId: params.id, workspaceName },
+        href: '/workspaces',
+        id: uid('notification'),
+        kind: 'workspace_member_removed',
+      });
+    }
     return new HttpResponse(null, { status: 204 });
   }),
   http.post('/api/workspace-invites/:token/accept', async ({ params }) => {
     const invite = mockWorkspaceInvites.find(
-      (item) => item.token === params.token && !item.acceptedAt
+      (item) =>
+        (item.id === params.token || item.token === params.token) &&
+        !item.acceptedAt
     );
     if (!invite) return new HttpResponse(null, { status: 404 });
+    if (invite.invitedUserId !== db.user.id) {
+      return new HttpResponse(null, { status: 403 });
+    }
     invite.acceptedAt = new Date().toISOString();
     const candidate = mockInviteCandidates.find(
       (item) => item.id === invite.invitedUserId
@@ -533,8 +609,7 @@ export const handlers = [
     };
     mockWorkspaceMembers.push(member);
     const notificationIndex = db.notifications.findIndex(
-      (notification) =>
-        notification.href === `/workspace-invites/${invite.token}`
+      (notification) => notification.href === `/workspace-invites/${invite.id}`
     );
     if (notificationIndex >= 0) db.notifications.splice(notificationIndex, 1);
     return HttpResponse.json(member);

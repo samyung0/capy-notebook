@@ -8,10 +8,9 @@ import type { NotificationKind } from './notificationKind.ts';
 
 export interface Notification {
   at: string;
-  body: string;
+  data: unknown;
   href?: string;
   id: string;
   kind: NotificationKind;
-  read: boolean;
-  title: string;
+  readAt?: string;
 }

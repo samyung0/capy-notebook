@@ -1,11 +1,11 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/evonotes/server/internal/materialdoc"
@@ -113,17 +113,29 @@ func workspaceInviteToken(t *testing.T, s *Store, ctx context.Context, wsID, ide
 	if err := s.CreateWorkspaceInvite(ctx, wsID, identifier, role, "u_owner"); err != nil {
 		t.Fatal(err)
 	}
-	var inviteID, href string
-	if err := s.pool.QueryRow(ctx, `SELECT wi.id, n.href
+	var inviteID, href, invitePath string
+	var notificationData []byte
+	if err := s.pool.QueryRow(ctx, `SELECT wi.id, n.href, n.data, o.payload->>'invitePath'
 		FROM workspace_invites wi
 		JOIN notifications n ON n.workspace_invite_id=wi.id
+		JOIN email_outbox o ON o.template='workspace-invite'
+			AND o.payload->>'inviteId'=wi.id
 		WHERE wi.workspace_id=$1 AND wi.invited_user_id=$2
-			AND wi.accepted_at IS NULL`, wsID, userID).Scan(&inviteID, &href); err != nil {
+			AND wi.accepted_at IS NULL`, wsID, userID).
+		Scan(&inviteID, &href, &notificationData, &invitePath); err != nil {
 		t.Fatal(err)
 	}
-	token := strings.TrimPrefix(href, "/workspace-invites/")
-	if token == href || token == "" {
-		t.Fatalf("notification has invalid invitation href %q", href)
+	if href != "/workspace-invites/"+inviteID {
+		t.Fatalf("notification has unsafe invitation href %q", href)
+	}
+	const invitePathPrefix = "/workspace-invites/"
+	if len(invitePath) <= len(invitePathPrefix) ||
+		invitePath[:len(invitePathPrefix)] != invitePathPrefix {
+		t.Fatalf("outbox has invalid invitation path %q", invitePath)
+	}
+	token := invitePath[len(invitePathPrefix):]
+	if bytes.Contains(notificationData, []byte(token)) {
+		t.Fatal("notification payload contains the plaintext invitation token")
 	}
 	return inviteID, token
 }
@@ -195,6 +207,49 @@ func TestWorkspaceInviteAcceptanceGrantsRoleCapabilities(t *testing.T) {
 				t.Fatal("accepted invitation notification was not removed")
 			}
 		})
+	}
+}
+
+func TestWorkspaceMembershipNotificationsAndNoOpRoleChange(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ws, err := s.CreateWorkspace(ctx, "u_owner", "Membership events "+uid("name"), ColorGraphite, []TagRef{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.DeleteWorkspace(ctx, "u_owner", ws.ID) })
+
+	_, token := workspaceInviteToken(t, s, ctx, ws.ID, "u_other", "u_other", RoleViewer)
+	if _, err := s.AcceptWorkspaceInvite(ctx, token, "u_other"); err != nil {
+		t.Fatal(err)
+	}
+
+	roleNotification, created, err := s.SetWorkspaceMemberRoleWithResult(
+		ctx, ws.ID, "u_other", RoleEditor,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created || roleNotification == nil || roleNotification.Href != "/workspaces/"+ws.ID {
+		t.Fatalf("role notification = %#v, created=%v", roleNotification, created)
+	}
+
+	unchanged, created, err := s.SetWorkspaceMemberRoleWithResult(
+		ctx, ws.ID, "u_other", RoleEditor,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unchanged != nil || created {
+		t.Fatalf("unchanged role emitted an event: %#v, created=%v", unchanged, created)
+	}
+
+	removed, created, err := s.RemoveWorkspaceMemberWithResult(ctx, ws.ID, "u_other")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !created || removed == nil || removed.Href != "/workspaces" {
+		t.Fatalf("removal notification = %#v, created=%v", removed, created)
 	}
 }
 

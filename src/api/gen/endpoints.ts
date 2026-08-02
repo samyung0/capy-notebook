@@ -37,14 +37,18 @@ import type {
   Flashcard,
   IntegrationsStatus,
   Label,
+  ListNotificationsParams,
   ListTagsParams,
   ListWorkspacesParams,
+  LocaleInputBody,
   Material,
   MaterialRef,
   MaterialRevision,
   MaterialUpdateResult,
   Message,
-  Notification,
+  NotificationCountOutputBody,
+  NotificationPage,
+  NotificationPrefs,
   ProjectMaterialReq,
   PublicDeck,
   PublicQuiz,
@@ -2524,6 +2528,56 @@ export const getMe = async ( options?: RequestInit): Promise<getMeResponse> => {
 
 
 
+export type setLocaleResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setLocaleResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type setLocaleResponseSuccess = (setLocaleResponse204) & {
+  headers: Headers;
+};
+export type setLocaleResponseError = (setLocaleResponseDefault) & {
+  headers: Headers;
+};
+
+export type setLocaleResponse = (setLocaleResponseSuccess | setLocaleResponseError)
+
+export const getSetLocaleUrl = () => {
+
+
+
+
+  return `/api/me/locale`
+}
+
+/**
+ * @summary Set account locale
+ */
+export const setLocale = async (localeInputBody: NonReadonly<LocaleInputBody>, options?: RequestInit): Promise<setLocaleResponse> => {
+
+  const res = await fetch(getSetLocaleUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(localeInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setLocaleResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setLocaleResponse
+}
+
+
+
 export type getMistakesResponse200 = {
   data: Quiz
   status: 200
@@ -2574,8 +2628,108 @@ export const getMistakes = async ( options?: RequestInit): Promise<getMistakesRe
 
 
 
+export type getNotificationPrefsResponse200 = {
+  data: NotificationPrefs
+  status: 200
+}
+
+export type getNotificationPrefsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getNotificationPrefsResponseSuccess = (getNotificationPrefsResponse200) & {
+  headers: Headers;
+};
+export type getNotificationPrefsResponseError = (getNotificationPrefsResponseDefault) & {
+  headers: Headers;
+};
+
+export type getNotificationPrefsResponse = (getNotificationPrefsResponseSuccess | getNotificationPrefsResponseError)
+
+export const getGetNotificationPrefsUrl = () => {
+
+
+
+
+  return `/api/notification-prefs`
+}
+
+/**
+ * @summary Get notification preferences
+ */
+export const getNotificationPrefs = async ( options?: RequestInit): Promise<getNotificationPrefsResponse> => {
+
+  const res = await fetch(getGetNotificationPrefsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getNotificationPrefsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getNotificationPrefsResponse
+}
+
+
+
+export type setNotificationPrefsResponse200 = {
+  data: NotificationPrefs
+  status: 200
+}
+
+export type setNotificationPrefsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type setNotificationPrefsResponseSuccess = (setNotificationPrefsResponse200) & {
+  headers: Headers;
+};
+export type setNotificationPrefsResponseError = (setNotificationPrefsResponseDefault) & {
+  headers: Headers;
+};
+
+export type setNotificationPrefsResponse = (setNotificationPrefsResponseSuccess | setNotificationPrefsResponseError)
+
+export const getSetNotificationPrefsUrl = () => {
+
+
+
+
+  return `/api/notification-prefs`
+}
+
+/**
+ * @summary Set notification preferences
+ */
+export const setNotificationPrefs = async (notificationPrefs: NonReadonly<NotificationPrefs>, options?: RequestInit): Promise<setNotificationPrefsResponse> => {
+
+  const res = await fetch(getSetNotificationPrefsUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(notificationPrefs)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setNotificationPrefsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as setNotificationPrefsResponse
+}
+
+
+
 export type listNotificationsResponse200 = {
-  data: Notification[] | null
+  data: NotificationPage
   status: 200
 }
 
@@ -2593,20 +2747,27 @@ export type listNotificationsResponseError = (listNotificationsResponseDefault) 
 
 export type listNotificationsResponse = (listNotificationsResponseSuccess | listNotificationsResponseError)
 
-export const getListNotificationsUrl = () => {
+export const getListNotificationsUrl = (params?: ListNotificationsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/notifications`
+  return stringifiedParams.length > 0 ? `/api/notifications?${stringifiedParams}` : `/api/notifications`
 }
 
 /**
  * @summary List notifications
  */
-export const listNotifications = async ( options?: RequestInit): Promise<listNotificationsResponse> => {
+export const listNotifications = async (params?: ListNotificationsParams, options?: RequestInit): Promise<listNotificationsResponse> => {
 
-  const res = await fetch(getListNotificationsUrl(),
+  const res = await fetch(getListNotificationsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -2670,6 +2831,106 @@ export const readNotifications = async ( options?: RequestInit): Promise<readNot
 
   const data: readNotificationsResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as readNotificationsResponse
+}
+
+
+
+export type getUnreadNotificationCountResponse200 = {
+  data: NotificationCountOutputBody
+  status: 200
+}
+
+export type getUnreadNotificationCountResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getUnreadNotificationCountResponseSuccess = (getUnreadNotificationCountResponse200) & {
+  headers: Headers;
+};
+export type getUnreadNotificationCountResponseError = (getUnreadNotificationCountResponseDefault) & {
+  headers: Headers;
+};
+
+export type getUnreadNotificationCountResponse = (getUnreadNotificationCountResponseSuccess | getUnreadNotificationCountResponseError)
+
+export const getGetUnreadNotificationCountUrl = () => {
+
+
+
+
+  return `/api/notifications/unread-count`
+}
+
+/**
+ * @summary Unread notification count
+ */
+export const getUnreadNotificationCount = async ( options?: RequestInit): Promise<getUnreadNotificationCountResponse> => {
+
+  const res = await fetch(getGetUnreadNotificationCountUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getUnreadNotificationCountResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getUnreadNotificationCountResponse
+}
+
+
+
+export type readNotificationResponse204 = {
+  data: void
+  status: 204
+}
+
+export type readNotificationResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type readNotificationResponseSuccess = (readNotificationResponse204) & {
+  headers: Headers;
+};
+export type readNotificationResponseError = (readNotificationResponseDefault) & {
+  headers: Headers;
+};
+
+export type readNotificationResponse = (readNotificationResponseSuccess | readNotificationResponseError)
+
+export const getReadNotificationUrl = (id: string,) => {
+
+
+
+
+  return `/api/notifications/${id}/read`
+}
+
+/**
+ * @summary Mark one notification read
+ */
+export const readNotification = async (id: string, options?: RequestInit): Promise<readNotificationResponse> => {
+
+  const res = await fetch(getReadNotificationUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: readNotificationResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as readNotificationResponse
 }
 
 

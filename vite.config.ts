@@ -31,7 +31,7 @@ export default defineConfig(({ mode }) => {
       // worker normally intercepts /api in the browser — but during HMR / SW
       // updates a request can briefly leak to Vite. If the proxy is still
       // pointed at a down backend, that shows up as noisy ECONNREFUSED
-      // (often /api/notifications, which polls every 30s).
+      // (often /api/notifications or its notification stream).
       proxy: useMsw
         ? undefined
         : {

@@ -1,0 +1,18 @@
+Evo Notes
+
+
+YOU HAVE A WORKSPACE INVITATION
+
+Hello,
+
+You have been invited to join {{.WorkspaceName}} on Evo Notes.
+
+View invitation {{.InviteURL}}
+
+Open this link if the button does not work: {{.InviteURL}}
+
+----------------------------------------
+
+You received this message because an Evo Notes workspace invited you.
+
+{{.UnsubscribeText}} {{.UnsubscribeURL}}

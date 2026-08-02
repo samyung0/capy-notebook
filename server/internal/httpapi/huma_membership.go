@@ -72,16 +72,31 @@ func (a *api) createWorkspaceInvite(ctx context.Context, in *createWorkspaceInvi
 	if err := a.s.AssertWorkspaceOwner(ctx, userID(ctx), in.ID); err != nil {
 		return nil, collaborationError(err)
 	}
-	if err := a.s.CreateWorkspaceInvite(ctx, in.ID, in.Body.Identifier, in.Body.Role, userID(ctx)); err != nil {
+	notification, created, err := a.s.CreateWorkspaceInviteWithResult(
+		ctx, in.ID, in.Body.Identifier, in.Body.Role, userID(ctx),
+	)
+	if err != nil {
 		return nil, collaborationError(err)
+	}
+	if created && notification != nil {
+		a.publishNotificationEvent(ctx, notification.UserID, notificationEvent{
+			Type:         "created",
+			Notification: notification,
+		})
 	}
 	return &Empty{}, nil
 }
 
 func (a *api) acceptWorkspaceInvite(ctx context.Context, in *acceptWorkspaceInviteInput) (*workspaceMemberOutput, error) {
-	member, err := a.s.AcceptWorkspaceInvite(ctx, in.Token, userID(ctx))
+	member, notificationID, err := a.s.AcceptWorkspaceInviteWithResult(ctx, in.Token, userID(ctx))
 	if err != nil {
 		return nil, collaborationError(err)
+	}
+	if notificationID != "" {
+		a.publishNotificationEvent(ctx, userID(ctx), notificationEvent{
+			Type: "removed",
+			IDs:  []string{notificationID},
+		})
 	}
 	return &workspaceMemberOutput{Body: member}, nil
 }
@@ -90,8 +105,15 @@ func (a *api) updateWorkspaceMember(ctx context.Context, in *updateWorkspaceMemb
 	if err := a.s.AssertWorkspaceOwner(ctx, userID(ctx), in.ID); err != nil {
 		return nil, collaborationError(err)
 	}
-	if err := a.s.SetWorkspaceMemberRole(ctx, in.ID, in.MemberID, in.Body.Role); err != nil {
+	notification, created, err := a.s.SetWorkspaceMemberRoleWithResult(ctx, in.ID, in.MemberID, in.Body.Role)
+	if err != nil {
 		return nil, collaborationError(err)
+	}
+	if created && notification != nil {
+		a.publishNotificationEvent(ctx, in.MemberID, notificationEvent{
+			Type:         "created",
+			Notification: notification,
+		})
 	}
 	a.publishWorkspaceEvictions(ctx, in.ID)
 	return &Empty{}, nil
@@ -101,8 +123,15 @@ func (a *api) removeWorkspaceMember(ctx context.Context, in *workspaceMemberInpu
 	if err := a.s.AssertWorkspaceOwner(ctx, userID(ctx), in.ID); err != nil {
 		return nil, collaborationError(err)
 	}
-	if err := a.s.RemoveWorkspaceMember(ctx, in.ID, in.MemberID); err != nil {
+	notification, created, err := a.s.RemoveWorkspaceMemberWithResult(ctx, in.ID, in.MemberID)
+	if err != nil {
 		return nil, collaborationError(err)
+	}
+	if created && notification != nil {
+		a.publishNotificationEvent(ctx, in.MemberID, notificationEvent{
+			Type:         "created",
+			Notification: notification,
+		})
 	}
 	a.publishWorkspaceEvictions(ctx, in.ID)
 	return &Empty{}, nil

@@ -1,0 +1,16 @@
+Evo Notes
+
+
+REMOVED FROM WORKSPACE
+
+Your membership in {{.WorkspaceName}} was removed by a workspace owner.
+
+{{.WorkspaceName}}
+
+Open Evo Notes {{.OpenURL}}
+
+----------------------------------------
+
+You received this message because your Evo Notes workspace membership changed.
+
+{{.UnsubscribeText}} {{.UnsubscribeURL}}

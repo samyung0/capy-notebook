@@ -998,6 +998,23 @@ components:
         - name
         - color
       type: object
+    LocaleInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/LocaleInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        locale:
+          enum:
+            - en
+            - zh
+          type: string
+      required:
+        - locale
+      type: object
     Material:
       additionalProperties: false
       properties:
@@ -1218,25 +1235,36 @@ components:
         at:
           format: date-time
           type: string
-        body:
-          type: string
+        data: {}
         href:
           type: string
         id:
           type: string
         kind:
           $ref: "#/components/schemas/NotificationKind"
-        read:
-          type: boolean
-        title:
+        readAt:
+          format: date-time
           type: string
       required:
         - id
         - kind
-        - title
-        - body
+        - data
         - at
-        - read
+      type: object
+    NotificationCountOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/NotificationCountOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        count:
+          format: int64
+          type: integer
+      required:
+        - count
       type: object
     NotificationKind:
       enum:
@@ -1244,7 +1272,44 @@ components:
         - quiz
         - system
         - workspace_invite
+        - workspace_role_changed
+        - workspace_member_removed
       type: string
+    NotificationPage:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/NotificationPage.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/Notification"
+          type: array
+        next:
+          type: string
+      required:
+        - items
+      type: object
+    NotificationPrefs:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/NotificationPrefs.json
+          format: uri
+          readOnly: true
+          type: string
+        emailMembership:
+          type: boolean
+        emailWorkspaceInvite:
+          type: boolean
+      required:
+        - emailWorkspaceInvite
+        - emailMembership
+      type: object
     PlanTier:
       enum:
         - free
@@ -2018,6 +2083,8 @@ components:
           type: string
         id:
           type: string
+        locale:
+          type: string
         name:
           type: string
         planTier:
@@ -2032,6 +2099,7 @@ components:
         - name
         - email
         - streak
+        - locale
         - planTier
         - subscriptionStatus
       type: object
@@ -3346,6 +3414,27 @@ paths:
       summary: Current user
       tags:
         - Account
+  /api/me/locale:
+    patch:
+      operationId: setLocale
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocaleInputBody"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Set account locale
+      tags:
+        - Account
   /api/mistakes:
     get:
       operationId: getMistakes
@@ -3365,18 +3454,73 @@ paths:
       summary: Review-mistakes quiz
       tags:
         - Quizzes
-  /api/notifications:
+  /api/notification-prefs:
     get:
-      operationId: listNotifications
+      operationId: getNotificationPrefs
       responses:
         "200":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/Notification"
-                nullable: true
-                type: array
+                $ref: "#/components/schemas/NotificationPrefs"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get notification preferences
+      tags:
+        - Account
+    patch:
+      operationId: setNotificationPrefs
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NotificationPrefs"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPrefs"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Set notification preferences
+      tags:
+        - Account
+  /api/notifications:
+    get:
+      operationId: listNotifications
+      parameters:
+        - explode: false
+          in: query
+          name: limit
+          schema:
+            default: 50
+            format: int64
+            maximum: 100
+            minimum: 1
+            type: integer
+        - explode: false
+          in: query
+          name: before
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationPage"
           description: OK
         default:
           content:
@@ -3400,6 +3544,46 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Mark notifications read
+      tags:
+        - Account
+  /api/notifications/unread-count:
+    get:
+      operationId: getUnreadNotificationCount
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NotificationCountOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Unread notification count
+      tags:
+        - Account
+  /api/notifications/{id}/read:
+    post:
+      operationId: readNotification
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Mark one notification read
       tags:
         - Account
   /api/quizzes:

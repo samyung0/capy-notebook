@@ -24,7 +24,30 @@ type searchOutput struct {
 	Body []apimodel.SearchResult
 }
 type notificationsOutput struct {
-	Body []apimodel.Notification
+	Body apimodel.NotificationPage
+}
+type notificationsInput struct {
+	Limit  int    `query:"limit" default:"50" minimum:"1" maximum:"100"`
+	Before string `query:"before"`
+}
+type notificationIDInput struct {
+	ID string `path:"id"`
+}
+type notificationCountOutput struct {
+	Body struct {
+		Count int `json:"count"`
+	}
+}
+type notificationPrefsOutput struct {
+	Body apimodel.NotificationPrefs
+}
+type notificationPrefsInput struct {
+	Body apimodel.NotificationPrefs
+}
+type localeInput struct {
+	Body struct {
+		Locale string `json:"locale" enum:"en,zh"`
+	}
 }
 type billingOutput struct {
 	Body apimodel.BillingInfo
@@ -57,9 +80,14 @@ type publicQuizzesOutput struct {
 func (a *api) registerAccount(api huma.API) {
 	const tag = "Account"
 	reg(api, http.MethodGet, "/api/me", "getMe", tag, "Current user", http.StatusOK, a.getMe)
+	reg(api, http.MethodPatch, "/api/me/locale", "setLocale", tag, "Set account locale", http.StatusNoContent, a.setLocale)
 	reg(api, http.MethodGet, "/api/search", "search", tag, "Global search", http.StatusOK, a.searchAll)
 	reg(api, http.MethodGet, "/api/notifications", "listNotifications", tag, "List notifications", http.StatusOK, a.listNotifications)
+	reg(api, http.MethodGet, "/api/notifications/unread-count", "getUnreadNotificationCount", tag, "Unread notification count", http.StatusOK, a.getUnreadNotificationCount)
+	reg(api, http.MethodPost, "/api/notifications/{id}/read", "readNotification", tag, "Mark one notification read", http.StatusNoContent, a.readNotification)
 	reg(api, http.MethodPost, "/api/notifications/read", "readNotifications", tag, "Mark notifications read", http.StatusNoContent, a.readNotifications)
+	reg(api, http.MethodGet, "/api/notification-prefs", "getNotificationPrefs", tag, "Get notification preferences", http.StatusOK, a.getNotificationPrefs)
+	reg(api, http.MethodPatch, "/api/notification-prefs", "setNotificationPrefs", tag, "Set notification preferences", http.StatusOK, a.setNotificationPrefs)
 }
 
 func (a *api) registerExplore(api huma.API) {
@@ -99,19 +127,76 @@ func (a *api) searchAll(ctx context.Context, in *searchInput) (*searchOutput, er
 	return &searchOutput{Body: res}, nil
 }
 
-func (a *api) listNotifications(ctx context.Context, _ *struct{}) (*notificationsOutput, error) {
-	res, err := a.s.Notifications(ctx, userID(ctx))
+func (a *api) setLocale(ctx context.Context, in *localeInput) (*Empty, error) {
+	if err := a.s.SetLocale(ctx, userID(ctx), in.Body.Locale); err != nil {
+		return nil, hErr(err)
+	}
+	return &Empty{}, nil
+}
+
+func (a *api) listNotifications(ctx context.Context, in *notificationsInput) (*notificationsOutput, error) {
+	res, err := a.s.ListNotifications(ctx, userID(ctx), in.Limit, in.Before)
 	if err != nil {
+		if strings.Contains(err.Error(), "invalid notification cursor") {
+			return nil, huma.Error400BadRequest("invalid notification cursor")
+		}
 		return nil, hErr(err)
 	}
 	return &notificationsOutput{Body: res}, nil
 }
 
-func (a *api) readNotifications(ctx context.Context, _ *struct{}) (*Empty, error) {
-	if err := a.s.MarkNotificationsRead(ctx, userID(ctx)); err != nil {
+func (a *api) getUnreadNotificationCount(ctx context.Context, _ *struct{}) (*notificationCountOutput, error) {
+	count, err := a.s.UnreadNotificationCount(ctx, userID(ctx))
+	if err != nil {
 		return nil, hErr(err)
 	}
+	out := &notificationCountOutput{}
+	out.Body.Count = count
+	return out, nil
+}
+
+func (a *api) readNotification(ctx context.Context, in *notificationIDInput) (*Empty, error) {
+	changed, err := a.s.MarkNotificationRead(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if changed {
+		a.publishNotificationEvent(ctx, userID(ctx), notificationEvent{
+			Type: "read",
+			IDs:  []string{in.ID},
+		})
+	}
 	return &Empty{}, nil
+}
+
+func (a *api) readNotifications(ctx context.Context, _ *struct{}) (*Empty, error) {
+	ids, err := a.s.MarkAllNotificationsRead(ctx, userID(ctx))
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if len(ids) > 0 {
+		a.publishNotificationEvent(ctx, userID(ctx), notificationEvent{
+			Type: "read",
+			IDs:  ids,
+		})
+	}
+	return &Empty{}, nil
+}
+
+func (a *api) getNotificationPrefs(ctx context.Context, _ *struct{}) (*notificationPrefsOutput, error) {
+	prefs, err := a.s.GetNotificationPrefs(ctx, userID(ctx))
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &notificationPrefsOutput{Body: prefs}, nil
+}
+
+func (a *api) setNotificationPrefs(ctx context.Context, in *notificationPrefsInput) (*notificationPrefsOutput, error) {
+	prefs, err := a.s.SetNotificationPrefs(ctx, userID(ctx), in.Body)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &notificationPrefsOutput{Body: prefs}, nil
 }
 
 func (a *api) exploreWorkspaces(ctx context.Context, _ *struct{}) (*publicWorkspacesOutput, error) {

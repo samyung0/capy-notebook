@@ -34,9 +34,11 @@ CREATE TABLE IF NOT EXISTS users (
   subscription_status text NOT NULL DEFAULT 'none',
   plan_tier           text NOT NULL DEFAULT 'free'
     CHECK (plan_tier IN ('free', 'pro')),
+  locale              text NOT NULL DEFAULT 'en',
   created_at          timestamptz NOT NULL DEFAULT now(),
   updated_at          timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE users ADD COLUMN IF NOT EXISTS locale text NOT NULL DEFAULT 'en';
 
 CREATE TABLE IF NOT EXISTS workspaces (
   id               text PRIMARY KEY,
@@ -346,22 +348,84 @@ CREATE INDEX IF NOT EXISTS workspace_invites_expiry_idx
   ON workspace_invites(expires_at)
   WHERE accepted_at IS NULL;
 
+-- The notification schema is intentionally destructive in this squashed
+-- baseline. This conditional drop lets a local database created by the
+-- previous baseline upgrade cleanly; production databases must be backed up
+-- before applying schema changes.
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_name='notifications' AND column_name='title'
+  ) THEN
+    DROP TABLE notifications;
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS notifications (
   id                  text PRIMARY KEY,
-  user_id             text REFERENCES users(id),
+  user_id             text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   kind                text NOT NULL,
-  title               text NOT NULL,
-  body                text NOT NULL,
+  data                jsonb NOT NULL DEFAULT '{}'::jsonb
+    CHECK (jsonb_typeof(data) = 'object'),
   href                text,
+  workspace_id        text REFERENCES workspaces(id) ON DELETE CASCADE,
   -- Actionable, recipient-only workspace-invitation notifications.
   workspace_invite_id text REFERENCES workspace_invites(id) ON DELETE CASCADE,
   at                  timestamptz NOT NULL DEFAULT now(),
-  read                boolean NOT NULL DEFAULT false
+  read_at             timestamptz
 );
-CREATE INDEX IF NOT EXISTS notifications_user_idx ON notifications(user_id);
+-- Matches the (at,id) keyset cursor used for pagination; a plain
+-- (user_id, at DESC) index would be a redundant prefix of this one.
+CREATE INDEX IF NOT EXISTS notifications_user_at_id_idx
+  ON notifications(user_id, at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS notifications_user_unread_idx
+  ON notifications(user_id)
+  WHERE read_at IS NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS notifications_workspace_invite_idx
   ON notifications(workspace_invite_id)
   WHERE workspace_invite_id IS NOT NULL;
+
+-- Product mail is sent asynchronously from this transactional outbox. The
+-- payload is cleared after a successful send because invite payloads contain
+-- the one-time plaintext token.
+CREATE TABLE IF NOT EXISTS email_outbox (
+  id                   text PRIMARY KEY,
+  user_id              text REFERENCES users(id) ON DELETE SET NULL,
+  to_email             text NOT NULL,
+  template             text NOT NULL,
+  locale               text NOT NULL DEFAULT 'en',
+  payload              jsonb NOT NULL DEFAULT '{}'::jsonb
+    CHECK (jsonb_typeof(payload) = 'object'),
+  idempotency_key      text UNIQUE,
+  status               text NOT NULL DEFAULT 'pending'
+    CHECK (status IN ('pending', 'sending', 'sent', 'failed')),
+  attempts             int NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+  next_attempt_at      timestamptz NOT NULL DEFAULT now(),
+  provider_message_id  text,
+  last_error           text,
+  lease_token          text,
+  lease_expires_at     timestamptz,
+  created_at           timestamptz NOT NULL DEFAULT now(),
+  updated_at           timestamptz NOT NULL DEFAULT now(),
+  sent_at              timestamptz
+);
+ALTER TABLE email_outbox
+  ADD COLUMN IF NOT EXISTS lease_token text,
+  ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz;
+CREATE INDEX IF NOT EXISTS email_outbox_claim_idx
+  ON email_outbox(next_attempt_at)
+  WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS email_outbox_lease_idx
+  ON email_outbox(lease_expires_at)
+  WHERE status = 'sending';
+
+CREATE TABLE IF NOT EXISTS notification_prefs (
+  user_id                 text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  email_workspace_invite  boolean NOT NULL DEFAULT true,
+  email_membership        boolean NOT NULL DEFAULT true,
+  updated_at              timestamptz NOT NULL DEFAULT now()
+);
 
 -- ============================================================================
 -- Collaboration: comment discussions and comments
@@ -1042,10 +1106,10 @@ INSERT INTO tasks (id, user_id, title, meta, done, due_date) VALUES
   ('tk_5', 'u_1', 'Outline history essay 2',          'World History 2',            false, date_trunc('day', now())+interval '1 day 23 hour')
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO notifications (id, user_id, kind, title, body, at, read) VALUES
-  ('nt_1', 'u_1', 'event',  'Calculus tutorial soon', 'Starts at 11:00 in Room 124.',        now()-interval '1 hour', false),
-  ('nt_2', 'u_1', 'quiz',   'New attempt graded',     'Cell biology basics — 8/10.',         now()-interval '5 hour', false),
-  ('nt_3', 'u_1', 'system', 'Welcome to Evo Notes',   'Upload your first source to get started.', now()-interval '1 day', true)
+INSERT INTO notifications (id, user_id, kind, data, at, read_at) VALUES
+  ('nt_1', 'u_1', 'event',  '{"code":"event_starting","eventName":"Calculus tutorial","time":"11:00","location":"Room 124"}', now()-interval '1 hour', NULL),
+  ('nt_2', 'u_1', 'quiz',   '{"code":"quiz_attempt_graded","quizName":"Cell biology basics","score":"8/10"}', now()-interval '5 hour', NULL),
+  ('nt_3', 'u_1', 'system', '{"code":"welcome"}', now()-interval '1 day', now()-interval '1 day')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO canvases (id, user_id, name, updated_at) VALUES

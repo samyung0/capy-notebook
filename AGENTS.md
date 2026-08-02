@@ -1,3 +1,9 @@
+## Important
+
+### For Agents/ LLM
+
+- When writing plans, put it inside of a `.plan` folder INSIDE of the repository so it can be tracked and reviewed.
+
 ## Getting Started
 
 ### Code Changes

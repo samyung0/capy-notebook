@@ -9,6 +9,7 @@
 
 import { authHeaders } from './auth';
 import { API_BASE } from './client';
+import { consumeSSE } from './sse';
 import type { ChatStatus, Citation } from './types';
 
 export interface StreamStart {
@@ -66,10 +67,6 @@ export async function streamChat(
     return;
   }
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
   const dispatch = (raw: string) => {
     // An SSE event may span multiple `data:` lines; join their payloads.
     const data = raw
@@ -121,20 +118,7 @@ export async function streamChat(
   };
 
   try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      // Events are separated by a blank line.
-      let sep = buffer.indexOf('\n\n');
-      while (sep !== -1) {
-        const chunk = buffer.slice(0, sep);
-        buffer = buffer.slice(sep + 2);
-        dispatch(chunk);
-        sep = buffer.indexOf('\n\n');
-      }
-    }
-    if (buffer.trim()) dispatch(buffer);
+    await consumeSSE(res.body, dispatch);
   } catch (e) {
     if ((e as Error).name !== 'AbortError')
       handlers.onError?.((e as Error).message);

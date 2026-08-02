@@ -3,13 +3,17 @@ import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { USE_MSW } from '@/api/auth';
 import {
+  useMarkNotificationRead,
   useMarkNotificationsRead,
   useMe,
+  useNotificationStream,
   useNotifications,
   useSearch,
+  useUnreadNotificationCount,
 } from '@/api/hooks';
 import type { SearchKind } from '@/api/types';
 import { Avatar } from '@/components/ui/Avatar';
+import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import {
   Dialog,
@@ -39,6 +43,7 @@ const CLERK_ACTIVE = !USE_MSW && !!CLERK_PUBLISHABLE_KEY;
 import { VisuallyHidden } from 'radix-ui';
 import { m } from '@/i18n';
 import { usePortals } from '@/stores/portals';
+import { NotificationItem } from './NotificationItem';
 import { MobileNavDrawer } from './Sidebar';
 import { ThemeSwitchDrawer } from './ThemeSwitchDrawer';
 
@@ -169,85 +174,111 @@ function SearchButton() {
 }
 
 function NotificationsBell() {
-  const { data } = useNotifications();
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    useNotifications();
+  const { data: unreadCount } = useUnreadNotificationCount();
+  useNotificationStream();
+  const markNotificationRead = useMarkNotificationRead();
   const markRead = useMarkNotificationsRead();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
-  const unread = data?.some((n) => !n.read);
+  const notifications = data?.pages.flatMap((page) => page.items) ?? [];
+  const unreadCountValue =
+    unreadCount?.count ?? notifications.filter((n) => !n.readAt).length;
+  const unread = unreadCountValue > 0;
+  const bellLabel = unread
+    ? m.notifications_unread_count({ count: String(unreadCountValue) })
+    : m.notifications_title();
 
   return (
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
         <IconButton
           className="shrink-0"
-          dot={unread}
           icon="bell"
-          label="Notifications"
-          onClick={() => {
-            if (unread) markRead.mutate();
-          }}
+          label={bellLabel}
           size="md"
           variant="surface"
-        />
+        >
+          {unread && (
+            <Badge
+              aria-label={bellLabel}
+              className="absolute -top-1 -right-1 min-w-4 justify-center px-1 py-1 text-[10px]"
+              size="sm"
+              tone="error"
+            >
+              {unreadCountValue > 99 ? '99+' : unreadCountValue}
+            </Badge>
+          )}
+        </IconButton>
       </PopoverTrigger>
       <PopoverContent>
         <Card
           border="solid"
-          className="block min-w-[320px] max-w-[480px] p-1"
+          className="block min-w-[320px] max-w-120 p-1"
           radius="card"
         >
-          <div className="t-label border-divider border-b px-4 py-3 text-fg-muted">
-            {m.notifications_title()}
+          <div className="flex items-center justify-between border-divider border-b px-4 py-3">
+            <span className="t-label text-fg-muted">
+              {m.notifications_title()}
+            </span>
+            {unread && (
+              <button
+                className="text-fg-muted text-xs hover:text-fg"
+                onClick={() => markRead.mutate()}
+                type="button"
+              >
+                {m.notifications_mark_all_read()}
+              </button>
+            )}
           </div>
           <div className="max-h-96 overflow-auto">
-            {!data?.length && (
+            {!notifications.length && (
               <div className="px-4 py-6 text-center text-fg-muted">
                 {m.notifications_empty()}
               </div>
             )}
-            {data?.map((n) => {
-              const content = (
-                <>
-                  <span className="mt-0.5 flex h-7 w-7 items-center justify-center rounded-button text-solid-accent-1">
-                    <Icon
-                      name={
-                        n.kind === 'event'
-                          ? 'schedule'
-                          : n.kind === 'quiz'
-                            ? 'quiz'
-                            : n.kind === 'workspace_invite'
-                              ? 'workspaces'
-                              : 'bell'
-                      }
-                      size={20}
-                    />
-                  </span>
-                  <span className="flex flex-col text-left">
-                    <span className="font-semibold">{n.title}</span>
-                    <span className="text-fg-secondary">{n.body}</span>
-                  </span>
-                </>
-              );
-              const itemClass =
-                'flex w-full gap-3 border-b border-divider px-4 py-3 last:border-0';
+            {notifications.map((n) => {
+              const itemClass = 'border-divider px-4 py-3 last:border-0';
+              const handleRead = () => {
+                if (!n.readAt) markNotificationRead.mutate(n.id);
+              };
               return n.href ? (
                 <button
-                  className={`${itemClass} hover:bg-surface-hover-bg`}
+                  className={`${itemClass} w-full hover:bg-surface-hover-bg`}
                   key={n.id}
                   onClick={() => {
+                    handleRead();
                     setOpen(false);
                     navigate({ to: n.href });
                   }}
                   type="button"
                 >
-                  {content}
+                  <NotificationItem notification={n} />
                 </button>
               ) : (
-                <div className={itemClass} key={n.id}>
-                  {content}
-                </div>
+                <button
+                  className={`${itemClass} w-full hover:bg-surface-hover-bg`}
+                  key={n.id}
+                  onClick={handleRead}
+                  type="button"
+                >
+                  <NotificationItem notification={n} />
+                </button>
               );
             })}
+            {hasNextPage && (
+              <button
+                className="w-full border-divider border-t px-4 py-3 text-center text-fg-muted text-xs hover:bg-surface-hover-bg"
+                disabled={isFetchingNextPage}
+                onClick={() => void fetchNextPage()}
+                type="button"
+              >
+                {isFetchingNextPage
+                  ? m.notifications_loading()
+                  : m.notifications_load_more()}
+              </button>
+            )}
           </div>
         </Card>
       </PopoverContent>

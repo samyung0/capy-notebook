@@ -1,6 +1,12 @@
+import {
+  useNotificationPrefs,
+  useSetLocale,
+  useSetNotificationPrefs,
+} from '@/api/hooks';
 import { LocaleSwitcher } from '@/components/app/LocaleSwitcher';
 import { PageHeader, Panel } from '@/components/app/layout';
-import { m } from '@/i18n';
+import { Switch } from '@/components/ui/Switch';
+import { getLocale, m, setLocale as setParaglideLocale } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { STYLES, useTheme } from '@/theme/ThemeProvider';
 
@@ -21,6 +27,10 @@ function Row({
 
 export default function Settings() {
   const { style, setStyle } = useTheme();
+  const prefs = useNotificationPrefs();
+  const setPrefs = useSetNotificationPrefs();
+  const setLocale = useSetLocale();
+  const currentPrefs = prefs.data;
 
   return (
     <Panel>
@@ -63,7 +73,45 @@ export default function Settings() {
               />
             </Row> */}
             <Row label={m.settings_language()}>
-              <LocaleSwitcher />
+              <LocaleSwitcher
+                disabled={setLocale.isPending}
+                onChange={(locale, previousLocale) => {
+                  if (locale !== 'en' && locale !== 'zh') return;
+                  void setLocale.mutateAsync(locale).catch(() => {
+                    if (getLocale() === locale) {
+                      setParaglideLocale(previousLocale as never);
+                    }
+                  });
+                }}
+              />
+            </Row>
+          </div>
+
+          <p className="t-label mt-6 mb-1 text-fg-muted">
+            {m.settings_notifications()}
+          </p>
+          <div className="rounded-card border border-line bg-surface px-5">
+            <Row label={m.settings_email_workspace_invite()}>
+              <Switch
+                aria-label={m.settings_email_workspace_invite()}
+                checked={currentPrefs?.emailWorkspaceInvite ?? false}
+                disabled={!prefs.isSuccess || setPrefs.isPending}
+                onChange={(emailWorkspaceInvite) => {
+                  if (!currentPrefs || setPrefs.isPending) return;
+                  setPrefs.mutate({ ...currentPrefs, emailWorkspaceInvite });
+                }}
+              />
+            </Row>
+            <Row label={m.settings_email_membership()}>
+              <Switch
+                aria-label={m.settings_email_membership()}
+                checked={currentPrefs?.emailMembership ?? false}
+                disabled={!prefs.isSuccess || setPrefs.isPending}
+                onChange={(emailMembership) => {
+                  if (!currentPrefs || setPrefs.isPending) return;
+                  setPrefs.mutate({ ...currentPrefs, emailMembership });
+                }}
+              />
             </Row>
           </div>
 

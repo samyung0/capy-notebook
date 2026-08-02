@@ -1,0 +1,55 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: evo
+          POSTGRES_PASSWORD: evo
+          POSTGRES_USER: evo
+        options: >-
+          --health-cmd "pg_isready -U evo -d evo"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+        ports:
+          - 5432:5432
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          cache: pnpm
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run email:check
+      - run: pnpm run check
+      - run: pnpm test
+      # The store/httpapi suites operate on the shared E2E actors (u_owner and
+      # friends), so the schema alone is not enough to run them.
+      - run: |
+          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f server/migrations/0001_init.sql
+          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f e2e/fixtures/seed.sql
+        env:
+          TEST_DATABASE_URL: postgres://evo:evo@localhost:5432/evo?sslmode=disable
+      # -p 1 because several packages reapply the migration on start-up, and
+      # concurrent DDL on one database deadlocks.
+      - run: go test -p 1 ./...
+        working-directory: server
+        env:
+          TEST_DATABASE_URL: postgres://evo:evo@localhost:5432/evo?sslmode=disable

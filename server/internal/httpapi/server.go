@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
@@ -20,6 +21,7 @@ import (
 	"github.com/evonotes/server/internal/auth"
 	"github.com/evonotes/server/internal/billing"
 	"github.com/evonotes/server/internal/blob"
+	"github.com/evonotes/server/internal/mail"
 	"github.com/evonotes/server/internal/pipeline"
 	"github.com/evonotes/server/internal/sourceupload"
 	"github.com/evonotes/server/internal/store"
@@ -33,26 +35,34 @@ type Config struct {
 	AuthDisabled       bool
 	DevUserID          string
 	// E2EAuth enables X-E2E-User-Id identity headers (disposable E2E only).
-	E2EAuth             bool
-	E2ESecret           string
-	E2EUserIDs          []string
-	StripeSecretKey     string
-	StripeWebhookSecret string
-	StripePricePro      string
-	AppURL              string
-	CollaborationSecret string
-	CollaborationURL    string
+	E2EAuth                bool
+	E2ESecret              string
+	E2EUserIDs             []string
+	StripeSecretKey        string
+	StripeWebhookSecret    string
+	StripePricePro         string
+	AppURL                 string
+	EmailUnsubscribeSecret string
+	CollaborationSecret    string
+	CollaborationURL       string
+	// MailRecorder exposes delivered mail to Playwright. Non-nil only under
+	// APP_ENV=e2e.
+	MailRecorder mail.Recorder
 }
 
 type api struct {
-	s      *store.Store
-	wh     webhookStore
-	blob   blob.Store
-	pipe   *pipeline.Client
-	rdb    *redis.Client
-	parser string
-	engine string
-	cfg    Config
+	s            *store.Store
+	wh           webhookStore
+	blob         blob.Store
+	pipe         *pipeline.Client
+	rdb          *redis.Client
+	parser       string
+	engine       string
+	cfg          Config
+	mailRecorder mail.Recorder
+	notifMu      sync.Mutex
+	notifByUser  map[string]int
+	notifTotal   int
 }
 
 // New builds the full HTTP handler. huma owns every JSON operation (and the
@@ -62,7 +72,18 @@ type api struct {
 // are intentionally absent from the spec.
 func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client, parser, engine string, cfg Config) http.Handler {
 	billing.Init(billing.Config{SecretKey: cfg.StripeSecretKey})
-	a := &api{s: s, wh: s, blob: b, pipe: pipe, rdb: rdb, parser: parser, engine: engine, cfg: cfg}
+	a := &api{
+		s:            s,
+		wh:           s,
+		blob:         b,
+		pipe:         pipe,
+		rdb:          rdb,
+		parser:       parser,
+		engine:       engine,
+		cfg:          cfg,
+		mailRecorder: cfg.MailRecorder,
+		notifByUser:  make(map[string]int),
+	}
 	r := chi.NewRouter()
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
@@ -82,6 +103,9 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		E2ESecret:  cfg.E2ESecret,
 		E2EUserIDs: cfg.E2EUserIDs,
 		Store:      s,
+		PublicPrefix: []string{
+			"/api/email/unsubscribe",
+		},
 		PublicReadPrefix: []string{
 			"/api/workspaces/",
 			"/api/files/",
@@ -102,6 +126,12 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
 	r.Post("/webhooks/clerk", a.clerkWebhook)
 	r.Post("/webhooks/stripe", a.stripeWebhook)
+	r.Get("/api/notifications/stream", a.notificationEvents)
+	r.Get("/api/email/unsubscribe", a.emailUnsubscribe)
+	r.Post("/api/email/unsubscribe", a.emailUnsubscribe)
+	if cfg.E2EAuth && a.mailRecorder != nil {
+		r.Get("/api/e2e/emails", a.e2eEmails)
+	}
 	r.Post("/api/workspaces/{id}/sources", a.addSource)
 	r.Post("/api/workspaces/{id}/sources/uploads", a.createSourceUpload)
 	r.Post("/api/workspaces/{id}/sources/uploads/{uploadId}/complete", a.completeSourceUpload)

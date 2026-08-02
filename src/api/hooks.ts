@@ -1,11 +1,13 @@
 import type { QueryClient } from '@tanstack/react-query';
 import {
+  type InfiniteData,
   queryOptions,
+  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import type {
   MaterialDocument,
   MaterialValue,
@@ -24,8 +26,11 @@ import type {
   UpdateWorkspaceReq,
   UpdateWorkspaceSharingReq,
 } from './gen/model';
+import {
+  type NotificationStreamEvent,
+  readNotificationStream,
+} from './notificationStream';
 import type {
-  AppNotification,
   Attempt,
   AttemptDetail,
   BillingInfo,
@@ -43,6 +48,8 @@ import type {
   MaterialDiscussion,
   MaterialRef,
   MaterialRevision,
+  NotificationPage,
+  NotificationPrefs,
   PlanTier,
   Privacy,
   PublicDeck,
@@ -78,18 +85,263 @@ export const useSearch = (q: string) =>
     queryKey: qk.search(q),
   });
 
+const notificationPageSize = 50;
+type NotificationCache = InfiniteData<NotificationPage, string>;
+type NotificationStreamState = {
+  status: 'connecting' | 'connected' | 'disconnected';
+};
+
 export const useNotifications = () =>
-  useQuery({
-    queryFn: () => api.get<AppNotification[]>('/notifications'),
+  useInfiniteQuery<
+    NotificationPage,
+    Error,
+    NotificationCache,
+    typeof qk.notifications,
+    string
+  >({
+    getNextPageParam: (page) => page.next || undefined,
+    initialPageParam: '',
+    queryFn: ({ pageParam }) => {
+      const query = new URLSearchParams({
+        limit: String(notificationPageSize),
+      });
+      if (pageParam) query.set('before', pageParam);
+      return api.get<NotificationPage>(`/notifications?${query}`);
+    },
     queryKey: qk.notifications,
-    refetchInterval: 30_000,
+    refetchOnWindowFocus: true,
   });
+
+export const useUnreadNotificationCount = () =>
+  useQuery({
+    queryFn: () => api.get<{ count: number }>('/notifications/unread-count'),
+    queryKey: qk.notificationUnread,
+  });
+
+export function applyNotificationEvent(
+  qc: QueryClient,
+  event: NotificationStreamEvent
+) {
+  if (event.type === 'created' && event.notification) {
+    const notification = event.notification;
+    const current = qc.getQueryData<NotificationCache>(qk.notifications);
+    if (!current) {
+      void qc.invalidateQueries({ queryKey: qk.notifications });
+      void qc.invalidateQueries({ queryKey: qk.notificationUnread });
+      return;
+    }
+    const previous = current.pages
+      .flatMap((page) => page.items)
+      .find((item) => item.id === notification.id);
+    const wasUnread = previous ? previous.readAt == null : false;
+    const isUnread = notification.readAt == null;
+    qc.setQueryData<NotificationCache>(qk.notifications, (cache) => {
+      if (!cache) return cache;
+      const pages = cache.pages.map((page) => ({
+        ...page,
+        items: page.items.filter((item) => item.id !== notification.id),
+      }));
+      if (!pages[0]) return cache;
+      pages[0] = {
+        ...pages[0],
+        items: [notification, ...pages[0].items].slice(0, notificationPageSize),
+      };
+      return { ...cache, pages };
+    });
+    if (wasUnread !== isUnread) {
+      const count = qc.getQueryData<{ count: number }>(qk.notificationUnread);
+      if (count) {
+        qc.setQueryData(qk.notificationUnread, {
+          count: Math.max(0, count.count + (isUnread ? 1 : -1)),
+        });
+      } else {
+        void qc.invalidateQueries({ queryKey: qk.notificationUnread });
+      }
+    }
+    return;
+  }
+  if (event.type === 'removed') {
+    const ids = new Set(event.ids ?? []);
+    const current = qc.getQueryData<NotificationCache>(qk.notifications);
+    if (current) {
+      qc.setQueryData<NotificationCache>(qk.notifications, (cache) => {
+        if (!cache) return cache;
+        return {
+          ...cache,
+          pages: cache.pages.map((page) => ({
+            ...page,
+            items: page.items.filter((item) => !ids.has(item.id)),
+          })),
+        };
+      });
+    } else {
+      void qc.invalidateQueries({ queryKey: qk.notifications });
+    }
+    void qc.invalidateQueries({ queryKey: qk.notificationUnread });
+    return;
+  }
+  if (event.type === 'read') {
+    const ids = new Set(event.ids ?? []);
+    const current = qc.getQueryData<NotificationCache>(qk.notifications);
+    if (current) {
+      qc.setQueryData<NotificationCache>(qk.notifications, (cache) => {
+        if (!cache) return cache;
+        return {
+          ...cache,
+          pages: cache.pages.map((page) => ({
+            ...page,
+            items: page.items.map((item) =>
+              ids.has(item.id)
+                ? { ...item, readAt: item.readAt ?? new Date().toISOString() }
+                : item
+            ),
+          })),
+        };
+      });
+    } else {
+      void qc.invalidateQueries({ queryKey: qk.notifications });
+    }
+    void qc.invalidateQueries({ queryKey: qk.notificationUnread });
+  }
+}
+
+export function useNotificationStream(enabled = true) {
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!enabled || USE_MSW) {
+      return;
+    }
+    let stopped = false;
+    let controller: AbortController | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let pollTimer: ReturnType<typeof setInterval> | undefined;
+    let delay = 1000;
+
+    const reconcile = () => {
+      void qc.refetchQueries({ queryKey: qk.notifications, type: 'active' });
+      void qc.refetchQueries({
+        queryKey: qk.notificationUnread,
+        type: 'active',
+      });
+    };
+    const markDisconnected = () => {
+      qc.setQueryData<NotificationStreamState>(qk.notificationStream, {
+        status: 'disconnected',
+      });
+      if (!pollTimer) {
+        pollTimer = setInterval(reconcile, 30_000);
+      }
+    };
+    const markConnected = () => {
+      qc.setQueryData<NotificationStreamState>(qk.notificationStream, {
+        status: 'connected',
+      });
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = undefined;
+      }
+      // Redis Pub/Sub is not durable; always reconcile after every connect.
+      reconcile();
+    };
+    const connect = async () => {
+      if (stopped) return;
+      qc.setQueryData<NotificationStreamState>(qk.notificationStream, {
+        status: 'connecting',
+      });
+      controller = new AbortController();
+      try {
+        await readNotificationStream(
+          (event) => applyNotificationEvent(qc, event),
+          controller.signal,
+          markConnected
+        );
+        // A clean end is the server's bounded stream lifetime, not a fault.
+        delay = 1000;
+      } catch {
+        delay = Math.min(delay * 2, 30_000);
+      }
+      if (stopped) return;
+      markDisconnected();
+      retryTimer = setTimeout(connect, delay);
+    };
+    void connect();
+
+    return () => {
+      stopped = true;
+      controller?.abort();
+      if (retryTimer) clearTimeout(retryTimer);
+      if (pollTimer) clearInterval(pollTimer);
+      qc.removeQueries({ queryKey: qk.notificationStream });
+    };
+  }, [enabled, qc]);
+}
+
+export function useMarkNotificationRead() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api.post<void>(`/notifications/${id}/read`),
+    onSuccess: (_data, id) => {
+      applyNotificationEvent(qc, { ids: [id], type: 'read' });
+    },
+  });
+}
 
 export function useMarkNotificationsRead() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.post<void>('/notifications/read'),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.notifications }),
+    onSuccess: () => {
+      const ids =
+        qc
+          .getQueryData<NotificationCache>(qk.notifications)
+          ?.pages.flatMap((page) => page.items.map((n) => n.id)) ?? [];
+      applyNotificationEvent(qc, { ids, type: 'read' });
+    },
+  });
+}
+
+export const useNotificationPrefs = () =>
+  useQuery({
+    queryFn: () => api.get<NotificationPrefs>('/notification-prefs'),
+    queryKey: qk.notificationPrefs,
+  });
+
+export function useSetNotificationPrefs() {
+  const qc = useQueryClient();
+  const queue = useRef(Promise.resolve());
+  return useMutation({
+    mutationFn: (prefs: NotificationPrefs) => {
+      const request = queue.current.then(() =>
+        api.patch<NotificationPrefs>('/notification-prefs', prefs)
+      );
+      queue.current = request.then(
+        () => undefined,
+        () => undefined
+      );
+      return request;
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: qk.notificationPrefs });
+    },
+    onSuccess: (prefs) => qc.setQueryData(qk.notificationPrefs, prefs),
+  });
+}
+
+export function useSetLocale() {
+  const qc = useQueryClient();
+  const queue = useRef(Promise.resolve());
+  return useMutation({
+    mutationFn: (locale: 'en' | 'zh') => {
+      const request = queue.current.then(() =>
+        api.patch<void>('/me/locale', { locale })
+      );
+      queue.current = request.then(
+        () => undefined,
+        () => undefined
+      );
+      return request;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.me }),
   });
 }
 
@@ -790,6 +1042,7 @@ export function useAcceptWorkspaceInvite() {
         queryKey: qk.workspaceMembers(member.workspaceId),
       });
       qc.invalidateQueries({ queryKey: qk.notifications });
+      qc.invalidateQueries({ queryKey: qk.notificationUnread });
     },
   });
 }

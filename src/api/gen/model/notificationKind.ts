@@ -13,4 +13,6 @@ export const NotificationKind = {
   quiz: 'quiz',
   system: 'system',
   workspace_invite: 'workspace_invite',
+  workspace_role_changed: 'workspace_role_changed',
+  workspace_member_removed: 'workspace_member_removed',
 } as const;

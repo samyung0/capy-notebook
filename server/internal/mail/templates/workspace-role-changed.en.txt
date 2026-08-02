@@ -1,0 +1,18 @@
+Evo Notes
+
+
+WORKSPACE ROLE CHANGED
+
+Your role in {{.WorkspaceName}} was changed by a workspace owner.
+
+Workspace: {{.WorkspaceName}}
+
+New role: {{.RoleName}}
+
+Open Evo Notes {{.OpenURL}}
+
+----------------------------------------
+
+You received this message because your Evo Notes workspace membership changed.
+
+{{.UnsubscribeText}} {{.UnsubscribeURL}}

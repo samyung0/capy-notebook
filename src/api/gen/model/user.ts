@@ -14,6 +14,7 @@ export interface User {
   classLabel?: string;
   email: string;
   id: string;
+  locale: string;
   name: string;
   planTier: PlanTier;
   streak: number;

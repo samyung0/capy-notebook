@@ -85,7 +85,9 @@ def _finish_ok(
     artifact_key: str | None = None,
     artifact_fingerprint: str | None = None,
     artifact_version: str | None = None,
+    notification_code: str = "source_ready",
 ) -> None:
+    notification = None
     with db.connect() as conn:
         with conn.cursor() as cur:
             db.set_file_status(cur, file_id, "ready")
@@ -98,10 +100,20 @@ def _finish_ok(
                     artifact_fingerprint or "",
                     artifact_version or "",
                 )
-            body = note or f"Finished processing {name}."
-            db.add_notification(cur, "system", "Source ready", body)
+            notification = db.add_notification(
+                cur,
+                file_id,
+                "system",
+                {
+                    "code": notification_code,
+                    "fileName": name,
+                },
+            )
             db.set_job(cur, job_id, "done")
         conn.commit()
+    if notification is not None:
+        user_id = str(notification.pop("userId"))
+        progress.publish_notification(user_id, notification)
 
 
 def _finish_fail(file_id: str | None, job_id: str, error: str) -> None:
@@ -250,7 +262,15 @@ async def process_job(cache: RagCache, job: dict) -> None:
         # Safety net: the gateway skips job creation for parseMode=none, but a
         # stray job must not fall through to a parser that can't handle it.
         note = f"{name}: stored without parsing (not indexed for retrieval)."
-        await asyncio.to_thread(_finish_ok, file_id, None, name, job["id"], note)
+        await asyncio.to_thread(
+            _finish_ok,
+            file_id,
+            None,
+            name,
+            job["id"],
+            note,
+            notification_code="source_stored",
+        )
         progress.publish(ws, file_id, "done", 100, status="ready", message=note)
         return
 
@@ -338,6 +358,7 @@ async def process_job(cache: RagCache, job: dict) -> None:
                 artifact_key,
                 artifact_fingerprint,
                 modal_parser.PARSER_VERSION if artifact_key else None,
+                "source_duplicate",
             )
             progress.publish(ws, file_id, "done", 100, status="ready")
             return
