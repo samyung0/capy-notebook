@@ -17,10 +17,10 @@ import {
 } from './commands.js';
 import { loadConfig } from './config.js';
 import {
+  MATERIAL_DOCUMENT_LIMITS,
   MaterialDocumentLimitError,
-  materialIdFromRoom,
-  YjsDocumentStore,
-} from './persistence.js';
+} from './limits.js';
+import { materialIdFromRoom, YjsDocumentStore } from './persistence.js';
 import { ProjectionService } from './projection.js';
 
 const config = loadConfig();
@@ -42,6 +42,13 @@ const projections = new ProjectionService(store, config.apiUrl, config.secret);
 const failedStores = new Map<string, Uint8Array>();
 const activeStores = new Map<string, Set<Promise<void>>>();
 const evictingRooms = new Set<string>();
+// Clients ask for a durability receipt with a stateless message instead of
+// writing a marker into the Y.Doc, so acknowledging a save costs no Yjs update
+// and leaves nothing behind in the persisted document.
+const pendingCheckpoints = new Map<string, Set<string>>();
+const rejectedRooms = new Set<string>();
+const MAX_PENDING_CHECKPOINTS = 64;
+const MAX_CHECKPOINT_ID_LENGTH = 128;
 const evictionWaiters = new Map<
   string,
   {
@@ -228,7 +235,64 @@ async function evictLocalRoom(room: string, notifyClients = false) {
     failedStores.delete(room);
   } finally {
     evictingRooms.delete(room);
+    rejectedRooms.delete(room);
   }
+}
+
+/**
+ * A room being discarded must not accept traffic or admit new connections until
+ * it has been unloaded, otherwise a reconnecting client resyncs the very state
+ * that is being thrown away.
+ */
+function assertRoomAvailable(room: string) {
+  if (rejectedRooms.has(room) || evictingRooms.has(room)) {
+    throw new Error('collaboration room is being reset');
+  }
+}
+
+function rejectionPayload(room: string, error: MaterialDocumentLimitError) {
+  return JSON.stringify({
+    code: error.code,
+    limits: MATERIAL_DOCUMENT_LIMITS,
+    materialId: materialIdFromRoom(room),
+    metrics: error.metrics,
+    room,
+    type: 'document-rejected',
+  });
+}
+
+/**
+ * Last resort for an over-limit document that slipped past `validateUpdate`.
+ * Hocuspocus swallows `onStoreDocument` failures and keeps the room in memory,
+ * so without this the room would stay live and silently unsavable forever.
+ * Discarding it forces every client back onto the last durable state.
+ */
+function rejectRoom(
+  room: string,
+  document: { broadcastStateless: (payload: string) => void },
+  error: MaterialDocumentLimitError
+) {
+  if (rejectedRooms.has(room)) return;
+  rejectedRooms.add(room);
+  const payload = rejectionPayload(room, error);
+  document.broadcastStateless(payload);
+  // `evictLocalRoom` waits for in-flight stores, and the caller is one of them,
+  // so the eviction has to run outside the failing store.
+  setTimeout(() => {
+    void (async () => {
+      await redis.publish('evo:collaboration:evict', payload);
+      await evictLocalRoom(room);
+    })().catch((evictionError) => {
+      rejectedRooms.delete(room);
+      storeFailures += 1;
+      console.warn(
+        'collaboration rejection eviction failed:',
+        evictionError instanceof Error
+          ? evictionError.message
+          : String(evictionError)
+      );
+    });
+  }, 0);
 }
 
 async function withDistributedEviction<T>(
@@ -274,12 +338,27 @@ async function withDistributedEviction<T>(
 
 const server = new Server<CollaborationContext>({
   address: config.host,
-  async beforeHandleMessage({ document, update }) {
-    if (await isRoomEvicting(document.name)) {
-      throw new Error('collaboration room is being compacted');
-    }
+  async afterUnloadDocument({ documentName }) {
+    pendingCheckpoints.delete(documentName);
+    store.forgetRoom(documentName);
+  },
+  // Runs per inbound message, so it must stay free of I/O. Distributed eviction
+  // always reaches this instance over Redis pub/sub and populates
+  // `evictingRooms`, so the local set is authoritative here.
+  async beforeHandleMessage({ connection, document, update }) {
+    assertRoomAvailable(document.name);
     const yjsUpdate = inboundYjsUpdate(update);
-    if (yjsUpdate) store.validateUpdate(document, yjsUpdate);
+    if (!yjsUpdate) return;
+    try {
+      store.validateUpdate(document.name, document, yjsUpdate);
+    } catch (error) {
+      // Throwing closes only this connection. Tell it why first so it can drop
+      // its diverged Y.Doc instead of reconnecting and resending forever.
+      if (error instanceof MaterialDocumentLimitError) {
+        connection.sendStateless(rejectionPayload(document.name, error));
+      }
+      throw error;
+    }
   },
   debounce: config.debounceMs,
   extensions: [
@@ -295,6 +374,7 @@ const server = new Server<CollaborationContext>({
   async onAuthenticate({ connectionConfig, documentName, request, token }) {
     try {
       assertAllowedOrigin(request, config.allowedOrigins);
+      assertRoomAvailable(documentName);
       if (await isRoomEvicting(documentName)) {
         throw new Error('collaboration room is being compacted');
       }
@@ -315,24 +395,57 @@ const server = new Server<CollaborationContext>({
     }
   },
   async onLoadDocument({ document, documentName }) {
+    assertRoomAvailable(documentName);
     if (await isRoomEvicting(documentName)) {
       throw new Error('collaboration room is being compacted');
     }
     await store.load(documentName, document);
   },
+  async onStateless({ connection, document, payload }) {
+    let event: { id?: unknown; type?: unknown };
+    try {
+      event = JSON.parse(payload);
+    } catch {
+      return;
+    }
+    if (event.type !== 'checkpoint-request' || connection.readOnly) return;
+    const id = event.id;
+    if (
+      typeof id !== 'string' ||
+      id.length === 0 ||
+      id.length > MAX_CHECKPOINT_ID_LENGTH
+    ) {
+      return;
+    }
+    let pending = pendingCheckpoints.get(document.name);
+    if (!pending) {
+      pending = new Set();
+      pendingCheckpoints.set(document.name, pending);
+    }
+    if (pending.size >= MAX_PENDING_CHECKPOINTS) return;
+    pending.add(id);
+  },
   async onStoreDocument({ document, documentName, lastContext }) {
     const finish = beginStore(documentName);
+    // Claimed before the store reads the document, so the committed state is
+    // guaranteed to contain everything these receipts were asked about.
+    const claimed = [...(pendingCheckpoints.get(documentName) ?? [])];
     try {
-      if (evictingRooms.has(documentName)) {
-        throw new Error('collaboration room is being evicted');
-      }
+      assertRoomAvailable(documentName);
       const stored = await store.store(documentName, document);
       failedStores.delete(documentName);
+      const pending = pendingCheckpoints.get(documentName);
+      if (pending) {
+        for (const id of claimed) pending.delete(id);
+        if (pending.size === 0) pendingCheckpoints.delete(documentName);
+      }
       const materialId = materialIdFromRoom(documentName);
       document.broadcastStateless(
         JSON.stringify({
-          checkpointIds: stored.checkpointIds,
+          checkpointIds: claimed,
+          limitCode: stored.limitCode,
           materialId,
+          metrics: stored.metrics,
           type: 'checkpoint-persisted',
           yjsVersion: stored.version,
         })
@@ -340,8 +453,7 @@ const server = new Server<CollaborationContext>({
       const projection = projections.project(
         materialId,
         stored.version,
-        stored.content,
-        stored.checkpointIds
+        stored.content
       );
       void projection
         .then(() => {
@@ -366,10 +478,9 @@ const server = new Server<CollaborationContext>({
       }
     } catch (error) {
       storeFailures += 1;
-      if (
-        !evictingRooms.has(documentName) &&
-        !(error instanceof MaterialDocumentLimitError)
-      ) {
+      if (error instanceof MaterialDocumentLimitError) {
+        rejectRoom(documentName, document, error);
+      } else if (!evictingRooms.has(documentName)) {
         failedStores.set(documentName, Y.encodeStateAsUpdate(document));
       }
       throw error;
@@ -423,6 +534,7 @@ async function handleHttpRequest(
       if (materialIdFromRoom(room) !== command.materialId) {
         throw new Error('collaboration command room does not match material');
       }
+      assertRoomAvailable(room);
       if (await isRoomEvicting(room)) {
         throw new Error('collaboration room is being compacted');
       }
@@ -499,16 +611,14 @@ async function retryFailedStores() {
     const finish = beginStore(room);
     const document = new Y.Doc({ gc: true });
     try {
-      if (evictingRooms.has(room)) continue;
+      if (evictingRooms.has(room) || rejectedRooms.has(room)) continue;
       Y.applyUpdate(document, state);
       const stored = await store.store(room, document);
       failedStores.delete(room);
-      const materialId = materialIdFromRoom(room);
       void projections.project(
-        materialId,
+        materialIdFromRoom(room),
         stored.version,
-        stored.content,
-        stored.checkpointIds
+        stored.content
       );
     } catch {
       storeFailures += 1;

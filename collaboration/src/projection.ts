@@ -16,14 +16,12 @@ export class ProjectionService {
   async project(
     materialId: string,
     version: number,
-    content: { schemaVersion: 1; value: unknown[] },
-    checkpointIds: string[] = []
+    content: { schemaVersion: 1; value: unknown[] }
   ) {
     const response = await fetch(
       `${this.apiUrl}/internal/collaboration/materials/${encodeURIComponent(materialId)}/projection`,
       {
         body: JSON.stringify({
-          checkpointIds,
           content,
           yjsVersion: version,
         }),

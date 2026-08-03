@@ -1,30 +1,23 @@
-import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { assertAllowedOrigin, verifyCollaborationToken } from './auth.js';
+import {
+  assertAllowedOrigin,
+  mintCollaborationToken,
+  signCollaborationToken,
+  verifyCollaborationToken,
+} from './auth.js';
 
 function token(overrides: Record<string, unknown> = {}) {
   const now = Math.floor(Date.now() / 1000);
-  const header = Buffer.from(
-    JSON.stringify({ alg: 'HS256', typ: 'JWT' })
-  ).toString('base64url');
-  const payload = Buffer.from(
-    JSON.stringify({
-      access: 'write',
-      aud: 'evo-collaboration',
-      exp: now + 300,
-      iat: now,
-      iss: 'evo-api',
-      jti: 'token-1',
-      room: 'material:note_1:schema:1',
-      schema: 1,
-      sub: 'user-1',
-      ...overrides,
-    })
-  ).toString('base64url');
-  const signature = createHmac('sha256', 'secret')
-    .update(`${header}.${payload}`)
-    .digest('base64url');
-  return `${header}.${payload}.${signature}`;
+  return signCollaborationToken('secret', {
+    access: 'write',
+    exp: now + 300,
+    iat: now,
+    jti: 'token-1',
+    room: 'material:note_1:schema:1',
+    schema: 1,
+    sub: 'user-1',
+    ...overrides,
+  } as never);
 }
 
 describe('collaboration tokens', () => {
@@ -32,6 +25,19 @@ describe('collaboration tokens', () => {
     expect(
       verifyCollaborationToken(token(), 'secret', 'material:note_1:schema:1')
     ).toMatchObject({ access: 'write', sub: 'user-1' });
+  });
+
+  it('mints short-lived write tokens for a room', () => {
+    const minted = mintCollaborationToken({
+      access: 'write',
+      name: 'Chaos',
+      room: 'material:note_1:schema:1',
+      secret: 'secret',
+      userId: 'chaos_1',
+    });
+    expect(
+      verifyCollaborationToken(minted, 'secret', 'material:note_1:schema:1')
+    ).toMatchObject({ access: 'write', name: 'Chaos', sub: 'chaos_1' });
   });
 
   it('rejects wrong rooms, expiry, access, and signatures', () => {

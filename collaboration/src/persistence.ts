@@ -1,26 +1,59 @@
 import { slateNodesToInsertDelta, yTextToSlateElement } from '@slate-yjs/core';
 import type { Pool, PoolClient } from 'pg';
 import * as Y from 'yjs';
+import {
+  MATERIAL_DOCUMENT_LIMITS,
+  MaterialDocumentLimitError,
+  type MaterialDocumentMetrics,
+  type MaterialLimitCode,
+  materialLimitCode,
+  measureMaterialValue,
+  recoversMaterialLimits,
+} from './limits.js';
 
 const CONTENT_ROOT = 'content';
-const CHECKPOINT_MAP = 'evo:checkpoints';
 const ROOM_PATTERN = /^material:([A-Za-z0-9_-]+):schema:(\d+)$/;
-const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
-const MAX_DOCUMENT_DEPTH = 16;
-const MAX_DOCUMENT_NODES = 10_000;
-
-export class MaterialDocumentLimitError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'MaterialDocumentLimitError';
-  }
-}
+// Measuring a document means cloning it and serializing it to Plate JSON, so
+// doing it per inbound update costs O(document) per keystroke. Amortize it over
+// a budget of applied update bytes, and fall back to measuring every update
+// once the document is close enough to a limit that the budget could overshoot.
+const VALIDATION_BUDGET_BYTES = 32 * 1024;
+const VALIDATION_HEADROOM = 0.9;
+const DEPTH_HEADROOM = 4;
 
 export interface StoredDocument {
-  checkpointIds: string[];
   content: { schemaVersion: 1; value: unknown[] };
+  limitCode: MaterialLimitCode | null;
+  metrics: MaterialDocumentMetrics;
   state: Uint8Array;
   version: number;
+}
+
+/**
+ * Per-room accounting that decides when the expensive measurement is worth
+ * running and remembers the last accepted metrics as the shrink baseline.
+ */
+class RoomValidator {
+  metrics: MaterialDocumentMetrics | null = null;
+  pendingBytes = 0;
+
+  shouldMeasure(): boolean {
+    if (!this.metrics) return true;
+    if (this.pendingBytes >= VALIDATION_BUDGET_BYTES) return true;
+    return (
+      this.metrics.contentBytes + this.pendingBytes >
+        MATERIAL_DOCUMENT_LIMITS.maxContentBytes * VALIDATION_HEADROOM ||
+      this.metrics.nodeCount + this.pendingBytes >
+        MATERIAL_DOCUMENT_LIMITS.maxNodes * VALIDATION_HEADROOM ||
+      this.metrics.maxDepth >=
+        MATERIAL_DOCUMENT_LIMITS.maxDepth - DEPTH_HEADROOM
+    );
+  }
+
+  accept(metrics: MaterialDocumentMetrics) {
+    this.metrics = metrics;
+    this.pendingBytes = 0;
+  }
 }
 
 export function materialIdFromRoom(room: string): string {
@@ -37,34 +70,6 @@ export function roomSchemaFromRoom(room: string): number {
     throw new Error('invalid collaboration room schema');
   }
   return schema;
-}
-
-function assertMaterialLimits(value: unknown[]) {
-  const encoded = new TextEncoder().encode(
-    JSON.stringify({ schemaVersion: 1, value })
-  );
-  if (encoded.byteLength > MAX_DOCUMENT_BYTES) {
-    throw new MaterialDocumentLimitError(
-      'invalid material document: document size'
-    );
-  }
-  let nodeCount = 0;
-  let maxDepth = 0;
-  const visit = (node: unknown, depth: number) => {
-    nodeCount += 1;
-    maxDepth = Math.max(maxDepth, depth);
-    if (nodeCount > MAX_DOCUMENT_NODES || depth > MAX_DOCUMENT_DEPTH) {
-      throw new MaterialDocumentLimitError(
-        'invalid material document: document complexity limit exceeded'
-      );
-    }
-    if (!node || typeof node !== 'object' || Array.isArray(node)) return;
-    const children = (node as { children?: unknown }).children;
-    if (Array.isArray(children)) {
-      for (const child of children) visit(child, depth + 1);
-    }
-  };
-  for (const node of value) visit(node, 0);
 }
 
 async function lockMaterial(client: PoolClient, materialId: string) {
@@ -84,28 +89,61 @@ function plateValue(document: Y.Doc): unknown[] {
   return Array.isArray(root.children) ? root.children : [];
 }
 
-function checkpoints(document: Y.Doc): string[] {
-  return [...document.getMap(CHECKPOINT_MAP).keys()].filter(
-    (key) => typeof key === 'string' && key.length <= 128
-  );
+function measureState(state: Buffer | Uint8Array): MaterialDocumentMetrics {
+  const document = new Y.Doc({ gc: true });
+  try {
+    applyStoredState(document, state);
+    return measureMaterialValue(plateValue(document));
+  } finally {
+    document.destroy();
+  }
 }
 
 export class YjsDocumentStore {
   private readonly pool: Pool;
+  private readonly validators = new Map<string, RoomValidator>();
 
   constructor(pool: Pool) {
     this.pool = pool;
   }
 
-  validateUpdate(current: Y.Doc, update: Uint8Array) {
+  /**
+   * Rejects an inbound update before it reaches the authoritative document.
+   * Rejecting after the fact is not an option: Yjs has no notion of undoing a
+   * peer's update, so the only remedy left would be discarding the whole room.
+   */
+  validateUpdate(room: string, current: Y.Doc, update: Uint8Array) {
+    let validator = this.validators.get(room);
+    if (!validator) {
+      validator = new RoomValidator();
+      this.validators.set(room, validator);
+    }
+    validator.pendingBytes += update.byteLength;
+    if (!validator.shouldMeasure()) return;
+    // A document that loaded from PostgreSQL already over the limit still needs
+    // a baseline, otherwise the edits that would bring it back under are the
+    // ones we reject.
+    if (!validator.metrics) {
+      validator.metrics = measureMaterialValue(plateValue(current));
+    }
     const candidate = new Y.Doc({ gc: true });
+    let metrics: MaterialDocumentMetrics;
     try {
       Y.applyUpdate(candidate, Y.encodeStateAsUpdate(current));
       Y.applyUpdate(candidate, update);
-      assertMaterialLimits(plateValue(candidate));
+      metrics = measureMaterialValue(plateValue(candidate));
     } finally {
       candidate.destroy();
     }
+    const code = materialLimitCode(metrics);
+    if (code && !recoversMaterialLimits(metrics, validator.metrics)) {
+      throw new MaterialDocumentLimitError(code, metrics);
+    }
+    validator.accept(metrics);
+  }
+
+  forgetRoom(room: string) {
+    this.validators.delete(room);
   }
 
   async load(room: string, target: Y.Doc): Promise<void> {
@@ -188,7 +226,16 @@ export class YjsDocumentStore {
       }
       Y.applyUpdate(merged, Y.encodeStateAsUpdate(current));
       const value = plateValue(merged);
-      assertMaterialLimits(value);
+      const metrics = measureMaterialValue(value);
+      const limitCode = materialLimitCode(metrics);
+      if (limitCode) {
+        const previous = existing.rowCount
+          ? measureState(existing.rows[0].state)
+          : null;
+        if (!recoversMaterialLimits(metrics, previous)) {
+          throw new MaterialDocumentLimitError(limitCode, metrics);
+        }
+      }
       const state = Y.encodeStateAsUpdate(merged);
       const version = existing.rowCount
         ? Number(existing.rows[0].stored_version) + 1
@@ -205,9 +252,11 @@ export class YjsDocumentStore {
         [materialId, roomSchema, Buffer.from(state), version]
       );
       await client.query('COMMIT');
+      this.validators.get(room)?.accept(metrics);
       return {
-        checkpointIds: checkpoints(merged),
         content: { schemaVersion: 1, value },
+        limitCode,
+        metrics,
         state,
         version,
       };
