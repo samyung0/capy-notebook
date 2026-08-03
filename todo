@@ -36,15 +36,20 @@ low priority:
 
 high PRIORITIES:
 
-1. materials action menu should have same functions as normal files (file property should in addition show nodes and depths (is this saved in db?)), materials like quiz/flashcards may have additional customizations (e.g. time limit when attempting etc), put these additional customizations into an option called settings which pops up a dialog
-2. in centercontent header, add in the action menu (with same functions found in filelistitem) with an additional action full screen
-3. actually check how to integrate realtime collab/yjs first, https://platejs.org/llms.txt, if not mistaken the yjs doc store different ops values, how does this work with the custom plugins/blocks? since the plate json is source of truths for suggestions, we can abandon draft mode for suggestions. there will also be a change for how saving is done i think?
-4. mvoe accept/reject all suggestions from BulkSuggestionActions components into action menu, if there are pending actions, make a small pulsing dot on top right (check IconButton for reference)
-5.  make a standalone suggestion summary at the bottom of editor (div placeholder exists in noteeditor), shows brief changes like lines changed, authors (there may be more than onewhen yjs/realtime collab is implemented). stats are on the left side, right side should be actions like submit or cancel (both with dialog confirm). make it minimal and dont take up too much space
-6.  if mode is suggesting, show dialog confirming to submit changes (including ctrl+s)
-7.  unify quizblock and questionrunner (with questionrunner as default)? (need to consider the impact of how user can edit them when rendered using questionrunner styles) we have two different rendering paths, remove question type ordering-item
-8.  how to adjust blockselection colors?
-9.  fix block selection, per plate playground:
+1. since events are sent across hocuspopcus after just 1 second, we can disable ctrl+s manual save? current onSave and scheduleCheckpoint have different logic and hadnlers for setting markers and can cause race conditions. ALso, how do we reconcile client states when server rejects a bad save/overlimit save? (I think Discard and reload from the authoritative room is better e.g. set an editorgeneration useState and type it into the key of noteeditorcore and increment after save rejection so it re-renders, solves existing potential issue that queryclient invalidating cllaboration-token query alone may still serve same room key and editorcore doesnt remount) With that we can also remove document limitaion check altogether on client side and rely on collab server to validate/save and return status and doucment stats? (prevent computationally intensive checks on client side), we will need to handle rejection states more formally rather than just throwing materialdocumenterror since user still needs the document stats (maybe introduce machine readable error codes to unify error handling) (Note I think there is two places on colab server that checks document limits, need to check how to catch and return these errors). one more issue is that there is only one pending checkpoint, if user types again before server acknowledges the last checkpoint, the new checkpoint on client side overwrites and editor loses track of the old checkpoint (we set pendingCheckpoint.current to new checkpoint everytime) Last question, Checkpoint deletion creates another Yjs update?
+2. in note editor, we wait for user query, members query etc before rendering noteeditorcore, can we narrow the type to non null for currentuserid, currentusername, discussions? and remove the default "Collaborator" name for null userid/name in noteeditorcore
+3. in dialogs, when I am selecting long text from left to right in an input and drag my mouse over the boundary of the dialog (into like the overlay) it acts funky and deselects a few words/jumps the selection pointer around, but when selecting from right to left its fine
+4. show only unread notifications in the topinsetbar notification icon (update in listnotifications in backend?)
+5. meta missing in task edit dialog
+6. materials action menu should have same functions as normal files (file property should in addition show nodes and depths (is this saved in db?)), materials like quiz/flashcards may have additional customizations (e.g. time limit when attempting etc), put these additional customizations into an option called settings which pops up a dialog
+7. in centercontent header, add in the action menu (with same functions found in filelistitem) with an additional action full screen
+8. actually check how to integrate realtime collab/yjs first, https://platejs.org/llms.txt, if not mistaken the yjs doc store different ops values, how does this work with the custom plugins/blocks? since the plate json is source of truths for suggestions, we can abandon draft mode for suggestions. there will also be a change for how saving is done i think?
+9. mvoe accept/reject all suggestions from BulkSuggestionActions components into action menu, if there are pending actions, make a small pulsing dot on top right (check IconButton for reference)
+10. make a standalone suggestion summary at the bottom of editor (div placeholder exists in noteeditor), shows brief changes like lines changed, authors (there may be more than onewhen yjs/realtime collab is implemented). stats are on the left side, right side should be actions like submit or cancel (both with dialog confirm). make it minimal and dont take up too much space
+11. if mode is suggesting, show dialog confirming to submit changes (including ctrl+s)
+12. unify quizblock and questionrunner (with questionrunner as default)? (need to consider the impact of how user can edit them when rendered using questionrunner styles) we have two different rendering paths, remove question type ordering-item
+13. how to adjust blockselection colors?
+14. fix block selection, per plate playground:
    Block Selection
    There are multiple ways to select entire blocks:
    Click and drag from the editor margin to select multiple blocks
@@ -58,29 +63,29 @@ high PRIORITIES:
    useBlockSelected in DraggableBlock seems to retun false always (i.e. clicking on the drag handle doesnt select the block),
    DraggableBlock and right clicking blocks right now has a custom bg color rather than using plate block selection
    selecting text seems to use browser default selection rather than plate block selection
-10. if copy and pasting markdown, render it directly rather than inside a code block (? what determines if a code block gets inserted or not?)
-11. remove line break in suggestion edits
-12. handle file loading errors (not unable to fetch from backend, thats handled, but onload error from urls, both in centercontent and in plate editor)
-13. all frontend test cases should only select elements using data-testid? (e.g. when getByRole dont use filter has text or names etc) and they should only match the results using text that is seeded for testing rather than relying on element names (translations may change anytime)
-14. combine image/audio/files into just a single upload (plus the YouTube embed tab), make it a dropdown with a chevron down icon like how file import/export does it; videos are embeds only and must not be uploaded to storage
-15. in editor we need to use custom tooltips rather than title=xxx, include shortcut as well
-16. add layout adjust in editor to make the document smaller or larger in width
-17. check what test cases/e2e test cases there are, what features are they testing and how much of the user journeys they cover, ideally they should check every single part, but what to do when responsivess moves the layouts around/mounts or unmount some components (or should we try to use display none which keeps the component mounted so test cases can select the elements with no issues)?
-18. workspaces tag validation should limit to 5 tags at most
-19. set loading state for submit buttons (esp dialogs)
-20. enable ordering of doucments within chapters with drag and drop (right now it just drops in the chapter)
-21. add icons for common file format
-22. enrich the global searches (in the topinsetbar)
+15. if copy and pasting markdown, render it directly rather than inside a code block (? what determines if a code block gets inserted or not?)
+16. remove line break in suggestion edits
+17. handle file loading errors (not unable to fetch from backend, thats handled, but onload error from urls, both in centercontent and in plate editor)
+18. all frontend test cases should only select elements using data-testid? (e.g. when getByRole dont use filter has text or names etc) and they should only match the results using text that is seeded for testing rather than relying on element names (translations may change anytime)
+19. combine image/audio/files into just a single upload (plus the YouTube embed tab), make it a dropdown with a chevron down icon like how file import/export does it; videos are embeds only and must not be uploaded to storage
+20. in editor we need to use custom tooltips rather than title=xxx, include shortcut as well
+21. add layout adjust in editor to make the document smaller or larger in width
+22. check what test cases/e2e test cases there are, what features are they testing and how much of the user journeys they cover, ideally they should check every single part, but what to do when responsivess moves the layouts around/mounts or unmount some components (or should we try to use display none which keeps the component mounted so test cases can select the elements with no issues)?
+23. workspaces tag validation should limit to 5 tags at most
+24. set loading state for submit buttons (esp dialogs)
+25. enable ordering of doucments within chapters with drag and drop (right now it just drops in the chapter)
+26. add icons for common file format
+27. enrich the global searches (in the topinsetbar)
     - workspace names & chapters
     - files and materials names
     - calendar event names
     - tasks title
     - Remove: thinking space (not worked on yet)
-23. make the onsuccess invalidate queries async await so awaiting a mutateAsync awaits both the mutate call AND the refetch query call, this is good for UI since loading states spans data mutation + refetch, refetch is where user actually sees the display changes, if loading state exits early, there is a gap between user seeing action finishes and UI updates
-24. when calling backend, we should always use react hook form paired with zod schema validations (auto generated), the submit button should be disabled when submitDisabled is true (const submitDisabled =
+28. make the onsuccess invalidate queries async await so awaiting a mutateAsync awaits both the mutate call AND the refetch query call, this is good for UI since loading states spans data mutation + refetch, refetch is where user actually sees the display changes, if loading state exits early, there is a gap between user seeing action finishes and UI updates
+29. when calling backend, we should always use react hook form paired with zod schema validations (auto generated), the submit button should be disabled when submitDisabled is true (const submitDisabled =
     !form.formState.isDirty || !form.formState.isValid || form.formState.isSubmitting;) when error happens inside handleSubmit, a userToast must always show. editing existing resources or creating resources shouldnt need to show toast unless there is minimal to no UI change to let user know the action is successful (e.g. inviting members to workspace, or updaing privacy inside the shareDialog (very minimal select value changes))
-25. enable website mcp for the LLM so users can ask (summarize file page x to xx or how to answer quiz A question 5), curate list of tools available to workspace chat llm/website convo llm (two different set of tools & context provided since workspace can provide more informations)
-26. modularize ai models, let user choose what cloud/local models they want to use for different scenarios:
+30. enable website mcp for the LLM so users can ask (summarize file page x to xx or how to answer quiz A question 5), curate list of tools available to workspace chat llm/website convo llm (two different set of tools & context provided since workspace can provide more informations)
+31. modularize ai models, let user choose what cloud/local models they want to use for different scenarios:
     exhaustive list:
 
 - file parsing
@@ -101,6 +106,8 @@ high PRIORITIES:
 8.  I think discussion table is not necessary? move discussion_id, block_id, anchors into comments table, render the discussion blocks if any comment is present on the block_id instead (need to check what purpose the discussion table serves), deleting parent comment should also delete child comment? UI rendering of comments should check for infinite self referencing comment, though shouldnt happen but should be handled
 9.  rn delete behavior on user to materials and deleting workspacing to files/materials are cascade, but if either user or workspace exists (user exist meaning is_deleted flag is false), then the files and materials should still exist since they cna viewed with either just user_id or workspace_id. but if both are deleted then the files and materials in the workspace should be deleted (also make sure uploading files are cancelled, session upload record should be deleted on cascade). if this behavior is not enforceable through schemas, then move to application logic (add relevant test cases) For tags, tags should have no cascade on delete, it shouldnt block user account deletion (rn it has no on delete) And on workspace/files/materials deletion, delete the associating tags_entity, if no tag_entity reference a tag, delete the tag as well. Comments should have user id on delete null, preserve comments
 10. upon user account deletion, if they have active subscription make them cancel first before they can delete. For subscription expirations, it should leave a buffer period for user to move files out of the platform and warn them in mails & notification on subscription cancel, 3 days before deletion and after deleteion (if account is already deleted then dont give buffer period and directly perm delete file). when user account deletes, flip the flag instead of actually removing the record, default deletes the events,tasks,canvases,event labels, AI conversations, default DO NOT delete comments,oauth_connections. let user choose whether to delete all workspaces and assets. if yes. this removes all workspaces which triggers aplication logic to delete files and materials that have both user_id and workspace_id, other files and materials that do not have workspace_id should also be deleted (check schema todo number 4). ensure that entities_tag and tags are deleted as well. if they choose not to delete workspace, then lock the workspace to prevent further edit, and check if they have an active subscription with persistent usage quotas (right now just storage) exceeding free tier limits, warn them files can get permanently deleted without warnings/buffer periods.
+11. fix logic in global dialog, right now conditional rendering triggers rerenders of the globaldialog, instead always mount but use hooks inside of each dialog to control open
+12. drag and drop on workspace files tree shows dropping line for both bottom of a file item and top of the next file item but its the same gap between
 
 subscription todo
 1. token usages (reconciliation from telementry?)

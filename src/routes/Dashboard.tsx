@@ -44,14 +44,14 @@ function StreakHeading() {
 const DASHBOARD_WORKSPACE_LIMIT = 12;
 
 function WorkspacesSection() {
-  const { data, isLoading } = useWorkspaces({ sort: 'accessed' });
+  const { data, isLoading } = useWorkspaces({ sort: "accessed" });
   const recent = data?.slice(0, DASHBOARD_WORKSPACE_LIMIT);
   const hasMore = (data?.length ?? 0) > DASHBOARD_WORKSPACE_LIMIT;
   return (
     <section>
       <div className="mb-3 flex items-center justify-between">
         <h2 className="t-large-card-title">{m.dashboard_workspaces()}</h2>
-        <Button asChild className="p-0" size="md" variant="ghost-link">
+        <Button asChild size="xs" variant="ghost-link">
           <Link preload="intent" to="/workspaces">
             {m.action_go_workspaces()}
           </Link>
@@ -67,7 +67,7 @@ function WorkspacesSection() {
       {!isLoading && (!recent || recent.length === 0) && (
         <div className="mt-30 flex w-full items-center justify-center">
           <p>
-            No workspaces yet.{' '}
+            No workspaces yet.{" "}
             <Link
               className="underline decoration-link decoration-wavy underline-offset-2 hover:decoration-link-hover"
               preload="intent"
@@ -85,7 +85,7 @@ function WorkspacesSection() {
           ))}
           {hasMore && (
             <div className="flex items-center justify-center p-5">
-              <Button asChild className="p-0" size="md" variant="ghost-link">
+              <Button asChild size="xs" variant="ghost-link">
                 <Link preload="intent" to="/workspaces">
                   <span className="flex items-center gap-2">
                     {m.action_see_all()}
@@ -135,7 +135,7 @@ function TasksCard() {
           >
             <Checkbox
               checked={t.done}
-              className={cn(t.meta && 'translate-y-1')}
+              className={cn(t.meta && "translate-y-1")}
               size={22}
               tone="purple"
             />
@@ -148,10 +148,10 @@ function TasksCard() {
                 <span
                   className={cn(
                     t.done
-                      ? 'font-semibold text-fg-muted line-through'
-                      : 'font-semibold text-fg',
-                    'line-clamp-2',
-                    !t.meta && 'translate-y-1'
+                      ? "font-semibold text-fg-muted line-through"
+                      : "font-semibold text-fg",
+                    "line-clamp-2",
+                    !t.meta && "translate-y-1",
                   )}
                 >
                   {t.title}
@@ -163,21 +163,21 @@ function TasksCard() {
             </button>
             <HoverActions
               className="absolute right-0"
-              iconContainerClassName="bg-surface-hover-bg/60 hover:bg-surface-dark"
+              radialBackground
               items={[
                 {
-                  icon: 'write',
+                  icon: "write",
                   label: m.action_edit(),
                   onClick: () => openTaskEdit(t),
                 },
                 {
-                  icon: 'check',
+                  icon: "check",
                   label: t.done ? m.action_mark_undone() : m.action_mark_done(),
                   onClick: () => toggle.mutate({ done: !t.done, id: t.id }),
                 },
                 {
                   danger: true,
-                  icon: 'trash',
+                  icon: "trash",
                   label: m.action_delete(),
                   onClick: () =>
                     openConfirm({
@@ -191,14 +191,17 @@ function TasksCard() {
           </div>
         ))}
         {hasMore && (
-          <Link
+          <Button
+            asChild
             aria-label={m.action_see_all()}
-            className="px-1 py-1 text-center font-bold text-fg-muted text-lg leading-none hover:text-fg"
-            preload="intent"
-            to="/tasks"
+            className="px-1 pt-1 text-center text-lg font-bold leading-none"
+            size="xs"
+            variant="ghost-muted"
           >
-            …
-          </Link>
+            <Link preload="intent" to="/tasks">
+              ...
+            </Link>
+          </Button>
         )}
       </div>
     </div>
@@ -210,7 +213,7 @@ export default function Dashboard() {
     <div className="flex h-full min-h-full flex-col gap-1.5 sm:gap-2.5 lg:flex-row">
       <Panel
         className="order-last min-h-0 flex-1 rounded-button lg:order-first lg:rounded-card-xl"
-        sectionClassName="gap-5 sm:gap-6 p-4 sm:p-6"
+        sectionClassName="gap-5 2xl:gap-6 p-4 sm:p-6"
       >
         <StreakHeading />
         <CloudConnectBanner />

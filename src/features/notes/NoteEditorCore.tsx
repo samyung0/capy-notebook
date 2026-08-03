@@ -20,38 +20,37 @@ import {
 import type { Material } from '@/api/types';
 import {
   countMaterialMetrics,
-  MATERIAL_DOCUMENT_LIMITS,
   type MaterialDocumentMetrics,
   type MaterialValue,
   parseMaterialDocument,
-} from '@/features/materials/document';
-import { cn } from '@/lib/cn';
-import { AiMenu } from './ai/AiMenu';
-import { VoiceButton } from './ai/VoiceButton';
-import { NoteBlockDialogsProvider } from './blocks/dialogContext';
+} from "@/features/materials/document";
+import { cn } from "@/lib/cn";
+import { AiMenu } from "./ai/AiMenu";
+import { VoiceButton } from "./ai/VoiceButton";
+import { NoteBlockDialogsProvider } from "./blocks/dialogContext";
 import {
   CollaborationProvider,
   commentDecorationRangesForEntry,
   resolveCommentDecorations,
-} from './Collaboration';
+} from "./Collaboration";
 import {
   contentSizeKilobytes,
   formatContentSize,
   shouldShowDocumentStats,
-} from './documentStats';
-import { EditorCommandPalette } from './EditorCommandPalette';
-import type { NoteEditorMode, NoteEditorStatus } from './editorMode';
-import { FloatingToolbar } from './FloatingToolbar';
-import { NoteToolbar } from './NoteToolbar';
-import { noteComponents } from './nodeComponents';
-import { buildPlugins } from './plugins';
+} from "./documentStats";
+import { EditorCommandPalette } from "./EditorCommandPalette";
+import type { NoteEditorMode, NoteEditorStatus } from "./editorMode";
+import { FloatingToolbar } from "./FloatingToolbar";
+import { NoteToolbar } from "./NoteToolbar";
+import { noteComponents } from "./nodeComponents";
+import { buildPlugins } from "./plugins";
 import {
   remoteCursorRangesForEntry,
   useRemoteCursorDecorations,
-} from './RemoteCursors';
+} from "./RemoteCursors";
+import { EDITOR_CHECKPOINT_MAP, MATERIAL_DOCUMENT_LIMITS } from "@/lib/const";
 
-const NOTE_PLACEHOLDER = 'Type  /  for commands ...';
-const CHECKPOINT_MAP = 'evo:checkpoints';
+const NOTE_PLACEHOLDER = "Type  /  for commands ...";
 const COLLABORATION_ROOM_ERROR = /room|schema|stale/i;
 
 function materialValueSizeBytes(value: MaterialValue) {
@@ -61,7 +60,7 @@ function materialValueSizeBytes(value: MaterialValue) {
 
 function cursorColor(userId: string | null) {
   let hash = 0;
-  for (const character of userId ?? 'anonymous') {
+  for (const character of userId ?? "anonymous") {
     hash = (hash * 31 + character.charCodeAt(0)) >>> 0;
   }
   return `hsl(${hash % 360} 72% 48%)`;
@@ -86,7 +85,7 @@ function DocumentStatsFooter({
       <span
         className={cn(
           metrics.nodeCount >= MATERIAL_DOCUMENT_LIMITS.maxNodes * 0.85 &&
-            'text-solid-error'
+            "text-solid-error",
         )}
       >
         Nodes: {metrics.nodeCount.toLocaleString()}/
@@ -95,7 +94,7 @@ function DocumentStatsFooter({
       <span
         className={cn(
           metrics.maxDepth >= MATERIAL_DOCUMENT_LIMITS.maxDepth * 0.85 &&
-            'text-solid-error'
+            "text-solid-error",
         )}
       >
         Depth: {metrics.maxDepth}/{MATERIAL_DOCUMENT_LIMITS.maxDepth}
@@ -103,8 +102,8 @@ function DocumentStatsFooter({
       <span>
         Size: {formatContentSize(contentBytes)}/
         {contentSizeKilobytes(
-          MATERIAL_DOCUMENT_LIMITS.maxContentBytes
-        ).toLocaleString()}{' '}
+          MATERIAL_DOCUMENT_LIMITS.maxContentBytes,
+        ).toLocaleString()}{" "}
         KB
       </span>
       {limitError && (
@@ -122,7 +121,7 @@ function NoteEditorContent({
 }: {
   metrics: MaterialDocumentMetrics;
   contentBytes: number | null;
-  discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>['data']>;
+  discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>["data"]>;
   readOnly: boolean;
 }) {
   const editor = useEditorRef();
@@ -138,11 +137,11 @@ function NoteEditorContent({
         current.api.isElementStateEmpty(firstNode)
       );
     },
-    [readOnly]
+    [readOnly],
   );
   const decorations = resolveCommentDecorations(
     editor as Parameters<typeof resolveCommentDecorations>[0],
-    discussions
+    discussions,
   );
   const remoteCursors = useRemoteCursorDecorations(editor);
 
@@ -150,8 +149,8 @@ function NoteEditorContent({
     <PlateContainer className="relative [&_.slate-selection-area]:z-50 [&_.slate-selection-area]:border [&_.slate-selection-area]:border-action-accent/25 [&_.slate-selection-area]:bg-action-accent/15">
       <PlateContent
         className={cn(
-          'note-editor mx-auto min-h-75 max-w-3xl px-10 pt-4 pb-36 text-base outline-none **:data-slate-placeholder:translate-y-1 **:data-slate-placeholder:text-placeholder **:data-slate-placeholder:text-sm **:data-slate-placeholder:leading-loose **:data-slate-placeholder:opacity-100! max-sm:px-5',
-          shouldShowStats && 'pb-16'
+          "note-editor mx-auto min-h-75 max-w-3xl px-10 pt-4 pb-36 text-base outline-none **:data-slate-placeholder:translate-y-1 **:data-slate-placeholder:text-placeholder **:data-slate-placeholder:text-sm **:data-slate-placeholder:leading-loose **:data-slate-placeholder:opacity-100! max-sm:px-5",
+          shouldShowStats && "pb-16",
         )}
         decorate={({ entry }) =>
           [
@@ -160,7 +159,7 @@ function NoteEditorContent({
           ] as never
         }
         onKeyDown={(event) => {
-          if (event.key !== 'End' || event.shiftKey) return;
+          if (event.key !== "End" || event.shiftKey) return;
           event.preventDefault();
           editor.tf.select(editor.api.end([]));
         }}
@@ -188,9 +187,9 @@ export function NoteEditorCore({
   allowExternalAssets: boolean;
   users: Record<
     string,
-    NonNullable<ReturnType<typeof useWorkspaceMembers>['data']>[number]
+    NonNullable<ReturnType<typeof useWorkspaceMembers>["data"]>[number]
   >;
-  discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>['data']>;
+  discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>["data"]>;
   currentUserId: string | null;
   currentUserName: string | null;
   collaborationToken: MaterialCollaborationToken;
@@ -200,30 +199,30 @@ export function NoteEditorCore({
   const queryClient = useQueryClient();
   const ydoc = useMemo(
     () => new Y.Doc({ gc: true }),
-    [collaborationToken.room]
+    [collaborationToken.room],
   );
   const checkpointTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingCheckpoint = useRef<string | null>(null);
   const initialValue =
     parseMaterialDocument(material.content)?.value ??
-    ([{ children: [{ text: '' }], type: 'p' }] as MaterialValue);
+    ([{ children: [{ text: "" }], type: "p" }] as MaterialValue);
   const [documentMetrics, setDocumentMetrics] =
     useState<MaterialDocumentMetrics>(() => countMaterialMetrics(initialValue));
   const [documentLimitError, setDocumentLimitError] = useState<string | null>(
-    null
+    null,
   );
   const [_saveState, setSaveState] =
-    useState<NoteEditorStatus['saveState']>('connecting');
+    useState<NoteEditorStatus["saveState"]>("connecting");
   const name = currentUserId
-    ? (users[currentUserId]?.name ?? currentUserName ?? 'Collaborator')
-    : 'Collaborator';
+    ? (users[currentUserId]?.name ?? currentUserName ?? "Collaborator")
+    : "Collaborator";
 
   const setStatus = useCallback(
-    (next: NoteEditorStatus['saveState']) => {
+    (next: NoteEditorStatus["saveState"]) => {
       setSaveState(next);
       onEditorStatusChange?.({ mode, saveState: next });
     },
-    [mode, onEditorStatusChange]
+    [mode, onEditorStatusChange],
   );
 
   const plugins = useMemo(
@@ -237,22 +236,22 @@ export function NoteEditorCore({
               name,
             },
           },
-          onConnect: () => setStatus('connecting'),
-          onDisconnect: () => setStatus('offline'),
+          onConnect: () => setStatus("connecting"),
+          onDisconnect: () => setStatus("offline"),
           onError: ({ error }) => {
-            console.warn('Yjs collaboration provider error:', error);
+            console.warn("Yjs collaboration provider error:", error);
             if (
               error instanceof Error &&
               COLLABORATION_ROOM_ERROR.test(error.message)
             ) {
               void queryClient.invalidateQueries({
-                queryKey: ['material', material.id, 'collaboration-token'],
+                queryKey: ["material", material.id, "collaboration-token"],
               });
             }
-            setStatus('error');
+            setStatus("error");
           },
           onSyncChange: ({ isSynced }) => {
-            if (isSynced) setStatus('synced');
+            if (isSynced) setStatus("synced");
           },
           providers: [
             {
@@ -268,18 +267,18 @@ export function NoteEditorCore({
                       type?: string;
                     };
                     if (
-                      event.type === 'checkpoint-persisted' &&
+                      event.type === "checkpoint-persisted" &&
                       pendingCheckpoint.current &&
                       event.checkpointIds?.includes(pendingCheckpoint.current)
                     ) {
                       ydoc
-                        .getMap(CHECKPOINT_MAP)
+                        .getMap(EDITOR_CHECKPOINT_MAP)
                         .delete(pendingCheckpoint.current);
                       pendingCheckpoint.current = null;
-                      setStatus('saved');
+                      setStatus("saved");
                     }
                     if (
-                      event.type === 'comments-invalidated' &&
+                      event.type === "comments-invalidated" &&
                       event.materialId === material.id
                     ) {
                       queryClient.invalidateQueries({
@@ -287,7 +286,7 @@ export function NoteEditorCore({
                       });
                     }
                     if (
-                      event.type === 'projection-updated' &&
+                      event.type === "projection-updated" &&
                       event.materialId === material.id
                     ) {
                       queryClient.invalidateQueries({
@@ -295,16 +294,16 @@ export function NoteEditorCore({
                       });
                     }
                     if (
-                      (event.type === 'compaction-evict' ||
-                        event.type === 'compaction-complete') &&
+                      (event.type === "compaction-evict" ||
+                        event.type === "compaction-complete") &&
                       (event.room === collaborationToken.room ||
                         event.materialId === material.id)
                     ) {
                       void queryClient.invalidateQueries({
                         queryKey: [
-                          'material',
+                          "material",
                           material.id,
-                          'collaboration-token',
+                          "collaboration-token",
                         ],
                       });
                     }
@@ -316,7 +315,7 @@ export function NoteEditorCore({
                   (await getMaterialCollaborationToken(material.id)).token,
                 url: collaborationToken.url,
               },
-              type: 'hocuspocus' as const,
+              type: "hocuspocus" as const,
             },
           ],
           userId: currentUserId,
@@ -324,19 +323,19 @@ export function NoteEditorCore({
         },
       }),
       ...buildPlugins({
-        allowExternalAssets: mode === 'edit' && allowExternalAssets,
+        allowExternalAssets: mode === "edit" && allowExternalAssets,
         currentUserId,
         discussions,
         mode,
         onSave: () => {
-          if (mode !== 'edit') return;
+          if (mode !== "edit") return;
           const marker = crypto.randomUUID();
           pendingCheckpoint.current = marker;
-          ydoc.getMap(CHECKPOINT_MAP).set(marker, {
+          ydoc.getMap(EDITOR_CHECKPOINT_MAP).set(marker, {
             at: Date.now(),
             userId: currentUserId,
           });
-          setStatus('synced');
+          setStatus("synced");
         },
         users,
         workspaceId: material.workspaceId,
@@ -356,7 +355,7 @@ export function NoteEditorCore({
       setStatus,
       users,
       ydoc,
-    ]
+    ],
   );
 
   const editor = usePlateEditor({
@@ -368,7 +367,7 @@ export function NoteEditorCore({
   useEffect(() => {
     let active = true;
     let initialized = false;
-    setStatus('connecting');
+    setStatus("connecting");
     // Delay initialization by one task so React Strict Mode's development-only
     // setup/cleanup probe cannot initialize the same Slate-Yjs editor twice.
     const initializeTimer = setTimeout(() => {
@@ -381,8 +380,8 @@ export function NoteEditorCore({
           value: null,
         })
         .catch((error) => {
-          console.warn('Yjs collaboration initialization failed:', error);
-          if (active) setStatus('error');
+          console.warn("Yjs collaboration initialization failed:", error);
+          if (active) setStatus("error");
         });
     }, 0);
     return () => {
@@ -395,18 +394,18 @@ export function NoteEditorCore({
   }, [collaborationToken.room, editor, onEditorStatusChange, setStatus]);
 
   useEffect(() => {
-    const online = () => setStatus('connecting');
-    const offline = () => setStatus('offline');
-    window.addEventListener('online', online);
-    window.addEventListener('offline', offline);
+    const online = () => setStatus("connecting");
+    const offline = () => setStatus("offline");
+    window.addEventListener("online", online);
+    window.addEventListener("offline", offline);
     return () => {
-      window.removeEventListener('online', online);
-      window.removeEventListener('offline', offline);
+      window.removeEventListener("online", online);
+      window.removeEventListener("offline", offline);
     };
   }, [setStatus]);
 
   const scheduleCheckpoint = useCallback(() => {
-    if (mode !== 'edit') return;
+    if (mode !== "edit") return;
     const value = editor.children as MaterialValue;
     const metrics = countMaterialMetrics(value);
     setDocumentMetrics(metrics);
@@ -415,22 +414,22 @@ export function NoteEditorCore({
     ) {
       setDocumentLimitError(
         `Document exceeds the ${contentSizeKilobytes(
-          MATERIAL_DOCUMENT_LIMITS.maxContentBytes
-        ).toLocaleString()} KB limit. Undo or remove content to continue.`
+          MATERIAL_DOCUMENT_LIMITS.maxContentBytes,
+        ).toLocaleString()} KB limit. Undo or remove content to continue.`,
       );
       if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
       return;
     }
     if (metrics.nodeCount > MATERIAL_DOCUMENT_LIMITS.maxNodes) {
       setDocumentLimitError(
-        `Document exceeds the ${MATERIAL_DOCUMENT_LIMITS.maxNodes.toLocaleString()} node limit.`
+        `Document exceeds the ${MATERIAL_DOCUMENT_LIMITS.maxNodes.toLocaleString()} node limit.`,
       );
       if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
       return;
     }
     if (metrics.maxDepth > MATERIAL_DOCUMENT_LIMITS.maxDepth) {
       setDocumentLimitError(
-        `Document exceeds the ${MATERIAL_DOCUMENT_LIMITS.maxDepth}-level nesting limit.`
+        `Document exceeds the ${MATERIAL_DOCUMENT_LIMITS.maxDepth}-level nesting limit.`,
       );
       if (checkpointTimer.current) clearTimeout(checkpointTimer.current);
       return;
@@ -440,11 +439,11 @@ export function NoteEditorCore({
     checkpointTimer.current = setTimeout(() => {
       const marker = crypto.randomUUID();
       pendingCheckpoint.current = marker;
-      ydoc.getMap(CHECKPOINT_MAP).set(marker, {
+      ydoc.getMap(EDITOR_CHECKPOINT_MAP).set(marker, {
         at: Date.now(),
         userId: currentUserId,
       });
-      setStatus('synced');
+      setStatus("synced");
     }, 1000);
   }, [currentUserId, editor, mode, setStatus, ydoc]);
 
@@ -460,7 +459,7 @@ export function NoteEditorCore({
           >
             <NoteToolbar
               right={
-                mode === 'edit' && allowExternalAssets ? (
+                mode === "edit" && allowExternalAssets ? (
                   <VoiceButton />
                 ) : undefined
               }
@@ -471,7 +470,7 @@ export function NoteEditorCore({
                   contentBytes={material.contentBytes ?? null}
                   discussions={discussions}
                   metrics={documentMetrics}
-                  readOnly={mode === 'comment'}
+                  readOnly={mode === "comment"}
                 />
                 <DocumentStatsFooter
                   contentBytes={material.contentBytes ?? null}
@@ -480,9 +479,9 @@ export function NoteEditorCore({
                 />
               </div>
             </div>
-            {mode === 'edit' && <FloatingToolbar />}
+            {mode === "edit" && <FloatingToolbar />}
             <EditorCommandPalette />
-            {mode === 'edit' && allowExternalAssets && <AiMenu />}
+            {mode === "edit" && allowExternalAssets && <AiMenu />}
           </CollaborationProvider>
         </Plate>
       </div>

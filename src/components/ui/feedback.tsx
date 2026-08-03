@@ -85,46 +85,16 @@ export function SkeletonList({
   return (
     <div
       aria-label="Loading"
-      className={cn('flex flex-col gap-2', className)}
+      className={cn("flex flex-col gap-2", className)}
       role="status"
     >
       {Array.from({ length: count }).map((_, i) => (
         <Skeleton
-          className={cn('rounded-button', rowClassName)}
+          className={cn("rounded-button", rowClassName)}
           key={i}
           style={{ height: rowHeight }}
         />
       ))}
-    </div>
-  );
-}
-
-export function EmptyState({
-  icon = 'fileError',
-  title,
-  body,
-  action,
-  className,
-}: {
-  icon?: IconName;
-  title: string;
-  body?: string;
-  action?: ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        'flex h-full flex-col items-center justify-center gap-3 px-6 py-12 text-center',
-        className
-      )}
-    >
-      <div className="">
-        <Icon className="size-7" name={icon} />
-      </div>
-      <h3 className="t-card-title">{title}</h3>
-      {body && <p className="max-w-sm">{body}</p>}
-      {action}
     </div>
   );
 }

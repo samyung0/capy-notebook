@@ -731,7 +731,7 @@ function FontSizeControl() {
       role="group"
     >
       <ToolbarButton
-        className="rounded-r-none bg-surface-hover-bg p-0 text-surface-dark-fg hover:bg-surface-dark"
+        className="rounded-r-none bg-surface-hover-bg p-0 text-fg hover:bg-surface-dark"
         disabled={cursorFontSize <= MIN_FONT_SIZE}
         label="Decrease font size"
         onClick={() => setFontSize(cursorFontSize - 1)}
@@ -745,8 +745,8 @@ function FontSizeControl() {
             aria-haspopup="listbox"
             aria-label={`Font size: ${cursorFontSize}`}
             className={cn(
-              'h-8 w-10 shrink-0 text-center font-semibold text-sm outline-none',
-              'bg-surface-hover-bg text-surface-dark-fg hover:bg-surface-dark focus-visible:ring-2 focus-visible:ring-focus'
+              "h-8 w-10 shrink-0 text-center font-semibold text-sm outline-none",
+              "bg-surface-hover-bg text-fg hover:bg-surface-dark focus-visible:ring-2 focus-visible:ring-focus",
             )}
             data-plate-prevent-deselect
             onMouseDown={(event) => event.preventDefault()}
@@ -770,10 +770,10 @@ function FontSizeControl() {
               <button
                 aria-selected={size === cursorFontSize}
                 className={cn(
-                  'flex h-8 w-full items-center justify-center rounded-button text-sm outline-none',
-                  'hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-focus',
+                  "flex h-8 w-full items-center justify-center rounded-button text-sm outline-none",
+                  "hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-focus",
                   size === cursorFontSize &&
-                    'bg-tint-accent-1 text-tint-accent-1-fg'
+                    "bg-tint-accent-1 text-tint-accent-1-fg",
                 )}
                 data-plate-prevent-deselect
                 key={size}
@@ -789,7 +789,7 @@ function FontSizeControl() {
         </PopoverContent>
       </Popover>
       <ToolbarButton
-        className="rounded-l-none bg-surface-hover-bg p-0 text-surface-dark-fg hover:bg-surface-dark"
+        className="rounded-l-none bg-surface-hover-bg p-0 text-fg hover:bg-surface-dark"
         disabled={cursorFontSize >= MAX_FONT_SIZE}
         label="Increase font size"
         onClick={() => setFontSize(cursorFontSize + 1)}

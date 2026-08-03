@@ -57,15 +57,15 @@ export function MaterialListItem({
   return (
     <div
       className={cn(
-        'group relative flex items-center rounded-button hover:bg-surface-hover-bg',
-        generating ? 'pr-1' : 'pr-8',
-        active && 'bg-surface-hover-bg'
+        "group relative flex items-center rounded-button hover:bg-surface-hover-bg",
+        generating ? "pr-1" : "pr-1.5",
+        active && "bg-surface-hover-bg",
       )}
     >
       <button
         className={cn(
-          'flex w-full items-center gap-2 rounded-button px-1.5 py-1.5 text-left',
-          active && 'font-bold'
+          "flex w-full items-center gap-2 rounded-button px-1.5 py-1.5 text-left",
+          active && "font-bold",
         )}
         disabled={generating}
         onClick={onOpen}

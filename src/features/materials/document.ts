@@ -12,14 +12,7 @@ import {
   parseQuizFenceBody,
   type QuizBlock,
 } from './blocks';
-
-export const MATERIAL_SCHEMA_VERSION = 1 as const;
-
-export const MATERIAL_DOCUMENT_LIMITS = {
-  maxContentBytes: 2 * 1024 * 1024,
-  maxDepth: 64,
-  maxNodes: 10_000,
-} as const;
+import { MATERIAL_SCHEMA_VERSION } from "@/lib/const";
 
 export interface MaterialDocumentMetrics {
   maxDepth: number;

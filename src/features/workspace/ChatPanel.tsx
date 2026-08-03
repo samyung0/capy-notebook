@@ -122,8 +122,8 @@ export function ChatPanel({
       className="flex h-full flex-col"
       style={
         {
-          '--temp-btn-bg': lightPair.bg,
-          '--temp-btn-fg': lightPair.fg,
+          "--temp-btn-bg": lightPair.bg,
+          "--temp-btn-fg": lightPair.fg,
         } as React.CSSProperties
       }
     >
@@ -136,18 +136,18 @@ export function ChatPanel({
             items={
               conversations?.length
                 ? conversations.map((c) => ({
-                    icon: 'message' as const,
-                    label: c.title || 'Untitled chat',
+                    icon: "message" as const,
+                    label: c.title || "Untitled chat",
                     onClick: () => {
                       hydratedRef.current = null;
                       setSelectId(c.id);
                     },
                   }))
-                : [{ disabled: true, label: 'No conversations yet' }]
+                : [{ disabled: true, label: "No conversations yet" }]
             }
             trigger={
               <IconButton
-                className="translate-x-px rounded-r-none bg-(--temp-btn-bg) py-1.5 pl-3.5 text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:opacity-85 disabled:opacity-30"
+                className="translate-x-px rounded-r-none bg-(--temp-btn-bg) py-1.5 pl-3.5 text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:brightness-97 disabled:opacity-30"
                 icon="clock"
                 label="Open history"
                 size="sm"
@@ -157,7 +157,7 @@ export function ChatPanel({
             }
           />
           <IconButton
-            className="rounded-r-none rounded-l-none bg-(--temp-btn-bg) py-1.5 pr-2.5 text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:opacity-85 disabled:opacity-30"
+            className="rounded-r-none rounded-l-none bg-(--temp-btn-bg) py-1.5 pr-2.5 text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:brightness-97 disabled:opacity-30"
             disabled={!conversationId}
             icon="plus"
             label="New chat"
@@ -180,7 +180,7 @@ export function ChatPanel({
           </div>
         )}
         {messages.map((msg) =>
-          msg.role === 'user' ? (
+          msg.role === "user" ? (
             <div
               className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-[14px] rounded-tr-sm bg-page px-3.5 py-2.5"
               key={msg.id}
@@ -189,7 +189,7 @@ export function ChatPanel({
             </div>
           ) : (
             <AssistantBubble key={msg.id} msg={msg} streaming={streaming} />
-          )
+          ),
         )}
       </div>
 
@@ -198,10 +198,10 @@ export function ChatPanel({
         <Input
           actionCallback={streaming ? stop : submit}
           actionClassName="bg-(--temp-btn-bg) text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:opacity-85"
-          actionIcon={streaming ? 'x' : 'send'}
+          actionIcon={streaming ? "x" : "send"}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
+            if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               submit();
             }

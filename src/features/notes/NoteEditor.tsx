@@ -7,14 +7,14 @@ import {
   useWorkspaceMembers,
 } from '@/api/hooks';
 import type { Material, WorkspaceRole } from '@/api/types';
-import { EmptyState, Spinner } from '@/components/ui/feedback';
-import { FileLoading } from '@/features/files/FileStates';
+import { Spinner } from "@/components/ui/feedback";
+import { FileLoading, FileError } from "@/features/files/FileStates";
 import {
   EditorRuntimeProvider,
   type EditorRuntimeValue,
-} from './EditorRuntime';
-import type { NoteEditorMode, NoteEditorStatus } from './editorMode';
-import { NoteEditorCore } from './NoteEditorCore';
+} from "./EditorRuntime";
+import type { NoteEditorMode, NoteEditorStatus } from "./editorMode";
+import { NoteEditorCore } from "./NoteEditorCore";
 
 export function NoteEditor({
   materialId,
@@ -40,21 +40,21 @@ export function NoteEditor({
   }
   if (!material) {
     return (
-      <EmptyState
-        body="This note may have been deleted."
+      <FileError
+        message="This note may have been deleted."
         title="Note not found"
       />
     );
   }
 
   const modeAllowed =
-    (mode === 'edit' && material.capabilities.canEdit) ||
-    (mode === 'comment' &&
+    (mode === "edit" && material.capabilities.canEdit) ||
+    (mode === "comment" &&
       (material.capabilities.canEdit || material.capabilities.canComment));
   if (!modeAllowed) {
     return (
-      <EmptyState
-        body="Your current material permissions do not allow this mode."
+      <FileError
+        message="Your current material permissions do not allow this mode."
         title="Mode unavailable"
       />
     );
@@ -87,7 +87,7 @@ function CollaborativeNoteEditor({
 }) {
   const me = useMe();
   const role: WorkspaceRole | null =
-    material.role ?? (material.isOwner ? 'owner' : null);
+    material.role ?? (material.isOwner ? "owner" : null);
   // Mentions/comments need the member directory for any collaborator, not only
   // owners who can manage invites (`canManageMembers`).
   const members = useWorkspaceMembers(material.workspaceId);
@@ -98,9 +98,9 @@ function CollaborativeNoteEditor({
   const users = useMemo(
     () =>
       Object.fromEntries(
-        (members.data ?? []).map((member) => [member.userId, member])
+        (members.data ?? []).map((member) => [member.userId, member]),
       ),
-    [members.data]
+    [members.data],
   );
 
   if (
@@ -111,12 +111,22 @@ function CollaborativeNoteEditor({
   ) {
     return <FileLoading />;
   }
-  if (!collaborationToken.data) {
+
+  if (!me.data || me.isError) {
     return (
-      <EmptyState
-        body="The live collaboration service is unavailable."
-        title="Unable to open material"
-      />
+      <FileError message="Unable to load user info. Please refresh the page." />
+    );
+  }
+
+  if (!members.data || members.isError) {
+    return (
+      <FileError message="Unable to load members info. Please refresh the page." />
+    );
+  }
+
+  if (!collaborationToken.data || collaborationToken.isError) {
+    return (
+      <FileError message="The live collaboration service is unavailable." />
     );
   }
 

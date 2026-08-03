@@ -98,10 +98,10 @@ export function DashboardCalendar() {
               </span>
               <span
                 className={cn(
-                  'relative flex h-8 w-8 items-center justify-center rounded-button font-semibold text-[0.8rem] transition-colors',
-                  isToday && 'bg-action font-bold text-action-fg',
-                  !isToday && isSel && 'text-fg ring-[1.5px] ring-action',
-                  !isToday && !isSel && 'text-fg hover:bg-surface-hover-bg'
+                  "relative flex h-8 w-8 items-center justify-center rounded-button font-semibold text-[0.8rem] transition-colors",
+                  isToday && "bg-action font-bold text-action-fg",
+                  !isToday && isSel && "text-fg ring-[1.5px] ring-action",
+                  !isToday && !isSel && "text-fg hover:bg-surface-hover-bg",
                 )}
               >
                 {day.getDate()}
@@ -117,7 +117,7 @@ export function DashboardCalendar() {
       {/* selected-day label + see calendar */}
       <div className="mt-3 mb-1 flex items-center justify-between">
         <span className="font-bold text-fg">{dayLabel}</span>
-        <Button asChild className="p-0" size="sm" variant="ghost-link">
+        <Button asChild size="xs" variant="ghost-link">
           <Link preload="intent" to="/schedule">
             {m.schedule_see_calendar()}
           </Link>

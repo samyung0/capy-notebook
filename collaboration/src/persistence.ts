@@ -6,7 +6,7 @@ const CONTENT_ROOT = 'content';
 const CHECKPOINT_MAP = 'evo:checkpoints';
 const ROOM_PATTERN = /^material:([A-Za-z0-9_-]+):schema:(\d+)$/;
 const MAX_DOCUMENT_BYTES = 2 * 1024 * 1024;
-const MAX_DOCUMENT_DEPTH = 64;
+const MAX_DOCUMENT_DEPTH = 16;
 const MAX_DOCUMENT_NODES = 10_000;
 
 export class MaterialDocumentLimitError extends Error {

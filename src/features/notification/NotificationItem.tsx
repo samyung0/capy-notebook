@@ -124,9 +124,12 @@ export function NotificationItem({
 }) {
   const copy = notificationCopy(notification);
   return (
-    <span className={cn('flex w-full gap-3 text-left', className)}>
-      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-button text-solid-accent-1">
-        <Icon name={KIND_ICON[notification.kind]} size={20} />
+    <span className={cn('flex w-full gap-3 text-left t-body', className)}>
+      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center relative justify-center rounded-button text-tint-accent-1-fg/70 group-hover:text-tint-accent-1-fg/95">
+        <Icon name={KIND_ICON[notification.kind]} size={20}/>
+        {!notification.readAt && (
+        <span className="absolute -top-px -right-px h-1.5 w-1.5 animate-pulse rounded-full bg-solid-error ring-1 ring-surface" />
+      )}
       </span>
       <span className="flex min-w-0 flex-col">
         <span

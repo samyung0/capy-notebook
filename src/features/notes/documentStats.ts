@@ -1,11 +1,9 @@
-import {
-  MATERIAL_DOCUMENT_LIMITS,
-  type MaterialDocumentMetrics,
-} from '@/features/materials/document';
+import { type MaterialDocumentMetrics } from "@/features/materials/document";
+import { MATERIAL_DOCUMENT_LIMITS } from "@/lib/const";
 
 export function shouldShowDocumentStats(
   metrics: MaterialDocumentMetrics,
-  contentBytes: number | null
+  contentBytes: number | null,
 ): boolean {
   return (
     metrics.nodeCount >= MATERIAL_DOCUMENT_LIMITS.maxNodes / 2 ||
@@ -20,6 +18,6 @@ export function contentSizeKilobytes(contentBytes: number): number {
 
 export function formatContentSize(contentBytes: number | null): string {
   return contentBytes == null
-    ? '—'
+    ? "—"
     : `${contentSizeKilobytes(contentBytes).toLocaleString()} KB`;
 }

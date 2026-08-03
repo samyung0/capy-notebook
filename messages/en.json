@@ -38,7 +38,7 @@
   "notifications_empty": "You're all caught up",
   "notifications_load_more": "Load more",
   "notifications_loading": "Loading…",
-  "notifications_mark_all_read": "Mark all as read",
+  "notifications_mark_all_read": "Mark as read",
   "notifications_unread_count": "{count} unread notifications",
   "notification_event_starting_title": "Event starting soon",
   "notification_event_starting_body": "{eventName} starts at {time} in {location}.",

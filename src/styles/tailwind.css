@@ -27,8 +27,6 @@
   --color-surface-dark: var(--surface-card-dark-bg);
 
   /* Text → text-* */
-  --color-surface-fg: var(--surface-card-fg);
-  --color-surface-dark-fg: var(--surface-card-dark-fg);
   --color-fg: var(--text-primary);
   --color-fg-secondary: var(--text-secondary);
   --color-fg-muted: var(--text-muted);
@@ -272,7 +270,7 @@
   button {
     cursor: pointer;
   }
-  input, select, optgroup, textarea, ::file-selector-button {
+  body, input, select, optgroup, textarea, ::file-selector-button {
     @apply t-body
   }
 }

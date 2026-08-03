@@ -217,7 +217,7 @@ function SimpleDialog({
           <DialogTitle className="pr-10 pb-4">{title}</DialogTitle>
         )}
         {children}
-        {footer && <DialogFooter>{footer}</DialogFooter>}
+        {footer && <DialogFooter className="mt-3">{footer}</DialogFooter>}
       </DialogContent>
     </Dialog>
   );

@@ -2,8 +2,8 @@ import { useState } from 'react';
 import type { Task } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
-import { Input } from '@/components/ui/Input';
-import { m } from '@/i18n';
+import { Input, InputTitle } from "@/components/ui/Input";
+import { m } from "@/i18n";
 
 export function TaskEditDialog({
   task,
@@ -14,7 +14,7 @@ export function TaskEditDialog({
   task: Task;
   open: boolean;
   onClose: () => void;
-  onSave: (patch: Pick<Task, 'title'>) => void;
+  onSave: (patch: Pick<Task, "title">) => void;
 }) {
   const [title, setTitle] = useState(task.title);
 
@@ -22,11 +22,12 @@ export function TaskEditDialog({
     <SimpleDialog
       footer={
         <>
-          <Button onClick={onClose} variant="ghost">
+          <Button onClick={onClose} size="lg" variant="ghost-hover">
             Cancel
           </Button>
           <Button
             disabled={!title.trim()}
+            size="lg"
             onClick={() => {
               onSave({ title: title.trim() });
               onClose();
@@ -41,7 +42,7 @@ export function TaskEditDialog({
       title={m.action_edit()}
     >
       <label className="flex flex-col gap-1.5">
-        <p className="t-label text-fg-muted">Title</p>
+        <InputTitle>Title</InputTitle>
         <Input
           autoFocus
           onChange={(e) => setTitle(e.target.value)}

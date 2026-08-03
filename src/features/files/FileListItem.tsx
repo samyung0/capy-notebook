@@ -53,29 +53,30 @@ export function FileListItem({
     <div className="flex flex-col">
       <div
         className={cn(
-          'group relative flex items-center rounded-button hover:bg-surface-hover-bg',
-          active && 'bg-surface-hover-bg'
+          "group relative flex items-center rounded-button hover:bg-surface-hover-bg",
+          active && "bg-surface-hover-bg",
         )}
       >
         <button
           className={cn(
-            'flex w-full items-center gap-1.5 rounded-button px-1.5 py-1.5 pl-2 text-left',
-            active && 'font-bold',
-            processing && 'cursor-default'
+            "flex w-full items-center gap-1.5 rounded-button px-1.5 py-1.5 pl-2 text-left",
+            active && "font-bold",
+            processing && "cursor-default",
           )}
           disabled={processing}
           onClick={() => !processing && onOpen(file.id)}
           type="button"
         >
           <Icon
-            className={cn(failed && 'text-solid-error')}
+            // hugeicon file icon looks a bit weirdly balanced
+            className={cn("-translate-x-0.5", failed && "text-solid-error")}
             name="files"
             size={15}
           />
           <span
             className={cn(
-              'line-clamp-1 flex-1 translate-y-px truncate',
-              failed && 'text-solid-error'
+              "line-clamp-1 flex-1 translate-y-px truncate",
+              failed && "text-solid-error",
             )}
           >
             {file.name}
@@ -89,10 +90,9 @@ export function FileListItem({
         {!readOnly && (
           <HoverActions
             className="absolute top-1/2 right-1 -translate-y-1/2"
-            iconContainerClassName="bg-surface-hover-bg/60 hover:bg-surface-dark"
             items={[
               {
-                icon: 'write',
+                icon: "write",
                 label: m.action_rename(),
                 onClick: () => {
                   setName(file.name);
@@ -100,18 +100,18 @@ export function FileListItem({
                 },
               },
               {
-                icon: 'files',
-                label: 'Move File',
+                icon: "files",
+                label: "Move File",
                 onClick: () => setMoveOpen(true),
               },
               {
-                icon: 'help',
-                label: 'Properties',
+                icon: "help",
+                label: "Properties",
                 onClick: () => setPropsOpen(true),
               },
               {
                 danger: true,
-                icon: 'trash',
+                icon: "trash",
                 label: m.action_delete(),
                 onClick: () => setConfirmOpen(true),
               },
@@ -163,7 +163,7 @@ export function FileListItem({
           <Row label="Name" value={file.name} />
           <Row label="Type" value={file.kind.toUpperCase()} />
           <Row label="Size" value={formatFileSize(file.sizeBytes)} />
-          <Row label="Status" value={file.status ?? 'ready'} />
+          <Row label="Status" value={file.status ?? "ready"} />
           <Row label="Added" value={new Date(file.addedAt).toLocaleString()} />
         </dl>
       </SimpleDialog>

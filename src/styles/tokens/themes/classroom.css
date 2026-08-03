@@ -73,9 +73,7 @@
   --surface-page-hover: #e6e9ea;
   --surface-canvas: #f4f6f5; /* page wash behind inset cards */
   --surface-card-bg: #ffffff;
-  --surface-card-fg: #222222;
   --surface-card-dark-bg: #e6e9ea; /* dark card */
-  --surface-card-dark-fg: #222222;
   --surface-card-hover-bg: #f7f8f8;
   --surface-card-dark-hover-bg: #dfdfdf;
 
@@ -85,7 +83,7 @@
   --text-muted: #6b6b6b;
   --text-placeholder: #6b6b6b;
   --text-link: #5b4aa8;
-  --text-link-hover: rgb(59, 47, 121);
+  --text-link-hover: rgb(65, 51, 134);
 
   /* Borders & lines */
   --border-default: #e6e6e6;
