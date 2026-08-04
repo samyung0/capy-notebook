@@ -144,11 +144,11 @@ export default function Workspaces() {
                           >
                             <Badge
                               className={cn(
-                                "transition-colors",
-                                !active && "hover:bg-surface-hover-bg",
+                                'transition-colors',
+                                !active && 'hover:bg-surface-hover-bg'
                               )}
                               size="sm"
-                              tone={active ? "dark" : "page"}
+                              tone={active ? 'dark' : 'page'}
                             >
                               {t.value}
                             </Badge>
@@ -187,11 +187,11 @@ export default function Workspaces() {
             ))}
             <Card
               border="dashed"
-              tabIndex={0}
-              className="focus-visible:ring-2 focus-visible:ring-action focus-visible:border-0 focus-visible:transition-none min-h-40 cursor-pointer items-center justify-center"
+              className="min-h-40 cursor-pointer items-center justify-center focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none"
               interactive
               onClick={() => openWorkspaceCreate()}
               radius="card-lg"
+              tabIndex={0}
             >
               <span className="flex flex-col items-center gap-2 text-fg-muted">
                 <Icon name="plus" size={24} />

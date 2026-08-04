@@ -121,6 +121,7 @@
     "email:check": "pnpm run email:build && tsx scripts/check-emails.ts",
     "email:dev": "email dev --dir emails",
     "perf": "playwright test --config=e2e/perf/playwright.perf.config.ts",
+    "chaos:peers": "pnpm --filter @evo-notes/collaboration chaos --",
     "check": "ultracite check && pnpm run typecheck",
     "test:all": "pnpm run check && pnpm run test && pnpm run e2e && pnpm run pipeline:test",
     "gen:openapi": "cd server && go run ./cmd/openapi -o ../openapi.yaml",

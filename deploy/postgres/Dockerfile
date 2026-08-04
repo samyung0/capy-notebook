@@ -26,3 +26,4 @@ FROM pgvector/pgvector:pg16
 COPY --from=build /usr/lib/postgresql/16/lib/age.so /usr/lib/postgresql/16/lib/age.so
 COPY --from=build /usr/share/postgresql/16/extension/age.control /usr/share/postgresql/16/extension/
 COPY --from=build /usr/share/postgresql/16/extension/age--*.sql /usr/share/postgresql/16/extension/
+COPY initdb/ /docker-entrypoint-initdb.d/

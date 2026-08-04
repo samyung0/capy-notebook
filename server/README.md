@@ -60,7 +60,9 @@ events.
 - `cmd/api` — entrypoint (config, migrate, serve, graceful shutdown).
 - `internal/store` — pgx pool, models (mirror `src/api/types.ts`), queries.
 - `internal/httpapi` — chi router + handlers (mirror `src/mocks/handlers.ts`).
-- `migrations` — `0001_init.sql` (complete schema, extensions, and development seed).
+- `migrations` — `0001_init.sql` (complete schema and development seed). It needs
+  no extensions, so it applies to a stock Postgres; pgvector and Apache AGE are
+  provisioned by `deploy/postgres` for LightRAG.
 
 ## Connect the frontend
 

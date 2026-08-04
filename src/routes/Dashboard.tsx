@@ -44,7 +44,7 @@ function StreakHeading() {
 const DASHBOARD_WORKSPACE_LIMIT = 12;
 
 function WorkspacesSection() {
-  const { data, isLoading } = useWorkspaces({ sort: "accessed" });
+  const { data, isLoading } = useWorkspaces({ sort: 'accessed' });
   const recent = data?.slice(0, DASHBOARD_WORKSPACE_LIMIT);
   const hasMore = (data?.length ?? 0) > DASHBOARD_WORKSPACE_LIMIT;
   return (
@@ -67,7 +67,7 @@ function WorkspacesSection() {
       {!isLoading && (!recent || recent.length === 0) && (
         <div className="mt-30 flex w-full items-center justify-center">
           <p>
-            No workspaces yet.{" "}
+            No workspaces yet.{' '}
             <Link
               className="underline decoration-link decoration-wavy underline-offset-2 hover:decoration-link-hover"
               preload="intent"
@@ -135,7 +135,7 @@ function TasksCard() {
           >
             <Checkbox
               checked={t.done}
-              className={cn(t.meta && "translate-y-1")}
+              className={cn(t.meta && 'translate-y-1')}
               size={22}
               tone="purple"
             />
@@ -148,10 +148,10 @@ function TasksCard() {
                 <span
                   className={cn(
                     t.done
-                      ? "font-semibold text-fg-muted line-through"
-                      : "font-semibold text-fg",
-                    "line-clamp-2",
-                    !t.meta && "translate-y-1",
+                      ? 'font-semibold text-fg-muted line-through'
+                      : 'font-semibold text-fg',
+                    'line-clamp-2',
+                    !t.meta && 'translate-y-1'
                   )}
                 >
                   {t.title}
@@ -163,21 +163,20 @@ function TasksCard() {
             </button>
             <HoverActions
               className="absolute right-0"
-              radialBackground
               items={[
                 {
-                  icon: "write",
+                  icon: 'write',
                   label: m.action_edit(),
                   onClick: () => openTaskEdit(t),
                 },
                 {
-                  icon: "check",
+                  icon: 'check',
                   label: t.done ? m.action_mark_undone() : m.action_mark_done(),
                   onClick: () => toggle.mutate({ done: !t.done, id: t.id }),
                 },
                 {
                   danger: true,
-                  icon: "trash",
+                  icon: 'trash',
                   label: m.action_delete(),
                   onClick: () =>
                     openConfirm({
@@ -187,14 +186,15 @@ function TasksCard() {
                     }),
                 },
               ]}
+              radialBackground
             />
           </div>
         ))}
         {hasMore && (
           <Button
-            asChild
             aria-label={m.action_see_all()}
-            className="px-1 pt-1 text-center text-lg font-bold leading-none"
+            asChild
+            className="px-1 pt-1 text-center font-bold text-lg leading-none"
             size="xs"
             variant="ghost-muted"
           >

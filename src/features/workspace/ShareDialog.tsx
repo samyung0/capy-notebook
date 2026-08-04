@@ -12,8 +12,8 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { userToast } from '@/components/ui/userToast';
-import { WorkspaceMemberManager } from "./WorkspaceMemberManager";
 import { InputTitle } from '../../components/ui/Input';
+import { WorkspaceMemberManager } from './WorkspaceMemberManager';
 
 type SharedRole = Exclude<WorkspaceRole, 'owner'>;
 type SavingField = 'privacy' | 'shareRole';

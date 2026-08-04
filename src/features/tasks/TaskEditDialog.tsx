@@ -2,8 +2,8 @@ import { useState } from 'react';
 import type { Task } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
-import { Input, InputTitle } from "@/components/ui/Input";
-import { m } from "@/i18n";
+import { Input, InputTitle } from '@/components/ui/Input';
+import { m } from '@/i18n';
 
 export function TaskEditDialog({
   task,
@@ -14,7 +14,7 @@ export function TaskEditDialog({
   task: Task;
   open: boolean;
   onClose: () => void;
-  onSave: (patch: Pick<Task, "title">) => void;
+  onSave: (patch: Pick<Task, 'title'>) => void;
 }) {
   const [title, setTitle] = useState(task.title);
 
@@ -27,11 +27,11 @@ export function TaskEditDialog({
           </Button>
           <Button
             disabled={!title.trim()}
-            size="lg"
             onClick={() => {
               onSave({ title: title.trim() });
               onClose();
             }}
+            size="lg"
           >
             Save
           </Button>

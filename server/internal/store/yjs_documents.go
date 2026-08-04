@@ -80,13 +80,27 @@ func (s *Store) ProjectMaterialContent(
 
 	var kind, title string
 	var revision int64
-	if err := tx.QueryRow(ctx, `SELECT kind, title, revision
-		FROM materials WHERE id=$1 FOR UPDATE`, materialID).
-		Scan(&kind, &title, &revision); err != nil {
+	var unchanged bool
+	if err := tx.QueryRow(ctx, `SELECT kind, title, revision, content = $2::jsonb
+		FROM materials WHERE id=$1 FOR UPDATE`, materialID, content).
+		Scan(&kind, &title, &revision, &unchanged); err != nil {
 		if isNoRows(err) {
 			return Material{}, ErrNotFound
 		}
 		return Material{}, err
+	}
+	// Retries and repeated stores of a settled document project identical JSON.
+	// Advance the watermark without inventing a revision nobody authored.
+	if unchanged {
+		if _, err := tx.Exec(ctx, `UPDATE material_yjs_documents
+			SET projected_version=$2, projection_error=NULL, projected_at=now()
+			WHERE material_id=$1`, materialID, yjsVersion); err != nil {
+			return Material{}, err
+		}
+		if err := tx.Commit(ctx); err != nil {
+			return Material{}, err
+		}
+		return s.GetMaterial(ctx, materialID)
 	}
 	if err := materialdoc.ValidateKind(content, kind); err != nil {
 		_, _ = tx.Exec(ctx, `UPDATE material_yjs_documents

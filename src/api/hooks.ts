@@ -12,6 +12,7 @@ import type {
   MaterialDocument,
   MaterialValue,
 } from '@/features/materials/document';
+import { NOTIFICATION_PAGE_SIZE } from '@/lib/const';
 import { USE_MSW } from './auth';
 import { API_BASE, api, qk } from './client';
 // TODO: can types be merged to type ts?
@@ -70,7 +71,6 @@ import type {
   WorkspaceMember,
   WorkspaceRole,
 } from './types';
-import { NOTIFICATION_PAGE_SIZE } from '@/lib/const';
 
 const USE_DIRECT_B2_UPLOAD = import.meta.env.VITE_DIRECT_B2_UPLOAD !== 'false';
 
@@ -145,7 +145,10 @@ export function applyNotificationEvent(
       if (!pages[0]) return cache;
       pages[0] = {
         ...pages[0],
-        items: [notification, ...pages[0].items].slice(0, NOTIFICATION_PAGE_SIZE),
+        items: [notification, ...pages[0].items].slice(
+          0,
+          NOTIFICATION_PAGE_SIZE
+        ),
       };
       return { ...cache, pages };
     });

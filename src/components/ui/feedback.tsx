@@ -1,6 +1,4 @@
-import type { ReactNode } from 'react';
 import { cn } from '@/lib/cn';
-import { Icon, type IconName } from './Icon';
 
 export function Spinner({ className }: { className?: string }) {
   return (
@@ -85,12 +83,12 @@ export function SkeletonList({
   return (
     <div
       aria-label="Loading"
-      className={cn("flex flex-col gap-2", className)}
+      className={cn('flex flex-col gap-2', className)}
       role="status"
     >
       {Array.from({ length: count }).map((_, i) => (
         <Skeleton
-          className={cn("rounded-button", rowClassName)}
+          className={cn('rounded-button', rowClassName)}
           key={i}
           style={{ height: rowHeight }}
         />

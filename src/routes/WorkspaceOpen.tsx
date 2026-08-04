@@ -461,8 +461,8 @@ export default function WorkspaceOpen() {
             className="rounded-card-lg p-4"
             style={{
               background:
-                pair.bg === "transparent"
-                  ? "var(--color-surface-dark)"
+                pair.bg === 'transparent'
+                  ? 'var(--color-surface-dark)'
                   : pair.bg,
               color: pair.fg,
             }}
@@ -472,11 +472,11 @@ export default function WorkspaceOpen() {
               preload="intent"
               to="/workspaces"
             >
-              <Icon className="-translate-y-px" name="chevronLeft" size={15} />{" "}
+              <Icon className="-translate-y-px" name="chevronLeft" size={15} />{' '}
               {m.workspace_back()}
             </Link>
             <h1 className="t-large-card-title wrap-break-word line-clamp-4 text-ellipsis text-inherit">
-              {ws?.name ?? "…"}
+              {ws?.name ?? '…'}
             </h1>
             {readOnly ? (
               <Button
@@ -485,19 +485,19 @@ export default function WorkspaceOpen() {
                 iconLeft="plus"
                 onClick={() =>
                   cloneWorkspace.mutate(workspaceId, {
-                    onError: (err) => toastCloneError(err, "workspace"),
+                    onError: (err) => toastCloneError(err, 'workspace'),
                     onSuccess: ({ workspace, ragCloned }) => {
                       // TODO: when is rag cloned?
                       userToast({
                         description: ragCloned
-                          ? ""
-                          : "Files copied. Parsed knowledge needs rebuilding.",
-                        title: "Workspace cloned successfully",
-                        variant: "success",
+                          ? ''
+                          : 'Files copied. Parsed knowledge needs rebuilding.',
+                        title: 'Workspace cloned successfully',
+                        variant: 'success',
                       });
                       navigate({
                         params: { workspaceId: workspace.id },
-                        to: "/workspaces/$workspaceId",
+                        to: '/workspaces/$workspaceId',
                       });
                     },
                   })
@@ -505,24 +505,24 @@ export default function WorkspaceOpen() {
                 size="md"
                 variant="surface"
               >
-                {cloneWorkspace.isPending ? "Cloning…" : "Clone workspace"}
+                {cloneWorkspace.isPending ? 'Cloning…' : 'Clone workspace'}
               </Button>
             ) : (
               <div
                 className={cn(
-                  "mt-4 grid gap-2",
-                  canShare && !readOnly && "grid-cols-2",
+                  'mt-4 grid gap-2',
+                  canShare && !readOnly && 'grid-cols-2',
                   (canShare && readOnly) ||
-                    (!canShare && !readOnly && "grid-cols-1"),
-                  !canShare && readOnly && "mt-0 block",
+                    (!canShare && !readOnly && 'grid-cols-1'),
+                  !canShare && readOnly && 'mt-0 block'
                 )}
               >
                 {!readOnly && (
                   <Button
-                    className="py-2.5 h-fit"
+                    className="h-fit py-2.5"
+                    iconLeft="newFile"
                     onClick={() => openAddSource(workspaceId)}
                     size="md"
-                    iconLeft="newFile"
                     variant="surface"
                   >
                     {m.action_add_file()}
@@ -531,7 +531,7 @@ export default function WorkspaceOpen() {
                 {/* TODO: change share to settings or configure since there will be more workspace settings in future */}
                 {canShare && (
                   <Button
-                    className="py-2.5 h-fit"
+                    className="h-fit py-2.5"
                     iconLeft="link"
                     onClick={() => setShareOpen(true)}
                     size="md"
@@ -573,13 +573,13 @@ export default function WorkspaceOpen() {
                                   onSuccess: (mt) =>
                                     setOpenItem({
                                       id: mt.id,
-                                      kind: "material",
+                                      kind: 'material',
                                     }),
-                                },
+                                }
                               )
                             }
-                            size={"xs"}
-                            variant={"surface"}
+                            size={'xs'}
+                            variant={'surface'}
                           />
                           <IconButton
                             className="rounded-md px-0.5 py-1"
@@ -587,12 +587,12 @@ export default function WorkspaceOpen() {
                             onClick={() =>
                               setOpenChapters({
                                 ...Object.fromEntries(
-                                  chapters.map((c) => [c.id, false]),
+                                  chapters.map((c) => [c.id, false])
                                 ),
                               })
                             }
-                            size={"xs"}
-                            variant={"surface"}
+                            size={'xs'}
+                            variant={'surface'}
                           />
                         </div>
                       )}
@@ -614,7 +614,7 @@ export default function WorkspaceOpen() {
                             >
                               <Icon
                                 className="shrink-0 text-fg-muted"
-                                name={expanded ? "chevronDown" : "chevronRight"}
+                                name={expanded ? 'chevronDown' : 'chevronRight'}
                                 size={15}
                               />
                               <span className="line-clamp-1 translate-y-px truncate font-semibold">
@@ -626,13 +626,13 @@ export default function WorkspaceOpen() {
                                 className="absolute top-1/2 right-1 -translate-y-1/2"
                                 items={[
                                   {
-                                    icon: "write",
+                                    icon: 'write',
                                     label: m.action_rename(),
                                     onClick: () => {
                                       // TODO: use dialog
                                       const n = prompt(
-                                        "Rename chapter",
-                                        ch.name,
+                                        'Rename chapter',
+                                        ch.name
                                       );
                                       if (n)
                                         updateChapter.mutate({
@@ -643,19 +643,19 @@ export default function WorkspaceOpen() {
                                   },
                                   {
                                     disabled: idx === 0,
-                                    icon: "chevronUp",
-                                    label: "Move up",
+                                    icon: 'chevronUp',
+                                    label: 'Move up',
                                     onClick: () => moveChapter(idx, -1),
                                   },
                                   {
                                     disabled: idx === chapters.length - 1,
-                                    icon: "chevronDown",
-                                    label: "Move down",
+                                    icon: 'chevronDown',
+                                    label: 'Move down',
                                     onClick: () => moveChapter(idx, 1),
                                   },
                                   {
                                     danger: true,
-                                    icon: "trash",
+                                    icon: 'trash',
                                     label: m.action_delete(),
                                     onClick: () => delChapter.mutate(ch.id),
                                   },
@@ -669,7 +669,7 @@ export default function WorkspaceOpen() {
                               className="flex flex-col pl-4"
                             >
                               {contentFor(ch.id).map((item) =>
-                                renderContentItem(item, ch.id),
+                                renderContentItem(item, ch.id)
                               )}
                               {contentFor(ch.id).length === 0 && (
                                 <div className="px-1.5 py-1 text-fg-muted text-xs">
@@ -689,16 +689,16 @@ export default function WorkspaceOpen() {
                     <div className="rounded-button">
                       <div
                         className={cn(
-                          "t-label px-1.5 py-1.5 text-fg-muted",
-                          dropTarget === "unfiled-files" &&
-                            "border-line-strong border-b-2",
+                          't-label px-1.5 py-1.5 text-fg-muted',
+                          dropTarget === 'unfiled-files' &&
+                            'border-line-strong border-b-2'
                         )}
                       >
                         Others
                       </div>
-                      <div {...dropZone("unfiled-files", null)}>
+                      <div {...dropZone('unfiled-files', null)}>
                         {contentFor(null).map((item) =>
-                          renderContentItem(item, null),
+                          renderContentItem(item, null)
                         )}
                         {generating && (
                           <MaterialListItem
@@ -707,7 +707,7 @@ export default function WorkspaceOpen() {
                             data={{
                               chapterId: null,
                               createdAt: new Date().toISOString(),
-                              id: "__generating__",
+                              id: '__generating__',
                               position: Number.MAX_SAFE_INTEGER,
                               title: GENERATING_MATERIAL[generating].title,
                               type: GENERATING_MATERIAL[generating].type,
@@ -725,11 +725,11 @@ export default function WorkspaceOpen() {
             </div>
             {!readOnly && (
               <Button
-                className="m-2 mb-1 py-2.5 h-fit"
+                className="m-2 mb-1 h-fit py-2.5"
                 iconLeft="plus"
                 onClick={() => {
                   // TODO: use dialog
-                  const n = prompt("New chapter name");
+                  const n = prompt('New chapter name');
                   if (n) addChapter.mutate(n);
                 }}
                 variant="outline"
@@ -742,7 +742,7 @@ export default function WorkspaceOpen() {
         <ResizableHandle withHandle />
         <ResizablePanel
           className="overflow-visible!"
-          defaultSize={readOnly ? "82%" : "52%"}
+          defaultSize={readOnly ? '82%' : '52%'}
           minSize="400px"
         >
           {/* Center: content viewer */}
@@ -775,14 +775,14 @@ export default function WorkspaceOpen() {
                       className="px-3"
                       onChange={setMode}
                       tabs={[
-                        { label: "Chat", value: "chat" },
-                        { label: "Generate", value: "generate" },
+                        { label: 'Chat', value: 'chat' },
+                        { label: 'Generate', value: 'generate' },
                       ]}
                       value={mode}
                     />
                   </div>
                   <div className="h-full flex-1 overflow-hidden">
-                    {mode === "chat" ? (
+                    {mode === 'chat' ? (
                       <ChatPanel color={ws?.color} workspaceId={workspaceId} />
                     ) : (
                       <GeneratePanel
@@ -813,7 +813,7 @@ export default function WorkspaceOpen() {
           open={shareOpen}
           privacy={ws.privacy}
           saving={updateSharing.isPending}
-          shareRole={ws.shareRole ?? "viewer"}
+          shareRole={ws.shareRole ?? 'viewer'}
           title={`Share ${ws.name}`}
           workspaceId={ws.id}
         />

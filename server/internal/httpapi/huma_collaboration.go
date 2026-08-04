@@ -61,9 +61,8 @@ type collaborationTokenOutput struct {
 }
 
 type projectMaterialReq struct {
-	Content       materialdoc.Envelope `json:"content"`
-	YjsVersion    int64                `json:"yjsVersion" minimum:"1"`
-	CheckpointIDs []string             `json:"checkpointIds,omitempty"`
+	Content    materialdoc.Envelope `json:"content"`
+	YjsVersion int64                `json:"yjsVersion" minimum:"1"`
 }
 
 type projectMaterialInput struct {

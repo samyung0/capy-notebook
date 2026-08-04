@@ -1,4 +1,5 @@
-import { useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useCallback, useMemo, useState } from 'react';
 import {
   useMaterial,
   useMaterialCollaborationToken,
@@ -7,14 +8,15 @@ import {
   useWorkspaceMembers,
 } from '@/api/hooks';
 import type { Material, WorkspaceRole } from '@/api/types';
-import { Spinner } from "@/components/ui/feedback";
-import { FileLoading, FileError } from "@/features/files/FileStates";
+import { Spinner } from '@/components/ui/feedback';
+import { userToast } from '@/components/ui/userToast';
+import { FileError, FileLoading } from '@/features/files/FileStates';
 import {
   EditorRuntimeProvider,
   type EditorRuntimeValue,
-} from "./EditorRuntime";
-import type { NoteEditorMode, NoteEditorStatus } from "./editorMode";
-import { NoteEditorCore } from "./NoteEditorCore";
+} from './EditorRuntime';
+import type { NoteEditorMode, NoteEditorStatus } from './editorMode';
+import { NoteEditorCore } from './NoteEditorCore';
 
 export function NoteEditor({
   materialId,
@@ -48,8 +50,8 @@ export function NoteEditor({
   }
 
   const modeAllowed =
-    (mode === "edit" && material.capabilities.canEdit) ||
-    (mode === "comment" &&
+    (mode === 'edit' && material.capabilities.canEdit) ||
+    (mode === 'comment' &&
       (material.capabilities.canEdit || material.capabilities.canComment));
   if (!modeAllowed) {
     return (
@@ -85,9 +87,29 @@ function CollaborativeNoteEditor({
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
   collaborationActionsHost?: HTMLElement | null;
 }) {
+  const queryClient = useQueryClient();
   const me = useMe();
+  // The collaboration service discards a room whose document breaks the
+  // material limits, so the local Y.Doc becomes a fork the moment that happens.
+  // Remounting is the only way back onto the authoritative state: invalidating
+  // the token alone can return the same room and leave this editor mounted.
+  const [editorGeneration, setEditorGeneration] = useState(0);
+  const onDocumentRejected = useCallback(
+    (message: string) => {
+      userToast({
+        description: `${message} Recent changes were discarded and the note was reloaded from the last saved version.`,
+        title: 'Note too large to save',
+        variant: 'error',
+      });
+      setEditorGeneration((generation) => generation + 1);
+      void queryClient.invalidateQueries({
+        queryKey: ['material', material.id, 'collaboration-token'],
+      });
+    },
+    [material.id, queryClient]
+  );
   const role: WorkspaceRole | null =
-    material.role ?? (material.isOwner ? "owner" : null);
+    material.role ?? (material.isOwner ? 'owner' : null);
   // Mentions/comments need the member directory for any collaborator, not only
   // owners who can manage invites (`canManageMembers`).
   const members = useWorkspaceMembers(material.workspaceId);
@@ -98,9 +120,9 @@ function CollaborativeNoteEditor({
   const users = useMemo(
     () =>
       Object.fromEntries(
-        (members.data ?? []).map((member) => [member.userId, member]),
+        (members.data ?? []).map((member) => [member.userId, member])
       ),
-    [members.data],
+    [members.data]
   );
 
   if (
@@ -151,9 +173,10 @@ function CollaborativeNoteEditor({
           currentUserId={me.data?.id ?? null}
           currentUserName={me.data?.name ?? null}
           discussions={discussions.data ?? []}
-          key={collaborationToken.data.room}
+          key={`${collaborationToken.data.room}:${editorGeneration}`}
           material={material}
           mode={mode}
+          onDocumentRejected={onDocumentRejected}
           onEditorStatusChange={onEditorStatusChange}
           users={users}
         />

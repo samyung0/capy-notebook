@@ -7,16 +7,11 @@
 -- The startup runner (internal/store.Migrate) re-applies this file on every
 -- boot, so everything must stay idempotent: IF NOT EXISTS / ON CONFLICT.
 --
--- Extensions:
---   * pgvector >= 0.7.0 (halfvec HNSW for LightRAG's 2560-dim embeddings) —
---     provided by the pgvector/pgvector:pg16 base of deploy/postgres/Dockerfile.
---   * Apache AGE must be preloaded: run Postgres with
---     `-c shared_preload_libraries=age` (set in deploy/docker-compose.yml).
---     LightRAG creates its own lightrag_* tables and AGE graph on
---     initialize_storages(); the Go migrator only ensures the extensions exist.
-
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE EXTENSION IF NOT EXISTS age;
+-- Extensions: none. Nothing below uses pgvector or Apache AGE — LightRAG owns
+-- its lightrag_* tables and AGE graph and creates both extensions itself in
+-- initialize_storages(). They are also provisioned up-front by
+-- deploy/postgres/initdb/00-extensions.sql. Keeping them out of this file lets
+-- the schema apply to a stock postgres:16 (see .github/workflows/ci.yml).
 
 -- ============================================================================
 -- Identity, workspaces, content tree

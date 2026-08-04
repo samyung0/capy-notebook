@@ -1330,11 +1330,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        checkpointIds:
-          items:
-            type: string
-          nullable: true
-          type: array
         content:
           $ref: "#/components/schemas/Envelope"
         yjsVersion:

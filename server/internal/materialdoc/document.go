@@ -18,7 +18,7 @@ import (
 const (
 	SchemaVersion    = 1
 	MaxDocumentBytes = 2 << 20
-	MaxDepth         = 64
+	MaxDepth         = 16
 	MaxNodes         = 10000
 	maxDocument      = MaxDocumentBytes
 	maxDepth         = MaxDepth

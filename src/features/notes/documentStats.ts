@@ -1,14 +1,14 @@
-import { type MaterialDocumentMetrics } from "@/features/materials/document";
-import { MATERIAL_DOCUMENT_LIMITS } from "@/lib/const";
+import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
+import type { MaterialDocumentStats } from './collaborationEvents';
 
 export function shouldShowDocumentStats(
-  metrics: MaterialDocumentMetrics,
-  contentBytes: number | null,
+  stats: MaterialDocumentStats | null
 ): boolean {
+  if (!stats) return false;
   return (
-    metrics.nodeCount >= MATERIAL_DOCUMENT_LIMITS.maxNodes / 2 ||
-    metrics.maxDepth >= MATERIAL_DOCUMENT_LIMITS.maxDepth / 2 ||
-    (contentBytes ?? 0) >= MATERIAL_DOCUMENT_LIMITS.maxContentBytes / 2
+    stats.nodeCount >= MATERIAL_DOCUMENT_LIMITS.maxNodes / 2 ||
+    stats.maxDepth >= MATERIAL_DOCUMENT_LIMITS.maxDepth / 2 ||
+    stats.contentBytes >= MATERIAL_DOCUMENT_LIMITS.maxContentBytes / 2
   );
 }
 
@@ -18,6 +18,6 @@ export function contentSizeKilobytes(contentBytes: number): number {
 
 export function formatContentSize(contentBytes: number | null): string {
   return contentBytes == null
-    ? "—"
+    ? '—'
     : `${contentSizeKilobytes(contentBytes).toLocaleString()} KB`;
 }

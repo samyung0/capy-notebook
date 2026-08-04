@@ -1,44 +1,44 @@
-import { USE_MSW } from "@/api/auth";
-import { useMe, useSearch } from "@/api/hooks";
-import type { SearchKind } from "@/api/types";
-import { Avatar } from "@/components/ui/Avatar";
-import { Card } from "@/components/ui/Card";
+import { useClerk } from '@clerk/react';
+import { useNavigate } from '@tanstack/react-router';
+import { useState } from 'react';
+import { USE_MSW } from '@/api/auth';
+import { useMe, useSearch } from '@/api/hooks';
+import type { SearchKind } from '@/api/types';
+import { Avatar } from '@/components/ui/Avatar';
+import { Card } from '@/components/ui/Card';
 import {
   Dialog,
   DialogClose,
   DialogContent,
   DialogTitle,
-} from "@/components/ui/Dialog";
-import { SkeletonList } from "@/components/ui/feedback";
-import { Icon } from "@/components/ui/Icon";
-import { IconButton } from "@/components/ui/IconButton";
-import { Input } from "@/components/ui/Input";
-import { Menu } from "@/components/ui/Menu";
-import { cn } from "@/lib/cn";
-import { useDebounced } from "@/lib/useDebounced";
-import { userColorPair } from "@/lib/userColor";
-import { useClerk } from "@clerk/react";
-import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+} from '@/components/ui/Dialog';
+import { SkeletonList } from '@/components/ui/feedback';
+import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
+import { Input } from '@/components/ui/Input';
+import { Menu } from '@/components/ui/Menu';
+import { cn } from '@/lib/cn';
+import { useDebounced } from '@/lib/useDebounced';
+import { userColorPair } from '@/lib/userColor';
 
 const CLERK_PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
   | string
   | undefined;
 const CLERK_ACTIVE = !USE_MSW && !!CLERK_PUBLISHABLE_KEY;
 
-import { NotificationsBell } from "@/features/notification/NotificationBell";
-import { m } from "@/i18n";
-import { usePortals } from "@/stores/portals";
-import { VisuallyHidden } from "radix-ui";
-import { MobileNavDrawer } from "./Sidebar";
-import { ThemeSwitchDrawer } from "./ThemeSwitchDrawer";
+import { VisuallyHidden } from 'radix-ui';
+import { NotificationsBell } from '@/features/notification/NotificationBell';
+import { m } from '@/i18n';
+import { usePortals } from '@/stores/portals';
+import { MobileNavDrawer } from './Sidebar';
+import { ThemeSwitchDrawer } from './ThemeSwitchDrawer';
 
-const KIND_ICON: Record<SearchKind, Parameters<typeof Icon>[0]["name"]> = {
-  event: "schedule",
-  file: "files",
-  flashcards: "flashcards",
-  thinking: "write",
-  workspace: "workspaces",
+const KIND_ICON: Record<SearchKind, Parameters<typeof Icon>[0]['name']> = {
+  event: 'schedule',
+  file: 'files',
+  flashcards: 'flashcards',
+  thinking: 'write',
+  workspace: 'workspaces',
 };
 
 export function SearchDialog({
@@ -48,7 +48,7 @@ export function SearchDialog({
   open: boolean;
   setOpen: (open: boolean) => void;
 }) {
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState('');
   const debounced = useDebounced(q, 400);
   const { data, isFetching } = useSearch(debounced);
   const navigate = useNavigate();
@@ -58,7 +58,7 @@ export function SearchDialog({
     <Dialog
       onOpenChange={(isOpen) => {
         setOpen(isOpen);
-        if (isOpen) setQ("");
+        if (isOpen) setQ('');
       }}
       open={open}
     >
@@ -67,7 +67,7 @@ export function SearchDialog({
         className="top-[12vh] translate-y-0"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
-          (e.currentTarget as HTMLElement).querySelector("input")?.focus();
+          (e.currentTarget as HTMLElement).querySelector('input')?.focus();
         }}
         showCloseButton={false}
       >
@@ -77,7 +77,7 @@ export function SearchDialog({
         <div className="flex max-h-[70vh] flex-col">
           <div className="flex items-center gap-2.5 border-divider border-b px-4 py-3">
             <span className="pl-1.5">
-              <Icon name="search" className="size-4.25" />
+              <Icon className="size-4.25" name="search" />
             </span>
             <Input
               onChange={(e) => setQ(e.target.value)}
@@ -178,28 +178,28 @@ function ProfilePillInner({ onLogout }: { onLogout?: () => void }) {
         alignWidthToTrigger
         items={[
           {
-            icon: "profile",
+            icon: 'profile',
             label: m.profile_menu_profile(),
-            onClick: () => navigate({ to: "/profile" }),
+            onClick: () => navigate({ to: '/profile' }),
           },
           {
-            icon: "settings",
+            icon: 'settings',
             label: m.profile_menu_subscription(),
-            onClick: () => navigate({ to: "/subscription" }),
+            onClick: () => navigate({ to: '/subscription' }),
           },
           {
-            icon: "settings",
+            icon: 'settings',
             label: m.profile_menu_settings(),
-            onClick: () => navigate({ to: "/settings" }),
+            onClick: () => navigate({ to: '/settings' }),
           },
           {
-            icon: "palette",
+            icon: 'palette',
             label: m.settings_theme(),
             onClick: () => setThemeOpen(true),
           },
           {
             danger: true,
-            icon: "logout",
+            icon: 'logout',
             label: m.profile_menu_logout(),
             onClick: onLogout,
           },
@@ -211,7 +211,7 @@ function ProfilePillInner({ onLogout }: { onLogout?: () => void }) {
           >
             <Avatar name={me?.name} size="md" src={me?.avatarUrl} />
             <span className="text-left">
-              <span className="block font-bold">{me?.name ?? "—"}</span>
+              <span className="block font-bold">{me?.name ?? '—'}</span>
             </span>
             <Icon className="text-fg-muted" name="chevronDown" size={16} />
           </button>
@@ -237,8 +237,8 @@ export function TopInsetBar({ className }: { className?: string }) {
     // the border radius should match the large panel/panel with inverted radius
     <Card
       className={cn(
-        "top-inset-bar-shape flex-row items-center justify-between gap-2.5 py-1.5 pr-3 pl-4",
-        className,
+        'top-inset-bar-shape flex-row items-center justify-between gap-2.5 py-1.5 pr-3 pl-4',
+        className
       )}
       radius="unset"
       theme="surface-dark"

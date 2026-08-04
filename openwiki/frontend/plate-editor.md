@@ -124,19 +124,51 @@ The editor reports:
 
 - `Connecting…`: opening or reconnecting;
 - `Synced`: provider convergence or a checkpoint awaiting durability;
-- `Saved`: the sidecar confirmed that a state containing this client's marker
-  was committed;
+- `Saved`: the sidecar confirmed that a state containing this client's work was
+  committed;
 - `Offline`;
 - `Collaboration unavailable`.
 
-On a value change, edit mode debounces a unique marker into the reserved
-`evo:checkpoints` Y.Map. After binary persistence commits, the sidecar broadcasts
-`checkpoint-persisted` with marker IDs and the stored version. Only that receipt
-changes the browser status to Saved.
+On a value change, edit mode debounces a `checkpoint-request` stateless message
+carrying a random receipt ID. The sidecar keeps the room's outstanding IDs in
+memory, claims them before it reads the document, and after binary persistence
+commits broadcasts `checkpoint-persisted` with those IDs, the stored version, and
+the current document metrics. Only that receipt changes the browser status to
+Saved. Receipts stay out of the Y.Doc deliberately: a marker written into the
+document would be an edit, so acknowledging it would dirty the room and force a
+second store and projection for every save.
+
+`mod+s` stays bound so the browser's own save dialog never opens; it flushes the
+debounce through the same path rather than running a second one. A client tracks
+every outstanding receipt, so editing again before the service answers cannot
+orphan an earlier request.
 
 The old REST content autosave, local revision refs, full-document replacement,
 draft unload warning, and five-second PATCH debounce do not exist. Public
 material PATCH updates metadata only.
+
+## Document limits and rejection
+
+The collaboration service owns limit enforcement; the browser never measures the
+document. `checkpoint-persisted` carries `{contentBytes, nodeCount, maxDepth}`
+for the stats footer and a `limitCode` when the committed document is over a
+limit.
+
+`beforeHandleMessage` measures an inbound update before it reaches the
+authoritative document, amortized over a budget of applied update bytes and
+tightening to every update near a limit. An over-limit document still accepts
+edits that do not worsen any dimension, otherwise the deletions needed to
+recover would be rejected too and the material would be permanently unsavable.
+
+A rejected update closes only the offending connection, preceded by a
+`document-rejected` stateless message so the client discards its now-forked Y.Doc
+instead of reconnecting and resending forever. If an over-limit document reaches
+the store hook anyway, the sidecar broadcasts `document-rejected` to the room and
+evicts it; Hocuspocus swallows store failures, so leaving the room loaded would
+mean it silently never persists again. `NoteEditor` responds by remounting
+`NoteEditorCore` under a new generation key, which reconnects onto the last
+durable state. Invalidating the collaboration token alone is not enough, because
+an unchanged room string leaves the editor mounted on its forked document.
 
 ## PostgreSQL read projection
 

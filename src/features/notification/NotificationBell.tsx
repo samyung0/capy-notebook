@@ -1,23 +1,23 @@
+import { useNavigate } from '@tanstack/react-router';
+import { useState } from 'react';
 import {
   useMarkNotificationRead,
   useMarkNotificationsRead,
   useNotificationStream,
   useNotifications,
   useUnreadNotificationCount,
-} from "@/api/hooks";
-import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
-import { IconButton } from "@/components/ui/IconButton";
+} from '@/api/hooks';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
+import { IconButton } from '@/components/ui/IconButton';
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@/components/ui/Popover";
-import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+} from '@/components/ui/Popover';
 
-import { m } from "@/i18n";
-import { NotificationItem } from "../../features/notification/NotificationItem";
+import { m } from '@/i18n';
+import { NotificationItem } from '../../features/notification/NotificationItem';
 
 export function NotificationsBell() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage } =
@@ -41,9 +41,9 @@ export function NotificationsBell() {
       <PopoverTrigger asChild>
         <IconButton
           className="shrink-0"
-          icon="bell"
           // NOTE: dont include unread notification numbers in ui display, labelling is OK for accessibility
           dot={unread}
+          icon="bell"
           label={bellLabel}
           size="md"
           variant="surface"
@@ -55,16 +55,16 @@ export function NotificationsBell() {
           className="block min-w-[320px] max-w-120 p-1"
           radius="card"
         >
-          <div className="flex items-center justify-between border-divider border-b px-4 py-2 h-9">
+          <div className="flex h-9 items-center justify-between border-divider border-b px-4 py-2">
             <span className="t-label text-fg-muted">
               {m.notifications_title()}
             </span>
             {unread && (
               <Button
                 className="text-xs"
+                onClick={() => markRead.mutate()}
                 size="xs"
                 variant="ghost-link"
-                onClick={() => markRead.mutate()}
               >
                 {m.notifications_mark_all_read()}
               </Button>
@@ -78,8 +78,9 @@ export function NotificationsBell() {
             )}
             {notifications.map((n) => (
               <Button
-                variant="ghost"
-                className={`border-divider active:scale-[0.98] group border-solid border-b rounded-none h-fit whitespace-normal px-4 py-3 last:border-0 w-full`}
+                className={
+                  'group h-fit w-full whitespace-normal rounded-none border-divider border-b border-solid px-4 py-3 last:border-0 active:scale-[0.98]'
+                }
                 key={n.id}
                 onClick={() => {
                   if (!n.readAt) markNotificationRead.mutate(n.id);
@@ -88,19 +89,20 @@ export function NotificationsBell() {
                   navigate({ to: n.href });
                 }}
                 type="button"
+                variant="ghost"
               >
                 <NotificationItem notification={n} />
               </Button>
             ))}
             {hasNextPage && (
-              <div className="flex items-center justify-center border-divider border-t pt-3 pb-2.5 px-4">
+              <div className="flex items-center justify-center border-divider border-t px-4 pt-3 pb-2.5">
                 <Button
-                  variant="ghost-muted"
-                  size="xs"
                   className="text-xs"
                   disabled={isFetchingNextPage}
                   onClick={() => void fetchNextPage()}
+                  size="xs"
                   type="button"
+                  variant="ghost-muted"
                 >
                   {isFetchingNextPage
                     ? m.notifications_loading()

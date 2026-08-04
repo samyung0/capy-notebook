@@ -4,34 +4,34 @@ import { cn } from '@/lib/cn';
 import { Icon, type IconName } from './Icon';
 
 export const BASE_BUTTON_STYLE =
-  "inline-flex relative rounded-button min-w-0 text-sm cursor-pointer select-none items-center justify-center whitespace-nowrap font-semibold leading-none outline-none transition-all duration-150 ease-out focus-visible:ring-2 focus-visible:ring-action active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50";
+  'inline-flex relative rounded-button min-w-0 text-sm cursor-pointer select-none items-center justify-center whitespace-nowrap font-semibold leading-none outline-none transition-all duration-150 ease-out focus-visible:ring-2 focus-visible:ring-action active:scale-[0.96] disabled:pointer-events-none disabled:opacity-50';
 
 const buttonVariants = cva(BASE_BUTTON_STYLE, {
   defaultVariants: {
-    size: "md",
-    variant: "dark",
+    size: 'md',
+    variant: 'dark',
   },
   variants: {
     size: {
-      lg: "h-13 min-w-24 gap-2.25 rounded-full px-6.5",
-      md: "h-11 gap-2 px-5",
-      sm: "h-7.5 gap-1.75 px-4",
-      xs: "h-fit gap-1.5 px-0.5 py-0.5",
+      lg: 'h-13 min-w-24 gap-2.25 rounded-full px-6.5',
+      md: 'h-11 gap-2 px-5',
+      sm: 'h-7.5 gap-1.75 px-4',
+      xs: 'h-fit gap-1.5 px-0.5 py-0.5',
     },
     variant: {
       accent:
-        "border border-transparent bg-action-accent text-action-accent-fg hover:bg-action-accent-hover",
+        'border border-transparent bg-action-accent text-action-accent-fg hover:bg-action-accent-hover',
       danger:
-        "border border-transparent bg-solid-error text-surface hover:brightness-95",
-      dark: "border border-transparent bg-action text-action-fg outline-offset-2 hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-action focus-visible:ring-0",
-      ghost: "border-none",
-      "ghost-hover": "border-none text-fg hover:bg-surface-hover-bg/80",
-      "ghost-link": "border-none text-link hover:text-link-hover",
+        'border border-transparent bg-solid-error text-surface hover:brightness-95',
+      dark: 'border border-transparent bg-action text-action-fg outline-offset-2 hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-action focus-visible:ring-0',
+      ghost: 'border-none',
+      'ghost-hover': 'border-none text-fg hover:bg-surface-hover-bg/80',
+      'ghost-link': 'border-none text-link hover:text-link-hover',
+      'ghost-muted': 'border-none text-fg-muted hover:text-fg/80',
       outline:
-        "border border-line bg-surface text-fg hover:bg-surface-hover-bg/80",
+        'border border-line bg-surface text-fg hover:bg-surface-hover-bg/80',
       surface:
-        "border border-transparent bg-surface text-fg hover:bg-surface-hover-bg",
-      "ghost-muted": "border-none text-fg-muted hover:text-fg/80",
+        'border border-transparent bg-surface text-fg hover:bg-surface-hover-bg',
     },
   },
 });

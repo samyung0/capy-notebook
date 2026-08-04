@@ -2056,7 +2056,6 @@ export const ProjectMaterialYjsDocumentHeader = zod.object({
 
 
 export const ProjectMaterialYjsDocumentBody = zod.object({
-  "checkpointIds": zod.array(zod.string()).nullish(),
   "content": zod.object({
   "schemaVersion": zod.number(),
   "value": zod.array(zod.record(zod.string(), zod.unknown())).nullable()

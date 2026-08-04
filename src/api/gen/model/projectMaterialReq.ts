@@ -9,8 +9,6 @@ import type { Envelope } from './envelope.ts';
 export interface ProjectMaterialReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** @nullable */
-  checkpointIds?: string[] | null;
   content: Envelope;
   /** @minimum 1 */
   yjsVersion: number;

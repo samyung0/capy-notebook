@@ -5,6 +5,7 @@ import type {
   Question,
   QuestionType,
 } from '@/api/types';
+import { MATERIAL_SCHEMA_VERSION } from '@/lib/const';
 import { uid } from '@/lib/id';
 import {
   type FlashcardContent,
@@ -12,7 +13,6 @@ import {
   parseQuizFenceBody,
   type QuizBlock,
 } from './blocks';
-import { MATERIAL_SCHEMA_VERSION } from "@/lib/const";
 
 export interface MaterialDocumentMetrics {
   maxDepth: number;
@@ -410,23 +410,6 @@ export function normalizeMaterialValueWithMetrics(value: MaterialValue): {
 
 export function normalizeMaterialValue(value: MaterialValue): MaterialValue {
   return normalizeMaterialValueInternal(value);
-}
-
-/** Read-only node count and depth. Unlike the normalize walk this allocates
- * nothing, so it is cheap enough to run against live editor content on a
- * throttled cadence for the document-stats footer. */
-export function countMaterialMetrics(
-  value: MaterialValue
-): MaterialDocumentMetrics {
-  const metrics: MaterialDocumentMetrics = { maxDepth: 0, nodeCount: 0 };
-  const visit = (node: MaterialNode, depth: number) => {
-    metrics.nodeCount += 1;
-    if (depth > metrics.maxDepth) metrics.maxDepth = depth;
-    if ('text' in node) return;
-    for (const child of node.children) visit(child, depth + 1);
-  };
-  for (const node of value) visit(node, 0);
-  return metrics;
 }
 
 export function emptyMaterialDocument(): MaterialDocument {

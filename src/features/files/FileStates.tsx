@@ -1,8 +1,8 @@
-import { Spinner } from "@/components/ui/feedback";
-import { Icon } from "@/components/ui/Icon";
+import { Spinner } from '@/components/ui/feedback';
+import { Icon } from '@/components/ui/Icon';
 
 export function FileLoading({
-  message = "Loading preview...",
+  message = 'Loading preview...',
 }: {
   message?: string;
 }) {
@@ -15,7 +15,7 @@ export function FileLoading({
 }
 
 export function FileError({
-  title = "Something went wrong",
+  title = 'Something went wrong',
   message = "We can't load the file. The file maybe missing or deleted.",
 }: {
   title?: string;
@@ -35,8 +35,8 @@ export function FileError({
 }
 
 export function FileEmpty({
-  title = "Something went wrong",
-  message = "The file is empty or corrupted. Please reupload and try again.",
+  title = 'Something went wrong',
+  message = 'The file is empty or corrupted. Please reupload and try again.',
 }: {
   title?: string;
   message?: string;
