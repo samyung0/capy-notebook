@@ -15,13 +15,13 @@ import (
 //go:embed templates/*.gohtml templates/*.txt
 var templateFS embed.FS
 
-var subjectTemplates = map[string]string{
-	"workspace-invite.en":         "You're invited to join {{.WorkspaceName}} on Evo Notes",
-	"workspace-invite.zh":         "邀请你加入 Evo Notes 工作区 {{.WorkspaceName}}",
-	"workspace-role-changed.en":   "Your role changed in {{.WorkspaceName}}",
-	"workspace-role-changed.zh":   "你在 {{.WorkspaceName}} 中的角色已更改",
-	"workspace-member-removed.en": "You were removed from {{.WorkspaceName}}",
-	"workspace-member-removed.zh": "你已被移出 {{.WorkspaceName}}",
+// RoleLabel translates a workspace role for use inside an email. Unknown roles
+// fall back to the raw identifier so a new role never blocks delivery.
+func RoleLabel(role, locale string) string {
+	if label, ok := roleLabels[role+"."+normalizeLocale(locale)]; ok {
+		return label
+	}
+	return role
 }
 
 func Render(templateName, locale string, data any) (subject, html, text string, err error) {

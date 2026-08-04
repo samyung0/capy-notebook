@@ -15,4 +15,4 @@ Evo Notes
 
 你收到这封邮件是因为有人邀请你加入 Evo Notes 工作区。
 
-{{.UnsubscribeText}} {{.UnsubscribeURL}}
+管理产品邮件偏好 {{.UnsubscribeURL}}

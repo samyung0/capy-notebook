@@ -1,41 +1,46 @@
 import { Button, Heading, Link, Text } from '@react-email/components';
 // biome-ignore lint/correctness/noUnusedImports: the email renderer uses the classic JSX runtime
 import * as React from 'react';
+import { type EmailLocale, m } from './i18n';
 import { EmailLayout } from './layout';
 
 export interface WorkspaceInviteEmailProps {
-  Body: string;
-  Button: string;
-  Fallback: string;
-  Footer: string;
-  Greeting: string;
-  Heading: string;
-  InviteURL: string;
-  Preview: string;
-  UnsubscribeText: string;
-  WorkspaceName: string;
+  inviteUrl: string;
+  locale: EmailLocale;
+  unsubscribeUrl: string;
+  workspaceName: string;
 }
 
-export function WorkspaceInviteEmail({
-  Body,
-  Button: buttonLabel,
-  Fallback,
-  Footer,
-  Greeting,
-  Heading: heading,
-  InviteURL,
-  Preview,
-  UnsubscribeText: _unsubscribeText,
+function WorkspaceInviteEmail({
+  inviteUrl,
+  locale,
+  unsubscribeUrl,
+  workspaceName,
 }: WorkspaceInviteEmailProps) {
   return (
-    <EmailLayout footer={Footer} preview={Preview}>
-      <Heading>{heading}</Heading>
-      <Text>{Greeting}</Text>
-      <Text>{Body}</Text>
-      <Button href={InviteURL}>{buttonLabel}</Button>
+    <EmailLayout
+      footer={m.email_invite_footer({}, { locale })}
+      locale={locale}
+      preview={m.email_invite_preview({}, { locale })}
+      unsubscribeUrl={unsubscribeUrl}
+    >
+      <Heading>{m.email_invite_heading({}, { locale })}</Heading>
+      <Text>{m.email_invite_greeting({}, { locale })}</Text>
+      <Text>{m.email_invite_body({ workspaceName }, { locale })}</Text>
+      <Button href={inviteUrl}>{m.email_invite_button({}, { locale })}</Button>
       <Text>
-        {Fallback} <Link href={InviteURL}>{InviteURL}</Link>
+        {m.email_invite_fallback({}, { locale })}{' '}
+        <Link href={inviteUrl}>{inviteUrl}</Link>
       </Text>
     </EmailLayout>
   );
 }
+
+WorkspaceInviteEmail.PreviewProps = {
+  inviteUrl: 'https://example.com/invite/abc',
+  locale: 'en',
+  unsubscribeUrl: 'https://example.com/settings',
+  workspaceName: 'Acme',
+} satisfies WorkspaceInviteEmailProps;
+
+export default WorkspaceInviteEmail;

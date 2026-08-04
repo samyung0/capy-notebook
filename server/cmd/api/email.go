@@ -164,11 +164,7 @@ func sendOutboxEmail(
 			data["OpenURL"] = appURL + "/workspaces/" + url.PathEscape(workspaceID)
 		}
 	}
-	data["RoleName"] = localizedRole(stringValue(data, "role"), locale)
-	data["UnsubscribeText"] = map[string]string{
-		"en": "Manage product email preferences",
-		"zh": "管理产品邮件偏好",
-	}[locale]
+	data["RoleName"] = mail.RoleLabel(stringValue(data, "role"), locale)
 
 	category := "membership"
 	if item.Template == "workspace-invite" {
@@ -234,30 +230,6 @@ func retryAfterForEmail(err error) time.Duration {
 func stringValue(data map[string]any, key string) string {
 	value, _ := data[key].(string)
 	return value
-}
-
-func localizedRole(role, locale string) string {
-	if locale == "zh" {
-		switch role {
-		case "editor":
-			return "编辑者"
-		case "commenter":
-			return "评论者"
-		case "viewer":
-			return "查看者"
-		}
-		return role
-	}
-	switch role {
-	case "editor":
-		return "Editor"
-	case "commenter":
-		return "Commenter"
-	case "viewer":
-		return "Viewer"
-	default:
-		return role
-	}
 }
 
 func normalizeAppURL(appURL string) string {

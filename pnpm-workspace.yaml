@@ -8,3 +8,4 @@ allowBuilds:
   canvas: true
   esbuild: true
   msw: true
+  sharp: true

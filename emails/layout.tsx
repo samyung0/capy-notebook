@@ -12,16 +12,25 @@ import {
 import type { ReactNode } from 'react';
 // biome-ignore lint/correctness/noUnusedImports: the email renderer uses the classic JSX runtime
 import * as React from 'react';
+import { type EmailLocale, m } from './i18n';
 
 export interface EmailLayoutProps {
   children: ReactNode;
   footer: string;
+  locale: EmailLocale;
   preview: string;
+  unsubscribeUrl: string;
 }
 
-export function EmailLayout({ children, footer, preview }: EmailLayoutProps) {
+export function EmailLayout({
+  children,
+  footer,
+  locale,
+  preview,
+  unsubscribeUrl,
+}: EmailLayoutProps) {
   return (
-    <Html>
+    <Html lang={locale}>
       <Head />
       <Preview>{preview}</Preview>
       <Body style={body}>
@@ -31,8 +40,8 @@ export function EmailLayout({ children, footer, preview }: EmailLayoutProps) {
           <Hr style={rule} />
           <Text style={footerStyle}>{footer}</Text>
           <Text style={footerStyle}>
-            <Link href={'{{.UnsubscribeURL}}'} style={link}>
-              {'{{.UnsubscribeText}}'}
+            <Link href={unsubscribeUrl} style={link}>
+              {m.email_common_unsubscribe({}, { locale })}
             </Link>
           </Text>
         </Container>

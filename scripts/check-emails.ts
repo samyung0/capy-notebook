@@ -1,12 +1,17 @@
 import { execFileSync } from 'node:child_process';
 
-const templateDir = 'server/internal/mail/templates';
+// Copy lives in messages/*.json, but the API embeds prerendered artifacts, so a
+// translation edit without a rebuild silently ships stale emails.
+const generated = [
+  'server/internal/mail/templates',
+  'server/internal/mail/copy_gen.go',
+];
 
 // `git diff` alone would miss a brand-new template the build script just
 // added, since untracked files never show up in a diff.
 const status = execFileSync(
   'git',
-  ['status', '--porcelain', '--untracked-files=all', '--', templateDir],
+  ['status', '--porcelain', '--untracked-files=all', '--', ...generated],
   { encoding: 'utf8' }
 ).trim();
 

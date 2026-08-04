@@ -15,4 +15,4 @@ Evo Notes
 
 你收到这封邮件是因为 Evo Notes 工作区成员身份发生了变化。
 
-{{.UnsubscribeText}} {{.UnsubscribeURL}}
+管理产品邮件偏好 {{.UnsubscribeURL}}

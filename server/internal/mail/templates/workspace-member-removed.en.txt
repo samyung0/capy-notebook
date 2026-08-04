@@ -13,4 +13,4 @@ Open Evo Notes {{.OpenURL}}
 
 You received this message because your Evo Notes workspace membership changed.
 
-{{.UnsubscribeText}} {{.UnsubscribeURL}}
+Manage product email preferences {{.UnsubscribeURL}}
