@@ -4,18 +4,23 @@ Self-hosted Hocuspocus/Yjs authority for live Plate material content.
 
 ## Configuration
 
-Required:
+Local `pnpm dev` works with no env file: missing values fall back to the same
+defaults as `deploy/docker-compose.yml` / the Go API
+(`http://localhost:5173`, `dev-collaboration-secret`, local Postgres/Redis).
+
+Optional: `cp .env.example .env` and edit. `dev` / `start` / `chaos` load
+`.env` via Node `--env-file-if-exists` when present.
 
 ```text
-DATABASE_URL=postgres://...
-REDIS_URL=redis://...
-API_URL=http://server:8080
-COLLABORATION_SECRET=<same value as Go>
-COLLABORATION_ALLOWED_ORIGINS=https://app.example.com
+COLLABORATION_ALLOWED_ORIGINS=http://localhost:5173   # comma-separated
+COLLABORATION_SECRET=dev-collaboration-secret         # must match Go
+API_URL=http://localhost:8080
+DATABASE_URL=postgres://evo:evo@localhost:5432/evo?sslmode=disable
+REDIS_URL=redis://localhost:6379/0
 ```
 
-Optional controls include `PORT` (1234),
-`COLLABORATION_DEBOUNCE_MS` (2000),
+Production must set these explicitly (docker-compose already does). Optional
+controls include `PORT` (1234), `COLLABORATION_DEBOUNCE_MS` (2000),
 `COLLABORATION_MAX_DEBOUNCE_MS` (10000), and
 `COLLABORATION_MAX_PAYLOAD_BYTES` (2 MiB).
 
