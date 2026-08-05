@@ -30,12 +30,17 @@ type updateWorkspaceMemberInput struct {
 	MemberID string `path:"memberId"`
 	Body     apimodel.UpdateWorkspaceMemberReq
 }
+type transferWorkspaceInput struct {
+	ID   string `path:"id"`
+	Body apimodel.TransferWorkspaceReq
+}
 
 func (a *api) registerMembership(api huma.API) {
 	const tag = "Workspace collaboration"
 	reg(api, http.MethodGet, "/api/workspaces/{id}/members", "listWorkspaceMembers", tag, "List workspace members", http.StatusOK, a.listWorkspaceMembers)
 	reg(api, http.MethodPatch, "/api/workspaces/{id}/members/{memberId}", "updateWorkspaceMember", tag, "Change a workspace member role", http.StatusNoContent, a.updateWorkspaceMember)
 	reg(api, http.MethodDelete, "/api/workspaces/{id}/members/{memberId}", "removeWorkspaceMember", tag, "Remove a workspace member", http.StatusNoContent, a.removeWorkspaceMember)
+	reg(api, http.MethodPost, "/api/workspaces/{id}/transfer", "transferWorkspace", tag, "Transfer workspace ownership to another member", http.StatusOK, a.transferWorkspace)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/invites", "createWorkspaceInvite", tag, "Privately invite a workspace member", http.StatusAccepted, a.createWorkspaceInvite)
 	reg(api, http.MethodPost, "/api/workspace-invites/{token}/accept", "acceptWorkspaceInvite", tag, "Accept a workspace invite", http.StatusOK, a.acceptWorkspaceInvite)
 }
@@ -117,6 +122,24 @@ func (a *api) updateWorkspaceMember(ctx context.Context, in *updateWorkspaceMemb
 	}
 	a.publishWorkspaceEvictions(ctx, in.ID)
 	return &Empty{}, nil
+}
+
+// transferWorkspace hands ownership, and the storage bill, to another member.
+// Every collaborator's room token is invalidated afterwards: their effective role
+// changed, and the token carries the old one.
+func (a *api) transferWorkspace(ctx context.Context, in *transferWorkspaceInput) (*workspaceOutput, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
+	ws, err := a.s.TransferWorkspace(ctx, userID(ctx), in.ID, in.Body.RecipientID)
+	if errors.Is(err, store.ErrTransferSelf) {
+		return nil, huma.Error409Conflict(err.Error())
+	}
+	if err != nil {
+		return nil, collaborationError(err)
+	}
+	a.publishWorkspaceEvictions(ctx, in.ID)
+	return &workspaceOutput{Body: apimodel.FromWorkspace(ws)}, nil
 }
 
 func (a *api) removeWorkspaceMember(ctx context.Context, in *workspaceMemberInput) (*Empty, error) {

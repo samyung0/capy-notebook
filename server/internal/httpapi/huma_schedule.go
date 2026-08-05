@@ -63,6 +63,9 @@ func (a *api) listEvents(ctx context.Context, _ *struct{}) (*eventsOutput, error
 }
 
 func (a *api) createEvent(ctx context.Context, in *createEventInput) (*eventOutput, error) {
+	if err := a.requireAccountCreate(ctx); err != nil {
+		return nil, err
+	}
 	e := store.Event{
 		Title: in.Body.Title, Start: in.Body.Start, End: in.Body.End,
 		LabelIDs: in.Body.LabelIDs, Location: in.Body.Location, Note: in.Body.Note,
@@ -75,6 +78,9 @@ func (a *api) createEvent(ctx context.Context, in *createEventInput) (*eventOutp
 }
 
 func (a *api) updateEvent(ctx context.Context, in *updateEventInput) (*eventOutput, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
 	p := store.EventPatch{
 		Title: in.Body.Title, Start: in.Body.Start, End: in.Body.End,
 		LabelIDs: in.Body.LabelIDs, Location: in.Body.Location, Note: in.Body.Note,
@@ -87,6 +93,9 @@ func (a *api) updateEvent(ctx context.Context, in *updateEventInput) (*eventOutp
 }
 
 func (a *api) deleteEvent(ctx context.Context, in *eventIDInput) (*Empty, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
 	if err := a.s.DeleteEvent(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
@@ -110,6 +119,9 @@ func (a *api) listTasks(ctx context.Context, _ *struct{}) (*tasksOutput, error) 
 }
 
 func (a *api) updateTask(ctx context.Context, in *updateTaskInput) (*taskOutput, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
 	res, err := a.s.UpdateTask(ctx, in.ID, store.TaskPatch{Title: in.Body.Title, Meta: in.Body.Meta, Done: in.Body.Done})
 	if err != nil {
 		return nil, hErr(err)

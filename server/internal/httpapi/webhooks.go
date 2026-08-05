@@ -11,6 +11,7 @@ import (
 	svix "github.com/svix/svix-webhooks/go"
 
 	"github.com/evonotes/server/internal/billing"
+	"github.com/evonotes/server/internal/store"
 )
 
 // webhookStore is the narrow slice of *store.Store the webhook handlers touch.
@@ -22,10 +23,25 @@ type webhookStore interface {
 	MarkWebhookProcessed(ctx context.Context, id string, procErr error) error
 	UpsertUserFromWebhook(ctx context.Context, id, name, email, avatarURL string) error
 	CreateDefaultWorkspace(ctx context.Context, userID string) error
-	MarkUserDeleted(ctx context.Context, id string) error
+	MarkIdentityDeleted(ctx context.Context, id string) error
 	UserIDByStripeCustomer(ctx context.Context, customerID string) (string, error)
 	SetStripeCustomerID(ctx context.Context, userID, customerID string) error
-	UpdateSubscriptionByCustomerID(ctx context.Context, customerID, status, planTier string) error
+	UpsertSubscription(ctx context.Context, sub store.Subscription) error
+	MarkSubscriptionPastDue(ctx context.Context, subscriptionID string, eventCreated int64) error
+}
+
+// invoiceSubscriptionID digs the subscription out of an invoice. As of API
+// version 2025-xx the link moved from invoice.subscription to
+// invoice.parent.subscription_details, so reading the old field silently returns
+// nothing.
+func invoiceSubscriptionID(invoice *stripe.Invoice) string {
+	if invoice.Parent == nil || invoice.Parent.SubscriptionDetails == nil {
+		return ""
+	}
+	if sub := invoice.Parent.SubscriptionDetails.Subscription; sub != nil {
+		return sub.ID
+	}
+	return ""
 }
 
 func (a *api) clerkWebhook(w http.ResponseWriter, r *http.Request) {
@@ -112,6 +128,9 @@ func (a *api) clerkWebhook(w http.ResponseWriter, r *http.Request) {
 			_ = a.wh.CreateDefaultWorkspace(r.Context(), wrapper.ID)
 		}
 	case "user.deleted":
+		// The identity was removed outside the app (Clerk dashboard, or our own
+		// purge job finishing the job). Enter the same deletion flow with no
+		// reactivation window, since the user can no longer sign in to claim it.
 		var data struct {
 			ID string `json:"id"`
 		}
@@ -119,7 +138,7 @@ func (a *api) clerkWebhook(w http.ResponseWriter, r *http.Request) {
 			procErr = err
 			break
 		}
-		procErr = a.wh.MarkUserDeleted(r.Context(), data.ID)
+		procErr = a.wh.MarkIdentityDeleted(r.Context(), data.ID)
 	}
 
 	_ = a.wh.MarkWebhookProcessed(r.Context(), eventID, procErr)
@@ -165,8 +184,19 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 		if userID == "" && sess.Customer != nil {
 			userID, _ = a.wh.UserIDByStripeCustomer(r.Context(), sess.Customer.ID)
 		}
-		if userID != "" && sess.Customer != nil {
+		if userID == "" {
+			break
+		}
+		if sess.Customer != nil {
 			_ = a.wh.SetStripeCustomerID(r.Context(), userID, sess.Customer.ID)
+		}
+		// The tier is recorded here too, not just on the subscription events.
+		// Linking the customer alone used to leave a paying user on free limits
+		// until customer.subscription.created happened to arrive, and Stripe does
+		// not order the two.
+		if sess.Subscription != nil {
+			procErr = a.wh.UpsertSubscription(r.Context(), billing.SubscriptionRecord(
+				sess.Subscription, userID, a.cfg.StripePricePro, event.Created))
 		}
 	case "customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted":
 		var sub stripe.Subscription
@@ -174,21 +204,32 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 			procErr = err
 			break
 		}
-		customerID := ""
+		userID := ""
 		if sub.Customer != nil {
-			customerID = sub.Customer.ID
+			userID, _ = a.wh.UserIDByStripeCustomer(r.Context(), sub.Customer.ID)
 		}
-		status := billing.SubscriptionStatus(sub.Status)
-		planTier := "free"
-		if len(sub.Items.Data) > 0 && sub.Items.Data[0].Price != nil {
-			planTier = billing.PlanTierFromPrice(sub.Items.Data[0].Price.ID, a.cfg.StripePricePro)
+		if userID == "" {
+			break
 		}
+		record := billing.SubscriptionRecord(&sub, userID, a.cfg.StripePricePro, event.Created)
 		if event.Type == "customer.subscription.deleted" {
-			status = "canceled"
-			planTier = "free"
+			// Stripe reports the status at deletion, which for an immediate
+			// cancellation can still read active. The event is the authority.
+			record.Status = "canceled"
+			record.PlanTier = store.PlanFree
 		}
-		if customerID != "" {
-			procErr = a.wh.UpdateSubscriptionByCustomerID(r.Context(), customerID, status, planTier)
+		procErr = a.wh.UpsertSubscription(r.Context(), record)
+	case "invoice.payment_failed":
+		// The first signal that entitlement is about to lapse. Nothing used to
+		// handle it, so past_due was written by subscription updates and then
+		// never read for enforcement anywhere.
+		var invoice stripe.Invoice
+		if err := json.Unmarshal(event.Data.Raw, &invoice); err != nil {
+			procErr = err
+			break
+		}
+		if subID := invoiceSubscriptionID(&invoice); subID != "" {
+			procErr = a.wh.MarkSubscriptionPastDue(r.Context(), subID, event.Created)
 		}
 	}
 

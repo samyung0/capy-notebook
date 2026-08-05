@@ -19,7 +19,7 @@ func (a *api) emailUnsubscribe(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid unsubscribe link", http.StatusBadRequest)
 		return
 	}
-	if category != "workspace_invite" && category != "membership" {
+	if category != "workspace_invite" && category != "membership" && category != "billing" {
 		http.Error(w, "invalid unsubscribe category", http.StatusBadRequest)
 		return
 	}

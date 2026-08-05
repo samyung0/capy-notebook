@@ -1,18 +1,22 @@
 package billing
 
 import (
+	"time"
+
 	"github.com/stripe/stripe-go/v82"
+	bportalsession "github.com/stripe/stripe-go/v82/billingportal/session"
 	"github.com/stripe/stripe-go/v82/checkout/session"
 	"github.com/stripe/stripe-go/v82/customer"
-	bportalsession "github.com/stripe/stripe-go/v82/billingportal/session"
 	"github.com/stripe/stripe-go/v82/subscription"
+
+	"github.com/evonotes/server/internal/store"
 )
 
 // Config holds Stripe settings.
 type Config struct {
-	SecretKey   string
-	PricePro    string
-	AppURL      string
+	SecretKey     string
+	PricePro      string
+	AppURL        string
 	WebhookSecret string
 }
 
@@ -118,4 +122,42 @@ func ListActiveSubscription(customerID string) (*stripe.Subscription, error) {
 		return iter.Subscription(), nil
 	}
 	return nil, iter.Err()
+}
+
+// SubscriptionRecord maps a Stripe subscription onto our record. The period
+// end lives on the subscription item in the current API version, not on the
+// subscription itself, which is why nothing used to persist it.
+func SubscriptionRecord(
+	sub *stripe.Subscription,
+	userID, pricePro string,
+	eventCreated int64,
+) store.Subscription {
+	out := store.Subscription{
+		StripeSubscriptionID: sub.ID,
+		UserID:               userID,
+		Status:               SubscriptionStatus(sub.Status),
+		PlanTier:             store.PlanFree,
+		CancelAtPeriodEnd:    sub.CancelAtPeriodEnd,
+		StripeEventCreated:   eventCreated,
+	}
+	if len(sub.Items.Data) > 0 {
+		item := sub.Items.Data[0]
+		if item.Price != nil {
+			out.PriceID = item.Price.ID
+			out.PlanTier = store.PlanTier(PlanTierFromPrice(item.Price.ID, pricePro))
+		}
+		if item.CurrentPeriodEnd > 0 {
+			end := time.Unix(item.CurrentPeriodEnd, 0).UTC()
+			out.CurrentPeriodEnd = &end
+		}
+	}
+	if sub.CanceledAt > 0 {
+		at := time.Unix(sub.CanceledAt, 0).UTC()
+		out.CanceledAt = &at
+	}
+	if sub.EndedAt > 0 {
+		at := time.Unix(sub.EndedAt, 0).UTC()
+		out.EndedAt = &at
+	}
+	return out
 }

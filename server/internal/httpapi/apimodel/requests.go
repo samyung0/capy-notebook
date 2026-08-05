@@ -95,6 +95,13 @@ type UpdateWorkspaceMemberReq struct {
 	Role store.WorkspaceRole `json:"role"`
 }
 
+// TransferWorkspaceReq hands a workspace to another member. The recipient must
+// already be a member: transfer charges them for every byte in the workspace, so
+// it cannot be done to somebody who has not opted in.
+type TransferWorkspaceReq struct {
+	RecipientID string `json:"recipientId" minLength:"1"`
+}
+
 type CreateDiscussionReq struct {
 	BlockID       *string          `json:"blockId,omitempty"`
 	AnchorStart   []byte           `json:"anchorStart,omitempty" maxLength:"4096"`
@@ -273,4 +280,10 @@ func EncodeRaw(v any) json.RawMessage {
 		return nil
 	}
 	return b
+}
+
+// RequestAccountDeletionReq confirms an irreversible action. The email is
+// re-typed by the user and verified server-side.
+type RequestAccountDeletionReq struct {
+	ConfirmEmail string `json:"confirmEmail" required:"true" maxLength:"320"`
 }

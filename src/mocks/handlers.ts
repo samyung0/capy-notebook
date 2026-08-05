@@ -68,7 +68,16 @@ interface MockInviteCandidate {
 
 const mockDiscussions: MaterialDiscussion[] = [];
 const mockWorkspaceInvites: MockWorkspaceInvite[] = [];
-const mockWorkspaceMembers: WorkspaceMember[] = [];
+const mockWorkspaceMembers: WorkspaceMember[] = [
+  {
+    createdAt: new Date().toISOString(),
+    email: 'morgan@example.com',
+    name: 'Morgan Lee',
+    role: 'editor',
+    userId: 'u_mock_collaborator',
+    workspaceId: 'ws_bio',
+  },
+];
 const mockInviteCandidates: MockInviteCandidate[] = [
   {
     email: 'morgan@example.com',
@@ -203,6 +212,53 @@ export const handlers = [
   http.get('/api/me', async () => {
     await latency();
     return HttpResponse.json(db.user);
+  }),
+  http.get('/api/account/status', async () => {
+    await latency();
+    return HttpResponse.json({
+      ...db.accountStatus,
+      userId: db.user.id,
+    });
+  }),
+  http.get('/api/account/deletion', async () => {
+    await latency();
+    const needingTransfer = db.workspaces.filter(
+      (ws) =>
+        ws.role === 'owner' &&
+        mockWorkspaceMembers.some((member) => member.workspaceId === ws.id)
+    );
+    const toDestroy = db.workspaces.filter(
+      (ws) =>
+        ws.role === 'owner' &&
+        !mockWorkspaceMembers.some((member) => member.workspaceId === ws.id)
+    );
+    return HttpResponse.json({
+      canDelete: needingTransfer.length === 0,
+      graceDays: 30,
+      storageUsedBytes: db.accountStatus.storageUsedBytes,
+      workspacesNeedingTransfer: needingTransfer,
+      workspacesToDestroy: toDestroy,
+    });
+  }),
+  http.post('/api/account/deletion', async ({ request }) => {
+    await latency();
+    const body = (await request.json()) as { confirmEmail?: string };
+    if (
+      !body.confirmEmail ||
+      body.confirmEmail.toLowerCase() !== db.user.email.toLowerCase()
+    ) {
+      return HttpResponse.json(
+        { message: 'confirmation does not match the account email' },
+        { status: 400 }
+      );
+    }
+    const purgeAfter = new Date();
+    purgeAfter.setDate(purgeAfter.getDate() + 30);
+    db.accountStatus.deletionRequestedAt = new Date().toISOString();
+    db.accountStatus.purgeAfter = purgeAfter.toISOString();
+    db.accountStatus.state = 'deletion_pending';
+    db.accountStatus.userId = db.user.id;
+    return HttpResponse.json({ ...db.accountStatus });
   }),
   http.patch('/api/me/locale', async ({ request }) => {
     const body = (await request.json()) as { locale?: string };
@@ -377,7 +433,9 @@ export const handlers = [
         .filter((m) => m.workspaceId === ws.id)
         .map((m) => m.id)
     );
-    const att = db.attempts.filter((a) => wsQuizIds.has(a.quizId));
+    const att = db.attempts.filter(
+      (a) => a.materialId !== null && wsQuizIds.has(a.materialId)
+    );
     const avg = att.length
       ? Math.round(att.reduce((s, a) => s + a.pct, 0) / att.length)
       : 0;
@@ -439,21 +497,24 @@ export const handlers = [
   }),
   http.get('/api/workspaces/:id/members', async ({ params }) => {
     const workspaceId = String(params.id);
-    return HttpResponse.json([
-      {
-        createdAt:
-          db.workspaces.find((workspace) => workspace.id === params.id)
-            ?.createdAt ?? '',
-        email: db.user.email,
-        name: db.user.name,
-        role: 'owner' as const,
-        userId: db.user.id,
-        workspaceId,
-      },
-      ...mockWorkspaceMembers.filter(
-        (member) => member.workspaceId === workspaceId
-      ),
-    ]);
+    const ws = db.workspaces.find((workspace) => workspace.id === params.id);
+    const collaborators = mockWorkspaceMembers.filter(
+      (member) => member.workspaceId === workspaceId
+    );
+    if (ws?.role === 'owner') {
+      return HttpResponse.json([
+        {
+          createdAt: ws.createdAt,
+          email: db.user.email,
+          name: db.user.name,
+          role: 'owner' as const,
+          userId: db.user.id,
+          workspaceId,
+        },
+        ...collaborators,
+      ]);
+    }
+    return HttpResponse.json(collaborators);
   }),
   http.post('/api/workspaces/:id/invites', async ({ params, request }) => {
     const body = (await request.json()) as {
@@ -583,6 +644,46 @@ export const handlers = [
       });
     }
     return new HttpResponse(null, { status: 204 });
+  }),
+  http.post('/api/workspaces/:id/transfer', async ({ params, request }) => {
+    await latency();
+    const ws = db.workspaces.find((w) => w.id === params.id);
+    if (!ws) return new HttpResponse(null, { status: 404 });
+    const body = (await request.json()) as { recipientId?: string };
+    if (!body.recipientId || body.recipientId === db.user.id) {
+      return HttpResponse.json(
+        { message: 'cannot transfer to yourself' },
+        { status: 409 }
+      );
+    }
+    const recipient = mockWorkspaceMembers.find(
+      (member) =>
+        member.workspaceId === params.id && member.userId === body.recipientId
+    );
+    if (!recipient) return new HttpResponse(null, { status: 404 });
+    recipient.role = 'owner';
+    const alreadyListed = mockWorkspaceMembers.some(
+      (member) =>
+        member.workspaceId === params.id && member.userId === db.user.id
+    );
+    if (!alreadyListed) {
+      mockWorkspaceMembers.push({
+        createdAt: new Date().toISOString(),
+        email: db.user.email,
+        name: db.user.name,
+        role: 'editor',
+        userId: db.user.id,
+        workspaceId: String(params.id),
+      });
+    }
+    ws.role = 'editor';
+    ws.capabilities = {
+      canComment: true,
+      canEdit: true,
+      canManageMembers: false,
+      canView: true,
+    };
+    return HttpResponse.json(ws);
   }),
   http.post('/api/workspace-invites/:token/accept', async ({ params }) => {
     const invite = mockWorkspaceInvites.find(
@@ -1774,9 +1875,10 @@ export const handlers = [
       chapters: quiz?.chapters ?? [],
       correct: body.correct,
       id: uid('at'),
+      materialId:
+        String(params.id) === 'review_mistakes' ? null : String(params.id),
       pct: Math.round((body.correct / Math.max(1, body.total)) * 100),
       questions: body.questions ?? [],
-      quizId: String(params.id),
       quizName: quiz?.name ?? 'Quiz',
       takenAt: new Date().toISOString(),
       total: body.total,

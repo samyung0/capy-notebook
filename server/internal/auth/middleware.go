@@ -37,11 +37,16 @@ type Config struct {
 	E2EUserIDs []string
 }
 
-// UserStore lazily provisions users on first authenticated request.
+// UserStore lazily provisions users on first authenticated request and reports
+// whether the account may still hold a session.
 type UserStore interface {
 	// UpsertUserFromClerk returns true when a new user row was inserted.
 	UpsertUserFromClerk(ctx context.Context, id, name, email, avatarURL string) (bool, error)
 	CreateDefaultWorkspace(ctx context.Context, userID string) error
+	// AccountSessionAllowed reports whether the account may hold a session at
+	// all. code is a machine-readable reason when it may not. The verdict is
+	// reduced to a bool here so this package stays free of the store types.
+	AccountSessionAllowed(ctx context.Context, userID string) (allowed bool, code string, err error)
 }
 
 func isPublic(path string, prefixes []string) bool {
@@ -186,6 +191,15 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 					if created, err := cfg.Store.UpsertUserFromClerk(r.Context(), userID, name, email, avatar); err == nil && created {
 						_ = cfg.Store.CreateDefaultWorkspace(r.Context(), userID)
 					}
+					// A purged account is refused here rather than per handler,
+					// so a Clerk token that outlived the purge cannot reach any
+					// route. Store failures fail open: an unavailable database
+					// is a 500 from the handler, not a spurious 403.
+					allowed, code, err := cfg.Store.AccountSessionAllowed(r.Context(), userID)
+					if err == nil && !allowed {
+						writeAccountForbidden(w, code)
+						return
+					}
 				}
 
 				next.ServeHTTP(w, r.WithContext(WithUserID(r.Context(), userID)))
@@ -225,4 +239,19 @@ func writeUnauthorized(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
 	_ = json.NewEncoder(w).Encode(map[string]string{"message": "unauthorized"})
+}
+
+// writeAccountForbidden reports a valid identity whose account may not hold a
+// session. The code lets the frontend route to the matching screen instead of
+// treating it as a generic auth failure and looping through sign-in.
+func writeAccountForbidden(w http.ResponseWriter, code string) {
+	if code == "" {
+		code = "account_locked"
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusForbidden)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"code":    code,
+		"message": "account unavailable",
+	})
 }

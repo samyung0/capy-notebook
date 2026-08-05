@@ -95,7 +95,7 @@ func TestEffectiveMaterialAccessAndMemberPrecedence(t *testing.T) {
 	}
 
 	standalone, err := s.CreateMaterial(ctx, Material{
-		UserID: "u_owner", Kind: "note", Title: "Standalone link",
+		CreatedBy: "u_owner", Kind: "note", Title: "Standalone link",
 		Content: content, Privacy: PrivacyLink,
 	})
 	if err != nil {

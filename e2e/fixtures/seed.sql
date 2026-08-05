@@ -5,7 +5,7 @@ BEGIN;
 
 DELETE FROM attempts WHERE user_id IN ('u_owner', 'u_editor', 'u_commenter', 'u_viewer', 'u_other');
 DELETE FROM mistakes WHERE user_id IN ('u_owner', 'u_editor', 'u_commenter', 'u_viewer', 'u_other');
-DELETE FROM materials WHERE user_id IN ('u_owner', 'u_editor', 'u_commenter', 'u_viewer', 'u_other');
+DELETE FROM materials WHERE created_by IN ('u_owner', 'u_editor', 'u_commenter', 'u_viewer', 'u_other');
 DELETE FROM workspace_members WHERE user_id IN ('u_owner', 'u_editor', 'u_commenter', 'u_viewer', 'u_other');
 DELETE FROM workspaces WHERE user_id IN ('u_owner', 'u_editor', 'u_commenter', 'u_viewer', 'u_other');
 
@@ -53,20 +53,20 @@ INSERT INTO chapters (id, workspace_id, name, position) VALUES
   ('ch_e2e_mutate',  'ws_e2e_mutate',  'Mutate chapter',  0)
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO files (id, workspace_id, chapter_id, name, kind, size_bytes, added_at, status, content) VALUES
-  ('f_e2e_private', 'ws_e2e_private', 'ch_e2e_private', 'secret-notes.md', 'md', 1024, now(), 'ready',
+INSERT INTO files (id, workspace_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, content) VALUES
+  ('f_e2e_private', 'ws_e2e_private', 'u_owner', 'ch_e2e_private', 'secret-notes.md', 'md', 1024, now(), 'ready',
    '# Secret private notes\nOnly owner and editor should see this.'),
-  ('f_e2e_link', 'ws_e2e_link', 'ch_e2e_link', 'shared-notes.md', 'md', 1024, now(), 'ready',
+  ('f_e2e_link', 'ws_e2e_link', 'u_owner', 'ch_e2e_link', 'shared-notes.md', 'md', 1024, now(), 'ready',
    '# Shared link notes\nAnyone with the link can read this.'),
-  ('f_e2e_public', 'ws_e2e_public', 'ch_e2e_public', 'public-notes.md', 'md', 1024, now(), 'ready',
+  ('f_e2e_public', 'ws_e2e_public', 'u_owner', 'ch_e2e_public', 'public-notes.md', 'md', 1024, now(), 'ready',
    '# Public notes\nDiscoverable on Explore.'),
-  ('f_e2e_edit', 'ws_e2e_edit', 'ch_e2e_edit', 'editable-notes.md', 'md', 1024, now(), 'ready',
+  ('f_e2e_edit', 'ws_e2e_edit', 'u_owner', 'ch_e2e_edit', 'editable-notes.md', 'md', 1024, now(), 'ready',
    '# Editable shared notes\nMaterial content may be edited by signed-in visitors.')
 ON CONFLICT (id) DO NOTHING;
 
 -- Minimal Plate quiz / flashcard documents.
 INSERT INTO materials (
-  id, user_id, workspace_id, workspace_name, kind, title, content,
+  id, created_by, workspace_id, workspace_name, kind, title, content,
   chapter_id, scope_chapters, scope_file_ids, privacy, color, created_at, updated_at, revision, updated_by
 ) VALUES
   (
@@ -154,7 +154,7 @@ INSERT INTO materials (
     'ch_e2e_edit', '{}', '{}', 'private', 'coral', now(), now(), 1, 'u_owner'
   )
 ON CONFLICT (id) DO UPDATE SET
-  user_id = EXCLUDED.user_id,
+  created_by = EXCLUDED.created_by,
   workspace_id = EXCLUDED.workspace_id,
   workspace_name = EXCLUDED.workspace_name,
   title = EXCLUDED.title,
@@ -167,7 +167,7 @@ INSERT INTO material_revisions (
   event_metadata, created_by, created_at
 )
 SELECT id, (created_at AT TIME ZONE 'UTC')::date, revision, NULL, 'create', title, content,
-       '{}'::jsonb, user_id, created_at
+       '{}'::jsonb, created_by, created_at
 FROM materials
 WHERE id IN (
   'qz_e2e_private', 'qz_e2e_link', 'qz_e2e_public', 'qz_e2e_mutate',

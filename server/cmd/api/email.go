@@ -157,9 +157,28 @@ func sendOutboxEmail(
 	if locale != "zh" {
 		locale = "en"
 	}
+	// Promote camelCase JSON payload fields into the PascalCase names the
+	// Go templates expect. Existing membership mails already rely on this
+	// for WorkspaceName / RoleName.
+	if v := stringValue(data, "workspaceName"); v != "" {
+		data["WorkspaceName"] = v
+	}
+	if v := data["graceDays"]; v != nil {
+		data["GraceDays"] = v
+	}
 	data["InviteURL"] = appURL + stringValue(data, "invitePath")
 	data["OpenURL"] = appURL + "/workspaces"
-	if item.Template != "workspace-member-removed" {
+	switch item.Template {
+	case "workspace-member-removed":
+		// stay on the workspaces index
+	case "account-deletion-requested":
+		// Account is locked; Settings is unreachable. Point at the marketing
+		// site / app root where support contact lives.
+		data["OpenURL"] = appURL
+	case "account-deletion-cancelled",
+		"subscription-over-quota", "subscription-frozen":
+		data["OpenURL"] = appURL + "/settings"
+	default:
 		if workspaceID := stringValue(data, "workspaceId"); workspaceID != "" {
 			data["OpenURL"] = appURL + "/workspaces/" + url.PathEscape(workspaceID)
 		}
@@ -167,13 +186,23 @@ func sendOutboxEmail(
 	data["RoleName"] = mail.RoleLabel(stringValue(data, "role"), locale)
 
 	category := "membership"
-	if item.Template == "workspace-invite" {
+	switch item.Template {
+	case "workspace-invite":
 		category = "workspace_invite"
+	case "subscription-over-quota", "subscription-frozen":
+		category = "billing"
+	case "account-deletion-requested", "account-deletion-cancelled":
+		// Lifecycle mail is non-optional: no unsubscribe token.
+		category = ""
 	}
 	unsubscribeURL := appURL + "/settings"
-	if token := mail.UnsubscribeToken(unsubscribeSecret, item.UserID, category); token != "" {
-		unsubscribeURL += "?unsubscribe=" + url.QueryEscape(token)
-		data["UnsubscribeURL"] = appURL + "/api/email/unsubscribe?token=" + url.QueryEscape(token)
+	if category != "" {
+		if token := mail.UnsubscribeToken(unsubscribeSecret, item.UserID, category); token != "" {
+			unsubscribeURL += "?unsubscribe=" + url.QueryEscape(token)
+			data["UnsubscribeURL"] = appURL + "/api/email/unsubscribe?token=" + url.QueryEscape(token)
+		} else {
+			data["UnsubscribeURL"] = unsubscribeURL
+		}
 	} else {
 		data["UnsubscribeURL"] = unsubscribeURL
 	}
@@ -184,10 +213,12 @@ func sendOutboxEmail(
 		return err
 	}
 	headers := map[string]string{}
-	if token := mail.UnsubscribeToken(unsubscribeSecret, item.UserID, category); token != "" {
-		listURL := appURL + "/api/email/unsubscribe?token=" + url.QueryEscape(token)
-		headers["List-Unsubscribe"] = "<" + listURL + ">"
-		headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+	if category != "" {
+		if token := mail.UnsubscribeToken(unsubscribeSecret, item.UserID, category); token != "" {
+			listURL := appURL + "/api/email/unsubscribe?token=" + url.QueryEscape(token)
+			headers["List-Unsubscribe"] = "<" + listURL + ">"
+			headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+		}
 	}
 
 	sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)

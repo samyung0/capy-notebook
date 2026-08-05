@@ -84,7 +84,7 @@ func TestCloneMaterialUsesTargetTierForDailyVersionRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 	source, err := s.CreateMaterial(ctx, Material{
-		UserID: sourceUserID, Kind: "flashcards", Title: "Clone retention",
+		CreatedBy: sourceUserID, Kind: "flashcards", Title: "Clone retention",
 		Content: content, Privacy: PrivacyPublic,
 	})
 	if err != nil {

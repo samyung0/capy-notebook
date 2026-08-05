@@ -6,6 +6,7 @@
  */
 import type {
   AccessTokenResp,
+  AccountStatus,
   AddChapterReq,
   Attempt,
   AttemptDetail,
@@ -30,6 +31,7 @@ import type {
   CreateWorkspaceInviteReq,
   CreateWorkspaceReq,
   Deck,
+  DeletionPreflight,
   Discussion,
   ErrorModel,
   Event,
@@ -57,12 +59,14 @@ import type {
   RecentFile,
   ReorderChaptersReq,
   ReorderContentReq,
+  RequestAccountDeletionReq,
   SaveCanvasReq,
   SearchParams,
   SearchResult,
   SourceUploadPolicy,
   Tag,
   Task,
+  TransferWorkspaceReq,
   URLResp,
   UpdateCardReq,
   UpdateChapterReq,
@@ -116,6 +120,156 @@ export type HTTPStatusCode3xx = 300 | 301 | 302 | 303 | 304 | 305 | 307 | 308;
 export type HTTPStatusCode4xx = 400 | 401 | 402 | 403 | 404 | 405 | 406 | 407 | 408 | 409 | 410 | 411 | 412 | 413 | 414 | 415 | 416 | 417 | 418 | 419 | 420 | 421 | 422 | 423 | 424 | 426 | 428 | 429 | 431 | 451;
 export type HTTPStatusCode5xx = 500 | 501 | 502 | 503 | 504 | 505 | 507 | 511;
 export type HTTPStatusCodes = HTTPStatusCode1xx | HTTPStatusCode2xx | HTTPStatusCode3xx | HTTPStatusCode4xx | HTTPStatusCode5xx;
+
+export type getDeletionPreflightResponse200 = {
+  data: DeletionPreflight
+  status: 200
+}
+
+export type getDeletionPreflightResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getDeletionPreflightResponseSuccess = (getDeletionPreflightResponse200) & {
+  headers: Headers;
+};
+export type getDeletionPreflightResponseError = (getDeletionPreflightResponseDefault) & {
+  headers: Headers;
+};
+
+export type getDeletionPreflightResponse = (getDeletionPreflightResponseSuccess | getDeletionPreflightResponseError)
+
+export const getGetDeletionPreflightUrl = () => {
+
+
+
+
+  return `/api/account/deletion`
+}
+
+/**
+ * @summary What account deletion would destroy, and what blocks it
+ */
+export const getDeletionPreflight = async ( options?: RequestInit): Promise<getDeletionPreflightResponse> => {
+
+  const res = await fetch(getGetDeletionPreflightUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getDeletionPreflightResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getDeletionPreflightResponse
+}
+
+
+
+export type requestAccountDeletionResponse200 = {
+  data: AccountStatus
+  status: 200
+}
+
+export type requestAccountDeletionResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type requestAccountDeletionResponseSuccess = (requestAccountDeletionResponse200) & {
+  headers: Headers;
+};
+export type requestAccountDeletionResponseError = (requestAccountDeletionResponseDefault) & {
+  headers: Headers;
+};
+
+export type requestAccountDeletionResponse = (requestAccountDeletionResponseSuccess | requestAccountDeletionResponseError)
+
+export const getRequestAccountDeletionUrl = () => {
+
+
+
+
+  return `/api/account/deletion`
+}
+
+/**
+ * @summary Schedule account deletion
+ */
+export const requestAccountDeletion = async (requestAccountDeletionReq: NonReadonly<RequestAccountDeletionReq>, options?: RequestInit): Promise<requestAccountDeletionResponse> => {
+
+  const res = await fetch(getRequestAccountDeletionUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(requestAccountDeletionReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: requestAccountDeletionResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as requestAccountDeletionResponse
+}
+
+
+
+export type getAccountStatusResponse200 = {
+  data: AccountStatus
+  status: 200
+}
+
+export type getAccountStatusResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getAccountStatusResponseSuccess = (getAccountStatusResponse200) & {
+  headers: Headers;
+};
+export type getAccountStatusResponseError = (getAccountStatusResponseDefault) & {
+  headers: Headers;
+};
+
+export type getAccountStatusResponse = (getAccountStatusResponseSuccess | getAccountStatusResponseError)
+
+export const getGetAccountStatusUrl = () => {
+
+
+
+
+  return `/api/account/status`
+}
+
+/**
+ * @summary Resolved account lifecycle state
+ */
+export const getAccountStatus = async ( options?: RequestInit): Promise<getAccountStatusResponse> => {
+
+  const res = await fetch(getGetAccountStatusUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getAccountStatusResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getAccountStatusResponse
+}
+
+
 
 export type listAttemptsResponse200 = {
   data: Attempt[] | null
@@ -4869,6 +5023,57 @@ export const getWorkspaceStats = async (id: string, options?: RequestInit): Prom
 
   const data: getWorkspaceStatsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getWorkspaceStatsResponse
+}
+
+
+
+export type transferWorkspaceResponse200 = {
+  data: Workspace
+  status: 200
+}
+
+export type transferWorkspaceResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type transferWorkspaceResponseSuccess = (transferWorkspaceResponse200) & {
+  headers: Headers;
+};
+export type transferWorkspaceResponseError = (transferWorkspaceResponseDefault) & {
+  headers: Headers;
+};
+
+export type transferWorkspaceResponse = (transferWorkspaceResponseSuccess | transferWorkspaceResponseError)
+
+export const getTransferWorkspaceUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/transfer`
+}
+
+/**
+ * @summary Transfer workspace ownership to another member
+ */
+export const transferWorkspace = async (id: string,
+    transferWorkspaceReq: NonReadonly<TransferWorkspaceReq>, options?: RequestInit): Promise<transferWorkspaceResponse> => {
+
+  const res = await fetch(getTransferWorkspaceUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(transferWorkspaceReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: transferWorkspaceResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as transferWorkspaceResponse
 }
 
 

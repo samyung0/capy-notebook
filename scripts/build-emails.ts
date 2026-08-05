@@ -24,6 +24,18 @@ await compile({
 
 const { m } = await import('../emails/i18n');
 const { locales } = await import('../src/i18n/paraglide/runtime.js');
+const { default: AccountDeletionCancelledEmail } = await import(
+  '../emails/account-deletion-cancelled'
+);
+const { default: AccountDeletionRequestedEmail } = await import(
+  '../emails/account-deletion-requested'
+);
+const { default: SubscriptionFrozenEmail } = await import(
+  '../emails/subscription-frozen'
+);
+const { default: SubscriptionOverQuotaEmail } = await import(
+  '../emails/subscription-over-quota'
+);
 const { default: WorkspaceInviteEmail } = await import(
   '../emails/workspace-invite'
 );
@@ -37,6 +49,8 @@ const { default: WorkspaceRoleChangedEmail } = await import(
 type Locale = 'en' | 'zh';
 
 const placeholder = (name: string) => `{{.${name}}}`;
+const graceDays = placeholder('GraceDays');
+const openUrl = placeholder('OpenURL');
 const workspaceName = placeholder('WorkspaceName');
 const unsubscribeUrl = placeholder('UnsubscribeURL');
 
@@ -61,7 +75,7 @@ const templates: Array<{
     render: (locale) =>
       createElement(WorkspaceRoleChangedEmail, {
         locale,
-        openUrl: placeholder('OpenURL'),
+        openUrl,
         roleName: placeholder('RoleName'),
         unsubscribeUrl,
         workspaceName,
@@ -74,12 +88,53 @@ const templates: Array<{
     render: (locale) =>
       createElement(WorkspaceMemberRemovedEmail, {
         locale,
-        openUrl: placeholder('OpenURL'),
+        openUrl,
         unsubscribeUrl,
         workspaceName,
       }),
     subject: (locale) =>
       m.email_member_removed_subject({ workspaceName }, { locale }),
+  },
+  {
+    name: 'account-deletion-requested',
+    render: (locale) =>
+      createElement(AccountDeletionRequestedEmail, {
+        graceDays,
+        locale,
+        openUrl,
+        unsubscribeUrl,
+      }),
+    subject: (locale) => m.email_deletion_requested_subject({}, { locale }),
+  },
+  {
+    name: 'account-deletion-cancelled',
+    render: (locale) =>
+      createElement(AccountDeletionCancelledEmail, {
+        locale,
+        openUrl,
+        unsubscribeUrl,
+      }),
+    subject: (locale) => m.email_deletion_cancelled_subject({}, { locale }),
+  },
+  {
+    name: 'subscription-over-quota',
+    render: (locale) =>
+      createElement(SubscriptionOverQuotaEmail, {
+        locale,
+        openUrl,
+        unsubscribeUrl,
+      }),
+    subject: (locale) => m.email_over_quota_subject({}, { locale }),
+  },
+  {
+    name: 'subscription-frozen',
+    render: (locale) =>
+      createElement(SubscriptionFrozenEmail, {
+        locale,
+        openUrl,
+        unsubscribeUrl,
+      }),
+    subject: (locale) => m.email_frozen_subject({}, { locale }),
   },
 ];
 

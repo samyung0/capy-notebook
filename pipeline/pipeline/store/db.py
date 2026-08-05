@@ -136,3 +136,53 @@ def file_name(cur, file_id: str) -> str:
     cur.execute("SELECT name FROM files WHERE id=%s", (file_id,))
     row = cur.fetchone()
     return row[0] if row else file_id
+
+
+def file_owner_user_id(cur, file_id: str) -> str | None:
+    cur.execute("SELECT user_id FROM files WHERE id=%s", (file_id,))
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+def account_allows_ingest(cur, user_id: str) -> bool:
+    """Mirror store.AccountStatus.CanCreate for the ingest worker.
+
+    Locked / over-quota accounts must not keep consuming parse capacity. The
+    Go gateway already refuses new uploads; this catches jobs that were
+    enqueued before the account transitioned, or raced the gate.
+    """
+    cur.execute(
+        """
+        SELECT u.deleted_at, u.suspended_at, u.deletion_requested_at,
+               COALESCE(st.used_bytes, 0) + COALESCE(
+                   (SELECT sum(delta_bytes) FROM user_storage_deltas d
+                    WHERE d.user_id = u.id), 0
+               ) + COALESCE(st.reserved_bytes, 0) AS effective_used,
+               (SELECT max(s.current_period_end)
+                  FROM user_subscriptions s
+                 WHERE s.user_id = u.id
+                   AND s.current_period_end IS NOT NULL) AS period_end
+        FROM users u
+        LEFT JOIN user_storage st ON st.user_id = u.id
+        WHERE u.id = %s
+        """,
+        (user_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return False
+    deleted_at, suspended_at, deletion_requested_at, effective_used, period_end = row
+    if deleted_at is not None or suspended_at is not None or deletion_requested_at is not None:
+        return False
+    from datetime import datetime, timezone
+
+    if period_end is not None:
+        now = datetime.now(timezone.utc)
+        end = period_end if period_end.tzinfo else period_end.replace(tzinfo=timezone.utc)
+        if end < now:
+            # After lapse the free-tier storage limit applies regardless of the
+            # denormalized plan_tier column, which may lag a missed webhook.
+            free_limit = 100 * 1024 * 1024
+            if effective_used > free_limit:
+                return False
+    return True

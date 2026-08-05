@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/stripe/stripe-go/v82"
+
+	"github.com/evonotes/server/internal/store"
 )
 
 /* ------------------------------------------------------------------ fake store
@@ -33,7 +35,10 @@ type recordedEvent struct {
 
 type upsertCall struct{ id, name, email, avatar string }
 
-type subUpdateCall struct{ customerID, status, planTier string }
+type pastDueCall struct {
+	subscriptionID string
+	eventCreated   int64
+}
 
 type fakeStore struct {
 	// processed lets a test pretend an event id was already handled.
@@ -53,7 +58,8 @@ type fakeStore struct {
 	defaultWSFor   []string
 	deleted        []string
 	setCustomer    map[string]string
-	subUpdates     []subUpdateCall
+	subUpserts     []store.Subscription
+	pastDue        []pastDueCall
 	recordedRawLen int
 }
 
@@ -94,7 +100,7 @@ func (f *fakeStore) CreateDefaultWorkspace(_ context.Context, userID string) err
 	return nil
 }
 
-func (f *fakeStore) MarkUserDeleted(_ context.Context, id string) error {
+func (f *fakeStore) MarkIdentityDeleted(_ context.Context, id string) error {
 	if f.deleteErr != nil {
 		return f.deleteErr
 	}
@@ -111,11 +117,19 @@ func (f *fakeStore) SetStripeCustomerID(_ context.Context, userID, customerID st
 	return nil
 }
 
-func (f *fakeStore) UpdateSubscriptionByCustomerID(_ context.Context, customerID, status, planTier string) error {
+func (f *fakeStore) UpsertSubscription(_ context.Context, sub store.Subscription) error {
 	if f.subUpdateErr != nil {
 		return f.subUpdateErr
 	}
-	f.subUpdates = append(f.subUpdates, subUpdateCall{customerID: customerID, status: status, planTier: planTier})
+	f.subUpserts = append(f.subUpserts, sub)
+	return nil
+}
+
+func (f *fakeStore) MarkSubscriptionPastDue(_ context.Context, subscriptionID string, eventCreated int64) error {
+	if f.subUpdateErr != nil {
+		return f.subUpdateErr
+	}
+	f.pastDue = append(f.pastDue, pastDueCall{subscriptionID: subscriptionID, eventCreated: eventCreated})
 	return nil
 }
 
@@ -383,12 +397,24 @@ func stripeBody(t *testing.T, id, evtType string, object map[string]any) []byte 
 
 func TestStripeWebhook_CheckoutCompleted(t *testing.T) {
 	f := newFakeStore()
-	srv := newTestServer(t, f, Config{StripeWebhookSecret: testStripeSecret})
+	srv := newTestServer(t, f, Config{
+		StripeWebhookSecret: testStripeSecret,
+		StripePricePro:      "price_pro_123",
+	})
 
 	body := stripeBody(t, "evt_stripe_1", "checkout.session.completed", map[string]any{
 		"id":       "cs_test_1",
 		"customer": "cus_123",
 		"metadata": map[string]string{"user_id": "user_abc"},
+		"subscription": map[string]any{
+			"id":     "sub_checkout",
+			"status": "active",
+			"items": map[string]any{
+				"data": []map[string]any{
+					{"price": map[string]any{"id": "price_pro_123"}},
+				},
+			},
+		},
 	})
 	resp := post(t, srv.URL+"/webhooks/stripe", signStripe(t, testStripeSecret, body), body)
 	defer resp.Body.Close()
@@ -398,6 +424,15 @@ func TestStripeWebhook_CheckoutCompleted(t *testing.T) {
 	}
 	if f.setCustomer["user_abc"] != "cus_123" {
 		t.Errorf("stripe customer id not linked: %v", f.setCustomer)
+	}
+	// Checkout used to only link the customer, leaving a paying user on free
+	// limits until customer.subscription.created happened to arrive.
+	if len(f.subUpserts) != 1 {
+		t.Fatalf("subscription upserts = %d, want 1", len(f.subUpserts))
+	}
+	got := f.subUpserts[0]
+	if got.UserID != "user_abc" || got.PlanTier != store.PlanPro || got.Status != "active" {
+		t.Errorf("checkout did not record the paid tier: %+v", got)
 	}
 }
 
@@ -424,18 +459,24 @@ func TestStripeWebhook_CheckoutCompleted_CustomerLookup(t *testing.T) {
 
 func TestStripeWebhook_SubscriptionUpdated_ProTier(t *testing.T) {
 	f := newFakeStore()
+	f.stripeCustomers["cus_555"] = "user_555"
 	srv := newTestServer(t, f, Config{
 		StripeWebhookSecret: testStripeSecret,
 		StripePricePro:      "price_pro_123",
 	})
 
+	periodEnd := time.Now().Add(30 * 24 * time.Hour).Unix()
 	body := stripeBody(t, "evt_sub_1", "customer.subscription.updated", map[string]any{
-		"id":       "sub_1",
-		"customer": "cus_555",
-		"status":   "active",
+		"id":                   "sub_1",
+		"customer":             "cus_555",
+		"status":               "active",
+		"cancel_at_period_end": true,
 		"items": map[string]any{
 			"data": []map[string]any{
-				{"price": map[string]any{"id": "price_pro_123"}},
+				{
+					"price":              map[string]any{"id": "price_pro_123"},
+					"current_period_end": periodEnd,
+				},
 			},
 		},
 	})
@@ -445,17 +486,27 @@ func TestStripeWebhook_SubscriptionUpdated_ProTier(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
-	if len(f.subUpdates) != 1 {
-		t.Fatalf("subUpdates = %d, want 1", len(f.subUpdates))
+	if len(f.subUpserts) != 1 {
+		t.Fatalf("subscription upserts = %d, want 1", len(f.subUpserts))
 	}
-	got := f.subUpdates[0]
-	if got.customerID != "cus_555" || got.status != "active" || got.planTier != "pro" {
+	got := f.subUpserts[0]
+	if got.StripeSubscriptionID != "sub_1" || got.UserID != "user_555" ||
+		got.Status != "active" || got.PlanTier != store.PlanPro {
 		t.Errorf("subscription update mismatch: %+v", got)
+	}
+	// The period end lives on the item, not the subscription, in this API
+	// version. Reading it off the wrong object is why renewalAt was always null.
+	if got.CurrentPeriodEnd == nil || got.CurrentPeriodEnd.Unix() != periodEnd {
+		t.Errorf("period end not captured: %+v", got.CurrentPeriodEnd)
+	}
+	if !got.CancelAtPeriodEnd {
+		t.Error("cancel_at_period_end not captured")
 	}
 }
 
 func TestStripeWebhook_SubscriptionDeleted_ForcesFree(t *testing.T) {
 	f := newFakeStore()
+	f.stripeCustomers["cus_666"] = "user_666"
 	srv := newTestServer(t, f, Config{
 		StripeWebhookSecret: testStripeSecret,
 		StripePricePro:      "price_pro_123",
@@ -478,12 +529,58 @@ func TestStripeWebhook_SubscriptionDeleted_ForcesFree(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
-	if len(f.subUpdates) != 1 {
-		t.Fatalf("subUpdates = %d, want 1", len(f.subUpdates))
+	if len(f.subUpserts) != 1 {
+		t.Fatalf("subscription upserts = %d, want 1", len(f.subUpserts))
 	}
-	got := f.subUpdates[0]
-	if got.status != "canceled" || got.planTier != "free" {
+	got := f.subUpserts[0]
+	if got.Status != "canceled" || got.PlanTier != store.PlanFree {
 		t.Errorf("deleted subscription must be canceled/free, got %+v", got)
+	}
+}
+
+func TestStripeWebhook_SubscriptionForUnknownCustomerIsIgnored(t *testing.T) {
+	f := newFakeStore()
+	srv := newTestServer(t, f, Config{StripeWebhookSecret: testStripeSecret})
+
+	// A subscription for a customer we cannot resolve has nowhere to go. Writing
+	// it with an empty user id would violate the FK and fail the webhook forever.
+	body := stripeBody(t, "evt_sub_orphan", "customer.subscription.updated", map[string]any{
+		"id": "sub_orphan", "customer": "cus_unknown", "status": "active",
+	})
+	resp := post(t, srv.URL+"/webhooks/stripe", signStripe(t, testStripeSecret, body), body)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if len(f.subUpserts) != 0 {
+		t.Errorf("unresolvable subscription must not be written: %+v", f.subUpserts)
+	}
+}
+
+func TestStripeWebhook_InvoicePaymentFailedMarksPastDue(t *testing.T) {
+	f := newFakeStore()
+	srv := newTestServer(t, f, Config{StripeWebhookSecret: testStripeSecret})
+
+	// The link moved to parent.subscription_details in the current API version;
+	// reading invoice.subscription silently finds nothing.
+	body := stripeBody(t, "evt_invoice_1", "invoice.payment_failed", map[string]any{
+		"id": "in_1",
+		"parent": map[string]any{
+			"type": "subscription_details",
+			"subscription_details": map[string]any{
+				"subscription": map[string]any{"id": "sub_failing"},
+			},
+		},
+	})
+	resp := post(t, srv.URL+"/webhooks/stripe", signStripe(t, testStripeSecret, body), body)
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if len(f.pastDue) != 1 || f.pastDue[0].subscriptionID != "sub_failing" {
+		t.Fatalf("payment failure not recorded: %+v", f.pastDue)
 	}
 }
 
@@ -501,7 +598,7 @@ func TestStripeWebhook_InvalidSignature(t *testing.T) {
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", resp.StatusCode)
 	}
-	if len(f.subUpdates) != 0 || len(f.recorded) != 0 {
+	if len(f.subUpserts) != 0 || len(f.recorded) != 0 {
 		t.Errorf("no side effects expected on bad signature")
 	}
 }
@@ -533,7 +630,7 @@ func TestStripeWebhook_Idempotent(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
-	if len(f.subUpdates) != 0 {
+	if len(f.subUpserts) != 0 {
 		t.Errorf("already-processed stripe event must not re-run side effects")
 	}
 }

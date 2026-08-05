@@ -112,14 +112,19 @@ export class YjsDocumentStore {
    * Rejecting after the fact is not an option: Yjs has no notion of undoing a
    * peer's update, so the only remedy left would be discarding the whole room.
    */
-  validateUpdate(room: string, current: Y.Doc, update: Uint8Array) {
+  validateUpdate(
+    room: string,
+    current: Y.Doc,
+    update: Uint8Array,
+    options?: { shrinkOnly?: boolean }
+  ) {
     let validator = this.validators.get(room);
     if (!validator) {
       validator = new RoomValidator();
       this.validators.set(room, validator);
     }
     validator.pendingBytes += update.byteLength;
-    if (!validator.shouldMeasure()) return;
+    if (!validator.shouldMeasure() && !options?.shrinkOnly) return;
     // A document that loaded from PostgreSQL already over the limit still needs
     // a baseline, otherwise the edits that would bring it back under are the
     // ones we reject.
@@ -138,6 +143,14 @@ export class YjsDocumentStore {
     const code = materialLimitCode(metrics);
     if (code && !recoversMaterialLimits(metrics, validator.metrics)) {
       throw new MaterialDocumentLimitError(code, metrics);
+    }
+    // Billing over-quota rooms reuse the same shrink-only rule: growth in any
+    // metric is rejected even when the document is still under the hard caps.
+    if (
+      options?.shrinkOnly &&
+      !recoversMaterialLimits(metrics, validator.metrics)
+    ) {
+      throw new MaterialDocumentLimitError('document_size_exceeded', metrics);
     }
     validator.accept(metrics);
   }

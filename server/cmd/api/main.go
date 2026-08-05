@@ -256,63 +256,36 @@ func main() {
 		}
 	}()
 
+	// Upload sweep. Both upload flows share one table, so this is one call; it
+	// only writes off reservations and queues object paths. The bucket is never
+	// touched here — the reaper below owns that, which is what lets objects
+	// orphaned by cascading deletes be collected by the same path.
 	go func() {
-		cleanup := func() {
-			uploads, err := st.ExpiredUploadSessions(ctx, 100)
-			if err != nil {
-				if ctx.Err() == nil {
-					log.Printf("list expired source uploads: %v", err)
-				}
-				return
+		sweep := func() {
+			if _, err := st.SweepExpiredUploads(ctx, 100); err != nil && ctx.Err() == nil {
+				log.Printf("sweep expired uploads: %v", err)
 			}
-			for _, upload := range uploads {
-				if err := st.MarkUploadExpired(ctx, upload.ID); err != nil {
-					log.Printf("release source upload %s: %v", upload.ID, err)
-					continue
-				}
-				if err := blobStore.Delete(ctx, upload.ObjectPath); err != nil {
-					log.Printf("delete expired source upload %s: %v", upload.ID, err)
-				}
-				if err := blobStore.Delete(ctx, upload.FinalPath); err != nil {
-					log.Printf("delete expired source final object %s: %v", upload.ID, err)
-				}
+			if err := st.PruneUploadSessions(ctx); err != nil && ctx.Err() == nil {
+				log.Printf("prune upload sessions: %v", err)
 			}
-			assetUploads, err := st.ExpiredEditorAssetUploads(ctx, 100)
-			if err != nil {
-				if ctx.Err() == nil {
-					log.Printf("list expired editor uploads: %v", err)
-				}
-			} else {
-				for _, upload := range assetUploads {
-					if err := st.MarkEditorAssetUploadExpired(ctx, upload.ID); err != nil {
-						log.Printf("release editor upload %s: %v", upload.ID, err)
-						continue
-					}
-					if err := blobStore.Delete(ctx, upload.ObjectPath); err != nil {
-						log.Printf("delete expired editor upload %s: %v", upload.ID, err)
-					}
-					if asset, err := st.GetEditorAsset(ctx, upload.AssetID); err == nil {
-						if err := blobStore.Delete(ctx, asset.ObjectPath); err != nil {
-							log.Printf("delete expired editor asset %s: %v", asset.ID, err)
-						}
-					}
-				}
-			}
-			_ = st.PruneUploadSessions(ctx)
-			_ = st.PruneEditorAssetUploads(ctx)
 		}
-		cleanup()
+		sweep()
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
 		for {
 			select {
 			case <-ticker.C:
-				cleanup()
+				sweep()
 			case <-ctx.Done():
 				return
 			}
 		}
 	}()
+
+	go runBlobReaper(ctx, st, blobStore)
+	go runBlobSweep(ctx, st, blobStore)
+	go runAccountPurgeWorker(ctx, st, env("CLERK_SECRET_KEY", "") != "")
+	go runOverQuotaNoticeWorker(ctx, st)
 
 	cfg := httpapi.Config{
 		ClerkSecretKey:         env("CLERK_SECRET_KEY", ""),

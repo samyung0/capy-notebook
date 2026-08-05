@@ -4,6 +4,7 @@
    for the session. Swap for the real API later — no UI changes.
    ============================================================ */
 import type {
+  AccountStatus,
   AppNotification,
   Attempt,
   CalendarEvent,
@@ -717,9 +718,9 @@ export const attempts: (Attempt & {
     chapters: ['Cell structure'],
     correct: 8,
     id: 'at_1',
+    materialId: 'qz_1',
     pct: 80,
     questions: seedQuizzes[0].questions,
-    quizId: 'qz_1',
     quizName: 'Cell biology basics',
     takenAt: days(2),
     total: 10,
@@ -746,9 +747,9 @@ export const attempts: (Attempt & {
     chapters: ['Techniques of integration'],
     correct: 6,
     id: 'at_2',
+    materialId: 'qz_3',
     pct: 60,
     questions: seedQuizzes[2].questions,
-    quizId: 'qz_3',
     quizName: 'Integration techniques',
     takenAt: days(3),
     total: 10,
@@ -770,9 +771,9 @@ export const attempts: (Attempt & {
     chapters: ['Genetics'],
     correct: 4,
     id: 'at_3',
+    materialId: 'qz_2',
     pct: 40,
     questions: seedQuizzes[1].questions,
-    quizId: 'qz_2',
     quizName: 'Genetics check-in',
     takenAt: days(5),
     total: 10,
@@ -1024,8 +1025,17 @@ export const notifications: AppNotification[] = [
 ];
 
 export const notificationPrefs: NotificationPrefs = {
+  emailBilling: true,
   emailMembership: true,
   emailWorkspaceInvite: true,
+};
+
+export const accountStatus: AccountStatus = {
+  planTier: 'pro',
+  state: 'active',
+  storageLimitBytes: 1024 * 1024 * 1024,
+  storageUsedBytes: 128 * 1024 * 1024,
+  userId: user.id,
 };
 
 export const canvases: ThinkingCanvas[] = [

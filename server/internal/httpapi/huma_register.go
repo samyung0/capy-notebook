@@ -68,6 +68,21 @@ func hErr(err error) error {
 			}},
 		}
 	}
+	var locked *store.AccountLockedError
+	if errors.As(err, &locked) {
+		return &huma.ErrorModel{
+			Status: http.StatusForbidden,
+			Title:  http.StatusText(http.StatusForbidden),
+			Detail: "account unavailable",
+			Errors: []*huma.ErrorDetail{{
+				Message: locked.Code(),
+				Value: map[string]any{
+					"state":  string(locked.State),
+					"reason": locked.Reason,
+				},
+			}},
+		}
+	}
 	return huma.Error500InternalServerError(err.Error())
 }
 
@@ -105,6 +120,7 @@ type Empty struct{}
 // chi (see server.go) and are intentionally absent from the spec.
 func registerRoutes(api huma.API, a *api) {
 	a.registerAccount(api)
+	a.registerAccountLifecycle(api)
 	a.registerWorkspaces(api)
 	a.registerTags(api)
 	a.registerChat(api)

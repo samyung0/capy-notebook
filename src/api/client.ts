@@ -43,21 +43,50 @@ export function isStorageQuotaError(err: unknown): err is ApiError {
   return isApiError(err) && err.code === 'storage_quota_exceeded';
 }
 
+const ACCOUNT_FORBIDDEN_CODES = new Set([
+  'account_deleted',
+  'account_suspended',
+  'account_deletion_pending',
+  'account_over_quota',
+  'account_locked',
+]);
+
+/** Auth middleware / write gates refuse the session or mutation. */
+export function isAccountForbiddenError(err: unknown): err is ApiError {
+  return (
+    isApiError(err) &&
+    err.status === 403 &&
+    !!err.code &&
+    ACCOUNT_FORBIDDEN_CODES.has(err.code)
+  );
+}
+
+export function isAccountBlockingError(err: unknown): err is ApiError {
+  return (
+    isApiError(err) &&
+    err.status === 403 &&
+    (err.code === 'account_suspended' ||
+      err.code === 'account_deleted' ||
+      err.code === 'account_deletion_pending')
+  );
+}
+
 function parseErrorBody(value: unknown): ApiErrorBody | null {
   if (typeof value !== 'object' || value === null) return null;
   const body = value as ApiErrorBody & {
     errors?: Array<{ message?: string; value?: unknown }>;
   };
-  const quotaError = body.errors?.find(
-    (error) => error.message === 'storage_quota_exceeded'
+  // Huma packs machine codes in errors[].message (quota + account locks).
+  const coded = body.errors?.find(
+    (error) =>
+      error.message === 'storage_quota_exceeded' ||
+      (typeof error.message === 'string' &&
+        ACCOUNT_FORBIDDEN_CODES.has(error.message))
   );
+  if (!coded?.message) return body;
   const details =
-    typeof quotaError?.value === 'object' && quotaError.value !== null
-      ? quotaError.value
-      : {};
-  return quotaError
-    ? { ...body, ...details, code: 'storage_quota_exceeded' }
-    : body;
+    typeof coded.value === 'object' && coded.value !== null ? coded.value : {};
+  return { ...body, ...details, code: coded.message };
 }
 
 function errorDetail(body: ApiErrorBody | null) {
@@ -237,6 +266,7 @@ export const api = {
 
 /** Central query-key registry for TanStack Query. */
 export const qk = {
+  accountStatus: ['account', 'status'] as const,
   attempt: (id: string) => ['attempt', id] as const,
   attempts: ['attempts'] as const,
   billing: ['billing'] as const,
@@ -247,6 +277,7 @@ export const qk = {
     ['workspace', wsId, 'conversations'] as const,
   deck: (id: string) => ['deck', id] as const,
   decks: ['decks'] as const,
+  deletionPreflight: ['account', 'deletion'] as const,
   events: ['events'] as const,
   exploreDecks: ['explore', 'decks'] as const,
   exploreQuizzes: ['explore', 'quizzes'] as const,

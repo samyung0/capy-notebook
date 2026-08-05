@@ -6,12 +6,20 @@ package mail
 // subjectTemplates holds subject lines keyed by "<template>.<locale>". They
 // are Go text/template sources and share the body templates' data.
 var subjectTemplates = map[string]string{
-	"workspace-invite.en":         "You're invited to join {{.WorkspaceName}} on Evo Notes",
-	"workspace-invite.zh":         "邀请你加入 Evo Notes 工作区 {{.WorkspaceName}}",
-	"workspace-member-removed.en": "You were removed from {{.WorkspaceName}}",
-	"workspace-member-removed.zh": "你已被移出 {{.WorkspaceName}}",
-	"workspace-role-changed.en":   "Your role changed in {{.WorkspaceName}}",
-	"workspace-role-changed.zh":   "你在 {{.WorkspaceName}} 中的角色已更改",
+	"account-deletion-cancelled.en": "Your Evo Notes account deletion was cancelled",
+	"account-deletion-cancelled.zh": "你的 Evo Notes 账户删除已取消",
+	"account-deletion-requested.en": "Your Evo Notes account deletion is scheduled",
+	"account-deletion-requested.zh": "你的 Evo Notes 账户删除已安排",
+	"subscription-frozen.en":        "Your Evo Notes account is frozen",
+	"subscription-frozen.zh":        "你的 Evo Notes 账户已被冻结",
+	"subscription-over-quota.en":    "Your Evo Notes storage is over the free limit",
+	"subscription-over-quota.zh":    "你的 Evo Notes 存储已超过免费额度",
+	"workspace-invite.en":           "You're invited to join {{.WorkspaceName}} on Evo Notes",
+	"workspace-invite.zh":           "邀请你加入 Evo Notes 工作区 {{.WorkspaceName}}",
+	"workspace-member-removed.en":   "You were removed from {{.WorkspaceName}}",
+	"workspace-member-removed.zh":   "你已被移出 {{.WorkspaceName}}",
+	"workspace-role-changed.en":     "Your role changed in {{.WorkspaceName}}",
+	"workspace-role-changed.zh":     "你在 {{.WorkspaceName}} 中的角色已更改",
 }
 
 // roleLabels holds workspace role names keyed by "<role>.<locale>".

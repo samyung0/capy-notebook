@@ -46,29 +46,30 @@ func main() {
 		log.Fatalf("list customers: %v", err)
 	}
 
+	drifted := 0
 	for _, row := range rows {
 		sub, err := billing.ListActiveSubscription(row.CustomerID)
-		wantStatus := "none"
-		wantTier := "free"
 		if err != nil {
 			log.Printf("customer %s: stripe error: %v", row.CustomerID, err)
 			continue
 		}
+		// Reconcile the subscription table rather than users.plan_tier: the tier
+		// column is a projection of it now, so writing the column directly would
+		// be undone by the next webhook.
+		var live *store.Subscription
 		if sub != nil {
-			wantStatus = billing.SubscriptionStatus(sub.Status)
-			if len(sub.Items.Data) > 0 && sub.Items.Data[0].Price != nil {
-				wantTier = billing.PlanTierFromPrice(sub.Items.Data[0].Price.ID, pricePro)
-			}
+			record := billing.SubscriptionRecord(sub, row.UserID, pricePro, 0)
+			live = &record
 		}
-		if row.Status != wantStatus || row.PlanTier != wantTier {
-			log.Printf("drift user=%s customer=%s db=%s/%s stripe=%s/%s",
-				row.UserID, row.CustomerID, row.Status, row.PlanTier, wantStatus, wantTier)
-			if err := st.UpdateSubscription(ctx, row.UserID, wantStatus, wantTier); err != nil {
-				log.Printf("fix user %s: %v", row.UserID, err)
-			}
+		changed, err := st.SyncSubscriptionsFromStripe(ctx, row.UserID, live)
+		if err != nil {
+			log.Printf("fix user %s: %v", row.UserID, err)
+			continue
+		}
+		if changed {
+			drifted++
+			log.Printf("drift repaired user=%s customer=%s", row.UserID, row.CustomerID)
 		}
 	}
-
-	// reconcile complete
-	log.Println("reconcile complete")
+	log.Printf("reconcile complete (%d subscription drift(s) repaired)", drifted)
 }

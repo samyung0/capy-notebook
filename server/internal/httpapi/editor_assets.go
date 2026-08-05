@@ -302,31 +302,11 @@ func (a *api) resolveEditorAsset(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// rejectEditorAssetUpload discards a reservation whose object failed
+// verification. Discarding the row queues both object paths for the reaper, so
+// the bytes are released without this handler touching the bucket.
 func (a *api) rejectEditorAssetUpload(ctx context.Context, upload store.EditorAssetUpload) {
 	_ = a.s.MarkEditorAssetUploadExpired(ctx, upload.ID)
-	_ = a.blob.Delete(ctx, upload.ObjectPath)
-	if objectPath, err := a.s.EditorAssetObjectPath(ctx, upload.AssetID); err == nil {
-		_ = a.blob.Delete(ctx, objectPath)
-	}
-}
-
-func (a *api) cleanupExpiredEditorAssetUploads() {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	uploads, err := a.s.ExpiredEditorAssetUploads(ctx, 20)
-	if err != nil {
-		return
-	}
-	for _, upload := range uploads {
-		if err := a.s.MarkEditorAssetUploadExpired(ctx, upload.ID); err != nil {
-			continue
-		}
-		_ = a.blob.Delete(ctx, upload.ObjectPath)
-		if asset, err := a.s.GetEditorAsset(ctx, upload.AssetID); err == nil {
-			_ = a.blob.Delete(ctx, asset.ObjectPath)
-		}
-	}
-	_ = a.s.PruneEditorAssetUploads(ctx)
 }
 
 func editorAssetSignatureAllowed(purpose, ext string, data []byte) bool {

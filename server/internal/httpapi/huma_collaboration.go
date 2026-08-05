@@ -49,10 +49,12 @@ type collaborationTokenInput struct {
 }
 
 type collaborationTokenResponse struct {
-	Token     string `json:"token"`
-	Room      string `json:"room"`
-	URL       string `json:"url"`
-	Access    string `json:"access" enum:"write,comment"`
+	Token string `json:"token"`
+	Room  string `json:"room"`
+	URL   string `json:"url"`
+	// shrink is write access restricted to edits that reduce the document, which
+	// is how an over-quota account stays able to delete its way back under limit.
+	Access    string `json:"access" enum:"write,comment,shrink"`
 	ExpiresAt int64  `json:"expiresAt"`
 }
 
@@ -121,6 +123,21 @@ func (a *api) createMaterialCollaborationToken(
 		access = "comment"
 	default:
 		return nil, collaborationError(store.ErrForbidden)
+	}
+	// The room token is the collaboration server's only source of truth for what
+	// a connection may do, so lifecycle restrictions have to be resolved here.
+	// Tokens are short-lived, which bounds how long a stale grant survives.
+	if access == "write" {
+		status, err := a.s.AccountAccess(ctx, uid)
+		if err != nil {
+			return nil, collaborationError(err)
+		}
+		switch {
+		case status.ShrinkOnly():
+			access = "shrink"
+		case !status.CanEdit():
+			access = "comment"
+		}
 	}
 	me, _ := a.s.Me(ctx, uid)
 	room, err := a.s.MaterialRoom(ctx, in.ID)

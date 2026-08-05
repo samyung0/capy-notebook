@@ -48,6 +48,7 @@ from ..config import cfg
 from ..rag import mineru_lite, modal_parser, progress
 from ..rag.cache import RagCache
 from ..rag.factory import build_ingest_rag
+from ..rag.teardown import drop_workspace_state
 from ..store import blobstore, db
 
 log = logging.getLogger("evo.worker")
@@ -245,6 +246,37 @@ def _cleanup_staged(ws: str, canonical: str) -> None:
             log.debug("cleanup of %s failed", t, exc_info=True)
 
 
+async def process_teardown_job(cache: RagCache, job: dict) -> None:
+    """Drop a deleted workspace's LightRAG state.
+
+    Runs here rather than inline in the Go delete handler because it is slow
+    (a full graph drop) and must survive a crash: none of this state is reachable
+    from the Go schema, so a lost teardown leaks it permanently.
+    """
+    ws = (job["payload"] or {})["workspaceId"]
+    # The instance is finalized before the tables it points at are dropped.
+    await cache.discard(ws)
+    result = await asyncio.to_thread(drop_workspace_state, ws)
+    await asyncio.to_thread(_finish_job_ok, job["id"])
+    log.info("workspace %s teardown: %s", ws, result)
+
+
+def _finish_job_ok(job_id: str) -> None:
+    with db.connect() as conn:
+        with conn.cursor() as cur:
+            db.set_job(cur, job_id, "done")
+        conn.commit()
+
+
+def _account_allows_ingest(file_id: str) -> bool:
+    with db.connect() as conn:
+        with conn.cursor() as cur:
+            owner = db.file_owner_user_id(cur, file_id)
+            if not owner:
+                return False
+            return db.account_allows_ingest(cur, owner)
+
+
 async def process_job(cache: RagCache, job: dict) -> None:
     payload = job["payload"] or {}
     file_id = payload["fileId"]
@@ -256,6 +288,11 @@ async def process_job(cache: RagCache, job: dict) -> None:
     parse_mode = (payload.get("parseMode") or "advanced").lower()
 
     name = await asyncio.to_thread(_read_name, file_id)
+    if not await asyncio.to_thread(_account_allows_ingest, file_id):
+        note = f"{name}: ingest refused because the account is locked or over quota."
+        await asyncio.to_thread(_finish_fail, file_id, job["id"], note)
+        progress.publish(ws, file_id, "failed", 100, status="failed", message=note)
+        return
     progress.publish(ws, file_id, "queued", 5)
 
     if parse_mode == "none" and kind not in _TEXT_KINDS:
@@ -430,13 +467,16 @@ async def main_async() -> None:
                 await asyncio.sleep(cfg.poll_interval)
                 continue
 
-            log.info("claimed ingest job %s", job["id"])
+            log.info("claimed %s job %s", job.get("type"), job["id"])
             payload = job.get("payload") or {}
             try:
-                await process_job(cache, job)
+                if job.get("type") == "rag_teardown":
+                    await process_teardown_job(cache, job)
+                else:
+                    await process_job(cache, job)
                 log.info("job %s done", job["id"])
             except Exception as exc:
-                log.exception("ingest job %s failed", job["id"])
+                log.exception("%s job %s failed", job.get("type"), job["id"])
                 fid = payload.get("fileId")
                 ws = payload.get("workspaceId")
                 try:

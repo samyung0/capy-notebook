@@ -111,7 +111,7 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	res, err := a.s.CreateMaterial(ctx, store.Material{
-		UserID:        userID(ctx),
+		CreatedBy:     userID(ctx),
 		WorkspaceID:   in.ID,
 		WorkspaceName: ws.Name,
 		Kind:          kind,
@@ -150,6 +150,12 @@ func (a *api) updateMaterial(
 	ctx context.Context,
 	in *updateMaterialInput,
 ) (*materialUpdateOutput, error) {
+	// Metadata edits (title, privacy, filing) require a fully writable account.
+	// Content shrink recovery goes through the collaboration server's shrink
+	// access, not this REST path.
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
 	access, err := a.s.AssertMaterialContentEditor(ctx, userID(ctx), in.ID)
 	if err != nil {
 		return nil, collaborationError(err)
@@ -203,6 +209,9 @@ func (a *api) updateMaterial(
 }
 
 func (a *api) deleteMaterial(ctx context.Context, in *materialIDInput) (*Empty, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
 	if err := a.assertMaterialOwner(ctx, in.ID); err != nil {
 		return nil, collaborationError(err)
 	}

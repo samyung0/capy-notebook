@@ -1,7 +1,9 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
+export type CollaborationAccess = 'comment' | 'write' | 'shrink';
+
 export interface CollaborationClaims {
-  access: 'comment' | 'write';
+  access: CollaborationAccess;
   aud: 'evo-collaboration';
   avatarUrl?: string;
   exp: number;
@@ -132,7 +134,9 @@ export function verifyCollaborationToken(
     expectedSchema < 1 ||
     claims.aud !== 'evo-collaboration' ||
     claims.iss !== 'evo-api' ||
-    (claims.access !== 'write' && claims.access !== 'comment') ||
+    (claims.access !== 'write' &&
+      claims.access !== 'comment' &&
+      claims.access !== 'shrink') ||
     !claims.sub ||
     !claims.jti ||
     !Number.isSafeInteger(claims.iat) ||

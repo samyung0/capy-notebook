@@ -4,7 +4,28 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+
+	"github.com/jackc/pgx/v5"
 )
+
+// EnqueueRagTeardownTx schedules removal of a workspace's LightRAG tenant (its
+// lightrag_* rows and Apache AGE graph). That state is keyed only by workspace
+// id and is invisible to this schema, so nothing else — not a cascade, not a
+// trigger — will ever collect it.
+//
+// It runs as a job rather than inline because dropping a graph is slow and has
+// to survive a crashed request. Enqueue it in the same transaction as the delete
+// so the two cannot diverge.
+func (s *Store) EnqueueRagTeardownTx(ctx context.Context, tx pgx.Tx, workspaceID string) error {
+	payload, err := json.Marshal(map[string]string{"workspaceId": workspaceID})
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx,
+		`INSERT INTO jobs (id, type, payload) VALUES ($1,'rag_teardown',$2)`,
+		uid("job"), payload)
+	return err
+}
 
 // CreateSourceWithJob inserts an uploaded file as 'processing' and enqueues an
 // ingest job in the same transaction (Postgres-backed queue; the Python worker
@@ -12,7 +33,7 @@ import (
 // so the viewer can render it immediately. parseMode selects how the worker
 // parses the document: 'advanced' (Modal GPU MinerU), 'normal' (MinerU
 // lightweight cloud API) — text kinds ignore it and are inserted directly.
-func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, engine, parseMode string) (File, string, error) {
+func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, engine, parseMode string) (File, string, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return File{}, "", err
@@ -34,9 +55,9 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, name, kind string
 	url := "/api/files/" + fileID + "/raw"
 	now := time.Now().UTC()
 	if _, err := tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, chapter_id, name, kind, size_bytes, added_at, status, parser, engine, blob_path, url)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'processing',$9,$10,$11,$12)`,
-		fileID, wsID, ownerID, chapterID, name, kind, sizeBytes, now, parser, engine, blobPath, url); err != nil {
+		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, engine, blob_path, url)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'processing',$10,$11,$12,$13)`,
+		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, parser, engine, blobPath, url); err != nil {
 		return File{}, "", err
 	}
 
@@ -60,7 +81,7 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, name, kind string
 // CreateSourceReady inserts an uploaded file that skips parsing entirely
 // (parse mode 'none' / formats no parser supports). The blob is stored for
 // viewing but no ingest job is enqueued, so the file is 'ready' at once.
-func (s *Store) CreateSourceReady(ctx context.Context, wsID, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath string) (File, error) {
+func (s *Store) CreateSourceReady(ctx context.Context, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath string) (File, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return File{}, err
@@ -82,9 +103,9 @@ func (s *Store) CreateSourceReady(ctx context.Context, wsID, name, kind string, 
 	url := "/api/files/" + fileID + "/raw"
 	now := time.Now().UTC()
 	if _, err := tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, chapter_id, name, kind, size_bytes, added_at, status, blob_path, url)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'ready',$9,$10)`,
-		fileID, wsID, ownerID, chapterID, name, kind, sizeBytes, now, blobPath, url); err != nil {
+		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, blob_path, url)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'ready',$10,$11)`,
+		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, blobPath, url); err != nil {
 		return File{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {

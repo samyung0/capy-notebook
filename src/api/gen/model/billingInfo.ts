@@ -10,6 +10,7 @@ import type { SubscriptionStatus } from './subscriptionStatus.ts';
 export interface BillingInfo {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  cancelAtPeriodEnd: boolean;
   planTier: PlanTier;
   renewalAt?: string;
   storageLimitBytes: number;

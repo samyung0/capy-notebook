@@ -1,0 +1,16 @@
+Evo Notes
+
+
+ACCOUNT FROZEN
+
+Hello,
+
+Your storage buffer has expired and your account is frozen. You cannot create new content until you free up space or resubscribe.
+
+Manage subscription {{.OpenURL}}
+
+----------------------------------------
+
+You received this message because your Evo Notes account was frozen after the storage buffer expired.
+
+Manage product email preferences {{.UnsubscribeURL}}

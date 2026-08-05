@@ -107,7 +107,7 @@ func CapabilitiesForRole(role WorkspaceRole, canView bool) AccessCapabilities {
 // MaterialEffectiveAccess for request-scoped shared material capabilities.
 func (s *Store) MaterialRole(ctx context.Context, userID, matID string) (WorkspaceRole, error) {
 	var owner, wsID *string
-	err := s.pool.QueryRow(ctx, `SELECT user_id, workspace_id FROM materials WHERE id=$1`, matID).
+	err := s.pool.QueryRow(ctx, `SELECT owner_user_id, workspace_id FROM materials WHERE id=$1`, matID).
 		Scan(&owner, &wsID)
 	if isNoRows(err) {
 		return "", ErrNotFound
@@ -144,7 +144,7 @@ func (s *Store) MaterialEffectiveAccess(ctx context.Context, userID, matID strin
 	var shareRole *ShareRole
 	var memberRole WorkspaceRole
 	err := s.pool.QueryRow(ctx, `
-		SELECT m.user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
+		SELECT m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
 			COALESCE(wm.role, '')
 		FROM materials m
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
@@ -208,7 +208,7 @@ func (s *Store) MaterialAccess(ctx context.Context, userID, matID string) (isOwn
 
 func (s *Store) AssertMaterialEditor(ctx context.Context, userID, matID string) error {
 	var owner, wsID *string
-	err := s.pool.QueryRow(ctx, `SELECT user_id, workspace_id FROM materials WHERE id=$1`, matID).Scan(&owner, &wsID)
+	err := s.pool.QueryRow(ctx, `SELECT owner_user_id, workspace_id FROM materials WHERE id=$1`, matID).Scan(&owner, &wsID)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
@@ -315,7 +315,7 @@ func (s *Store) ListPublicWorkspaces(ctx context.Context) ([]PublicWorkspace, er
 func (s *Store) ListPublicQuizzes(ctx context.Context) ([]PublicQuiz, error) {
 	rows, err := s.pool.Query(ctx, `SELECT m.id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.scope_chapters, m.scope_file_ids, m.privacy, m.color, m.created_at,
 			COALESCE(u.name,'Unknown'), m.clone_count
-		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.user_id
+		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
 		WHERE m.kind='quiz' AND (m.privacy='public' OR w.privacy='public')
 		ORDER BY m.clone_count DESC, m.created_at DESC`)
 	if err != nil {
@@ -342,7 +342,7 @@ func (s *Store) ListPublicQuizzes(ctx context.Context) ([]PublicQuiz, error) {
 func (s *Store) ListPublicDecks(ctx context.Context) ([]PublicDeck, error) {
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, COALESCE(m.workspace_id,''), m.workspace_name, m.color, m.privacy,`+deckStatsExpr+`,
 			COALESCE(u.name,'Unknown'), m.clone_count
-		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.user_id
+		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
 		WHERE m.kind='flashcards' AND (m.privacy='public' OR w.privacy='public')
 		ORDER BY m.clone_count DESC, m.created_at DESC`)
 	if err != nil {
@@ -656,10 +656,13 @@ func (s *Store) snapshotWorkspaceForClone(
 }
 
 // CloneWorkspace deep-copies a shared workspace (chapters, files, materials,
-// fresh card stats) into a new workspace owned by userID. Blobs are shared by
-// reference (blob_path is copied, objects are never deleted on file delete).
-// LightRAG state is copied separately by the pipeline (keyed by workspace id).
-// The clone lands private regardless of the source's visibility.
+// fresh card stats) into a new workspace owned by userID. Blob objects are shared
+// rather than duplicated: the clone copies blob_path and editor asset object
+// paths, and the refcount triggers make that safe — the object survives until its
+// last holder is gone, so deleting either workspace no longer leaks or destroys
+// the other's bytes. LightRAG state is copied separately by the pipeline (keyed
+// by workspace id). The clone lands private regardless of the source's
+// visibility.
 func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Workspace, error) {
 	isOwner, err := s.WorkspaceAccess(ctx, userID, srcID)
 	if err != nil {
@@ -737,8 +740,8 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 				url = &u
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO files
-				(id, workspace_id, user_id, chapter_id, position, name, kind, size_bytes, added_at, status, parser, engine, blob_path, url, content, doc_id)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+				(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, parser, engine, blob_path, url, content, doc_id)
+				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
 				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.parser, f.engine, f.blobPath, url, f.content, f.docID); err != nil {
 				return Workspace{}, err
 			}
@@ -781,7 +784,7 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 			content := materialSnapshot.content
 			metrics := materialSnapshot.metrics
 			if _, err := tx.Exec(ctx, `INSERT INTO materials
-				(id, user_id, owner_user_id, workspace_id, workspace_name, kind, title, content,
+				(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
 				 chapter_id, position, scope_chapters, scope_file_ids, privacy, color, node_count, max_depth, updated_at, revision, updated_by)
 				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2)`,
 				nid, userID, newID, name, mt.Kind, mt.Title, json.RawMessage(content), chapterID,
@@ -856,7 +859,7 @@ func (s *Store) CloneMaterial(ctx context.Context, userID, matID string) (Materi
 
 	nid := uid("mat")
 	if _, err := tx.Exec(ctx, `INSERT INTO materials
-		(id, user_id, owner_user_id, workspace_id, workspace_name, kind, title, content,
+		(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
 		 scope_chapters, scope_file_ids, privacy, color, node_count, max_depth, updated_at, revision, updated_by)
 		VALUES ($1,$2,$2,NULL,'',$3,$4,$5,$6,'{}','private',$7,$8,$9,$10,$11,$2)`,
 		nid, userID, src.Kind, src.Title, json.RawMessage(content), src.ScopeChapters,

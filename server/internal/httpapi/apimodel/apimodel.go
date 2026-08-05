@@ -349,3 +349,30 @@ type CloneWorkspaceResp struct {
 	Workspace Workspace `json:"workspace"`
 	RagCloned bool      `json:"ragCloned"`
 }
+
+// SubscriptionBlocker is a live subscription standing in the way of account
+// deletion. Unavailable means Stripe could not be reached, which is reported as
+// a blocker rather than as "no subscription" so an outage cannot let a paying
+// account through.
+type SubscriptionBlocker struct {
+	StripeSubscriptionID string     `json:"stripeSubscriptionId,omitempty"`
+	PlanTier             string     `json:"planTier,omitempty"`
+	CurrentPeriodEnd     *time.Time `json:"currentPeriodEnd,omitempty"`
+	Unavailable          bool       `json:"unavailable,omitempty"`
+}
+
+// DeletionPreflight is everything the danger zone needs to state consequences
+// before the user commits.
+type DeletionPreflight struct {
+	CanDelete bool `json:"canDelete"`
+	// WorkspacesNeedingTransfer have other live members. Deleting them would
+	// take somebody else's work with them, so each has to be transferred or
+	// emptied first.
+	WorkspacesNeedingTransfer []Workspace `json:"workspacesNeedingTransfer"`
+	// WorkspacesToDestroy are solely the user's and will be destroyed.
+	WorkspacesToDestroy []Workspace          `json:"workspacesToDestroy"`
+	Subscription        *SubscriptionBlocker `json:"subscription,omitempty"`
+	StorageUsedBytes    int64                `json:"storageUsedBytes"`
+	// GraceDays is the reactivation window before the purge runs.
+	GraceDays int `json:"graceDays"`
+}

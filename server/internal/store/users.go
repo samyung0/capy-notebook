@@ -7,12 +7,18 @@ import (
 )
 
 type BillingInfo struct {
-	PlanTier             PlanTier           `json:"planTier"`
-	SubscriptionStatus   SubscriptionStatus `json:"subscriptionStatus"`
-	RenewalAt            *time.Time         `json:"renewalAt,omitempty"`
-	StorageUsedBytes     int64              `json:"storageUsedBytes"`
-	StorageReservedBytes int64              `json:"storageReservedBytes"`
-	StorageLimitBytes    int64              `json:"storageLimitBytes"`
+	PlanTier           PlanTier           `json:"planTier"`
+	SubscriptionStatus SubscriptionStatus `json:"subscriptionStatus"`
+	// RenewalAt is the end of the paid period: the next charge date normally, or
+	// the date access stops when CancelAtPeriodEnd is set.
+	RenewalAt *time.Time `json:"renewalAt,omitempty"`
+	// CancelAtPeriodEnd distinguishes "renews then" from "ends then", which the
+	// deletion precondition also needs: a subscription set to cancel already
+	// satisfies the cancel-before-deleting requirement.
+	CancelAtPeriodEnd    bool  `json:"cancelAtPeriodEnd"`
+	StorageUsedBytes     int64 `json:"storageUsedBytes"`
+	StorageReservedBytes int64 `json:"storageReservedBytes"`
+	StorageLimitBytes    int64 `json:"storageLimitBytes"`
 }
 
 // IntegrationsStatus reflects Clerk external-account links (not local rows).
@@ -25,8 +31,9 @@ type IntegrationsStatus struct {
 
 func (s *Store) Me(ctx context.Context, userID string) (User, error) {
 	var u User
-	row := s.pool.QueryRow(ctx, `SELECT id, name, email, COALESCE(avatar_url,''), COALESCE(class_label,''), streak,
-		locale, plan_tier, subscription_status FROM users WHERE id=$1`, userID)
+	row := s.pool.QueryRow(ctx, `SELECT id, name, COALESCE(email,''), COALESCE(avatar_url,''),
+		COALESCE(class_label,''), streak, locale, plan_tier, subscription_status
+		FROM users WHERE id=$1`, userID)
 	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.AvatarURL, &u.ClassLabel, &u.Streak,
 		&u.Locale, &u.PlanTier, &u.SubscriptionStatus)
 	if isNoRows(err) {
@@ -47,6 +54,11 @@ func (s *Store) SetLocale(ctx context.Context, userID, locale string) error {
 // when a new row was inserted (first sign-in), so callers can run one-time
 // provisioning such as CreateDefaultWorkspace. Detection uses xmax=0, which is
 // 0 for freshly inserted tuples and non-zero for rows touched by ON CONFLICT.
+//
+// The profile sync deliberately skips purged rows. This runs on every
+// authenticated request, so without the guard a scrubbed tombstone would be
+// repopulated with the name and email the purge just erased, the moment a
+// still-valid Clerk identity made one more call.
 func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatarURL string) (bool, error) {
 	if name == "" {
 		name = email
@@ -55,25 +67,26 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 		name = "User"
 	}
 	var created bool
-	err := s.pool.QueryRow(ctx, `INSERT INTO users (id, clerk_id, name, email, avatar_url)
-		VALUES ($1,$1,$2,$3,NULLIF($4,''))
+	err := s.pool.QueryRow(ctx, `INSERT INTO users (id, name, email, avatar_url)
+		VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''))
 		ON CONFLICT (id) DO UPDATE SET
 			name=EXCLUDED.name,
 			email=EXCLUDED.email,
 			avatar_url=COALESCE(NULLIF(EXCLUDED.avatar_url,''), users.avatar_url),
 			updated_at=now()
+		WHERE users.deleted_at IS NULL
 		RETURNING (xmax = 0)`,
 		id, name, email, avatarURL).Scan(&created)
+	// The WHERE clause suppresses the RETURNING row for a tombstone, which is
+	// not an error: the account exists and stays scrubbed.
+	if isNoRows(err) {
+		return false, nil
+	}
 	return created, err
 }
 
 func (s *Store) UpsertUserFromWebhook(ctx context.Context, id, name, email, avatarURL string) error {
 	_, err := s.UpsertUserFromClerk(ctx, id, name, email, avatarURL)
-	return err
-}
-
-func (s *Store) MarkUserDeleted(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE users SET email=email || '.deleted', updated_at=now() WHERE id=$1`, id)
 	return err
 }
 
@@ -159,6 +172,16 @@ func (s *Store) GetBilling(ctx context.Context, userID string) (BillingInfo, err
 	if err != nil {
 		return b, err
 	}
+	// RenewalAt was permanently null before user_subscriptions existed: nothing
+	// persisted the period end, so it was not merely unread but uncomputable.
+	sub, err := s.SubscriptionForUser(ctx, userID)
+	if err != nil {
+		return b, err
+	}
+	if sub != nil {
+		b.RenewalAt = sub.CurrentPeriodEnd
+		b.CancelAtPeriodEnd = sub.CancelAtPeriodEnd
+	}
 	usage, err := s.StorageUsage(ctx, userID)
 	if err != nil {
 		return b, err
@@ -183,18 +206,6 @@ func (s *Store) GetStripeCustomerID(ctx context.Context, userID string) (string,
 
 func (s *Store) SetStripeCustomerID(ctx context.Context, userID, customerID string) error {
 	_, err := s.pool.Exec(ctx, `UPDATE users SET stripe_customer_id=$2, updated_at=now() WHERE id=$1`, userID, customerID)
-	return err
-}
-
-func (s *Store) UpdateSubscription(ctx context.Context, userID, status, planTier string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE users SET subscription_status=$2, plan_tier=$3, updated_at=now() WHERE id=$1`,
-		userID, status, planTier)
-	return err
-}
-
-func (s *Store) UpdateSubscriptionByCustomerID(ctx context.Context, customerID, status, planTier string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE users SET subscription_status=$2, plan_tier=$3, updated_at=now()
-		WHERE stripe_customer_id=$1`, customerID, status, planTier)
 	return err
 }
 
@@ -240,5 +251,5 @@ func (s *Store) ListStripeCustomers(ctx context.Context) ([]struct {
 	return out, rows.Err()
 }
 
-// OAuth connection storage was removed: Clerk holds provider tokens now.
-// The legacy oauth_connections table can be dropped in a future migration.
+// OAuth connection storage was removed: Clerk holds provider tokens now, and
+// the legacy oauth_connections table is gone from the baseline schema.

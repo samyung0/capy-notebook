@@ -112,6 +112,9 @@ func (a *api) createWorkspace(ctx context.Context, in *createWorkspaceInput) (*w
 }
 
 func (a *api) updateWorkspace(ctx context.Context, in *updateWorkspaceInput) (*workspaceOutput, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
 	p := store.WorkspacePatch{
 		Name: in.Body.Name, Color: in.Body.Color,
 	}
@@ -127,6 +130,9 @@ func (a *api) updateWorkspace(ctx context.Context, in *updateWorkspaceInput) (*w
 }
 
 func (a *api) updateWorkspaceSharing(ctx context.Context, in *updateWorkspaceSharingInput) (*workspaceOutput, error) {
+	if err := a.requireAccountEdit(ctx); err != nil {
+		return nil, err
+	}
 	res, err := a.s.UpdateWorkspaceSharing(
 		ctx,
 		userID(ctx),
@@ -141,6 +147,9 @@ func (a *api) updateWorkspaceSharing(ctx context.Context, in *updateWorkspaceSha
 }
 
 func (a *api) deleteWorkspace(ctx context.Context, in *workspaceIDInput) (*Empty, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
 	materialIDs, _ := a.s.WorkspaceMaterialIDs(ctx, in.ID)
 	removed, err := a.s.DeleteWorkspaceWithResult(ctx, userID(ctx), in.ID)
 	if err != nil {

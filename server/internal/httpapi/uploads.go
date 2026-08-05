@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"context"
 	"errors"
 	"log"
 	"mime"
@@ -14,6 +13,20 @@ import (
 
 	"github.com/evonotes/server/internal/store"
 )
+
+// Object keys are built only through these helpers so every source object lands
+// under one prefix. Three shapes used to coexist — `sources/blob_…` from the
+// presign flow against bare `blob_…` from the legacy multipart and import paths —
+// which made the incoming/ lifecycle rule and the orphan sweep unable to reason
+// about a key from its name alone.
+func sourceObjectKey(name string) string { return "sources/" + name }
+
+// incomingObjectKey is where a browser PUTs before promotion. The prefix carries
+// a bucket lifecycle rule expiring objects after a day, so an upload that is
+// never completed costs nothing even if the outbox never hears about it.
+func incomingObjectKey(uploadID, name string) string {
+	return "incoming/" + uploadID + "/" + name
+}
 
 type createUploadRequest struct {
 	Name        string  `json:"name"`
@@ -89,15 +102,16 @@ func (a *api) createSourceUpload(w http.ResponseWriter, r *http.Request) {
 	if len(ext) > 12 {
 		ext = ""
 	}
-	incoming := "incoming/" + uploadID + "/" + blobID + ext
-	finalPath := "sources/" + blobID + ext
+	incoming := incomingObjectKey(uploadID, blobID+ext)
+	finalPath := sourceObjectKey(blobID + ext)
 	signed, err := a.blob.PresignPut(r.Context(), incoming, in.ContentType)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
 	session, err := a.s.CreateUploadSession(r.Context(), store.NewUploadSession{
-		ID: uploadID, WorkspaceID: wsID, ChapterID: in.ChapterID, ChapterName: in.ChapterName,
+		ID: uploadID, WorkspaceID: wsID, CreatedBy: uid(r),
+		ChapterID: in.ChapterID, ChapterName: in.ChapterName,
 		ObjectPath: incoming, FinalPath: finalPath, Name: in.Name, Kind: in.Kind,
 		ContentType: in.ContentType, DeclaredSize: in.SizeBytes,
 		ParseMode: in.ParseMode, ExpiresAt: signed.ExpiresAt,
@@ -177,24 +191,4 @@ func (a *api) completeSourceUpload(w http.ResponseWriter, r *http.Request) {
 	log.Printf("direct upload completed upload=%s file=%s bytes=%d etag=%s",
 		uploadID, res.ID, info.Size, info.ETag)
 	writeJSON(w, http.StatusCreated, res)
-}
-
-// cleanupExpiredUploads is deliberately bounded and best-effort. It runs
-// opportunistically on upload creation so abandoned presigned PUTs do not
-// accumulate indefinitely even without a separate scheduler.
-func (a *api) cleanupExpiredUploads() {
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	sessions, err := a.s.ExpiredUploadSessions(ctx, 20)
-	if err != nil {
-		return
-	}
-	for _, session := range sessions {
-		if err := a.s.MarkUploadExpired(ctx, session.ID); err != nil {
-			continue
-		}
-		_ = a.blob.Delete(ctx, session.ObjectPath)
-		_ = a.blob.Delete(ctx, session.FinalPath)
-	}
-	_ = a.s.PruneUploadSessions(ctx)
 }

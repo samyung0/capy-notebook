@@ -48,7 +48,9 @@ type EmailOutboxParams struct {
 // EnqueueEmailTx writes a product email only when the recipient has enabled its
 // category. It must be called with the same transaction as the domain event.
 func EnqueueEmailTx(ctx context.Context, tx pgx.Tx, params EmailOutboxParams) (bool, error) {
-	if params.Category != "workspace_invite" && params.Category != "membership" {
+	switch params.Category {
+	case "workspace_invite", "membership", "billing", "lifecycle":
+	default:
 		return false, ErrInvalidEmailCategory
 	}
 	if params.IdempotencyKey == "" {
@@ -187,10 +189,6 @@ func (s *Store) ClaimEmails(ctx context.Context, limit int) ([]EmailOutbox, erro
 	return out, nil
 }
 
-type emailQueryer interface {
-	QueryRow(context.Context, string, ...any) pgx.Row
-}
-
 type EmailSendGuard struct {
 	tx   pgx.Tx
 	item EmailOutbox
@@ -314,7 +312,7 @@ func (s *Store) EmailClaimActive(ctx context.Context, item EmailOutbox) (bool, e
 	return emailClaimActive(ctx, s.pool, item)
 }
 
-func emailClaimActive(ctx context.Context, q emailQueryer, item EmailOutbox) (bool, error) {
+func emailClaimActive(ctx context.Context, q rowQueryer, item EmailOutbox) (bool, error) {
 	var active bool
 	err := q.QueryRow(ctx, `SELECT EXISTS(
 		SELECT 1

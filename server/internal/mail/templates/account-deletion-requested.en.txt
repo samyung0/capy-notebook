@@ -1,0 +1,16 @@
+Evo Notes
+
+
+ACCOUNT DELETION SCHEDULED
+
+Hello,
+
+We received your request to delete your Evo Notes account. Deletion proceeds in {{.GraceDays}} days. If this was a mistake, contact support before then.
+
+Contact support {{.OpenURL}}
+
+----------------------------------------
+
+You received this message because you requested account deletion on Evo Notes.
+
+Manage product email preferences {{.UnsubscribeURL}}

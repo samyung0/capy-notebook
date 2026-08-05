@@ -198,14 +198,10 @@ func (a *api) deleteFile(ctx context.Context, in *fileIDInput) (*Empty, error) {
 	if err := a.assertFileEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
-	orphaned, err := a.s.DeleteFileWithOrphanedBlobs(ctx, in.ID)
-	if err != nil {
+	// The blob objects are queued for the reaper by trigger, so there is nothing
+	// to clean up here and no chance of leaking them if this request dies.
+	if err := a.s.DeleteFile(ctx, in.ID); err != nil {
 		return nil, hErr(err)
-	}
-	if a.blob != nil {
-		for _, path := range orphaned {
-			_ = a.blob.Delete(ctx, path)
-		}
 	}
 	return &Empty{}, nil
 }

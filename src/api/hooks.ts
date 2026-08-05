@@ -33,6 +33,7 @@ import {
   readNotificationStream,
 } from './notificationStream';
 import type {
+  AccountStatus,
   Attempt,
   AttemptDetail,
   BillingInfo,
@@ -41,6 +42,7 @@ import type {
   CloneWorkspaceResult,
   Conversation,
   Deck,
+  DeletionPreflight,
   FileStatus,
   Flashcard,
   GenerateOptions,
@@ -78,6 +80,51 @@ const USE_DIRECT_B2_UPLOAD = import.meta.env.VITE_DIRECT_B2_UPLOAD !== 'false';
 export const meQuery = () =>
   queryOptions({ queryFn: () => api.get<User>('/me'), queryKey: qk.me });
 export const useMe = () => useQuery(meQuery());
+
+export const accountStatusQuery = () =>
+  queryOptions({
+    queryFn: () => api.get<AccountStatus>('/account/status'),
+    queryKey: qk.accountStatus,
+  });
+export const useAccountStatus = () => useQuery(accountStatusQuery());
+
+export const deletionPreflightQuery = () =>
+  queryOptions({
+    queryFn: () => api.get<DeletionPreflight>('/account/deletion'),
+    queryKey: qk.deletionPreflight,
+  });
+export const useDeletionPreflight = (enabled = true) =>
+  useQuery({ ...deletionPreflightQuery(), enabled });
+
+export function useRequestAccountDeletion() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (confirmEmail: string) =>
+      api.post<AccountStatus>('/account/deletion', { confirmEmail }),
+    onSuccess: (status) => {
+      qc.setQueryData(qk.accountStatus, status);
+      void qc.invalidateQueries({ queryKey: qk.deletionPreflight });
+      void qc.invalidateQueries({ queryKey: qk.me });
+    },
+  });
+}
+
+export function useTransferWorkspace(workspaceId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (recipientId: string) =>
+      api.post<Workspace>(`/workspaces/${workspaceId}/transfer`, {
+        recipientId,
+      }),
+    onSuccess: (ws) => {
+      qc.setQueryData(qk.workspace(workspaceId), ws);
+      void qc.invalidateQueries({ queryKey: qk.workspaceMembers(workspaceId) });
+      void qc.invalidateQueries({ queryKey: qk.workspaces() });
+      void qc.invalidateQueries({ queryKey: qk.deletionPreflight });
+      void qc.invalidateQueries({ queryKey: qk.accountStatus });
+    },
+  });
+}
 
 export const useSearch = (q: string) =>
   useQuery({

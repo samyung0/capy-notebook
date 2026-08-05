@@ -27,6 +27,35 @@ bucket access and exits if those credentials are invalid.
 The server applies the embedded `migrations/0001_init.sql` development baseline
 (schema + seed) on startup; it is idempotent.
 
+### Bucket configuration
+
+Apply `../deploy/b2-lifecycle.example.json` to the bucket. Two things depend on
+it:
+
+- The `incoming/` and `editor-assets/incoming/` prefixes expire after a day. A
+  presigned PUT that is never completed is then free, with no code involved, and
+  the orphan sweep can skip those prefixes entirely.
+- Keeping only the last file version stops hidden objects billing forever. B2
+  hides rather than deletes by default, so without a `daysFromHidingToDeleting`
+  rule every object the reaper "deletes" is still charged for.
+
+### Object lifecycle
+
+Bucket objects are deleted in exactly one place: the reaper in
+`cmd/api/blob_workers.go`, draining `pending_blob_deletions`. Nothing in a request
+handler deletes an object.
+
+Rows land in that queue from refcount triggers on `files`, `editor_assets` and
+`upload_sessions`. Because those are row-level `AFTER DELETE` triggers, they fire
+on FK cascades too — which is the point, since deleting a workspace or purging an
+account never runs handler code for the files inside. `blobs.ref_count` is what
+lets a cloned workspace share a source object safely: the object goes only when
+its last holder does.
+
+A monthly report-only sweep lists the bucket and logs keys with no database
+reference. That is the backstop for objects written without a row at all, and it
+deletes nothing.
+
 ## Collaboration authority
 
 The Hocuspocus service in `../collaboration` is authoritative for initialized
@@ -55,9 +84,23 @@ positions plus stable block ID/version/quote fallback. Comment mutations publish
 Redis invalidations. Membership changes and deletions publish room eviction
 events.
 
+## Support: cancel a scheduled account deletion
+
+Users cannot undo account deletion themselves. After they confirm, sessions are
+revoked and auth returns `account_deletion_pending` until purge. To reactivate
+an account still inside the grace window:
+
+```bash
+DATABASE_URL=... go run ./cmd/cancel-deletion -user <user_id>
+DATABASE_URL=... go run ./cmd/cancel-deletion -email user@example.com
+# optional: also send the deletion-cancelled email + in-app notice
+DATABASE_URL=... go run ./cmd/cancel-deletion -email user@example.com -notify
+```
+
 ## Layout
 
 - `cmd/api` — entrypoint (config, migrate, serve, graceful shutdown).
+- `cmd/cancel-deletion` — support tool to reactivate a deletion-pending account.
 - `internal/store` — pgx pool, models (mirror `src/api/types.ts`), queries.
 - `internal/httpapi` — chi router + handlers (mirror `src/mocks/handlers.ts`).
 - `migrations` — `0001_init.sql` (complete schema and development seed). It needs

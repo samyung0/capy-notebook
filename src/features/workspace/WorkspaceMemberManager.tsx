@@ -1,13 +1,16 @@
 import { useState } from 'react';
 import {
   useCreateWorkspaceInvite,
+  useMe,
   useRemoveWorkspaceMember,
+  useTransferWorkspace,
   useUpdateWorkspaceMember,
   useWorkspaceMembers,
 } from '@/api/hooks';
-import type { WorkspaceRole } from '@/api/types';
+import type { WorkspaceMember, WorkspaceRole } from '@/api/types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Input, InputTitle } from '@/components/ui/Input';
 import {
   Select,
@@ -17,6 +20,7 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { userToast } from '@/components/ui/userToast';
+import { m } from '@/i18n';
 
 type MemberRole = Exclude<WorkspaceRole, 'owner'>;
 
@@ -33,10 +37,19 @@ export function WorkspaceMemberManager({
 }) {
   const [identifier, setIdentifier] = useState('');
   const [role, setRole] = useState<MemberRole>('viewer');
+  const [transferTarget, setTransferTarget] = useState<WorkspaceMember | null>(
+    null
+  );
+  const me = useMe();
   const members = useWorkspaceMembers(workspaceId);
   const createInvite = useCreateWorkspaceInvite(workspaceId);
   const updateMember = useUpdateWorkspaceMember(workspaceId);
   const removeMember = useRemoveWorkspaceMember(workspaceId);
+  const transfer = useTransferWorkspace(workspaceId);
+
+  const isOwner = members.data?.some(
+    (member) => member.userId === me.data?.id && member.role === 'owner'
+  );
 
   async function invite() {
     const value = identifier.trim();
@@ -52,6 +65,27 @@ export function WorkspaceMemberManager({
       userToast({
         description: 'Something went wrong. Please try again.',
         title: 'Could not send invitation',
+        variant: 'error',
+      });
+    }
+  }
+
+  async function confirmTransfer() {
+    if (!transferTarget) return;
+    try {
+      await transfer.mutateAsync(transferTarget.userId);
+      setTransferTarget(null);
+      userToast({
+        title: m.workspace_transfer_success(),
+        variant: 'success',
+      });
+    } catch (err) {
+      userToast({
+        description:
+          err instanceof Error
+            ? err.message
+            : 'Something went wrong. Please try again.',
+        title: m.workspace_transfer_failed(),
         variant: 'error',
       });
     }
@@ -122,6 +156,16 @@ export function WorkspaceMemberManager({
                   }
                   value={member.role}
                 />
+                {isOwner && (
+                  <Button
+                    disabled={transfer.isPending}
+                    onClick={() => setTransferTarget(member)}
+                    size="sm"
+                    variant="ghost"
+                  >
+                    {m.workspace_transfer_action()}
+                  </Button>
+                )}
                 <Button
                   disabled={removeMember.isPending}
                   onClick={() => removeMember.mutate(member.userId)}
@@ -135,6 +179,26 @@ export function WorkspaceMemberManager({
           </div>
         ))}
       </div>
+
+      <ConfirmDialog
+        body={
+          transferTarget
+            ? m.workspace_transfer_confirm_body({
+                name: transferTarget.name,
+              })
+            : undefined
+        }
+        closeOnConfirm={false}
+        confirmLabel={m.workspace_transfer_confirm()}
+        danger
+        isSubmitting={transfer.isPending}
+        onClose={() => {
+          if (!transfer.isPending) setTransferTarget(null);
+        }}
+        onConfirm={() => void confirmTransfer()}
+        open={!!transferTarget}
+        title={m.workspace_transfer_title()}
+      />
     </section>
   );
 }

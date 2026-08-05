@@ -14,10 +14,19 @@ var (
 	ErrUploadState   = errors.New("upload session is not pending")
 )
 
+// uploadPresignGrace is how long an abandoned upload's objects wait before the
+// reaper takes them. It has to outlast the presigned PUT URL: a request already
+// in flight can still create the object after the row is written off, and
+// deleting early would leave that object unreferenced and unqueued forever.
+const uploadPresignGrace = 24 * time.Hour
+
 type UploadSession struct {
-	ID           string
-	WorkspaceID  string
+	ID          string
+	WorkspaceID string
+	// UserID is the storage owner charged for the reservation; CreatedBy is the
+	// uploader, which may be a collaborator rather than the workspace owner.
 	UserID       string
+	CreatedBy    *string
 	ChapterID    *string
 	ChapterName  string
 	ObjectPath   string
@@ -35,6 +44,7 @@ type UploadSession struct {
 type NewUploadSession struct {
 	ID           string
 	WorkspaceID  string
+	CreatedBy    string
 	ChapterID    *string
 	ChapterName  string
 	ObjectPath   string
@@ -61,9 +71,11 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 		return UploadSession{}, err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO upload_sessions
-		(id, workspace_id, user_id, chapter_id, chapter_name, object_path, final_path, name, kind, content_type, declared_size, parse_mode, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-		in.ID, in.WorkspaceID, ownerID, in.ChapterID, in.ChapterName, in.ObjectPath, in.FinalPath,
+		(id, target, workspace_id, user_id, created_by, chapter_id, chapter_name,
+		 object_path, final_path, name, kind, content_type, declared_size, parse_mode, expires_at)
+		VALUES ($1,'source',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+		in.ID, in.WorkspaceID, ownerID, nullStr(in.CreatedBy), in.ChapterID, in.ChapterName,
+		in.ObjectPath, in.FinalPath,
 		in.Name, in.Kind, in.ContentType, in.DeclaredSize, in.ParseMode, in.ExpiresAt)
 	if err != nil {
 		return UploadSession{}, err
@@ -76,18 +88,22 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 
 func scanUploadSession(row interface{ Scan(...any) error }) (UploadSession, error) {
 	var u UploadSession
-	err := row.Scan(&u.ID, &u.WorkspaceID, &u.UserID, &u.ChapterID, &u.ChapterName, &u.ObjectPath, &u.FinalPath,
+	err := row.Scan(&u.ID, &u.WorkspaceID, &u.UserID, &u.CreatedBy, &u.ChapterID, &u.ChapterName, &u.ObjectPath, &u.FinalPath,
 		&u.Name, &u.Kind, &u.ContentType, &u.DeclaredSize, &u.ParseMode,
 		&u.Status, &u.FileID, &u.ExpiresAt)
 	return u, err
 }
 
-const uploadSessionCols = `id, workspace_id, user_id, chapter_id, chapter_name, object_path, final_path,
+const uploadSessionCols = `id, workspace_id, user_id, created_by, chapter_id, chapter_name, object_path, final_path,
 	name, kind, content_type, declared_size, parse_mode, status, file_id, expires_at`
+
+// uploadSessionFrom restricts the shared table to the source flow, so an
+// editor-asset upload id can never be driven through the file finalize path.
+const uploadSessionFrom = ` FROM upload_sessions WHERE target='source' AND `
 
 func (s *Store) GetUploadSession(ctx context.Context, id string) (UploadSession, error) {
 	u, err := scanUploadSession(s.pool.QueryRow(ctx,
-		`SELECT `+uploadSessionCols+` FROM upload_sessions WHERE id=$1`, id))
+		`SELECT `+uploadSessionCols+uploadSessionFrom+`id=$1`, id))
 	if isNoRows(err) {
 		return u, ErrNotFound
 	}
@@ -104,7 +120,7 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 	defer tx.Rollback(ctx)
 
 	var ownerID string
-	if err := tx.QueryRow(ctx, `SELECT user_id FROM upload_sessions WHERE id=$1`, uploadID).
+	if err := tx.QueryRow(ctx, `SELECT user_id`+uploadSessionFrom+`id=$1`, uploadID).
 		Scan(&ownerID); err != nil {
 		if isNoRows(err) {
 			return File{}, ErrNotFound
@@ -115,7 +131,7 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 		return File{}, err
 	}
 	u, err := scanUploadSession(tx.QueryRow(ctx,
-		`SELECT `+uploadSessionCols+` FROM upload_sessions WHERE id=$1 FOR UPDATE`, uploadID))
+		`SELECT `+uploadSessionCols+uploadSessionFrom+`id=$1 FOR UPDATE`, uploadID))
 	if isNoRows(err) {
 		return File{}, ErrNotFound
 	}
@@ -146,9 +162,9 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 		status = "ready"
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, chapter_id, name, kind, size_bytes, added_at, status, parser, engine, blob_path, url, source_etag)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-		fileID, u.WorkspaceID, u.UserID, chapterID, u.Name, u.Kind, u.DeclaredSize,
+		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, engine, blob_path, url, source_etag)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+		fileID, u.WorkspaceID, u.UserID, u.CreatedBy, chapterID, u.Name, u.Kind, u.DeclaredSize,
 		now, status, parser, engine, u.FinalPath, fileURL, sourceETag)
 	if err != nil {
 		return File{}, err
@@ -183,27 +199,59 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 	}, nil
 }
 
-// ExpiredUploadSessions returns a bounded cleanup batch. Completed sessions
-// are retained as an audit/idempotency record.
-func (s *Store) ExpiredUploadSessions(ctx context.Context, limit int) ([]UploadSession, error) {
-	rows, err := s.pool.Query(ctx, `SELECT `+uploadSessionCols+`
-		FROM upload_sessions WHERE status='pending' AND expires_at < now()
+// SweepExpiredUploads writes off reservations whose presigned window closed
+// without a completion. It covers both upload targets, because they share the
+// table, and processes each session in its own transaction so one wedged row
+// cannot block the batch behind it.
+//
+// Nothing here talks to the bucket. Expiry only queues object paths; the reaper
+// drains that queue, which is also how objects orphaned by cascading deletes get
+// collected.
+func (s *Store) SweepExpiredUploads(ctx context.Context, limit int) (int, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, target FROM upload_sessions
+		WHERE status='pending' AND expires_at < now()
 		ORDER BY expires_at LIMIT $1`, limit)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	defer rows.Close()
-	var out []UploadSession
+	type staleUpload struct{ id, target string }
+	var stale []staleUpload
 	for rows.Next() {
-		u, err := scanUploadSession(rows)
-		if err != nil {
-			return nil, err
+		var item staleUpload
+		if err := rows.Scan(&item.id, &item.target); err != nil {
+			rows.Close()
+			return 0, err
 		}
-		out = append(out, u)
+		stale = append(stale, item)
 	}
-	return out, rows.Err()
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	swept := 0
+	var firstErr error
+	for _, item := range stale {
+		var err error
+		if item.target == "editor_asset" {
+			err = s.MarkEditorAssetUploadExpired(ctx, item.id)
+		} else {
+			err = s.MarkUploadExpired(ctx, item.id)
+		}
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		swept++
+	}
+	return swept, firstErr
 }
 
+// MarkUploadExpired releases a source reservation and queues both of its object
+// paths in the same transaction, so the accounting change and the cleanup that
+// pays for it commit together.
 func (s *Store) MarkUploadExpired(ctx context.Context, id string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -211,10 +259,8 @@ func (s *Store) MarkUploadExpired(ctx context.Context, id string) error {
 	}
 	defer tx.Rollback(ctx)
 	var userID string
-	var declaredSize int64
-	err = tx.QueryRow(ctx, `SELECT user_id, declared_size
-		FROM upload_sessions WHERE id=$1 AND status='pending'`, id).
-		Scan(&userID, &declaredSize)
+	err = tx.QueryRow(ctx, `SELECT user_id`+uploadSessionFrom+
+		`id=$1 AND status='pending'`, id).Scan(&userID)
 	if isNoRows(err) {
 		return nil
 	}
@@ -224,77 +270,30 @@ func (s *Store) MarkUploadExpired(ctx context.Context, id string) error {
 	if err := s.lockStorageRowTx(ctx, tx, userID); err != nil {
 		return err
 	}
-	err = tx.QueryRow(ctx, `SELECT declared_size
-		FROM upload_sessions WHERE id=$1 AND status='pending' FOR UPDATE`, id).
-		Scan(&declaredSize)
+	var objectPath, finalPath string
+	err = tx.QueryRow(ctx, `UPDATE upload_sessions SET status='expired'
+		WHERE id=$1 AND status='pending'
+		RETURNING object_path, final_path`, id).Scan(&objectPath, &finalPath)
 	if isNoRows(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE upload_sessions SET status='expired'
-		WHERE id=$1 AND status='pending'`, id); err != nil {
+	if err := s.EnqueueBlobDeletionTx(ctx, tx, uploadPresignGrace,
+		objectPath, finalPath); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
+// PruneUploadSessions drops sessions that have outlived their usefulness as an
+// idempotency record. The delete trigger re-queues their paths, which is a no-op
+// for a completed session because the file that took over final_path holds the
+// reference.
 func (s *Store) PruneUploadSessions(ctx context.Context) error {
 	_, err := s.pool.Exec(ctx, `DELETE FROM upload_sessions
 		WHERE (status='completed' AND completed_at < now() - interval '30 days')
 		   OR (status='expired' AND expires_at < now() - interval '7 days')`)
 	return err
-}
-
-// DeleteFileWithOrphanedBlobs deletes the file row and returns only storage
-// keys no remaining file references. Workspace clones may intentionally share
-// a source blob, so callers must not blindly delete every returned file path.
-func (s *Store) DeleteFileWithOrphanedBlobs(ctx context.Context, id string) ([]string, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback(ctx)
-	var source, parsed *string
-	var userID string
-	err = tx.QueryRow(ctx, `SELECT user_id FROM files WHERE id=$1`, id).Scan(&userID)
-	if isNoRows(err) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	if err := s.lockStorageRowTx(ctx, tx, userID); err != nil {
-		return nil, err
-	}
-	err = tx.QueryRow(ctx, `SELECT blob_path, parsed_blob_path FROM files
-		WHERE id=$1 FOR UPDATE`, id).Scan(&source, &parsed)
-	if isNoRows(err) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-	if _, err := tx.Exec(ctx, `DELETE FROM files WHERE id=$1`, id); err != nil {
-		return nil, err
-	}
-	var orphaned []string
-	for _, path := range []*string{source, parsed} {
-		if path == nil || *path == "" {
-			continue
-		}
-		var count int
-		if err := tx.QueryRow(ctx, `SELECT count(*) FROM files
-			WHERE blob_path=$1 OR parsed_blob_path=$1`, *path).Scan(&count); err != nil {
-			return nil, err
-		}
-		if count == 0 {
-			orphaned = append(orphaned, *path)
-		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, err
-	}
-	return orphaned, nil
 }

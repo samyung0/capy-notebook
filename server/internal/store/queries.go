@@ -58,12 +58,12 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 
 	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name,
 			COALESCE((SELECT array_agg(t.name) FROM entity_tags et JOIN tags t ON t.id=et.tag_id
-				WHERE et.kind='workspace' AND et.entity_id=w.id), '{}')
+				WHERE et.workspace_id=w.id), '{}')
 		FROM workspaces w
 		WHERE (w.user_id=$2 OR EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=w.id AND wm.user_id=$2))
 			AND (lower(w.name) LIKE $1
 			OR EXISTS (SELECT 1 FROM entity_tags et JOIN tags t ON t.id=et.tag_id
-				WHERE et.kind='workspace' AND et.entity_id=w.id AND lower(t.name) LIKE $1))`, like, userID)
+				WHERE et.workspace_id=w.id AND lower(t.name) LIKE $1))`, like, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 
 	rows, err = s.pool.Query(ctx, `SELECT m.id, m.title, m.workspace_name
 		FROM materials m
-		WHERE (m.user_id=$2 OR EXISTS (
+		WHERE (m.owner_user_id=$2 OR EXISTS (
 			SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=m.workspace_id AND wm.user_id=$2
 		)) AND m.kind='flashcards' AND lower(m.title) LIKE $1`, like, userID)
 	if err != nil {
@@ -145,7 +145,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 const wsCols = `w.id, w.name, w.color, w.privacy, w.share_role,
 	COALESCE((SELECT jsonb_agg(jsonb_build_object('id', t.id, 'value', t.name) ORDER BY t.name)
 		FROM entity_tags et JOIN tags t ON t.id=et.tag_id
-		WHERE et.kind='workspace' AND et.entity_id=w.id), '[]'::jsonb),
+		WHERE et.workspace_id=w.id), '[]'::jsonb),
 	(SELECT count(*) FROM chapters c WHERE c.workspace_id=w.id),
 	(SELECT count(*) FROM files f WHERE f.workspace_id=w.id),
 	w.created_at, w.last_accessed_at`
@@ -178,7 +178,7 @@ func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, color, t
 	if q != "" {
 		args = append(args, "%"+strings.ToLower(q)+"%")
 		n := len(args)
-		sb += fmt.Sprintf(" AND (lower(w.name) LIKE $%d OR EXISTS (SELECT 1 FROM entity_tags et JOIN tags t ON t.id=et.tag_id WHERE et.kind='workspace' AND et.entity_id=w.id AND lower(t.name) LIKE $%d))", n, n)
+		sb += fmt.Sprintf(" AND (lower(w.name) LIKE $%d OR EXISTS (SELECT 1 FROM entity_tags et JOIN tags t ON t.id=et.tag_id WHERE et.workspace_id=w.id AND lower(t.name) LIKE $%d))", n, n)
 	}
 	colors := splitCSVQuery(color)
 	tags := splitCSVQuery(tag)
@@ -190,7 +190,7 @@ func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, color, t
 		}
 		if len(tags) > 0 {
 			args = append(args, tags)
-			parts = append(parts, fmt.Sprintf("EXISTS (SELECT 1 FROM entity_tags et JOIN tags t ON t.id=et.tag_id WHERE et.kind='workspace' AND et.entity_id=w.id AND t.name = ANY($%d))", len(args)))
+			parts = append(parts, fmt.Sprintf("EXISTS (SELECT 1 FROM entity_tags et JOIN tags t ON t.id=et.tag_id WHERE et.workspace_id=w.id AND t.name = ANY($%d))", len(args)))
 		}
 		sb += " AND (" + strings.Join(parts, " OR ") + ")"
 	}
@@ -244,8 +244,8 @@ func (s *Store) WorkspaceStats(ctx context.Context, userID, id string) (Workspac
 		(SELECT count(*) FROM chapters WHERE workspace_id=$1),
 		(SELECT count(*) FROM files WHERE workspace_id=$1),
 		(SELECT count(*) FROM materials WHERE workspace_id=$1 AND kind='quiz'),
-		(SELECT count(*) FROM attempts a JOIN materials m ON m.id=a.quiz_id WHERE m.workspace_id=$1),
-		COALESCE((SELECT round(avg(a.pct))::int FROM attempts a JOIN materials m ON m.id=a.quiz_id WHERE m.workspace_id=$1),0)`,
+		(SELECT count(*) FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1),
+		COALESCE((SELECT round(avg(a.pct))::int FROM attempts a JOIN materials m ON m.id=a.material_id WHERE m.workspace_id=$1),0)`,
 		id).Scan(&st.Chapters, &st.Files, &st.Quizzes, &st.Attempts, &st.AvgScore)
 	return st, err
 }
@@ -257,6 +257,16 @@ func (s *Store) CreateWorkspace(ctx context.Context, userID, name string, color 
 		return Workspace{}, err
 	}
 	defer tx.Rollback(ctx)
+
+	// Workspaces themselves do not consume storage bytes, so they miss the
+	// gateStorageTx path used by files and materials. Still enforce lifecycle.
+	status, err := s.accountAccess(ctx, tx, userID)
+	if err != nil {
+		return Workspace{}, err
+	}
+	if err := status.CreateErr(); err != nil {
+		return Workspace{}, err
+	}
 
 	if _, err := tx.Exec(ctx, `INSERT INTO workspaces (id, user_id, name, color, privacy, share_role) VALUES ($1,$2,$3,$4,$5,$6)`,
 		id, userID, name, color, PrivacyPrivate, ShareViewer); err != nil {
@@ -275,12 +285,31 @@ func (s *Store) CreateWorkspace(ctx context.Context, userID, name string, color 
 	return s.GetWorkspace(ctx, userID, id, false)
 }
 
-// syncEntityTags reconciles the tag set for one entity (workspace/quiz/card) to
-// exactly `refs`, inside a transaction. It resolves each ref to a catalog tag
-// (reusing the referenced/matched row so its metadata survives), then adds the
-// missing links and drops links no longer present. Catalog rows are never
-// deleted here — they outlive the entities that reference them.
+// entityTagColumn maps a catalog tag kind to the entity_tags column holding its
+// reference. Adding a taggable type means adding a nullable FK column here and
+// in the migration, which is the point: the previous polymorphic (kind,
+// entity_id) pair accepted anything and referenced nothing.
+func entityTagColumn(kind string) (string, error) {
+	switch kind {
+	case "workspace":
+		return "workspace_id", nil
+	case "material":
+		return "material_id", nil
+	default:
+		return "", fmt.Errorf("untaggable entity kind %q", kind)
+	}
+}
+
+// syncEntityTags reconciles the tag set for one entity to exactly `refs`, inside
+// a transaction. It resolves each ref to a catalog tag (reusing the
+// referenced/matched row so its metadata survives), then adds the missing links
+// and drops links no longer present. Catalog rows are never deleted here — they
+// outlive the entities that reference them.
 func syncEntityTags(ctx context.Context, tx pgx.Tx, userID, kind, entityID string, refs []TagRef) error {
+	column, err := entityTagColumn(kind)
+	if err != nil {
+		return err
+	}
 	ids := make([]string, 0, len(refs))
 	seen := map[string]bool{}
 	for _, r := range refs {
@@ -299,14 +328,15 @@ func syncEntityTags(ctx context.Context, tx pgx.Tx, userID, kind, entityID strin
 	}
 	// Drop links this entity no longer has (empty ids clears them all).
 	if _, err := tx.Exec(ctx,
-		`DELETE FROM entity_tags WHERE kind=$1 AND entity_id=$2 AND NOT (tag_id = ANY($3))`,
-		kind, entityID, ids); err != nil {
+		`DELETE FROM entity_tags WHERE `+column+`=$1 AND NOT (tag_id = ANY($2))`,
+		entityID, ids); err != nil {
 		return err
 	}
 	for _, id := range ids {
 		if _, err := tx.Exec(ctx,
-			`INSERT INTO entity_tags (kind, entity_id, tag_id) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`,
-			kind, entityID, id); err != nil {
+			`INSERT INTO entity_tags (`+column+`, tag_id) VALUES ($1,$2)
+				ON CONFLICT DO NOTHING`,
+			entityID, id); err != nil {
 			return err
 		}
 	}
@@ -485,6 +515,13 @@ func (s *Store) DeleteWorkspaceWithResult(ctx context.Context, userID, id string
 		return nil, err
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM workspaces WHERE id=$1`, id); err != nil {
+		return nil, err
+	}
+	// The workspace's blob objects are queued by the cascade's delete triggers;
+	// its LightRAG tenant is not reachable from this schema at all, so it needs
+	// an explicit job. Enqueued in the same transaction as the delete, because a
+	// teardown lost to a crash leaks that state permanently.
+	if err := s.EnqueueRagTeardownTx(ctx, tx, id); err != nil {
 		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -734,6 +771,9 @@ func (s *Store) UpdateFile(ctx context.Context, id string, p FilePatch) (File, e
 	return s.GetFile(ctx, id)
 }
 
+// DeleteFile removes the file row. Its blob objects are dereferenced by trigger,
+// which queues for the reaper whichever ones no other row still points at — a
+// workspace clone deliberately shares source blobs, so the refcount decides.
 func (s *Store) DeleteFile(ctx context.Context, id string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -762,12 +802,12 @@ func (s *Store) DeleteFile(ctx context.Context, id string) error {
 
 /* ------------------------------------------------------------- materials */
 
-const materialCols = `id, user_id, owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, chapter_id, position, scope_chapters, scope_file_ids, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth`
-const materialColsM = `m.id, m.user_id, m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.position, m.scope_chapters, m.scope_file_ids, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth`
+const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, chapter_id, position, scope_chapters, scope_file_ids, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth`
+const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.position, m.scope_chapters, m.scope_file_ids, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth`
 
 func scanMaterial(row pgx.Row) (Material, error) {
 	var mt Material
-	err := row.Scan(&mt.ID, &mt.UserID, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.Position, &mt.ScopeChapters, &mt.ScopeFileIDs, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth)
+	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.Position, &mt.ScopeChapters, &mt.ScopeFileIDs, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth)
 	if mt.ScopeChapters == nil {
 		mt.ScopeChapters = []string{}
 	}
@@ -816,7 +856,7 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 			cardIDs[i] = card.ID
 		}
 	}
-	creatorID := mt.UserID
+	creatorID := mt.CreatedBy
 	var ownerID string
 	if mt.WorkspaceID != "" {
 		if err := s.pool.QueryRow(ctx, `SELECT user_id FROM workspaces WHERE id=$1`, mt.WorkspaceID).Scan(&ownerID); err != nil {
@@ -844,7 +884,7 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 		return Material{}, err
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO materials
-		(id, user_id, owner_user_id, workspace_id, workspace_name, kind, title, content,
+		(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
 		 chapter_id, scope_chapters, scope_file_ids, privacy, color, node_count, max_depth, updated_by)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
 		mt.ID, creatorID, ownerID, nullStr(mt.WorkspaceID), mt.WorkspaceName, mt.Kind,
@@ -1176,7 +1216,7 @@ func quizFromMaterial(mt Material) (Quiz, error) {
 func (s *Store) ListQuizzes(ctx context.Context, userID string) ([]Quiz, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+materialColsM+`
 		FROM materials m
-		WHERE (m.user_id=$1 OR EXISTS (
+		WHERE (m.owner_user_id=$1 OR EXISTS (
 			SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=m.workspace_id AND wm.user_id=$1
 		)) AND m.kind='quiz' ORDER BY m.created_at DESC`, userID)
 	if err != nil {
@@ -1215,7 +1255,7 @@ func (s *Store) CreateQuiz(ctx context.Context, q Quiz) (Quiz, error) {
 		return Quiz{}, err
 	}
 	mt, err := s.CreateMaterial(ctx, Material{
-		ID: q.ID, UserID: q.UserID, WorkspaceID: q.WorkspaceID, WorkspaceName: q.WorkspaceName, Kind: "quiz",
+		ID: q.ID, CreatedBy: q.UserID, WorkspaceID: q.WorkspaceID, WorkspaceName: q.WorkspaceName, Kind: "quiz",
 		Title: q.Name, Content: content, ScopeChapters: q.Chapters, Privacy: q.Privacy,
 	})
 	if err != nil {
@@ -1274,8 +1314,12 @@ func (s *Store) DeleteQuiz(ctx context.Context, id string) error {
 	return nil
 }
 
+// ReviewMistakesQuizID is the virtual quiz assembled from the user's mistakes
+// pool. It is not a material, so attempts against it carry a null material_id.
+const ReviewMistakesQuizID = "review_mistakes"
+
 func (s *Store) ListAttempts(ctx context.Context, userID string) ([]Attempt, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, quiz_id, quiz_name, workspace_name, chapters, correct, total, pct, taken_at
+	rows, err := s.pool.Query(ctx, `SELECT id, material_id, quiz_name, workspace_name, chapters, correct, total, pct, taken_at
 		FROM attempts WHERE user_id=$1 ORDER BY taken_at DESC`, userID)
 	if err != nil {
 		return nil, err
@@ -1284,7 +1328,7 @@ func (s *Store) ListAttempts(ctx context.Context, userID string) ([]Attempt, err
 	out := []Attempt{}
 	for rows.Next() {
 		var a Attempt
-		if err := rows.Scan(&a.ID, &a.QuizID, &a.QuizName, &a.WorkspaceName, &a.Chapters, &a.Correct, &a.Total, &a.Pct, &a.TakenAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.MaterialID, &a.QuizName, &a.WorkspaceName, &a.Chapters, &a.Correct, &a.Total, &a.Pct, &a.TakenAt); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -1295,19 +1339,21 @@ func (s *Store) ListAttempts(ctx context.Context, userID string) ([]Attempt, err
 func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, correct, total int, answers, questions json.RawMessage) (Attempt, error) {
 	quizName, workspaceName := "Review mistakes", ""
 	chapters := []string{}
-	if materialID != "review_mistakes" {
+	var linkedMaterial *string
+	if materialID != ReviewMistakesQuizID {
 		q, err := s.GetQuiz(ctx, materialID)
 		if err != nil {
 			return Attempt{}, err
 		}
 		quizName, workspaceName, chapters = q.Name, q.WorkspaceName, q.Chapters
+		linkedMaterial = &materialID
 	}
 	pct := 0
 	if total > 0 {
 		pct = int(float64(correct) / float64(total) * 100.0)
 	}
 	a := Attempt{
-		ID: uid("at"), QuizID: materialID, QuizName: quizName, WorkspaceName: workspaceName,
+		ID: uid("at"), MaterialID: linkedMaterial, QuizName: quizName, WorkspaceName: workspaceName,
 		Chapters: chapters, Correct: correct, Total: total, Pct: pct, TakenAt: time.Now().UTC(),
 	}
 	if a.Chapters == nil {
@@ -1319,8 +1365,8 @@ func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, co
 	if len(questions) == 0 {
 		questions = json.RawMessage("[]")
 	}
-	_, err := s.pool.Exec(ctx, `INSERT INTO attempts (id, quiz_id, user_id, quiz_name, workspace_name, chapters, correct, total, pct, taken_at, answers, questions)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, a.ID, a.QuizID, userID, a.QuizName, a.WorkspaceName, a.Chapters, a.Correct, a.Total, a.Pct, a.TakenAt, []byte(answers), []byte(questions))
+	_, err := s.pool.Exec(ctx, `INSERT INTO attempts (id, material_id, user_id, quiz_name, workspace_name, chapters, correct, total, pct, taken_at, answers, questions)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, a.ID, a.MaterialID, userID, a.QuizName, a.WorkspaceName, a.Chapters, a.Correct, a.Total, a.Pct, a.TakenAt, []byte(answers), []byte(questions))
 	return a, err
 }
 
@@ -1328,9 +1374,9 @@ func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, co
 // the owner via the attempts.user_id column recorded at submit time.
 func (s *Store) GetAttempt(ctx context.Context, id, userID string) (AttemptDetail, error) {
 	var d AttemptDetail
-	err := s.pool.QueryRow(ctx, `SELECT id, quiz_id, quiz_name, workspace_name, chapters, correct, total, pct, taken_at, answers, questions
+	err := s.pool.QueryRow(ctx, `SELECT id, material_id, quiz_name, workspace_name, chapters, correct, total, pct, taken_at, answers, questions
 		FROM attempts WHERE id=$1 AND user_id=$2`, id, userID).
-		Scan(&d.ID, &d.QuizID, &d.QuizName, &d.WorkspaceName, &d.Chapters, &d.Correct, &d.Total, &d.Pct, &d.TakenAt, &d.Answers, &d.Questions)
+		Scan(&d.ID, &d.MaterialID, &d.QuizName, &d.WorkspaceName, &d.Chapters, &d.Correct, &d.Total, &d.Pct, &d.TakenAt, &d.Answers, &d.Questions)
 	if isNoRows(err) {
 		return d, ErrNotFound
 	}
@@ -1358,7 +1404,7 @@ func scanDeck(row pgx.Row) (Deck, error) {
 func (s *Store) ListDecks(ctx context.Context, userID string) ([]Deck, error) {
 	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, COALESCE(m.workspace_id,''), m.workspace_name, m.color, m.privacy,`+deckStatsExpr+`
 		FROM materials m
-		WHERE (m.user_id=$1 OR EXISTS (
+		WHERE (m.owner_user_id=$1 OR EXISTS (
 			SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=m.workspace_id AND wm.user_id=$1
 		)) AND m.kind='flashcards' ORDER BY m.title`, userID)
 	if err != nil {
@@ -1429,7 +1475,7 @@ func (s *Store) CreateDeckWithCards(
 		return Deck{}, err
 	}
 	mt, err := s.CreateMaterial(ctx, Material{
-		UserID: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: "flashcards",
+		CreatedBy: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: "flashcards",
 		Title: name, Content: content, Color: color,
 	})
 	if err != nil {
@@ -1732,16 +1778,26 @@ func (s *Store) ListLabels(ctx context.Context, userID string) ([]Label, error) 
 	return out, rows.Err()
 }
 
-const eventCols = `id, title, start_at, end_at, label_ids, location, note`
+// Label membership is a join table, so the API's flat labelIds array is
+// aggregated on read. Only labels the row still references survive, because a
+// deleted label cascades its links away instead of leaving a dead id behind.
+const eventCols = `e.id, e.title, e.start_at, e.end_at,
+	COALESCE((SELECT array_agg(el.label_id ORDER BY el.label_id)
+		FROM event_labels el WHERE el.event_id=e.id), '{}'),
+	e.location, e.note`
 
 func scanEvent(row pgx.Row) (Event, error) {
 	var e Event
 	err := row.Scan(&e.ID, &e.Title, &e.Start, &e.End, &e.LabelIDs, &e.Location, &e.Note)
+	if e.LabelIDs == nil {
+		e.LabelIDs = []string{}
+	}
 	return e, err
 }
 
 func (s *Store) ListEvents(ctx context.Context, userID string) ([]Event, error) {
-	rows, err := s.pool.Query(ctx, `SELECT `+eventCols+` FROM events WHERE user_id=$1 ORDER BY start_at`, userID)
+	rows, err := s.pool.Query(ctx, `SELECT `+eventCols+`
+		FROM events e WHERE e.user_id=$1 ORDER BY e.start_at`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -1757,31 +1813,74 @@ func (s *Store) ListEvents(ctx context.Context, userID string) ([]Event, error) 
 	return out, rows.Err()
 }
 
+// syncEventLabelsTx reconciles an event's label links to exactly labelIDs. Ids
+// the user does not own are silently dropped rather than erroring: the join
+// insert would otherwise let a caller probe for other users' label ids.
+func syncEventLabelsTx(ctx context.Context, tx pgx.Tx, userID, eventID string, labelIDs []string) error {
+	if _, err := tx.Exec(ctx, `DELETE FROM event_labels
+		WHERE event_id=$1 AND NOT (label_id = ANY($2))`, eventID, labelIDs); err != nil {
+		return err
+	}
+	if len(labelIDs) == 0 {
+		return nil
+	}
+	_, err := tx.Exec(ctx, `INSERT INTO event_labels (event_id, label_id)
+		SELECT $1, l.id FROM labels l
+		WHERE l.id = ANY($2) AND l.user_id=$3
+		ON CONFLICT DO NOTHING`, eventID, labelIDs, userID)
+	return err
+}
+
 func (s *Store) CreateEvent(ctx context.Context, userID string, e Event) (Event, error) {
 	e.ID = uid("ev")
 	if e.LabelIDs == nil {
 		e.LabelIDs = []string{}
 	}
-	_, err := s.pool.Exec(ctx, `INSERT INTO events (id, user_id, title, start_at, end_at, label_ids, location, note)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, e.ID, userID, e.Title, e.Start, e.End, e.LabelIDs, e.Location, e.Note)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Event{}, err
 	}
-	return e, nil
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `INSERT INTO events (id, user_id, title, start_at, end_at, location, note)
+		VALUES ($1,$2,$3,$4,$5,$6,$7)`, e.ID, userID, e.Title, e.Start, e.End, e.Location, e.Note); err != nil {
+		return Event{}, err
+	}
+	if err := syncEventLabelsTx(ctx, tx, userID, e.ID, e.LabelIDs); err != nil {
+		return Event{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Event{}, err
+	}
+	return scanEvent(s.pool.QueryRow(ctx, `SELECT `+eventCols+` FROM events e WHERE e.id=$1`, e.ID))
 }
 
 func (s *Store) UpdateEvent(ctx context.Context, id string, p EventPatch) (Event, error) {
-	ct, err := s.pool.Exec(ctx, `UPDATE events SET
-		title=COALESCE($2,title), start_at=COALESCE($3,start_at), end_at=COALESCE($4,end_at),
-		label_ids=COALESCE($5,label_ids), location=COALESCE($6,location), note=COALESCE($7,note) WHERE id=$1`,
-		id, p.Title, p.Start, p.End, p.LabelIDs, p.Location, p.Note)
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Event{}, err
 	}
-	if ct.RowsAffected() == 0 {
+	defer tx.Rollback(ctx)
+	var ownerID string
+	err = tx.QueryRow(ctx, `UPDATE events SET
+		title=COALESCE($2,title), start_at=COALESCE($3,start_at), end_at=COALESCE($4,end_at),
+		location=COALESCE($5,location), note=COALESCE($6,note)
+		WHERE id=$1 RETURNING user_id`,
+		id, p.Title, p.Start, p.End, p.Location, p.Note).Scan(&ownerID)
+	if isNoRows(err) {
 		return Event{}, ErrNotFound
 	}
-	return scanEvent(s.pool.QueryRow(ctx, `SELECT `+eventCols+` FROM events WHERE id=$1`, id))
+	if err != nil {
+		return Event{}, err
+	}
+	if p.LabelIDs != nil {
+		if err := syncEventLabelsTx(ctx, tx, ownerID, id, *p.LabelIDs); err != nil {
+			return Event{}, err
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return Event{}, err
+	}
+	return scanEvent(s.pool.QueryRow(ctx, `SELECT `+eventCols+` FROM events e WHERE e.id=$1`, id))
 }
 
 func (s *Store) DeleteEvent(ctx context.Context, id string) error {

@@ -27,12 +27,16 @@ type EditorAsset struct {
 	CompletedAt *time.Time `json:"completedAt,omitempty"`
 }
 
+// EditorAssetUpload is an upload_sessions row with target='editor_asset'. The
+// two upload flows share the table (and therefore one reservation trigger and
+// one sweeper) while their destinations stay separate.
 type EditorAssetUpload struct {
 	ID           string
 	AssetID      string
 	WorkspaceID  string
 	UserID       string
 	ObjectPath   string
+	FinalPath    string
 	ContentType  string
 	DeclaredSize int64
 	Status       string
@@ -78,11 +82,12 @@ func (s *Store) CreateEditorAssetReservation(ctx context.Context, in NewEditorAs
 		finalPath, in.ContentType, in.DeclaredSize); err != nil {
 		return EditorAsset{}, EditorAssetUpload{}, err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO editor_asset_uploads
-		(id, asset_id, workspace_id, user_id, object_path, content_type, declared_size, expires_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-		in.UploadID, in.AssetID, in.WorkspaceID, ownerID, in.ObjectPath,
-		in.ContentType, in.DeclaredSize, in.ExpiresAt); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO upload_sessions
+		(id, target, asset_id, workspace_id, user_id, created_by, object_path, final_path,
+		 content_type, declared_size, expires_at)
+		VALUES ($1,'editor_asset',$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		in.UploadID, in.AssetID, in.WorkspaceID, ownerID, nullStr(in.CreatedBy),
+		in.ObjectPath, finalPath, in.ContentType, in.DeclaredSize, in.ExpiresAt); err != nil {
 		return EditorAsset{}, EditorAssetUpload{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -125,20 +130,24 @@ func (s *Store) EditorAssetObjectPath(ctx context.Context, assetID string) (stri
 	return objectPath, err
 }
 
-const editorAssetUploadCols = `id, asset_id, workspace_id, user_id, object_path, content_type,
-	declared_size, status, expires_at`
+const editorAssetUploadCols = `id, asset_id, workspace_id, user_id, object_path, final_path,
+	content_type, declared_size, status, expires_at`
 
 func scanEditorAssetUpload(row interface{ Scan(...any) error }) (EditorAssetUpload, error) {
 	var upload EditorAssetUpload
 	err := row.Scan(&upload.ID, &upload.AssetID, &upload.WorkspaceID, &upload.UserID,
-		&upload.ObjectPath, &upload.ContentType, &upload.DeclaredSize,
+		&upload.ObjectPath, &upload.FinalPath, &upload.ContentType, &upload.DeclaredSize,
 		&upload.Status, &upload.ExpiresAt)
 	return upload, err
 }
 
+// editorAssetUploadFrom restricts the shared table to the editor-asset flow, so
+// a source upload id can never be driven through the asset completion path.
+const editorAssetUploadFrom = ` FROM upload_sessions WHERE target='editor_asset' AND `
+
 func (s *Store) GetEditorAssetUpload(ctx context.Context, uploadID string) (EditorAssetUpload, error) {
 	upload, err := scanEditorAssetUpload(s.pool.QueryRow(ctx,
-		`SELECT `+editorAssetUploadCols+` FROM editor_asset_uploads WHERE id=$1`, uploadID))
+		`SELECT `+editorAssetUploadCols+editorAssetUploadFrom+`id=$1`, uploadID))
 	if isNoRows(err) {
 		return upload, ErrNotFound
 	}
@@ -156,7 +165,8 @@ func (s *Store) FinalizeEditorAssetUpload(ctx context.Context, uploadID, etag st
 	defer tx.Rollback(ctx)
 
 	var ownerID string
-	if err := tx.QueryRow(ctx, `SELECT user_id FROM editor_asset_uploads WHERE id=$1`, uploadID).
+	if err := tx.QueryRow(ctx,
+		`SELECT user_id`+editorAssetUploadFrom+`id=$1`, uploadID).
 		Scan(&ownerID); err != nil {
 		if isNoRows(err) {
 			return EditorAsset{}, ErrNotFound
@@ -167,7 +177,7 @@ func (s *Store) FinalizeEditorAssetUpload(ctx context.Context, uploadID, etag st
 		return EditorAsset{}, err
 	}
 	upload, err := scanEditorAssetUpload(tx.QueryRow(ctx,
-		`SELECT `+editorAssetUploadCols+` FROM editor_asset_uploads WHERE id=$1 FOR UPDATE`, uploadID))
+		`SELECT `+editorAssetUploadCols+editorAssetUploadFrom+`id=$1 FOR UPDATE`, uploadID))
 	if isNoRows(err) {
 		return EditorAsset{}, ErrNotFound
 	}
@@ -191,7 +201,7 @@ func (s *Store) FinalizeEditorAssetUpload(ctx context.Context, uploadID, etag st
 		upload.AssetID, etag); err != nil {
 		return EditorAsset{}, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE editor_asset_uploads
+	if _, err := tx.Exec(ctx, `UPDATE upload_sessions
 		SET status='completed', completed_at=now() WHERE id=$1`, uploadID); err != nil {
 		return EditorAsset{}, err
 	}
@@ -206,39 +216,28 @@ func (s *Store) FinalizeEditorAssetUpload(ctx context.Context, uploadID, etag st
 	return asset, nil
 }
 
-func (s *Store) ExpiredEditorAssetUploads(ctx context.Context, limit int) ([]EditorAssetUpload, error) {
-	rows, err := s.pool.Query(ctx, `SELECT `+editorAssetUploadCols+`
-		FROM editor_asset_uploads
-		WHERE status='pending' AND expires_at < now()
-		ORDER BY expires_at LIMIT $1`, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var uploads []EditorAssetUpload
-	for rows.Next() {
-		upload, err := scanEditorAssetUpload(rows)
-		if err != nil {
-			return nil, err
-		}
-		uploads = append(uploads, upload)
-	}
-	return uploads, rows.Err()
-}
-
+// MarkEditorAssetUploadExpired discards an abandoned or rejected editor upload.
+//
+// It deletes the pending editor_assets row rather than flagging it, and lets the
+// cascade do the rest: the upload_sessions row goes with it, which releases the
+// reservation through the accounting trigger and queues both object paths
+// through the blob-deletion trigger. Flagging instead would keep the asset row
+// holding a blob reference, so its object could never be collected — and making
+// the refcount conditional on a status column is exactly the kind of special
+// case that makes trigger-based accounting untrustworthy.
+//
+// Unlike a source upload, the destination row here exists before any bytes
+// arrive, so a destination that never received bytes is not an audit record.
 func (s *Store) MarkEditorAssetUploadExpired(ctx context.Context, uploadID string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	var assetID string
-	var userID string
-	var declaredSize int64
-	err = tx.QueryRow(ctx, `SELECT asset_id, user_id, declared_size
-		FROM editor_asset_uploads
-		WHERE id=$1 AND status='pending'`, uploadID).
-		Scan(&assetID, &userID, &declaredSize)
+	var assetID, userID string
+	err = tx.QueryRow(ctx, `SELECT asset_id, user_id`+
+		editorAssetUploadFrom+`id=$1 AND status='pending'`, uploadID).
+		Scan(&assetID, &userID)
 	if isNoRows(err) {
 		return nil
 	}
@@ -248,35 +247,8 @@ func (s *Store) MarkEditorAssetUploadExpired(ctx context.Context, uploadID strin
 	if err := s.lockStorageRowTx(ctx, tx, userID); err != nil {
 		return err
 	}
-	err = tx.QueryRow(ctx, `UPDATE editor_asset_uploads
-		SET status='expired' WHERE id=$1 AND status='pending'
-		RETURNING asset_id, user_id, declared_size`, uploadID).Scan(&assetID, &userID, &declaredSize)
-	if isNoRows(err) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `UPDATE editor_assets
-		SET status='expired' WHERE id=$1 AND status='pending'`, assetID); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
-}
-
-func (s *Store) PruneEditorAssetUploads(ctx context.Context) error {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx, `DELETE FROM editor_asset_uploads
-		WHERE (status='completed' AND completed_at < now() - interval '30 days')
-		   OR (status='expired' AND expires_at < now() - interval '7 days')`); err != nil {
-		return err
-	}
 	if _, err := tx.Exec(ctx, `DELETE FROM editor_assets
-		WHERE status='expired' AND created_at < now() - interval '7 days'`); err != nil {
+		WHERE id=$1 AND status='pending'`, assetID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

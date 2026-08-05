@@ -1,0 +1,16 @@
+Evo Notes
+
+
+STORAGE OVER FREE LIMIT
+
+Hello,
+
+Your subscription has lapsed and your storage is over the free plan limit. You have a buffer period to free up space. No content has been deleted yet.
+
+Manage subscription {{.OpenURL}}
+
+----------------------------------------
+
+You received this message because your Evo Notes subscription and storage limits changed.
+
+Manage product email preferences {{.UnsubscribeURL}}

@@ -72,7 +72,7 @@ func (a *api) importSources(w http.ResponseWriter, r *http.Request) {
 			a.fail(w, fmt.Errorf("blob store not configured"))
 			return
 		}
-		blobPath, _, err := a.blob.Put(randID("blob"), bytes.NewReader(data))
+		blobPath, _, err := a.blob.Put(sourceObjectKey(randID("blob")), bytes.NewReader(data))
 		if err != nil {
 			a.fail(w, err)
 			return
@@ -80,9 +80,9 @@ func (a *api) importSources(w http.ResponseWriter, r *http.Request) {
 		var f store.File
 		if mode == parseModeNone {
 			// Formats no parser supports (audio/…) land ready, view-only.
-			f, err = a.s.CreateSourceReady(r.Context(), wsID, name, kind, body.ChapterID, "", int64(len(data)), blobPath)
+			f, err = a.s.CreateSourceReady(r.Context(), wsID, userID, name, kind, body.ChapterID, "", int64(len(data)), blobPath)
 		} else {
-			f, _, err = a.s.CreateSourceWithJob(r.Context(), wsID, name, kind, body.ChapterID, "", int64(len(data)), blobPath, a.parser, a.engine, mode)
+			f, _, err = a.s.CreateSourceWithJob(r.Context(), wsID, userID, name, kind, body.ChapterID, "", int64(len(data)), blobPath, a.parser, a.engine, mode)
 		}
 		if err != nil {
 			_ = a.blob.Delete(r.Context(), blobPath)

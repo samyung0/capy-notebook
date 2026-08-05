@@ -37,8 +37,10 @@ import type {
 
 /* ---------------- pass-through wire contracts ---------------- */
 export type {
+  AccountStatus,
   BillingInfo,
   Canvas as ThinkingCanvas,
+  DeletionPreflight,
   Flashcard,
   IntegrationsStatus,
   Label,
@@ -47,14 +49,17 @@ export type {
   NotificationPrefs,
   SourceUploadPolicy,
   SrsState,
+  SubscriptionBlocker,
   Tag,
   TagInput,
   Task,
+  TransferWorkspaceReq,
   User,
 } from './gen/model';
 
 /* ---------------- enums & scalars (straight from the generated spec) ---------------- */
 export {
+  AccountState,
   FileKind,
   FileStatus,
   NotificationKind,

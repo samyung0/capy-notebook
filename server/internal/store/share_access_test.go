@@ -129,7 +129,7 @@ func TestMaterialInheritsParentWorkspaceShare(t *testing.T) {
 	ctx := context.Background()
 
 	mt, err := s.CreateMaterial(ctx, Material{
-		UserID: "u_owner", WorkspaceID: "ws_e2e_link", WorkspaceName: "E2E Link Workspace",
+		CreatedBy: "u_owner", WorkspaceID: "ws_e2e_link", WorkspaceName: "E2E Link Workspace",
 		Kind: "note", Title: "Inherited private note",
 		Content: "body",
 		Privacy: PrivacyPrivate,
@@ -152,7 +152,7 @@ func TestMaterialLevelShareUnderPrivateWorkspace(t *testing.T) {
 	ctx := context.Background()
 
 	mt, err := s.CreateMaterial(ctx, Material{
-		UserID: "u_owner", WorkspaceID: "ws_e2e_private", WorkspaceName: "E2E Private Workspace",
+		CreatedBy: "u_owner", WorkspaceID: "ws_e2e_private", WorkspaceName: "E2E Private Workspace",
 		Kind: "note", Title: "Standalone-shared note",
 		Content: "shared",
 		Privacy: PrivacyLink,

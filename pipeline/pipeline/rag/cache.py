@@ -43,6 +43,23 @@ class RagCache:
             await self._evict_if_needed()
             return rag
 
+    async def discard(self, workspace: str) -> bool:
+        """Drop a cached instance, finalizing its storages.
+
+        Required before tearing a workspace's state down: a cached handle would
+        keep pointing at tables and a graph that no longer exist, and the next
+        request for that id would resurrect empty state instead of 404ing.
+        """
+        async with self._lock:
+            rag = self._items.pop(workspace, None)
+        if rag is None:
+            return False
+        try:
+            await rag.finalize_storages()
+        except Exception:
+            log.exception("error finalizing discarded workspace=%s", workspace)
+        return True
+
     async def _evict_if_needed(self) -> None:
         while len(self._items) > self._maxsize:
             ws, rag = self._items.popitem(last=False)

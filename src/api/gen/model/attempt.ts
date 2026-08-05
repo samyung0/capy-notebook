@@ -11,8 +11,9 @@ export interface Attempt {
   chapters: string[];
   correct: number;
   id: string;
+  /** @nullable */
+  materialId: string | null;
   pct: number;
-  quizId: string;
   quizName: string;
   takenAt: string;
   total: number;

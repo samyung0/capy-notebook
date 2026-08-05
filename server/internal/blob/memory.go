@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -112,6 +113,68 @@ func (s *Memory) Delete(_ context.Context, path string) error {
 	defer s.mu.Unlock()
 	delete(s.objects, path)
 	return nil
+}
+
+func (s *Memory) DeleteObjects(_ context.Context, paths []string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, path := range paths {
+		delete(s.objects, path)
+	}
+	return nil, nil
+}
+
+func (s *Memory) ListObjects(
+	_ context.Context,
+	prefix, token string,
+	limit int32,
+) (ObjectListing, error) {
+	s.mu.RLock()
+	keys := make([]string, 0, len(s.objects))
+	for key := range s.objects {
+		if strings.HasPrefix(key, prefix) {
+			keys = append(keys, key)
+		}
+	}
+	s.mu.RUnlock()
+	// The token is the last key of the previous page, matching S3's ordering
+	// guarantee closely enough for the sweep to be testable.
+	sort.Strings(keys)
+	return pageObjectKeys(keys, token, limit, func(key string) ListedObject {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		return ListedObject{Key: key, Size: int64(len(s.objects[key].data))}
+	}), nil
+}
+
+// pageObjectKeys turns a sorted key slice into one listing page, using the last
+// key emitted as the continuation token.
+func pageObjectKeys(
+	keys []string,
+	token string,
+	limit int32,
+	describe func(string) ListedObject,
+) ObjectListing {
+	if token != "" {
+		start := sort.SearchStrings(keys, token)
+		for start < len(keys) && keys[start] <= token {
+			start++
+		}
+		keys = keys[start:]
+	}
+	if limit <= 0 {
+		limit = DeleteObjectsLimit
+	}
+	listing := ObjectListing{}
+	if int32(len(keys)) > limit {
+		listing.NextToken = keys[limit-1]
+		keys = keys[:limit]
+	}
+	listing.Keys = make([]ListedObject, 0, len(keys))
+	for _, key := range keys {
+		listing.Keys = append(listing.Keys, describe(key))
+	}
+	return listing
 }
 
 // Disk is a filesystem-backed store for E2E tests that do not exercise
@@ -250,4 +313,56 @@ func (s *Disk) Delete(_ context.Context, path string) error {
 		return nil
 	}
 	return err
+}
+
+func (s *Disk) DeleteObjects(ctx context.Context, paths []string) ([]string, error) {
+	var failed []string
+	for _, path := range paths {
+		if err := s.Delete(ctx, path); err != nil {
+			failed = append(failed, path)
+		}
+	}
+	return failed, nil
+}
+
+func (s *Disk) ListObjects(
+	_ context.Context,
+	prefix, token string,
+	limit int32,
+) (ObjectListing, error) {
+	root := filepath.Clean(s.root)
+	var keys []string
+	sizes := map[string]int64{}
+	modTimes := map[string]time.Time{}
+	err := filepath.WalkDir(root, func(full string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, full)
+		if relErr != nil {
+			return relErr
+		}
+		key := filepath.ToSlash(rel)
+		if !strings.HasPrefix(key, prefix) {
+			return nil
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return infoErr
+		}
+		keys = append(keys, key)
+		sizes[key] = info.Size()
+		modTimes[key] = info.ModTime()
+		return nil
+	})
+	if err != nil {
+		return ObjectListing{}, err
+	}
+	sort.Strings(keys)
+	return pageObjectKeys(keys, token, limit, func(key string) ListedObject {
+		return ListedObject{Key: key, Size: sizes[key], LastModified: modTimes[key]}
+	}), nil
 }

@@ -182,6 +182,16 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		})
 		return
 	}
+	var locked *store.AccountLockedError
+	if errors.As(err, &locked) {
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"code":    locked.Code(),
+			"message": "account unavailable",
+			"state":   string(locked.State),
+			"reason":  locked.Reason,
+		})
+		return
+	}
 	writeJSON(w, http.StatusInternalServerError, map[string]string{"message": err.Error()})
 }
 
@@ -226,6 +236,10 @@ func (a *api) assertWSRead(w http.ResponseWriter, r *http.Request, wsID string) 
 // metadata path (no bytes, lands 'ready').
 func (a *api) addSource(w http.ResponseWriter, r *http.Request) {
 	if !a.assertWS(w, r, id(r)) {
+		return
+	}
+	if err := a.accountCreateAllowed(r.Context(), uid(r)); err != nil {
+		a.fail(w, err)
 		return
 	}
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
@@ -327,13 +341,13 @@ func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blobPath, size, err := a.blob.Put(randID("blob"), file)
+	blobPath, size, err := a.blob.Put(sourceObjectKey(randID("blob")), file)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
 	if parseMode == parseModeNone && !sourceupload.IsTextKind(kind) {
-		res, err := a.s.CreateSourceReady(r.Context(), id(r), name, kind, chapterID, chapterName, size, blobPath)
+		res, err := a.s.CreateSourceReady(r.Context(), id(r), uid(r), name, kind, chapterID, chapterName, size, blobPath)
 		if err != nil {
 			_ = a.blob.Delete(r.Context(), blobPath)
 			a.fail(w, err)
@@ -342,7 +356,7 @@ func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 201, res)
 		return
 	}
-	res, _, err := a.s.CreateSourceWithJob(r.Context(), id(r), name, kind, chapterID, chapterName, size, blobPath, a.parser, a.engine, parseMode)
+	res, _, err := a.s.CreateSourceWithJob(r.Context(), id(r), uid(r), name, kind, chapterID, chapterName, size, blobPath, a.parser, a.engine, parseMode)
 	if err != nil {
 		_ = a.blob.Delete(r.Context(), blobPath)
 		a.fail(w, err)
@@ -480,6 +494,10 @@ func (o generateOpts) cognitiveLevels() []string {
 
 func (a *api) generate(w http.ResponseWriter, r *http.Request) {
 	if !a.assertWS(w, r, id(r)) {
+		return
+	}
+	if err := a.accountCreateAllowed(r.Context(), uid(r)); err != nil {
+		a.fail(w, err)
 		return
 	}
 	var opts generateOpts

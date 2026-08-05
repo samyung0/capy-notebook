@@ -1,14 +1,26 @@
+import { useClerk } from '@clerk/react';
+import { useState } from 'react';
+import { USE_MSW } from '@/api/auth';
+import { isApiError } from '@/api/client';
 import {
+  useDeletionPreflight,
+  useMe,
   useNotificationPrefs,
+  useRequestAccountDeletion,
   useSetLocale,
   useSetNotificationPrefs,
 } from '@/api/hooks';
 import { LocaleSwitcher } from '@/components/app/LocaleSwitcher';
 import { PageHeader, Panel } from '@/components/app/layout';
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
 import { Switch } from '@/components/ui/Switch';
+import { userToast } from '@/components/ui/userToast';
 import { getLocale, m, setLocale as setParaglideLocale } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { STYLES, useTheme } from '@/theme/ThemeProvider';
+
+const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
 function Row({
   label,
@@ -23,6 +35,143 @@ function Row({
       {children}
     </div>
   );
+}
+
+function AccountDangerZoneInner({
+  signOut,
+}: {
+  signOut?: () => Promise<unknown>;
+}) {
+  const me = useMe();
+  const preflight = useDeletionPreflight();
+  const requestDeletion = useRequestAccountDeletion();
+  const [confirmEmail, setConfirmEmail] = useState('');
+
+  const emailMatches =
+    !!me.data?.email &&
+    confirmEmail.trim().toLowerCase() === me.data.email.toLowerCase();
+  const canDelete = preflight.data?.canDelete === true && emailMatches;
+
+  async function onRequestDeletion() {
+    try {
+      await requestDeletion.mutateAsync(confirmEmail.trim());
+      setConfirmEmail('');
+      userToast({
+        title: m.settings_deletion_requested_toast(),
+        variant: 'success',
+      });
+      // Sessions are revoked server-side; sign out locally so the next paint
+      // does not keep probing APIs that now return account_deletion_pending.
+      if (signOut) await signOut();
+    } catch (err) {
+      userToast({
+        description: isApiError(err)
+          ? (err.body?.message ?? err.message)
+          : err instanceof Error
+            ? err.message
+            : undefined,
+        title: m.settings_deletion_request_failed(),
+        variant: 'error',
+      });
+    }
+  }
+
+  const needingTransfer = preflight.data?.workspacesNeedingTransfer ?? [];
+  const toDestroy = preflight.data?.workspacesToDestroy ?? [];
+  const subscription = preflight.data?.subscription;
+
+  return (
+    <div className="rounded-card border border-solid-error/30 bg-surface px-5 py-4">
+      <p className="t-subtitle font-bold text-solid-error">
+        {m.settings_danger_zone_title()}
+      </p>
+      <p className="mt-2 text-fg-secondary text-sm">
+        {m.settings_danger_zone_body({
+          days: String(preflight.data?.graceDays ?? 30),
+        })}
+      </p>
+
+      {preflight.isSuccess && (
+        <div className="mt-4 space-y-3 text-sm">
+          {subscription && (
+            <div className="rounded-button border border-solid-error/30 bg-tint-error px-3 py-2.5 text-tint-error-fg">
+              {subscription.unavailable
+                ? m.settings_deletion_blocker_subscription_unavailable()
+                : m.settings_deletion_blocker_subscription()}
+            </div>
+          )}
+          {needingTransfer.length > 0 && (
+            <div>
+              <p className="font-medium text-fg">
+                {m.settings_deletion_needs_transfer()}
+              </p>
+              <ul className="mt-1 list-disc pl-5 text-fg-secondary">
+                {needingTransfer.map((ws) => (
+                  <li key={ws.id}>{ws.name}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {toDestroy.length > 0 && (
+            <div>
+              <p className="font-medium text-fg">
+                {m.settings_deletion_will_destroy()}
+              </p>
+              <ul className="mt-1 list-disc pl-5 text-fg-secondary">
+                {toDestroy.map((ws) => (
+                  <li key={ws.id}>{ws.name}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {!subscription &&
+            needingTransfer.length === 0 &&
+            toDestroy.length === 0 && (
+              <p className="text-fg-muted">
+                {m.settings_deletion_no_side_effects()}
+              </p>
+            )}
+        </div>
+      )}
+
+      <div className="mt-4">
+        <p className="mb-2 text-fg-secondary text-sm">
+          {m.settings_deletion_confirm_email({
+            email: me.data?.email ?? '…',
+          })}
+        </p>
+        <Input
+          autoComplete="off"
+          disabled={requestDeletion.isPending || !preflight.data?.canDelete}
+          onChange={(e) => setConfirmEmail(e.target.value)}
+          placeholder={me.data?.email}
+          value={confirmEmail}
+        />
+      </div>
+
+      <Button
+        className="mt-4"
+        disabled={!canDelete || requestDeletion.isPending}
+        onClick={() => void onRequestDeletion()}
+        size="sm"
+        variant="danger"
+      >
+        {requestDeletion.isPending
+          ? m.common_loading()
+          : m.settings_deletion_request()}
+      </Button>
+    </div>
+  );
+}
+
+function ClerkAccountDangerZone() {
+  const { signOut } = useClerk();
+  return <AccountDangerZoneInner signOut={() => signOut()} />;
+}
+
+function AccountDangerZone() {
+  if (!CLERK_ACTIVE) return <AccountDangerZoneInner />;
+  return <ClerkAccountDangerZone />;
 }
 
 export default function Settings() {
@@ -60,18 +209,6 @@ export default function Settings() {
                 ))}
               </div>
             </Row>
-            {/* TODO: change */}
-            {/* <Row label={m.settings_mode()}>
-              <SegmentedControl
-                onChange={(v) => setTheme(v as "latte" | "mocha")}
-                options={[
-                  { label: m.mode_light(), value: "latte" },
-                  { label: m.mode_dark(), value: "mocha" },
-                ]}
-                size="sm"
-                value={theme}
-              />
-            </Row> */}
             <Row label={m.settings_language()}>
               <LocaleSwitcher
                 disabled={setLocale.isPending}
@@ -113,24 +250,23 @@ export default function Settings() {
                 }}
               />
             </Row>
+            <Row label={m.settings_email_billing()}>
+              <Switch
+                aria-label={m.settings_email_billing()}
+                checked={currentPrefs?.emailBilling ?? false}
+                disabled={!prefs.isSuccess || setPrefs.isPending}
+                onChange={(emailBilling) => {
+                  if (!currentPrefs || setPrefs.isPending) return;
+                  setPrefs.mutate({ ...currentPrefs, emailBilling });
+                }}
+              />
+            </Row>
           </div>
 
-          <p className="t-label mt-6 mb-1 text-fg-muted">Workspaces</p>
-          <div className="rounded-card border border-line bg-surface px-5">
-            {/* TODO: change */}
-            {/* <Row label="Default visibility">
-              <SegmentedControl
-                onChange={setPrivacy}
-                options={[
-                  { label: "Private", value: "private" },
-                  { label: "Public", value: "public" },
-                  { label: "Shared link", value: "link" },
-                ]}
-                size="sm"
-                value={privacy}
-              />
-            </Row> */}
-          </div>
+          <p className="t-label mt-6 mb-1 text-fg-muted">
+            {m.settings_account()}
+          </p>
+          <AccountDangerZone />
         </div>
       </div>
     </Panel>

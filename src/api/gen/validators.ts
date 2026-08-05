@@ -7,6 +7,119 @@
 import * as zod from 'zod';
 
 /**
+ * @summary What account deletion would destroy, and what blocks it
+ */
+export const getDeletionPreflightResponseWorkspacesNeedingTransferItemTagsItemValueMax = 50;
+
+export const getDeletionPreflightResponseWorkspacesToDestroyItemTagsItemValueMax = 50;
+
+
+
+export const GetDeletionPreflightResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "canDelete": zod.boolean(),
+  "graceDays": zod.number(),
+  "storageUsedBytes": zod.number(),
+  "subscription": zod.object({
+  "currentPeriodEnd": zod.iso.datetime({"offset":true}).optional(),
+  "planTier": zod.string().optional(),
+  "stripeSubscriptionId": zod.string().optional(),
+  "unavailable": zod.boolean().optional()
+}).optional(),
+  "workspacesNeedingTransfer": zod.array(zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "capabilities": zod.object({
+  "canComment": zod.boolean(),
+  "canEdit": zod.boolean(),
+  "canManageMembers": zod.boolean(),
+  "canView": zod.boolean()
+}),
+  "chapterCount": zod.number(),
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "fileCount": zod.number(),
+  "id": zod.string(),
+  "isOwner": zod.boolean(),
+  "lastAccessedAt": zod.iso.datetime({"offset":true}),
+  "name": zod.string(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
+  "shareRole": zod.enum(['editor', 'commenter', 'viewer']),
+  "tags": zod.array(zod.object({
+  "id": zod.string(),
+  "value": zod.string().min(1).max(getDeletionPreflightResponseWorkspacesNeedingTransferItemTagsItemValueMax)
+}))
+})).nullable(),
+  "workspacesToDestroy": zod.array(zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "capabilities": zod.object({
+  "canComment": zod.boolean(),
+  "canEdit": zod.boolean(),
+  "canManageMembers": zod.boolean(),
+  "canView": zod.boolean()
+}),
+  "chapterCount": zod.number(),
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "fileCount": zod.number(),
+  "id": zod.string(),
+  "isOwner": zod.boolean(),
+  "lastAccessedAt": zod.iso.datetime({"offset":true}),
+  "name": zod.string(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
+  "shareRole": zod.enum(['editor', 'commenter', 'viewer']),
+  "tags": zod.array(zod.object({
+  "id": zod.string(),
+  "value": zod.string().min(1).max(getDeletionPreflightResponseWorkspacesToDestroyItemTagsItemValueMax)
+}))
+})).nullable()
+})
+
+
+/**
+ * @summary Schedule account deletion
+ */
+export const requestAccountDeletionBodyConfirmEmailMax = 320;
+
+
+
+export const RequestAccountDeletionBody = zod.object({
+  "confirmEmail": zod.string().max(requestAccountDeletionBodyConfirmEmailMax)
+})
+
+export const RequestAccountDeletionResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "deletionRequestedAt": zod.iso.datetime({"offset":true}).optional(),
+  "graceEndsAt": zod.iso.datetime({"offset":true}).optional(),
+  "planTier": zod.enum(['free', 'pro']),
+  "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "state": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']),
+  "storageLimitBytes": zod.number(),
+  "storageUsedBytes": zod.number(),
+  "suspendedReason": zod.string().optional(),
+  "userId": zod.string()
+})
+
+
+/**
+ * @summary Resolved account lifecycle state
+ */
+export const GetAccountStatusResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "deletionRequestedAt": zod.iso.datetime({"offset":true}).optional(),
+  "graceEndsAt": zod.iso.datetime({"offset":true}).optional(),
+  "planTier": zod.enum(['free', 'pro']),
+  "purgeAfter": zod.iso.datetime({"offset":true}).optional(),
+  "state": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']),
+  "storageLimitBytes": zod.number(),
+  "storageUsedBytes": zod.number(),
+  "suspendedReason": zod.string().optional(),
+  "userId": zod.string()
+})
+
+
+/**
  * @summary List attempts
  */
 export const ListAttemptsResponseItem = zod.object({
@@ -14,8 +127,8 @@ export const ListAttemptsResponseItem = zod.object({
   "chapters": zod.array(zod.string()),
   "correct": zod.number(),
   "id": zod.string(),
+  "materialId": zod.string().nullable(),
   "pct": zod.number(),
-  "quizId": zod.string(),
   "quizName": zod.string(),
   "takenAt": zod.iso.datetime({"offset":true}),
   "total": zod.number(),
@@ -37,9 +150,9 @@ export const GetAttemptResponse = zod.object({
   "chapters": zod.array(zod.string()),
   "correct": zod.number(),
   "id": zod.string(),
+  "materialId": zod.string().nullable(),
   "pct": zod.number(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
-  "quizId": zod.string(),
   "quizName": zod.string(),
   "takenAt": zod.iso.datetime({"offset":true}),
   "total": zod.number(),
@@ -52,6 +165,7 @@ export const GetAttemptResponse = zod.object({
  */
 export const GetBillingResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "cancelAtPeriodEnd": zod.boolean(),
   "planTier": zod.enum(['free', 'pro']),
   "renewalAt": zod.iso.datetime({"offset":true}).optional(),
   "storageLimitBytes": zod.number(),
@@ -889,7 +1003,7 @@ export const CreateMaterialCollaborationTokenParams = zod.object({
 
 export const CreateMaterialCollaborationTokenResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "access": zod.enum(['write', 'comment']),
+  "access": zod.enum(['write', 'comment', 'shrink']),
   "expiresAt": zod.number(),
   "room": zod.string(),
   "token": zod.string(),
@@ -1064,6 +1178,7 @@ export const GetMistakesResponse = zod.object({
  */
 export const GetNotificationPrefsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "emailBilling": zod.boolean(),
   "emailMembership": zod.boolean(),
   "emailWorkspaceInvite": zod.boolean()
 })
@@ -1073,12 +1188,14 @@ export const GetNotificationPrefsResponse = zod.object({
  * @summary Set notification preferences
  */
 export const SetNotificationPrefsBody = zod.object({
+  "emailBilling": zod.boolean(),
   "emailMembership": zod.boolean(),
   "emailWorkspaceInvite": zod.boolean()
 })
 
 export const SetNotificationPrefsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "emailBilling": zod.boolean(),
   "emailMembership": zod.boolean(),
   "emailWorkspaceInvite": zod.boolean()
 })
@@ -1264,8 +1381,8 @@ export const CreateAttemptResponse = zod.object({
   "chapters": zod.array(zod.string()),
   "correct": zod.number(),
   "id": zod.string(),
+  "materialId": zod.string().nullable(),
   "pct": zod.number(),
-  "quizId": zod.string(),
   "quizName": zod.string(),
   "takenAt": zod.iso.datetime({"offset":true}),
   "total": zod.number(),
@@ -2038,6 +2155,50 @@ export const GetWorkspaceStatsResponse = zod.object({
   "chapters": zod.number(),
   "files": zod.number(),
   "quizzes": zod.number()
+})
+
+
+/**
+ * @summary Transfer workspace ownership to another member
+ */
+export const TransferWorkspaceParams = zod.object({
+  "id": zod.string()
+})
+
+
+
+
+export const TransferWorkspaceBody = zod.object({
+  "recipientId": zod.string().min(1)
+})
+
+export const transferWorkspaceResponseTagsItemValueMax = 50;
+
+
+
+export const TransferWorkspaceResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "capabilities": zod.object({
+  "canComment": zod.boolean(),
+  "canEdit": zod.boolean(),
+  "canManageMembers": zod.boolean(),
+  "canView": zod.boolean()
+}),
+  "chapterCount": zod.number(),
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "fileCount": zod.number(),
+  "id": zod.string(),
+  "isOwner": zod.boolean(),
+  "lastAccessedAt": zod.iso.datetime({"offset":true}),
+  "name": zod.string(),
+  "privacy": zod.enum(['private', 'public', 'link']),
+  "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
+  "shareRole": zod.enum(['editor', 'commenter', 'viewer']),
+  "tags": zod.array(zod.object({
+  "id": zod.string(),
+  "value": zod.string().min(1).max(transferWorkspaceResponseTagsItemValueMax)
+}))
 })
 
 

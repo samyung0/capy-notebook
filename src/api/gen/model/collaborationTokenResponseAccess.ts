@@ -11,4 +11,5 @@ export type CollaborationTokenResponseAccess = typeof CollaborationTokenResponse
 export const CollaborationTokenResponseAccess = {
   write: 'write',
   comment: 'comment',
+  shrink: 'shrink',
 } as const;

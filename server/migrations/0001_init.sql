@@ -14,30 +14,130 @@
 -- the schema apply to a stock postgres:16 (see .github/workflows/ci.yml).
 
 -- ============================================================================
+-- Baseline version guard
+--
+-- Because this file is re-applied on every boot, IF NOT EXISTS makes reshaping
+-- an existing table impossible. Rather than accumulate conditional ALTERs, the
+-- baseline carries a version: when the recorded version does not match the
+-- target below, every application table is dropped and recreated from the
+-- definitions in this file. A missing record is treated as a mismatch, which
+-- covers both a brand-new database (nothing to drop) and one created by an
+-- earlier baseline.
+--
+-- This is only safe because there is no production deployment. Bump
+-- target_version on any destructive change to the definitions below.
+--
+-- LightRAG's lightrag_* tables and AGE graphs are deliberately absent from the
+-- drop list: that schema is owned by the Python pipeline, not this file.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS schema_baseline (
+  id      int PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  version int NOT NULL
+);
+
+DO $$
+DECLARE
+  target_version constant int := 4;
+  recorded_version int;
+BEGIN
+  -- Serialize concurrent migrators. The runner sends this file as one statement
+  -- batch, so it executes in a single implicit transaction and this lock is held
+  -- for the whole of it. Without it, a second boot (or a parallel test binary)
+  -- can drop tables out from under the first, or deadlock against it. The loser
+  -- blocks here and then finds the version already current.
+  PERFORM pg_advisory_xact_lock(hashtext('evo_schema_baseline'));
+  SELECT version INTO recorded_version FROM schema_baseline WHERE id = 1;
+  IF recorded_version IS DISTINCT FROM target_version THEN
+    DROP TABLE IF EXISTS
+      -- editor_asset_uploads and oauth_connections no longer exist in this
+      -- file; they stay listed so a database created by an earlier baseline is
+      -- cleaned up rather than keeping a stale table forever.
+      attempts, blobs, canvases, card_stats, chapters, conversations,
+      editor_asset_uploads, editor_assets, email_outbox, entity_tags,
+      event_labels, events, files, jobs, labels, lifecycle_notices,
+      material_comments, material_discussions, material_revisions,
+      material_yjs_documents, materials, messages, mistakes,
+      notification_prefs, notifications, oauth_connections,
+      pending_blob_deletions, tags, tasks, upload_sessions, user_storage,
+      user_storage_deltas, user_subscriptions, users, webhook_events,
+      workspace_invites, workspace_members, workspaces
+      CASCADE;
+  END IF;
+  INSERT INTO schema_baseline (id, version) VALUES (1, target_version)
+    ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version;
+END $$;
+
+-- ============================================================================
 -- Identity, workspaces, content tree
 -- ============================================================================
 
+-- The user row is a durable tombstone: application logic never deletes it.
+-- Deletion soft-flags the row and scrubs its PII, which keeps preserved
+-- authorship (comments, revisions, materials authored inside other people's
+-- workspaces) pointing at a real referent, retains the Stripe customer mapping
+-- for invoice history, and prevents free-tier re-registration churn.
+--
+-- email is nullable precisely because purge scrubs it; read paths must
+-- COALESCE. The schema-level cascades below still allow a hard DELETE for
+-- operational recovery, but nothing in the application performs one.
 CREATE TABLE IF NOT EXISTS users (
-  id                  text PRIMARY KEY,
-  name                text NOT NULL,
-  email               text NOT NULL,
-  avatar_url          text,
-  class_label         text,
-  streak              int  NOT NULL DEFAULT 0,
-  clerk_id            text UNIQUE,
-  stripe_customer_id  text UNIQUE,
-  subscription_status text NOT NULL DEFAULT 'none',
-  plan_tier           text NOT NULL DEFAULT 'free'
+  id                    text PRIMARY KEY,
+  name                  text NOT NULL,
+  email                 text,
+  avatar_url            text,
+  class_label           text,
+  streak                int  NOT NULL DEFAULT 0,
+  stripe_customer_id    text UNIQUE,
+  subscription_status   text NOT NULL DEFAULT 'none',
+  plan_tier             text NOT NULL DEFAULT 'free'
     CHECK (plan_tier IN ('free', 'pro')),
-  locale              text NOT NULL DEFAULT 'en',
-  created_at          timestamptz NOT NULL DEFAULT now(),
-  updated_at          timestamptz NOT NULL DEFAULT now()
+  locale                text NOT NULL DEFAULT 'en',
+  -- Account lifecycle. deletion_requested_at starts the reactivation window;
+  -- purge_after is when the purge job runs; deleted_at is set by the purge
+  -- itself, after which the row is a scrubbed tombstone.
+  deletion_requested_at timestamptz,
+  purge_after           timestamptz,
+  deleted_at            timestamptz,
+  -- Suspension is enforced (all writes rejected) but nothing sets it yet;
+  -- there is no automated suspension policy.
+  suspended_at          timestamptz,
+  suspended_reason      text,
+  created_at            timestamptz NOT NULL DEFAULT now(),
+  updated_at            timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT users_purge_window_check
+    CHECK (purge_after IS NULL OR deletion_requested_at IS NOT NULL),
+  CONSTRAINT users_deleted_requires_request_check
+    CHECK (deleted_at IS NULL OR deletion_requested_at IS NOT NULL),
+  CONSTRAINT users_suspension_reason_check
+    CHECK ((suspended_at IS NULL) = (suspended_reason IS NULL))
 );
-ALTER TABLE users ADD COLUMN IF NOT EXISTS locale text NOT NULL DEFAULT 'en';
+-- Invite resolution looks users up by email, so live accounts must be unique on
+-- it. Tombstones are excluded: a scrubbed row holds no email, and a deleted
+-- account must not block the address from being used again.
+CREATE UNIQUE INDEX IF NOT EXISTS users_email_active_uidx
+  ON users(lower(email))
+  WHERE deleted_at IS NULL AND email IS NOT NULL;
+-- Keeps the purge sweep bounded.
+CREATE INDEX IF NOT EXISTS users_purge_due_idx
+  ON users(purge_after)
+  WHERE deleted_at IS NULL AND purge_after IS NOT NULL;
 
+-- Foreign keys onto users(id) follow one rule throughout this schema:
+--
+--   * the ownership / storage-accounting axis cascades, so a hard DELETE of a
+--     user is never blocked and the bytes charged to them go with them;
+--   * the authorship / attribution axis is nullable ON DELETE SET NULL, so
+--     content that lives inside somebody else's workspace survives.
+--
+-- In practice the SET NULL branches never fire, because deletion is a soft flag
+-- and the scrubbed tombstone keeps the reference intact. They exist so that a
+-- hard delete degrades to "author unknown" instead of destroying other users'
+-- data. Read paths must therefore treat a null author and a tombstoned author
+-- identically ("Deleted user").
 CREATE TABLE IF NOT EXISTS workspaces (
   id               text PRIMARY KEY,
-  user_id          text NOT NULL REFERENCES users(id),
+  user_id          text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   name             text NOT NULL,
   color            text NOT NULL DEFAULT 'green',
   privacy          text NOT NULL DEFAULT 'private',
@@ -56,15 +156,24 @@ CREATE TABLE IF NOT EXISTS chapters (
   id           text PRIMARY KEY,
   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   name         text NOT NULL,
-  position     int  NOT NULL DEFAULT 0
+  position     int  NOT NULL DEFAULT 0,
+  -- Redundant with the primary key, but it is the target every composite
+  -- (chapter_id, workspace_id) foreign key below needs, which is what stops a
+  -- file or material referencing a chapter in a different workspace.
+  UNIQUE (id, workspace_id)
 );
 CREATE INDEX IF NOT EXISTS chapters_ws_idx ON chapters(workspace_id);
 
 CREATE TABLE IF NOT EXISTS files (
   id                    text PRIMARY KEY,
   workspace_id          text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  -- Storage owner, derived from the workspace by trigger. This is the
+  -- accounting axis, hence CASCADE.
   user_id               text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  chapter_id            text REFERENCES chapters(id) ON DELETE SET NULL,
+  -- Uploader. Attribution only: a collaborator's deletion must not remove
+  -- files from a workspace they do not own.
+  created_by            text REFERENCES users(id) ON DELETE SET NULL,
+  chapter_id            text,
   name                  text NOT NULL,
   kind                  text NOT NULL DEFAULT 'pdf',
   position              bigint NOT NULL DEFAULT 0,
@@ -84,13 +193,12 @@ CREATE TABLE IF NOT EXISTS files (
   parsed_blob_path      text,
   parsed_fingerprint    text,
   parsed_parser_version text,
-  source_etag           text
+  source_etag           text,
+  -- The column list on SET NULL is what makes this work: the default form would
+  -- try to null workspace_id too, which is NOT NULL. Requires Postgres 15+.
+  FOREIGN KEY (chapter_id, workspace_id)
+    REFERENCES chapters(id, workspace_id) ON DELETE SET NULL (chapter_id)
 );
-ALTER TABLE files
-  ADD COLUMN IF NOT EXISTS position bigint NOT NULL DEFAULT 0;
-ALTER TABLE files
-  ALTER COLUMN position TYPE bigint USING position::bigint,
-  ALTER COLUMN position SET DEFAULT 0;
 CREATE INDEX IF NOT EXISTS files_ws_idx ON files(workspace_id);
 CREATE INDEX IF NOT EXISTS files_chapter_idx ON files(chapter_id);
 CREATE INDEX IF NOT EXISTS files_user_idx ON files(user_id);
@@ -102,16 +210,21 @@ CREATE INDEX IF NOT EXISTS files_user_idx ON files(user_id);
 
 CREATE TABLE IF NOT EXISTS materials (
   id             text PRIMARY KEY,
-  -- Ownership lives directly on the material; workspace_id is optional
-  -- provenance / container membership (standalone materials have none).
-  user_id        text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  -- Author. Distinct from owner_user_id: an editor creating a note inside
+  -- somebody else's workspace is the creator, while the workspace owner is
+  -- charged for the bytes. Cascading this column would let a collaborator's
+  -- account deletion destroy content out of the owner's workspace and silently
+  -- drop the owner's storage counter, so it is attribution-only.
+  created_by     text REFERENCES users(id) ON DELETE SET NULL,
   workspace_id   text REFERENCES workspaces(id) ON DELETE CASCADE,
+  -- Storage owner: the workspace owner, or the creator for standalone
+  -- materials. This is the accounting axis, hence CASCADE.
   owner_user_id  text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   workspace_name text NOT NULL DEFAULT '',
   -- Membership: which chapter the material is filed under in the workspace
   -- tree (mirrors files.chapter_id). Nullable = unfiled; unfiles on chapter
   -- delete. Orthogonal to scope_chapters, which records generation provenance.
-  chapter_id     text REFERENCES chapters(id) ON DELETE SET NULL,
+  chapter_id     text,
   kind           text NOT NULL,
   title          text NOT NULL DEFAULT '',
   content        jsonb NOT NULL DEFAULT
@@ -135,17 +248,18 @@ CREATE TABLE IF NOT EXISTS materials (
     jsonb_typeof(content) = 'object'
     AND content->>'schemaVersion' = '1'
     AND jsonb_typeof(content->'value') = 'array'
-  )
+  ),
+  -- A standalone material has no workspace, so the composite chapter reference
+  -- is only meaningful when it is filed in one.
+  CONSTRAINT materials_chapter_requires_workspace_check
+    CHECK (chapter_id IS NULL OR workspace_id IS NOT NULL),
+  FOREIGN KEY (chapter_id, workspace_id)
+    REFERENCES chapters(id, workspace_id) ON DELETE SET NULL (chapter_id)
 );
-ALTER TABLE materials
-  ADD COLUMN IF NOT EXISTS position bigint NOT NULL DEFAULT 0;
-ALTER TABLE materials
-  ALTER COLUMN position TYPE bigint USING position::bigint,
-  ALTER COLUMN position SET DEFAULT 0;
 CREATE INDEX IF NOT EXISTS materials_ws_idx ON materials(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS materials_chapter_idx ON materials(chapter_id);
 CREATE INDEX IF NOT EXISTS materials_privacy_idx ON materials(privacy, kind) WHERE privacy = 'public';
-CREATE INDEX IF NOT EXISTS materials_user_idx ON materials(user_id, kind, created_at DESC);
+CREATE INDEX IF NOT EXISTS materials_creator_idx ON materials(created_by, kind, created_at DESC);
 CREATE INDEX IF NOT EXISTS materials_owner_idx ON materials(owner_user_id, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS material_revisions (
@@ -204,10 +318,16 @@ CREATE INDEX IF NOT EXISTS card_stats_due_idx ON card_stats ((srs->>'due'));
 -- Quiz attempts. `answers` is a map keyed by question id (mirrors the frontend
 -- Answer union); `questions` is the snapshot taken at submit time so later
 -- quiz edits don't distort historical results.
+--
+-- material_id is deliberately SET NULL rather than CASCADE. The question
+-- snapshot and the denormalized quiz_name / workspace_name exist precisely so
+-- an attempt outlives the quiz; deleting a quiz must not erase the score
+-- history of everyone who took it. The user's own deletion does cascade, since
+-- attempts are their personal history.
 CREATE TABLE IF NOT EXISTS attempts (
   id             text PRIMARY KEY,
-  user_id        text,
-  quiz_id        text,
+  user_id        text REFERENCES users(id) ON DELETE CASCADE,
+  material_id    text REFERENCES materials(id) ON DELETE SET NULL,
   quiz_name      text NOT NULL DEFAULT '',
   workspace_name text NOT NULL DEFAULT '',
   chapters       text[] NOT NULL DEFAULT '{}',
@@ -218,16 +338,22 @@ CREATE TABLE IF NOT EXISTS attempts (
   questions      jsonb NOT NULL DEFAULT '[]',
   taken_at       timestamptz NOT NULL DEFAULT now()
 );
+CREATE INDEX IF NOT EXISTS attempts_user_idx ON attempts(user_id, taken_at DESC);
+CREATE INDEX IF NOT EXISTS attempts_material_idx ON attempts(material_id);
 
--- Per-user mistakes pool backing the "Review mistakes" virtual quiz.
+-- Per-user mistakes pool backing the "Review mistakes" virtual quiz. `question`
+-- is self-contained, so as with attempts the source quiz disappearing only
+-- unlinks the row.
 CREATE TABLE IF NOT EXISTS mistakes (
-  user_id     text NOT NULL,
+  user_id     text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   question_id text NOT NULL,
+  material_id text REFERENCES materials(id) ON DELETE SET NULL,
   question    jsonb NOT NULL,
   updated_at  timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, question_id)
 );
 CREATE INDEX IF NOT EXISTS mistakes_user_idx ON mistakes(user_id, updated_at DESC);
+CREATE INDEX IF NOT EXISTS mistakes_material_idx ON mistakes(material_id);
 
 -- ============================================================================
 -- Tags — per-user, per-kind catalog (deduped by name) + entity link table.
@@ -237,8 +363,8 @@ CREATE INDEX IF NOT EXISTS mistakes_user_idx ON mistakes(user_id, updated_at DES
 
 CREATE TABLE IF NOT EXISTS tags (
   id         text PRIMARY KEY,
-  user_id    text REFERENCES users(id),
-  kind       text NOT NULL,               -- 'workspace' | 'quiz' | 'card'
+  user_id    text REFERENCES users(id) ON DELETE CASCADE,
+  kind       text NOT NULL,               -- 'workspace' | 'material'
   name       text NOT NULL,
   metadata   jsonb NOT NULL DEFAULT '{}',
   created_at timestamptz NOT NULL DEFAULT now()
@@ -249,14 +375,27 @@ CREATE INDEX IF NOT EXISTS tags_name_idx ON tags(lower(name));  -- cross-user se
 CREATE UNIQUE INDEX IF NOT EXISTS tags_user_kind_name_uidx
   ON tags(user_id, kind, lower(name));
 
+-- Tag links. The reference used to be a polymorphic (kind, entity_id) pair with
+-- no foreign key, which left a dangling row behind every workspace and material
+-- delete. Real per-type columns make the cleanup a cascade instead of something
+-- every delete path has to remember, and the CHECK keeps a row pointing at
+-- exactly one entity.
+--
+-- Orphaned catalog rows are deliberately NOT collected: the tags table exists to
+-- outlive the entities referencing it so per-tag metadata survives edits and
+-- reuse, and a few hundred bytes per user is not worth the write amplification.
 CREATE TABLE IF NOT EXISTS entity_tags (
-  kind       text NOT NULL,               -- 'workspace' | 'quiz' | 'card'
-  entity_id  text NOT NULL,               -- id of the owning workspace/quiz/card
-  tag_id     text NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-  created_at timestamptz NOT NULL DEFAULT now(),
-  PRIMARY KEY (kind, entity_id, tag_id)
+  tag_id       text NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+  workspace_id text REFERENCES workspaces(id) ON DELETE CASCADE,
+  material_id  text REFERENCES materials(id) ON DELETE CASCADE,
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT entity_tags_single_entity_check
+    CHECK (num_nonnulls(workspace_id, material_id) = 1)
 );
-CREATE INDEX IF NOT EXISTS entity_tags_entity_idx ON entity_tags(kind, entity_id);
+CREATE UNIQUE INDEX IF NOT EXISTS entity_tags_workspace_uidx
+  ON entity_tags(workspace_id, tag_id) WHERE workspace_id IS NOT NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS entity_tags_material_uidx
+  ON entity_tags(material_id, tag_id) WHERE material_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS entity_tags_tag_idx ON entity_tags(tag_id);
 
 -- ============================================================================
@@ -265,7 +404,8 @@ CREATE INDEX IF NOT EXISTS entity_tags_tag_idx ON entity_tags(tag_id);
 
 CREATE TABLE IF NOT EXISTS labels (
   id      text PRIMARY KEY,
-  user_id text REFERENCES users(id),   -- labels are user-owned calendar categories
+  -- Labels are user-owned calendar categories: ownership axis, so CASCADE.
+  user_id text REFERENCES users(id) ON DELETE CASCADE,
   name    text NOT NULL,
   color   text NOT NULL DEFAULT 'green'
 );
@@ -273,19 +413,28 @@ CREATE INDEX IF NOT EXISTS labels_user_idx ON labels(user_id);
 
 CREATE TABLE IF NOT EXISTS events (
   id        text PRIMARY KEY,
-  user_id   text REFERENCES users(id),
+  user_id   text REFERENCES users(id) ON DELETE CASCADE,
   title     text NOT NULL,
   start_at  timestamptz NOT NULL,
   end_at    timestamptz NOT NULL,
-  label_ids text[] NOT NULL DEFAULT '{}',
   location  text,
   note      text
 );
 CREATE INDEX IF NOT EXISTS events_user_idx ON events(user_id);
 
+-- Event labels were a text[] of label ids with no referential integrity, so
+-- deleting a label left every event referencing it holding a dead id. A join
+-- table lets the cascade clean up after itself.
+CREATE TABLE IF NOT EXISTS event_labels (
+  event_id text NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  label_id text NOT NULL REFERENCES labels(id) ON DELETE CASCADE,
+  PRIMARY KEY (event_id, label_id)
+);
+CREATE INDEX IF NOT EXISTS event_labels_label_idx ON event_labels(label_id);
+
 CREATE TABLE IF NOT EXISTS tasks (
   id       text PRIMARY KEY,
-  user_id  text REFERENCES users(id),
+  user_id  text REFERENCES users(id) ON DELETE CASCADE,
   title    text NOT NULL,
   meta     text,
   done     boolean NOT NULL DEFAULT false,
@@ -295,7 +444,7 @@ CREATE INDEX IF NOT EXISTS tasks_user_idx ON tasks(user_id);
 
 CREATE TABLE IF NOT EXISTS canvases (
   id         text PRIMARY KEY,
-  user_id    text REFERENCES users(id),
+  user_id    text REFERENCES users(id) ON DELETE CASCADE,
   name       text NOT NULL,
   updated_at timestamptz NOT NULL DEFAULT now(),
   scene      jsonb
@@ -342,20 +491,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS workspace_invites_pending_user_idx
 CREATE INDEX IF NOT EXISTS workspace_invites_expiry_idx
   ON workspace_invites(expires_at)
   WHERE accepted_at IS NULL;
-
--- The notification schema is intentionally destructive in this squashed
--- baseline. This conditional drop lets a local database created by the
--- previous baseline upgrade cleanly; production databases must be backed up
--- before applying schema changes.
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM information_schema.columns
-    WHERE table_name='notifications' AND column_name='title'
-  ) THEN
-    DROP TABLE notifications;
-  END IF;
-END $$;
 
 CREATE TABLE IF NOT EXISTS notifications (
   id                  text PRIMARY KEY,
@@ -405,9 +540,6 @@ CREATE TABLE IF NOT EXISTS email_outbox (
   updated_at           timestamptz NOT NULL DEFAULT now(),
   sent_at              timestamptz
 );
-ALTER TABLE email_outbox
-  ADD COLUMN IF NOT EXISTS lease_token text,
-  ADD COLUMN IF NOT EXISTS lease_expires_at timestamptz;
 CREATE INDEX IF NOT EXISTS email_outbox_claim_idx
   ON email_outbox(next_attempt_at)
   WHERE status = 'pending';
@@ -419,8 +551,23 @@ CREATE TABLE IF NOT EXISTS notification_prefs (
   user_id                 text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   email_workspace_invite  boolean NOT NULL DEFAULT true,
   email_membership        boolean NOT NULL DEFAULT true,
+  -- Over-quota / billing buffer warnings. Lifecycle emails (deletion requested,
+  -- purge) are always sent and do not consult this flag.
+  email_billing           boolean NOT NULL DEFAULT true,
   updated_at              timestamptz NOT NULL DEFAULT now()
 );
+
+-- Idempotency for the buffer-period reminder schedule. Kind is scoped to one
+-- subscription period_end so a later re-lapse can notify again.
+CREATE TABLE IF NOT EXISTS lifecycle_notices (
+  user_id    text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind       text NOT NULL,
+  period_end timestamptz NOT NULL,
+  sent_at    timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, kind, period_end)
+);
+CREATE INDEX IF NOT EXISTS lifecycle_notices_user_idx
+  ON lifecycle_notices(user_id, sent_at DESC);
 
 -- ============================================================================
 -- Collaboration: comment discussions and comments
@@ -434,7 +581,9 @@ CREATE TABLE IF NOT EXISTS material_discussions (
   anchor_end   bytea,
   anchor_version integer NOT NULL DEFAULT 1 CHECK (anchor_version > 0),
   anchor_quote text NOT NULL DEFAULT '',
-  created_by  text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  -- Attribution axis: a discussion opened inside somebody else's document must
+  -- not vanish because its author left.
+  created_by  text REFERENCES users(id) ON DELETE SET NULL,
   is_resolved boolean NOT NULL DEFAULT false,
   deleted_at  timestamptz,
   deleted_by  text REFERENCES users(id) ON DELETE SET NULL,
@@ -452,7 +601,8 @@ CREATE TABLE IF NOT EXISTS material_comments (
   id                text PRIMARY KEY,
   discussion_id     text NOT NULL REFERENCES material_discussions(id) ON DELETE CASCADE,
   parent_comment_id text REFERENCES material_comments(id) ON DELETE SET NULL,
-  user_id           text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  -- Attribution axis. See material_discussions.created_by.
+  user_id           text REFERENCES users(id) ON DELETE SET NULL,
   content_rich      jsonb NOT NULL,
   is_edited         boolean NOT NULL DEFAULT false,
   deleted_at        timestamptz,
@@ -474,7 +624,7 @@ CREATE INDEX IF NOT EXISTS material_comments_parent_idx
 
 CREATE TABLE IF NOT EXISTS conversations (
   id           text PRIMARY KEY,
-  user_id      text NOT NULL,
+  user_id      text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   title        text,
   metadata     jsonb NOT NULL DEFAULT '{}',   -- system prompt, RAG filters, etc.
@@ -500,18 +650,39 @@ CREATE INDEX IF NOT EXISTS messages_conv_idx ON messages(conversation_id, create
 -- Auth/billing plumbing and the async job queue
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS oauth_connections (
-  id            text PRIMARY KEY,
-  user_id       text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  provider      text NOT NULL,
-  access_token  text NOT NULL,
-  refresh_token text,
-  expires_at    timestamptz,
-  scopes        text,
-  account_email text,
-  UNIQUE(user_id, provider)
+-- oauth_connections is gone: Clerk owns the OAuth lifecycle for provider
+-- integrations and hands out fresh access tokens from its token wallet, so no
+-- provider credentials are stored locally. Retaining tokens for deleted
+-- accounts would also be a liability the purge path cannot discharge.
+
+-- One row per Stripe subscription. users.plan_tier stays as the denormalized
+-- fast read for the storage gate, but it is derived from here.
+--
+-- current_period_end is what makes the lapse buffer computable at all, and
+-- stripe_event_created is the ordering guard: Stripe does not guarantee webhook
+-- delivery order, so an older event must never overwrite newer state.
+CREATE TABLE IF NOT EXISTS user_subscriptions (
+  stripe_subscription_id text PRIMARY KEY,
+  user_id                text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  status                 text NOT NULL,
+  price_id               text NOT NULL DEFAULT '',
+  plan_tier              text NOT NULL DEFAULT 'free'
+    CHECK (plan_tier IN ('free', 'pro')),
+  current_period_end     timestamptz,
+  cancel_at_period_end   boolean NOT NULL DEFAULT false,
+  canceled_at            timestamptz,
+  ended_at               timestamptz,
+  -- Stripe event `created` (unix seconds) that produced this row's state.
+  stripe_event_created   bigint NOT NULL DEFAULT 0,
+  created_at             timestamptz NOT NULL DEFAULT now(),
+  updated_at             timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS oauth_connections_user_idx ON oauth_connections(user_id);
+CREATE INDEX IF NOT EXISTS user_subscriptions_user_idx
+  ON user_subscriptions(user_id, current_period_end DESC);
+-- Drives the lapse sweep: subscriptions whose paid period has run out.
+CREATE INDEX IF NOT EXISTS user_subscriptions_period_end_idx
+  ON user_subscriptions(current_period_end)
+  WHERE current_period_end IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS webhook_events (
   id           text PRIMARY KEY,
@@ -538,33 +709,49 @@ CREATE TABLE IF NOT EXISTS jobs (
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status, created_at);
 
 -- ============================================================================
--- Direct browser-to-B2 uploads and editor media assets
+-- Blob layer: refcounts and the deletion outbox
 -- ============================================================================
 
-CREATE TABLE IF NOT EXISTS upload_sessions (
-  id            text PRIMARY KEY,
-  workspace_id  text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  user_id       text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  chapter_id    text REFERENCES chapters(id) ON DELETE SET NULL,
-  chapter_name  text NOT NULL DEFAULT '',
-  object_path   text NOT NULL UNIQUE,
-  final_path    text NOT NULL UNIQUE,
-  name          text NOT NULL,
-  kind          text NOT NULL,
-  content_type  text NOT NULL DEFAULT 'application/octet-stream',
-  declared_size bigint NOT NULL CHECK (declared_size >= 0),
-  parse_mode    text NOT NULL,
-  status        text NOT NULL DEFAULT 'pending',
-  source_etag   text,
-  file_id       text REFERENCES files(id) ON DELETE SET NULL,
-  created_at    timestamptz NOT NULL DEFAULT now(),
-  expires_at    timestamptz NOT NULL,
-  completed_at  timestamptz
+-- One row per live object in the bucket, refcounted across every table that
+-- names it. The count is maintained entirely by triggers rather than by
+-- application code, because references disappear through FK cascades — a
+-- workspace delete, a material delete, a user purge — where no handler runs.
+--
+-- Deliberately no size/content_type/etag columns. They already live on the
+-- referencing rows, and two rows can legitimately share one path (cloning a
+-- workspace copies blob_path rather than duplicating the object), which would
+-- leave this table needing a conflict policy for metadata it does not own.
+--
+-- Deliberately no declared foreign key from files.blob_path or
+-- editor_assets.object_path either: the row here is created by the referencing
+-- table's AFTER INSERT trigger, so an immediate FK check would fire before it
+-- exists. The refcount triggers are the enforcement, and unlike a helper
+-- function they cannot be bypassed by a new writer that forgets to call them.
+CREATE TABLE IF NOT EXISTS blobs (
+  object_path text PRIMARY KEY,
+  ref_count   int NOT NULL CHECK (ref_count > 0),
+  created_at  timestamptz NOT NULL DEFAULT now()
 );
-ALTER TABLE upload_sessions
-  ADD COLUMN IF NOT EXISTS chapter_name text NOT NULL DEFAULT '';
-CREATE INDEX IF NOT EXISTS upload_sessions_expiry_idx
-  ON upload_sessions(status, expires_at);
+
+-- Objects whose last database reference is gone, waiting for the reaper to
+-- delete them from B2. Durable, so a failed or crashed delete is retried
+-- instead of silently leaking bytes that keep being billed.
+CREATE TABLE IF NOT EXISTS pending_blob_deletions (
+  object_path text PRIMARY KEY,
+  -- Upload paths are queued with a delay: a presigned PUT that lands after the
+  -- session row is gone still has to be collected, and deleting before the URL
+  -- expires would leave that late object behind forever.
+  not_before  timestamptz NOT NULL DEFAULT now(),
+  attempts    int NOT NULL DEFAULT 0,
+  last_error  text,
+  created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS pending_blob_deletions_due_idx
+  ON pending_blob_deletions(not_before);
+
+-- ============================================================================
+-- Direct browser-to-B2 uploads and editor media assets
+-- ============================================================================
 
 -- Editor media stored directly in Backblaze B2. The browser uploads to a
 -- short-lived, server-reserved object URL. Plate documents persist only the
@@ -580,8 +767,11 @@ CREATE TABLE IF NOT EXISTS editor_assets (
   object_path  text NOT NULL,
   content_type text NOT NULL,
   size_bytes   bigint NOT NULL CHECK (size_bytes > 0),
+  -- No 'expired' state: an abandoned reservation deletes this row so the
+  -- refcount trigger can release its object. A row that stays behind holding a
+  -- reference would make its object uncollectable.
   status       text NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending','ready','expired')),
+    CHECK (status IN ('pending','ready')),
   etag         text,
   created_at   timestamptz NOT NULL DEFAULT now(),
   completed_at timestamptz,
@@ -594,30 +784,69 @@ CREATE TABLE IF NOT EXISTS editor_assets (
   ),
   CHECK ((status='ready') = (completed_at IS NOT NULL))
 );
-ALTER TABLE editor_assets
-  DROP CONSTRAINT IF EXISTS editor_assets_object_path_key;
 CREATE INDEX IF NOT EXISTS editor_assets_workspace_idx
   ON editor_assets(workspace_id, status);
 
-CREATE TABLE IF NOT EXISTS editor_asset_uploads (
+-- One reservation table for both upload flows. They were separate tables with
+-- ~90% identical columns, one shared reservation trigger and two near-duplicate
+-- sweepers; target discriminates instead. The destinations stay separate
+-- tables, because files and editor_assets diverge in both columns and query
+-- patterns, and a single wide table risks an editor asset leaking into the file
+-- tree or the RAG ingest scope.
+CREATE TABLE IF NOT EXISTS upload_sessions (
   id            text PRIMARY KEY,
-  asset_id      text NOT NULL UNIQUE,
-  workspace_id  text NOT NULL,
+  target        text NOT NULL DEFAULT 'source'
+    CHECK (target IN ('source','editor_asset')),
+  workspace_id  text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  -- Storage owner (the workspace owner), which is who the reservation is
+  -- charged to. created_by is the uploader, carried onto files.created_by when
+  -- the session finalizes.
   user_id       text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  created_by    text REFERENCES users(id) ON DELETE SET NULL,
+  -- object_path is where the browser PUTs; final_path is where the object is
+  -- promoted to on completion. Neither is unique-per-target, so both
+  -- constraints stay table-wide.
   object_path   text NOT NULL UNIQUE,
-  content_type  text NOT NULL,
-  declared_size bigint NOT NULL CHECK (declared_size > 0),
+  final_path    text NOT NULL UNIQUE,
+  content_type  text NOT NULL DEFAULT 'application/octet-stream',
+  declared_size bigint NOT NULL CHECK (declared_size >= 0),
   status        text NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending','completed','expired')),
+  -- Source-only: the file tree placement and parser selection.
+  chapter_id    text,
+  chapter_name  text NOT NULL DEFAULT '',
+  name          text NOT NULL DEFAULT '',
+  kind          text NOT NULL DEFAULT '',
+  parse_mode    text NOT NULL DEFAULT '',
+  source_etag   text,
+  file_id       text REFERENCES files(id) ON DELETE SET NULL,
+  -- Editor-asset-only: the pending row in editor_assets this fills in.
+  asset_id      text,
   created_at    timestamptz NOT NULL DEFAULT now(),
   expires_at    timestamptz NOT NULL,
   completed_at  timestamptz,
+  FOREIGN KEY (chapter_id, workspace_id)
+    REFERENCES chapters(id, workspace_id) ON DELETE SET NULL (chapter_id),
+  -- Deleting the asset row takes its reservation with it, which is what keeps
+  -- the reserved-bytes counter correct through a workspace cascade.
   FOREIGN KEY (asset_id, workspace_id)
     REFERENCES editor_assets(id, workspace_id) ON DELETE CASCADE,
-  CHECK ((status='completed') = (completed_at IS NOT NULL))
+  CONSTRAINT upload_sessions_source_fields CHECK (
+    target <> 'source' OR (name <> '' AND kind <> '' AND parse_mode <> '')
+  ),
+  CONSTRAINT upload_sessions_asset_fields CHECK (
+    (target = 'editor_asset') = (asset_id IS NOT NULL)
+  ),
+  CONSTRAINT upload_sessions_file_target CHECK (
+    file_id IS NULL OR target = 'source'
+  )
 );
-CREATE INDEX IF NOT EXISTS editor_asset_uploads_expiry_idx
-  ON editor_asset_uploads(status, expires_at);
+CREATE INDEX IF NOT EXISTS upload_sessions_expiry_idx
+  ON upload_sessions(status, expires_at);
+-- Completing an editor-asset upload looks the session up by asset; one live
+-- reservation per asset.
+CREATE UNIQUE INDEX IF NOT EXISTS upload_sessions_asset_uidx
+  ON upload_sessions(asset_id) WHERE asset_id IS NOT NULL;
 
 -- ============================================================================
 -- Logical storage accounting
@@ -752,18 +981,137 @@ RETURNS trigger
 LANGUAGE plpgsql
 AS $$
 BEGIN
-  IF NEW.workspace_id IS NULL THEN
-    NEW.owner_user_id = NEW.user_id;
-  ELSE
-    SELECT w.user_id INTO NEW.owner_user_id
-    FROM workspaces w
-    WHERE w.id = NEW.workspace_id;
-  END IF;
-  IF NEW.owner_user_id IS NULL THEN
-    RAISE EXCEPTION 'material % has no storage owner', NEW.id;
+  -- Ownership is derived on insert and on a workspace move only, never from a
+  -- later authorship change: created_by is nulled when an author's account is
+  -- hard-deleted, and re-deriving there would both re-own the row and fail
+  -- outright once the surrounding cascade has already removed the workspace.
+  -- Ownership transfer therefore has to rewrite owner_user_id explicitly.
+  IF TG_OP = 'INSERT' OR NEW.workspace_id IS DISTINCT FROM OLD.workspace_id THEN
+    IF NEW.workspace_id IS NULL THEN
+      -- Standalone material: the creator is also the storage owner.
+      NEW.owner_user_id = NEW.created_by;
+    ELSE
+      SELECT w.user_id INTO NEW.owner_user_id
+      FROM workspaces w
+      WHERE w.id = NEW.workspace_id;
+    END IF;
+    IF NEW.owner_user_id IS NULL THEN
+      RAISE EXCEPTION 'material % has no storage owner', NEW.id;
+    END IF;
   END IF;
   NEW.size_bytes = octet_length(NEW.content::text);
   RETURN NEW;
+END;
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Blob refcounting
+-- ---------------------------------------------------------------------------
+
+-- blob_enqueue_deletion is the only writer of the outbox. It refuses to queue a
+-- path something still points at, which is what makes it safe for the
+-- upload-session trigger to queue final_path unconditionally: if the session
+-- completed, the file that took the path over holds a reference.
+CREATE OR REPLACE FUNCTION blob_enqueue_deletion(p_path text, p_delay interval)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF p_path IS NULL OR p_path = '' THEN
+    RETURN;
+  END IF;
+  IF EXISTS (SELECT 1 FROM blobs WHERE object_path = p_path) THEN
+    RETURN;
+  END IF;
+  INSERT INTO pending_blob_deletions (object_path, not_before)
+  VALUES (p_path, now() + p_delay)
+  ON CONFLICT (object_path) DO UPDATE
+    SET not_before = greatest(pending_blob_deletions.not_before, excluded.not_before);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION blob_ref(p_path text)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF p_path IS NULL OR p_path = '' THEN
+    RETURN;
+  END IF;
+  INSERT INTO blobs (object_path, ref_count) VALUES (p_path, 1)
+  ON CONFLICT (object_path) DO UPDATE SET ref_count = blobs.ref_count + 1;
+  -- A queued path can come back to life: cloning a workspace re-references a
+  -- path whose last file was just deleted. Cancelling the queued delete is what
+  -- stops the reaper removing an object that is live again.
+  DELETE FROM pending_blob_deletions WHERE object_path = p_path;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION blob_unref(p_path text, p_delay interval)
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  remaining int;
+BEGIN
+  IF p_path IS NULL OR p_path = '' THEN
+    RETURN;
+  END IF;
+  -- Decrement only while other references remain; the last one deletes the row
+  -- so the CHECK (ref_count > 0) invariant holds without a zero state.
+  UPDATE blobs SET ref_count = ref_count - 1
+  WHERE object_path = p_path AND ref_count > 1
+  RETURNING ref_count INTO remaining;
+  IF remaining IS NOT NULL THEN
+    RETURN;
+  END IF;
+  DELETE FROM blobs WHERE object_path = p_path;
+  PERFORM blob_enqueue_deletion(p_path, p_delay);
+END;
+$$;
+
+-- One function for every table that names blob paths. The columns arrive as
+-- trigger arguments and are read through to_jsonb, so files (two blob columns)
+-- and editor_assets (one) share it. Row-level AFTER triggers fire on FK
+-- cascades, which is the entire point: a workspace or user delete never runs
+-- handler code, and this is what keeps the bucket in step with it.
+CREATE OR REPLACE FUNCTION account_blob_refs()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  col      text;
+  old_row  jsonb := CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE to_jsonb(OLD) END;
+  new_row  jsonb := CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE to_jsonb(NEW) END;
+  old_path text;
+  new_path text;
+BEGIN
+  FOREACH col IN ARRAY TG_ARGV LOOP
+    old_path := old_row ->> col;
+    new_path := new_row ->> col;
+    IF old_path IS DISTINCT FROM new_path THEN
+      -- Reference before dereference, so a path moving between two rows in one
+      -- statement is never briefly unreferenced and queued for deletion.
+      PERFORM blob_ref(new_path);
+      PERFORM blob_unref(old_path, interval '0');
+    END IF;
+  END LOOP;
+  RETURN NULL;
+END;
+$$;
+
+-- How long a vanished upload session's objects sit before the reaper takes
+-- them. It has to outlast the presigned PUT URL: a request already in flight
+-- can still create the object after the row is gone, and deleting early would
+-- leave that object unreferenced and unqueued forever.
+CREATE OR REPLACE FUNCTION account_upload_blob_deletion()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  PERFORM blob_enqueue_deletion(OLD.object_path, interval '1 day');
+  PERFORM blob_enqueue_deletion(OLD.final_path, interval '1 day');
+  RETURN NULL;
 END;
 $$;
 
@@ -827,6 +1175,12 @@ BEGIN
   ELSIF NOT old_pending AND new_pending THEN
     PERFORM adjust_user_storage_reserved(NEW.user_id, NEW.declared_size);
   ELSIF old_pending AND new_pending
+    AND OLD.user_id IS DISTINCT FROM NEW.user_id THEN
+    -- Ownership transfer moves a live reservation, and the counter has to move
+    -- with it or the old owner is charged for bytes they can no longer see.
+    PERFORM adjust_user_storage_reserved(OLD.user_id, -OLD.declared_size);
+    PERFORM adjust_user_storage_reserved(NEW.user_id, NEW.declared_size);
+  ELSIF old_pending AND new_pending
     AND OLD.declared_size IS DISTINCT FROM NEW.declared_size THEN
     PERFORM adjust_user_storage_reserved(
       NEW.user_id, NEW.declared_size - OLD.declared_size
@@ -881,6 +1235,10 @@ DROP TRIGGER IF EXISTS files_storage_after ON files;
 CREATE TRIGGER files_storage_after
 AFTER INSERT OR UPDATE OR DELETE ON files
 FOR EACH ROW EXECUTE FUNCTION account_file_storage();
+DROP TRIGGER IF EXISTS files_blob_refs_after ON files;
+CREATE TRIGGER files_blob_refs_after
+AFTER INSERT OR UPDATE OF blob_path, parsed_blob_path OR DELETE ON files
+FOR EACH ROW EXECUTE FUNCTION account_blob_refs('blob_path', 'parsed_blob_path');
 
 DROP TRIGGER IF EXISTS upload_sessions_storage_owner_before ON upload_sessions;
 CREATE TRIGGER upload_sessions_storage_owner_before
@@ -890,19 +1248,19 @@ DROP TRIGGER IF EXISTS upload_sessions_reservation_after ON upload_sessions;
 CREATE TRIGGER upload_sessions_reservation_after
 AFTER UPDATE OR DELETE ON upload_sessions
 FOR EACH ROW EXECUTE FUNCTION account_upload_reservation();
+DROP TRIGGER IF EXISTS upload_sessions_blob_deletion_after ON upload_sessions;
+CREATE TRIGGER upload_sessions_blob_deletion_after
+AFTER DELETE ON upload_sessions
+FOR EACH ROW EXECUTE FUNCTION account_upload_blob_deletion();
 
 DROP TRIGGER IF EXISTS editor_assets_storage_owner_before ON editor_assets;
 CREATE TRIGGER editor_assets_storage_owner_before
 BEFORE INSERT OR UPDATE OF workspace_id ON editor_assets
 FOR EACH ROW EXECUTE FUNCTION set_editor_asset_storage_owner();
-DROP TRIGGER IF EXISTS editor_asset_uploads_storage_owner_before ON editor_asset_uploads;
-CREATE TRIGGER editor_asset_uploads_storage_owner_before
-BEFORE INSERT OR UPDATE OF workspace_id ON editor_asset_uploads
-FOR EACH ROW EXECUTE FUNCTION set_editor_asset_storage_owner();
-DROP TRIGGER IF EXISTS editor_asset_uploads_reservation_after ON editor_asset_uploads;
-CREATE TRIGGER editor_asset_uploads_reservation_after
-AFTER UPDATE OR DELETE ON editor_asset_uploads
-FOR EACH ROW EXECUTE FUNCTION account_upload_reservation();
+DROP TRIGGER IF EXISTS editor_assets_blob_refs_after ON editor_assets;
+CREATE TRIGGER editor_assets_blob_refs_after
+AFTER INSERT OR UPDATE OF object_path OR DELETE ON editor_assets
+FOR EACH ROW EXECUTE FUNCTION account_blob_refs('object_path');
 DROP TRIGGER IF EXISTS editor_assets_storage_after ON editor_assets;
 CREATE TRIGGER editor_assets_storage_after
 AFTER INSERT OR UPDATE OR DELETE ON editor_assets
@@ -910,7 +1268,7 @@ FOR EACH ROW EXECUTE FUNCTION account_editor_asset_storage();
 
 DROP TRIGGER IF EXISTS materials_storage_before ON materials;
 CREATE TRIGGER materials_storage_before
-BEFORE INSERT OR UPDATE OF user_id, workspace_id, content ON materials
+BEFORE INSERT OR UPDATE OF workspace_id, content ON materials
 FOR EACH ROW EXECUTE FUNCTION prepare_material_storage_fields();
 DROP TRIGGER IF EXISTS materials_storage_after ON materials;
 CREATE TRIGGER materials_storage_after
@@ -986,8 +1344,8 @@ ON CONFLICT (user_id, kind, lower(name)) DO NOTHING;
 
 -- Links resolve the tag id by name so they never dangle regardless of which id
 -- won the catalog row.
-INSERT INTO entity_tags (kind, entity_id, tag_id)
-  SELECT 'workspace', v.entity_id, t.id
+INSERT INTO entity_tags (workspace_id, tag_id)
+  SELECT v.entity_id, t.id
   FROM (VALUES
     ('ws_bio',  'Cells'),
     ('ws_bio',  'Genetics'),
@@ -1003,7 +1361,7 @@ INSERT INTO entity_tags (kind, entity_id, tag_id)
   WHERE EXISTS (SELECT 1 FROM workspaces w WHERE w.id = v.entity_id)
   ON CONFLICT DO NOTHING;
 
-INSERT INTO materials (id, user_id, workspace_id, workspace_name, kind, title, content, scope_chapters, scope_file_ids, privacy, color, created_at) VALUES
+INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title, content, scope_chapters, scope_file_ids, privacy, color, created_at) VALUES
   ('qz_1', 'u_1', 'ws_bio', 'Biology 101', 'quiz', 'Cell biology basics',
    $json${"value": [{"type": "h1", "children": [{"text": "Cell biology basics"}]}, {"id": "qz_1:quiz", "type": "quiz", "children": [{"id": "q1", "type": "quiz_question", "level": "recall", "children": [{"type": "quiz_prompt", "children": [{"text": "Which organelle is the powerhouse of the cell?"}]}, {"id": "q1:option:1", "type": "quiz_option", "children": [{"text": "Nucleus"}], "explanation": "The nucleus stores DNA; it does not generate the cell's ATP."}, {"id": "q1:option:2", "type": "quiz_option", "children": [{"text": "Mitochondria"}], "explanation": "Correct — mitochondria produce ATP through cellular respiration."}, {"id": "q1:option:3", "type": "quiz_option", "children": [{"text": "Ribosome"}], "explanation": "Ribosomes synthesize proteins, not energy."}, {"id": "q1:option:4", "type": "quiz_option", "children": [{"text": "Golgi apparatus"}], "explanation": "The Golgi packages and ships proteins; it is not an energy source."}, {"type": "quiz_explanation", "children": [{"text": "Mitochondria produce ATP through cellular respiration."}]}], "questionType": "mcq", "correctOptionIds": ["q1:option:2"]}, {"id": "q2", "type": "quiz_question", "level": "recall", "children": [{"type": "quiz_prompt", "children": [{"text": "The cell membrane is a phospholipid bilayer."}]}, {"id": "q2:option:1", "type": "quiz_option", "children": [{"text": "True"}]}, {"id": "q2:option:2", "type": "quiz_option", "children": [{"text": "False"}]}, {"type": "quiz_explanation", "children": [{"text": "The membrane is two layers of phospholipids with hydrophilic heads out and hydrophobic tails in."}]}], "questionType": "boolean", "correctBoolean": true, "correctOptionIds": ["q2:option:1"]}, {"id": "q3", "type": "quiz_question", "level": "application", "children": [{"type": "quiz_prompt", "children": [{"text": "Select all that are membrane-bound organelles."}]}, {"id": "q3:option:1", "type": "quiz_option", "children": [{"text": "Ribosome"}], "explanation": "Ribosomes are ribonucleoprotein particles, not membrane-bound."}, {"id": "q3:option:2", "type": "quiz_option", "children": [{"text": "Nucleus"}], "explanation": "Correct — enclosed by a double-membrane nuclear envelope."}, {"id": "q3:option:3", "type": "quiz_option", "children": [{"text": "Mitochondria"}], "explanation": "Correct — bounded by an outer and inner membrane."}, {"id": "q3:option:4", "type": "quiz_option", "children": [{"text": "Cytosol"}], "explanation": "The cytosol is the fluid itself, not a membrane-bound compartment."}], "questionType": "multi", "correctOptionIds": ["q3:option:2", "q3:option:3"]}, {"id": "q4", "type": "quiz_question", "level": "application", "children": [{"type": "quiz_prompt", "children": [{"text": "The diffusion of water across a membrane is called ____."}]}, {"id": "q4:option:1", "role": "accepted-answer", "type": "quiz_option", "children": [{"text": "osmosis"}]}], "questionType": "fill", "acceptedAnswers": ["osmosis"]}, {"id": "q5", "type": "quiz_question", "level": "analysis", "children": [{"type": "quiz_prompt", "children": [{"text": "Order the path of protein secretion."}]}, {"id": "q5:option:1", "role": "ordering-item", "type": "quiz_option", "children": [{"text": "Ribosome"}]}, {"id": "q5:option:2", "role": "ordering-item", "type": "quiz_option", "children": [{"text": "Rough ER"}]}, {"id": "q5:option:3", "role": "ordering-item", "type": "quiz_option", "children": [{"text": "Golgi apparatus"}]}, {"id": "q5:option:4", "role": "ordering-item", "type": "quiz_option", "children": [{"text": "Vesicle"}]}, {"id": "q5:option:5", "role": "ordering-item", "type": "quiz_option", "children": [{"text": "Cell membrane"}]}], "questionType": "ordering"}, {"id": "q6", "type": "quiz_question", "level": "application", "pairs": [{"left": "Nucleus", "right": "Stores DNA"}, {"left": "Mitochondria", "right": "Makes ATP"}, {"left": "Ribosome", "right": "Builds proteins"}], "children": [{"type": "quiz_prompt", "children": [{"text": "Match the organelle to its function."}]}, {"id": "q6:option:1", "role": "matching-pair", "type": "quiz_option", "children": [{"text": "Nucleus → Stores DNA"}]}, {"id": "q6:option:2", "role": "matching-pair", "type": "quiz_option", "children": [{"text": "Mitochondria → Makes ATP"}]}, {"id": "q6:option:3", "role": "matching-pair", "type": "quiz_option", "children": [{"text": "Ribosome → Builds proteins"}]}], "questionType": "matching"}]}], "schemaVersion": 1}$json$::jsonb,
    '{"Cell structure","Membranes & transport"}', '{}', 'private', 'green', now()-interval '4 day'),
@@ -1030,7 +1388,7 @@ INSERT INTO material_revisions (
   event_metadata, created_by, created_at
 )
 SELECT id, (created_at AT TIME ZONE 'UTC')::date, revision, NULL, 'create', title, content,
-       '{}'::jsonb, user_id, created_at
+       '{}'::jsonb, created_by, created_at
 FROM materials
 WHERE id IN ('qz_1','qz_2','qz_3','dk_1','dk_2','dk_3')
 ON CONFLICT (material_id, version_date) DO NOTHING;
@@ -1069,7 +1427,7 @@ INSERT INTO card_stats (card_id, material_id, srs, known) VALUES
     'reps', 0, 'lapses', 0, 'state', 0, 'learning_steps', 0), false)
 ON CONFLICT (card_id) DO NOTHING;
 
-INSERT INTO attempts (id, user_id, quiz_id, quiz_name, workspace_name, chapters, correct, total, pct, taken_at) VALUES
+INSERT INTO attempts (id, user_id, material_id, quiz_name, workspace_name, chapters, correct, total, pct, taken_at) VALUES
   ('at_1', 'u_1', 'qz_1', 'Cell biology basics',   'Biology 101', '{"Cell structure"}',            8, 10, 80, now()-interval '2 day'),
   ('at_2', 'u_1', 'qz_3', 'Integration techniques','Calculus II', '{"Techniques of integration"}', 6, 10, 60, now()-interval '3 day'),
   ('at_3', 'u_1', 'qz_2', 'Genetics check-in',     'Biology 101', '{"Genetics"}',                  4, 10, 40, now()-interval '5 day')
@@ -1084,14 +1442,23 @@ INSERT INTO labels (id, user_id, name, color) VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Events anchored to "today" so the calendar always has same-day content.
-INSERT INTO events (id, user_id, title, start_at, end_at, label_ids, location) VALUES
-  ('ev_1', 'u_1', 'Biology lecture',   date_trunc('day', now())+interval '8 hour',  date_trunc('day', now())+interval '9 hour',  '{lb_bio}',          'Room B2 · 158'),
-  ('ev_2', 'u_1', 'Calculus tutorial', date_trunc('day', now())+interval '11 hour', date_trunc('day', now())+interval '12 hour 30 minute', '{lb_calc,lb_study}', 'Room 124'),
-  ('ev_3', 'u_1', 'History essay due',  date_trunc('day', now())+interval '15 hour', date_trunc('day', now())+interval '16 hour', '{lb_hist,lb_exam}', NULL),
-  ('ev_4', 'u_1', 'Study group',        date_trunc('day', now())+interval '1 day 13 hour', date_trunc('day', now())+interval '1 day 15 hour', '{lb_study}', 'Library'),
-  ('ev_5', 'u_1', 'Chem midterm',       date_trunc('day', now())+interval '2 day 9 hour',  date_trunc('day', now())+interval '2 day 11 hour', '{lb_exam}', 'Hall A'),
-  ('ev_6', 'u_1', 'Past revision',      date_trunc('day', now())-interval '30 day'+interval '10 hour', date_trunc('day', now())-interval '30 day'+interval '11 hour', '{lb_bio}', NULL)
+INSERT INTO events (id, user_id, title, start_at, end_at, location) VALUES
+  ('ev_1', 'u_1', 'Biology lecture',   date_trunc('day', now())+interval '8 hour',  date_trunc('day', now())+interval '9 hour',  'Room B2 · 158'),
+  ('ev_2', 'u_1', 'Calculus tutorial', date_trunc('day', now())+interval '11 hour', date_trunc('day', now())+interval '12 hour 30 minute', 'Room 124'),
+  ('ev_3', 'u_1', 'History essay due',  date_trunc('day', now())+interval '15 hour', date_trunc('day', now())+interval '16 hour', NULL),
+  ('ev_4', 'u_1', 'Study group',        date_trunc('day', now())+interval '1 day 13 hour', date_trunc('day', now())+interval '1 day 15 hour', 'Library'),
+  ('ev_5', 'u_1', 'Chem midterm',       date_trunc('day', now())+interval '2 day 9 hour',  date_trunc('day', now())+interval '2 day 11 hour', 'Hall A'),
+  ('ev_6', 'u_1', 'Past revision',      date_trunc('day', now())-interval '30 day'+interval '10 hour', date_trunc('day', now())-interval '30 day'+interval '11 hour', NULL)
 ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO event_labels (event_id, label_id) VALUES
+  ('ev_1', 'lb_bio'),
+  ('ev_2', 'lb_calc'), ('ev_2', 'lb_study'),
+  ('ev_3', 'lb_hist'), ('ev_3', 'lb_exam'),
+  ('ev_4', 'lb_study'),
+  ('ev_5', 'lb_exam'),
+  ('ev_6', 'lb_bio')
+ON CONFLICT DO NOTHING;
 
 INSERT INTO tasks (id, user_id, title, meta, done, due_date) VALUES
   ('tk_1', 'u_1', 'Read Chapter 3 — Genetics',      'Biology 101',              false, date_trunc('day', now())+interval '23 hour'),

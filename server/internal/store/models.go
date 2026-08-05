@@ -108,8 +108,11 @@ type Quiz struct {
 }
 
 type Attempt struct {
-	ID            string    `json:"id"`
-	QuizID        string    `json:"quizId"`
+	ID string `json:"id"`
+	// MaterialID is null for the virtual "review mistakes" quiz, and becomes
+	// null when the source quiz is deleted. QuizName and WorkspaceName are the
+	// submit-time snapshot that keeps the row readable either way.
+	MaterialID    *string   `json:"materialId"`
 	QuizName      string    `json:"quizName"`
 	WorkspaceName string    `json:"workspaceName"`
 	Chapters      []string  `json:"chapters" nullable:"false"`
@@ -161,8 +164,11 @@ type Flashcard struct {
 // built from). ChapterID is the orthogonal *membership* link — which chapter
 // the material is filed under in the tree (null = unfiled), mirroring File.
 type Material struct {
-	ID            string `json:"id"`
-	UserID        string `json:"-"`
+	ID string `json:"id"`
+	// CreatedBy is the author; empty when the authoring account was hard-deleted.
+	// OwnerUserID is the storage owner and is never empty. See the FK notes in
+	// the migration for why the two axes differ.
+	CreatedBy     string `json:"-"`
 	OwnerUserID   string `json:"-"`
 	WorkspaceID   string `json:"workspaceId"`
 	WorkspaceName string `json:"workspaceName"`
@@ -338,6 +344,7 @@ type Notification struct {
 type NotificationPrefs struct {
 	EmailWorkspaceInvite bool `json:"emailWorkspaceInvite"`
 	EmailMembership      bool `json:"emailMembership"`
+	EmailBilling         bool `json:"emailBilling"`
 }
 
 type Canvas struct {

@@ -19,6 +19,12 @@ import (
 )
 
 // ErrNotFound is returned by Get-style methods when a row is absent.
+// rowQueryer is satisfied by both *pgxpool.Pool and pgx.Tx, so single-row
+// helpers can run either standalone or inside a caller's transaction.
+type rowQueryer interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
 var ErrNotFound = errors.New("not found")
 
 // ErrConflict reports a failed optimistic revision comparison.

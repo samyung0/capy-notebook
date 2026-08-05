@@ -350,7 +350,10 @@ const server = new Server<CollaborationContext>({
     const yjsUpdate = inboundYjsUpdate(update);
     if (!yjsUpdate) return;
     try {
-      store.validateUpdate(document.name, document, yjsUpdate);
+      const shrinkOnly =
+        (connection.context as CollaborationContext | undefined)?.access ===
+        'shrink';
+      store.validateUpdate(document.name, document, yjsUpdate, { shrinkOnly });
     } catch (error) {
       // Throwing closes only this connection. Tell it why first so it can drop
       // its diverged Y.Doc instead of reconnecting and resending forever.
@@ -384,6 +387,8 @@ const server = new Server<CollaborationContext>({
         documentName
       );
       connectionConfig.readOnly = claims.access === 'comment';
+      // shrink stays writable at the Hocuspocus layer; validateUpdate enforces
+      // the shrinking-direction rule for over-quota accounts.
       return claimsContext(claims);
     } catch (error) {
       authenticationFailures += 1;

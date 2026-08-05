@@ -135,12 +135,57 @@ func (s *Store) lockedStorageUsageTx(
 	return
 }
 
+// unlockedStorageUsageTx reads the same effective usage without taking the
+// counter-row lock or provisioning a missing row. Lifecycle and reporting reads
+// use it; only the creation gate needs the lock, and account state is resolved
+// on every authenticated request, so locking there would serialize a user's
+// entire request stream behind one row.
+func (s *Store) unlockedStorageUsage(
+	ctx context.Context,
+	q rowQueryer,
+	userID string,
+) (usage StorageUsage, err error) {
+	var tier PlanTier
+	var baseUsed, reserved, pending int64
+	err = q.QueryRow(ctx, `SELECT u.plan_tier,
+			COALESCE(st.used_bytes, 0),
+			COALESCE(st.reserved_bytes, 0),
+			COALESCE((SELECT sum(delta_bytes) FROM user_storage_deltas d
+				WHERE d.user_id = u.id), 0)
+		FROM users u
+		LEFT JOIN user_storage st ON st.user_id = u.id
+		WHERE u.id=$1`, userID).Scan(&tier, &baseUsed, &reserved, &pending)
+	if isNoRows(err) {
+		return usage, ErrNotFound
+	}
+	if err != nil {
+		return usage, err
+	}
+	return StorageUsage{
+		UserID:        userID,
+		UsedBytes:     baseUsed + pending,
+		ReservedBytes: reserved,
+		LimitBytes:    StorageLimitBytes(tier),
+		PlanTier:      tier,
+	}, nil
+}
+
 // gateStorageTx serializes creation decisions on the user's counter row.
 // Resource triggers update used_bytes after the gate succeeds in the same
 // transaction, so a concurrent creation cannot pass the check twice.
 func (s *Store) gateStorageTx(ctx context.Context, tx pgx.Tx, userID string, requested int64) error {
 	if requested < 0 {
 		return fmt.Errorf("negative storage request: %d", requested)
+	}
+	// Lifecycle first: an over-quota or locked account must not create even
+	// when the byte counter would still fit. The counter lock below also
+	// serializes this check against concurrent creates.
+	status, err := s.accountAccess(ctx, tx, userID)
+	if err != nil {
+		return err
+	}
+	if err := status.CreateErr(); err != nil {
+		return err
 	}
 	tier, usage, err := s.lockedStorageUsageTx(ctx, tx, userID)
 	if err != nil {
@@ -186,19 +231,7 @@ func (s *Store) releaseStorageReservationTx(ctx context.Context, tx pgx.Tx, user
 }
 
 func (s *Store) StorageUsage(ctx context.Context, userID string) (StorageUsage, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return StorageUsage{}, err
-	}
-	defer tx.Rollback(ctx)
-	_, usage, err := s.lockedStorageUsageTx(ctx, tx, userID)
-	if err != nil {
-		return StorageUsage{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return StorageUsage{}, err
-	}
-	return usage, nil
+	return s.unlockedStorageUsage(ctx, s.pool, userID)
 }
 
 // ReconcileStorage recomputes counters from authoritative rows. Each user is
@@ -243,8 +276,6 @@ func (s *Store) reconcileStorageUserTx(ctx context.Context, tx pgx.Tx, userID st
 		`SELECT id FROM materials WHERE owner_user_id=$1 FOR UPDATE`,
 		`SELECT id FROM upload_sessions
 			WHERE user_id=$1 AND status='pending' AND expires_at > now() FOR UPDATE`,
-		`SELECT id FROM editor_asset_uploads
-			WHERE user_id=$1 AND status='pending' AND expires_at > now() FOR UPDATE`,
 	} {
 		rows, err := tx.Query(ctx, query, userID)
 		if err != nil {
@@ -276,8 +307,6 @@ func (s *Store) reconcileStorageUserTx(ctx context.Context, tx pgx.Tx, userID st
 		+ COALESCE((SELECT sum(size_bytes) FROM materials
 			WHERE owner_user_id=$1), 0),
 		COALESCE((SELECT sum(declared_size) FROM upload_sessions
-			WHERE user_id=$1 AND status='pending' AND expires_at > now()), 0)
-		+ COALESCE((SELECT sum(declared_size) FROM editor_asset_uploads
 			WHERE user_id=$1 AND status='pending' AND expires_at > now()), 0)`,
 		userID).Scan(&used, &reserved); err != nil {
 		return err

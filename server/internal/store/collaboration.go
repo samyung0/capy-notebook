@@ -12,7 +12,7 @@ import (
 )
 
 func (s *Store) ListWorkspaceMembers(ctx context.Context, wsID string) ([]WorkspaceMember, error) {
-	rows, err := s.pool.Query(ctx, `SELECT wm.workspace_id, wm.user_id, u.name, u.email,
+	rows, err := s.pool.Query(ctx, `SELECT wm.workspace_id, wm.user_id, u.name, COALESCE(u.email,''),
 		COALESCE(u.avatar_url,''), wm.role, wm.created_at
 		FROM workspace_members wm JOIN users u ON u.id=wm.user_id
 		WHERE wm.workspace_id=$1 ORDER BY CASE wm.role WHEN 'owner' THEN 0 ELSE 1 END, u.name`, wsID)
@@ -88,7 +88,7 @@ func (s *Store) SetWorkspaceMemberRoleWithResult(ctx context.Context, wsID, memb
 		FROM users u, workspaces w
 		WHERE wm.workspace_id=$1 AND wm.user_id=$2 AND wm.role<>'owner'
 			AND u.id=wm.user_id AND w.id=wm.workspace_id
-		RETURNING u.email, u.locale, w.name, wm.role, wm.updated_at`,
+		RETURNING COALESCE(u.email,''), u.locale, w.name, wm.role, wm.updated_at`,
 		wsID, memberID, role).
 		Scan(&memberEmail, &locale, &workspaceName, &updatedRole, &updatedAt)
 	if err != nil {
@@ -156,7 +156,7 @@ func (s *Store) RemoveWorkspaceMemberWithResult(ctx context.Context, wsID, membe
 		USING users u, workspaces w
 		WHERE wm.workspace_id=$1 AND wm.user_id=$2 AND wm.role<>'owner'
 			AND u.id=wm.user_id AND w.id=wm.workspace_id
-		RETURNING u.email, u.locale, w.name`,
+		RETURNING COALESCE(u.email,''), u.locale, w.name`,
 		wsID, memberID).Scan(&memberEmail, &locale, &workspaceName)
 	if isNoRows(err) {
 		return nil, false, ErrNotFound
@@ -233,18 +233,20 @@ func (s *Store) CreateWorkspaceInviteWithResult(ctx context.Context, wsID, ident
 	var inviteID, invitedUserID, workspaceName, inviteEmail, locale string
 	err = tx.QueryRow(ctx, `
 		WITH candidates AS (
-			SELECT id FROM users WHERE id=$2
+			SELECT id FROM users WHERE id=$2 AND deleted_at IS NULL
 			UNION ALL
 			SELECT id FROM users
-			WHERE lower(email)=lower($2)
-				AND NOT EXISTS (SELECT 1 FROM users WHERE id=$2)
+			WHERE lower(email)=lower($2) AND deleted_at IS NULL
+				AND NOT EXISTS (
+					SELECT 1 FROM users WHERE id=$2 AND deleted_at IS NULL
+				)
 		),
 		target AS (
 			SELECT min(id) AS id FROM candidates HAVING count(*)=1
 		)
 		INSERT INTO workspace_invites
 			(id, workspace_id, invited_user_id, email, role, token_hash, invited_by, expires_at, created_at)
-		SELECT $3,$1,u.id,u.email,$4,$5,$6,$7,$8
+		SELECT $3,$1,u.id,COALESCE(u.email,''),$4,$5,$6,$7,$8
 		FROM target
 		JOIN users u ON u.id=target.id
 		JOIN workspaces w ON w.id=$1
@@ -260,7 +262,7 @@ func (s *Store) CreateWorkspaceInviteWithResult(ctx context.Context, wsID, ident
 			created_at=EXCLUDED.created_at
 		RETURNING id, invited_user_id,
 			(SELECT name FROM workspaces WHERE id=$1),
-			(SELECT email FROM users WHERE id=workspace_invites.invited_user_id),
+			(SELECT COALESCE(email,'') FROM users WHERE id=workspace_invites.invited_user_id),
 			(SELECT locale FROM users WHERE id=workspace_invites.invited_user_id)`,
 		wsID, identifier, uid("inv"), role, tokenHash[:], invitedBy, expiresAt, now).
 		Scan(&inviteID, &invitedUserID, &workspaceName, &inviteEmail, &locale)

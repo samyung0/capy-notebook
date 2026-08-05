@@ -5,6 +5,7 @@ package blob
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/url"
 	"strconv"
@@ -15,6 +16,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 const defaultPresignTTL = 15 * time.Minute
@@ -189,6 +191,74 @@ func (s *B2) Delete(ctx context.Context, path string) error {
 		Key:    aws.String(path),
 	})
 	return err
+}
+
+func (s *B2) DeleteObjects(ctx context.Context, paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	if len(paths) > DeleteObjectsLimit {
+		return nil, fmt.Errorf("blob: %d keys exceeds the batch limit of %d",
+			len(paths), DeleteObjectsLimit)
+	}
+	ids := make([]s3types.ObjectIdentifier, 0, len(paths))
+	for _, path := range paths {
+		ids = append(ids, s3types.ObjectIdentifier{Key: aws.String(path)})
+	}
+	out, err := s.client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+		Bucket: aws.String(s.bucket),
+		// Quiet mode returns only the failures, which is all the reaper needs.
+		Delete: &s3types.Delete{Objects: ids, Quiet: aws.Bool(true)},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var failed []string
+	for _, e := range out.Errors {
+		if e.Key != nil {
+			failed = append(failed, *e.Key)
+		}
+	}
+	return failed, nil
+}
+
+func (s *B2) ListObjects(
+	ctx context.Context,
+	prefix, token string,
+	limit int32,
+) (ObjectListing, error) {
+	in := &s3.ListObjectsV2Input{Bucket: aws.String(s.bucket)}
+	if prefix != "" {
+		in.Prefix = aws.String(prefix)
+	}
+	if token != "" {
+		in.ContinuationToken = aws.String(token)
+	}
+	if limit > 0 {
+		in.MaxKeys = aws.Int32(limit)
+	}
+	out, err := s.client.ListObjectsV2(ctx, in)
+	if err != nil {
+		return ObjectListing{}, err
+	}
+	listing := ObjectListing{Keys: make([]ListedObject, 0, len(out.Contents))}
+	for _, obj := range out.Contents {
+		if obj.Key == nil {
+			continue
+		}
+		item := ListedObject{Key: *obj.Key}
+		if obj.Size != nil {
+			item.Size = *obj.Size
+		}
+		if obj.LastModified != nil {
+			item.LastModified = *obj.LastModified
+		}
+		listing.Keys = append(listing.Keys, item)
+	}
+	if aws.ToBool(out.IsTruncated) && out.NextContinuationToken != nil {
+		listing.NextToken = *out.NextContinuationToken
+	}
+	return listing, nil
 }
 
 // HealthCheck verifies the bucket exists and the credentials can reach it.

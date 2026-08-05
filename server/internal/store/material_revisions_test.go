@@ -61,9 +61,9 @@ func createRevisionTestMaterial(
 		_, _ = s.pool.Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
 	})
 	material, err := s.CreateMaterial(ctx, Material{
-		UserID: userID,
-		Kind:   "note",
-		Title:  "Revision test",
+		CreatedBy: userID,
+		Kind:      "note",
+		Title:     "Revision test",
 		Content: revisionTestContent(
 			t,
 			"initial",

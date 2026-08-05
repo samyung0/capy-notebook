@@ -247,16 +247,19 @@ func (s *Store) GetNotificationPrefs(ctx context.Context, userID string) (Notifi
 	var prefs NotificationPrefs
 	err := s.pool.QueryRow(ctx, `SELECT
 			COALESCE(email_workspace_invite, true),
-			COALESCE(email_membership, true)
+			COALESCE(email_membership, true),
+			COALESCE(email_billing, true)
 		FROM notification_prefs
 		WHERE user_id=$1`, userID).Scan(
 		&prefs.EmailWorkspaceInvite,
 		&prefs.EmailMembership,
+		&prefs.EmailBilling,
 	)
 	if isNoRows(err) {
 		return NotificationPrefs{
 			EmailWorkspaceInvite: true,
 			EmailMembership:      true,
+			EmailBilling:         true,
 		}, nil
 	}
 	return prefs, err
@@ -264,13 +267,14 @@ func (s *Store) GetNotificationPrefs(ctx context.Context, userID string) (Notifi
 
 func (s *Store) SetNotificationPrefs(ctx context.Context, userID string, prefs NotificationPrefs) (NotificationPrefs, error) {
 	_, err := s.pool.Exec(ctx, `INSERT INTO notification_prefs
-			(user_id, email_workspace_invite, email_membership, updated_at)
-		VALUES ($1,$2,$3,now())
+			(user_id, email_workspace_invite, email_membership, email_billing, updated_at)
+		VALUES ($1,$2,$3,$4,now())
 		ON CONFLICT (user_id) DO UPDATE SET
 			email_workspace_invite=EXCLUDED.email_workspace_invite,
 			email_membership=EXCLUDED.email_membership,
+			email_billing=EXCLUDED.email_billing,
 			updated_at=now()`,
-		userID, prefs.EmailWorkspaceInvite, prefs.EmailMembership)
+		userID, prefs.EmailWorkspaceInvite, prefs.EmailMembership, prefs.EmailBilling)
 	return prefs, err
 }
 
@@ -284,22 +288,36 @@ func (s *Store) DisableNotificationCategory(ctx context.Context, userID, categor
 		column = "email_workspace_invite"
 	case "membership":
 		column = "email_membership"
+	case "billing":
+		column = "email_billing"
 	default:
 		return fmt.Errorf("invalid notification category %q", category)
 	}
+	// The INSERT values already disable the target category. ON CONFLICT only
+	// runs when the row exists, so a successful first insert must not leave the
+	// category enabled — that is what makes concurrent unsubscribes atomic.
+	invite := category != "workspace_invite"
+	membership := category != "membership"
+	billing := category != "billing"
 	_, err := s.pool.Exec(ctx, `INSERT INTO notification_prefs
-			(user_id, email_workspace_invite, email_membership, updated_at)
-		VALUES ($1, $2, $3, now())
+			(user_id, email_workspace_invite, email_membership, email_billing, updated_at)
+		VALUES ($1, $2, $3, $4, now())
 		ON CONFLICT (user_id) DO UPDATE SET `+column+`=false, updated_at=now()`,
-		userID, category == "membership", category == "workspace_invite")
+		userID, invite, membership, billing)
 	return err
 }
 
 func notificationEmailEnabled(ctx context.Context, tx pgx.Tx, userID, category string) (bool, error) {
+	// Lifecycle mail (deletion, purge) is non-optional — the account is ending
+	// and the user must be told even if they muted billing reminders.
+	if category == "lifecycle" {
+		return true, nil
+	}
 	var enabled bool
 	err := tx.QueryRow(ctx, `SELECT CASE
 			WHEN $2='workspace_invite' THEN COALESCE(email_workspace_invite, true)
 			WHEN $2='membership' THEN COALESCE(email_membership, true)
+			WHEN $2='billing' THEN COALESCE(email_billing, true)
 			ELSE true
 		END
 		FROM users u

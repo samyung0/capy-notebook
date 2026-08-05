@@ -25,6 +25,7 @@ from ..config import cfg
 from ..rag.cache import RagCache
 from ..rag.clone import clone_workspace_state
 from ..rag.factory import build_query_rag
+from ..rag.teardown import drop_workspace_state
 from ..rag.models import query_model_override
 from ..store import db
 from .ai_adapter import router as plate_ai_router
@@ -235,6 +236,27 @@ async def workspace_clone(req: CloneWorkspaceReq):
     result = await asyncio.to_thread(
         clone_workspace_state, req.sourceWorkspaceId, req.targetWorkspaceId
     )
+    return {"ok": True, **result}
+
+
+class DeleteWorkspaceReq(BaseModel):
+    workspaceId: str
+
+
+@app.post("/workspace/delete")
+async def workspace_delete(req: DeleteWorkspaceReq):
+    """Drop a workspace's LightRAG state (PG rows + AGE graph).
+
+    Called by the Go gateway after it deletes the app rows, and during an account
+    purge. None of this state is reachable from the Go schema, so without this
+    call every deleted workspace leaves its lightrag_* rows and graph behind.
+
+    Idempotent: a workspace that was never ingested has no state to remove.
+    """
+    assert _cache is not None
+    # Evict first: a cached handle would outlive the tables it points at.
+    await _cache.discard(req.workspaceId)
+    result = await asyncio.to_thread(drop_workspace_state, req.workspaceId)
     return {"ok": True, **result}
 
 
