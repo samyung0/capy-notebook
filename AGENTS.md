@@ -2,7 +2,8 @@
 
 ### Code Changes
 
-- run `pnpm run fmt` and `pnpm run fix` to fix according to biome rules
+- run `pnpm run fmt` and `pnpm run fix` to fix and format codes after frontend changes
+- run `pnpm run fmt:go` to format golang sever codes
 
 ## Common Pitfalls
 

@@ -24,10 +24,10 @@ import {
   type MaterialValue,
   parseMaterialDocument,
 } from '@/features/materials/document';
+import { NoteToolbar } from '@/features/notes/toolbar/NoteToolbar';
 import { cn } from '@/lib/cn';
 import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
 import { AiMenu } from './ai/AiMenu';
-import { VoiceButton } from './ai/VoiceButton';
 import { NoteBlockDialogsProvider } from './blocks/dialogContext';
 import {
   CollaborationProvider,
@@ -47,7 +47,6 @@ import {
 import { EditorCommandPalette } from './EditorCommandPalette';
 import type { NoteEditorMode, NoteEditorStatus } from './editorMode';
 import { FloatingToolbar } from './FloatingToolbar';
-import { NoteToolbar } from './NoteToolbar';
 import { noteComponents } from './nodeComponents';
 import { buildPlugins } from './plugins';
 import {
@@ -521,13 +520,7 @@ export function NoteEditorCore({
             discussions={discussions}
             users={users}
           >
-            <NoteToolbar
-              right={
-                mode === 'edit' && allowExternalAssets ? (
-                  <VoiceButton />
-                ) : undefined
-              }
-            />
+            <NoteToolbar />
             <div className="min-h-0 flex-1 overflow-auto">
               <div className="mx-auto min-h-full w-full max-w-7xl">
                 <NoteEditorContent

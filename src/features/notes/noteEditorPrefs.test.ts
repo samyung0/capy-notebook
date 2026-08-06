@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   enabledKey,
+  useNoteEditorPrefs,
   WIDGET_GROUPS,
   type WidgetGroupId,
 } from './noteEditorPrefs';
@@ -9,26 +10,38 @@ import {
 describe('note editor command preferences', () => {
   it('returns enabled groups in canonical UI order', () => {
     const enabled = Object.fromEntries(
-      WIDGET_GROUPS.map(({ id }) => [id, id === 'table' || id === 'media'])
+      WIDGET_GROUPS.map(({ id }) => [
+        id,
+        id === 'fileOperations' || id === 'blockElements',
+      ])
     ) as Record<WidgetGroupId, boolean>;
 
-    expect(enabledKey(enabled)).toBe('table,media');
+    expect(enabledKey(enabled)).toBe('fileOperations,blockElements');
   });
 
-  it('keeps every optional command group represented', () => {
+  it('keeps every toolbar group represented', () => {
     expect(new Set(WIDGET_GROUPS.map(({ id }) => id))).toEqual(
       new Set([
-        'table',
-        'callout',
-        'columns',
-        'math',
-        'media',
-        'toc',
+        'history',
+        'fileOperations',
+        'general',
         'fontStyles',
-        'quiz',
-        'flashcards',
-        'mermaid',
+        'textDecorations',
+        'inlineElements',
+        'blockDecorations',
+        'blockElements',
+        'indentation',
       ])
     );
+  });
+
+  it('hides indentation by default', () => {
+    const indentation = WIDGET_GROUPS.find(({ id }) => id === 'indentation');
+
+    expect(indentation?.defaultEnabled).toBe(false);
+    expect(
+      WIDGET_GROUPS.filter(({ defaultEnabled }) => defaultEnabled === false)
+    ).toHaveLength(1);
+    expect(useNoteEditorPrefs.getState().enabled.indentation).toBe(false);
   });
 });

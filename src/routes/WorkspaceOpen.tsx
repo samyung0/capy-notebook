@@ -584,7 +584,7 @@ export default function WorkspaceOpen() {
                           />
                           <IconButton
                             className="rounded-md px-0.5 py-1"
-                            icon="collapse"
+                            icon="minimize"
                             onClick={() =>
                               setOpenChapters({
                                 ...Object.fromEntries(

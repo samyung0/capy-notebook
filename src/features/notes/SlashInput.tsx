@@ -101,7 +101,7 @@ export function SlashInputElement(
       canComment && collaboration
         ? {
             description: 'Add a comment to the current selection',
-            group: 'inline',
+            group: 'general',
             icon: MessageSquarePlus,
             id: 'comment',
             label: 'Comment',
@@ -115,7 +115,7 @@ export function SlashInputElement(
 
     return availableCommands.filter(
       (command) =>
-        (!command.widget || enabled[command.widget]) &&
+        enabled[command.group] &&
         isEditorCommandAllowed(mode, command) &&
         commandMatches(command, query)
     );

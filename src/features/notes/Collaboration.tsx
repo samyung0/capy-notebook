@@ -52,7 +52,7 @@ export interface EditorCollaborationOptions {
   users: Record<string, WorkspaceMember>;
 }
 
-interface CollaborationActions {
+export interface CollaborationActions {
   addComment: (discussionId: string, text: string) => Promise<void>;
   addReply: (
     discussionId: string,

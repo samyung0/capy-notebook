@@ -1,5 +1,6 @@
 import { ListStyleType, toggleList } from '@platejs/list';
 import {
+  AtSign,
   Braces,
   CircleAlert,
   Columns2,
@@ -16,7 +17,6 @@ import {
   ListChecks,
   ListOrdered,
   type LucideIcon,
-  MessageSquarePlus,
   Minus,
   PanelLeft,
   PanelRight,
@@ -31,18 +31,13 @@ import { customBlockNode } from './blocks/shared';
 import { toggleEditorBlock } from './editorTransforms';
 import { insertEditorNode, type NoteEditorInstance } from './insertEditorNode';
 import { insertMediaPlaceholder } from './insertMediaPlaceholder';
-import type { WidgetGroupId } from './noteEditorPrefs';
+import type { EditorCommandGroup, EditorWidgetId } from './noteEditorPrefs';
 import { COLUMN_LAYOUTS } from './richBlockConfig';
 import { insertYouTubeEmbed } from './youtube';
 
 export { insertEditorNode, type NoteEditorInstance } from './insertEditorNode';
 
-export type EditorCommandGroup =
-  | 'basic'
-  | 'lists'
-  | 'media'
-  | 'advanced'
-  | 'inline';
+export type { EditorCommandGroup } from './noteEditorPrefs';
 
 export interface EditorCommand {
   description: string;
@@ -57,7 +52,7 @@ export interface EditorCommand {
     dialogs?: NoteBlockDialogsApi | null
   ) => void;
   shortcut?: string;
-  widget?: WidgetGroupId;
+  widget?: EditorWidgetId;
 }
 
 export function emptyParagraph() {
@@ -73,6 +68,37 @@ export function columnGroupFromWidths(widths: readonly string[]) {
     })),
     type: KEYS.columnGroup,
   };
+}
+
+export function insertInlineEquation(
+  editor: NoteEditorInstance,
+  promptForExpression: (
+    message: string,
+    defaultValue: string
+  ) => string | null = (message, defaultValue) =>
+    window.prompt(message, defaultValue)
+) {
+  const selection = editor.selection;
+  const initialExpression =
+    selection && !editor.api.isCollapsed(selection)
+      ? editor.api.string(selection)
+      : '';
+  const texExpression = promptForExpression(
+    'LaTeX expression',
+    initialExpression
+  );
+
+  if (texExpression == null) return;
+
+  editor.tf.focus();
+  editor.tf.insertNodes(
+    {
+      children: [{ text: '' }],
+      texExpression,
+      type: KEYS.inlineEquation,
+    },
+    selection ? { at: selection, select: true } : { select: true }
+  );
 }
 
 function blockCommand(
@@ -108,7 +134,7 @@ function listCommand(
 ) {
   return {
     description: `Create an indented ${label.toLowerCase()}`,
-    group: 'lists',
+    group: 'blockDecorations',
     icon,
     id,
     keywords,
@@ -129,7 +155,7 @@ function columnCommand(
 ) {
   return {
     description: `Insert ${label.toLowerCase()}`,
-    group: 'advanced',
+    group: 'blockElements',
     icon,
     id,
     keywords,
@@ -141,7 +167,7 @@ function columnCommand(
 }
 
 export const EDITOR_COMMANDS: EditorCommand[] = [
-  blockCommand('paragraph', 'Text', 'p', Pilcrow, 'basic', [
+  blockCommand('paragraph', 'Text', 'p', Pilcrow, 'general', [
     'paragraph',
     'plain',
   ]),
@@ -150,7 +176,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'Heading 1',
     'h1',
     Heading1,
-    'basic',
+    'general',
     ['title', 'h1'],
     'Ctrl/Cmd+Alt+1'
   ),
@@ -159,7 +185,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'Heading 2',
     'h2',
     Heading2,
-    'basic',
+    'general',
     ['subtitle', 'h2'],
     'Ctrl/Cmd+Alt+2'
   ),
@@ -168,19 +194,19 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'Heading 3',
     'h3',
     Heading3,
-    'basic',
+    'general',
     ['section', 'h3'],
     'Ctrl/Cmd+Alt+3'
   ),
-  blockCommand('heading-4', 'Heading 4', 'h4', Heading1, 'basic', ['h4']),
-  blockCommand('heading-5', 'Heading 5', 'h5', Heading2, 'basic', ['h5']),
-  blockCommand('heading-6', 'Heading 6', 'h6', Heading3, 'basic', ['h6']),
+  blockCommand('heading-4', 'Heading 4', 'h4', Heading1, 'general', ['h4']),
+  blockCommand('heading-5', 'Heading 5', 'h5', Heading2, 'general', ['h5']),
+  blockCommand('heading-6', 'Heading 6', 'h6', Heading3, 'general', ['h6']),
   blockCommand(
     'quote',
     'Blockquote',
     'blockquote',
     Quote,
-    'basic',
+    'general',
     ['quote', 'citation'],
     'Ctrl/Cmd+Shift+.'
   ),
@@ -189,13 +215,13 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'Code block',
     'code_block',
     Braces,
-    'basic',
+    'general',
     ['code', 'pre'],
     'Ctrl/Cmd+Alt+8'
   ),
   {
     description: 'Insert a horizontal divider',
-    group: 'basic',
+    group: 'general',
     icon: Minus,
     id: 'divider',
     label: 'Divider',
@@ -220,7 +246,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   ]),
   {
     description: 'Insert a 2 × 2 table',
-    group: 'advanced',
+    group: 'blockElements',
     icon: Table2,
     id: 'table',
     label: 'Table',
@@ -239,7 +265,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   },
   {
     description: 'Insert a highlighted note box',
-    group: 'advanced',
+    group: 'blockElements',
     icon: Info,
     id: 'callout',
     label: 'Callout',
@@ -268,7 +294,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   ),
   {
     description: 'Upload an image through workspace storage',
-    group: 'media',
+    group: 'fileOperations',
     icon: Image,
     id: 'image',
     label: 'Image',
@@ -277,7 +303,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   },
   {
     description: 'Embed a YouTube video without uploading it',
-    group: 'media',
+    group: 'fileOperations',
     icon: ExternalLink,
     id: 'youtube',
     label: 'YouTube embed',
@@ -289,7 +315,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   },
   {
     description: 'Upload audio through workspace storage',
-    group: 'media',
+    group: 'fileOperations',
     icon: FileAudio,
     id: 'audio',
     label: 'Audio',
@@ -298,7 +324,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   },
   {
     description: 'Upload a document or attachment',
-    group: 'media',
+    group: 'fileOperations',
     icon: FileText,
     id: 'file',
     label: 'File',
@@ -308,8 +334,8 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   {
     description: 'Mention a workspace member',
     focusEditor: false,
-    group: 'inline',
-    icon: MessageSquarePlus,
+    group: 'inlineElements',
+    icon: AtSign,
     id: 'mention',
     keywords: ['user', '@'],
     label: 'Mention',
@@ -321,7 +347,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   },
   {
     description: 'Insert a block equation',
-    group: 'advanced',
+    group: 'blockElements',
     icon: Sigma,
     id: 'equation',
     label: 'Equation',
@@ -335,23 +361,16 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   },
   {
     description: 'Insert an inline equation',
-    group: 'inline',
+    group: 'inlineElements',
     icon: Sigma,
     id: 'inline-equation',
     label: 'Inline equation',
-    run: (editor) => {
-      editor.tf.focus();
-      editor.tf.insertNodes({
-        children: [{ text: '' }],
-        texExpression: '',
-        type: KEYS.inlineEquation,
-      });
-    },
+    run: (editor) => insertInlineEquation(editor),
     widget: 'math',
   },
   {
     description: 'Insert a generated document outline',
-    group: 'advanced',
+    group: 'blockElements',
     icon: List,
     id: 'toc',
     keywords: ['toc', 'outline'],
@@ -362,7 +381,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   },
   {
     description: 'Author an annotatable quiz block',
-    group: 'advanced',
+    group: 'blockElements',
     icon: CircleAlert,
     id: 'quiz',
     label: 'Quiz',
@@ -374,7 +393,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   },
   {
     description: 'Author an annotatable flashcard set',
-    group: 'advanced',
+    group: 'blockElements',
     icon: ListChecks,
     id: 'flashcards',
     label: 'Flashcards',
@@ -386,7 +405,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   },
   {
     description: 'Insert a Mermaid diagram with a rich caption',
-    group: 'advanced',
+    group: 'blockElements',
     icon: Braces,
     id: 'mermaid',
     keywords: ['diagram', 'flowchart'],

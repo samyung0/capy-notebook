@@ -27,6 +27,7 @@ import { cn } from '@/lib/cn';
 import { openAiMenu } from './ai/aiMenuState';
 import { useCollaborationActions } from './Collaboration';
 import { useEditorRuntime } from './EditorRuntime';
+import { insertInlineEquation } from './editorCommands';
 
 export function FloatingToolbar() {
   const editor = useEditorRef();
@@ -97,13 +98,7 @@ export function FloatingToolbar() {
         </FloatingButton>
         <FloatingButton
           label="Inline equation"
-          onClick={() =>
-            editor.tf.insertNodes({
-              children: [{ text: '' }],
-              texExpression: '',
-              type: KEYS.inlineEquation,
-            })
-          }
+          onClick={() => insertInlineEquation(editor)}
         >
           <Sigma />
         </FloatingButton>

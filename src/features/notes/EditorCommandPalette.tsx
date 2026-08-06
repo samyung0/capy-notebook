@@ -38,7 +38,7 @@ export function EditorCommandPalette() {
       canComment && collaboration
         ? {
             description: 'Add a comment to the current selection',
-            group: 'inline',
+            group: 'general',
             icon: MessageSquarePlus,
             id: 'comment',
             label: 'Comment',
@@ -51,7 +51,7 @@ export function EditorCommandPalette() {
       ...(comment ? [comment] : []),
     ].filter(
       (command) =>
-        (!command.widget || enabled[command.widget]) &&
+        enabled[command.group] &&
         (command.id === 'comment' || isEditorCommandAllowed(mode, command)) &&
         commandMatches(command, query)
     );

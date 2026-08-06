@@ -1,3 +1,10 @@
+---
+type: Backend
+title: 'Backend Storage Quota and Blob Lifecycle'
+description: 'Storage accounting, quota enforcement, upload reservations, and blob cleanup behavior in the backend.'
+tags: [backend, storage, quota, uploads, blobs, lifecycle]
+---
+
 # Backend storage quota
 
 ## Accounting contract
@@ -75,7 +82,3 @@ decorations split text leaves, editor end navigation uses the Plate document API
 Static `PlateStatic` output still has a `data-slate-editor` marker but is not
 editable; editability checks should use `contenteditable`.
 
-Deletion of all B2 objects, downgrade over-quota policy, recycle-bin behavior,
-account deletion, and ownership transfer remain in `todo-lifecycle`. Those
-decisions must be implemented together because cascades, shared blob paths, and
-denormalized accounting owners otherwise create leaks or charge the wrong user.

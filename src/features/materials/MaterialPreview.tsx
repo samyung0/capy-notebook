@@ -56,7 +56,7 @@ export function MaterialPreview({
   return (
     <PlateStatic
       className={cn(
-        'note-editor whitespace-break-spaces p-6 text-[0.95rem]',
+        'note-editor mx-auto min-h-75 w-full max-w-3xl px-10 pt-4 pb-36 text-base outline-none max-sm:px-5',
         className
       )}
       editor={editor}

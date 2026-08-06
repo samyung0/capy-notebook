@@ -126,10 +126,7 @@ function MaterialBody({
       {activeMode === 'view' && (
         <div className="h-full min-h-0 overflow-auto">
           <Suspense fallback={<FileLoading />}>
-            <MaterialPreview
-              className="mx-auto max-w-[700px]"
-              content={material.content}
-            />
+            <MaterialPreview content={material.content} />
           </Suspense>
         </div>
       )}

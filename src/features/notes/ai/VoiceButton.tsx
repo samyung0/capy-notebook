@@ -2,8 +2,8 @@ import { Mic } from 'lucide-react';
 import { useEditorRef } from 'platejs/react';
 import { useCallback } from 'react';
 import { Spinner } from '@/components/ui/feedback';
+import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
 import { cn } from '@/lib/cn';
-import { ToolbarButton } from '../ToolBarButton';
 import { useVoiceInput } from './useVoiceInput';
 
 /** Mic toggle that dictates into the note at the cursor. Records while active, then save as audio file */
