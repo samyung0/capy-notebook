@@ -30,14 +30,19 @@ import {
   type QuizQuestionElement as QuizQuestionNode,
   quizElementToBlock,
   quizNodeFromFence,
+  quizQuestionElementToQuestion,
 } from '@/features/materials/document';
-import { Mermaid } from '@/features/materials/Mermaid';
+import { Mermaid, mermaidBlockLabel } from '@/features/materials/Mermaid';
+import { answerKey } from '@/features/quizzes/grade';
 import {
-  type QuizOptionRole,
+  QuestionRunner,
   QuizOptionView,
   QuizQuestionHeader,
+} from '@/features/quizzes/QuestionRunner';
+import {
+  type QuizOptionRole,
   quizOptionClassName,
-} from '@/features/materials/QuizBlock';
+} from '@/features/quizzes/quizOptionStyles';
 import { cn } from '@/lib/cn';
 import {
   BLOCK_SHELL_CLASS,
@@ -418,7 +423,7 @@ export function MermaidElement(props: PlateElementProps) {
   }
   return (
     <BlockShell
-      label="Diagram"
+      label={mermaidBlockLabel(element.source)}
       onEdit={readOnly ? undefined : edit}
       props={props}
     >
@@ -431,11 +436,32 @@ export function MermaidElement(props: PlateElementProps) {
 
 export function QuizQuestionElement(props: PlateElementProps) {
   const editor = useEditorRef();
+  const readOnly = useReadOnly();
   const element = props.element as unknown as QuizQuestionNode;
   const path = editor.api.findPath(props.element);
   const pathIndex = path?.[path.length - 1];
   const questionNumber =
     typeof pathIndex === 'number' ? pathIndex + 1 : undefined;
+  if (readOnly) {
+    const question = quizQuestionElementToQuestion(element);
+    return (
+      <PlateElement {...props} className={QUIZ_REVIEW_QUESTION_CLASS}>
+        <div contentEditable={false}>
+          <QuestionRunner
+            answer={answerKey(question)}
+            onChange={() => undefined}
+            question={question}
+            questionNumber={questionNumber}
+            review
+            showExplanation
+          />
+        </div>
+        <div aria-hidden="true" className="hidden">
+          {props.children}
+        </div>
+      </PlateElement>
+    );
+  }
   return (
     <PlateElement {...props} className={QUIZ_REVIEW_QUESTION_CLASS}>
       <QuizQuestionHeader

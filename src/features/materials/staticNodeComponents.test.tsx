@@ -5,6 +5,7 @@ import {
   createMaterialDocument,
   flashcardsNode,
   type MaterialValue,
+  mermaidNode,
   quizNode,
 } from './document';
 import { MaterialPreview } from './MaterialPreview';
@@ -70,6 +71,15 @@ describe('static study-block renderers', () => {
     expect(html).toContain('color:#dc2626');
     expect(html).toContain('background-color:#fef9c3');
     expect(html).toContain('Styled text');
+  });
+
+  it('labels Mermaid mindmaps separately from diagrams', () => {
+    const html = renderMaterial([
+      mermaidNode('mindmap\n  root((Topic))', 'Topic map', 'mindmap'),
+    ]);
+
+    expect(html).toContain('>Mindmap</span>');
+    expect(html).toContain('Topic map');
   });
 
   it('renders semantic callout variants and code language labels in previews', () => {
@@ -209,9 +219,11 @@ describe('static study-block renderers', () => {
     expect(html).toContain('This is why.');
     expect(html).toContain('Accepted answer');
     expect(html).toContain('First item');
-    expect(html).toContain('Left → Right');
+    expect(html).toContain('Left');
+    expect(html).toContain('value="Right" selected=""');
     expect(html).toContain('Pairs are shown in their correct arrangement.');
     expect(html).toContain('border-solid-success');
+    expect(html).toContain('cursor-default');
     expect(html).not.toContain('Time limit: 15 min');
   });
 

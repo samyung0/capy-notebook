@@ -38,7 +38,7 @@ CREATE TABLE IF NOT EXISTS schema_baseline (
 
 DO $$
 DECLARE
-  target_version constant int := 4;
+  target_version constant int := 5;
   recorded_version int;
 BEGIN
   -- Serialize concurrent migrators. The runner sends this file as one statement
@@ -223,14 +223,15 @@ CREATE TABLE IF NOT EXISTS materials (
   workspace_name text NOT NULL DEFAULT '',
   -- Membership: which chapter the material is filed under in the workspace
   -- tree (mirrors files.chapter_id). Nullable = unfiled; unfiles on chapter
-  -- delete. Orthogonal to scope_chapters, which records generation provenance.
+  -- delete. Orthogonal to scope_chapters/scope_file_names, which record
+  -- generation provenance as display-name snapshots rather than references.
   chapter_id     text,
   kind           text NOT NULL,
   title          text NOT NULL DEFAULT '',
   content        jsonb NOT NULL DEFAULT
     '{"schemaVersion":1,"value":[{"type":"p","children":[{"text":""}]}]}'::jsonb,
   scope_chapters text[] NOT NULL DEFAULT '{}',
-  scope_file_ids text[] NOT NULL DEFAULT '{}',
+  scope_file_names text[] NOT NULL DEFAULT '{}',
   privacy        text NOT NULL DEFAULT 'private',
   color          text NOT NULL DEFAULT 'green',
   position       bigint NOT NULL DEFAULT 0,
@@ -1361,7 +1362,7 @@ INSERT INTO entity_tags (workspace_id, tag_id)
   WHERE EXISTS (SELECT 1 FROM workspaces w WHERE w.id = v.entity_id)
   ON CONFLICT DO NOTHING;
 
-INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title, content, scope_chapters, scope_file_ids, privacy, color, created_at) VALUES
+INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title, content, scope_chapters, scope_file_names, privacy, color, created_at) VALUES
   ('qz_1', 'u_1', 'ws_bio', 'Biology 101', 'quiz', 'Cell biology basics',
    $json${"value": [{"type": "h1", "children": [{"text": "Cell biology basics"}]}, {"id": "qz_1:quiz", "type": "quiz", "children": [{"id": "q1", "type": "quiz_question", "level": "recall", "children": [{"type": "quiz_prompt", "children": [{"text": "Which organelle is the powerhouse of the cell?"}]}, {"id": "q1:option:1", "type": "quiz_option", "children": [{"text": "Nucleus"}], "explanation": "The nucleus stores DNA; it does not generate the cell's ATP."}, {"id": "q1:option:2", "type": "quiz_option", "children": [{"text": "Mitochondria"}], "explanation": "Correct — mitochondria produce ATP through cellular respiration."}, {"id": "q1:option:3", "type": "quiz_option", "children": [{"text": "Ribosome"}], "explanation": "Ribosomes synthesize proteins, not energy."}, {"id": "q1:option:4", "type": "quiz_option", "children": [{"text": "Golgi apparatus"}], "explanation": "The Golgi packages and ships proteins; it is not an energy source."}, {"type": "quiz_explanation", "children": [{"text": "Mitochondria produce ATP through cellular respiration."}]}], "questionType": "mcq", "correctOptionIds": ["q1:option:2"]}, {"id": "q2", "type": "quiz_question", "level": "recall", "children": [{"type": "quiz_prompt", "children": [{"text": "The cell membrane is a phospholipid bilayer."}]}, {"id": "q2:option:1", "type": "quiz_option", "children": [{"text": "True"}]}, {"id": "q2:option:2", "type": "quiz_option", "children": [{"text": "False"}]}, {"type": "quiz_explanation", "children": [{"text": "The membrane is two layers of phospholipids with hydrophilic heads out and hydrophobic tails in."}]}], "questionType": "boolean", "correctBoolean": true, "correctOptionIds": ["q2:option:1"]}, {"id": "q3", "type": "quiz_question", "level": "application", "children": [{"type": "quiz_prompt", "children": [{"text": "Select all that are membrane-bound organelles."}]}, {"id": "q3:option:1", "type": "quiz_option", "children": [{"text": "Ribosome"}], "explanation": "Ribosomes are ribonucleoprotein particles, not membrane-bound."}, {"id": "q3:option:2", "type": "quiz_option", "children": [{"text": "Nucleus"}], "explanation": "Correct — enclosed by a double-membrane nuclear envelope."}, {"id": "q3:option:3", "type": "quiz_option", "children": [{"text": "Mitochondria"}], "explanation": "Correct — bounded by an outer and inner membrane."}, {"id": "q3:option:4", "type": "quiz_option", "children": [{"text": "Cytosol"}], "explanation": "The cytosol is the fluid itself, not a membrane-bound compartment."}], "questionType": "multi", "correctOptionIds": ["q3:option:2", "q3:option:3"]}, {"id": "q4", "type": "quiz_question", "level": "application", "children": [{"type": "quiz_prompt", "children": [{"text": "The diffusion of water across a membrane is called ____."}]}, {"id": "q4:option:1", "role": "accepted-answer", "type": "quiz_option", "children": [{"text": "osmosis"}]}], "questionType": "fill", "acceptedAnswers": ["osmosis"]}, {"id": "q5", "type": "quiz_question", "level": "analysis", "children": [{"type": "quiz_prompt", "children": [{"text": "Order the path of protein secretion."}]}, {"id": "q5:option:1", "role": "ordering-item", "type": "quiz_option", "children": [{"text": "Ribosome"}]}, {"id": "q5:option:2", "role": "ordering-item", "type": "quiz_option", "children": [{"text": "Rough ER"}]}, {"id": "q5:option:3", "role": "ordering-item", "type": "quiz_option", "children": [{"text": "Golgi apparatus"}]}, {"id": "q5:option:4", "role": "ordering-item", "type": "quiz_option", "children": [{"text": "Vesicle"}]}, {"id": "q5:option:5", "role": "ordering-item", "type": "quiz_option", "children": [{"text": "Cell membrane"}]}], "questionType": "ordering"}, {"id": "q6", "type": "quiz_question", "level": "application", "pairs": [{"left": "Nucleus", "right": "Stores DNA"}, {"left": "Mitochondria", "right": "Makes ATP"}, {"left": "Ribosome", "right": "Builds proteins"}], "children": [{"type": "quiz_prompt", "children": [{"text": "Match the organelle to its function."}]}, {"id": "q6:option:1", "role": "matching-pair", "type": "quiz_option", "children": [{"text": "Nucleus → Stores DNA"}]}, {"id": "q6:option:2", "role": "matching-pair", "type": "quiz_option", "children": [{"text": "Mitochondria → Makes ATP"}]}, {"id": "q6:option:3", "role": "matching-pair", "type": "quiz_option", "children": [{"text": "Ribosome → Builds proteins"}]}], "questionType": "matching"}]}], "schemaVersion": 1}$json$::jsonb,
    '{"Cell structure","Membranes & transport"}', '{}', 'private', 'green', now()-interval '4 day'),

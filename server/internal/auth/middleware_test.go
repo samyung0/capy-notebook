@@ -84,9 +84,9 @@ func TestE2EAuthRejectsInvalidSecret(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	handler := Middleware(Config{
-		Disabled:  true,
-		E2EAuth:   true,
-		E2ESecret: "s3cret",
+		Disabled:   true,
+		E2EAuth:    true,
+		E2ESecret:  "s3cret",
 		E2EUserIDs: []string{"u_owner"},
 	})(next)
 
@@ -105,10 +105,10 @@ func TestE2EAuthFailClosedWithoutHeaders(t *testing.T) {
 		w.WriteHeader(http.StatusNoContent)
 	})
 	handler := Middleware(Config{
-		Disabled:  true,
-		DevUserID: "u_1",
-		E2EAuth:   true,
-		E2ESecret: "s3cret",
+		Disabled:   true,
+		DevUserID:  "u_1",
+		E2EAuth:    true,
+		E2ESecret:  "s3cret",
 		E2EUserIDs: []string{"u_owner"},
 	})(next)
 

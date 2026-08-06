@@ -127,8 +127,13 @@ func (a *api) updateWorkspaceMember(ctx context.Context, in *updateWorkspaceMemb
 // transferWorkspace hands ownership, and the storage bill, to another member.
 // Every collaborator's room token is invalidated afterwards: their effective role
 // changed, and the token carries the old one.
+//
+// An over-quota sender may transfer. Handing a workspace away is one of the two
+// ways such an account gets back under its limit, so the strict gate would
+// close a recovery path. The recipient is still gated on their own quota inside
+// TransferWorkspace.
 func (a *api) transferWorkspace(ctx context.Context, in *transferWorkspaceInput) (*workspaceOutput, error) {
-	if err := a.requireAccountEdit(ctx); err != nil {
+	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
 	ws, err := a.s.TransferWorkspace(ctx, userID(ctx), in.ID, in.Body.RecipientID)
@@ -139,7 +144,7 @@ func (a *api) transferWorkspace(ctx context.Context, in *transferWorkspaceInput)
 		return nil, collaborationError(err)
 	}
 	a.publishWorkspaceEvictions(ctx, in.ID)
-	return &workspaceOutput{Body: apimodel.FromWorkspace(ws)}, nil
+	return a.ownedWorkspaceOutput(ctx, ws)
 }
 
 func (a *api) removeWorkspaceMember(ctx context.Context, in *workspaceMemberInput) (*Empty, error) {

@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  checks:
+  frontend_check:
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -40,7 +40,8 @@ jobs:
       - run: pnpm run email:check
       - run: pnpm run check
       - run: pnpm test
-      - run: pnpm --filter @evo-notes/collaboration test
+      - run: pnpm run test:collaboration
+      - run: pnpm run test:cloudflare-relay
       # The store/httpapi suites operate on the shared E2E actors (u_owner and
       # friends), so the schema alone is not enough to run them.
       - run: |
@@ -55,7 +56,7 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://evo:evo@localhost:5432/evo?sslmode=disable
 
-  pipeline:
+  pipeline_check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

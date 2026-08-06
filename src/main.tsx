@@ -17,6 +17,10 @@ const USE_MOCKS =
 async function enableMocks() {
   if (!USE_MOCKS) return;
   const { startMockServer } = await import('./mocks/browser');
+  const { registerMockCollaborationProvider } = await import(
+    './mocks/collaboration'
+  );
+  registerMockCollaborationProvider();
   await startMockServer();
 }
 

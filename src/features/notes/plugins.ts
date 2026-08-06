@@ -455,12 +455,17 @@ function buildBlockInteractionKit(
         enableContextMenu: true,
         // Nested structures keep normal text selection; their top-level
         // ancestors (table, column_group, code_block) are block-selectable.
-        isSelectable: (element) =>
+        isSelectable: (element, path) =>
           ![
             editor.getType(KEYS.column),
             editor.getType(KEYS.codeLine),
             editor.getType(KEYS.td),
-          ].includes(element.type),
+          ].includes(element.type) &&
+          !(
+            path.length === 1 &&
+            path[0] === editor.children.length - 1 &&
+            editor.api.isEmpty(element)
+          ),
         ...(allowExternalAssets && {
           onKeyDownSelecting: (
             keyEditor: SlateEditor,

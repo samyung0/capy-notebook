@@ -645,7 +645,7 @@ components:
             type: string
           nullable: true
           type: array
-        scopeFileIds:
+        scopeFileNames:
           items:
             type: string
           nullable: true
@@ -1156,7 +1156,7 @@ components:
           items:
             type: string
           type: array
-        scopeFileIds:
+        scopeFileNames:
           items:
             type: string
           type: array
@@ -1182,7 +1182,7 @@ components:
         - chapterId
         - position
         - scopeChapters
-        - scopeFileIds
+        - scopeFileNames
         - privacy
         - createdAt
         - updatedAt
@@ -1562,6 +1562,10 @@ components:
           $ref: "#/components/schemas/WorkspaceRole"
         shareRole:
           $ref: "#/components/schemas/ShareRole"
+        storageOwnerName:
+          type: string
+        storageOwnerState:
+          $ref: "#/components/schemas/AccountState"
         tags:
           items:
             $ref: "#/components/schemas/Tag"
@@ -1581,6 +1585,7 @@ components:
         - lastAccessedAt
         - isOwner
         - capabilities
+        - storageOwnerName
       type: object
     Quiz:
       additionalProperties: false
@@ -2102,7 +2107,7 @@ components:
           items:
             type: string
           type: array
-        scopeFileIds:
+        scopeFileNames:
           items:
             type: string
           type: array
@@ -2281,6 +2286,10 @@ components:
           $ref: "#/components/schemas/WorkspaceRole"
         shareRole:
           $ref: "#/components/schemas/ShareRole"
+        storageOwnerName:
+          type: string
+        storageOwnerState:
+          $ref: "#/components/schemas/AccountState"
         tags:
           items:
             $ref: "#/components/schemas/Tag"
@@ -2298,6 +2307,7 @@ components:
         - lastAccessedAt
         - isOwner
         - capabilities
+        - storageOwnerName
       type: object
     WorkspaceMember:
       additionalProperties: false

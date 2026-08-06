@@ -16,6 +16,6 @@ export interface CreateMaterialReq {
   /** @nullable */
   scopeChapters?: string[] | null;
   /** @nullable */
-  scopeFileIds?: string[] | null;
+  scopeFileNames?: string[] | null;
   title?: string;
 }

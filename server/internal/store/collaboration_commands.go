@@ -98,7 +98,7 @@ func (s *Store) applyAuthoritativeContentCommand(
 	}
 	body, err := json.Marshal(replaceBlockCommand{
 		Type: "replace-block", MaterialID: materialID,
-		Room: roomForCommand,
+		Room:          roomForCommand,
 		ExpectedBlock: expectedBlock, ReplacementBlock: replacementBlock,
 	})
 	if err != nil {

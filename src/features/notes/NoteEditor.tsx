@@ -156,7 +156,7 @@ function CollaborativeNoteEditor({
     allowExternalAssets,
     canComment,
     canEdit,
-    currentUserId: me.data?.id ?? null,
+    currentUserId: me.data.id,
     materialId: material.id,
     mode,
     role,
@@ -170,8 +170,8 @@ function CollaborativeNoteEditor({
           allowExternalAssets={allowExternalAssets}
           collaborationActionsHost={collaborationActionsHost}
           collaborationToken={collaborationToken.data}
-          currentUserId={me.data?.id ?? null}
-          currentUserName={me.data?.name ?? null}
+          currentUserId={me.data.id}
+          currentUserName={me.data.name}
           discussions={discussions.data ?? []}
           key={`${collaborationToken.data.room}:${editorGeneration}`}
           material={material}

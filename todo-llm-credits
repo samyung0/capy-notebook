@@ -1,0 +1,65 @@
+Actor-billed LLM usage and credits
+
+Status: not implemented. `generationCreditsAllowed` in
+server/internal/httpapi/generation_credits.go is a stub that always allows.
+
+Why this exists
+
+Generation charges two users at once:
+
+- The produced material is storage. It is billed to the workspace owner
+  (`materials.owner_user_id`) and enforced by `gateStorageTx`. Done.
+- The inference that produced it is model spend. It should be billed to the
+  actor who requested it. Nothing tracks this.
+
+Before this split was written down, `generate` called
+`accountCreateAllowed(actor)`, which used the actor's storage lifecycle state as
+a proxy for "may this user spend". That conflated two unrelated budgets and made
+an over-quota editor unable to generate into a workspace whose owner had plenty
+of room. See todo-permissions, Inconsistency 1. The check is now the stub
+instead, so the intent is recorded at the call site rather than lost.
+
+What a real implementation needs
+
+- A spend ledger keyed by actor, not by workspace or owner. Generation is not
+  the only future spender: chat, RAG retrieval, and re-generation all draw on
+  the same budget, so the gate must take a cost estimate rather than being
+  generation-specific.
+- Tier allowances plus overage policy, derived from `user_subscriptions` the way
+  `StorageLimitBytes` derives from `plan_tier`. Two budgets, one subscription.
+- Reservation-then-settle, matching the upload reservation lifecycle in
+  `server/internal/store/storage.go`: reserve an estimate before calling the
+  model, settle the actual token cost after. A post-hoc-only ledger lets
+  concurrent requests both pass the gate.
+- A stable error code alongside `storage_quota_exceeded` so the frontend can
+  tell "you are out of credits" from "the workspace owner is out of space".
+  These render as completely different messages: one is about you, the other is
+  about someone else.
+- Pipeline enforcement. `generateViaPipe` reaches the retrieval service, which
+  can spend without returning anything persistable, so a gate that only runs in
+  Go is incomplete once the pipeline gains its own model calls.
+
+Related deferred item: live collaboration connections are not downgraded when
+their owner crosses into over-quota
+
+Not credits, but recorded here because it is the other known deferral in the
+same area.
+
+Room access is decided once in `onAuthenticate`
+(collaboration/src/server.ts) and Hocuspocus never re-authenticates, so
+`connection.context.access` is fixed for the life of the socket. Collaboration
+tokens live five minutes, which bounds how long a *new* connection can carry a
+stale grant, but a socket opened while the owner was active keeps full write
+access for as long as it stays connected.
+
+Freeze is derived state, not a stored transition: `SweepOverQuotaNotices` in
+server/internal/store/lifecycle_notices.go only sends mail, and nothing writes a
+column when an account crosses `current_period_end`. So there is no event to
+hang an eviction off yet.
+
+The fix, when it is worth doing: have the sweeper publish
+`evo:collaboration:evict` for the owner's materials the first time it observes
+the account as shrink-only. `publishMaterialEviction` already exists in
+server/internal/httpapi/huma_collaboration.go and is wired for privacy and
+membership changes; the sweeper runs in the store package and would need Redis
+access, which is the actual cost of the change.

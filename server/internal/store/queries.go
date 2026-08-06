@@ -142,17 +142,20 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 
 /* --------------------------------------------------------------- workspaces */
 
+// The owner name is a subselect rather than a join so every caller of wsCols
+// keeps its existing FROM clause.
 const wsCols = `w.id, w.name, w.color, w.privacy, w.share_role,
 	COALESCE((SELECT jsonb_agg(jsonb_build_object('id', t.id, 'value', t.name) ORDER BY t.name)
 		FROM entity_tags et JOIN tags t ON t.id=et.tag_id
 		WHERE et.workspace_id=w.id), '[]'::jsonb),
+	w.user_id, COALESCE((SELECT u.name FROM users u WHERE u.id=w.user_id), ''),
 	(SELECT count(*) FROM chapters c WHERE c.workspace_id=w.id),
 	(SELECT count(*) FROM files f WHERE f.workspace_id=w.id),
 	w.created_at, w.last_accessed_at`
 
 func scanWorkspace(row pgx.Row) (Workspace, error) {
 	var w Workspace
-	err := row.Scan(&w.ID, &w.Name, &w.Color, &w.Privacy, &w.ShareRole, &w.Tags, &w.ChapterCount, &w.FileCount, &w.CreatedAt, &w.LastAccessedAt)
+	err := row.Scan(&w.ID, &w.Name, &w.Color, &w.Privacy, &w.ShareRole, &w.Tags, &w.OwnerUserID, &w.OwnerName, &w.ChapterCount, &w.FileCount, &w.CreatedAt, &w.LastAccessedAt)
 	return w, err
 }
 
@@ -802,17 +805,17 @@ func (s *Store) DeleteFile(ctx context.Context, id string) error {
 
 /* ------------------------------------------------------------- materials */
 
-const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, chapter_id, position, scope_chapters, scope_file_ids, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth`
-const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.position, m.scope_chapters, m.scope_file_ids, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth`
+const materialCols = `id, COALESCE(created_by,''), owner_user_id, COALESCE(workspace_id,''), workspace_name, kind, title, content, chapter_id, position, scope_chapters, scope_file_names, privacy, color, created_at, updated_at, revision, size_bytes, node_count, max_depth`
+const materialColsM = `m.id, COALESCE(m.created_by,''), m.owner_user_id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.position, m.scope_chapters, m.scope_file_names, m.privacy, m.color, m.created_at, m.updated_at, m.revision, m.size_bytes, m.node_count, m.max_depth`
 
 func scanMaterial(row pgx.Row) (Material, error) {
 	var mt Material
-	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.Position, &mt.ScopeChapters, &mt.ScopeFileIDs, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth)
+	err := row.Scan(&mt.ID, &mt.CreatedBy, &mt.OwnerUserID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.Position, &mt.ScopeChapters, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &mt.UpdatedAt, &mt.Revision, &mt.SizeBytes, &mt.NodeCount, &mt.MaxDepth)
 	if mt.ScopeChapters == nil {
 		mt.ScopeChapters = []string{}
 	}
-	if mt.ScopeFileIDs == nil {
-		mt.ScopeFileIDs = []string{}
+	if mt.ScopeFileNames == nil {
+		mt.ScopeFileNames = []string{}
 	}
 	return mt, err
 }
@@ -824,8 +827,8 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 	if mt.ScopeChapters == nil {
 		mt.ScopeChapters = []string{}
 	}
-	if mt.ScopeFileIDs == nil {
-		mt.ScopeFileIDs = []string{}
+	if mt.ScopeFileNames == nil {
+		mt.ScopeFileNames = []string{}
 	}
 	if mt.Privacy == "" {
 		mt.Privacy = "private"
@@ -885,11 +888,11 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO materials
 		(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
-		 chapter_id, scope_chapters, scope_file_ids, privacy, color, node_count, max_depth, updated_by)
+		 chapter_id, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_by)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
 		mt.ID, creatorID, ownerID, nullStr(mt.WorkspaceID), mt.WorkspaceName, mt.Kind,
 		mt.Title, json.RawMessage(mt.Content), mt.ChapterID, mt.ScopeChapters,
-		mt.ScopeFileIDs, mt.Privacy, mt.Color, metrics.NodeCount, metrics.MaxDepth, creatorID)
+		mt.ScopeFileNames, mt.Privacy, mt.Color, metrics.NodeCount, metrics.MaxDepth, creatorID)
 	if err != nil {
 		return Material{}, err
 	}
@@ -957,7 +960,7 @@ type MaterialPatch struct {
 	Content          *string
 	ChapterID        **string // double pointer: nil = leave, &nil = unfile, &&v = set
 	ScopeChapters    *[]string
-	ScopeFileIDs     *[]string
+	ScopeFileNames   *[]string
 	Privacy          *Privacy
 	ExpectedRevision *int64
 	UpdatedBy        string
@@ -1055,12 +1058,12 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		}
 		add("scope_chapters", sc)
 	}
-	if p.ScopeFileIDs != nil {
-		sf := *p.ScopeFileIDs
+	if p.ScopeFileNames != nil {
+		sf := *p.ScopeFileNames
 		if sf == nil {
 			sf = []string{}
 		}
-		add("scope_file_ids", sf)
+		add("scope_file_names", sf)
 	}
 	if p.Privacy != nil {
 		add("privacy", *p.Privacy)
@@ -1401,8 +1404,13 @@ func scanDeck(row pgx.Row) (Deck, error) {
 	return d, err
 }
 
+// ListDecks returns the decks a user owns plus those reachable through
+// workspace membership, so IsOwner has to be derived per row rather than
+// assumed — a member seeing owner-only affordances would be offered actions the
+// API then refuses.
 func (s *Store) ListDecks(ctx context.Context, userID string) ([]Deck, error) {
-	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, COALESCE(m.workspace_id,''), m.workspace_name, m.color, m.privacy,`+deckStatsExpr+`
+	rows, err := s.pool.Query(ctx, `SELECT m.id, m.title, COALESCE(m.workspace_id,''), m.workspace_name, m.color, m.privacy,`+deckStatsExpr+`,
+		(m.owner_user_id=$1)
 		FROM materials m
 		WHERE (m.owner_user_id=$1 OR EXISTS (
 			SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=m.workspace_id AND wm.user_id=$1
@@ -1413,11 +1421,11 @@ func (s *Store) ListDecks(ctx context.Context, userID string) ([]Deck, error) {
 	defer rows.Close()
 	out := []Deck{}
 	for rows.Next() {
-		d, err := scanDeck(rows)
-		if err != nil {
+		var d Deck
+		if err := rows.Scan(&d.ID, &d.Name, &d.WorkspaceID, &d.WorkspaceName, &d.Color,
+			&d.Privacy, &d.CardCount, &d.KnownPct, &d.DueCount, &d.IsOwner); err != nil {
 			return nil, err
 		}
-		d.IsOwner = true
 		out = append(out, d)
 	}
 	return out, rows.Err()
@@ -1443,6 +1451,12 @@ func (s *Store) CreateDeck(ctx context.Context, userID, name string, color UserC
 // creation transaction. This is important for generated decks: card additions
 // are normal material edits and intentionally do not pass through the creation
 // quota gate.
+//
+// userID is the author, not necessarily the workspace owner. This lookup must
+// not filter on ownership: doing so made decks the only material kind an editor
+// could not create in someone else's workspace, and CreateMaterial below
+// already resolves the owner and gates their quota. Callers are responsible for
+// the workspace role check, as they are for every other material kind.
 func (s *Store) CreateDeckWithCards(
 	ctx context.Context,
 	userID, name string,
@@ -1452,7 +1466,11 @@ func (s *Store) CreateDeckWithCards(
 ) (Deck, error) {
 	var wsName string
 	if wsID != "" {
-		if err := s.pool.QueryRow(ctx, `SELECT name FROM workspaces WHERE id=$1 AND user_id=$2`, wsID, userID).Scan(&wsName); err != nil {
+		err := s.pool.QueryRow(ctx, `SELECT name FROM workspaces WHERE id=$1`, wsID).Scan(&wsName)
+		if isNoRows(err) {
+			return Deck{}, ErrNotFound
+		}
+		if err != nil {
 			return Deck{}, err
 		}
 	}

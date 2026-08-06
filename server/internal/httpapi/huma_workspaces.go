@@ -51,10 +51,28 @@ func (a *api) registerWorkspaces(api huma.API) {
 	reg(api, http.MethodGet, "/api/workspaces/{id}/stats", "getWorkspaceStats", tag, "Workspace stats", http.StatusOK, a.getWorkspaceStats)
 }
 
+// ownedWorkspaceOutput renders a workspace the caller owns, resolving the
+// owner's storage state so the client can warn before the next write is
+// refused.
+func (a *api) ownedWorkspaceOutput(
+	ctx context.Context,
+	w store.Workspace,
+) (*workspaceOutput, error) {
+	ownerState, err := a.workspaceOwnerState(ctx, w)
+	if err != nil {
+		return nil, err
+	}
+	return &workspaceOutput{Body: apimodel.FromWorkspace(w, ownerState)}, nil
+}
+
 func (a *api) listWorkspaces(ctx context.Context, in *listWorkspacesInput) (*workspacesOutput, error) {
 	res, err := a.s.ListWorkspaces(ctx, userID(ctx), in.Q, in.Sort, in.Color, in.Tag)
 	if err != nil {
 		return nil, hErr(err)
+	}
+	ownerStates, err := a.workspaceOwnerStates(ctx, res...)
+	if err != nil {
+		return nil, err
 	}
 	out := make([]apimodel.Workspace, len(res))
 	for i, workspace := range res {
@@ -62,7 +80,7 @@ func (a *api) listWorkspaces(ctx context.Context, in *listWorkspacesInput) (*wor
 		if err != nil {
 			return nil, hErr(err)
 		}
-		out[i] = apimodel.FromWorkspaceAccess(workspace, role)
+		out[i] = apimodel.FromWorkspaceAccess(workspace, role, ownerStates[workspace.OwnerUserID])
 	}
 	return &workspacesOutput{Body: out}, nil
 }
@@ -78,19 +96,20 @@ func (a *api) getWorkspace(ctx context.Context, in *workspaceIDInput) (*workspac
 	if err != nil {
 		return nil, hErr(err)
 	}
+	var res store.Workspace
 	if isOwner {
-		res, err := a.s.GetWorkspace(ctx, userID(ctx), in.ID, true)
-		if err != nil {
-			return nil, hErr(err)
-		}
-		return &workspaceOutput{Body: apimodel.FromWorkspaceAccess(res, role)}, nil
+		res, err = a.s.GetWorkspace(ctx, userID(ctx), in.ID, true)
+	} else {
+		res, err = a.s.GetWorkspaceShared(ctx, in.ID)
 	}
-	res, err := a.s.GetWorkspaceShared(ctx, in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	body := apimodel.FromWorkspaceAccess(res, role)
-	return &workspaceOutput{Body: body}, nil
+	ownerState, err := a.workspaceOwnerState(ctx, res)
+	if err != nil {
+		return nil, err
+	}
+	return &workspaceOutput{Body: apimodel.FromWorkspaceAccess(res, role, ownerState)}, nil
 }
 
 func (a *api) createWorkspace(ctx context.Context, in *createWorkspaceInput) (*workspaceOutput, error) {
@@ -108,11 +127,13 @@ func (a *api) createWorkspace(ctx context.Context, in *createWorkspaceInput) (*w
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &workspaceOutput{Body: apimodel.FromWorkspace(res)}, nil
+	return a.ownedWorkspaceOutput(ctx, res)
 }
 
+// updateWorkspace changes name, colour and tags, none of which move bytes, so
+// an over-quota account keeps them.
 func (a *api) updateWorkspace(ctx context.Context, in *updateWorkspaceInput) (*workspaceOutput, error) {
-	if err := a.requireAccountEdit(ctx); err != nil {
+	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
 	p := store.WorkspacePatch{
@@ -126,9 +147,12 @@ func (a *api) updateWorkspace(ctx context.Context, in *updateWorkspaceInput) (*w
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &workspaceOutput{Body: apimodel.FromWorkspace(res)}, nil
+	return a.ownedWorkspaceOutput(ctx, res)
 }
 
+// updateWorkspaceSharing stays on the strict gate. Publishing a workspace puts
+// it on Explore where every clone is charged to the cloner, so it is an
+// exposure change rather than a size-neutral edit.
 func (a *api) updateWorkspaceSharing(ctx context.Context, in *updateWorkspaceSharingInput) (*workspaceOutput, error) {
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
@@ -143,7 +167,7 @@ func (a *api) updateWorkspaceSharing(ctx context.Context, in *updateWorkspaceSha
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &workspaceOutput{Body: apimodel.FromWorkspace(res)}, nil
+	return a.ownedWorkspaceOutput(ctx, res)
 }
 
 func (a *api) deleteWorkspace(ctx context.Context, in *workspaceIDInput) (*Empty, error) {

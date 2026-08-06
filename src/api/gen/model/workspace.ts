@@ -5,6 +5,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AccessCapabilities } from './accessCapabilities.ts';
+import type { AccountState } from './accountState.ts';
 import type { Privacy } from './privacy.ts';
 import type { ShareRole } from './shareRole.ts';
 import type { Tag } from './tag.ts';
@@ -26,5 +27,7 @@ export interface Workspace {
   privacy: Privacy;
   role?: WorkspaceRole;
   shareRole: ShareRole;
+  storageOwnerName: string;
+  storageOwnerState?: AccountState;
   tags: Tag[];
 }

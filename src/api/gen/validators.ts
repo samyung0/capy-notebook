@@ -45,6 +45,8 @@ export const GetDeletionPreflightResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'commenter', 'viewer']),
+  "storageOwnerName": zod.string(),
+  "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(getDeletionPreflightResponseWorkspacesNeedingTransferItemTagsItemValueMax)
@@ -69,6 +71,8 @@ export const GetDeletionPreflightResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'commenter', 'viewer']),
+  "storageOwnerName": zod.string(),
+  "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(getDeletionPreflightResponseWorkspacesToDestroyItemTagsItemValueMax)
@@ -733,6 +737,8 @@ export const ExploreWorkspacesResponseItem = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'commenter', 'viewer']),
+  "storageOwnerName": zod.string(),
+  "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(exploreWorkspacesResponseTagsItemValueMax)
@@ -915,7 +921,7 @@ export const GetMaterialResponse = zod.object({
   "revision": zod.number(),
   "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
-  "scopeFileIds": zod.array(zod.string()),
+  "scopeFileNames": zod.array(zod.string()),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string(),
@@ -938,7 +944,7 @@ export const UpdateMaterialBody = zod.object({
   "expectedRevision": zod.number().min(1).optional().describe('Required when changing title'),
   "privacy": zod.enum(['private', 'public', 'link']).optional().describe('Visibility (share standalone)'),
   "scopeChapters": zod.array(zod.string()).optional(),
-  "scopeFileIds": zod.array(zod.string()).optional(),
+  "scopeFileNames": zod.array(zod.string()).optional(),
   "title": zod.string().optional()
 })
 
@@ -986,7 +992,7 @@ export const CloneMaterialResponse = zod.object({
   "revision": zod.number(),
   "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
-  "scopeFileIds": zod.array(zod.string()),
+  "scopeFileNames": zod.array(zod.string()),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string(),
@@ -1626,6 +1632,8 @@ export const ListWorkspacesResponseItem = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'commenter', 'viewer']),
+  "storageOwnerName": zod.string(),
+  "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(listWorkspacesResponseTagsItemValueMax)
@@ -1675,6 +1683,8 @@ export const CreateWorkspaceResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'commenter', 'viewer']),
+  "storageOwnerName": zod.string(),
+  "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(createWorkspaceResponseTagsItemValueMax)
@@ -1722,6 +1732,8 @@ export const GetWorkspaceResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'commenter', 'viewer']),
+  "storageOwnerName": zod.string(),
+  "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(getWorkspaceResponseTagsItemValueMax)
@@ -1772,6 +1784,8 @@ export const UpdateWorkspaceResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'commenter', 'viewer']),
+  "storageOwnerName": zod.string(),
+  "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(updateWorkspaceResponseTagsItemValueMax)
@@ -1868,6 +1882,8 @@ export const CloneWorkspaceResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'commenter', 'viewer']),
+  "storageOwnerName": zod.string(),
+  "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(cloneWorkspaceResponseWorkspaceTagsItemValueMax)
@@ -2015,7 +2031,7 @@ export const CreateMaterialBody = zod.object({
 }).optional().describe('Versioned Plate document'),
   "kind": zod.string().optional().describe('Material kind; defaults to note'),
   "scopeChapters": zod.array(zod.string()).nullish(),
-  "scopeFileIds": zod.array(zod.string()).nullish(),
+  "scopeFileNames": zod.array(zod.string()).nullish(),
   "title": zod.string().optional()
 })
 
@@ -2045,7 +2061,7 @@ export const CreateMaterialResponse = zod.object({
   "revision": zod.number(),
   "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
   "scopeChapters": zod.array(zod.string()),
-  "scopeFileIds": zod.array(zod.string()),
+  "scopeFileNames": zod.array(zod.string()),
   "title": zod.string(),
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string(),
@@ -2134,6 +2150,8 @@ export const UpdateWorkspaceSharingResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'commenter', 'viewer']),
+  "storageOwnerName": zod.string(),
+  "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(updateWorkspaceSharingResponseTagsItemValueMax)
@@ -2195,6 +2213,8 @@ export const TransferWorkspaceResponse = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']),
   "role": zod.enum(['owner', 'editor', 'commenter', 'viewer']).optional(),
   "shareRole": zod.enum(['editor', 'commenter', 'viewer']),
+  "storageOwnerName": zod.string(),
+  "storageOwnerState": zod.enum(['active', 'over_quota_grace', 'over_quota_frozen', 'deletion_pending', 'suspended', 'deleted']).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(transferWorkspaceResponseTagsItemValueMax)

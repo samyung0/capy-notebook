@@ -596,66 +596,70 @@ function nodeText(node: MaterialNode): string {
   return node.children.map(nodeText).join('');
 }
 
-export function quizElementToBlock(element: QuizElement): QuizBlock {
-  const questions: Question[] = element.children.map((question) => {
-    const prompt =
-      question.children
-        .find((child) => child.type === 'quiz_prompt')
-        ?.children.map(nodeText)
-        .join('') ?? '';
-    const explanation = question.children
-      .find((child) => child.type === 'quiz_explanation')
+export function quizQuestionElementToQuestion(
+  question: QuizQuestionElement
+): Question {
+  const prompt =
+    question.children
+      .find((child) => child.type === 'quiz_prompt')
       ?.children.map(nodeText)
-      .join('');
-    const options = question.children.filter(
-      (child): child is QuizOptionElement => child.type === 'quiz_option'
-    );
-    const base = {
-      id: question.id,
-      level: question.level,
-      prompt,
-      ...(explanation ? { explanation } : {}),
-    };
-    switch (question.questionType) {
-      case 'boolean':
-        return {
-          ...base,
-          correct: question.correctBoolean ?? true,
-          type: 'boolean',
-        };
-      case 'fill':
-      case 'short':
-        return {
-          ...base,
-          accepted: (question.acceptedAnswers ?? options.map(nodeText)).map(
-            (value) => ({ value })
-          ),
-          type: question.questionType,
-        };
-      case 'matching':
-        return { ...base, pairs: question.pairs ?? [], type: 'matching' };
-      case 'ordering':
-        return {
-          ...base,
-          items: options.map((option) => ({ value: nodeText(option) })),
-          type: 'ordering',
-        };
-      default:
-        return {
-          ...base,
-          correct: (question.correctOptionIds ?? [])
-            .map((id) => options.findIndex((option) => option.id === id))
-            .filter((index) => index >= 0),
-          options: options.map((option) => ({
-            value: nodeText(option),
-            ...(typeof option.explanation === 'string'
-              ? { explanation: option.explanation }
-              : {}),
-          })),
-          type: question.questionType === 'multi' ? 'multi' : 'mcq',
-        };
-    }
-  });
+      .join('') ?? '';
+  const explanation = question.children
+    .find((child) => child.type === 'quiz_explanation')
+    ?.children.map(nodeText)
+    .join('');
+  const options = question.children.filter(
+    (child): child is QuizOptionElement => child.type === 'quiz_option'
+  );
+  const base = {
+    id: question.id,
+    level: question.level,
+    prompt,
+    ...(explanation ? { explanation } : {}),
+  };
+  switch (question.questionType) {
+    case 'boolean':
+      return {
+        ...base,
+        correct: question.correctBoolean ?? true,
+        type: 'boolean',
+      };
+    case 'fill':
+    case 'short':
+      return {
+        ...base,
+        accepted: (question.acceptedAnswers ?? options.map(nodeText)).map(
+          (value) => ({ value })
+        ),
+        type: question.questionType,
+      };
+    case 'matching':
+      return { ...base, pairs: question.pairs ?? [], type: 'matching' };
+    case 'ordering':
+      return {
+        ...base,
+        items: options.map((option) => ({ value: nodeText(option) })),
+        type: 'ordering',
+      };
+    default:
+      return {
+        ...base,
+        correct: (question.correctOptionIds ?? [])
+          .map((id) => options.findIndex((option) => option.id === id))
+          .filter((index) => index >= 0),
+        options: options.map((option) => ({
+          value: nodeText(option),
+          ...(typeof option.explanation === 'string'
+            ? { explanation: option.explanation }
+            : {}),
+        })),
+        type: question.questionType === 'multi' ? 'multi' : 'mcq',
+      };
+  }
+}
+
+export function quizElementToBlock(element: QuizElement): QuizBlock {
+  const questions = element.children.map(quizQuestionElementToQuestion);
   return {
     questions,
     ...(element.timeLimitMin == null

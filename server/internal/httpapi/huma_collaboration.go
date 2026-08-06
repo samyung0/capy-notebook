@@ -127,15 +127,22 @@ func (a *api) createMaterialCollaborationToken(
 	// The room token is the collaboration server's only source of truth for what
 	// a connection may do, so lifecycle restrictions have to be resolved here.
 	// Tokens are short-lived, which bounds how long a stale grant survives.
+	//
+	// The role above decided whether this user may write at all; the material's
+	// storage owner decides which direction the document may move, because the
+	// bytes are charged to the owner and never to the actor. The actor's own
+	// lifecycle does not enter into it: suspended, deletion-pending and deleted
+	// users are refused a session by the auth middleware, and their storage
+	// state is irrelevant inside a workspace they do not pay for.
 	if access == "write" {
-		status, err := a.s.AccountAccess(ctx, uid)
+		owner, err := a.s.MaterialOwnerAccess(ctx, in.ID)
 		if err != nil {
 			return nil, collaborationError(err)
 		}
 		switch {
-		case status.ShrinkOnly():
+		case owner.ShrinkOnly():
 			access = "shrink"
-		case !status.CanEdit():
+		case !owner.CanEdit():
 			access = "comment"
 		}
 	}

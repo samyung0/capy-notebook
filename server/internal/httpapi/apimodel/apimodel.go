@@ -106,27 +106,27 @@ type SourceUploadPolicy struct {
 }
 
 type Material struct {
-	ID            string                   `json:"id"`
-	WorkspaceID   string                   `json:"workspaceId"`
-	WorkspaceName string                   `json:"workspaceName"`
-	Kind          string                   `json:"kind"`
-	Title         string                   `json:"title"`
-	Content       materialdoc.Envelope     `json:"content"`
-	ContentBytes  int                      `json:"contentBytes" doc:"UTF-8 byte length of persisted content JSON"`
-	NodeCount     int                      `json:"nodeCount"`
-	MaxDepth      int                      `json:"maxDepth"`
-	ChapterID     *string                  `json:"chapterId"`
-	Position      int64                    `json:"position"`
-	ScopeChapters []string                 `json:"scopeChapters" nullable:"false"`
-	ScopeFileIDs  []string                 `json:"scopeFileIds" nullable:"false"`
-	Privacy       store.Privacy            `json:"privacy"`
-	Color         store.UserColor          `json:"color,omitempty"`
-	CreatedAt     time.Time                `json:"createdAt"`
-	UpdatedAt     time.Time                `json:"updatedAt"`
-	Revision      int64                    `json:"revision"`
-	IsOwner       bool                     `json:"isOwner"`
-	Role          *store.WorkspaceRole     `json:"role,omitempty"`
-	Capabilities  store.AccessCapabilities `json:"capabilities"`
+	ID             string                   `json:"id"`
+	WorkspaceID    string                   `json:"workspaceId"`
+	WorkspaceName  string                   `json:"workspaceName"`
+	Kind           string                   `json:"kind"`
+	Title          string                   `json:"title"`
+	Content        materialdoc.Envelope     `json:"content"`
+	ContentBytes   int                      `json:"contentBytes" doc:"UTF-8 byte length of persisted content JSON"`
+	NodeCount      int                      `json:"nodeCount"`
+	MaxDepth       int                      `json:"maxDepth"`
+	ChapterID      *string                  `json:"chapterId"`
+	Position       int64                    `json:"position"`
+	ScopeChapters  []string                 `json:"scopeChapters" nullable:"false"`
+	ScopeFileNames []string                 `json:"scopeFileNames" nullable:"false"`
+	Privacy        store.Privacy            `json:"privacy"`
+	Color          store.UserColor          `json:"color,omitempty"`
+	CreatedAt      time.Time                `json:"createdAt"`
+	UpdatedAt      time.Time                `json:"updatedAt"`
+	Revision       int64                    `json:"revision"`
+	IsOwner        bool                     `json:"isOwner"`
+	Role           *store.WorkspaceRole     `json:"role,omitempty"`
+	Capabilities   store.AccessCapabilities `json:"capabilities"`
 }
 
 // MaterialUpdateResult is the lightweight acknowledgement returned by
@@ -152,7 +152,7 @@ func FromMaterial(m store.Material) Material {
 		Kind: m.Kind, Title: m.Title, Content: content, ContentBytes: len(m.Content),
 		NodeCount: m.NodeCount, MaxDepth: m.MaxDepth, ChapterID: m.ChapterID,
 		Position:      m.Position,
-		ScopeChapters: m.ScopeChapters, ScopeFileIDs: m.ScopeFileIDs,
+		ScopeChapters: m.ScopeChapters, ScopeFileNames: m.ScopeFileNames,
 		Privacy: m.Privacy, Color: m.Color, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
 		Revision: m.Revision,
 		IsOwner:  m.IsOwner, Role: m.Role, Capabilities: m.Capabilities,
@@ -209,20 +209,46 @@ type Workspace struct {
 	IsOwner        bool                     `json:"isOwner"`
 	Role           *store.WorkspaceRole     `json:"role,omitempty"`
 	Capabilities   store.AccessCapabilities `json:"capabilities"`
+	// StorageOwnerState is the lifecycle state of the account charged for this
+	// workspace's bytes, which is the owner and not necessarily the requester.
+	// A member with a healthy account still cannot add content to an
+	// over-quota owner's workspace, so the client needs the owner's state to
+	// explain why writes are being refused.
+	//
+	// Omitted where the owner's limit cannot affect the requester — Explore
+	// listings, where the only action is a clone charged to the cloner. Absent
+	// therefore means "not applicable", not "healthy".
+	StorageOwnerState *store.AccountState `json:"storageOwnerState,omitempty"`
+	// StorageOwnerName names that account so a member sees whose limit is full
+	// rather than an anonymous "the owner". Empty when the owner has no display
+	// name; the client falls back to generic copy.
+	StorageOwnerName string `json:"storageOwnerName"`
 }
 
-func FromWorkspace(w store.Workspace) Workspace {
+// FromWorkspace renders a workspace the requester owns. ownerState must be the
+// resolved state of w.OwnerUserID (see api.workspaceOwnerStates) or empty to
+// leave it unreported.
+func FromWorkspace(w store.Workspace, ownerState store.AccountState) Workspace {
 	role := store.RoleOwner
-	return Workspace{
+	out := Workspace{
 		ID: w.ID, Name: w.Name, Color: w.Color, Privacy: w.Privacy, ShareRole: w.ShareRole,
 		Tags: WrapTags(w.Tags), ChapterCount: w.ChapterCount, FileCount: w.FileCount,
 		CreatedAt: w.CreatedAt, LastAccessedAt: w.LastAccessedAt, IsOwner: true,
 		Role: &role, Capabilities: store.CapabilitiesForRole(role, true),
+		StorageOwnerName: w.OwnerName,
 	}
+	if ownerState != "" {
+		out.StorageOwnerState = &ownerState
+	}
+	return out
 }
 
-func FromWorkspaceAccess(w store.Workspace, role store.WorkspaceRole) Workspace {
-	out := FromWorkspace(w)
+func FromWorkspaceAccess(
+	w store.Workspace,
+	role store.WorkspaceRole,
+	ownerState store.AccountState,
+) Workspace {
+	out := FromWorkspace(w, ownerState)
 	out.IsOwner = role == store.RoleOwner
 	out.Capabilities = store.CapabilitiesForRole(role, true)
 	if role == "" {
@@ -233,10 +259,15 @@ func FromWorkspaceAccess(w store.Workspace, role store.WorkspaceRole) Workspace 
 	return out
 }
 
-func FromWorkspaces(ws []store.Workspace) []Workspace {
+// FromWorkspaces renders workspaces the requester owns. ownerStates is keyed by
+// owner user id so a mixed-ownership list resolves each owner once.
+func FromWorkspaces(
+	ws []store.Workspace,
+	ownerStates map[string]store.AccountState,
+) []Workspace {
 	out := make([]Workspace, len(ws))
 	for i, w := range ws {
-		out[i] = FromWorkspace(w)
+		out[i] = FromWorkspace(w, ownerStates[w.OwnerUserID])
 	}
 	return out
 }
@@ -248,10 +279,13 @@ type PublicWorkspace struct {
 	Clones int    `json:"clones"`
 }
 
+// FromPublicWorkspaces leaves StorageOwnerState unreported: an Explore visitor
+// can only clone, which is charged to them, so the author's billing state is
+// both irrelevant here and none of the visitor's business.
 func FromPublicWorkspaces(ws []store.PublicWorkspace) []PublicWorkspace {
 	out := make([]PublicWorkspace, len(ws))
 	for i, w := range ws {
-		workspace := FromWorkspaceAccess(w.Workspace, "")
+		workspace := FromWorkspaceAccess(w.Workspace, "", "")
 		out[i] = PublicWorkspace{Workspace: workspace, Author: w.Author, Clones: w.Clones}
 	}
 	return out

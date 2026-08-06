@@ -20,8 +20,7 @@ import (
 func (a *api) importSources(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	wsID := id(r)
-	if err := a.s.AssertWorkspaceOwner(r.Context(), userID, wsID); err != nil {
-		a.fail(w, err)
+	if !a.assertWS(w, r, wsID) {
 		return
 	}
 

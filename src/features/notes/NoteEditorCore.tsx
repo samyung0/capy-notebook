@@ -1,4 +1,3 @@
-import type { HocuspocusProviderWrapper } from '@platejs/yjs';
 import { YjsPlugin } from '@platejs/yjs/react';
 import { useQueryClient } from '@tanstack/react-query';
 import type { PlateEditor } from 'platejs/react';
@@ -12,6 +11,7 @@ import {
 } from 'platejs/react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
+import { USE_MSW } from '@/api/auth';
 import { qk } from '@/api/client';
 import {
   getMaterialCollaborationToken,
@@ -59,6 +59,12 @@ const NOTE_PLACEHOLDER = 'Type  /  for commands ...';
 const COLLABORATION_ROOM_ERROR = /room|schema|stale/i;
 const CHECKPOINT_DEBOUNCE_MS = 1000;
 
+interface StatelessProviderWrapper {
+  isConnected: boolean;
+  provider: { sendStateless: (payload: string) => void };
+  type: string;
+}
+
 /**
  * Asks the collaboration service for a durability receipt. Kept off the Y.Doc
  * on purpose: a marker written into the document would be an edit in its own
@@ -67,9 +73,9 @@ const CHECKPOINT_DEBOUNCE_MS = 1000;
 function sendCheckpointRequest(editor: PlateEditor, id: string) {
   const provider = editor
     .getOptions(YjsPlugin)
-    ._providers.find((candidate) => candidate.type === 'hocuspocus') as
-    | HocuspocusProviderWrapper
-    | undefined;
+    ._providers.find((candidate) =>
+      USE_MSW ? candidate.type === 'mock' : candidate.type === 'hocuspocus'
+    ) as StatelessProviderWrapper | undefined;
   if (!provider?.isConnected) return;
   provider.provider.sendStateless(
     JSON.stringify({ id, type: 'checkpoint-request' })
@@ -204,8 +210,8 @@ export function NoteEditorCore({
     NonNullable<ReturnType<typeof useWorkspaceMembers>['data']>[number]
   >;
   discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>['data']>;
-  currentUserId: string | null;
-  currentUserName: string | null;
+  currentUserId: string;
+  currentUserName: string;
   collaborationToken: MaterialCollaborationToken;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
   onDocumentRejected?: (message: string, stats: MaterialDocumentStats) => void;
@@ -242,9 +248,7 @@ export function NoteEditorCore({
   );
   const [_saveState, setSaveState] =
     useState<NoteEditorStatus['saveState']>('connecting');
-  const name = currentUserId
-    ? (users[currentUserId]?.name ?? currentUserName ?? 'Collaborator')
-    : 'Collaborator';
+  const name = users[currentUserId]?.name ?? currentUserName;
 
   const setStatus = useCallback(
     (next: NoteEditorStatus['saveState']) => {
@@ -259,6 +263,75 @@ export function NoteEditorCore({
   const saveNow = useRef(() => {});
   const resendCheckpoints = useRef(() => {});
   const reportRejection = useRef(onDocumentRejected);
+
+  const handleStatelessEvent = useCallback(
+    (payload: string) => {
+      const event = parseCollaborationEvent(payload);
+      if (!event) return;
+      if (
+        event.type === 'checkpoint-persisted' &&
+        event.materialId === material.id
+      ) {
+        setDocumentStats(event.metrics);
+        setDocumentLimitError(
+          event.limitCode
+            ? `${materialLimitMessage(event.limitCode)} Only edits that remove content will be saved.`
+            : null
+        );
+        let acknowledged = false;
+        for (const id of event.checkpointIds) {
+          if (pendingCheckpoints.current.delete(id)) acknowledged = true;
+        }
+        if (acknowledged && pendingCheckpoints.current.size === 0) {
+          setStatus('saved');
+        }
+        return;
+      }
+      if (
+        event.type === 'document-rejected' &&
+        event.materialId === material.id
+      ) {
+        if (rejected.current) return;
+        rejected.current = true;
+        pendingCheckpoints.current.clear();
+        setStatus('error');
+        reportRejection.current?.(
+          materialLimitMessage(event.code),
+          event.metrics
+        );
+        return;
+      }
+      if (
+        event.type === 'comments-invalidated' &&
+        event.materialId === material.id
+      ) {
+        queryClient.invalidateQueries({
+          queryKey: qk.materialDiscussions(material.id),
+        });
+        return;
+      }
+      if (
+        event.type === 'projection-updated' &&
+        event.materialId === material.id
+      ) {
+        queryClient.invalidateQueries({
+          queryKey: qk.material(material.id),
+        });
+        return;
+      }
+      if (
+        (event.type === 'compaction-evict' ||
+          event.type === 'compaction-complete') &&
+        (event.room === collaborationToken.room ||
+          event.materialId === material.id)
+      ) {
+        void queryClient.invalidateQueries({
+          queryKey: ['material', material.id, 'collaboration-token'],
+        });
+      }
+    },
+    [collaborationToken.room, material.id, queryClient, setStatus]
+  );
 
   const plugins = useMemo(
     () => [
@@ -292,88 +365,30 @@ export function NoteEditorCore({
             resendCheckpoints.current();
           },
           providers: [
-            {
-              options: {
-                name: collaborationToken.room,
-                onStateless: ({ payload }: { payload: string }) => {
-                  const event = parseCollaborationEvent(payload);
-                  if (!event) return;
-                  if (
-                    event.type === 'checkpoint-persisted' &&
-                    event.materialId === material.id
-                  ) {
-                    setDocumentStats(event.metrics);
-                    setDocumentLimitError(
-                      event.limitCode
-                        ? `${materialLimitMessage(event.limitCode)} Only edits that remove content will be saved.`
-                        : null
-                    );
-                    let acknowledged = false;
-                    for (const id of event.checkpointIds) {
-                      if (pendingCheckpoints.current.delete(id)) {
-                        acknowledged = true;
-                      }
-                    }
-                    if (acknowledged && pendingCheckpoints.current.size === 0) {
-                      setStatus('saved');
-                    }
-                    return;
-                  }
-                  if (
-                    event.type === 'document-rejected' &&
-                    event.materialId === material.id
-                  ) {
-                    // The service discards the room, so this editor's Y.Doc is
-                    // now a fork. The host remounts us onto the durable state.
-                    if (rejected.current) return;
-                    rejected.current = true;
-                    pendingCheckpoints.current.clear();
-                    setStatus('error');
-                    reportRejection.current?.(
-                      materialLimitMessage(event.code),
-                      event.metrics
-                    );
-                    return;
-                  }
-                  if (
-                    event.type === 'comments-invalidated' &&
-                    event.materialId === material.id
-                  ) {
-                    queryClient.invalidateQueries({
-                      queryKey: qk.materialDiscussions(material.id),
-                    });
-                    return;
-                  }
-                  if (
-                    event.type === 'projection-updated' &&
-                    event.materialId === material.id
-                  ) {
-                    queryClient.invalidateQueries({
-                      queryKey: qk.material(material.id),
-                    });
-                    return;
-                  }
-                  if (
-                    (event.type === 'compaction-evict' ||
-                      event.type === 'compaction-complete') &&
-                    (event.room === collaborationToken.room ||
-                      event.materialId === material.id)
-                  ) {
-                    void queryClient.invalidateQueries({
-                      queryKey: [
-                        'material',
-                        material.id,
-                        'collaboration-token',
-                      ],
-                    });
-                  }
+            USE_MSW
+              ? ({
+                  options: {
+                    initialValue,
+                    materialId: material.id,
+                    name: collaborationToken.room,
+                    onStateless: ({ payload }: { payload: string }) => {
+                      handleStatelessEvent(payload);
+                    },
+                  },
+                  type: 'mock',
+                } as never)
+              : {
+                  options: {
+                    name: collaborationToken.room,
+                    onStateless: ({ payload }: { payload: string }) => {
+                      handleStatelessEvent(payload);
+                    },
+                    token: async () =>
+                      (await getMaterialCollaborationToken(material.id)).token,
+                    url: collaborationToken.url,
+                  },
+                  type: 'hocuspocus' as const,
                 },
-                token: async () =>
-                  (await getMaterialCollaborationToken(material.id)).token,
-                url: collaborationToken.url,
-              },
-              type: 'hocuspocus' as const,
-            },
           ],
           userId: currentUserId,
           ydoc,
@@ -395,6 +410,7 @@ export function NoteEditorCore({
       collaborationToken.url,
       currentUserId,
       discussions,
+      handleStatelessEvent,
       material.id,
       material.workspaceId,
       mode,

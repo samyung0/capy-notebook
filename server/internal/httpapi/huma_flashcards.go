@@ -60,6 +60,11 @@ func (a *api) listDecks(ctx context.Context, _ *struct{}) (*decksOutput, error) 
 }
 
 func (a *api) createDeck(ctx context.Context, in *createDeckInput) (*deckOutput, error) {
+	if in.Body.WorkspaceID != "" {
+		if err := a.s.AssertWorkspaceEditor(ctx, userID(ctx), in.Body.WorkspaceID); err != nil {
+			return nil, hErr(err)
+		}
+	}
 	res, err := a.s.CreateDeck(ctx, userID(ctx), in.Body.Name, in.Body.Color, in.Body.WorkspaceID)
 	if err != nil {
 		return nil, hErr(err)

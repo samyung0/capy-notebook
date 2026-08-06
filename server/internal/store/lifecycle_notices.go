@@ -136,14 +136,14 @@ func (s *Store) sendLifecycleNotice(
 	}
 
 	result, err := NotifyTx(ctx, tx, NotifyParams{
-		UserID:   userID,
-		ToEmail:  toEmail,
-		Locale:   locale,
-		Kind:     NotifSystem,
-		Data:     data,
-		Href:     "/settings",
-		Template: template,
-		Category: "billing",
+		UserID:         userID,
+		ToEmail:        toEmail,
+		Locale:         locale,
+		Kind:           NotifSystem,
+		Data:           data,
+		Href:           "/settings",
+		Template:       template,
+		Category:       "billing",
 		IdempotencyKey: fmt.Sprintf("%s:%s:%d", kind, userID, periodEnd.Unix()),
 	})
 	if err != nil {

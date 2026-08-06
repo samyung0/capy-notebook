@@ -276,6 +276,10 @@
 }
 
 @layer components {
+  .note-editor .slate-selectable:has(> [data-slot='block-selection']) {
+    box-shadow: inset 0 0 0 9999px var(--tint-accent-1-bg);
+  }
+
   /* lowlight emits highlight.js token classes on code-syntax leaves. */
   .note-editor pre .hljs-comment,
   .note-editor pre .hljs-code,

@@ -107,8 +107,12 @@ func (a *api) cloneWorkspace(ctx context.Context, in *workspaceIDInput) (*cloneW
 			log.Printf("workspace clone %s -> %s: rag copy failed: %v", in.ID, ws.ID, err)
 		}
 	}
+	ownerState, err := a.workspaceOwnerState(ctx, ws)
+	if err != nil {
+		return nil, err
+	}
 	return &cloneWorkspaceOutput{Body: apimodel.CloneWorkspaceResp{
-		Workspace: apimodel.FromWorkspace(ws), RagCloned: ragCloned,
+		Workspace: apimodel.FromWorkspace(ws, ownerState), RagCloned: ragCloned,
 	}}, nil
 }
 

@@ -85,13 +85,17 @@ func (a *api) deletionPreflight(ctx context.Context, _ *struct{}) (*deletionPref
 	if err != nil {
 		return nil, hErr(err)
 	}
-	out.WorkspacesNeedingTransfer = apimodel.FromWorkspaces(blocking)
-
 	doomed, err := a.s.WorkspacesDestroyedByDeletion(ctx, uid)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	out.WorkspacesToDestroy = apimodel.FromWorkspaces(doomed)
+	// Both lists are owned by uid, so this resolves one account.
+	ownerStates, err := a.workspaceOwnerStates(ctx, append(append([]store.Workspace{}, blocking...), doomed...)...)
+	if err != nil {
+		return nil, err
+	}
+	out.WorkspacesNeedingTransfer = apimodel.FromWorkspaces(blocking, ownerStates)
+	out.WorkspacesToDestroy = apimodel.FromWorkspaces(doomed, ownerStates)
 
 	out.Subscription, err = a.liveSubscriptionBlocker(ctx, uid)
 	if err != nil {

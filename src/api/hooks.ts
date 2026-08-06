@@ -999,7 +999,7 @@ export function useDeleteMaterial(wsId: string) {
 export interface CreateNoteInput {
   content?: MaterialDocument;
   scopeChapters?: string[];
-  scopeFileIds?: string[];
+  scopeFileNames?: string[];
   title?: string;
 }
 export function useCreateNote(wsId: string) {
@@ -1021,7 +1021,7 @@ export function useCreateNote(wsId: string) {
 export interface UpdateMaterialInput {
   expectedRevision?: number;
   scopeChapters?: string[];
-  scopeFileIds?: string[];
+  scopeFileNames?: string[];
   title?: string;
 }
 export function useUpdateMaterial(wsId: string) {
@@ -1038,9 +1038,9 @@ export function useUpdateMaterial(wsId: string) {
               ...(patch.scopeChapters === undefined
                 ? {}
                 : { scopeChapters: patch.scopeChapters }),
-              ...(patch.scopeFileIds === undefined
+              ...(patch.scopeFileNames === undefined
                 ? {}
-                : { scopeFileIds: patch.scopeFileIds }),
+                : { scopeFileNames: patch.scopeFileNames }),
               contentBytes: result.contentBytes,
               revision: result.revision,
               updatedAt: result.updatedAt,
@@ -1050,7 +1050,7 @@ export function useUpdateMaterial(wsId: string) {
       if (
         patch.title !== undefined ||
         patch.scopeChapters !== undefined ||
-        patch.scopeFileIds !== undefined
+        patch.scopeFileNames !== undefined
       ) {
         qc.invalidateQueries({ queryKey: qk.materials(wsId) });
       }

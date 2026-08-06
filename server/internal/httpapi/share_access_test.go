@@ -142,6 +142,36 @@ func TestShareHTTPCapabilities(t *testing.T) {
 	}
 }
 
+func TestCloudImportAuthorization(t *testing.T) {
+	h := openShareHTTP(t)
+
+	cases := []struct {
+		name   string
+		user   string
+		status int
+	}{
+		{"owner reaches request validation", "u_owner", http.StatusBadRequest},
+		{"editor reaches request validation", "u_editor", http.StatusBadRequest},
+		{"commenter is rejected", "u_commenter", http.StatusNotFound},
+		{"viewer is rejected", "u_viewer", http.StatusNotFound},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := doReq(
+				t,
+				h,
+				http.MethodPost,
+				"/api/workspaces/ws_e2e_private/sources/import",
+				tc.user,
+				map[string]any{},
+			)
+			if rec.Code != tc.status {
+				t.Fatalf("cloud import by %s = %d body=%s", tc.user, rec.Code, rec.Body.String())
+			}
+		})
+	}
+}
+
 func TestShareHTTPWritesAndClone(t *testing.T) {
 	h := openShareHTTP(t)
 

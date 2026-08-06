@@ -304,7 +304,7 @@ func (s *Store) ListPublicWorkspaces(ctx context.Context) ([]PublicWorkspace, er
 	out := []PublicWorkspace{}
 	for rows.Next() {
 		var w PublicWorkspace
-		if err := rows.Scan(&w.ID, &w.Name, &w.Color, &w.Privacy, &w.ShareRole, &w.Tags, &w.ChapterCount, &w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.Author, &w.Clones); err != nil {
+		if err := rows.Scan(&w.ID, &w.Name, &w.Color, &w.Privacy, &w.ShareRole, &w.Tags, &w.OwnerUserID, &w.OwnerName, &w.ChapterCount, &w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.Author, &w.Clones); err != nil {
 			return nil, err
 		}
 		out = append(out, w)
@@ -313,7 +313,7 @@ func (s *Store) ListPublicWorkspaces(ctx context.Context) ([]PublicWorkspace, er
 }
 
 func (s *Store) ListPublicQuizzes(ctx context.Context) ([]PublicQuiz, error) {
-	rows, err := s.pool.Query(ctx, `SELECT m.id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.scope_chapters, m.scope_file_ids, m.privacy, m.color, m.created_at,
+	rows, err := s.pool.Query(ctx, `SELECT m.id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.scope_chapters, m.scope_file_names, m.privacy, m.color, m.created_at,
 			COALESCE(u.name,'Unknown'), m.clone_count
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
 		WHERE m.kind='quiz' AND (m.privacy='public' OR w.privacy='public')
@@ -327,7 +327,7 @@ func (s *Store) ListPublicQuizzes(ctx context.Context) ([]PublicQuiz, error) {
 		var mt Material
 		var author string
 		var clones int
-		if err := rows.Scan(&mt.ID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.ScopeChapters, &mt.ScopeFileIDs, &mt.Privacy, &mt.Color, &mt.CreatedAt, &author, &clones); err != nil {
+		if err := rows.Scan(&mt.ID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.ScopeChapters, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &author, &clones); err != nil {
 			return nil, err
 		}
 		q, err := quizFromMaterial(mt)
@@ -721,13 +721,11 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 		}
 	}
 
-	// Files (old id -> new id); doc_id is copied so the pipeline's LightRAG
+	// Files; doc_id is copied so the pipeline's LightRAG
 	// row copy (keyed by workspace) keeps the file <-> document link intact.
-	fileMap := map[string]string{}
 	{
 		for _, f := range snapshot.files {
 			nid := uid("f")
-			fileMap[f.id] = nid
 			var chapterID *string
 			if f.chapterID != nil {
 				if mapped, ok := chapterMap[*f.chapterID]; ok {
@@ -775,20 +773,14 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 					chapterID = &mapped
 				}
 			}
-			scopeFiles := make([]string, 0, len(mt.ScopeFileIDs))
-			for _, fid := range mt.ScopeFileIDs {
-				if mapped, ok := fileMap[fid]; ok {
-					scopeFiles = append(scopeFiles, mapped)
-				}
-			}
 			content := materialSnapshot.content
 			metrics := materialSnapshot.metrics
 			if _, err := tx.Exec(ctx, `INSERT INTO materials
 				(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
-				 chapter_id, position, scope_chapters, scope_file_ids, privacy, color, node_count, max_depth, updated_at, revision, updated_by)
+				 chapter_id, position, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by)
 				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2)`,
 				nid, userID, newID, name, mt.Kind, mt.Title, json.RawMessage(content), chapterID,
-				mt.Position, mt.ScopeChapters, scopeFiles, mt.Color, metrics.NodeCount,
+				mt.Position, mt.ScopeChapters, mt.ScopeFileNames, mt.Color, metrics.NodeCount,
 				metrics.MaxDepth, mt.UpdatedAt, mt.Revision); err != nil {
 				return Workspace{}, err
 			}
@@ -860,7 +852,7 @@ func (s *Store) CloneMaterial(ctx context.Context, userID, matID string) (Materi
 	nid := uid("mat")
 	if _, err := tx.Exec(ctx, `INSERT INTO materials
 		(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
-		 scope_chapters, scope_file_ids, privacy, color, node_count, max_depth, updated_at, revision, updated_by)
+		 scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by)
 		VALUES ($1,$2,$2,NULL,'',$3,$4,$5,$6,'{}','private',$7,$8,$9,$10,$11,$2)`,
 		nid, userID, src.Kind, src.Title, json.RawMessage(content), src.ScopeChapters,
 		src.Color, metrics.NodeCount, metrics.MaxDepth, src.UpdatedAt, src.Revision); err != nil {

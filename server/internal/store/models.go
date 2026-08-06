@@ -25,12 +25,19 @@ type User struct {
 }
 
 type Workspace struct {
-	ID             string    `json:"id"`
-	Name           string    `json:"name"`
-	Color          UserColor `json:"color"`
-	Privacy        Privacy   `json:"privacy"`
-	ShareRole      ShareRole `json:"shareRole"`
-	Tags           []Tag     `json:"tags"`
+	ID        string    `json:"id"`
+	Name      string    `json:"name"`
+	Color     UserColor `json:"color"`
+	Privacy   Privacy   `json:"privacy"`
+	ShareRole ShareRole `json:"shareRole"`
+	Tags      []Tag     `json:"tags"`
+	// OwnerUserID is the account every byte in this workspace is charged to.
+	// It is the account whose quota governs whether members may add content,
+	// so it is not interchangeable with the requester.
+	OwnerUserID string `json:"ownerUserId"`
+	// OwnerName is that account's display name, so a member can be told whose
+	// limit is blocking them rather than a nameless "the owner".
+	OwnerName      string    `json:"ownerName"`
 	ChapterCount   int       `json:"chapterCount"`
 	FileCount      int       `json:"fileCount"`
 	CreatedAt      time.Time `json:"createdAt"`
@@ -160,7 +167,7 @@ type Flashcard struct {
 // Material is a persisted versioned Plate document scoped to chapters and/or
 // files. Every material kind shares this universal envelope.
 //
-// ScopeChapters/ScopeFileIDs record *provenance* (what a generated artifact was
+// ScopeChapters/ScopeFileNames record *provenance* (what a generated artifact was
 // built from). ChapterID is the orthogonal *membership* link — which chapter
 // the material is filed under in the tree (null = unfiled), mirroring File.
 type Material struct {
@@ -176,19 +183,19 @@ type Material struct {
 	Title         string `json:"title"`
 	// Content is the encoded materialdoc.Envelope stored as jsonb. The API
 	// model decodes it so clients receive an object rather than a JSON string.
-	Content       string    `json:"-"`
-	ChapterID     *string   `json:"chapterId"` // null = unfiled (not omitempty)
-	Position      int64     `json:"position"`
-	ScopeChapters []string  `json:"scopeChapters" nullable:"false"`
-	ScopeFileIDs  []string  `json:"scopeFileIds" nullable:"false"`
-	Privacy       Privacy   `json:"privacy"`
-	Color         UserColor `json:"color,omitempty"` // decks only; presentation tint
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
-	Revision      int64     `json:"revision"`
-	SizeBytes     int64     `json:"-"`
-	NodeCount     int       `json:"-"`
-	MaxDepth      int       `json:"-"`
+	Content        string    `json:"-"`
+	ChapterID      *string   `json:"chapterId"` // null = unfiled (not omitempty)
+	Position       int64     `json:"position"`
+	ScopeChapters  []string  `json:"scopeChapters" nullable:"false"`
+	ScopeFileNames []string  `json:"scopeFileNames" nullable:"false"`
+	Privacy        Privacy   `json:"privacy"`
+	Color          UserColor `json:"color,omitempty"` // decks only; presentation tint
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
+	Revision       int64     `json:"revision"`
+	SizeBytes      int64     `json:"-"`
+	NodeCount      int       `json:"-"`
+	MaxDepth       int       `json:"-"`
 	// IsOwner is request-scoped (not persisted): true when the requester owns
 	// the parent workspace, false for link/public shared reads.
 	IsOwner      bool               `json:"isOwner"`

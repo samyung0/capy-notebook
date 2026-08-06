@@ -58,6 +58,7 @@ import { ChatPanel } from '@/features/workspace/ChatPanel';
 import type { GenerateMode } from '@/features/workspace/GenerateFormDialog';
 import { GeneratePanel } from '@/features/workspace/GeneratePanel';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
+import { StorageOwnerBanner } from '@/features/workspace/StorageOwnerBanner';
 import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
 import { cn } from '@/lib/cn';
@@ -519,7 +520,7 @@ export default function WorkspaceOpen() {
               >
                 {!readOnly && (
                   <Button
-                    className="h-fit py-2.5"
+                    className="h-fit py-2"
                     iconLeft="newFile"
                     onClick={() => openAddSource(workspaceId)}
                     size="md"
@@ -531,7 +532,7 @@ export default function WorkspaceOpen() {
                 {/* TODO: change share to settings or configure since there will be more workspace settings in future */}
                 {canShare && (
                   <Button
-                    className="h-fit py-2.5"
+                    className="h-fit py-2"
                     iconLeft="link"
                     onClick={() => setShareOpen(true)}
                     size="md"
@@ -747,6 +748,7 @@ export default function WorkspaceOpen() {
         >
           {/* Center: content viewer */}
           <Panel className="w-full" sectionClassName="h-full gap-0">
+            <StorageOwnerBanner workspace={ws} />
             <CenterContent
               color={ws?.color}
               item={openItem}

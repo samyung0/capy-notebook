@@ -468,6 +468,7 @@ export const handlers = [
       privacy: 'private',
       role: 'owner',
       shareRole: 'viewer',
+      storageOwnerName: db.user.name,
       tags: resolveTags('workspace', body.tags),
     };
     db.workspaces.unshift(ws);
@@ -772,16 +773,13 @@ export const handlers = [
           createdAt: new Date().toISOString(),
           id: uid('mat'),
           privacy: 'private',
-          scopeFileIds: material.scopeFileIds
-            .map((id) => fileMap.get(id))
-            .filter((id): id is string => !!id),
+          scopeFileNames: material.scopeFileNames,
           workspaceId: newId,
           workspaceName: workspace.name,
         });
       });
     return HttpResponse.json({ ragCloned: true, workspace }, { status: 201 });
   }),
-
   /* ---------------- chapters & files ---------------- */
   http.get('/api/workspaces/:id/chapters', async ({ params }) => {
     await latency();
@@ -912,7 +910,6 @@ export const handlers = [
     }
     return new HttpResponse(null, { status: 204 });
   }),
-
   /* ---------------- study materials ---------------- */
   http.get('/api/workspaces/:id/materials', async ({ params }) => {
     await latency();
@@ -939,7 +936,7 @@ export const handlers = [
       title?: string;
       content?: Material['content'];
       scopeChapters?: string[];
-      scopeFileIds?: string[];
+      scopeFileNames?: string[];
     };
     const mt: Material = {
       ...ownerMaterialAccess,
@@ -951,7 +948,7 @@ export const handlers = [
       privacy: 'private',
       revision: 1,
       scopeChapters: body.scopeChapters ?? [],
-      scopeFileIds: body.scopeFileIds ?? [],
+      scopeFileNames: body.scopeFileNames ?? [],
       title: body.title || 'Untitled note',
       workspaceId: wsId,
       workspaceName: ws?.name ?? '',
@@ -966,6 +963,20 @@ export const handlers = [
     const mt = db.materials.find((x) => x.id === params.id);
     return mt ? HttpResponse.json(mt) : new HttpResponse(null, { status: 404 });
   }),
+  http.post('/api/materials/:id/collaboration-token', async ({ params }) => {
+    const material = db.materials.find((item) => item.id === params.id);
+    if (!material) return new HttpResponse(null, { status: 404 });
+    return HttpResponse.json(
+      {
+        access: material.capabilities.canEdit ? 'write' : 'comment',
+        expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
+        room: `material:${material.id}:schema:1`,
+        token: 'mock-collaboration-token',
+        url: 'mock://collaboration',
+      },
+      { status: 201 }
+    );
+  }),
   http.patch('/api/materials/:id', async ({ params, request }) => {
     await latency();
     const mt = db.materials.find((x) => x.id === params.id);
@@ -975,7 +986,7 @@ export const handlers = [
       expectedRevision?: number;
       chapterId?: string;
       scopeChapters?: string[];
-      scopeFileIds?: string[];
+      scopeFileNames?: string[];
     };
     if (
       body.title != null &&
@@ -993,7 +1004,7 @@ export const handlers = [
     if (body.chapterId != null)
       mt.chapterId = body.chapterId === '' ? null : body.chapterId;
     if (body.scopeChapters != null) mt.scopeChapters = body.scopeChapters;
-    if (body.scopeFileIds != null) mt.scopeFileIds = body.scopeFileIds;
+    if (body.scopeFileNames != null) mt.scopeFileNames = body.scopeFileNames;
     mt.updatedAt = new Date().toISOString();
     await persistEditorState(mt.id);
     return HttpResponse.json({
@@ -1231,7 +1242,6 @@ export const handlers = [
     }, 2600);
     return HttpResponse.json(f, { status: 201 });
   }),
-
   /* ---------------- chat & generate ---------------- */
   http.post('/api/workspaces/:id/chat', async ({ request }) => {
     await delay(700);
@@ -1248,7 +1258,6 @@ export const handlers = [
       text: `Based on your sources, ${body.text.replace(/\?$/, '')} relates to the key ideas in your materials. In short: the cell membrane regulates transport, and energy is produced in the mitochondria.`,
     });
   }),
-
   /* ---------------- conversations ---------------- */
   http.get('/api/workspaces/:id/conversations', async ({ params }) => {
     await latency();
@@ -1293,7 +1302,6 @@ export const handlers = [
     }
     return new HttpResponse(null, { status: 204 });
   }),
-
   /* ---------------- chat streaming (SSE) ----------------
      Mirrors the Go gateway: persists the user turn, streams the answer
      token-by-token as `data: {type,...}` events, then saves the assistant
@@ -1348,7 +1356,11 @@ export const handlers = [
       async start(controller) {
         const send = (o: unknown) =>
           controller.enqueue(encoder.encode(`data: ${JSON.stringify(o)}\n\n`));
-        send({ conversationId: convId, messageId: assistantId, type: 'start' });
+        send({
+          conversationId: convId,
+          messageId: assistantId,
+          type: 'start',
+        });
         await delay(120);
         send({ citations, type: 'citations' });
         let acc = '';
@@ -1370,7 +1382,11 @@ export const handlers = [
         });
         conv!.updatedAt = new Date().toISOString();
         if (!aborted)
-          send({ status: 'complete', tokenCount: words.length, type: 'done' });
+          send({
+            status: 'complete',
+            tokenCount: words.length,
+            type: 'done',
+          });
         controller.close();
       },
     });
@@ -1381,7 +1397,6 @@ export const handlers = [
       },
     });
   }),
-
   http.post('/api/workspaces/:id/complete/stream', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as {
       mode?: 'command' | 'continue';
@@ -1413,7 +1428,6 @@ export const handlers = [
       },
     });
   }),
-
   /* Plate/@ai-sdk UI-message stream. This mirrors the production protocol so
      editor integration can be developed under MSW without provider calls. */
   http.post('/api/workspaces/:id/ai/command', async ({ request }) => {
@@ -1506,7 +1520,6 @@ export const handlers = [
       },
     });
   }),
-
   http.post('/api/workspaces/:id/ai/copilot', async ({ request }) => {
     const body = (await request.json()) as { prompt?: string };
     if (request.signal.aborted) return HttpResponse.json(null, { status: 408 });
@@ -1517,12 +1530,10 @@ export const handlers = [
       usage: { completionTokens: 5, promptTokens: 8 },
     });
   }),
-
   http.post('/api/transcribe', async () => {
     await delay(600);
     return HttpResponse.json({ text: 'This is a mock voice transcription.' });
   }),
-
   http.post('/api/workspaces/:id/generate', async ({ params, request }) => {
     await delay(900);
     const opts = (await request.json()) as GenerateOptions;
@@ -1535,7 +1546,12 @@ export const handlers = [
       .map((cid) => db.chapters.find((c) => c.id === cid)?.name)
       .filter(Boolean) as string[];
     // Human-readable scope, for material titles / bodies.
-    const scopeFileNames = ('fileIds' in opts ? opts.fileIds : [])
+    const selectedFileIds = new Set(opts.fileIds);
+    for (const chapterId of opts.chapters) {
+      const chapter = db.chapters.find((item) => item.id === chapterId);
+      for (const fileId of chapter?.fileIds ?? []) selectedFileIds.add(fileId);
+    }
+    const scopeFileNames = [...selectedFileIds]
       .map((fid) => db.files.find((f) => f.id === fid)?.name)
       .filter(Boolean) as string[];
     const scopeLabel =
@@ -1562,7 +1578,7 @@ export const handlers = [
         kind: 'flashcards',
         privacy: 'private',
         scopeChapters: scopeChapterNames,
-        scopeFileIds: opts.fileIds,
+        scopeFileNames,
         title: name,
         workspaceId: wsId,
         workspaceName: wsName,
@@ -1588,7 +1604,10 @@ export const handlers = [
         chapterId: null,
         content: createMaterialDocument([
           { children: [{ text: `${wsName} ${opts.kind}` }], type: 'h1' },
-          { children: [{ text: `Generated from ${scopeLabel}.` }], type: 'p' },
+          {
+            children: [{ text: `Generated from ${scopeLabel}.` }],
+            type: 'p',
+          },
           mermaidNode(
             opts.kind === 'mindmap'
               ? 'mindmap\n  root((Topic))\n    Key idea A\n      Detail 1\n      Detail 2\n    Key idea B\n      Detail 3'
@@ -1600,7 +1619,7 @@ export const handlers = [
         kind: opts.kind,
         privacy: 'private',
         scopeChapters: scopeChapterNames,
-        scopeFileIds: opts.fileIds,
+        scopeFileNames,
         title: `${wsName} ${opts.kind}`,
         workspaceId: wsId,
         workspaceName: wsName,
@@ -1675,7 +1694,10 @@ export const handlers = [
             ...base,
             correct: [0],
             options: [
-              { explanation: 'Correct — this is the best answer.', value: 'A' },
+              {
+                explanation: 'Correct — this is the best answer.',
+                value: 'A',
+              },
               { explanation: 'Incorrect — a common distractor.', value: 'B' },
               { explanation: 'Incorrect for this question.', value: 'C' },
               { explanation: 'Incorrect for this question.', value: 'D' },
@@ -1694,7 +1716,7 @@ export const handlers = [
       kind: 'quiz',
       privacy: 'private',
       scopeChapters: scopeChapterNames,
-      scopeFileIds: opts.fileIds,
+      scopeFileNames,
       title: name,
       workspaceId: wsId,
       workspaceName: wsName,
@@ -1706,7 +1728,6 @@ export const handlers = [
       quiz: db.quizFromMaterial(quizMat),
     });
   }),
-
   /* ---------------- quizzes & attempts ---------------- */
   http.get('/api/quizzes', async () => {
     await latency();
@@ -1725,7 +1746,7 @@ export const handlers = [
       kind: 'quiz',
       privacy: body.privacy ?? 'private',
       scopeChapters: body.chapters ?? [],
-      scopeFileIds: [],
+      scopeFileNames: [],
       title: name,
       workspaceId: body.workspaceId ?? '',
       workspaceName: ws?.name ?? '',
@@ -1816,7 +1837,7 @@ export const handlers = [
       kind: 'quiz',
       privacy: 'private',
       scopeChapters: source.chapters,
-      scopeFileIds: [],
+      scopeFileNames: [],
       title: source.name,
       workspaceId: '',
       workspaceName: '',
@@ -1887,7 +1908,6 @@ export const handlers = [
     db.attempts.unshift(at);
     return HttpResponse.json(at, { status: 201 });
   }),
-
   /* ---------------- flashcards ---------------- */
   http.get('/api/decks', async () => {
     await latency();
@@ -1908,7 +1928,7 @@ export const handlers = [
       kind: 'flashcards',
       privacy: 'private',
       scopeChapters: [],
-      scopeFileIds: [],
+      scopeFileNames: [],
       title: name,
       workspaceId: body.workspaceId ?? '',
       workspaceName: ws?.name ?? body.workspaceName ?? '',
@@ -1960,7 +1980,7 @@ export const handlers = [
       id,
       isOwner: true,
       privacy: 'private',
-      scopeFileIds: [],
+      scopeFileNames: [],
       workspaceId: '',
       workspaceName: '',
     };

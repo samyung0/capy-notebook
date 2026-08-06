@@ -111,15 +111,15 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	res, err := a.s.CreateMaterial(ctx, store.Material{
-		CreatedBy:     userID(ctx),
-		WorkspaceID:   in.ID,
-		WorkspaceName: ws.Name,
-		Kind:          kind,
-		Title:         title,
-		Content:       raw,
-		ScopeChapters: in.Body.ScopeChapters,
-		ScopeFileIDs:  in.Body.ScopeFileIDs,
-		Privacy:       "private",
+		CreatedBy:      userID(ctx),
+		WorkspaceID:    in.ID,
+		WorkspaceName:  ws.Name,
+		Kind:           kind,
+		Title:          title,
+		Content:        raw,
+		ScopeChapters:  in.Body.ScopeChapters,
+		ScopeFileNames: in.Body.ScopeFileNames,
+		Privacy:        "private",
 	})
 	if err != nil {
 		return nil, hErr(err)
@@ -150,10 +150,17 @@ func (a *api) updateMaterial(
 	ctx context.Context,
 	in *updateMaterialInput,
 ) (*materialUpdateOutput, error) {
-	// Metadata edits (title, privacy, filing) require a fully writable account.
-	// Content shrink recovery goes through the collaboration server's shrink
-	// access, not this REST path.
-	if err := a.requireAccountEdit(ctx); err != nil {
+	// Title, filing and scope are size-neutral, so an over-quota account keeps
+	// them: the quota is a creation gate, and renaming is part of how such an
+	// account finds what to delete. Publishing is not size-neutral in effect —
+	// a public material is an Explore surface and every clone of it is charged
+	// to the cloner — so it needs a fully writable account. Content shrink
+	// recovery goes through the collaboration server, not this REST path.
+	if in.Body.Privacy != nil {
+		if err := a.requireAccountEdit(ctx); err != nil {
+			return nil, err
+		}
+	} else if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
 	access, err := a.s.AssertMaterialContentEditor(ctx, userID(ctx), in.ID)
@@ -169,7 +176,7 @@ func (a *api) updateMaterial(
 	patch := store.MaterialPatch{
 		Title:            in.Body.Title,
 		ScopeChapters:    in.Body.ScopeChapters,
-		ScopeFileIDs:     in.Body.ScopeFileIDs,
+		ScopeFileNames:   in.Body.ScopeFileNames,
 		Privacy:          in.Body.Privacy,
 		ExpectedRevision: in.Body.ExpectedRevision,
 		UpdatedBy:        userID(ctx),

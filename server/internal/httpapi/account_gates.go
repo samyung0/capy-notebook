@@ -20,7 +20,13 @@ func (a *api) requireAccountCreate(ctx context.Context) error {
 }
 
 // requireAccountEdit rejects the request when the authenticated user may not
-// perform unrestricted mutations (rename, schedule edits, sharing changes).
+// perform unrestricted mutations.
+//
+// Reserve this for actions that can grow storage or widen exposure. Size-
+// neutral metadata (rename, re-file, reorder) must use requireAccountMutate
+// instead: the over-quota states are a creation gate, and blocking a rename
+// would leave an over-quota owner unable to tidy up the content they are being
+// asked to shrink.
 func (a *api) requireAccountEdit(ctx context.Context) error {
 	status, err := a.s.AccountAccess(ctx, userID(ctx))
 	if err != nil {
@@ -45,14 +51,42 @@ func (a *api) requireAccountMutate(ctx context.Context) error {
 	return nil
 }
 
-// accountCreateAllowed is the raw-chi counterpart of requireAccountCreate.
-func (a *api) accountCreateAllowed(ctx context.Context, uid string) error {
-	status, err := a.s.AccountAccess(ctx, uid)
-	if err != nil {
-		return err
+// workspaceOwnerStates resolves the lifecycle state of each workspace's storage
+// owner, keyed by owner user id. Owners repeat heavily in a list (most rows in
+// "my workspaces" share one), so each distinct account is evaluated once.
+//
+// This deliberately reports the owner's state and not the requester's: the
+// owner is the account charged for the workspace's bytes, so the owner is who
+// has to free space before anybody — member or owner — can add to it.
+func (a *api) workspaceOwnerStates(
+	ctx context.Context,
+	ws ...store.Workspace,
+) (map[string]store.AccountState, error) {
+	out := make(map[string]store.AccountState, 1)
+	for _, w := range ws {
+		if w.OwnerUserID == "" {
+			continue
+		}
+		if _, done := out[w.OwnerUserID]; done {
+			continue
+		}
+		status, err := a.s.AccountAccess(ctx, w.OwnerUserID)
+		if err != nil {
+			return nil, hErr(err)
+		}
+		out[w.OwnerUserID] = status.State
 	}
-	return status.CreateErr()
+	return out, nil
 }
 
-// Ensure the helpers stay typed against the store error they re-wrap.
-var _ = store.AccountActive
+// workspaceOwnerState is the single-workspace form of workspaceOwnerStates.
+func (a *api) workspaceOwnerState(
+	ctx context.Context,
+	w store.Workspace,
+) (store.AccountState, error) {
+	states, err := a.workspaceOwnerStates(ctx, w)
+	if err != nil {
+		return "", err
+	}
+	return states[w.OwnerUserID], nil
+}

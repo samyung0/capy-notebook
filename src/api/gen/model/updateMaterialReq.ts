@@ -19,6 +19,6 @@ export interface UpdateMaterialReq {
   /** Visibility (share standalone) */
   privacy?: Privacy;
   scopeChapters?: string[];
-  scopeFileIds?: string[];
+  scopeFileNames?: string[];
   title?: string;
 }

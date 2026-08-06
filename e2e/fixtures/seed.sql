@@ -67,7 +67,7 @@ ON CONFLICT (id) DO NOTHING;
 -- Minimal Plate quiz / flashcard documents.
 INSERT INTO materials (
   id, created_by, workspace_id, workspace_name, kind, title, content,
-  chapter_id, scope_chapters, scope_file_ids, privacy, color, created_at, updated_at, revision, updated_by
+  chapter_id, scope_chapters, scope_file_names, privacy, color, created_at, updated_at, revision, updated_by
 ) VALUES
   (
     'qz_e2e_private', 'u_owner', 'ws_e2e_private', 'E2E Private Workspace', 'quiz',

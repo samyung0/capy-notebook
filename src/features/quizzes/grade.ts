@@ -106,3 +106,23 @@ export function emptyAnswer(q: Question): Answer {
       return '';
   }
 }
+
+/** The canonical answer used when a question is rendered as an answer key. */
+export function answerKey(q: Question): Answer {
+  switch (q.type) {
+    case 'mcq':
+    case 'multi':
+      return q.correct;
+    case 'boolean':
+      return q.correct;
+    case 'fill':
+    case 'short':
+      return q.accepted[0]?.value ?? '';
+    case 'ordering':
+      return q.items.map((item) => item.value);
+    case 'matching':
+      return Object.fromEntries(q.pairs.map((pair) => [pair.left, pair.right]));
+    default:
+      return '';
+  }
+}

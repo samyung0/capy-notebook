@@ -147,6 +147,28 @@ func (s *Store) AccountAccess(ctx context.Context, userID string) (AccountStatus
 	return s.accountAccess(ctx, s.pool, userID)
 }
 
+// MaterialOwnerAccess resolves the lifecycle state of the account charged for a
+// material's bytes, which is the account whose limits govern whether the
+// document may grow. Every byte a collaborator adds lands on owner_user_id, so
+// a write gate keyed on the connecting user answers the wrong question in both
+// directions: it restricts an over-quota editor inside a healthy owner's
+// workspace, and lets an active editor push an over-quota owner further over.
+func (s *Store) MaterialOwnerAccess(
+	ctx context.Context,
+	materialID string,
+) (AccountStatus, error) {
+	var ownerID string
+	err := s.pool.QueryRow(ctx,
+		`SELECT owner_user_id FROM materials WHERE id=$1`, materialID).Scan(&ownerID)
+	if isNoRows(err) {
+		return AccountStatus{}, ErrNotFound
+	}
+	if err != nil {
+		return AccountStatus{}, err
+	}
+	return s.accountAccess(ctx, s.pool, ownerID)
+}
+
 // AccountSessionAllowed answers the auth middleware's narrower question without
 // exposing the full status, so the auth package stays independent of this one.
 // An unknown user is allowed: the middleware provisions rows lazily, and a

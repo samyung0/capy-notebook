@@ -64,11 +64,11 @@ type UpdateFileReq struct {
 // CreateMaterialReq is the body for POST /api/workspaces/{id}/materials. Used to
 // create a user-authored note (markdown editor). Kind defaults to "note".
 type CreateMaterialReq struct {
-	Kind          string                `json:"kind,omitempty" doc:"Material kind; defaults to note"`
-	Title         string                `json:"title,omitempty"`
-	Content       *materialdoc.Envelope `json:"content,omitempty" doc:"Versioned Plate document"`
-	ScopeChapters []string              `json:"scopeChapters,omitempty"`
-	ScopeFileIDs  []string              `json:"scopeFileIds,omitempty"`
+	Kind           string                `json:"kind,omitempty" doc:"Material kind; defaults to note"`
+	Title          string                `json:"title,omitempty"`
+	Content        *materialdoc.Envelope `json:"content,omitempty" doc:"Versioned Plate document"`
+	ScopeChapters  []string              `json:"scopeChapters,omitempty"`
+	ScopeFileNames []string              `json:"scopeFileNames,omitempty"`
 }
 
 // UpdateMaterialReq is the (partial) body for PATCH /api/materials/{id}.
@@ -82,7 +82,7 @@ type UpdateMaterialReq struct {
 	ExpectedRevision *int64         `json:"expectedRevision,omitempty" minimum:"1" doc:"Required when changing title"`
 	ChapterID        *string        `json:"chapterId,omitempty" doc:"Chapter to file under; empty string unfiles; omit to leave unchanged"`
 	ScopeChapters    *[]string      `json:"scopeChapters,omitempty"`
-	ScopeFileIDs     *[]string      `json:"scopeFileIds,omitempty"`
+	ScopeFileNames   *[]string      `json:"scopeFileNames,omitempty"`
 	Privacy          *store.Privacy `json:"privacy,omitempty" doc:"Visibility (share standalone)"`
 }
 

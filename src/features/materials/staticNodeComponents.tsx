@@ -57,6 +57,15 @@ import {
   getCodeBlockLanguageLabel,
   normalizeCalloutVariant,
 } from '@/features/notes/richBlockConfig';
+import { answerKey } from '@/features/quizzes/grade';
+import {
+  QuestionRunner,
+  QuizOptionView,
+} from '@/features/quizzes/QuestionRunner';
+import {
+  type QuizOptionRole,
+  quizOptionClassName,
+} from '@/features/quizzes/quizOptionStyles';
 import { cn } from '@/lib/cn';
 import type {
   FlashcardElement as FlashcardNode,
@@ -64,15 +73,10 @@ import type {
   QuizOptionElement as QuizOptionNode,
   QuizQuestionElement as QuizQuestionNode,
 } from './document';
+import { quizQuestionElementToQuestion } from './document';
 import { Katex } from './Katex';
 import { type MediaAssetNode, MediaAssetView } from './MediaAssetView';
-import { Mermaid } from './Mermaid';
-import {
-  type QuizOptionRole,
-  QuizOptionView,
-  QuizQuestionHeader,
-  quizOptionClassName,
-} from './QuizBlock';
+import { Mermaid, mermaidBlockLabel } from './Mermaid';
 import { YouTubeEmbed, type YouTubeNode } from './YouTubeEmbed';
 
 /* ------------------------------------------------------------- helpers */
@@ -375,7 +379,7 @@ function FlashcardsElement(props: SlateElementProps) {
 function MermaidElement(props: SlateElementProps) {
   const element = props.element as unknown as MermaidNode;
   return (
-    <BlockShell label="Diagram" props={props}>
+    <BlockShell label={mermaidBlockLabel(element.source)} props={props}>
       <Mermaid code={element.source} />
     </BlockShell>
   );
@@ -387,14 +391,17 @@ function QuizQuestionElement(props: SlateElementProps) {
   const pathIndex = path?.[path.length - 1];
   const questionNumber =
     typeof pathIndex === 'number' ? pathIndex + 1 : undefined;
+  const question = quizQuestionElementToQuestion(element);
   return (
     <SlateElement {...props} className={QUIZ_REVIEW_QUESTION_CLASS}>
-      <QuizQuestionHeader
-        level={element.level}
+      <QuestionRunner
+        answer={answerKey(question)}
+        onChange={() => undefined}
+        question={question}
         questionNumber={questionNumber}
-        questionType={element.questionType}
+        review
+        showExplanation
       />
-      {props.children}
     </SlateElement>
   );
 }

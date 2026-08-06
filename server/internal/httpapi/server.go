@@ -234,12 +234,13 @@ func (a *api) assertWSRead(w http.ResponseWriter, r *http.Request, wsID string) 
 // addSource handles both the real upload (multipart: stores bytes, marks the
 // file 'processing', enqueues an ingest job) and the mock-compatible JSON
 // metadata path (no bytes, lands 'ready').
+//
+// Storage is charged to the workspace owner, so the lifecycle and quota gate is
+// the owner's and lives in gateStorageTx. An actor-level account check here
+// would block an over-quota editor from contributing to a workspace whose owner
+// has room, which no other upload path does.
 func (a *api) addSource(w http.ResponseWriter, r *http.Request) {
 	if !a.assertWS(w, r, id(r)) {
-		return
-	}
-	if err := a.accountCreateAllowed(r.Context(), uid(r)); err != nil {
-		a.fail(w, err)
 		return
 	}
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
@@ -496,7 +497,9 @@ func (a *api) generate(w http.ResponseWriter, r *http.Request) {
 	if !a.assertWS(w, r, id(r)) {
 		return
 	}
-	if err := a.accountCreateAllowed(r.Context(), uid(r)); err != nil {
+	// Model spend is the actor's; the material it produces is the workspace
+	// owner's and is gated by gateStorageTx further down.
+	if err := a.generationCreditsAllowed(r.Context(), uid(r)); err != nil {
 		a.fail(w, err)
 		return
 	}
@@ -529,17 +532,23 @@ func (a *api) generate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, payload)
 }
 
-// resolveScope maps the requested generation scope into (a) the concrete set of
-// file ids for retrieval filtering and (b) the chapter *names* used for display
-// (stored on the quiz/material) and the pipeline's natural-language scope hint.
+// resolveScope maps the requested generation scope into concrete file ids for
+// retrieval filtering, file-name snapshots for material provenance, and
+// chapter-name snapshots for display and the pipeline's scope hint.
 //
 // Chapters arrive as ids (stable across rename), matched by id against the
 // workspace's chapter records; their member files union with any explicitly
 // selected file ids. Requested order is preserved for names. An empty fileIDs
 // result means "whole workspace" (no filtering).
-func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts) (fileIDs, chapterNames []string) {
+func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts) (fileIDs, fileNames, chapterNames []string) {
 	seen := map[string]struct{}{}
 	fileIDs = make([]string, 0, len(opts.FileIds))
+	fileNamesByID := map[string]string{}
+	if files, err := a.s.ListFiles(ctx, "", wsID); err == nil {
+		for _, file := range files {
+			fileNamesByID[file.ID] = file.Name
+		}
+	}
 	add := func(id string) {
 		if id == "" {
 			return
@@ -571,7 +580,13 @@ func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts)
 			}
 		}
 	}
-	return fileIDs, chapterNames
+	fileNames = make([]string, 0, len(fileIDs))
+	for _, id := range fileIDs {
+		if name, ok := fileNamesByID[id]; ok {
+			fileNames = append(fileNames, name)
+		}
+	}
+	return fileIDs, fileNames, chapterNames
 }
 
 // generateViaPipe asks the retrieval service to produce grounded output, then
@@ -582,7 +597,7 @@ func (a *api) generateViaPipe(
 	userID, wsID, wsName string,
 	opts *generateOpts,
 ) (any, bool, error) {
-	fileIDs, chapterNames := a.resolveScope(ctx, wsID, opts)
+	fileIDs, fileNames, chapterNames := a.resolveScope(ctx, wsID, opts)
 	body := map[string]any{
 		"workspaceId": wsID, "kind": opts.Kind, "length": opts.Length, "format": opts.Format,
 		"count": opts.Count, "style": opts.Style, "types": opts.Types, "levels": opts.cognitiveLevels(),
@@ -617,7 +632,7 @@ func (a *api) generateViaPipe(
 			chapters = chapterNames
 		}
 		quiz, err := a.s.CreateQuiz(ctx, store.Quiz{
-			Name: name, WorkspaceID: wsID, WorkspaceName: wsName, Chapters: chapters,
+			UserID: userID, Name: name, WorkspaceID: wsID, WorkspaceName: wsName, Chapters: chapters,
 			Questions: qp.Questions, Privacy: "private", TimeLimitMin: qp.TimeLimitMin,
 		})
 		if err != nil {
@@ -647,7 +662,7 @@ func (a *api) generateViaPipe(
 			Content string `json:"content"`
 		}
 		_ = json.Unmarshal(raw, &mp)
-		res, err := a.persistMaterial(ctx, wsID, wsName, head.Kind, mp.Title, mp.Content, opts, chapterNames)
+		res, err := a.persistMaterial(ctx, userID, wsID, wsName, head.Kind, mp.Title, mp.Content, opts, chapterNames, fileNames)
 		if err != nil {
 			return nil, false, err
 		}
@@ -662,7 +677,7 @@ func (a *api) generateViaPipe(
 
 // generateLocal is the offline fallback (and the mock-parity generator).
 func (a *api) generateLocal(ctx context.Context, userID, wsID, wsName string, opts generateOpts) (any, error) {
-	_, chapterNames := a.resolveScope(ctx, wsID, &opts)
+	_, fileNames, chapterNames := a.resolveScope(ctx, wsID, &opts)
 	switch opts.Kind {
 	case "flashcards":
 		n := opts.Count
@@ -675,10 +690,10 @@ func (a *api) generateLocal(ctx context.Context, userID, wsID, wsName string, op
 		}
 		return a.persistDeck(ctx, userID, wsID, wsName, cards)
 	case "mindmap", "diagram":
-		return a.persistMaterial(ctx, wsID, wsName, opts.Kind, "", localMaterialContent(wsName, opts), &opts, chapterNames)
+		return a.persistMaterial(ctx, userID, wsID, wsName, opts.Kind, "", localMaterialContent(wsName, opts), &opts, chapterNames, fileNames)
 	default:
 		quiz, err := a.s.CreateQuiz(ctx, store.Quiz{
-			Name: wsName + " quiz", WorkspaceID: wsID, WorkspaceName: wsName,
+			UserID: userID, Name: wsName + " quiz", WorkspaceID: wsID, WorkspaceName: wsName,
 			Chapters: chapterNames, Questions: buildQuestions(opts), Privacy: "private", TimeLimitMin: opts.TimeLimitMin,
 		})
 		if err != nil {
@@ -706,8 +721,11 @@ func (a *api) persistDeck(ctx context.Context, userID, wsID, wsName string, card
 }
 
 // persistMaterial stores a generated mindmap/diagram markdown document.
-// chapterNames are the resolved display names for the requested chapter scope.
-func (a *api) persistMaterial(ctx context.Context, wsID, wsName, kind, title, content string, opts *generateOpts, chapterNames []string) (any, error) {
+// Scope values are immutable display-name snapshots, not entity references.
+//
+// userID is the author. Without it CreateMaterial falls back to the workspace
+// owner, which records a generation an editor ran as the owner's own work.
+func (a *api) persistMaterial(ctx context.Context, userID, wsID, wsName, kind, title, content string, opts *generateOpts, chapterNames, fileNames []string) (any, error) {
 	if title == "" {
 		title = wsName + " " + kind
 	}
@@ -715,8 +733,8 @@ func (a *api) persistMaterial(ctx context.Context, wsID, wsName, kind, title, co
 		content = localMaterialContent(wsName, *opts)
 	}
 	mt, err := a.s.CreateMaterial(ctx, store.Material{
-		WorkspaceID: wsID, WorkspaceName: wsName, Kind: kind, Title: title, Content: content,
-		ScopeChapters: chapterNames, ScopeFileIDs: opts.FileIds, Privacy: "private",
+		CreatedBy: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: kind, Title: title,
+		Content: content, ScopeChapters: chapterNames, ScopeFileNames: fileNames, Privacy: "private",
 	})
 	if err != nil {
 		return nil, err

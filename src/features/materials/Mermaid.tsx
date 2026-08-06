@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { getLocale } from '@/i18n';
 import { THEMES } from '@/theme/ThemeProvider';
 
+const mindmapRegex = /^\s*mindmap(?:\s|$)/i;
+
 /** Lazily-initialized mermaid singleton so the (heavy) library is only loaded
  * when a diagram is actually rendered. */
 let mermaidPromise: Promise<typeof import('mermaid').default> | null = null;
@@ -25,6 +27,10 @@ async function getMermaid() {
 }
 
 let idSeq = 0;
+
+export function mermaidBlockLabel(code: string): 'Diagram' | 'Mindmap' {
+  return mindmapRegex.test(code) ? 'Mindmap' : 'Diagram';
+}
 
 /** Renders a mermaid code block to inline SVG. Falls back to the raw source in
  * a <pre> if the diagram fails to parse. */

@@ -72,7 +72,7 @@ func TestMaterialResponseIncludesDecodedContent(t *testing.T) {
 	}
 	encoded, err := json.Marshal(apimodel.FromMaterial(store.Material{
 		ID: "mat_1", Kind: "note", Content: raw,
-		ScopeChapters: []string{}, ScopeFileIDs: []string{},
+		ScopeChapters: []string{}, ScopeFileNames: []string{},
 	}))
 	if err != nil {
 		t.Fatal(err)
@@ -125,13 +125,14 @@ func TestInviteCreateRequestUsesPrivateIdentifier(t *testing.T) {
 }
 
 func TestWorkspaceAccessMetadataDistinguishesEditorsAndPublicViewers(t *testing.T) {
-	editor := apimodel.FromWorkspaceAccess(store.Workspace{ID: "ws_1"}, store.RoleEditor)
+	editor := apimodel.FromWorkspaceAccess(
+		store.Workspace{ID: "ws_1"}, store.RoleEditor, store.AccountActive)
 	if editor.IsOwner || editor.Role == nil || *editor.Role != store.RoleEditor ||
 		!editor.Capabilities.CanEdit || !editor.Capabilities.CanComment {
 		t.Fatalf("editor access metadata is incorrect: %#v", editor)
 	}
 
-	public := apimodel.FromWorkspaceAccess(store.Workspace{ID: "ws_2"}, "")
+	public := apimodel.FromWorkspaceAccess(store.Workspace{ID: "ws_2"}, "", "")
 	if public.IsOwner || public.Role != nil || !public.Capabilities.CanView ||
 		public.Capabilities.CanEdit || public.Capabilities.CanComment {
 		t.Fatalf("public viewer access metadata is incorrect: %#v", public)
