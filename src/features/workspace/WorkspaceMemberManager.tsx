@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import {
   useCreateWorkspaceInvite,
-  useMe,
   useRemoveWorkspaceMember,
   useTransferWorkspace,
   useUpdateWorkspaceMember,
@@ -10,11 +9,14 @@ import {
 import type { WorkspaceMember, WorkspaceRole } from '@/api/types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
-import { ConfirmDialog } from '@/components/ui/Dialog';
+import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
+import { Spinner } from '@/components/ui/feedback';
 import { Input, InputTitle } from '@/components/ui/Input';
+import { Menu } from '@/components/ui/Menu';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -40,22 +42,24 @@ export function WorkspaceMemberManager({
   const [transferTarget, setTransferTarget] = useState<WorkspaceMember | null>(
     null
   );
-  const me = useMe();
-  const members = useWorkspaceMembers(workspaceId);
-  const createInvite = useCreateWorkspaceInvite(workspaceId);
-  const updateMember = useUpdateWorkspaceMember(workspaceId);
-  const removeMember = useRemoveWorkspaceMember(workspaceId);
-  const transfer = useTransferWorkspace(workspaceId);
-
-  const isOwner = members.data?.some(
-    (member) => member.userId === me.data?.id && member.role === 'owner'
+  const [manageTarget, setManageTarget] = useState<WorkspaceMember | null>(
+    null
   );
+  const [managedRole, setManagedRole] = useState<MemberRole>('viewer');
+  const { data: membersData } = useWorkspaceMembers(workspaceId);
+  const { isPending: createInviteIsPending, mutateAsync: createInvite } =
+    useCreateWorkspaceInvite(workspaceId);
+  const { isPending: updateMemberIsPending, mutate: updateMember } =
+    useUpdateWorkspaceMember(workspaceId);
+  const { mutate: removeMember } = useRemoveWorkspaceMember(workspaceId);
+  const { isPending: transferIsPending, mutateAsync: transfer } =
+    useTransferWorkspace(workspaceId);
 
   async function invite() {
     const value = identifier.trim();
     if (!value) return;
     try {
-      await createInvite.mutateAsync({ identifier: value, role });
+      await createInvite({ identifier: value, role });
       setIdentifier('');
       userToast({
         description: "If an account matches, they'll receive an invitation.",
@@ -73,7 +77,7 @@ export function WorkspaceMemberManager({
   async function confirmTransfer() {
     if (!transferTarget) return;
     try {
-      await transfer.mutateAsync(transferTarget.userId);
+      await transfer(transferTarget.userId);
       setTransferTarget(null);
       userToast({
         title: m.workspace_transfer_success(),
@@ -92,10 +96,7 @@ export function WorkspaceMemberManager({
   }
 
   return (
-    <section
-      aria-labelledby="workspace-members-title"
-      className="border-divider border-t pt-4"
-    >
+    <section aria-labelledby="workspace-members-title">
       <div>
         <InputTitle id="workspace-members-title">People with access</InputTitle>
         <p className="t-meta text-fg-muted">
@@ -106,7 +107,7 @@ export function WorkspaceMemberManager({
 
       <div className="mt-3 flex gap-2">
         <Input
-          disabled={createInvite.isPending}
+          disabled={createInviteIsPending}
           onChange={(event) => setIdentifier(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') void invite();
@@ -116,22 +117,27 @@ export function WorkspaceMemberManager({
           wrapperClassName="min-w-0 flex-1"
         />
         <RoleSelect
-          disabled={createInvite.isPending}
+          disabled={createInviteIsPending}
           onChange={setRole}
           value={role}
         />
         <Button
-          disabled={createInvite.isPending || !identifier.trim()}
+          className="w-19 rounded-input"
+          disabled={createInviteIsPending || !identifier.trim()}
           onClick={() => void invite()}
-          size="sm"
           variant="accent"
         >
-          {createInvite.isPending ? 'Inviting…' : 'Invite'}
+          {createInviteIsPending && (
+            <span>
+              <Spinner />
+            </span>
+          )}
+          {!createInviteIsPending && 'Invite'}
         </Button>
       </div>
 
       <div className="mt-4 flex flex-col gap-1.5">
-        {members.data?.map((member) => (
+        {membersData?.map((member) => (
           <div className="flex items-center gap-2 py-1" key={member.userId}>
             <Avatar name={member.name} size="sm" src={member.avatarUrl} />
             <div className="min-w-0 flex-1">
@@ -145,40 +151,49 @@ export function WorkspaceMemberManager({
                 Owner
               </span>
             ) : (
-              <>
-                <RoleSelect
-                  disabled={updateMember.isPending || removeMember.isPending}
-                  onChange={(nextRole) =>
-                    updateMember.mutate({
-                      role: nextRole,
-                      userId: member.userId,
-                    })
-                  }
-                  value={member.role}
-                />
-                {isOwner && (
-                  <Button
-                    disabled={transfer.isPending}
-                    onClick={() => setTransferTarget(member)}
-                    size="sm"
-                    variant="ghost"
-                  >
-                    {m.workspace_transfer_action()}
-                  </Button>
-                )}
-                <Button
-                  disabled={removeMember.isPending}
-                  onClick={() => removeMember.mutate(member.userId)}
-                  size="sm"
-                  variant="ghost"
-                >
-                  Remove
-                </Button>
-              </>
+              <Menu
+                items={[
+                  {
+                    label: 'Manage Member',
+                    onClick: () => {
+                      setManageTarget(member);
+                      setManagedRole(member.role as MemberRole);
+                    },
+                  },
+                  {
+                    danger: true,
+                    label: 'Remove',
+                    onClick: () => removeMember(member.userId),
+                  },
+                ]}
+              />
             )}
           </div>
         ))}
       </div>
+
+      <SimpleDialog
+        onClose={() => setManageTarget(null)}
+        open={!!manageTarget}
+        title="Manage Member"
+      >
+        {manageTarget && (
+          <div className="flex flex-col gap-1.5">
+            <InputTitle>Role</InputTitle>
+            <RoleSelect
+              disabled={updateMemberIsPending}
+              onChange={(nextRole) => {
+                setManagedRole(nextRole);
+                updateMember({
+                  role: nextRole,
+                  userId: manageTarget.userId,
+                });
+              }}
+              value={managedRole}
+            />
+          </div>
+        )}
+      </SimpleDialog>
 
       <ConfirmDialog
         body={
@@ -191,9 +206,9 @@ export function WorkspaceMemberManager({
         closeOnConfirm={false}
         confirmLabel={m.workspace_transfer_confirm()}
         danger
-        isSubmitting={transfer.isPending}
+        isSubmitting={transferIsPending}
         onClose={() => {
-          if (!transfer.isPending) setTransferTarget(null);
+          if (!transferIsPending) setTransferTarget(null);
         }}
         onConfirm={() => void confirmTransfer()}
         open={!!transferTarget}
@@ -222,11 +237,13 @@ function RoleSelect({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {ROLE_OPTIONS.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
+        <SelectGroup>
+          {ROLE_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectGroup>
       </SelectContent>
     </Select>
   );

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import type { Privacy, WorkspaceRole } from '@/api/types';
+import { WarningBanner } from '@/components/banners/WarningBanner';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
-import { Icon, type IconName } from '@/components/ui/Icon';
+import type { IconName } from '@/components/ui/Icon';
 import {
   Select,
   SelectContent,
@@ -11,8 +12,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select';
+import { Separator } from '@/components/ui/Separator';
 import { userToast } from '@/components/ui/userToast';
-import { InputTitle } from '../../components/ui/Input';
+import { Input, InputTitle } from '../../components/ui/Input';
+import { MATERIALMODE_ICON } from '../materials/materialIconMappings';
 import { WorkspaceMemberManager } from './WorkspaceMemberManager';
 
 type SharedRole = Exclude<WorkspaceRole, 'owner'>;
@@ -40,7 +43,7 @@ const PRIVACY_OPTIONS: {
     value: 'link',
   },
   {
-    hint: 'Open to public, your workspace can be searched.',
+    hint: 'Open to public, your workspace can be discovered by others.',
     icon: 'globe',
     label: 'Public',
     value: 'public',
@@ -51,22 +54,30 @@ const SHARED_ROLE_OPTIONS: Array<{
   value: SharedRole;
   label: string;
   hint: string;
+  icon: IconName;
 }> = [
-  { hint: "Just see, can't touch.", label: 'Can view', value: 'viewer' },
   {
-    hint: 'Users can comment and suggest changes.',
+    hint: "Just see, can't touch.",
+    icon: MATERIALMODE_ICON['view'],
+    label: 'Can view',
+    value: 'viewer',
+  },
+  {
+    hint: 'Users can leave comments.',
+    icon: MATERIALMODE_ICON['comment'],
     label: 'Can comment',
     value: 'commenter',
   },
   {
-    hint: 'Editing is allowed on the files.',
+    hint: 'User can edit and upload the files.',
+    icon: MATERIALMODE_ICON['edit'],
     label: 'Can edit',
     value: 'editor',
   },
 ];
 
 const PUBLIC_EDITOR_WARNING =
-  'Public workspaces are searchable. Combined with edit access, anyone signed in can find and change your files.';
+  'Public workspaces are searchable. Combined with edit access, anyone can upload and change any and all files.';
 
 function isPublicEditor(
   privacy: Privacy,
@@ -263,14 +274,10 @@ export function ShareDialog({
                           ? 'text-tint-error-fg hover:bg-tint-error'
                           : undefined
                       }
+                      iconAndValue={o}
                       key={o.value}
                       value={o.value}
-                    >
-                      <div className="flex items-center gap-1.5">
-                        <Icon className="size-4.5" name={o.icon} />
-                        <span className="translate-y-px">{o.label}</span>
-                      </div>
-                    </SelectItem>
+                    />
                   ))}
                 </SelectGroup>
               </SelectContent>
@@ -306,11 +313,10 @@ export function ShareDialog({
                               ? 'text-tint-error-fg hover:bg-tint-error'
                               : undefined
                           }
+                          iconAndValue={option}
                           key={option.value}
                           value={option.value}
-                        >
-                          {option.label}
-                        </SelectItem>
+                        />
                       ))}
                     </SelectGroup>
                   </SelectContent>
@@ -319,23 +325,20 @@ export function ShareDialog({
             </div>
           )}
         {publicEditorActive && (
-          <div
-            className="flex items-start gap-2.5 rounded-button border border-solid-error/30 bg-tint-error px-3 py-2.5 text-sm text-tint-error-fg"
-            role="alert"
-          >
-            <Icon className="mt-0.5 size-4.5 shrink-0" name="warning" />
-            <p>{PUBLIC_EDITOR_WARNING}</p>
-          </div>
+          <WarningBanner message={PUBLIC_EDITOR_WARNING} />
         )}
         {privacy !== 'private' && (
-          <div className="flex items-center gap-2">
-            <div className="min-w-0 flex-1 truncate rounded-button border border-line bg-surface-hover-bg px-2.5 py-2 text-fg-secondary text-sm">
-              {absoluteLink}
-            </div>
+          <div className="flex items-center gap-3.5">
+            <Input
+              disabled
+              type="text"
+              value={absoluteLink}
+              wrapperClassName="has-disabled:pointer-events-auto has-disabled:cursor-auto flex-1"
+            />
             <Button
+              className="rounded-input"
               iconLeft={copied ? 'check' : 'link'}
               onClick={copy}
-              size="sm"
               variant="outline"
             >
               {copied ? 'Copied' : 'Copy'}
@@ -343,7 +346,10 @@ export function ShareDialog({
           </div>
         )}
         {workspaceId && open && (
-          <WorkspaceMemberManager workspaceId={workspaceId} />
+          <>
+            <Separator />
+            <WorkspaceMemberManager workspaceId={workspaceId} />
+          </>
         )}
       </div>
       <ConfirmDialog

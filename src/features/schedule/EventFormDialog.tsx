@@ -77,7 +77,7 @@ export function EventFormDialog({
     <SimpleDialog
       footer={
         <>
-          <Button onClick={onClose} size="lg" variant="ghost">
+          <Button onClick={onClose} size="lg" variant="ghost-hover">
             Cancel
           </Button>
           <Button

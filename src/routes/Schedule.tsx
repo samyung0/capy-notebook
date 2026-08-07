@@ -26,7 +26,7 @@ export default function Schedule() {
   const { event: eventParam } = useSearch({ from: '/auth-shell/schedule' });
   const { data: events, isLoading } = useEvents();
   const { data: labels } = useLabels();
-  const deleteLabel = useDeleteLabel();
+  const { mutate: deleteLabel } = useDeleteLabel();
   const openLabelEdit = usePortals((s) => s.openLabelEdit);
   const openConfirm = usePortals((s) => s.openConfirm);
   const openEventForm = usePortals((s) => s.openEventForm);
@@ -221,7 +221,7 @@ export default function Schedule() {
                             onClick: () =>
                               openConfirm({
                                 body: m.confirm_delete_body(),
-                                onConfirm: () => deleteLabel.mutate(l.id),
+                                onConfirm: () => deleteLabel(l.id),
                                 title: m.confirm_delete_title({ name: l.name }),
                               }),
                           },

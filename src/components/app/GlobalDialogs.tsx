@@ -47,12 +47,12 @@ export function GlobalDialogs() {
   const closeMsImport = usePortals((s) => s.closeMsImport);
   const closeConfirm = usePortals((s) => s.closeConfirm);
 
-  const createWorkspace = useCreateWorkspace();
-  const updateWorkspace = useUpdateWorkspace();
-  const updateTask = useUpdateTask();
-  const updateLabel = useUpdateLabel();
-  const createEvent = useCreateEvent();
-  const updateEvent = useUpdateEvent();
+  const { mutateAsync: createWorkspace } = useCreateWorkspace();
+  const { mutateAsync: updateWorkspace } = useUpdateWorkspace();
+  const { mutate: updateTask } = useUpdateTask();
+  const { mutate: updateLabel } = useUpdateLabel();
+  const { mutate: createEvent } = useCreateEvent();
+  const { mutate: updateEvent } = useUpdateEvent();
   const { data: labels } = useLabels();
 
   const isTopBarSearchOpen = usePortals((s) => s.isTopBarSearchOpen);
@@ -65,7 +65,7 @@ export function GlobalDialogs() {
       {/* TODO: fix the workspace create and edit dialog */}
       {workspaceCreate && (
         <WorkspaceFormCreateDialog
-          onSubmit={async (v) => await createWorkspace.mutateAsync(v)}
+          onSubmit={async (v) => await createWorkspace(v)}
           open
           setOpen={(open) => {
             if (!open) closeWorkspaceCreate();
@@ -87,7 +87,7 @@ export function GlobalDialogs() {
               });
               return;
             }
-            return await updateWorkspace.mutateAsync({ id: workspaceId, ...v });
+            return await updateWorkspace({ id: workspaceId, ...v });
           }}
           open
           setOpen={(open) => {
@@ -109,7 +109,7 @@ export function GlobalDialogs() {
       {taskEdit && (
         <TaskEditDialog
           onClose={closeTaskEdit}
-          onSave={(patch) => updateTask.mutate({ id: taskEdit.id, ...patch })}
+          onSave={(patch) => updateTask({ id: taskEdit.id, ...patch })}
           open
           task={taskEdit}
         />
@@ -120,7 +120,7 @@ export function GlobalDialogs() {
           key={labelEdit.id}
           label={labelEdit}
           onClose={closeLabelEdit}
-          onSave={(patch) => updateLabel.mutate({ id: labelEdit.id, ...patch })}
+          onSave={(patch) => updateLabel({ id: labelEdit.id, ...patch })}
           open
         />
       )}
@@ -135,8 +135,8 @@ export function GlobalDialogs() {
           onClose={closeEventForm}
           onSubmit={(v) =>
             eventForm.id
-              ? updateEvent.mutate({ id: eventForm.id, ...v })
-              : createEvent.mutate(v)
+              ? updateEvent({ id: eventForm.id, ...v })
+              : createEvent(v)
           }
           open
         />

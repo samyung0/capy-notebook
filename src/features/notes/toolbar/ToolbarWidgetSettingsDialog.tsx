@@ -20,7 +20,7 @@ export function WidgetSettingsDialog() {
   const setEnabled = useNoteEditorPrefs((state) => state.setEnabled);
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(enabled);
-  const count = WIDGET_GROUPS.filter((group) => draft[group.id]).length;
+  const _count = WIDGET_GROUPS.filter((group) => draft[group.id]).length;
 
   const setAll = (value: boolean) => {
     const next = {} as Record<WidgetGroupId, boolean>;
@@ -44,21 +44,29 @@ export function WidgetSettingsDialog() {
       >
         <Settings2 />
       </ToolbarButton>
-      <DialogContent className="max-w-xl">
+      <DialogContent className="max-w-2xl">
         <DialogTitle className="pb-2">Editor commands</DialogTitle>
-        <p className="mb-4 text-fg-muted text-sm">
-          Choose which toolbar groups appear in the editor and command menus.
-          Existing document content always remains available.
+        <p className="mb-2.5">
+          You can hide some of the toolbar groups in case it is getting too
+          crowded.
         </p>
-        <div className="mb-3 flex items-center justify-between">
-          <span className="font-medium text-fg text-sm">
+        <div className="mb-2.5 flex items-center justify-end">
+          {/* <span className="font-medium text-fg text-sm">
             {count} of {WIDGET_GROUPS.length} visible
-          </span>
-          <div className="flex gap-1">
-            <Button onClick={() => setAll(true)} size="sm" variant="ghost">
+          </span> */}
+          <div className="flex">
+            <Button
+              onClick={() => setAll(true)}
+              size="sm"
+              variant="ghost-hover"
+            >
               All
             </Button>
-            <Button onClick={() => setAll(false)} size="sm" variant="ghost">
+            <Button
+              onClick={() => setAll(false)}
+              size="sm"
+              variant="ghost-hover"
+            >
               None
             </Button>
           </div>
@@ -66,20 +74,18 @@ export function WidgetSettingsDialog() {
         <div className="grid max-h-[52vh] grid-cols-1 gap-2 overflow-auto pr-1 sm:grid-cols-2">
           {WIDGET_GROUPS.map((group) => (
             <label
-              className="flex items-center justify-between gap-3 rounded-card border border-line px-3 py-2"
+              className="flex items-center justify-between gap-3 rounded-card border border-line p-4 py-2.5"
               key={group.id}
             >
-              <span className="min-w-0">
-                <span className="block font-medium text-fg text-sm">
-                  {group.label}
-                </span>
-                <span className="block text-fg-muted text-xs">
+              <span className="inline-flex min-w-0 flex-col gap-0.5">
+                <span className="block font-semibold">{group.label}</span>
+                <span className="block text-fg-secondary leading-tight">
                   {group.description}
                 </span>
               </span>
               <Switch
                 checked={draft[group.id]}
-                onChange={() =>
+                onCheckedChange={() =>
                   setDraft((current) => ({
                     ...current,
                     [group.id]: !current[group.id],

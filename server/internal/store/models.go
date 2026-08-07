@@ -303,6 +303,8 @@ type MaterialRef struct {
 	ChapterID *string   `json:"chapterId"`
 	Position  int64     `json:"position"`
 	CreatedAt time.Time `json:"createdAt"`
+	NodeCount int       `json:"nodeCount"`
+	MaxDepth  int       `json:"maxDepth"`
 }
 
 type ContentOrderItem struct {

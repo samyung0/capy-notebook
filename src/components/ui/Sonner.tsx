@@ -7,7 +7,7 @@ import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 
 const sonnerCardVariants = cva(
-  'items-top pointer-events-auto relative z-9999 w-full min-w-64 flex-row p-4 shadow-card md:max-w-91',
+  'items-top pointer-events-auto relative z-9999 w-full min-w-64 flex-row rounded-card px-5 py-4 shadow-card md:max-w-91',
   {
     defaultVariants: {
       variant: 'default',
@@ -55,13 +55,13 @@ function Toast(props: ToastProps) {
       )}
       <div className="items-top flex flex-1 gap-1.5">
         {variant === 'error' && (
-          <Icon className="mr-2 size-5" name="error" strokeWidth={2} />
+          <Icon className="size-5" name="error" strokeWidth={2} />
         )}
         {variant === 'warning' && (
-          <Icon className="mr-2 size-5" name="warning" strokeWidth={2} />
+          <Icon className="size-5" name="warning" strokeWidth={2} />
         )}
         {variant === 'success' && (
-          <Icon className="mr-2 size-5" name="check" strokeWidth={2} />
+          <Icon className="size-5" name="check" strokeWidth={2} />
         )}
         <div className="w-full">
           <p

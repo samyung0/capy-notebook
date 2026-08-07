@@ -20,12 +20,14 @@ import { userColorPair } from '@/lib/userColor';
 
 export default function Explore() {
   const [tab, setTab] = useState('workspaces');
-  const ws = useExploreWorkspaces();
-  const qz = useExploreQuizzes();
-  const decks = useExploreDecks();
-  const cloneWorkspace = useCloneWorkspace();
-  const cloneQuiz = useCloneQuiz();
-  const cloneDeck = useCloneDeck();
+  const { data: workspaces, isLoading: workspacesIsLoading } =
+    useExploreWorkspaces();
+  const { data: quizzes, isLoading: quizzesIsLoading } = useExploreQuizzes();
+  const { data: decks, isLoading: decksIsLoading } = useExploreDecks();
+  const { isPending: cloneWorkspaceIsPending, mutate: cloneWorkspace } =
+    useCloneWorkspace();
+  const { isPending: cloneQuizIsPending, mutate: cloneQuiz } = useCloneQuiz();
+  const { isPending: cloneDeckIsPending, mutate: cloneDeck } = useCloneDeck();
   const navigate = useNavigate();
 
   return (
@@ -47,11 +49,11 @@ export default function Explore() {
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
         {tab === 'workspaces' ? (
-          ws.isLoading ? (
+          workspacesIsLoading ? (
             <SkeletonCardGrid cardHeight={170} count={6} />
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {ws.data?.map((w) => {
+              {workspaces?.map((w) => {
                 const c = userColorPair(w.color);
                 return (
                   <Card className="p-5.5" key={w.id} radius="card-lg">
@@ -67,10 +69,10 @@ export default function Explore() {
                     </p>
                     <Button
                       className="mt-3"
-                      disabled={cloneWorkspace.isPending}
+                      disabled={cloneWorkspaceIsPending}
                       iconLeft="plus"
                       onClick={() =>
-                        cloneWorkspace.mutate(w.id, {
+                        cloneWorkspace(w.id, {
                           onSuccess: ({ workspace }) =>
                             navigate({
                               params: { workspaceId: workspace.id },
@@ -88,11 +90,11 @@ export default function Explore() {
               })}
             </div>
           )
-        ) : tab === 'quizzes' && qz.isLoading ? (
+        ) : tab === 'quizzes' && quizzesIsLoading ? (
           <SkeletonCardGrid cardHeight={190} count={6} />
         ) : tab === 'quizzes' ? (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {qz.data?.map((q) => (
+            {quizzes?.map((q) => (
               <Card className="p-5.5" key={q.id} radius="card-lg">
                 <span className="flex h-11 w-11 items-center justify-center rounded-card bg-tint-accent-1 text-tint-accent-1-fg">
                   <Icon name="quiz" size={20} />
@@ -106,10 +108,10 @@ export default function Explore() {
                 </div>
                 <Button
                   className="mt-3"
-                  disabled={cloneQuiz.isPending}
+                  disabled={cloneQuizIsPending}
                   iconLeft="plus"
                   onClick={() =>
-                    cloneQuiz.mutate(q.id, {
+                    cloneQuiz(q.id, {
                       onSuccess: (copy) =>
                         navigate({
                           params: { quizId: copy.id },
@@ -125,11 +127,11 @@ export default function Explore() {
               </Card>
             ))}
           </div>
-        ) : decks.isLoading ? (
+        ) : decksIsLoading ? (
           <SkeletonCardGrid cardHeight={190} count={6} />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {decks.data?.map((deck) => (
+            {decks?.map((deck) => (
               <Card className="p-5.5" key={deck.id} radius="card-lg">
                 <span className="flex h-11 w-11 items-center justify-center rounded-card bg-tint-accent-2 text-tint-accent-2-fg">
                   <Icon name="flashcards" size={20} />
@@ -143,10 +145,10 @@ export default function Explore() {
                 </div>
                 <Button
                   className="mt-3"
-                  disabled={cloneDeck.isPending}
+                  disabled={cloneDeckIsPending}
                   iconLeft="plus"
                   onClick={() =>
-                    cloneDeck.mutate(deck.id, {
+                    cloneDeck(deck.id, {
                       onSuccess: (copy) =>
                         navigate({
                           params: { deckId: copy.id },

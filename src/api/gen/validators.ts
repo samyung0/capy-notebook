@@ -2010,6 +2010,8 @@ export const ListMaterialsResponseItem = zod.object({
   "chapterId": zod.string().nullable(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
+  "maxDepth": zod.number(),
+  "nodeCount": zod.number(),
   "position": zod.number(),
   "title": zod.string(),
   "type": zod.string()

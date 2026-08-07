@@ -53,7 +53,8 @@ function bytesToBase64(bytes: Uint8Array): string {
 function usePlateChat(workspaceId: string) {
   const editor = useEditorRef();
   const { materialId } = useEditorRuntime();
-  const createDiscussion = useCreateMaterialDiscussion(materialId);
+  const { mutateAsync: createDiscussion } =
+    useCreateMaterialDiscussion(materialId);
   const transport = useMemo(
     () => createPlateAiTransport(workspaceId),
     [workspaceId]
@@ -100,20 +101,16 @@ function usePlateChat(workspaceId: string) {
           editor,
           range
         );
-        void createDiscussion
-          .mutateAsync({
-            anchorEnd: bytesToBase64(Y.encodeRelativePosition(relative.focus)),
-            anchorQuote: editor.api.string(range).slice(0, 1000),
-            anchorStart: bytesToBase64(
-              Y.encodeRelativePosition(relative.anchor)
-            ),
-            anchorVersion: 1,
-            blockId: data.comment.blockId,
-            contentRich: [
-              { children: [{ text: data.comment.comment }], type: 'p' },
-            ],
-          })
-          .catch(() => undefined);
+        void createDiscussion({
+          anchorEnd: bytesToBase64(Y.encodeRelativePosition(relative.focus)),
+          anchorQuote: editor.api.string(range).slice(0, 1000),
+          anchorStart: bytesToBase64(Y.encodeRelativePosition(relative.anchor)),
+          anchorVersion: 1,
+          blockId: data.comment.blockId,
+          contentRich: [
+            { children: [{ text: data.comment.comment }], type: 'p' },
+          ],
+        }).catch(() => undefined);
       }
     },
     transport,

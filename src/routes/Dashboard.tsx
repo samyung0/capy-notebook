@@ -103,8 +103,8 @@ function WorkspacesSection() {
 
 function TasksCard() {
   const { data } = useTasks();
-  const toggle = useToggleTask();
-  const remove = useDeleteTask();
+  const { mutate: toggle } = useToggleTask();
+  const { mutate: remove } = useDeleteTask();
   const openTaskEdit = usePortals((s) => s.openTaskEdit);
   const openConfirm = usePortals((s) => s.openConfirm);
   const open = data?.filter((t) => !t.done) ?? [];
@@ -141,7 +141,7 @@ function TasksCard() {
             />
             <button
               className="flex min-w-0 flex-1 items-start gap-3 text-left"
-              onClick={() => toggle.mutate({ done: !t.done, id: t.id })}
+              onClick={() => toggle({ done: !t.done, id: t.id })}
               type="button"
             >
               <span className="min-w-0">
@@ -172,7 +172,7 @@ function TasksCard() {
                 {
                   icon: 'check',
                   label: t.done ? m.action_mark_undone() : m.action_mark_done(),
-                  onClick: () => toggle.mutate({ done: !t.done, id: t.id }),
+                  onClick: () => toggle({ done: !t.done, id: t.id }),
                 },
                 {
                   danger: true,
@@ -181,7 +181,7 @@ function TasksCard() {
                   onClick: () =>
                     openConfirm({
                       body: m.confirm_delete_body(),
-                      onConfirm: () => remove.mutate(t.id),
+                      onConfirm: () => remove(t.id),
                       title: m.confirm_delete_title({ name: t.title }),
                     }),
                 },

@@ -60,10 +60,11 @@ export default function DeckStudy() {
     isError: cardsError,
     error: cardsErr,
   } = useCards(deckId);
-  const reviewCard = useReviewCard(deckId);
-  const deleteCard = useDeleteCard(deckId);
-  const cloneDeck = useCloneDeck();
-  const updateDeck = useUpdateDeck();
+  const { mutate: reviewCard } = useReviewCard(deckId);
+  const { mutate: deleteCard } = useDeleteCard(deckId);
+  const { isPending: cloneDeckIsPending, mutate: cloneDeck } = useCloneDeck();
+  const { isPending: updateDeckIsPending, mutateAsync: updateDeck } =
+    useUpdateDeck();
   const navigate = useNavigate();
   const isOwner = deck?.isOwner === true;
 
@@ -127,7 +128,7 @@ export default function DeckStudy() {
   function rate(rating: SrsRating) {
     if (!card) return;
     const srs = reviewSrs(card.srs, rating);
-    if (isOwner) reviewCard.mutate({ id: card.id, known: isKnown(srs), srs });
+    if (isOwner) reviewCard({ id: card.id, known: isKnown(srs), srs });
     setFlipped(false);
     setQueue((q) => {
       if (!q) return q;
@@ -139,7 +140,7 @@ export default function DeckStudy() {
 
   function removeCurrent() {
     if (!card) return;
-    deleteCard.mutate(card.id);
+    deleteCard(card.id);
     setFlipped(false);
     setQueue((q) => (q ? q.filter((id) => id !== card.id) : q));
   }
@@ -173,10 +174,10 @@ export default function DeckStudy() {
         </>
       ) : (
         <Button
-          disabled={cloneDeck.isPending}
+          disabled={cloneDeckIsPending}
           iconLeft="plus"
           onClick={() =>
-            cloneDeck.mutate(deckId, {
+            cloneDeck(deckId, {
               onError: (err) => toastCloneError(err, 'deck'),
               onSuccess: (copy) =>
                 navigate({
@@ -187,7 +188,7 @@ export default function DeckStudy() {
           }
           size="sm"
         >
-          {cloneDeck.isPending ? 'Cloning…' : 'Clone deck'}
+          {cloneDeckIsPending ? 'Cloning…' : 'Clone deck'}
         </Button>
       )}
     </div>
@@ -340,12 +341,10 @@ export default function DeckStudy() {
         <ShareDialog
           link={`/share/decks/${deck.id}`}
           onClose={() => setShareOpen(false)}
-          onPrivacyChange={(privacy) =>
-            updateDeck.mutateAsync({ id: deck.id, privacy })
-          }
+          onPrivacyChange={(privacy) => updateDeck({ id: deck.id, privacy })}
           open={shareOpen}
           privacy={deck.privacy ?? 'private'}
-          saving={updateDeck.isPending}
+          saving={updateDeckIsPending}
           title={`Share ${deck.name}`}
         />
       )}

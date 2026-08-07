@@ -239,7 +239,11 @@ export function NoteToolbar({ className }: { className?: string }) {
       >
         {canComment && collaboration && (
           <ToolbarGroup>
-            <ToolbarButton label="Comment" onClick={collaboration.openComment}>
+            <ToolbarButton
+              disabled={collaboration.mutationPending}
+              label="Comment"
+              onClick={collaboration.openComment}
+            >
               <MessageSquarePlus />
             </ToolbarButton>
           </ToolbarGroup>
@@ -291,6 +295,7 @@ export function NoteToolbar({ className }: { className?: string }) {
             <ToolbarGroup className="gap-1" persistent>
               {canComment && collaboration && (
                 <ToolbarButton
+                  disabled={collaboration.mutationPending}
                   label="Comment"
                   onClick={collaboration.openComment}
                 >

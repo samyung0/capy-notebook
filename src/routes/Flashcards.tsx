@@ -21,14 +21,16 @@ import { userColorPair } from '@/lib/userColor';
 
 export default function Flashcards() {
   const { data, isLoading } = useDecks();
-  const createDeck = useCreateDeck();
-  const cloneDeck = useCloneDeck();
-  const updateDeck = useUpdateDeck();
+  const { isPending: createDeckIsPending, mutate: createDeck } =
+    useCreateDeck();
+  const { mutate: cloneDeck } = useCloneDeck();
+  const { isPending: updateDeckIsPending, mutateAsync: updateDeck } =
+    useUpdateDeck();
   const navigate = useNavigate();
   const [sharing, setSharing] = useState<Deck | null>(null);
 
   function newDeck() {
-    createDeck.mutate(
+    createDeck(
       { color: 'purple', name: 'New deck' },
       {
         onSuccess: (deck) =>
@@ -42,7 +44,7 @@ export default function Flashcards() {
       <PageHeader
         actions={
           <IconButton
-            disabled={createDeck.isPending}
+            disabled={createDeckIsPending}
             icon="plus"
             label={m.flashcards_new_deck()}
             onClick={newDeck}
@@ -107,7 +109,7 @@ export default function Flashcards() {
                         {
                           icon: 'plus',
                           label: 'Clone',
-                          onClick: () => cloneDeck.mutate(d.id),
+                          onClick: () => cloneDeck(d.id),
                         },
                       ]}
                     />
@@ -123,7 +125,7 @@ export default function Flashcards() {
           link={`/share/decks/${sharing.id}`}
           onClose={() => setSharing(null)}
           onPrivacyChange={async (privacy) => {
-            const deck = await updateDeck.mutateAsync({
+            const deck = await updateDeck({
               id: sharing.id,
               privacy,
             });
@@ -131,7 +133,7 @@ export default function Flashcards() {
           }}
           open
           privacy={sharing.privacy ?? 'private'}
-          saving={updateDeck.isPending}
+          saving={updateDeckIsPending}
           title={`Share ${sharing.name}`}
         />
       )}

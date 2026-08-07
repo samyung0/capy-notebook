@@ -55,7 +55,7 @@ export function BlockTypeMenu({
   return (
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
-        <ToolbarButton className="w-fit" label="Block Type">
+        <ToolbarButton className="w-23" label="Block Type">
           <span className="translate-y-px">{blockTypeLabel}</span>
           <ChevronDown className="size-3! text-fg-secondary" />
         </ToolbarButton>

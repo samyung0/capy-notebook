@@ -126,9 +126,9 @@ export function useChatStream(workspaceId: string) {
 
       setStreaming(false);
       abortRef.current = null;
-      qc.invalidateQueries({ queryKey: qk.conversations(workspaceId) });
+      void qc.invalidateQueries({ queryKey: qk.conversations(workspaceId) });
     },
-    [workspaceId, conversationId, streaming, patch, qc]
+    [conversationId, qc, patch, streaming, workspaceId]
   );
 
   return { conversationId, hydrate, messages, send, startNew, stop, streaming };

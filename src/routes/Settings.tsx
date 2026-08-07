@@ -42,19 +42,21 @@ function AccountDangerZoneInner({
 }: {
   signOut?: () => Promise<unknown>;
 }) {
-  const me = useMe();
-  const preflight = useDeletionPreflight();
-  const requestDeletion = useRequestAccountDeletion();
+  const { data: meData } = useMe();
+  const { data: preflightData, isSuccess: preflightIsSuccess } =
+    useDeletionPreflight();
+  const { isPending: requestDeletionIsPending, mutateAsync: requestDeletion } =
+    useRequestAccountDeletion();
   const [confirmEmail, setConfirmEmail] = useState('');
 
   const emailMatches =
-    !!me.data?.email &&
-    confirmEmail.trim().toLowerCase() === me.data.email.toLowerCase();
-  const canDelete = preflight.data?.canDelete === true && emailMatches;
+    !!meData?.email &&
+    confirmEmail.trim().toLowerCase() === meData.email.toLowerCase();
+  const canDelete = preflightData?.canDelete === true && emailMatches;
 
   async function onRequestDeletion() {
     try {
-      await requestDeletion.mutateAsync(confirmEmail.trim());
+      await requestDeletion(confirmEmail.trim());
       setConfirmEmail('');
       userToast({
         title: m.settings_deletion_requested_toast(),
@@ -76,9 +78,9 @@ function AccountDangerZoneInner({
     }
   }
 
-  const needingTransfer = preflight.data?.workspacesNeedingTransfer ?? [];
-  const toDestroy = preflight.data?.workspacesToDestroy ?? [];
-  const subscription = preflight.data?.subscription;
+  const needingTransfer = preflightData?.workspacesNeedingTransfer ?? [];
+  const toDestroy = preflightData?.workspacesToDestroy ?? [];
+  const subscription = preflightData?.subscription;
 
   return (
     <div className="rounded-card border border-solid-error/30 bg-surface px-5 py-4">
@@ -87,11 +89,11 @@ function AccountDangerZoneInner({
       </p>
       <p className="mt-2 text-fg-secondary text-sm">
         {m.settings_danger_zone_body({
-          days: String(preflight.data?.graceDays ?? 30),
+          days: String(preflightData?.graceDays ?? 30),
         })}
       </p>
 
-      {preflight.isSuccess && (
+      {preflightIsSuccess && (
         <div className="mt-4 space-y-3 text-sm">
           {subscription && (
             <div className="rounded-button border border-solid-error/30 bg-tint-error px-3 py-2.5 text-tint-error-fg">
@@ -137,26 +139,26 @@ function AccountDangerZoneInner({
       <div className="mt-4">
         <p className="mb-2 text-fg-secondary text-sm">
           {m.settings_deletion_confirm_email({
-            email: me.data?.email ?? '…',
+            email: meData?.email ?? '…',
           })}
         </p>
         <Input
           autoComplete="off"
-          disabled={requestDeletion.isPending || !preflight.data?.canDelete}
+          disabled={requestDeletionIsPending || !preflightData?.canDelete}
           onChange={(e) => setConfirmEmail(e.target.value)}
-          placeholder={me.data?.email}
+          placeholder={meData?.email}
           value={confirmEmail}
         />
       </div>
 
       <Button
         className="mt-4"
-        disabled={!canDelete || requestDeletion.isPending}
+        disabled={!canDelete || requestDeletionIsPending}
         onClick={() => void onRequestDeletion()}
         size="sm"
         variant="danger"
       >
-        {requestDeletion.isPending
+        {requestDeletionIsPending
           ? m.common_loading()
           : m.settings_deletion_request()}
       </Button>
@@ -176,10 +178,12 @@ function AccountDangerZone() {
 
 export default function Settings() {
   const { style, setStyle } = useTheme();
-  const prefs = useNotificationPrefs();
-  const setPrefs = useSetNotificationPrefs();
-  const setLocale = useSetLocale();
-  const currentPrefs = prefs.data;
+  const { data: prefsData, isSuccess: prefsIsSuccess } = useNotificationPrefs();
+  const { isPending: setPrefsIsPending, mutate: setPrefs } =
+    useSetNotificationPrefs();
+  const { isPending: setLocaleIsPending, mutateAsync: setLocale } =
+    useSetLocale();
+  const currentPrefs = prefsData;
 
   return (
     <Panel>
@@ -211,10 +215,10 @@ export default function Settings() {
             </Row>
             <Row label={m.settings_language()}>
               <LocaleSwitcher
-                disabled={setLocale.isPending}
+                disabled={setLocaleIsPending}
                 onChange={(locale, previousLocale) => {
                   if (locale !== 'en' && locale !== 'zh') return;
-                  void setLocale.mutateAsync(locale).catch(() => {
+                  void setLocale(locale).catch(() => {
                     if (getLocale() === locale) {
                       setParaglideLocale(previousLocale as never);
                     }
@@ -232,10 +236,10 @@ export default function Settings() {
               <Switch
                 aria-label={m.settings_email_workspace_invite()}
                 checked={currentPrefs?.emailWorkspaceInvite ?? false}
-                disabled={!prefs.isSuccess || setPrefs.isPending}
-                onChange={(emailWorkspaceInvite) => {
-                  if (!currentPrefs || setPrefs.isPending) return;
-                  setPrefs.mutate({ ...currentPrefs, emailWorkspaceInvite });
+                disabled={!prefsIsSuccess || setPrefsIsPending}
+                onCheckedChange={(emailWorkspaceInvite) => {
+                  if (!currentPrefs || setPrefsIsPending) return;
+                  setPrefs({ ...currentPrefs, emailWorkspaceInvite });
                 }}
               />
             </Row>
@@ -243,10 +247,10 @@ export default function Settings() {
               <Switch
                 aria-label={m.settings_email_membership()}
                 checked={currentPrefs?.emailMembership ?? false}
-                disabled={!prefs.isSuccess || setPrefs.isPending}
-                onChange={(emailMembership) => {
-                  if (!currentPrefs || setPrefs.isPending) return;
-                  setPrefs.mutate({ ...currentPrefs, emailMembership });
+                disabled={!prefsIsSuccess || setPrefsIsPending}
+                onCheckedChange={(emailMembership) => {
+                  if (!currentPrefs || setPrefsIsPending) return;
+                  setPrefs({ ...currentPrefs, emailMembership });
                 }}
               />
             </Row>
@@ -254,10 +258,10 @@ export default function Settings() {
               <Switch
                 aria-label={m.settings_email_billing()}
                 checked={currentPrefs?.emailBilling ?? false}
-                disabled={!prefs.isSuccess || setPrefs.isPending}
-                onChange={(emailBilling) => {
-                  if (!currentPrefs || setPrefs.isPending) return;
-                  setPrefs.mutate({ ...currentPrefs, emailBilling });
+                disabled={!prefsIsSuccess || setPrefsIsPending}
+                onCheckedChange={(emailBilling) => {
+                  if (!currentPrefs || setPrefsIsPending) return;
+                  setPrefs({ ...currentPrefs, emailBilling });
                 }}
               />
             </Row>

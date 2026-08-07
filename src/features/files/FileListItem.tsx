@@ -1,17 +1,12 @@
-import { useState } from 'react';
-import { useDeleteFile, useMoveFile, useUpdateFile } from '@/api/hooks';
 import type { Chapter, SourceFile, UserColor } from '@/api/types';
-import { Button } from '@/components/ui/Button';
-import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
-import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
-import { Input } from '@/components/ui/Input';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import { MoveToChapterDialog } from '@/features/workspace/MoveToChapterDialog';
-import { m } from '@/i18n';
+import {
+  ContentActions,
+  toFileActionTarget,
+} from '@/features/workspace/ContentActions';
 import { cn } from '@/lib/cn';
-import { formatFileSize } from './fileUtils';
 
 /** A file row in the workspace sidebar. Opens the file in the center pane, shows
  * ingest progress, and exposes a hover action menu (rename / properties /
@@ -39,15 +34,6 @@ export function FileListItem({
 }) {
   const processing = file.status === 'processing';
   const failed = file.status === 'failed';
-  const updateFile = useUpdateFile(workspaceId);
-  const moveFile = useMoveFile(workspaceId);
-  const delFile = useDeleteFile(workspaceId);
-
-  const [renameOpen, setRenameOpen] = useState(false);
-  const [propsOpen, setPropsOpen] = useState(false);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [moveOpen, setMoveOpen] = useState(false);
-  const [name, setName] = useState(file.name);
 
   return (
     <div className="flex flex-col">
@@ -88,34 +74,20 @@ export function FileListItem({
           </div>
         )}
         {!readOnly && (
-          <HoverActions
-            className="absolute top-1/2 right-1 -translate-y-1/2"
-            items={[
-              {
-                icon: 'write',
-                label: m.action_rename(),
-                onClick: () => {
-                  setName(file.name);
-                  setRenameOpen(true);
-                },
-              },
-              {
-                icon: 'files',
-                label: 'Move File',
-                onClick: () => setMoveOpen(true),
-              },
-              {
-                icon: 'help',
-                label: 'Properties',
-                onClick: () => setPropsOpen(true),
-              },
-              {
-                danger: true,
-                icon: 'trash',
-                label: m.action_delete(),
-                onClick: () => setConfirmOpen(true),
-              },
-            ]}
+          <ContentActions
+            chapters={chapters}
+            color={color}
+            content={toFileActionTarget(file)}
+            display="hover"
+            hoverClassName={cn(
+              'absolute top-1/2 right-1 -translate-y-[calc(50%-2px)]',
+              active && 'from-surface-hover-bg'
+            )}
+            onDeleted={() => onDeleted?.(file.id)}
+            propertiesClassName="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2"
+            propertyLabelClassName="text-fg-secondary"
+            renameTitle="Rename file"
+            workspaceId={workspaceId}
           />
         )}
       </div>
@@ -129,73 +101,6 @@ export function FileListItem({
           <ProgressBar height={4} tone={color} value={file.ingestPct ?? 0} />
         </div>
       )}
-
-      <SimpleDialog
-        footer={
-          <>
-            <Button onClick={() => setRenameOpen(false)} variant="ghost">
-              Cancel
-            </Button>
-            <Button
-              onClick={() => {
-                const n = name.trim();
-                if (n) updateFile.mutate({ id: file.id, name: n });
-                setRenameOpen(false);
-              }}
-            >
-              Save
-            </Button>
-          </>
-        }
-        onClose={() => setRenameOpen(false)}
-        open={renameOpen}
-        title="Rename file"
-      >
-        <Input onChange={(e) => setName(e.target.value)} value={name} />
-      </SimpleDialog>
-
-      <SimpleDialog
-        onClose={() => setPropsOpen(false)}
-        open={propsOpen}
-        title="File properties"
-      >
-        <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm">
-          <Row label="Name" value={file.name} />
-          <Row label="Type" value={file.kind.toUpperCase()} />
-          <Row label="Size" value={formatFileSize(file.sizeBytes)} />
-          <Row label="Status" value={file.status ?? 'ready'} />
-          <Row label="Added" value={new Date(file.addedAt).toLocaleString()} />
-        </dl>
-      </SimpleDialog>
-
-      <ConfirmDialog
-        body="This removes the file from the workspace. This cannot be undone."
-        onClose={() => setConfirmOpen(false)}
-        onConfirm={() => {
-          delFile.mutate(file.id);
-          onDeleted?.(file.id);
-        }}
-        open={confirmOpen}
-        title={`Delete ${file.name}?`}
-      />
-
-      <MoveToChapterDialog
-        chapters={chapters}
-        color={color}
-        currentChapterId={file.chapterId}
-        onClose={() => setMoveOpen(false)}
-        onSelect={(chapterId) => moveFile.mutate({ chapterId, id: file.id })}
-        open={moveOpen}
-      />
     </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <>
-      <p className="text-fg-muted">{label}</p>
-      <p className="truncate">{value}</p>
-    </>
   );
 }

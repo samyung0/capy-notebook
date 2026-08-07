@@ -9,7 +9,7 @@ import { m } from '@/i18n';
 
 export default function Thinking() {
   const { data, isLoading } = useCanvases();
-  const create = useCreateCanvas();
+  const { mutate: createCanvas } = useCreateCanvas();
 
   return (
     <PanelWithInvertedRadius>
@@ -20,7 +20,7 @@ export default function Thinking() {
             label="New canvas"
             onClick={() => {
               const n = prompt('Canvas name');
-              if (n) create.mutate(n);
+              if (n) createCanvas(n);
             }}
             variant="dark"
           />

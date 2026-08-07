@@ -1,10 +1,15 @@
-import { useState } from 'react';
-import type { Chapter, MaterialRef, MaterialRefType } from '@/api/types';
+import type {
+  Chapter,
+  MaterialRef,
+  MaterialRefType,
+  UserColor,
+} from '@/api/types';
 import { Spinner } from '@/components/ui/feedback';
-import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon, type IconName } from '@/components/ui/Icon';
-import { MoveToChapterDialog } from '@/features/workspace/MoveToChapterDialog';
-import { m } from '@/i18n';
+import {
+  ContentActions,
+  toMaterialActionTarget,
+} from '@/features/workspace/ContentActions';
 import { cn } from '@/lib/cn';
 
 const MATERIAL_ICON: Record<MaterialRefType, IconName> = {
@@ -21,7 +26,9 @@ export function MaterialListItem({
   onOpen,
   onDelete,
   chapters,
+  color,
   onMove,
+  workspaceId,
   generating = false,
   readOnly = false,
 }: {
@@ -31,29 +38,13 @@ export function MaterialListItem({
   onDelete?: () => void;
   /** All workspace chapters, for the "Move to…" menu. */
   chapters: Chapter[];
+  color?: UserColor;
   /** File this material under a chapter (null = unfile). */
   onMove?: (chapterId: string | null) => void;
+  workspaceId: string;
   generating?: boolean;
   readOnly?: boolean;
 }) {
-  const [moveOpen, setMoveOpen] = useState(false);
-  const items = [
-    {
-      icon: 'files' as IconName,
-      label: 'Move file',
-      onClick: () => setMoveOpen(true),
-    },
-    ...(onDelete
-      ? [
-          {
-            danger: true,
-            icon: 'trash' as IconName,
-            label: m.action_delete(),
-            onClick: onDelete,
-          },
-        ]
-      : []),
-  ];
   return (
     <div
       className={cn(
@@ -78,19 +69,21 @@ export function MaterialListItem({
         {generating && <Spinner className="size-4 shrink-0" />}
       </button>
       {!readOnly && !generating && (
-        <>
-          <HoverActions
-            className="absolute top-1/2 right-1 -translate-y-1/2"
-            items={items}
-          />
-          <MoveToChapterDialog
-            chapters={chapters}
-            currentChapterId={matRef.chapterId}
-            onClose={() => setMoveOpen(false)}
-            onSelect={(chapterId) => onMove?.(chapterId)}
-            open={moveOpen}
-          />
-        </>
+        <ContentActions
+          chapters={chapters}
+          color={color}
+          content={toMaterialActionTarget(matRef)}
+          display="hover"
+          hoverClassName={cn(
+            'absolute top-1/2 right-1 -translate-y-[calc(50%-2px)]',
+            active && 'from-surface-hover-bg'
+          )}
+          includeDelete={!!onDelete}
+          onMove={(chapterId) => onMove?.(chapterId)}
+          onRequestDelete={onDelete}
+          renameTitle="Rename material"
+          workspaceId={workspaceId}
+        />
       )}
     </div>
   );

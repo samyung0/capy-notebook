@@ -17,6 +17,7 @@ import { UserColorChooser } from '@/components/ui/UserColorChooser';
 import { WorkspaceCard } from '@/components/ui/WorkspaceCard';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { type USER_COLORS, USER_COLORS_DISPLAY } from '@/lib/userColor';
 import { usePortals } from '@/stores/portals';
 
 const SORTS = [
@@ -52,7 +53,13 @@ export default function Workspaces() {
   );
   const hasFilters = colorFilters.length > 0 || tagFilters.length > 0;
   const filterLabel = useMemo(() => {
-    const parts = [...colorFilters, ...tagFilters];
+    const parts = [
+      ...colorFilters.map(
+        (color) =>
+          USER_COLORS_DISPLAY[color as (typeof USER_COLORS)[number]] ?? color
+      ),
+      ...tagFilters,
+    ];
     if (!parts.length) return m.workspaces_filter();
     if (parts.length <= 2) return parts.join(' · ');
     return `${parts.slice(0, 2).join(' · ')} +${parts.length - 2}`;
@@ -74,7 +81,7 @@ export default function Workspaces() {
       />
 
       <div className="-mb-3 flex items-center justify-between gap-3 px-6">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 pt-2 pb-3">
           <Menu
             align="start"
             items={SORTS.map((s) => ({
@@ -83,7 +90,7 @@ export default function Workspaces() {
             }))}
             trigger={
               <Button
-                className="px-1"
+                className="h-fit px-1 py-1.5"
                 iconRight="chevronDown"
                 size="md"
                 variant="ghost"
@@ -95,7 +102,7 @@ export default function Workspaces() {
           <Popover onOpenChange={setFilterOpen} open={filterOpen}>
             <PopoverTrigger asChild>
               <Button
-                className="px-1"
+                className="h-fit px-1 py-1.5"
                 iconLeft="filter"
                 iconRight="chevronDown"
                 size="md"
@@ -107,13 +114,13 @@ export default function Workspaces() {
             <PopoverContent align="start" className="max-h-80 w-72 gap-0 p-0">
               <Card
                 border="solid"
-                className="max-h-80 gap-3 overflow-y-auto p-3"
+                className="max-h-80 gap-5 overflow-y-auto p-3"
                 radius="card"
               >
-                <section className="flex flex-col gap-2">
-                  <h3 className="t-meta text-fg-muted">
+                <section className="mt-1 flex flex-col gap-2">
+                  <p className="t-label text-fg-muted">
                     {m.workspaces_filter_color()}
-                  </h3>
+                  </p>
                   <UserColorChooser
                     onChange={(c) =>
                       setColorFilters((prev) => toggleIn(prev, c))
@@ -123,9 +130,9 @@ export default function Workspaces() {
                 </section>
 
                 <section className="flex flex-col gap-2">
-                  <h3 className="t-meta text-fg-muted">
+                  <p className="t-label text-fg-muted">
                     {m.workspaces_filter_tags()}
-                  </h3>
+                  </p>
                   {tags.length === 0 ? (
                     <p className="text-fg-muted text-sm">
                       {m.workspaces_filter_no_tags()}
@@ -145,7 +152,7 @@ export default function Workspaces() {
                             <Badge
                               className={cn(
                                 'transition-colors',
-                                !active && 'hover:bg-surface-hover-bg'
+                                !active && 'hover:bg-surface-dark'
                               )}
                               size="sm"
                               tone={active ? 'dark' : 'page'}
@@ -160,6 +167,7 @@ export default function Workspaces() {
                 </section>
 
                 <Button
+                  className="mx-auto w-fit"
                   disabled={!hasFilters}
                   fullWidth
                   onClick={() => {
@@ -167,7 +175,7 @@ export default function Workspaces() {
                     setTagFilters([]);
                   }}
                   size="sm"
-                  variant="ghost"
+                  variant="ghost-hover"
                 >
                   {m.workspaces_filter_reset()}
                 </Button>

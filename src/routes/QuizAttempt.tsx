@@ -22,8 +22,8 @@ export default function QuizAttempt() {
   const params = useParams({ strict: false });
   const quizId = (params as { quizId: string }).quizId;
   const { data: quiz, isLoading, isError, error } = useQuiz(quizId);
-  const submit = useSubmitAttempt();
-  const cloneQuiz = useCloneQuiz();
+  const { isPending: submitIsPending, mutate: submit } = useSubmitAttempt();
+  const { isPending: cloneQuizIsPending, mutate: cloneQuiz } = useCloneQuiz();
   const navigate = useNavigate();
 
   const [idx, setIdx] = useState(0);
@@ -88,7 +88,7 @@ export default function QuizAttempt() {
     const wrong = quiz.questions.filter(
       (qq) => !gradeQuestion(qq, answers[qq.id])
     );
-    submit.mutate(
+    submit(
       {
         answers,
         correct: score.correct,
@@ -198,10 +198,10 @@ export default function QuizAttempt() {
           </p>
           {!quiz.isOwner && (
             <Button
-              disabled={cloneQuiz.isPending}
+              disabled={cloneQuizIsPending}
               iconLeft="plus"
               onClick={() =>
-                cloneQuiz.mutate(quizId, {
+                cloneQuiz(quizId, {
                   onError: (err) => toastCloneError(err, 'quiz'),
                   onSuccess: (copy) =>
                     navigate({
@@ -212,7 +212,7 @@ export default function QuizAttempt() {
               }
               size="sm"
             >
-              {cloneQuiz.isPending ? 'Cloning…' : 'Clone'}
+              {cloneQuizIsPending ? 'Cloning…' : 'Clone'}
             </Button>
           )}
         </div>
@@ -243,12 +243,12 @@ export default function QuizAttempt() {
             </Button>
           ) : (
             <Button
-              disabled={submit.isPending}
+              disabled={submitIsPending}
               iconRight="check"
               onClick={finish}
               variant="accent"
             >
-              {submit.isPending ? 'Saving…' : 'Finish'}
+              {submitIsPending ? 'Saving…' : 'Finish'}
             </Button>
           )}
         </div>

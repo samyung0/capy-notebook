@@ -5,7 +5,7 @@ import { Icon, type IconName } from './Icon';
 import { IconButton, type IconButtonProps } from './IconButton';
 
 const inputContainerVariants = cva(
-  'flex items-center gap-2 outline-none transition-[colors,border] duration-150 file:inline-flex file:border-0 file:bg-transparent file:font-medium file:text-fg file:text-sm disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50',
+  'flex items-center gap-2 outline-none transition-[colors,border] duration-150 file:inline-flex file:border-0 file:bg-transparent file:font-medium file:text-fg file:text-sm has-disabled:pointer-events-none has-disabled:cursor-not-allowed has-disabled:bg-surface-hover-bg',
   {
     compoundVariants: [
       {
@@ -46,7 +46,7 @@ const inputContainerVariants = cva(
 );
 
 const inputVariants = cva(
-  'min-w-0 flex-1 border-none bg-transparent py-2.5 outline-none placeholder:text-placeholder',
+  'min-w-0 flex-1 border-none bg-transparent py-2.5 outline-none placeholder:text-placeholder disabled:bg-surface-hover-bg disabled:text-fg-secondary',
   {
     defaultVariants: {
       size: 'md',

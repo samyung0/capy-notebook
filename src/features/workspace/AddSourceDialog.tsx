@@ -243,7 +243,7 @@ function UploadFiles({
   onClose?: () => void;
   className?: string;
 }) {
-  const uploadSource = useUploadSource(workspaceId);
+  const { mutateAsync: uploadSource } = useUploadSource(workspaceId);
   const { data: uploadPolicy } = useSourceUploadPolicy();
   const { data: chapters } = useChapters(workspaceId);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -357,17 +357,15 @@ function UploadFiles({
       batch.map((f) => {
         const controller = new AbortController();
         uploadControllers.current.set(f.key, controller);
-        return uploadSource
-          .mutateAsync({
-            chapterId: f.chapterId,
-            chapterName: f.chapterName,
-            file: f.file,
-            kind: f.kind,
-            onUploadProgress: (uploadPct) => patchFile(f.key, { uploadPct }),
-            parseMode: f.parseMode,
-            signal: controller.signal,
-          })
-          .finally(() => uploadControllers.current.delete(f.key));
+        return uploadSource({
+          chapterId: f.chapterId,
+          chapterName: f.chapterName,
+          file: f.file,
+          kind: f.kind,
+          onUploadProgress: (uploadPct) => patchFile(f.key, { uploadPct }),
+          parseMode: f.parseMode,
+          signal: controller.signal,
+        }).finally(() => uploadControllers.current.delete(f.key));
       })
     );
     setIsSubmitting(false);
@@ -635,7 +633,8 @@ function ImportFiles({
   // const [chapterId, setChapterId] = useState<string | null>(null);
   const openMsImport = usePortals((s) => s.openMsImport);
   const { data: integrations } = useIntegrations();
-  const importSources = useImportSources(workspaceId);
+  const { isPending: importSourcesIsPending, mutate: importSources } =
+    useImportSources(workspaceId);
   // const { data: msFiles } = useMicrosoftRecentFiles(msOpen && !!integrations?.microsoft);
 
   const connectProvider = useProviderConnect();
@@ -656,7 +655,7 @@ function ImportFiles({
 
   async function connect(provider: 'google' | 'microsoft') {
     if (USE_MSW) {
-      importSources.mutate(
+      importSources(
         {
           chapterId: null,
           fileIds: ['mock_drive_file'],
@@ -685,7 +684,7 @@ function ImportFiles({
 
   async function openGooglePicker() {
     if (USE_MSW) {
-      importSources.mutate(
+      importSources(
         {
           chapterId: null,
           fileIds: ['mock_drive_file'],
@@ -708,7 +707,7 @@ function ImportFiles({
       .setOAuthToken(accessToken)
       .setCallback((data: { action: string; docs?: { id: string }[] }) => {
         if (data.action === 'picked' && data.docs?.length) {
-          importSources.mutate(
+          importSources(
             {
               chapterId: null,
               fileIds: data.docs.map((d: { id: string }) => d.id),
@@ -742,7 +741,7 @@ function ImportFiles({
     <div className={cn(className)}>
       <div className="grid grid-cols-2 gap-3">
         <Button
-          disabled={importSources.isPending}
+          disabled={importSourcesIsPending}
           iconLeft="files"
           onClick={onGoogleClick}
           variant="outline"
@@ -750,7 +749,7 @@ function ImportFiles({
           Google Drive
         </Button>
         <Button
-          disabled={importSources.isPending}
+          disabled={importSourcesIsPending}
           iconLeft="files"
           onClick={onMicrosoftClick}
           variant="outline"

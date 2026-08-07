@@ -13,7 +13,7 @@ export default function QuizEdit() {
   const quizId = (params as { quizId: string }).quizId;
   const navigate = useNavigate();
   const { data: quiz, isLoading } = useQuiz(quizId);
-  const update = useUpdateQuiz();
+  const { isPending: updateIsPending, mutateAsync: update } = useUpdateQuiz();
 
   const [name, setName] = useState('');
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -34,7 +34,7 @@ export default function QuizEdit() {
 
   async function save() {
     try {
-      await update.mutateAsync({ id: quizId, name, questions });
+      await update({ id: quizId, name, questions });
       back();
     } catch (err) {
       userToast({
@@ -52,7 +52,7 @@ export default function QuizEdit() {
         actions={
           <>
             <Button
-              disabled={update.isPending}
+              disabled={updateIsPending}
               iconLeft="chevronLeft"
               onClick={back}
               variant="ghost"
@@ -60,11 +60,11 @@ export default function QuizEdit() {
               Back
             </Button>
             <Button
-              disabled={update.isPending || !seeded.current}
+              disabled={updateIsPending || !seeded.current}
               iconLeft="check"
               onClick={save}
             >
-              {update.isPending ? 'Saving…' : 'Save'}
+              {updateIsPending ? 'Saving…' : 'Save'}
             </Button>
           </>
         }

@@ -6,7 +6,7 @@ import { m } from '@/i18n';
 
 export default function Tasks() {
   const { data, isLoading } = useTasks();
-  const toggle = useToggleTask();
+  const { mutate: toggle } = useToggleTask();
 
   const groups = (data ?? []).reduce<Record<string, typeof data>>((acc, t) => {
     const day = new Date(t.dueDate).toLocaleDateString(undefined, {
@@ -41,7 +41,7 @@ export default function Tasks() {
                     <button
                       className="flex items-start gap-3 rounded-card border border-line bg-surface px-4 py-3 text-left hover:bg-surface-hover-bg"
                       key={t.id}
-                      onClick={() => toggle.mutate({ done: !t.done, id: t.id })}
+                      onClick={() => toggle({ done: !t.done, id: t.id })}
                       type="button"
                     >
                       <Checkbox checked={t.done} size={22} tone="purple" />

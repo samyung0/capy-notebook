@@ -342,6 +342,8 @@ export interface MaterialRef {
   chapterId: string | null;
   createdAt: string;
   id: string;
+  maxDepth: number;
+  nodeCount: number;
   /** Shared ordering position among files and materials in the same bucket. */
   position: number;
   title: string;

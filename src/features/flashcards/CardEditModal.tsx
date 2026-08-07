@@ -22,8 +22,10 @@ export function CardEditModal({
 }) {
   const [front, setFront] = useState('');
   const [back, setBack] = useState('');
-  const createCard = useCreateCard(deckId);
-  const updateCard = useUpdateCard(deckId);
+  const { isPending: createCardIsPending, mutate: createCard } =
+    useCreateCard(deckId);
+  const { isPending: updateCardIsPending, mutate: updateCard } =
+    useUpdateCard(deckId);
 
   useEffect(() => {
     if (open) {
@@ -33,13 +35,13 @@ export function CardEditModal({
   }, [open, card]);
 
   const canSave = front.trim().length > 0 && back.trim().length > 0;
-  const pending = createCard.isPending || updateCard.isPending;
+  const pending = createCardIsPending || updateCardIsPending;
 
   function save() {
     if (!canSave) return;
     const done = { onSuccess: () => onClose() };
-    if (card) updateCard.mutate({ back, front, id: card.id }, done);
-    else createCard.mutate({ back, front }, done);
+    if (card) updateCard({ back, front, id: card.id }, done);
+    else createCard({ back, front }, done);
   }
 
   return (

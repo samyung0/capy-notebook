@@ -24,8 +24,8 @@ export function NotificationsBell() {
     useNotifications();
   const { data: unreadCount } = useUnreadNotificationCount();
   useNotificationStream();
-  const markNotificationRead = useMarkNotificationRead();
-  const markRead = useMarkNotificationsRead();
+  const { mutate: markNotificationRead } = useMarkNotificationRead();
+  const { mutate: markRead } = useMarkNotificationsRead();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const notifications = data?.pages.flatMap((page) => page.items) ?? [];
@@ -62,7 +62,7 @@ export function NotificationsBell() {
             {unread && (
               <Button
                 className="text-xs"
-                onClick={() => markRead.mutate()}
+                onClick={() => markRead()}
                 size="xs"
                 variant="ghost-link"
               >
@@ -83,7 +83,7 @@ export function NotificationsBell() {
                 }
                 key={n.id}
                 onClick={() => {
-                  if (!n.readAt) markNotificationRead.mutate(n.id);
+                  if (!n.readAt) markNotificationRead(n.id);
                   if (!n.href) return;
                   setOpen(false);
                   navigate({ to: n.href });

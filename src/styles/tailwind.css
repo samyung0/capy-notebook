@@ -28,6 +28,7 @@
 
   /* Text → text-* */
   --color-fg: var(--text-primary);
+  /* secondary should be slightly darker than muted */
   --color-fg-secondary: var(--text-secondary);
   --color-fg-muted: var(--text-muted);
   --color-placeholder: var(--text-placeholder);

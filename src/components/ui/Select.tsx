@@ -4,7 +4,7 @@ import type * as React from 'react';
 
 import { cn } from '@/lib/cn';
 import { Spinner } from './feedback';
-import { Icon } from './Icon';
+import { Icon, type IconName } from './Icon';
 
 function Select({
   ...props
@@ -162,9 +162,15 @@ function SelectItem({
   children,
   disabled,
   size = 'md',
+  iconAndValue,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Item> &
-  VariantProps<typeof selectItemVariants>) {
+  VariantProps<typeof selectItemVariants> & {
+    iconAndValue?: {
+      icon: IconName;
+      label: string;
+    };
+  }) {
   return (
     <SelectPrimitive.Item
       className={cn(
@@ -182,7 +188,16 @@ function SelectItem({
           <Icon className="pointer-events-none" name="check" />
         </SelectPrimitive.ItemIndicator>
       </div>
-      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      <SelectPrimitive.ItemText>
+        {iconAndValue ? (
+          <div className="flex items-center gap-2">
+            <Icon className="size-4.5" name={iconAndValue.icon} />
+            <span className="translate-y-px">{iconAndValue.label}</span>
+          </div>
+        ) : (
+          children
+        )}
+      </SelectPrimitive.ItemText>
     </SelectPrimitive.Item>
   );
 }

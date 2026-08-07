@@ -29,7 +29,7 @@ function PopoverContent({
       <PopoverPrimitive.Content
         align={align}
         className={cn(
-          'data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=close]:fade-out-0 data-[state=close]:zoom-out-95 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 z-50 flex w-72 flex-col gap-2.5 rounded-lg p-2.5 outline-hidden duration-100 data-[state=close]:animate-out data-[state=open]:animate-in',
+          'data-[side=bottom]:slide-in-from-top-4 data-[side=left]:slide-in-from-right-4 data-[side=right]:slide-in-from-left-4 data-[side=top]:slide-in-from-bottom-4 data-[state=close]:fade-out-0 data-[state=close]:zoom-out-95 data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 z-50 flex w-72 flex-col gap-2.5 rounded-lg p-2.5 outline-hidden duration-100 ease-out data-[state=close]:animate-out data-[state=open]:animate-in',
           alignWidthToTrigger && 'w-(--radix-popover-trigger-width)!',
           className
         )}

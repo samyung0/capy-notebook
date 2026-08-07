@@ -13,7 +13,6 @@ import {
   useEditorRef,
 } from 'platejs/react';
 import { createContext, useContext, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import * as Y from 'yjs';
 import {
   useCreateMaterialComment,
@@ -236,22 +235,28 @@ export function CollaborationProvider({
   discussions,
   users,
   currentUserId,
-  actionsPortalHost,
 }: {
   children: React.ReactNode;
   discussions: MaterialDiscussion[];
   users: Record<string, WorkspaceMember>;
   currentUserId: string | null;
-  actionsPortalHost?: HTMLElement | null;
 }) {
   const editor = useEditorRef();
   const { materialId, canEdit, canComment } = useEditorRuntime();
-  const deleteDiscussionMutation = useDeleteMaterialDiscussion(materialId);
-  const createDiscussion = useCreateMaterialDiscussion(materialId);
-  const addComment = useCreateMaterialComment(materialId);
-  const updateComment = useUpdateMaterialComment(materialId);
-  const deleteComment = useDeleteMaterialComment(materialId);
-  const resolveDiscussion = useResolveMaterialDiscussion(materialId);
+  const { isPending: deleteDiscussionIsPending, mutate: deleteDiscussion } =
+    useDeleteMaterialDiscussion(materialId);
+  const {
+    isPending: createDiscussionIsPending,
+    mutateAsync: createDiscussion,
+  } = useCreateMaterialDiscussion(materialId);
+  const { isPending: addCommentIsPending, mutateAsync: addComment } =
+    useCreateMaterialComment(materialId);
+  const { isPending: updateCommentIsPending, mutateAsync: updateComment } =
+    useUpdateMaterialComment(materialId);
+  const { isPending: deleteCommentIsPending, mutate: deleteComment } =
+    useDeleteMaterialComment(materialId);
+  const { isPending: resolveDiscussionIsPending, mutate: resolveDiscussion } =
+    useResolveMaterialDiscussion(materialId);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [comment, setComment] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -259,12 +264,12 @@ export function CollaborationProvider({
     null
   );
   const mutationPending =
-    deleteDiscussionMutation.isPending ||
-    createDiscussion.isPending ||
-    addComment.isPending ||
-    updateComment.isPending ||
-    deleteComment.isPending ||
-    resolveDiscussion.isPending;
+    deleteDiscussionIsPending ||
+    createDiscussionIsPending ||
+    addCommentIsPending ||
+    updateCommentIsPending ||
+    deleteCommentIsPending ||
+    resolveDiscussionIsPending;
 
   const fail = (cause: unknown, fallback: string) =>
     setError(cause instanceof Error ? cause.message : fallback);
@@ -288,7 +293,7 @@ export function CollaborationProvider({
         | string
         | undefined;
       const quote = editor.api.string(selection);
-      await createDiscussion.mutateAsync({
+      await createDiscussion({
         anchorEnd: bytesToBase64(Y.encodeRelativePosition(relative.focus)),
         anchorQuote: quote.slice(0, 1000),
         anchorStart: bytesToBase64(Y.encodeRelativePosition(relative.anchor)),
@@ -306,13 +311,13 @@ export function CollaborationProvider({
 
   const actions: CollaborationActions = {
     addComment: async (discussionId, text) => {
-      await addComment.mutateAsync({
+      await addComment({
         contentRich: richComment(text),
         discussionId,
       });
     },
     addReply: async (discussionId, parentCommentId, text) => {
-      await addComment.mutateAsync({
+      await addComment({
         contentRich: richComment(text),
         discussionId,
         parentCommentId,
@@ -324,11 +329,11 @@ export function CollaborationProvider({
     currentUserId,
     deleteComment: (entry) => {
       if (!window.confirm('Delete this comment?')) return;
-      deleteComment.mutate(entry.id);
+      deleteComment(entry.id);
     },
     deleteDiscussion: (discussion) => {
       if (!window.confirm('Delete this comment thread?')) return;
-      deleteDiscussionMutation.mutate(discussion.id);
+      deleteDiscussion(discussion.id);
     },
     discussions,
     mutationPending,
@@ -340,12 +345,12 @@ export function CollaborationProvider({
       setDialogOpen(true);
     },
     resolve: (discussion) =>
-      resolveDiscussion.mutate({
+      resolveDiscussion({
         discussionId: discussion.id,
         isResolved: !discussion.isResolved,
       }),
     updateComment: async (commentId, text) => {
-      await updateComment.mutateAsync({
+      await updateComment({
         commentId,
         contentRich: richComment(text),
       });
@@ -356,8 +361,6 @@ export function CollaborationProvider({
   return (
     <CollaborationActionsContext.Provider value={actions}>
       {children}
-      {actionsPortalHost &&
-        createPortal(<CommentToolbarActions />, actionsPortalHost)}
       <SimpleDialog
         footer={
           <>
@@ -371,7 +374,7 @@ export function CollaborationProvider({
               Cancel
             </Button>
             <Button
-              disabled={!comment.trim() || createDiscussion.isPending}
+              disabled={!comment.trim() || createDiscussionIsPending}
               onClick={() => void submitNewComment()}
             >
               Add comment
@@ -650,21 +653,6 @@ function CommentEntry({
         />
       ))}
     </div>
-  );
-}
-
-export function CommentToolbarActions() {
-  const actions = useCollaborationActions();
-  if (!actions?.canComment) return null;
-  return (
-    <Button
-      disabled={actions.mutationPending}
-      onClick={actions.openComment}
-      size="sm"
-      variant="accent"
-    >
-      Comment
-    </Button>
   );
 }
 

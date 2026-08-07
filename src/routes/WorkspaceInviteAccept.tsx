@@ -7,7 +7,13 @@ import { Icon } from '@/components/ui/Icon';
 export default function WorkspaceInviteAccept() {
   const { token } = useParams({ strict: false }) as { token: string };
   const navigate = useNavigate();
-  const accept = useAcceptWorkspaceInvite();
+  const {
+    data: acceptData,
+    isError: acceptIsError,
+    isPending: acceptIsPending,
+    isSuccess: acceptIsSuccess,
+    mutate: accept,
+  } = useAcceptWorkspaceInvite();
 
   return (
     <PanelWithInvertedRadius className="mx-auto w-full max-w-xl">
@@ -21,19 +27,19 @@ export default function WorkspaceInviteAccept() {
           its owner.
         </p>
 
-        {accept.isError && (
+        {acceptIsError && (
           <p className="mt-5 text-sm text-solid-error" role="alert">
             This invitation is invalid, expired, revoked, or belongs to another
             account.
           </p>
         )}
 
-        {accept.isSuccess ? (
+        {acceptIsSuccess ? (
           <Button
             className="mt-6"
             onClick={() =>
               navigate({
-                params: { workspaceId: accept.data.workspaceId },
+                params: { workspaceId: acceptData.workspaceId },
                 to: '/workspaces/$workspaceId',
               })
             }
@@ -50,11 +56,11 @@ export default function WorkspaceInviteAccept() {
               Cancel
             </Button>
             <Button
-              disabled={accept.isPending || !token}
-              onClick={() => accept.mutate(token)}
+              disabled={acceptIsPending || !token}
+              onClick={() => accept(token)}
               variant="accent"
             >
-              {accept.isPending ? 'Accepting…' : 'Accept invitation'}
+              {acceptIsPending ? 'Accepting…' : 'Accept invitation'}
             </Button>
           </div>
         )}

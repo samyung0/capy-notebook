@@ -208,20 +208,19 @@ function sortWorkspaces(list: Workspace[], sort: string | null): Workspace[] {
 }
 
 export const handlers = [
-  /* ---------------- me ---------------- */
-  http.get('/api/me', async () => {
+  http.all('/api/*', async () => {
     await latency();
-    return HttpResponse.json(db.user);
   }),
-  http.get('/api/account/status', async () => {
-    await latency();
-    return HttpResponse.json({
+
+  /* ---------------- me ---------------- */
+  http.get('/api/me', async () => HttpResponse.json(db.user)),
+  http.get('/api/account/status', async () =>
+    HttpResponse.json({
       ...db.accountStatus,
       userId: db.user.id,
-    });
-  }),
+    })
+  ),
   http.get('/api/account/deletion', async () => {
-    await latency();
     const needingTransfer = db.workspaces.filter(
       (ws) =>
         ws.role === 'owner' &&
@@ -241,7 +240,6 @@ export const handlers = [
     });
   }),
   http.post('/api/account/deletion', async ({ request }) => {
-    await latency();
     const body = (await request.json()) as { confirmEmail?: string };
     if (
       !body.confirmEmail ||
@@ -269,7 +267,6 @@ export const handlers = [
 
   /* ---------------- global search ---------------- */
   http.get('/api/search', async ({ request }) => {
-    await latency();
     const q = (new URL(request.url).searchParams.get('q') ?? '')
       .toLowerCase()
       .trim();
@@ -333,7 +330,6 @@ export const handlers = [
 
   /* ---------------- notifications ---------------- */
   http.get('/api/notifications', async ({ request }) => {
-    await latency();
     const params = new URL(request.url).searchParams;
     const limit = Math.min(Number(params.get('limit') ?? 50), 100);
     const before = Number(params.get('before') ?? 0);
@@ -345,13 +341,13 @@ export const handlers = [
         : undefined;
     return HttpResponse.json({ items, ...(next ? { next } : {}) });
   }),
-  http.get('/api/notifications/unread-count', () =>
+  http.get('/api/notifications/unread-count', async () =>
     HttpResponse.json({
       count: db.notifications.filter((notification) => !notification.readAt)
         .length,
     })
   ),
-  http.post('/api/notifications/:id/read', ({ params }) => {
+  http.post('/api/notifications/:id/read', async ({ params }) => {
     const notification = db.notifications.find((item) => item.id === params.id);
     if (notification) notification.readAt = new Date().toISOString();
     return new HttpResponse(null, { status: 204 });
@@ -363,7 +359,7 @@ export const handlers = [
     });
     return new HttpResponse(null, { status: 204 });
   }),
-  http.get('/api/notification-prefs', () =>
+  http.get('/api/notification-prefs', async () =>
     HttpResponse.json(db.notificationPrefs)
   ),
   http.patch('/api/notification-prefs', async ({ request }) => {
@@ -376,7 +372,6 @@ export const handlers = [
 
   /* ---------------- tags ---------------- */
   http.get('/api/tags', async ({ request }) => {
-    await latency();
     const kind = new URL(request.url).searchParams.get('kind') ?? 'workspace';
     const list = db.tagCatalog
       .filter((t) => t.kind === kind)
@@ -388,7 +383,6 @@ export const handlers = [
   /* ---------------- workspaces ---------------- */
   // TODO response/request/schema model is different
   http.get('/api/workspaces', async ({ request }) => {
-    await latency();
     const url = new URL(request.url);
     const q = (url.searchParams.get('q') ?? '').toLowerCase().trim();
     const colors = (url.searchParams.get('color') ?? '')
@@ -417,14 +411,12 @@ export const handlers = [
     return HttpResponse.json(sortWorkspaces(list, sort));
   }),
   http.get('/api/workspaces/:id', async ({ params }) => {
-    await latency();
     const ws = db.workspaces.find((w) => w.id === params.id);
     if (!ws) return new HttpResponse(null, { status: 404 });
     ws.lastAccessedAt = new Date().toISOString();
     return HttpResponse.json({ ...ws, isOwner: ws.isOwner ?? true });
   }),
   http.get('/api/workspaces/:id/stats', async ({ params }) => {
-    await latency();
     const ws = db.workspaces.find((w) => w.id === params.id);
     if (!ws) return new HttpResponse(null, { status: 404 });
     const wsQuizIds = new Set(
@@ -647,7 +639,6 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   http.post('/api/workspaces/:id/transfer', async ({ params, request }) => {
-    await latency();
     const ws = db.workspaces.find((w) => w.id === params.id);
     if (!ws) return new HttpResponse(null, { status: 404 });
     const body = (await request.json()) as { recipientId?: string };
@@ -722,7 +713,6 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   http.post('/api/workspaces/:id/clone', async ({ params }) => {
-    await latency();
     const source =
       db.workspaces.find((w) => w.id === params.id) ??
       db.publicWorkspaces.find((w) => w.id === params.id);
@@ -781,14 +771,13 @@ export const handlers = [
     return HttpResponse.json({ ragCloned: true, workspace }, { status: 201 });
   }),
   /* ---------------- chapters & files ---------------- */
-  http.get('/api/workspaces/:id/chapters', async ({ params }) => {
-    await latency();
-    return HttpResponse.json(
+  http.get('/api/workspaces/:id/chapters', async ({ params }) =>
+    HttpResponse.json(
       db.chapters
         .filter((c) => c.workspaceId === params.id)
         .sort((a, b) => a.order - b.order)
-    );
-  }),
+    )
+  ),
   http.post('/api/workspaces/:id/chapters', async ({ params, request }) => {
     const body = (await request.json()) as { name: string };
     const order = db.chapters.filter((c) => c.workspaceId === params.id).length;
@@ -867,18 +856,11 @@ export const handlers = [
     }
     return new HttpResponse(null, { status: 204 });
   }),
-  http.get('/api/files', async () => {
-    await latency();
-    return HttpResponse.json(db.files);
-  }),
-  http.get('/api/workspaces/:id/files', async ({ params }) => {
-    await latency();
-    return HttpResponse.json(
-      db.files.filter((f) => f.workspaceId === params.id)
-    );
-  }),
+  http.get('/api/files', async () => HttpResponse.json(db.files)),
+  http.get('/api/workspaces/:id/files', async ({ params }) =>
+    HttpResponse.json(db.files.filter((f) => f.workspaceId === params.id))
+  ),
   http.get('/api/files/:id', async ({ params }) => {
-    await latency();
     const f = db.files.find((x) => x.id === params.id);
     return f ? HttpResponse.json(f) : new HttpResponse(null, { status: 404 });
   }),
@@ -912,7 +894,6 @@ export const handlers = [
   }),
   /* ---------------- study materials ---------------- */
   http.get('/api/workspaces/:id/materials', async ({ params }) => {
-    await latency();
     const wsId = String(params.id);
     const refs: MaterialRef[] = db.materials
       .filter((mt) => mt.workspaceId === wsId)
@@ -920,6 +901,8 @@ export const handlers = [
         chapterId: mt.chapterId ?? null,
         createdAt: mt.createdAt,
         id: mt.id,
+        maxDepth: mt.maxDepth ?? 0,
+        nodeCount: mt.nodeCount ?? 0,
         position: mt.position ?? 0,
         title: mt.title,
         type: refType(mt.kind),
@@ -928,7 +911,6 @@ export const handlers = [
     return HttpResponse.json(refs);
   }),
   http.post('/api/workspaces/:id/materials', async ({ params, request }) => {
-    await latency();
     const wsId = String(params.id);
     const ws = db.workspaces.find((w) => w.id === wsId);
     const body = (await request.json().catch(() => ({}))) as {
@@ -959,7 +941,6 @@ export const handlers = [
   }),
   http.get('/api/materials/:id', async ({ params }) => {
     await hydrateEditorState(String(params.id));
-    await latency();
     const mt = db.materials.find((x) => x.id === params.id);
     return mt ? HttpResponse.json(mt) : new HttpResponse(null, { status: 404 });
   }),
@@ -978,7 +959,6 @@ export const handlers = [
     );
   }),
   http.patch('/api/materials/:id', async ({ params, request }) => {
-    await latency();
     const mt = db.materials.find((x) => x.id === params.id);
     if (!mt) return new HttpResponse(null, { status: 404 });
     const body = (await request.json().catch(() => ({}))) as {
@@ -1141,10 +1121,9 @@ export const handlers = [
     }
     return new HttpResponse(null, { status: 404 });
   }),
-  http.get('/api/source-upload-policy', async () => {
-    await latency();
-    return HttpResponse.json(sourceUploadPolicy);
-  }),
+  http.get('/api/source-upload-policy', async () =>
+    HttpResponse.json(sourceUploadPolicy)
+  ),
   http.post('/api/workspaces/:id/sources', async ({ params, request }) => {
     await delay(500);
     // Real uploads are multipart (file bytes); fall back to JSON for any
@@ -1260,7 +1239,6 @@ export const handlers = [
   }),
   /* ---------------- conversations ---------------- */
   http.get('/api/workspaces/:id/conversations', async ({ params }) => {
-    await latency();
     const list = db.conversations
       .filter((c) => c.workspaceId === params.id)
       .sort((a, b) => +new Date(b.updatedAt) - +new Date(a.updatedAt));
@@ -1269,7 +1247,6 @@ export const handlers = [
   http.post(
     '/api/workspaces/:id/conversations',
     async ({ params, request }) => {
-      await latency();
       const body = (await request.json().catch(() => ({}))) as {
         title?: string;
       };
@@ -1286,14 +1263,12 @@ export const handlers = [
     }
   ),
   http.get('/api/conversations/:id/messages', async ({ params }) => {
-    await latency();
     const list = db.chatMessages.filter(
       (msg) => msg.conversationId === params.id && msg.status !== 'streaming'
     );
     return HttpResponse.json(list);
   }),
   http.delete('/api/conversations/:id', async ({ params }) => {
-    await latency();
     const i = db.conversations.findIndex((c) => c.id === params.id);
     if (i >= 0) db.conversations.splice(i, 1);
     for (let j = db.chatMessages.length - 1; j >= 0; j--) {
@@ -1729,10 +1704,9 @@ export const handlers = [
     });
   }),
   /* ---------------- quizzes & attempts ---------------- */
-  http.get('/api/quizzes', async () => {
-    await latency();
-    return HttpResponse.json(db.quizMaterials().map(db.quizFromMaterial));
-  }),
+  http.get('/api/quizzes', async () =>
+    HttpResponse.json(db.quizMaterials().map(db.quizFromMaterial))
+  ),
   http.post('/api/quizzes', async ({ request }) => {
     const body = (await request.json()) as Partial<Quiz>;
     const ws = db.workspaces.find((w) => w.id === body.workspaceId);
@@ -1757,7 +1731,6 @@ export const handlers = [
   }),
   /** Ad-hoc quiz built from the recently-missed question pool. */
   http.get('/api/mistakes', async () => {
-    await latency();
     const quiz: Quiz = {
       chapters: [],
       createdAt: new Date().toISOString(),
@@ -1771,7 +1744,6 @@ export const handlers = [
     return HttpResponse.json(quiz);
   }),
   http.get('/api/quizzes/:id', async ({ params }) => {
-    await latency();
     if (params.id === 'review_mistakes') {
       return HttpResponse.json({
         chapters: [],
@@ -1817,7 +1789,6 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   http.post('/api/quizzes/:id/clone', async ({ params }) => {
-    await latency();
     const sourceMaterial = db.materials.find(
       (material) => material.id === params.id && material.kind === 'quiz'
     );
@@ -1846,16 +1817,14 @@ export const handlers = [
     db.materials.unshift(material);
     return HttpResponse.json(db.quizFromMaterial(material), { status: 201 });
   }),
-  http.get('/api/attempts', async () => {
-    await latency();
-    return HttpResponse.json(
+  http.get('/api/attempts', async () =>
+    HttpResponse.json(
       [...db.attempts].sort(
         (a, b) => +new Date(b.takenAt) - +new Date(a.takenAt)
       )
-    );
-  }),
+    )
+  ),
   http.get('/api/attempts/:id', async ({ params }) => {
-    await latency();
     const at = db.attempts.find((a) => a.id === params.id);
     if (!at) return new HttpResponse(null, { status: 404 });
     return HttpResponse.json({
@@ -1909,10 +1878,9 @@ export const handlers = [
     return HttpResponse.json(at, { status: 201 });
   }),
   /* ---------------- flashcards ---------------- */
-  http.get('/api/decks', async () => {
-    await latency();
-    return HttpResponse.json(db.deckMaterials().map(db.deckFromMaterial));
-  }),
+  http.get('/api/decks', async () =>
+    HttpResponse.json(db.deckMaterials().map(db.deckFromMaterial))
+  ),
   http.post('/api/decks', async ({ request }) => {
     const body = (await request.json()) as Partial<Deck>;
     const ws = db.workspaces.find((w) => w.id === body.workspaceId);
@@ -1938,7 +1906,6 @@ export const handlers = [
     return HttpResponse.json(db.deckFromMaterial(material), { status: 201 });
   }),
   http.get('/api/decks/:id', async ({ params }) => {
-    await latency();
     const mt = db.materials.find(
       (x) => x.id === params.id && x.kind === 'flashcards'
     );
@@ -1958,7 +1925,6 @@ export const handlers = [
     return HttpResponse.json(db.deckFromMaterial(material));
   }),
   http.post('/api/decks/:id/clone', async ({ params }) => {
-    await latency();
     let source = db.materials.find(
       (material) => material.id === params.id && material.kind === 'flashcards'
     );
@@ -1995,7 +1961,6 @@ export const handlers = [
     return HttpResponse.json(db.deckFromMaterial(material), { status: 201 });
   }),
   http.get('/api/decks/:id/cards', async ({ params }) => {
-    await latency();
     const mt = db.materials.find(
       (x) => x.id === params.id && x.kind === 'flashcards'
     );
@@ -2064,10 +2029,7 @@ export const handlers = [
   }),
 
   /* ---------------- schedule ---------------- */
-  http.get('/api/events', async () => {
-    await latency();
-    return HttpResponse.json(db.events);
-  }),
+  http.get('/api/events', async () => HttpResponse.json(db.events)),
   http.post('/api/events', async ({ request }) => {
     const body = (await request.json()) as Omit<
       (typeof db.events)[number],
@@ -2088,10 +2050,7 @@ export const handlers = [
     if (i >= 0) db.events.splice(i, 1);
     return new HttpResponse(null, { status: 204 });
   }),
-  http.get('/api/labels', async () => {
-    await latency();
-    return HttpResponse.json(db.labels);
-  }),
+  http.get('/api/labels', async () => HttpResponse.json(db.labels)),
   http.patch('/api/labels/:id', async ({ params, request }) => {
     const label = db.labels.find((x) => x.id === params.id);
     if (!label) return new HttpResponse(null, { status: 404 });
@@ -2110,7 +2069,6 @@ export const handlers = [
 
   /* ---------------- tasks ---------------- */
   http.get('/api/tasks', async () => {
-    await latency();
     // simulate day-end cleanup: drop tasks completed before today
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
@@ -2126,19 +2084,14 @@ export const handlers = [
     return HttpResponse.json(t);
   }),
   http.delete('/api/tasks/:id', async ({ params }) => {
-    await latency();
     const i = db.tasks.findIndex((x) => x.id === params.id);
     if (i >= 0) db.tasks.splice(i, 1);
     return new HttpResponse(null, { status: 204 });
   }),
 
   /* ---------------- thinking space ---------------- */
-  http.get('/api/thinking', async () => {
-    await latency();
-    return HttpResponse.json(db.canvases);
-  }),
+  http.get('/api/thinking', async () => HttpResponse.json(db.canvases)),
   http.get('/api/thinking/:id', async ({ params }) => {
-    await latency();
     const c = db.canvases.find((x) => x.id === params.id);
     return c ? HttpResponse.json(c) : new HttpResponse(null, { status: 404 });
   }),
@@ -2163,59 +2116,47 @@ export const handlers = [
   }),
 
   /* ---------------- explore ---------------- */
-  http.get('/api/explore/workspaces', async () => {
-    await latency();
-    return HttpResponse.json(db.publicWorkspaces);
-  }),
-  http.get('/api/explore/quizzes', async () => {
-    await latency();
-    return HttpResponse.json(db.publicQuizzes);
-  }),
-  http.get('/api/explore/decks', async () => {
-    await latency();
-    return HttpResponse.json(db.publicDecks);
-  }),
+  http.get('/api/explore/workspaces', async () =>
+    HttpResponse.json(db.publicWorkspaces)
+  ),
+  http.get('/api/explore/quizzes', async () =>
+    HttpResponse.json(db.publicQuizzes)
+  ),
+  http.get('/api/explore/decks', async () => HttpResponse.json(db.publicDecks)),
 
   /* ---------------- billing ---------------- */
-  http.get('/api/billing', async () => {
-    await latency();
-    return HttpResponse.json({
+  http.get('/api/billing', async () =>
+    HttpResponse.json({
       planTier: db.user.planTier,
       subscriptionStatus: db.user.subscriptionStatus,
-    });
-  }),
+    })
+  ),
   http.post('/api/billing/checkout', async ({ request }) => {
-    await latency();
     const body = (await request.json()) as { planTier: string };
     return HttpResponse.json({
       url: `/subscription?mock_checkout=${body.planTier}`,
     });
   }),
-  http.post('/api/billing/portal', async () => {
-    await latency();
-    return HttpResponse.json({ url: '/subscription?mock_portal=1' });
-  }),
+  http.post('/api/billing/portal', async () =>
+    HttpResponse.json({ url: '/subscription?mock_portal=1' })
+  ),
 
   /* ---------------- integrations ---------------- */
-  http.get('/api/integrations', async () => {
-    await latency();
-    return HttpResponse.json({ google: false, microsoft: false });
-  }),
-  http.get('/api/integrations/google/picker-token', async () => {
-    await latency();
-    return HttpResponse.json({ accessToken: 'mock-google-token' });
-  }),
-  http.get('/api/integrations/microsoft/recent', async () => {
-    await latency();
-    return HttpResponse.json([
+  http.get('/api/integrations', async () =>
+    HttpResponse.json({ google: false, microsoft: false })
+  ),
+  http.get('/api/integrations/google/picker-token', async () =>
+    HttpResponse.json({ accessToken: 'mock-google-token' })
+  ),
+  http.get('/api/integrations/microsoft/recent', async () =>
+    HttpResponse.json([
       { id: 'ms_file_1', name: 'Biology Notes.docx' },
       { id: 'ms_file_2', name: 'Lab Report.pdf' },
-    ]);
-  }),
+    ])
+  ),
   http.post(
     '/api/workspaces/:id/sources/import',
     async ({ params, request }) => {
-      await latency();
       const wsId = params.id as string;
       const body = (await request.json()) as {
         provider: string;

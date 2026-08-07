@@ -7,7 +7,6 @@ import {
   Outlet,
 } from '@tanstack/react-router';
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
-import { Toaster } from 'sonner';
 import { USE_MSW } from '@/api/auth';
 import {
   allFilesQuery,
@@ -57,7 +56,6 @@ const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: () => (
     <>
       <Outlet />
-      <Toaster />
       <TanStackRouterDevtools />
     </>
   ),

@@ -1,12 +1,13 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { useFile, useMaterial } from '@/api/hooks';
-import type { UserColor } from '@/api/types';
+import type { Chapter, UserColor } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { FileError, FileLoading } from '@/features/files/FileStates';
 import { FileViewer } from '@/features/files/FileViewer';
 import { IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
+import { cn } from '@/lib/cn';
 import { Header } from './CenterContentHeader';
 import {
   isInteractiveMaterialMode,
@@ -34,26 +35,32 @@ const MaterialPreview = lazy(() =>
  * flashcards materials get view actions in the header; mindmaps/diagrams render inline.
  * User-authored notes take over the whole pane with the editable Plate editor. */
 export function CenterContent({
+  chapters,
   item,
   readOnly = false,
   color,
+  onDeleted,
+  workspaceId,
 }: {
+  chapters: Chapter[];
   item: OpenItem | null;
   readOnly?: boolean;
   color?: UserColor;
+  onDeleted: () => void;
+  workspaceId: string;
 }) {
   const [imageZoom, setImageZoom] = useState(IMAGE_MIN_ZOOM);
   const [materialMode, setMaterialMode] = useState<MaterialMode | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [editorStatus, setEditorStatus] = useState<NoteEditorStatus | null>(
     null
   );
-  const [collaborationActionsHost, setCollaborationActionsHost] =
-    useState<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setImageZoom(IMAGE_MIN_ZOOM);
     setMaterialMode(null);
     setEditorStatus(null);
+    setIsFullscreen(false);
   }, [item?.kind, item?.id]);
 
   const changeMaterialMode = (nextMode: MaterialMode) => {
@@ -65,21 +72,31 @@ export function CenterContent({
     return <EmptyCenter />;
   }
   return (
-    <>
+    <div
+      className={cn(
+        'flex min-h-0 flex-1 flex-col bg-surface',
+        isFullscreen && 'fixed inset-0 z-40'
+      )}
+    >
       <Header
-        collaborationActionsRef={setCollaborationActionsHost}
+        chapters={chapters}
+        color={color}
         editorStatus={editorStatus}
         imageZoom={imageZoom}
+        isFullscreen={isFullscreen}
         item={item}
         materialMode={materialMode}
+        onDeleted={onDeleted}
         onImageZoomChange={setImageZoom}
         onMaterialModeChange={changeMaterialMode}
+        onToggleFullscreen={() => setIsFullscreen((value) => !value)}
+        readOnly={readOnly}
+        workspaceId={workspaceId}
       />
       <div className="relative min-h-0 flex-1 overflow-auto">
         {item.kind === 'material' && (
           <MaterialBody
             allowExternalAssets={!readOnly}
-            collaborationActionsHost={collaborationActionsHost}
             materialId={item.id}
             mode={materialMode}
             onEditorStatusChange={setEditorStatus}
@@ -94,7 +111,7 @@ export function CenterContent({
           />
         )}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -103,13 +120,11 @@ function MaterialBody({
   mode,
   allowExternalAssets,
   onEditorStatusChange,
-  collaborationActionsHost,
 }: {
   materialId: string;
   mode: MaterialMode | null;
   allowExternalAssets: boolean;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
-  collaborationActionsHost: HTMLDivElement | null;
 }) {
   const { data: material, isLoading, isError } = useMaterial(materialId);
   if (isLoading) {
@@ -134,7 +149,6 @@ function MaterialBody({
         <Suspense fallback={<FileLoading />}>
           <NoteEditor
             allowExternalAssets={allowExternalAssets}
-            collaborationActionsHost={collaborationActionsHost}
             key={`${materialId}:${activeMode}`}
             materialId={materialId}
             mode={activeMode}

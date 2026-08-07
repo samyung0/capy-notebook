@@ -11,7 +11,7 @@ export default function Canvas() {
   const params = useParams({ strict: false });
   const canvasId = (params as { canvasId: string }).canvasId;
   const { data: canvas, isLoading } = useCanvas(canvasId);
-  const save = useSaveCanvas(canvasId);
+  const { isPending: saveIsPending, mutate: save } = useSaveCanvas(canvasId);
 
   return (
     <PanelWithInvertedRadius>
@@ -24,7 +24,7 @@ export default function Canvas() {
           <Icon name="chevronLeft" size={20} />
         </Link>
         <p className="t-subtitle flex-1">{canvas?.name ?? 'Canvas'}</p>
-        {save.isPending && <p className="t-meta text-fg-muted">Saving…</p>}
+        {saveIsPending && <p className="t-meta text-fg-muted">Saving…</p>}
       </div>
       <div className="min-h-0 flex-1">
         {isLoading ? (
@@ -35,7 +35,7 @@ export default function Canvas() {
           >
             <CanvasEditor
               initialScene={canvas?.scene}
-              onChange={(scene) => save.mutate({ scene })}
+              onChange={(scene) => save({ scene })}
             />
           </Suspense>
         )}

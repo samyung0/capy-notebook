@@ -42,7 +42,8 @@ export function GeneratePanel({
   onOpenItem?: (item: OpenItem) => void;
   onGeneratingChange?: (mode: GenerateMode | null) => void;
 }) {
-  const gen = useGenerate(workspaceId);
+  const { isPending: generateIsPending, mutateAsync: generate } =
+    useGenerate(workspaceId);
   const [mode, setMode] = useState<GenerateMode | null>(null);
   const [result, setResult] = useState<GenerateResultData | null>(null);
 
@@ -50,7 +51,7 @@ export function GeneratePanel({
     onGeneratingChange?.(opts.kind);
     setMode(null);
     try {
-      const r = (await gen.mutateAsync(opts)) as GenerateResultData;
+      const r = (await generate(opts)) as GenerateResultData;
       setResult(r);
       // Reveal the freshly-generated artifact in the center pane.
       const materialId =
@@ -83,7 +84,7 @@ export function GeneratePanel({
         {TILES.map(([k, icon, label]) => (
           <ButtonCard
             buttonText={label}
-            disabled={gen.isPending}
+            disabled={generateIsPending}
             icon={icon}
             key={k}
             onClick={() => {
@@ -104,7 +105,7 @@ export function GeneratePanel({
           mode={mode}
           onGenerate={handleGenerate}
           open
-          pending={gen.isPending}
+          pending={generateIsPending}
           setOpen={(o) => {
             if (!o) setMode(null);
           }}

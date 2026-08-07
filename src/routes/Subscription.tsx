@@ -107,14 +107,14 @@ function PlanCard({
 export default function Subscription() {
   const { data: me } = useMe();
   const { data: billing } = useBilling();
-  const checkout = useBillingCheckout();
-  const portal = useBillingPortal();
+  const { mutateAsync: checkout } = useBillingCheckout();
+  const { isPending: portalIsPending, mutate: openPortal } = useBillingPortal();
   const [busy, setBusy] = useState<PlanTier | null>(null);
 
   async function upgrade(tier: PlanTier) {
     setBusy(tier);
     try {
-      const { url } = await checkout.mutateAsync(tier);
+      const { url } = await checkout(tier);
       window.location.href = url;
     } finally {
       setBusy(null);
@@ -145,8 +145,8 @@ export default function Subscription() {
             {me?.subscriptionStatus === 'active' && (
               <Button
                 className="mt-3"
-                disabled={portal.isPending}
-                onClick={() => portal.mutate()}
+                disabled={portalIsPending}
+                onClick={() => openPortal()}
                 size="sm"
                 variant="outline"
               >

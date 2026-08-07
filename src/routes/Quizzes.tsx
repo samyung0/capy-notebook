@@ -62,9 +62,10 @@ function ReviewMistakesCard() {
 function AllQuizzes() {
   const { data, isLoading } = useQuizzes();
   const navigate = useNavigate();
-  const del = useDeleteQuiz();
-  const clone = useCloneQuiz();
-  const update = useUpdateQuiz();
+  const { mutate: deleteQuiz } = useDeleteQuiz();
+  const { mutate: cloneQuiz } = useCloneQuiz();
+  const { isPending: updateIsPending, mutateAsync: updateQuiz } =
+    useUpdateQuiz();
   const openConfirm = usePortals((s) => s.openConfirm);
   const [info, setInfo] = useState<Quiz | null>(null);
   const [sharing, setSharing] = useState<Quiz | null>(null);
@@ -126,7 +127,7 @@ function AllQuizzes() {
                   {
                     icon: 'plus',
                     label: 'Clone',
-                    onClick: () => clone.mutate(q.id),
+                    onClick: () => cloneQuiz(q.id),
                   },
                   {
                     danger: true,
@@ -135,7 +136,7 @@ function AllQuizzes() {
                     onClick: () =>
                       openConfirm({
                         body: m.confirm_delete_body(),
-                        onConfirm: () => del.mutate(q.id),
+                        onConfirm: () => deleteQuiz(q.id),
                         title: m.confirm_delete_title({ name: q.name }),
                       }),
                   },
@@ -200,12 +201,12 @@ function AllQuizzes() {
           link={`/share/quizzes/${sharing.id}`}
           onClose={() => setSharing(null)}
           onPrivacyChange={async (privacy) => {
-            const quiz = await update.mutateAsync({ id: sharing.id, privacy });
+            const quiz = await updateQuiz({ id: sharing.id, privacy });
             setSharing(quiz);
           }}
           open
           privacy={sharing.privacy}
-          saving={update.isPending}
+          saving={updateIsPending}
           title={`Share ${sharing.name}`}
         />
       )}
@@ -269,11 +270,12 @@ function PastAttempts() {
 
 export default function Quizzes() {
   const [tab, setTab] = useState('all');
-  const createQuiz = useCreateQuiz();
+  const { isPending: createQuizIsPending, mutate: createQuiz } =
+    useCreateQuiz();
   const navigate = useNavigate();
 
   function newQuiz() {
-    createQuiz.mutate(
+    createQuiz(
       { name: 'Untitled quiz', questions: [] },
       {
         onSuccess: (quiz) =>
@@ -290,7 +292,7 @@ export default function Quizzes() {
       <PageHeader
         actions={
           <IconButton
-            disabled={createQuiz.isPending}
+            disabled={createQuizIsPending}
             icon="plus"
             label={m.action_new_quiz()}
             onClick={newQuiz}

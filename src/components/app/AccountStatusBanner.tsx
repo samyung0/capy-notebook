@@ -26,17 +26,17 @@ function blockingCodeFromError(err: unknown): string | null {
 
 /** Lifecycle warnings + full-screen block for locked accounts. */
 export function AccountStatusBanner() {
-  const status = useAccountStatus();
-  const me = useMe();
+  const { data: statusData, error: statusError } = useAccountStatus();
+  const { error: meError } = useMe();
 
   const blockingCode =
-    blockingCodeFromError(status.error) ??
-    blockingCodeFromError(me.error) ??
-    (status.data?.state === AccountState.suspended
+    blockingCodeFromError(statusError) ??
+    blockingCodeFromError(meError) ??
+    (statusData?.state === AccountState.suspended
       ? 'account_suspended'
-      : status.data?.state === AccountState.deleted
+      : statusData?.state === AccountState.deleted
         ? 'account_deleted'
-        : status.data?.state === AccountState.deletion_pending
+        : statusData?.state === AccountState.deletion_pending
           ? 'account_deletion_pending'
           : null);
 
@@ -63,7 +63,7 @@ export function AccountStatusBanner() {
     );
   }
 
-  const state = status.data?.state;
+  const state = statusData?.state;
   if (
     !state ||
     state === AccountState.active ||
@@ -74,7 +74,7 @@ export function AccountStatusBanner() {
     return null;
   }
 
-  const graceDate = formatDate(status.data?.graceEndsAt);
+  const graceDate = formatDate(statusData?.graceEndsAt);
   const isFrozen = state === AccountState.over_quota_frozen;
 
   return (

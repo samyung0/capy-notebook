@@ -15,8 +15,9 @@ import { Icon } from './Icon';
 
 export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const c = userColorPair(workspace.color);
-  const del = useDeleteWorkspace();
-  const updateSharing = useUpdateWorkspaceSharing();
+  const { mutate: deleteWorkspace } = useDeleteWorkspace();
+  const { isPending: updateSharingIsPending, mutateAsync: updateSharing } =
+    useUpdateWorkspaceSharing();
   const [shareOpen, setShareOpen] = useState(false);
   const canManage = workspace.capabilities.canManageMembers;
   const openWorkspaceEdit = usePortals((s) => s.openWorkspaceEdit);
@@ -56,7 +57,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
               {workspace.chapterCount} chapters · {workspace.fileCount} files
             </p>
             <div className="mt-3 flex flex-wrap gap-1">
-              {workspace.tags.slice(0, 3).map((t) => (
+              {workspace.tags.map((t) => (
                 <Badge key={t.value} size="sm">
                   # {t.value}
                 </Badge>
@@ -95,7 +96,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
                   onClick: () =>
                     openConfirm({
                       body: m.confirm_delete_body(),
-                      onConfirm: () => del.mutate(workspace.id),
+                      onConfirm: () => deleteWorkspace(workspace.id),
                       title: m.confirm_delete_title({ name: workspace.name }),
                     }),
                 },
@@ -106,16 +107,16 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
             link={`/share/workspaces/${workspace.id}`}
             onClose={() => setShareOpen(false)}
             onPrivacyChange={(privacy) =>
-              updateSharing.mutateAsync({ id: workspace.id, privacy })
+              updateSharing({ id: workspace.id, privacy })
             }
             onShareRoleChange={(shareRole) =>
-              updateSharing.mutateAsync({ id: workspace.id, shareRole })
+              updateSharing({ id: workspace.id, shareRole })
             }
             open={shareOpen}
             privacy={workspace.privacy}
-            saving={updateSharing.isPending}
+            saving={updateSharingIsPending}
             shareRole={workspace.shareRole ?? 'viewer'}
-            title={`Share ${workspace.name}`}
+            title={'Share Workspace'}
             workspaceId={workspace.id}
           />
         </>

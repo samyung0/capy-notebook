@@ -14,9 +14,10 @@ export function TaskEditDialog({
   task: Task;
   open: boolean;
   onClose: () => void;
-  onSave: (patch: Pick<Task, 'title'>) => void;
+  onSave: (patch: Pick<Task, 'title' | 'meta'>) => void;
 }) {
   const [title, setTitle] = useState(task.title);
+  const [meta, setMeta] = useState(task.meta ?? '');
 
   return (
     <SimpleDialog
@@ -28,7 +29,7 @@ export function TaskEditDialog({
           <Button
             disabled={!title.trim()}
             onClick={() => {
-              onSave({ title: title.trim() });
+              onSave({ meta: meta.trim(), title: title.trim() });
               onClose();
             }}
             size="lg"
@@ -48,6 +49,10 @@ export function TaskEditDialog({
           onChange={(e) => setTitle(e.target.value)}
           value={title}
         />
+      </label>
+      <label className="mt-3 flex flex-col gap-1.5">
+        <InputTitle>Meta</InputTitle>
+        <Input onChange={(e) => setMeta(e.target.value)} value={meta} />
       </label>
     </SimpleDialog>
   );

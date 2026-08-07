@@ -40,48 +40,48 @@ export interface WidgetGroupMeta {
 /** Display metadata for the settings popover. Order here = order in the UI. */
 export const WIDGET_GROUPS: WidgetGroupMeta[] = [
   {
-    description: 'Undo and redo document changes',
+    description: 'Undo and redo',
     id: 'history',
     label: 'Editor history',
   },
   {
-    description: 'Upload, import, and export content',
+    description: 'Upload, import, export',
     id: 'fileOperations',
     label: 'File operations',
   },
   {
-    description: 'Comments and block insertion controls',
+    description: 'Comments, Headings, dropdown menu',
     id: 'general',
     label: 'General',
   },
   {
-    description: 'Font size, text color, and background color',
+    description: 'Font size and colors',
     id: 'fontStyles',
     label: 'Font styles',
   },
   {
-    description: 'Bold, italic, underline, strikethrough, and highlight',
+    description: 'Bold, italic, underline, etc.',
     id: 'textDecorations',
     label: 'Text decorations',
   },
   {
-    description: 'Equations, inline code, links, and mentions',
+    description: 'Inline equations, codes, links, mentions',
     id: 'inlineElements',
     label: 'Inline elements',
   },
   {
-    description: 'Alignment, numbered lists, bullets, and task lists',
+    description: 'Alignment and lists',
     id: 'blockDecorations',
     label: 'Block decorations',
   },
   {
-    description: 'Tables, columns, callouts, and other block widgets',
+    description: 'Tables, columns, callouts, etc.',
     id: 'blockElements',
     label: 'Block elements',
   },
   {
     defaultEnabled: false,
-    description: 'Indent and outdent paragraphs and lists',
+    description: 'Indent and outdent',
     id: 'indentation',
     label: 'Indentation',
   },

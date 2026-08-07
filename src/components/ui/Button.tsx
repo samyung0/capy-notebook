@@ -13,7 +13,7 @@ const buttonVariants = cva(BASE_BUTTON_STYLE, {
   },
   variants: {
     size: {
-      lg: 'h-13 min-w-24 gap-2.25 rounded-full px-6.5',
+      lg: 'h-13 min-w-24 gap-2.25 rounded-full px-6.5 text-[0.925rem]',
       md: 'h-11 gap-2 px-5',
       sm: 'h-7.5 gap-1.75 px-4',
       xs: 'h-fit gap-1.5 px-0.5 py-0.5',

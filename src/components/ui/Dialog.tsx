@@ -40,7 +40,7 @@ function DialogOverlay({
   return (
     <DialogPrimitive.Overlay
       className={cn(
-        'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 isolate z-50 select-none bg-black/10 duration-100 data-[state=closed]:animate-out data-[state=open]:animate-in supports-backdrop-filter:backdrop-blur-xs',
+        'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 isolate z-50 bg-black/10 duration-100 data-[state=closed]:animate-out data-[state=open]:animate-in supports-backdrop-filter:backdrop-blur-xs',
         className
       )}
       data-slot="dialog-overlay"
@@ -142,7 +142,7 @@ function DialogFooter({
   return (
     <div
       className={cn(
-        '-mx-4 -mb-2 flex flex-col-reverse gap-2 p-4 sm:flex-row sm:justify-end',
+        '-mx-4 -mb-3 flex flex-col-reverse gap-2 px-4 pt-5.5 pb-3 sm:flex-row sm:justify-end',
         className
       )}
       data-slot="dialog-footer"
@@ -284,7 +284,8 @@ function ConfirmDialog({
       open={open}
       title={title}
     >
-      {body && <p>{body}</p>}
+      {/* t-body is slightly too small to draw user's attention */}
+      {body && <p className="text-base">{body}</p>}
       {children}
     </SimpleDialog>
   );

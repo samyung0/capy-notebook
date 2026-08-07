@@ -199,7 +199,6 @@ export function NoteEditorCore({
   collaborationToken,
   onEditorStatusChange,
   onDocumentRejected,
-  collaborationActionsHost,
 }: {
   material: Material;
   mode: NoteEditorMode;
@@ -214,9 +213,8 @@ export function NoteEditorCore({
   collaborationToken: MaterialCollaborationToken;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
   onDocumentRejected?: (message: string, stats: MaterialDocumentStats) => void;
-  collaborationActionsHost?: HTMLElement | null;
 }) {
-  const queryClient = useQueryClient();
+  const qc = useQueryClient();
   const ydoc = useMemo(
     () => new Y.Doc({ gc: true }),
     [collaborationToken.room]
@@ -304,7 +302,7 @@ export function NoteEditorCore({
         event.type === 'comments-invalidated' &&
         event.materialId === material.id
       ) {
-        queryClient.invalidateQueries({
+        void qc.invalidateQueries({
           queryKey: qk.materialDiscussions(material.id),
         });
         return;
@@ -313,9 +311,7 @@ export function NoteEditorCore({
         event.type === 'projection-updated' &&
         event.materialId === material.id
       ) {
-        queryClient.invalidateQueries({
-          queryKey: qk.material(material.id),
-        });
+        void qc.invalidateQueries({ queryKey: qk.material(material.id) });
         return;
       }
       if (
@@ -324,12 +320,12 @@ export function NoteEditorCore({
         (event.room === collaborationToken.room ||
           event.materialId === material.id)
       ) {
-        void queryClient.invalidateQueries({
+        void qc.invalidateQueries({
           queryKey: ['material', material.id, 'collaboration-token'],
         });
       }
     },
-    [collaborationToken.room, material.id, queryClient, setStatus]
+    [collaborationToken.room, qc, material.id, setStatus]
   );
 
   const plugins = useMemo(
@@ -351,7 +347,7 @@ export function NoteEditorCore({
               error instanceof Error &&
               COLLABORATION_ROOM_ERROR.test(error.message)
             ) {
-              void queryClient.invalidateQueries({
+              void qc.invalidateQueries({
                 queryKey: ['material', material.id, 'collaboration-token'],
               });
             }
@@ -414,7 +410,7 @@ export function NoteEditorCore({
       material.workspaceId,
       mode,
       name,
-      queryClient,
+      qc,
       setStatus,
       users,
       ydoc,
@@ -515,7 +511,6 @@ export function NoteEditorCore({
       <div className="flex max-h-full flex-1 flex-col overflow-auto">
         <Plate editor={editor} onValueChange={scheduleCheckpoint}>
           <CollaborationProvider
-            actionsPortalHost={collaborationActionsHost}
             currentUserId={currentUserId}
             discussions={discussions}
             users={users}

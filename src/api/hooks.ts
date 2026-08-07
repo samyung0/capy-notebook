@@ -1268,29 +1268,36 @@ export function useMaterialCollaborationToken(
 export function useMoveMaterial(wsId: string) {
   const qc = useQueryClient();
   return useMutation<
-    Material,
+    MaterialUpdateResult,
     Error,
     { id: string; chapterId: string | null },
-    { prevList?: MaterialRef[] }
+    { prevList?: MaterialRef[]; prevMaterial?: Material }
   >({
     mutationFn: ({ id, chapterId }: { id: string; chapterId: string | null }) =>
-      api.patch<Material>(`/materials/${id}`, { chapterId: chapterId ?? '' }),
-    onError: (_e, _v, ctx) => {
+      api.patch<MaterialUpdateResult>(`/materials/${id}`, {
+        chapterId: chapterId ?? '',
+      }),
+    onError: (_e, { id }, ctx) => {
       if (ctx?.prevList) qc.setQueryData(qk.materials(wsId), ctx.prevList);
+      if (ctx?.prevMaterial) qc.setQueryData(qk.material(id), ctx.prevMaterial);
     },
     onMutate: async ({ id, chapterId }) => {
       await qc.cancelQueries({ queryKey: qk.materials(wsId) });
       const prevList = qc.getQueryData<MaterialRef[]>(qk.materials(wsId));
+      const prevMaterial = qc.getQueryData<Material>(qk.material(id));
       qc.setQueryData<MaterialRef[]>(qk.materials(wsId), (prev) =>
         prev?.map((r) => (r.id === id ? { ...r, chapterId } : r))
       );
       qc.setQueryData<Material>(qk.material(id), (prev) =>
         prev ? { ...prev, chapterId } : prev
       );
-      return { prevList };
+      return { prevList, prevMaterial };
     },
     onSettled: () => qc.invalidateQueries({ queryKey: qk.materials(wsId) }),
-    onSuccess: (mt) => qc.setQueryData(qk.material(mt.id), mt),
+    onSuccess: (result) =>
+      qc.setQueryData<Material>(qk.material(result.id), (current) =>
+        current ? { ...current, ...result } : current
+      ),
   });
 }
 

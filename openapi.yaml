@@ -1201,6 +1201,10 @@ components:
           type: string
         id:
           type: string
+        maxDepth:
+          type: integer
+        nodeCount:
+          type: integer
         position:
           format: int64
           type: integer
@@ -1213,6 +1217,8 @@ components:
         - type
         - title
         - chapterId
+        - maxDepth
+        - nodeCount
         - position
         - createdAt
       type: object

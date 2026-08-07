@@ -91,3 +91,13 @@ export const USER_COLORS: UserColor[] = [
   'graphite',
   'transparent',
 ];
+
+export const USER_COLORS_DISPLAY: Record<UserColor, string> = {
+  amber: 'Amber',
+  blue: 'Blue',
+  coral: 'Coral',
+  graphite: 'Graphite',
+  green: 'Green',
+  purple: 'Purple',
+  transparent: 'Transparent',
+};

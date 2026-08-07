@@ -989,15 +989,6 @@ export const notifications: AppNotification[] = [
     kind: 'quiz',
   },
   {
-    at: days(1),
-    data: {
-      code: 'welcome',
-    },
-    id: 'nt_3',
-    kind: 'system',
-    readAt: days(1),
-  },
-  {
     at: hours(1),
     data: {
       code: 'event_starting',
@@ -1017,15 +1008,6 @@ export const notifications: AppNotification[] = [
     },
     id: 'nt_2',
     kind: 'quiz',
-  },
-  {
-    at: days(1),
-    data: {
-      code: 'welcome',
-    },
-    id: 'nt_3',
-    kind: 'system',
-    readAt: days(1),
   },
 ];
 

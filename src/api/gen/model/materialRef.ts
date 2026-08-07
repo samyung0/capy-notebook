@@ -10,6 +10,8 @@ export interface MaterialRef {
   chapterId: string | null;
   createdAt: string;
   id: string;
+  maxDepth: number;
+  nodeCount: number;
   position: number;
   title: string;
   type: string;

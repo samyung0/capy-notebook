@@ -1167,7 +1167,7 @@ func (s *Store) MaterialWorkspaceID(ctx context.Context, id string) (string, err
 // as the legacy ref type "deck".
 func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRef, error) {
 	out := []MaterialRef{}
-	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at
+	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at, node_count, max_depth
 		FROM materials WHERE workspace_id=$1 ORDER BY position, created_at DESC`, wsID)
 	if err != nil {
 		return nil, err
@@ -1182,6 +1182,8 @@ func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRe
 			&r.ChapterID,
 			&r.Position,
 			&r.CreatedAt,
+			&r.NodeCount,
+			&r.MaxDepth,
 		); err != nil {
 			return nil, err
 		}

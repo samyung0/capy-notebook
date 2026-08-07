@@ -1,6 +1,12 @@
 import { useNavigate } from '@tanstack/react-router';
 import { useDeck, useFile, useMaterial, useQuiz } from '@/api/hooks';
-import type { MaterialKind } from '@/api/types';
+import type {
+  Chapter,
+  Material,
+  MaterialKind,
+  SourceFile,
+  UserColor,
+} from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
@@ -23,42 +29,49 @@ import {
   type NoteEditorStatus,
   noteEditorStatusLabel,
 } from '@/features/notes/editorMode';
+import {
+  ContentActions,
+  toFileActionTarget,
+  toMaterialActionTarget,
+} from '@/features/workspace/ContentActions';
 import { cn } from '@/lib/cn';
 import {
   MATERIALMODE_ICON,
   MATERIALMODE_LABEL,
   materialIcon,
 } from './materialIconMappings';
-import {
-  isInteractiveMaterialMode,
-  type MaterialMode,
-  materialModePolicy,
-} from './modePolicy';
+import { type MaterialMode, materialModePolicy } from './modePolicy';
 import type { OpenItem } from './openItem';
 
 function useHeader(item: OpenItem): {
+  file?: SourceFile;
   icon: IconName;
   title?: string;
+  material?: Material;
   materialKind?: MaterialKind;
   showImageZoom: boolean;
   modeOptions?: { value: MaterialMode; label: string }[];
   defaultMode?: MaterialMode;
 } {
-  const file = useFile(item.kind === 'file' ? item.id : null);
-  const material = useMaterial(item.kind === 'material' ? item.id : null);
+  const { data: fileData } = useFile(item.kind === 'file' ? item.id : null);
+  const { data: materialData } = useMaterial(
+    item.kind === 'material' ? item.id : null
+  );
   if (item.kind === 'file') {
     return {
+      file: fileData,
       icon: 'files',
-      showImageZoom: !!file.data && isImageFile(file.data),
-      title: file.data?.name,
+      showImageZoom: !!fileData && isImageFile(fileData),
+      title: fileData?.name,
     };
   }
-  const mt = material.data;
+  const mt = materialData;
   if (!mt)
     return { icon: 'workspaces', showImageZoom: false, title: undefined };
   return {
     defaultMode: materialModePolicy(mt.kind, mt.capabilities).defaultMode,
     icon: materialIcon(mt.kind),
+    material: mt,
     materialKind: mt.kind,
     modeOptions: materialModePolicy(mt.kind, mt.capabilities).modes.map(
       (value) => ({
@@ -72,11 +85,11 @@ function useHeader(item: OpenItem): {
 }
 
 function DeckPreviewActions({ deckId }: { deckId: string }) {
-  const deck = useDeck(deckId);
+  const { data: deckData, isLoading: deckIsLoading } = useDeck(deckId);
   const navigate = useNavigate();
-  const summary = deck.data
-    ? `${deck.data.cardCount} card${deck.data.cardCount === 1 ? '' : 's'} · ${deck.data.knownPct}% known`
-    : deck.isLoading
+  const summary = deckData
+    ? `${deckData.cardCount} card${deckData.cardCount === 1 ? '' : 's'} · ${deckData.knownPct}% known`
+    : deckIsLoading
       ? 'Loading deck details…'
       : 'Flashcards';
 
@@ -102,15 +115,15 @@ function DeckPreviewActions({ deckId }: { deckId: string }) {
 }
 
 function QuizPreviewActions({ quizId }: { quizId: string }) {
-  const quiz = useQuiz(quizId);
+  const { data: quizData, isLoading: quizIsLoading } = useQuiz(quizId);
   const navigate = useNavigate();
-  const summary = quiz.data
-    ? `${quiz.data.questions.length} question${quiz.data.questions.length === 1 ? '' : 's'}${
-        quiz.data.timeLimitMin == null
+  const summary = quizData
+    ? `${quizData.questions.length} question${quizData.questions.length === 1 ? '' : 's'}${
+        quizData.timeLimitMin == null
           ? ''
-          : ` · Time limit: ${quiz.data.timeLimitMin} min`
+          : ` · Time limit: ${quizData.timeLimitMin} min`
       }`
-    : quiz.isLoading
+    : quizIsLoading
       ? 'Loading quiz details…'
       : 'Quiz';
 
@@ -149,25 +162,45 @@ function MaterialViewActions({
 }
 
 export function Header({
+  chapters,
+  color,
   item,
   imageZoom,
   onImageZoomChange,
   materialMode,
   onMaterialModeChange,
+  isFullscreen,
+  onDeleted,
+  onToggleFullscreen,
   editorStatus,
-  collaborationActionsRef,
+  readOnly,
+  workspaceId,
 }: {
+  chapters: Chapter[];
+  color?: UserColor;
   item: OpenItem;
   imageZoom: number;
   onImageZoomChange: (next: number) => void;
   materialMode: MaterialMode | null;
   onMaterialModeChange: (mode: MaterialMode) => void;
+  isFullscreen: boolean;
+  onDeleted: () => void;
+  onToggleFullscreen: () => void;
   editorStatus: NoteEditorStatus | null;
-  collaborationActionsRef: (node: HTMLDivElement | null) => void;
+  readOnly: boolean;
+  workspaceId: string;
 }) {
   // TODO: magic wand for summary/AI related stuff, then some tool box? same action menu
-  const { icon, title, materialKind, showImageZoom, modeOptions, defaultMode } =
-    useHeader(item);
+  const {
+    file,
+    icon,
+    material,
+    title,
+    materialKind,
+    showImageZoom,
+    modeOptions,
+    defaultMode,
+  } = useHeader(item);
   const activeMode =
     materialMode && modeOptions?.some((option) => option.value === materialMode)
       ? materialMode
@@ -194,17 +227,9 @@ export function Header({
           </span>
         )}
       </div>
-      <div className="ml-auto flex items-center gap-2">
+      <div className="ml-auto flex items-center">
         {item.kind === 'material' && activeMode === 'view' && materialKind && (
           <MaterialViewActions kind={materialKind} materialId={item.id} />
-        )}
-        {activeMode && isInteractiveMaterialMode(activeMode) && (
-          <div
-            aria-label="Material collaboration"
-            className="flex items-center gap-1"
-            ref={collaborationActionsRef}
-            role="toolbar"
-          />
         )}
         {modeOptions && modeOptions.length > 1 && activeMode && (
           <Select
@@ -213,7 +238,7 @@ export function Header({
             }
             value={activeMode}
           >
-            <SelectTrigger variant="ghost-hover">
+            <SelectTrigger className="px-1.5 py-2" variant="ghost-hover">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -221,27 +246,23 @@ export function Header({
                 {modeOptions.map((o) => (
                   <SelectItem
                     className="text-sm"
+                    iconAndValue={{
+                      icon: MATERIALMODE_ICON[o.value],
+                      label: o.label,
+                    }}
                     key={o.value}
                     size="sm"
                     value={o.value}
-                  >
-                    <div className="flex items-center gap-2">
-                      <Icon
-                        className="size-3.75 -translate-y-px"
-                        name={MATERIALMODE_ICON[o.value]}
-                      />
-                      <span>{o.label}</span>
-                    </div>
-                  </SelectItem>
+                  />
                 ))}
               </SelectGroup>
             </SelectContent>
           </Select>
         )}
         {showImageZoom && (
-          <div className="flex items-center gap-0.5">
+          <>
             <IconButton
-              className="p-1.5"
+              // className="p-1.5"
               disabled={imageZoom <= IMAGE_MIN_ZOOM}
               icon="zoomOut"
               label="Zoom out"
@@ -253,7 +274,7 @@ export function Header({
               variant="ghost-hover"
             />
             <IconButton
-              className="p-1.5"
+              // className="p-1.5"
               disabled={imageZoom >= IMAGE_MAX_ZOOM}
               icon="zoomIn"
               label="Zoom in"
@@ -264,8 +285,33 @@ export function Header({
               strokeWidth={1.5}
               variant="ghost-hover"
             />
-          </div>
+          </>
         )}
+        <ContentActions
+          chapters={chapters}
+          color={color}
+          content={
+            file
+              ? toFileActionTarget(file)
+              : material
+                ? toMaterialActionTarget(material)
+                : undefined
+          }
+          display="menu"
+          key={`${item.kind}:${item.id}`}
+          leadingItems={[
+            {
+              icon: isFullscreen ? 'minimize' : 'maximize',
+              label: isFullscreen ? 'Exit full screen' : 'Full screen',
+              onClick: onToggleFullscreen,
+            },
+          ]}
+          menuIconContainerClassName="shrink-0"
+          onDeleted={onDeleted}
+          readOnly={readOnly}
+          renameFieldLabel="File Name"
+          workspaceId={workspaceId}
+        />
       </div>
     </div>
   );

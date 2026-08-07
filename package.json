@@ -130,9 +130,10 @@
     "chaos:peers": "pnpm --filter @evo-notes/collaboration chaos --",
     "check": "ultracite check && pnpm run typecheck",
     "gen:openapi": "cd server && go run ./cmd/openapi -o ../openapi.yaml",
-    "gen:api": "orval",
+    "gen:api": "pnpm gen:api:clean && orval",
+    "gen:api:clean": "node scripts/clean-api-gen.mjs",
     "gen:api:msw": "pnpm gen:openapi && pnpm gen:api",
-    "gen:api:watch": "orval --watch",
+    "gen:api:watch": "pnpm gen:api:clean && orval --watch",
     "fix": "ultracite fix",
     "pipeline:test": "uv run --extra test pytest",
     "pipeline:test:offline": "uv run --extra test pytest -q -m \"not cassette\""

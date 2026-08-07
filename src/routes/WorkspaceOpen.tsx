@@ -24,7 +24,12 @@ import {
   useUpdateWorkspaceSharing,
   useWorkspace,
 } from '@/api/hooks';
-import type { MaterialRef, MaterialRefType, SourceFile } from '@/api/types';
+import type {
+  MaterialRef,
+  MaterialRefType,
+  SourceFile,
+  UserColor,
+} from '@/api/types';
 import { LoadingLarge } from '@/components/app/LoadingLarge';
 import { Panel } from '@/components/app/layout';
 import { PrivateOrUnavailable } from '@/components/app/PrivateOrUnavailable';
@@ -109,16 +114,18 @@ export default function WorkspaceOpen() {
   const readOnly = isWorkspaceReadOnly(ws?.capabilities);
   const canShare = canShareWorkspace(ws?.capabilities);
   useIngestProgress(workspaceId, !readOnly);
-  const addChapter = useAddChapter(workspaceId);
-  const updateChapter = useUpdateChapter(workspaceId);
-  const reorder = useReorderChapters(workspaceId);
-  const delChapter = useDeleteChapter(workspaceId);
-  const delMaterial = useDeleteMaterial(workspaceId);
-  const moveMaterial = useMoveMaterial(workspaceId);
-  const reorderContent = useReorderContent(workspaceId);
-  const createNote = useCreateNote(workspaceId);
-  const cloneWorkspace = useCloneWorkspace();
-  const updateSharing = useUpdateWorkspaceSharing();
+  const { mutate: addChapter } = useAddChapter(workspaceId);
+  const { mutate: updateChapter } = useUpdateChapter(workspaceId);
+  const { mutate: reorder } = useReorderChapters(workspaceId);
+  const { mutate: delChapter } = useDeleteChapter(workspaceId);
+  const { mutate: delMaterial } = useDeleteMaterial(workspaceId);
+  const { mutate: moveMaterial } = useMoveMaterial(workspaceId);
+  const { mutate: reorderContent } = useReorderContent(workspaceId);
+  const { mutate: createNote } = useCreateNote(workspaceId);
+  const { isPending: cloneWorkspaceIsPending, mutate: cloneWorkspace } =
+    useCloneWorkspace();
+  const { isPending: updateSharingIsPending, mutateAsync: updateSharing } =
+    useUpdateWorkspaceSharing();
   const openAddSource = usePortals((s) => s.openAddSource);
   const openConfirm = usePortals((s) => s.openConfirm);
 
@@ -214,7 +221,7 @@ export default function WorkspaceOpen() {
       .map(({ id, type }) => ({ id, type }))
       .filter((item) => item.id !== dragged.id || item.type !== dragged.type);
     items.splice(Math.max(0, Math.min(targetIndex, items.length)), 0, dragged);
-    reorderContent.mutate({ chapterId, items });
+    reorderContent({ chapterId, items });
     if (chapterId)
       setOpenChapters((state) => ({ ...state, [chapterId]: true }));
   }
@@ -312,11 +319,12 @@ export default function WorkspaceOpen() {
       },
     };
   }
-  function renderMaterial(mt: MaterialRef) {
+  function renderMaterial(mt: MaterialRef, color?: UserColor) {
     return (
       <MaterialListItem
         active={openItem?.kind === 'material' && openItem.id === mt.id}
         chapters={chapters ?? []}
+        color={color}
         data={mt}
         key={`${mt.type}:${mt.id}`}
         onDelete={
@@ -327,7 +335,7 @@ export default function WorkspaceOpen() {
                   body: m.confirm_delete_body(),
                   danger: true,
                   onConfirm: () =>
-                    delMaterial.mutate(mt.id, {
+                    delMaterial(mt.id, {
                       onSuccess: () => {
                         if (
                           openItem?.kind === 'material' &&
@@ -341,9 +349,10 @@ export default function WorkspaceOpen() {
                 });
               }
         }
-        onMove={(chapterId) => moveMaterial.mutate({ chapterId, id: mt.id })}
+        onMove={(chapterId) => moveMaterial({ chapterId, id: mt.id })}
         onOpen={() => setOpenItem({ id: mt.id, kind: 'material' })}
         readOnly={readOnly}
+        workspaceId={workspaceId}
       />
     );
   }
@@ -394,7 +403,7 @@ export default function WorkspaceOpen() {
             workspaceId={workspaceId}
           />
         ) : (
-          renderMaterial(item.data)
+          renderMaterial(item.data, ws?.color)
         )}
       </div>
     );
@@ -405,7 +414,7 @@ export default function WorkspaceOpen() {
     const j = idx + dir;
     if (j < 0 || j >= ids.length) return;
     [ids[idx], ids[j]] = [ids[j], ids[idx]];
-    reorder.mutate(ids);
+    reorder(ids);
   }
   const isFileActive = (id: string) =>
     openItem?.kind === 'file' && openItem.id === id;
@@ -482,10 +491,10 @@ export default function WorkspaceOpen() {
             {readOnly ? (
               <Button
                 className="mt-4 h-fit w-full py-2"
-                disabled={cloneWorkspace.isPending}
+                disabled={cloneWorkspaceIsPending}
                 iconLeft="plus"
                 onClick={() =>
-                  cloneWorkspace.mutate(workspaceId, {
+                  cloneWorkspace(workspaceId, {
                     onError: (err) => toastCloneError(err, 'workspace'),
                     onSuccess: ({ workspace, ragCloned }) => {
                       // TODO: when is rag cloned?
@@ -506,7 +515,7 @@ export default function WorkspaceOpen() {
                 size="md"
                 variant="surface"
               >
-                {cloneWorkspace.isPending ? 'Cloning…' : 'Clone workspace'}
+                {cloneWorkspaceIsPending ? 'Cloning…' : 'Clone workspace'}
               </Button>
             ) : (
               <div
@@ -568,7 +577,7 @@ export default function WorkspaceOpen() {
                             className="rounded-md px-0.5 py-1"
                             icon="newNote"
                             onClick={() =>
-                              createNote.mutate(
+                              createNote(
                                 {},
                                 {
                                   onSuccess: (mt) =>
@@ -636,7 +645,7 @@ export default function WorkspaceOpen() {
                                         ch.name
                                       );
                                       if (n)
-                                        updateChapter.mutate({
+                                        updateChapter({
                                           id: ch.id,
                                           name: n,
                                         });
@@ -658,7 +667,7 @@ export default function WorkspaceOpen() {
                                     danger: true,
                                     icon: 'trash',
                                     label: m.action_delete(),
-                                    onClick: () => delChapter.mutate(ch.id),
+                                    onClick: () => delChapter(ch.id),
                                   },
                                 ]}
                               />
@@ -673,9 +682,9 @@ export default function WorkspaceOpen() {
                                 renderContentItem(item, ch.id)
                               )}
                               {contentFor(ch.id).length === 0 && (
-                                <div className="px-1.5 py-1 text-fg-muted text-xs">
+                                <p className="px-1.5 py-1 pl-2 font-semibold text-fg-muted text-xs">
                                   Empty
-                                </div>
+                                </p>
                               )}
                             </div>
                           )}
@@ -705,10 +714,13 @@ export default function WorkspaceOpen() {
                           <MaterialListItem
                             active={false}
                             chapters={chapters}
+                            color={ws?.color}
                             data={{
                               chapterId: null,
                               createdAt: new Date().toISOString(),
                               id: '__generating__',
+                              maxDepth: 0,
+                              nodeCount: 0,
                               position: Number.MAX_SAFE_INTEGER,
                               title: GENERATING_MATERIAL[generating].title,
                               type: GENERATING_MATERIAL[generating].type,
@@ -716,6 +728,7 @@ export default function WorkspaceOpen() {
                             generating
                             onOpen={() => {}}
                             readOnly
+                            workspaceId={workspaceId}
                           />
                         )}
                       </div>
@@ -731,7 +744,7 @@ export default function WorkspaceOpen() {
                 onClick={() => {
                   // TODO: use dialog
                   const n = prompt('New chapter name');
-                  if (n) addChapter.mutate(n);
+                  if (n) addChapter(n);
                 }}
                 variant="outline"
               >
@@ -750,9 +763,12 @@ export default function WorkspaceOpen() {
           <Panel className="w-full" sectionClassName="h-full gap-0">
             <StorageOwnerBanner workspace={ws} />
             <CenterContent
+              chapters={chapters ?? []}
               color={ws?.color}
               item={openItem}
+              onDeleted={() => setOpenItem(null)}
               readOnly={readOnly}
+              workspaceId={workspaceId}
             />
           </Panel>
         </ResizablePanel>
@@ -761,9 +777,9 @@ export default function WorkspaceOpen() {
             <ResizableHandle withHandle />
             <ResizablePanel
               className="overflow-visible!"
-              defaultSize="30%"
-              maxSize="900px"
-              minSize="350px"
+              defaultSize="26%"
+              maxSize="700px"
+              minSize="320px"
             >
               {/* Right column: top bar + AI */}
               <div className="flex h-full w-full flex-col gap-2.5">
@@ -806,17 +822,15 @@ export default function WorkspaceOpen() {
         <ShareDialog
           link={`/share/workspaces/${ws.id}`}
           onClose={() => setShareOpen(false)}
-          onPrivacyChange={(privacy) =>
-            updateSharing.mutateAsync({ id: ws.id, privacy })
-          }
+          onPrivacyChange={(privacy) => updateSharing({ id: ws.id, privacy })}
           onShareRoleChange={(shareRole) =>
-            updateSharing.mutateAsync({ id: ws.id, shareRole })
+            updateSharing({ id: ws.id, shareRole })
           }
           open={shareOpen}
           privacy={ws.privacy}
-          saving={updateSharing.isPending}
+          saving={updateSharingIsPending}
           shareRole={ws.shareRole ?? 'viewer'}
-          title={`Share ${ws.name}`}
+          title={'Share Workspace'}
           workspaceId={ws.id}
         />
       )}
