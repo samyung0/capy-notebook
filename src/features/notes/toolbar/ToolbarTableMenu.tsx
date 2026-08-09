@@ -29,6 +29,30 @@ import { cn } from '@/lib/cn';
 
 export function TableMenu() {
   const [open, setOpen] = useState(false);
+
+  return (
+    <DropdownMenu modal={false} onOpenChange={setOpen} open={open}>
+      <DropdownMenuTrigger asChild>
+        <ToolbarButton active={open} label="Table controls">
+          <Table2 />
+        </ToolbarButton>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-45">
+        <TableMenuItems onClose={() => setOpen(false)} />
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+/**
+ * Split out so the document subscriptions live under `DropdownMenuContent`,
+ * which Radix does not render while the menu is closed. `useTableMergeState`
+ * reads the selected cells through `useEditorSelector` with reference equality
+ * over a freshly built array, so it reports a change on every edit; reading it
+ * from the always-mounted toolbar button re-rendered this entire menu on every
+ * keystroke, open or not.
+ */
+function TableMenuItems({ onClose }: { onClose: () => void }) {
   const { editor, tf } = useEditorPlugin(TablePlugin);
   const tableSelected = useEditorSelector(
     (currentEditor) => currentEditor.api.some({ match: { type: KEYS.table } }),
@@ -42,120 +66,101 @@ export function TableMenu() {
   };
 
   return (
-    <DropdownMenu modal={false} onOpenChange={setOpen} open={open}>
-      <DropdownMenuTrigger asChild>
-        <ToolbarButton active={open} label="Table controls">
-          <Table2 />
-        </ToolbarButton>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-45">
-        <DropdownMenuGroup>
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <Grid3X3 />
-              <span>Table</span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-auto p-0">
-              <TablePicker
-                onInsert={(rowCount, colCount) => {
-                  run(() =>
-                    tf.insert.table({ colCount, rowCount }, { select: true })
-                  );
-                  setOpen(false);
-                }}
-              />
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
+    <DropdownMenuGroup>
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger>
+          <Grid3X3 />
+          <span>Table</span>
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className="w-auto p-0">
+          <TablePicker
+            onInsert={(rowCount, colCount) => {
+              run(() =>
+                tf.insert.table({ colCount, rowCount }, { select: true })
+              );
+              onClose();
+            }}
+          />
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
 
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger disabled={!tableSelected}>
-              <span className="size-4" />
-              <span>Cell</span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-48">
-              <DropdownMenuItem
-                disabled={!canMerge}
-                onSelect={() => run(() => tf.table.merge())}
-              >
-                <Combine />
-                Merge cells
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                disabled={!canSplit}
-                onSelect={() => run(() => tf.table.split())}
-              >
-                <Ungroup />
-                Split cell
-              </DropdownMenuItem>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger disabled={!tableSelected}>
-              <span className="size-4" />
-              <span>Row</span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-48">
-              <DropdownMenuItem
-                onSelect={() => run(() => tf.insert.tableRow({ before: true }))}
-              >
-                <ArrowUp />
-                Insert row before
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => run(() => tf.insert.tableRow())}
-              >
-                <ArrowDown />
-                Insert row after
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => run(() => tf.remove.tableRow())}
-              >
-                <X />
-                Delete row
-              </DropdownMenuItem>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger disabled={!tableSelected}>
-              <span className="size-4" />
-              <span>Column</span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent className="w-52">
-              <DropdownMenuItem
-                onSelect={() =>
-                  run(() => tf.insert.tableColumn({ before: true }))
-                }
-              >
-                <ArrowLeft />
-                Insert column before
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => run(() => tf.insert.tableColumn())}
-              >
-                <ArrowRight />
-                Insert column after
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onSelect={() => run(() => tf.remove.tableColumn())}
-              >
-                <X />
-                Delete column
-              </DropdownMenuItem>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger disabled={!tableSelected}>
+          <span className="size-4" />
+          <span>Cell</span>
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className="w-48">
           <DropdownMenuItem
-            disabled={!tableSelected}
-            onSelect={() => run(() => tf.remove.table())}
+            disabled={!canMerge}
+            onSelect={() => run(() => tf.table.merge())}
           >
-            <Trash2 />
-            Delete table
+            <Combine />
+            Merge cells
           </DropdownMenuItem>
-        </DropdownMenuGroup>
-      </DropdownMenuContent>
-    </DropdownMenu>
+          <DropdownMenuItem
+            disabled={!canSplit}
+            onSelect={() => run(() => tf.table.split())}
+          >
+            <Ungroup />
+            Split cell
+          </DropdownMenuItem>
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger disabled={!tableSelected}>
+          <span className="size-4" />
+          <span>Row</span>
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className="w-48">
+          <DropdownMenuItem
+            onSelect={() => run(() => tf.insert.tableRow({ before: true }))}
+          >
+            <ArrowUp />
+            Insert row before
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => run(() => tf.insert.tableRow())}>
+            <ArrowDown />
+            Insert row after
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => run(() => tf.remove.tableRow())}>
+            <X />
+            Delete row
+          </DropdownMenuItem>
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger disabled={!tableSelected}>
+          <span className="size-4" />
+          <span>Column</span>
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent className="w-52">
+          <DropdownMenuItem
+            onSelect={() => run(() => tf.insert.tableColumn({ before: true }))}
+          >
+            <ArrowLeft />
+            Insert column before
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => run(() => tf.insert.tableColumn())}>
+            <ArrowRight />
+            Insert column after
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => run(() => tf.remove.tableColumn())}>
+            <X />
+            Delete column
+          </DropdownMenuItem>
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+
+      <DropdownMenuItem
+        disabled={!tableSelected}
+        onSelect={() => run(() => tf.remove.table())}
+      >
+        <Trash2 />
+        Delete table
+      </DropdownMenuItem>
+    </DropdownMenuGroup>
   );
 }
 

@@ -1,5 +1,11 @@
-import { expect, type Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { PERF_LARGE_NOTE, PERF_WORKSPACE_ID } from '../../src/mocks/perfSeed';
+import {
+  type CpuProfile,
+  profileSection,
+  readDomCounter,
+  startDomCounter,
+} from './cpuProfile';
 import { CPU_RATE } from './metrics';
 
 /**
@@ -15,145 +21,6 @@ import { CPU_RATE } from './metrics';
 /** Kept identical to `TYPING_TEXT` in editor.perf.ts. */
 const PROBE_TEXT =
   'measuring editor latency with plain words that avoid every input rule trigger in the registry';
-
-interface CallFrame {
-  functionName: string;
-  url: string;
-}
-interface ProfileNode {
-  callFrame: CallFrame;
-  children?: number[];
-  id: number;
-}
-interface CpuProfile {
-  endTime: number;
-  nodes: ProfileNode[];
-  samples: number[];
-  startTime: number;
-  timeDeltas: number[];
-}
-
-function shortUrl(url: string) {
-  if (!url) return '';
-  return url
-    .replace(/^https?:\/\/[^/]+/, '')
-    .replace(/\?.*$/, '')
-    .replace('/node_modules/.vite/deps/', 'dep:');
-}
-
-function label(frame: CallFrame) {
-  return `${frame.functionName || '(anonymous)'}  ${shortUrl(frame.url)}`;
-}
-
-function analyze(profile: CpuProfile) {
-  const byId = new Map<number, ProfileNode>();
-  for (const node of profile.nodes) byId.set(node.id, node);
-  const parent = new Map<number, number>();
-  for (const node of profile.nodes) {
-    for (const child of node.children ?? []) parent.set(child, node.id);
-  }
-
-  const selfByLabel = new Map<string, number>();
-  const totalByLabel = new Map<string, number>();
-  let sampled = 0;
-
-  for (let i = 0; i < profile.samples.length; i += 1) {
-    const id = profile.samples[i];
-    const ms = (profile.timeDeltas[i] ?? 0) / 1000;
-    sampled += ms;
-    const node = byId.get(id);
-    if (!node) continue;
-    const key = label(node.callFrame);
-    selfByLabel.set(key, (selfByLabel.get(key) ?? 0) + ms);
-
-    const seen = new Set<string>();
-    let cursor: number | undefined = id;
-    while (cursor !== undefined) {
-      const current = byId.get(cursor);
-      if (current) {
-        const ancestor = label(current.callFrame);
-        if (!seen.has(ancestor)) {
-          seen.add(ancestor);
-          totalByLabel.set(ancestor, (totalByLabel.get(ancestor) ?? 0) + ms);
-        }
-      }
-      cursor = parent.get(cursor);
-    }
-  }
-
-  const format = (map: Map<string, number>, count: number, min = 0) =>
-    [...map.entries()]
-      .filter(([, ms]) => ms >= min)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, count)
-      .map(
-        ([name, ms]) => `${Math.round(ms).toString().padStart(7)}ms  ${name}`
-      );
-
-  return {
-    appTotals: format(
-      new Map([...totalByLabel].filter(([n]) => n.includes('/src/'))),
-      20
-    ),
-    busyMs: Math.round(
-      sampled -
-        (selfByLabel.get('(idle)  ') ?? 0) -
-        (selfByLabel.get('(program)  ') ?? 0)
-    ),
-    self: format(selfByLabel, 22),
-    total: format(totalByLabel, 26),
-    wallMs: Math.round((profile.endTime - profile.startTime) / 1000),
-  };
-}
-
-/** Counts DOM nodes added/removed under the editable, to distinguish a React
- * re-render that reuses the DOM from one that tears it down and rebuilds it. */
-async function startDomCounter(page: Page) {
-  await page.evaluate(() => {
-    const target = document.querySelector('[contenteditable="true"]');
-    if (!target) throw new Error('no editable');
-    const counters = { added: 0, attrs: 0, records: 0, removed: 0 };
-    const observer = new MutationObserver((records) => {
-      for (const record of records) {
-        counters.records += 1;
-        if (record.type === 'attributes') counters.attrs += 1;
-        counters.added += record.addedNodes.length;
-        counters.removed += record.removedNodes.length;
-      }
-    });
-    observer.observe(target, {
-      attributes: true,
-      childList: true,
-      subtree: true,
-    });
-    (window as unknown as { __dom: unknown }).__dom = { counters, observer };
-  });
-}
-
-async function readDomCounter(page: Page, reset: boolean) {
-  return page.evaluate((shouldReset) => {
-    const state = (
-      window as unknown as {
-        __dom: {
-          counters: {
-            added: number;
-            removed: number;
-            records: number;
-            attrs: number;
-          };
-        };
-      }
-    ).__dom;
-    const snapshot = { ...state.counters };
-    if (shouldReset) {
-      state.counters.added = 0;
-      state.counters.removed = 0;
-      state.counters.records = 0;
-      state.counters.attrs = 0;
-    }
-    return snapshot;
-  }, reset);
-}
 
 test(`save cycle profile — near-limit document (cpu x${CPU_RATE})`, async ({
   page,
@@ -226,35 +93,20 @@ test(`save cycle profile — near-limit document (cpu x${CPU_RATE})`, async ({
 
   await client.send('Emulation.setCPUThrottlingRate', { rate: 1 });
 
-  const section = (
-    name: string,
-    profile: CpuProfile,
-    dom: Record<string, number>
-  ) => {
-    const stats = analyze(profile);
-    return [
-      `######## ${name}`,
-      `wall ${stats.wallMs}ms · busy ${stats.busyMs}ms · dom +${dom.added}/-${dom.removed} nodes, ${dom.attrs} attr writes`,
-      '-- app components (inclusive) --',
-      ...stats.appTotals,
-      '-- top self time --',
-      ...stats.self,
-      '-- top inclusive time --',
-      ...stats.total,
-      '',
-    ].join('\n');
-  };
-
   const report = [
     `document: ${blocks} rendered slate nodes, cpu x${CPU_RATE}, vite dev build`,
     '',
-    section('PHASE 1 — typing 6 characters', typingProfile.profile, typingDom),
-    section(
+    profileSection(
+      `PHASE 1 — typing ${PROBE_TEXT.length + 1} characters`,
+      typingProfile.profile,
+      typingDom
+    ),
+    profileSection(
       'PHASE 2 — checkpoint request + acknowledgement',
       ackProfile.profile,
       ackDom
     ),
-    section(
+    profileSection(
       'PHASE 3 — projection refetch + its render',
       projectionProfile.profile,
       projectionDom

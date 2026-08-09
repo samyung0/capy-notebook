@@ -60,6 +60,7 @@ at the top of each section.
 | [`src/features/notes/responsiveToolbar.test.ts`](../src/features/notes/responsiveToolbar.test.ts) | Responsive toolbar hides overflow groups right-to-left while keeping persistent ones. |
 | [`src/features/notes/richBlockConfig.test.ts`](../src/features/notes/richBlockConfig.test.ts) | Callout variant fallbacks, column layouts, and code-language toolbar labels. |
 | [`src/features/notes/stableElementIds.test.ts`](../src/features/notes/stableElementIds.test.ts) | Plugin assigns recursive element IDs before inserted nodes enter the editor. |
+| [`src/features/notes/tocHeadings.test.ts`](../src/features/notes/tocHeadings.test.ts) | Incremental heading scan: nested paths, stable array identity for unrelated edits, and path recomputation after insert/remove. |
 | [`src/features/notes/youtube.test.ts`](../src/features/notes/youtube.test.ts) | Accepts watch/short/embed YouTube URLs and rejects malformed non-YouTube ones. |
 
 ### Quizzes / workspace
@@ -184,20 +185,22 @@ MSW + Vite only (`pnpm e2e:editor`); no Docker.
 | --- | --- |
 | [`e2e/editor/block-interactions.spec.ts`](../e2e/editor/block-interactions.spec.ts) | Drag-handle select, context menu duplicate/delete/turn-into, select-all escalate, reorder. |
 | [`e2e/editor/formatting.spec.ts`](../e2e/editor/formatting.spec.ts) | Bold apply and clear-formatting for single and stacked marks. |
-| [`e2e/editor/insertions.spec.ts`](../e2e/editor/insertions.spec.ts) | Mentions in heading/paragraph, slash-insert table, and column layout widths. |
+| [`e2e/editor/insertions.spec.ts`](../e2e/editor/insertions.spec.ts) | Mentions in heading/paragraph, slash-insert table, toolbar table menu, table of contents following a retitle, and column layout widths. |
 
 ---
 
 ## Playwright perf (`e2e/perf/`)
 
-MSW + Vite (`pnpm perf`). Budgets are regression tripwires under CPU throttle, not UX targets.
+MSW + Vite (`pnpm perf`). 6 cases total: 4 budget specs always run; 2 diagnostic V8 profiles are skipped unless `PERF_PROFILE=1`. Budgets are regression tripwires under CPU throttle, not UX targets.
 
 | File | About |
 | --- | --- |
-| [`e2e/perf/editor.perf.ts`](../e2e/perf/editor.perf.ts) | Open cost, typing latency, save cycle, and scroll FPS for small and near-limit documents. |
-| [`e2e/perf/saveCycleProfile.perf.ts`](../e2e/perf/saveCycleProfile.perf.ts) | Opt-in (`PERF_PROFILE=1`) V8 CPU profile of the near-limit save cycle (diagnostic, no budget assert). |
+| [`e2e/perf/editor.perf.ts`](../e2e/perf/editor.perf.ts) | 4 cases: open cost (near-limit), typing latency (small), typing + save cycle (near-limit), scroll FPS (near-limit). |
+| [`e2e/perf/saveCycleProfile.perf.ts`](../e2e/perf/saveCycleProfile.perf.ts) | 1 case, opt-in (`PERF_PROFILE=1`): V8 CPU profile of the near-limit save cycle (diagnostic, no budget assert). |
+| [`e2e/perf/typingProfile.perf.ts`](../e2e/perf/typingProfile.perf.ts) | 1 case, opt-in (`PERF_PROFILE=1`): V8 CPU profile of idle, heading typing, and body typing with per-suspect attribution (diagnostic, no budget assert). |
 
-Supporting (not tests): [`e2e/perf/metrics.ts`](../e2e/perf/metrics.ts) instrumentation helpers.
+Supporting (not tests): [`e2e/perf/metrics.ts`](../e2e/perf/metrics.ts) instrumentation helpers and
+[`e2e/perf/cpuProfile.ts`](../e2e/perf/cpuProfile.ts) profile capture/attribution shared by the two diagnostics.
 
 ---
 

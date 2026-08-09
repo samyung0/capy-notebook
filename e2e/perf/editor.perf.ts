@@ -29,23 +29,28 @@ const KEY_DELAY_MS = 40;
  * PERF_CPU=4 throttle and the Vite DEV build (unminified, React dev mode,
  * StrictMode double-render), which inflates absolute numbers well beyond
  * production. Values are ~2x the numbers observed at recalibration (Aug 2026,
- * after the editor moved to Yjs collaboration); if one trips, profile with
- * DevTools Performance under the same throttle before touching it — the
- * attached `worstLoafs` script attribution usually names the offender.
+ * after the per-keystroke work described below was cut); if one trips, run
+ * `typingProfile.perf.ts` under the same throttle before touching it — the
+ * attached `worstLoafs` script attribution and that profile's watched frames
+ * usually name the offender between them.
  *
  * Observed at recalibration against the ~2MB / 7.4k-node load-test note (dev
  * build, unthrottled opens, cpu x4 elsewhere):
- * - opening it: ~19s interactive (11s blocking), ~2s read-only (0.25s blocking)
- * - small doc typing: INP ~160ms, ~35ms blocking per keystroke
- * - near-limit typing: INP 1.9-3.3s, ~1.1s blocking per keystroke (!) —
- *   per-keystroke cost scales with document size, and this is the one number
- *   still worth attacking. Each keystroke is a synchronous render of the whole
- *   document (`DIV#root.oninput` -> `dispatchDiscreteEvent`).
- * - save cycle: ~0.5s blocking. It was ~24s until the checkpoint
- *   acknowledgement stopped re-rendering the document: the footer stats reached
- *   `NoteEditorContent`, and the projection refetch re-parsed 2MB nobody was
- *   reading. Both were React render storms rather than serialization cost.
- * - scroll: ~7 FPS, ~93% janky frames
+ * - opening it: ~16s interactive (11s blocking), ~2s read-only (0.2s blocking).
+ *   Open is now the worst number here and the one left to attack.
+ * - small doc typing: INP ~130ms, ~2.5ms blocking per keystroke
+ * - near-limit typing: INP ~0.5s, ~310ms blocking per keystroke
+ * - save cycle: ~0.4s blocking
+ * - scroll: ~40 FPS, ~5% janky frames
+ *
+ * Typing and scroll used to be far worse (~1.1s per keystroke, ~7 FPS). Three
+ * things were paying per keystroke regardless of what was edited: the chunk
+ * size left the document in four chunks so one character re-created ~1000
+ * element descriptors, the table-of-contents query walked every node and
+ * returned a fresh array that no equality check could match, and the toolbar's
+ * table menu subscribed to the selected cells while closed. The same chunk
+ * size was also the granularity of the `content-visibility: auto` boxes, which
+ * is why scrolling moved with it.
  */
 const BUDGET = {
   large: {
@@ -57,22 +62,20 @@ const BUDGET = {
     // projection invalidation. Nothing here may touch the document tree, so
     // this budget is tight on purpose — it is the tripwire for a regression
     // that reconnects the save path to the editor's render.
-    saveCycleBlockingMs: 3000,
-    typingBlockingPerKeystrokeMs: 1800,
-    // Run-to-run spread on this metric is wide (1.9-3.3s observed on the same
-    // build), because a single unlucky keystroke sets it.
-    typingInpMs: 4500,
+    saveCycleBlockingMs: 1500,
+    typingBlockingPerKeystrokeMs: 700,
+    // A single unlucky keystroke sets this one, so it spreads wider run to run
+    // than the average above (0.5-0.8s observed on the same build).
+    typingInpMs: 2000,
   },
   scroll: {
-    avgFps: 4,
-    // Every frame of a document this size is already janky, so the dropped
-    // ratio can no longer get meaningfully worse; the worst single frame still
-    // can, and is what a regression shows up in.
-    longestFrameMs: 4000,
+    avgFps: 20,
+    longestFrameMs: 1200,
   },
   small: {
-    typingBlockingPerKeystrokeMs: 90,
-    typingInpMs: 600,
+    // Small enough now that it is mostly noise: 2.5-7.7ms across runs.
+    typingBlockingPerKeystrokeMs: 30,
+    typingInpMs: 350,
   },
 };
 

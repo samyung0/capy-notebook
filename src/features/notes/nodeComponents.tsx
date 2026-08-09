@@ -9,8 +9,9 @@ import {
   Clipboard,
   Info,
 } from 'lucide-react';
-import { KEYS, NodeApi, type TLinkElement } from 'platejs';
+import { KEYS, NodeApi, type Path, type TLinkElement } from 'platejs';
 import {
+  type PlateEditor,
   PlateElement,
   type PlateElementProps,
   PlateLeaf,
@@ -22,6 +23,7 @@ import { Slot } from 'radix-ui';
 import {
   type FocusEvent,
   type KeyboardEvent,
+  memo,
   type MouseEvent as ReactMouseEvent,
   useEffect,
   useState,
@@ -418,6 +420,53 @@ function scrollHeadingIntoView(element: HTMLElement, topOffset: number) {
   });
 }
 
+/** A document can carry hundreds of headings, and editing any one of their
+ * titles produces a new heading list. Without a per-entry memo, retitling one
+ * heading rebuilds every row on every keystroke. `path` arrives as a fresh
+ * array each time, so it has to be compared by value. */
+const TocEntry = memo(
+  function TocEntry({
+    editor,
+    path,
+    title,
+    type,
+  }: {
+    editor: PlateEditor;
+    path: Path;
+    title: string;
+    type: string;
+  }) {
+    return (
+      <button
+        className={TOC_ITEM_CLASS}
+        onClick={(event) => {
+          event.preventDefault();
+          const node = NodeApi.get(editor, path);
+          if (!node) return;
+
+          const element = editor.api.toDOMNode(node);
+          if (!element) return;
+
+          scrollHeadingIntoView(element, TOC_SCROLL_TOP_OFFSET);
+          editor.tf.navigation.flashTarget({
+            target: { path, type: 'node' },
+          });
+        }}
+        style={tocItemIndent(type)}
+        type="button"
+      >
+        {title}
+      </button>
+    );
+  },
+  (previous, next) =>
+    previous.editor === next.editor &&
+    previous.title === next.title &&
+    previous.type === next.type &&
+    previous.path.length === next.path.length &&
+    previous.path.every((step, index) => step === next.path[index])
+);
+
 function Toc(props: PlateElementProps) {
   const state = useTocElementState();
   const headings = state.headingList;
@@ -429,27 +478,13 @@ function Toc(props: PlateElementProps) {
         {headings.length ? (
           <nav className="flex flex-col">
             {headings.map((heading) => (
-              <button
-                className={TOC_ITEM_CLASS}
+              <TocEntry
+                editor={state.editor}
                 key={heading.id ?? heading.path.join('-')}
-                onClick={(event) => {
-                  event.preventDefault();
-                  const node = NodeApi.get(state.editor, heading.path);
-                  if (!node) return;
-
-                  const element = state.editor.api.toDOMNode(node);
-                  if (!element) return;
-
-                  scrollHeadingIntoView(element, TOC_SCROLL_TOP_OFFSET);
-                  state.editor.tf.navigation.flashTarget({
-                    target: { path: heading.path, type: 'node' },
-                  });
-                }}
-                style={tocItemIndent(heading.type)}
-                type="button"
-              >
-                {heading.title}
-              </button>
+                path={heading.path}
+                title={heading.title}
+                type={heading.type}
+              />
             ))}
           </nav>
         ) : (

@@ -130,6 +130,7 @@ import { noteMarkdownPlugin } from './markdown';
 import { remoteCursorDecorationPlugin } from './RemoteCursors';
 import { SlashInputElement } from './SlashInput';
 import { stableElementIdsPlugin } from './stableElementIds';
+import { queryHeadings } from './tocHeadings';
 
 // Plugin-derived editor types are intentionally wider than Plate's base tuple.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -536,7 +537,7 @@ export const MaterialKit: AnyPlugin[] = [
   TableRowPlugin,
   TableCellPlugin,
   TableCellHeaderPlugin,
-  TocPlugin,
+  TocPlugin.configure({ options: { queryHeading: queryHeadings } }),
   ...MediaKit,
   CalloutPlugin,
   ColumnPlugin,

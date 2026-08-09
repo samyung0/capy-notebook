@@ -491,6 +491,13 @@ export function NoteEditorCore({
   );
 
   const editor = usePlateEditor({
+    // slate-react re-creates the element descriptors of every block in a
+    // modified chunk, so the chunk size is the number of blocks a keystroke
+    // costs. Plate's default of 1000 leaves a near-limit note in four chunks:
+    // one character re-created ~1000 descriptors, all of which then bailed out
+    // of `MemoizedElement` without rendering. It is also the granularity of the
+    // `content-visibility: auto` boxes that carry scrolling.
+    chunking: { chunkSize: 32 },
     components: noteComponents,
     plugins,
     value: initialValue,

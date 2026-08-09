@@ -75,6 +75,63 @@ test.describe('inline and block insertions', () => {
     expect(box!.width).toBeGreaterThan(100);
   });
 
+  test('toolbar table menu inserts a table', async ({ page }) => {
+    // The toolbar drops whole groups from the right until it fits, and the
+    // default viewport leaves the editor pane too narrow to keep this one.
+    await page.setViewportSize({ height: 1000, width: 2560 });
+    const editor = await openEditorNote(
+      page,
+      EDITOR_NOTE.id,
+      EDITOR_NOTE.thirdParagraph
+    );
+
+    await editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true }).click();
+    await page.keyboard.press('End');
+
+    // The menu body lives under the dropdown content so that Radix leaves it
+    // unmounted while closed — its selection subscriptions re-rendered the
+    // toolbar on every keystroke otherwise. This walks the whole path to prove
+    // the split did not break the menu.
+    await page.getByRole('button', { name: 'Table controls' }).click();
+    await page.getByRole('menuitem', { exact: true, name: 'Table' }).hover();
+    await page.getByRole('gridcell', { name: 'Insert 3 by 3 table' }).click();
+
+    await expect(editor.locator('table')).toBeVisible();
+    await expect(editor.locator('td[data-table-cell-id]')).toHaveCount(9);
+  });
+
+  test('table of contents lists headings and follows a retitle', async ({
+    page,
+  }) => {
+    const editor = await openEditorNote(
+      page,
+      EDITOR_NOTE.id,
+      EDITOR_NOTE.firstParagraph
+    );
+
+    await editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true }).click();
+    await page.keyboard.press('End');
+    await chooseAllBlocksEntry(page, 'Table of contents');
+
+    const contents = editor.getByRole('navigation');
+    await expect(
+      contents.getByRole('button', { name: EDITOR_NOTE.headingText })
+    ).toBeVisible();
+
+    // The heading list is cached per top-level block and reused whenever that
+    // block's identity is unchanged, so the case that has to keep working is
+    // the one where a cached block really did change.
+    await editor.locator('h1').click();
+    await page.keyboard.press('End');
+    await page.keyboard.type(' updated');
+
+    await expect(
+      contents.getByRole('button', {
+        name: `${EDITOR_NOTE.headingText} updated`,
+      })
+    ).toBeVisible();
+  });
+
   test('column layout keeps per-column width', async ({ page }) => {
     const editor = await openEditorNote(
       page,
