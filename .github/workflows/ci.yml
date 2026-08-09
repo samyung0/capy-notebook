@@ -40,6 +40,7 @@ jobs:
       - run: pnpm test
       - run: pnpm run test:collaboration
       - run: pnpm run test:cloudflare-relay
+      - run: pnpm run e2e:install
       - run: pnpm run e2e
       - run: pnpm run e2e:editor
       # The store/httpapi suites operate on the shared E2E actors (u_owner and
