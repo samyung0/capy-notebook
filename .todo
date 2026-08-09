@@ -45,7 +45,6 @@ high PRIORITIES:
 6.  if copy and pasting markdown, render it directly rather than inside a code block (? what determines if a code block gets inserted or not?)
 7.  handle file loading errors (not unable to fetch from backend, thats handled, but onload error from urls, both in centercontent and in plate editor)
 8.  all frontend test cases should only select elements using data-testid? (e.g. when getByRole dont use filter has text or names etc) and they should only match the results using text that is seeded for testing rather than relying on element names (translations may change anytime)
-9.  combine image/audio/files into just a single upload (plus the YouTube embed tab), make it a dropdown with a chevron down icon like how file import/export does it; videos are embeds only and must not be uploaded to storage
 10. in editor we need to use custom tooltips rather than title=xxx, include shortcut as well
 11. add layout adjust in editor to make the document smaller or larger in width
 12. check what test cases/e2e test cases there are, what features are they testing and how much of the user journeys they cover, ideally they should check every single part, but what to do when responsivess moves the layouts around/mounts or unmount some components (or should we try to use display none which keeps the component mounted so test cases can select the elements with no issues)?
@@ -72,8 +71,6 @@ high PRIORITIES:
 - editor ask AI (TODO: verify if this works at all)
 - editor voice transcribe (TODO: verify if transcribe works at all)
 - website realtime convo llm (TODO: not implemented yet)
-1.  for materials file scopes/chapter scope, use name instead of id if we are not referencing them.
-2.  There are also no composite constraints ensuring that a referenced chapter belongs to the same workspace as a file, material, or upload session?
 3.  I think discussion table is not necessary? move discussion_id, block_id, anchors into comments table, render the discussion blocks if any comment is present on the block_id instead (need to check what purpose the discussion table serves), deleting parent comment should also delete child comment? UI rendering of comments should check for infinite self referencing comment, though shouldnt happen but should be handled
 4.  fix logic in global dialog, right now conditional rendering triggers rerenders of the globaldialog, instead always mount but use hooks inside of each dialog to control open
 5.  drag and drop on workspace files tree shows dropping line for both bottom of a file item and top of the next file item but its the same gap between

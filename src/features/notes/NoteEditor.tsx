@@ -1,11 +1,10 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   useMaterial,
   useMaterialCollaborationToken,
   useMaterialDiscussions,
   useMe,
-  useWorkspaceMembers,
 } from '@/api/hooks';
 import type { Material, WorkspaceRole } from '@/api/types';
 import { Spinner } from '@/components/ui/feedback';
@@ -105,13 +104,6 @@ function CollaborativeNoteEditor({
   );
   const role: WorkspaceRole | null =
     material.role ?? (material.isOwner ? 'owner' : null);
-  // Mentions/comments need the member directory for any collaborator, not only
-  // owners who can manage invites (`canManageMembers`).
-  const {
-    data: membersData,
-    isError: membersIsError,
-    isPending: membersIsPending,
-  } = useWorkspaceMembers(material.workspaceId);
   const { data: discussionsData, isPending: discussionsIsPending } =
     useMaterialDiscussions(material.id);
   const {
@@ -121,32 +113,14 @@ function CollaborativeNoteEditor({
   } = useMaterialCollaborationToken(material.id);
   const canEdit = material.capabilities.canEdit;
   const canComment = material.capabilities.canComment || canEdit;
-  const users = useMemo(
-    () =>
-      Object.fromEntries(
-        (membersData ?? []).map((member) => [member.userId, member])
-      ),
-    [membersData]
-  );
 
-  if (
-    meIsPending ||
-    membersIsPending ||
-    discussionsIsPending ||
-    collaborationTokenIsPending
-  ) {
+  if (meIsPending || discussionsIsPending || collaborationTokenIsPending) {
     return <FileLoading />;
   }
 
   if (!meData || meIsError) {
     return (
       <FileError message="Unable to load user info. Please refresh the page." />
-    );
-  }
-
-  if (!membersData || membersIsError) {
-    return (
-      <FileError message="Unable to load members info. Please refresh the page." />
     );
   }
 
@@ -181,7 +155,6 @@ function CollaborativeNoteEditor({
           mode={mode}
           onDocumentRejected={onDocumentRejected}
           onEditorStatusChange={onEditorStatusChange}
-          users={users}
         />
       </div>
     </EditorRuntimeProvider>

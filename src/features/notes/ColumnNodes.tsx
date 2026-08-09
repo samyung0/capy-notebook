@@ -131,6 +131,7 @@ export function Column(props: PlateElementProps) {
   return (
     <PlateElement
       {...props}
+      attributes={{ ...props.attributes, 'data-slot': 'column' }}
       className={cn(COLUMN_CLASS, draggable.isDragging && 'opacity-45')}
       ref={useComposedRef(props.ref, draggable.previewRef, draggable.nodeRef)}
       style={width ? ({ '--column-width': width } as CSSProperties) : undefined}

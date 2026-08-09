@@ -13,6 +13,9 @@ import (
 
 type workspaceMembersOutput struct{ Body []apimodel.WorkspaceMember }
 type workspaceMemberOutput struct{ Body apimodel.WorkspaceMember }
+type workspaceCollaboratorsOutput struct {
+	Body []apimodel.WorkspaceCollaborator
+}
 
 type createWorkspaceInviteInput struct {
 	ID   string `path:"id"`
@@ -38,6 +41,7 @@ type transferWorkspaceInput struct {
 func (a *api) registerMembership(api huma.API) {
 	const tag = "Workspace collaboration"
 	reg(api, http.MethodGet, "/api/workspaces/{id}/members", "listWorkspaceMembers", tag, "List workspace members", http.StatusOK, a.listWorkspaceMembers)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/collaborators", "listWorkspaceCollaborators", tag, "List mentionable workspace collaborators", http.StatusOK, a.listWorkspaceCollaborators)
 	reg(api, http.MethodPatch, "/api/workspaces/{id}/members/{memberId}", "updateWorkspaceMember", tag, "Change a workspace member role", http.StatusNoContent, a.updateWorkspaceMember)
 	reg(api, http.MethodDelete, "/api/workspaces/{id}/members/{memberId}", "removeWorkspaceMember", tag, "Remove a workspace member", http.StatusNoContent, a.removeWorkspaceMember)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/transfer", "transferWorkspace", tag, "Transfer workspace ownership to another member", http.StatusOK, a.transferWorkspace)
@@ -71,6 +75,28 @@ func (a *api) listWorkspaceMembers(ctx context.Context, in *workspaceIDInput) (*
 		return nil, collaborationError(err)
 	}
 	return &workspaceMembersOutput{Body: members}, nil
+}
+
+// listWorkspaceCollaborators serves the mention menu. It is gated on the
+// effective comment role rather than membership, because a signed-in visitor
+// to a shared workspace can write comments and needs names to mention. The
+// payload is redacted accordingly; the full roster stays owner-facing.
+func (a *api) listWorkspaceCollaborators(
+	ctx context.Context,
+	in *workspaceIDInput,
+) (*workspaceCollaboratorsOutput, error) {
+	role, err := a.s.WorkspaceEffectiveRole(ctx, userID(ctx), in.ID)
+	if err != nil {
+		return nil, collaborationError(err)
+	}
+	if !store.RoleCanComment(role) {
+		return nil, collaborationError(store.ErrForbidden)
+	}
+	collaborators, err := a.s.ListWorkspaceCollaborators(ctx, in.ID)
+	if err != nil {
+		return nil, collaborationError(err)
+	}
+	return &workspaceCollaboratorsOutput{Body: collaborators}, nil
 }
 
 func (a *api) createWorkspaceInvite(ctx context.Context, in *createWorkspaceInviteInput) (*Empty, error) {

@@ -63,8 +63,8 @@ Both link and public workspaces are readable to anyone with access to the URL.
 Only public workspaces are listed in Explore. Files and all materials inside a
 shared workspace inherit that readable visibility.
 
-For **signed-in nonmembers**, the workspace's `shareRole` grants an effective
-role for material collaboration:
+The workspace's `shareRole` grants an effective role for material
+collaboration to every **signed-in** caller:
 
 | Shared visitor | Read workspace/materials/files | Edit material document | Comment | Change workspace structure/files |
 | --- | --- | --- | --- | --- |
@@ -79,13 +79,24 @@ Important boundaries:
   authorization. Shared editors cannot add chapters, upload files, use
   workspace chat/generation, manage members, or change sharing.
 - Anonymous visitors are always viewers. Write routes require authentication.
-- An explicit membership role wins over `shareRole`, even when the explicit
-  role is less permissive.
+- Roles are grants rather than caps, so a member's effective role is the **more
+  permissive** of their membership and the share role. A viewer invited to a
+  workspace shared for editing may edit documents. Capping them would not
+  restrain anyone, since the same link already hands editing to every other
+  signed-in account, and it would leave the one invited collaborator with less
+  access than a stranger.
+- The raise never reaches structure. A raised viewer still cannot rename a
+  material, add a chapter, or upload, because those checks read the persisted
+  membership rather than the effective role.
+- A share role never lowers a membership. An editor member keeps editing on a
+  view-only link.
 - A material shared by itself from an otherwise private workspace is view-only,
   including for signed-in visitors.
 - Shared material editors may change document content through collaboration,
   but REST metadata changes such as title, filing, scope, or privacy require an
   explicit owner/editor membership.
+- Changing visibility or `shareRole` moves everyone's effective role, so it
+  evicts live collaboration connections the same way a membership change does.
 
 Sources: [workspace versus material access rules](../server/internal/store/share.go#L13),
 [effective material role calculation](../server/internal/store/share.go#L107),
@@ -96,7 +107,10 @@ Sources: [workspace versus material access rules](../server/internal/store/share
 
 ### Workspace settings and membership
 
-- **Any explicit member** can list the workspace members.
+- **Any explicit member** can list the workspace members, which includes each
+  member's email and role. Anyone who may comment, shared-link visitors
+  included, can instead read the redacted collaborator directory behind mention
+  autocomplete, which carries only user id, display name, and avatar.
 - **Owner only** can invite a member, change a member's role, remove a member,
   rename/recolor/tag the workspace, change private/link/public visibility or
   `shareRole`, view workspace statistics, and delete the workspace.
@@ -153,6 +167,10 @@ and [material editor checks](../server/internal/store/share.go#L209).
   delete another user's comment or discussion; commenters cannot.
 - Viewers and anonymous visitors get static read-only material rendering and
   cannot join the collaboration room.
+- Discussions and comments carry their author's display name and avatar. The
+  client does not resolve authorship against the current member list, so a
+  contributor who has since left the workspace stays attributed and a reader
+  without a roster still sees who wrote what.
 - Collaboration tokens encode `write`, `comment`, or quota-recovery `shrink`
   access. A token's document growth rule follows the material's storage owner,
   not the connecting editor.

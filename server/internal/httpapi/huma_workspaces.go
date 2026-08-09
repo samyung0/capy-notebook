@@ -167,6 +167,11 @@ func (a *api) updateWorkspaceSharing(ctx context.Context, in *updateWorkspaceSha
 	if err != nil {
 		return nil, hErr(err)
 	}
+	// Sharing decides part of everyone's effective material role, members
+	// included, and room tokens carry the role they were minted with. Without
+	// this, unsharing a workspace leaves live write connections open until the
+	// tokens expire.
+	a.publishWorkspaceEvictions(ctx, in.ID)
 	return a.ownedWorkspaceOutput(ctx, res)
 }
 

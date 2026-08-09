@@ -17,7 +17,6 @@ import {
   getMaterialCollaborationToken,
   type MaterialCollaborationToken,
   type useMaterialDiscussions,
-  type useWorkspaceMembers,
 } from '@/api/hooks';
 import type { Material } from '@/api/types';
 import {
@@ -192,7 +191,6 @@ export function NoteEditorCore({
   material,
   mode,
   allowExternalAssets,
-  users,
   discussions,
   currentUserId,
   currentUserName,
@@ -203,10 +201,6 @@ export function NoteEditorCore({
   material: Material;
   mode: NoteEditorMode;
   allowExternalAssets: boolean;
-  users: Record<
-    string,
-    NonNullable<ReturnType<typeof useWorkspaceMembers>['data']>[number]
-  >;
   discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>['data']>;
   currentUserId: string;
   currentUserName: string;
@@ -245,7 +239,7 @@ export function NoteEditorCore({
   );
   const [_saveState, setSaveState] =
     useState<NoteEditorStatus['saveState']>('connecting');
-  const name = users[currentUserId]?.name ?? currentUserName;
+  const name = currentUserName;
 
   const setStatus = useCallback(
     (next: NoteEditorStatus['saveState']) => {
@@ -395,7 +389,6 @@ export function NoteEditorCore({
         discussions,
         mode,
         onSave: () => saveNow.current(),
-        users,
         workspaceId: material.workspaceId,
       }),
     ],
@@ -412,7 +405,6 @@ export function NoteEditorCore({
       name,
       qc,
       setStatus,
-      users,
       ydoc,
     ]
   );
@@ -513,7 +505,6 @@ export function NoteEditorCore({
           <CollaborationProvider
             currentUserId={currentUserId}
             discussions={discussions}
-            users={users}
           >
             <NoteToolbar />
             <div className="min-h-0 flex-1 overflow-auto">

@@ -32,6 +32,29 @@ func (s *Store) ListWorkspaceMembers(ctx context.Context, wsID string) ([]Worksp
 	return out, rows.Err()
 }
 
+// ListWorkspaceCollaborators is the redacted directory behind mention
+// autocomplete. It lists members only: a shared link grants access without
+// leaving a row to enumerate, and someone reachable solely through a link is
+// not a dependable mention target anyway.
+func (s *Store) ListWorkspaceCollaborators(ctx context.Context, wsID string) ([]WorkspaceCollaborator, error) {
+	rows, err := s.pool.Query(ctx, `SELECT wm.user_id, u.name, COALESCE(u.avatar_url,'')
+		FROM workspace_members wm JOIN users u ON u.id=wm.user_id
+		WHERE wm.workspace_id=$1 ORDER BY u.name`, wsID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []WorkspaceCollaborator{}
+	for rows.Next() {
+		var collaborator WorkspaceCollaborator
+		if err := rows.Scan(&collaborator.UserID, &collaborator.Name, &collaborator.AvatarURL); err != nil {
+			return nil, err
+		}
+		out = append(out, collaborator)
+	}
+	return out, rows.Err()
+}
+
 func (s *Store) SetWorkspaceMemberRole(ctx context.Context, wsID, memberID string, role WorkspaceRole) error {
 	_, _, err := s.SetWorkspaceMemberRoleWithResult(ctx, wsID, memberID, role)
 	return err

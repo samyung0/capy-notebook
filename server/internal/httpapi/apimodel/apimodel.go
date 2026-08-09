@@ -187,9 +187,10 @@ func FromMaterialRevision(r store.MaterialRevision) MaterialRevision {
 }
 
 type (
-	WorkspaceMember = store.WorkspaceMember
-	Discussion      = store.Discussion
-	Comment         = store.Comment
+	WorkspaceMember       = store.WorkspaceMember
+	WorkspaceCollaborator = store.WorkspaceCollaborator
+	Discussion            = store.Discussion
+	Comment               = store.Comment
 )
 
 // Workspace is the response contract. Tags are object-wrapped for useFieldArray.

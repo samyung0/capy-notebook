@@ -83,6 +83,7 @@ import type {
   UpdateWorkspaceSharingReq,
   User,
   Workspace,
+  WorkspaceCollaborator,
   WorkspaceMember,
   WorkspaceStats
 } from './model';
@@ -4413,6 +4414,56 @@ export const cloneWorkspace = async (id: string, options?: RequestInit): Promise
 
   const data: cloneWorkspaceResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as cloneWorkspaceResponse
+}
+
+
+
+export type listWorkspaceCollaboratorsResponse200 = {
+  data: WorkspaceCollaborator[] | null
+  status: 200
+}
+
+export type listWorkspaceCollaboratorsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listWorkspaceCollaboratorsResponseSuccess = (listWorkspaceCollaboratorsResponse200) & {
+  headers: Headers;
+};
+export type listWorkspaceCollaboratorsResponseError = (listWorkspaceCollaboratorsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listWorkspaceCollaboratorsResponse = (listWorkspaceCollaboratorsResponseSuccess | listWorkspaceCollaboratorsResponseError)
+
+export const getListWorkspaceCollaboratorsUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/collaborators`
+}
+
+/**
+ * @summary List mentionable workspace collaborators
+ */
+export const listWorkspaceCollaborators = async (id: string, options?: RequestInit): Promise<listWorkspaceCollaboratorsResponse> => {
+
+  const res = await fetch(getListWorkspaceCollaboratorsUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listWorkspaceCollaboratorsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listWorkspaceCollaboratorsResponse
 }
 
 

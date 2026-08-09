@@ -70,6 +70,7 @@ import type {
   User,
   WireMessage,
   Workspace,
+  WorkspaceCollaborator,
   WorkspaceMember,
   WorkspaceRole,
 } from './types';
@@ -1070,6 +1071,29 @@ export const workspaceMembersQuery = (workspaceId: string, enabled = true) =>
 export const useWorkspaceMembers = (workspaceId: string, enabled = true) =>
   useQuery(workspaceMembersQuery(workspaceId, enabled));
 
+/**
+ * Mention directory. Unlike the member roster this is readable by shared-link
+ * collaborators, so the editor may request it without knowing whether the
+ * current user holds a membership row.
+ */
+export const workspaceCollaboratorsQuery = (
+  workspaceId: string,
+  enabled = true
+) =>
+  queryOptions({
+    enabled: !!workspaceId && enabled,
+    queryFn: () =>
+      api.get<WorkspaceCollaborator[]>(
+        `/workspaces/${workspaceId}/collaborators`
+      ),
+    queryKey: qk.workspaceCollaborators(workspaceId),
+  });
+
+export const useWorkspaceCollaborators = (
+  workspaceId: string,
+  enabled = true
+) => useQuery(workspaceCollaboratorsQuery(workspaceId, enabled));
+
 export function useCreateWorkspaceInvite(workspaceId: string) {
   return useMutation({
     mutationFn: (body: {
@@ -1119,8 +1143,14 @@ export function useRemoveWorkspaceMember(workspaceId: string) {
   return useMutation({
     mutationFn: (userId: string) =>
       api.del<void>(`/workspaces/${workspaceId}/members/${userId}`),
-    onSuccess: () =>
-      qc.invalidateQueries({ queryKey: qk.workspaceMembers(workspaceId) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: qk.workspaceMembers(workspaceId) });
+      // A removed member also leaves the mention directory. Role changes do
+      // not, since the directory carries no roles.
+      qc.invalidateQueries({
+        queryKey: qk.workspaceCollaborators(workspaceId),
+      });
+    },
   });
 }
 

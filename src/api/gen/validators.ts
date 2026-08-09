@@ -313,6 +313,8 @@ export const UpdateMaterialCommentBody = zod.object({
 
 export const UpdateMaterialCommentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "authorAvatarUrl": zod.string().optional(),
+  "authorName": zod.string(),
   "contentRich": zod.unknown(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "discussionId": zod.string(),
@@ -576,6 +578,8 @@ export const CreateMaterialCommentBody = zod.object({
 
 export const CreateMaterialCommentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "authorAvatarUrl": zod.string().optional(),
+  "authorName": zod.string(),
   "contentRich": zod.unknown(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "discussionId": zod.string(),
@@ -1030,9 +1034,13 @@ export const ListMaterialDiscussionsResponseItem = zod.object({
   "anchorQuote": zod.string(),
   "anchorStart": zod.string().optional(),
   "anchorVersion": zod.number(),
+  "authorAvatarUrl": zod.string().optional(),
+  "authorName": zod.string(),
   "blockId": zod.string().optional(),
   "comments": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "authorAvatarUrl": zod.string().optional(),
+  "authorName": zod.string(),
   "contentRich": zod.unknown(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "discussionId": zod.string(),
@@ -1086,9 +1094,13 @@ export const CreateMaterialDiscussionResponse = zod.object({
   "anchorQuote": zod.string(),
   "anchorStart": zod.string().optional(),
   "anchorVersion": zod.number(),
+  "authorAvatarUrl": zod.string().optional(),
+  "authorName": zod.string(),
   "blockId": zod.string().optional(),
   "comments": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "authorAvatarUrl": zod.string().optional(),
+  "authorName": zod.string(),
   "contentRich": zod.unknown(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "discussionId": zod.string(),
@@ -1890,6 +1902,21 @@ export const CloneWorkspaceResponse = zod.object({
 }))
 })
 })
+
+
+/**
+ * @summary List mentionable workspace collaborators
+ */
+export const ListWorkspaceCollaboratorsParams = zod.object({
+  "id": zod.string()
+})
+
+export const ListWorkspaceCollaboratorsResponseItem = zod.object({
+  "avatarUrl": zod.string().optional(),
+  "name": zod.string(),
+  "userId": zod.string()
+})
+export const ListWorkspaceCollaboratorsResponse = zod.array(ListWorkspaceCollaboratorsResponseItem)
 
 
 /**

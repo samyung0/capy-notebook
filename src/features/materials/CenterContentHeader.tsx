@@ -238,7 +238,11 @@ export function Header({
             }
             value={activeMode}
           >
-            <SelectTrigger className="px-1.5 py-2" variant="ghost-hover">
+            <SelectTrigger
+              aria-label="Material mode"
+              className="px-1.5 py-2"
+              variant="ghost-hover"
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>

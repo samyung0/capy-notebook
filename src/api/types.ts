@@ -316,6 +316,16 @@ export interface WorkspaceMember {
   workspaceId: string;
 }
 
+/**
+ * Mention directory entry. Readable by anyone who may comment, shared-link
+ * visitors included, so it deliberately carries no email or role.
+ */
+export interface WorkspaceCollaborator {
+  avatarUrl?: string;
+  name: string;
+  userId: string;
+}
+
 export type MaterialComment = Omit<GenComment, 'contentRich' | 'replies'> & {
   contentRich: import('@/features/materials/document').MaterialValue | null;
   replies: MaterialComment[];

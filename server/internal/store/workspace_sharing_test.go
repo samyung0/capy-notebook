@@ -57,7 +57,7 @@ func TestWorkspaceDefaultsToInviteOnlyViewer(t *testing.T) {
 	}
 }
 
-func TestEffectiveMaterialAccessAndMemberPrecedence(t *testing.T) {
+func TestEffectiveMaterialAccessUnionsMembershipAndShareRole(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx, ws := createSharingTestWorkspace(t, s, ShareEditor)
 
@@ -74,24 +74,47 @@ func TestEffectiveMaterialAccessAndMemberPrecedence(t *testing.T) {
 	}
 
 	access, err := s.MaterialEffectiveAccess(ctx, "u_other", material.ID)
-	if err != nil || access.Role != RoleEditor || access.Explicit {
+	if err != nil || access.Role != RoleEditor || access.MemberRole != "" {
 		t.Fatalf("signed-in nonmember access = %#v, %v", access, err)
 	}
 	anonymous, err := s.MaterialEffectiveAccess(ctx, "", material.ID)
-	if err != nil || anonymous.Role != RoleViewer || anonymous.Explicit {
+	if err != nil || anonymous.Role != RoleViewer || anonymous.MemberRole != "" {
 		t.Fatalf("anonymous access = %#v, %v", anonymous, err)
 	}
 	if err := s.AssertWorkspaceEditor(ctx, "u_other", ws.ID); !errors.Is(err, ErrForbidden) {
 		t.Fatalf("share editor gained structural workspace access: %v", err)
 	}
 
+	// A viewer membership must not leave the invited collaborator with less
+	// than the link already hands to every other signed-in account.
 	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id,user_id,role)
 		VALUES ($1,$2,'viewer')`, ws.ID, "u_other"); err != nil {
 		t.Fatal(err)
 	}
 	access, err = s.MaterialEffectiveAccess(ctx, "u_other", material.ID)
-	if err != nil || access.Role != RoleViewer || !access.Explicit {
-		t.Fatalf("explicit viewer did not override share editor: %#v, %v", access, err)
+	if err != nil || access.Role != RoleEditor || access.MemberRole != RoleViewer {
+		t.Fatalf("viewer member was not raised by the share editor role: %#v, %v", access, err)
+	}
+	if err := s.AssertWorkspaceEditor(ctx, "u_other", ws.ID); !errors.Is(err, ErrForbidden) {
+		t.Fatalf("raised member gained structural workspace access: %v", err)
+	}
+	role, err := s.WorkspaceEffectiveRole(ctx, "u_other", ws.ID)
+	if err != nil || role != RoleEditor {
+		t.Fatalf("workspace effective role = %q, %v; want editor", role, err)
+	}
+
+	// The reverse never demotes: a viewer share role leaves editors editing.
+	viewerShare := ShareViewer
+	if _, err := s.UpdateWorkspaceSharing(ctx, "u_owner", ws.ID, nil, &viewerShare); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE workspace_members SET role='editor'
+		WHERE workspace_id=$1 AND user_id=$2`, ws.ID, "u_other"); err != nil {
+		t.Fatal(err)
+	}
+	access, err = s.MaterialEffectiveAccess(ctx, "u_other", material.ID)
+	if err != nil || access.Role != RoleEditor || access.MemberRole != RoleEditor {
+		t.Fatalf("editor member was lowered by the viewer share role: %#v, %v", access, err)
 	}
 
 	standalone, err := s.CreateMaterial(ctx, Material{
@@ -103,7 +126,7 @@ func TestEffectiveMaterialAccessAndMemberPrecedence(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = s.DeleteMaterial(ctx, standalone.ID) })
 	access, err = s.MaterialEffectiveAccess(ctx, "u_other", standalone.ID)
-	if err != nil || access.Role != RoleViewer || access.Explicit {
+	if err != nil || access.Role != RoleViewer || access.MemberRole != "" {
 		t.Fatalf("standalone sharing must remain view-only: %#v, %v", access, err)
 	}
 }

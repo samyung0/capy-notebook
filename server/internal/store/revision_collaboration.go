@@ -17,6 +17,9 @@ type CollaborationResource struct {
 	UserID     string
 }
 
+// scanRevisionComment expects the author's name and avatar between the user id
+// and the content. Mutations project them through a CTE, because RETURNING
+// cannot join the author's user row on its own.
 func scanRevisionComment(row pgx.Row) (Comment, error) {
 	var comment Comment
 	var content []byte
@@ -25,6 +28,8 @@ func scanRevisionComment(row pgx.Row) (Comment, error) {
 		&comment.DiscussionID,
 		&comment.ParentCommentID,
 		&comment.UserID,
+		&comment.AuthorName,
+		&comment.AuthorAvatarURL,
 		&content,
 		&comment.IsEdited,
 		&comment.IsDeleted,
@@ -70,12 +75,14 @@ func validateRelativeAnchor(start, end []byte, version int, quote string) error 
 // ListCollaborationDiscussions returns active comment threads with one-level
 // replies nested under each root comment.
 func (s *Store) ListCollaborationDiscussions(ctx context.Context, materialID string) ([]Discussion, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, material_id, block_id, anchor_start,
-		anchor_end, anchor_version, anchor_quote, created_by, is_resolved, false,
-		created_at, updated_at
-		FROM material_discussions
-		WHERE material_id=$1 AND deleted_at IS NULL
-		ORDER BY created_at`, materialID)
+	rows, err := s.pool.Query(ctx, `SELECT d.id, d.material_id, d.block_id, d.anchor_start,
+		d.anchor_end, d.anchor_version, d.anchor_quote, d.created_by,
+		COALESCE(u.name,''), COALESCE(u.avatar_url,''), d.is_resolved, false,
+		d.created_at, d.updated_at
+		FROM material_discussions d
+		LEFT JOIN users u ON u.id=d.created_by
+		WHERE d.material_id=$1 AND d.deleted_at IS NULL
+		ORDER BY d.created_at`, materialID)
 	if err != nil {
 		return nil, err
 	}
@@ -93,6 +100,8 @@ func (s *Store) ListCollaborationDiscussions(ctx context.Context, materialID str
 			&discussion.AnchorVersion,
 			&discussion.AnchorQuote,
 			&discussion.CreatedBy,
+			&discussion.AuthorName,
+			&discussion.AuthorAvatarURL,
 			&discussion.IsResolved,
 			&discussion.IsDeleted,
 			&discussion.CreatedAt,
@@ -110,10 +119,13 @@ func (s *Store) ListCollaborationDiscussions(ctx context.Context, materialID str
 }
 
 func (s *Store) listDiscussionComments(ctx context.Context, discussionID string) ([]Comment, error) {
-	rows, err := s.pool.Query(ctx, `SELECT id, discussion_id, parent_comment_id, user_id,
-		content_rich, is_edited, (deleted_at IS NOT NULL), created_at, updated_at
-		FROM material_comments WHERE discussion_id=$1
-		ORDER BY created_at`, discussionID)
+	rows, err := s.pool.Query(ctx, `SELECT c.id, c.discussion_id, c.parent_comment_id, c.user_id,
+		COALESCE(u.name,''), COALESCE(u.avatar_url,''), c.content_rich, c.is_edited,
+		(c.deleted_at IS NOT NULL), c.created_at, c.updated_at
+		FROM material_comments c
+		LEFT JOIN users u ON u.id=c.user_id
+		WHERE c.discussion_id=$1
+		ORDER BY c.created_at`, discussionID)
 	if err != nil {
 		return nil, err
 	}
@@ -241,12 +253,18 @@ func (s *Store) AddNestedComment(
 		}
 	}
 	id := uid("com")
-	comment, err := scanRevisionComment(s.pool.QueryRow(ctx, `INSERT INTO material_comments
-		(id, discussion_id, parent_comment_id, user_id, content_rich)
-		SELECT $1,$2,$3,$4,$5 FROM material_discussions
-		WHERE id=$2 AND deleted_at IS NULL
-		RETURNING id, discussion_id, parent_comment_id, user_id, content_rich,
-		          is_edited, false, created_at, updated_at`,
+	comment, err := scanRevisionComment(s.pool.QueryRow(ctx, `WITH added AS (
+			INSERT INTO material_comments
+			(id, discussion_id, parent_comment_id, user_id, content_rich)
+			SELECT $1,$2,$3,$4,$5 FROM material_discussions
+			WHERE id=$2 AND deleted_at IS NULL
+			RETURNING id, discussion_id, parent_comment_id, user_id, content_rich,
+			          is_edited, created_at, updated_at
+		)
+		SELECT a.id, a.discussion_id, a.parent_comment_id, a.user_id,
+			COALESCE(u.name,''), COALESCE(u.avatar_url,''), a.content_rich,
+			a.is_edited, false, a.created_at, a.updated_at
+		FROM added a LEFT JOIN users u ON u.id=a.user_id`,
 		id, discussionID, parentCommentID, actorID, content))
 	if isNoRows(err) {
 		return Comment{}, ErrNotFound
@@ -262,11 +280,17 @@ func (s *Store) EditOwnComment(
 	if err := validateRichContent(content); err != nil {
 		return Comment{}, err
 	}
-	comment, err := scanRevisionComment(s.pool.QueryRow(ctx, `UPDATE material_comments
-		SET content_rich=$3, is_edited=true, updated_at=now()
-		WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL
-		RETURNING id, discussion_id, parent_comment_id, user_id, content_rich,
-		          is_edited, false, created_at, updated_at`, id, actorID, content))
+	comment, err := scanRevisionComment(s.pool.QueryRow(ctx, `WITH edited AS (
+			UPDATE material_comments
+			SET content_rich=$3, is_edited=true, updated_at=now()
+			WHERE id=$1 AND user_id=$2 AND deleted_at IS NULL
+			RETURNING id, discussion_id, parent_comment_id, user_id, content_rich,
+			          is_edited, created_at, updated_at
+		)
+		SELECT e.id, e.discussion_id, e.parent_comment_id, e.user_id,
+			COALESCE(u.name,''), COALESCE(u.avatar_url,''), e.content_rich,
+			e.is_edited, false, e.created_at, e.updated_at
+		FROM edited e LEFT JOIN users u ON u.id=e.user_id`, id, actorID, content))
 	if isNoRows(err) {
 		return Comment{}, ErrNotFound
 	}

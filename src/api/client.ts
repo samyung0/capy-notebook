@@ -305,6 +305,8 @@ export const qk = {
   tasks: ['tasks'] as const,
   thinking: ['thinking'] as const,
   workspace: (id: string) => ['workspace', id] as const,
+  workspaceCollaborators: (id: string) =>
+    ['workspace', id, 'collaborators'] as const,
   workspaceMembers: (id: string) => ['workspace', id, 'members'] as const,
   workspaceStats: (id: string) => ['workspace', id, 'stats'] as const,
   workspaces: (params?: unknown) => ['workspaces', params ?? null] as const,

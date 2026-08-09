@@ -60,9 +60,19 @@ The permission boundary is layered:
    actions are not mounted for comment mode.
 7. Comment REST endpoints independently enforce comment/edit ACLs.
 
-ACL changes and deletions publish an eviction event through Redis. The sidecar
-closes matching room connections, and short token TTLs bound stale access if an
-event is missed.
+`MaterialEffectiveRole` is the union of the caller's membership and the
+workspace share role, so a viewer member of a link-shared-for-editing workspace
+mints a `write` token. Structural authorization is unaffected; see
+[authorization](../authorization-permissions-lifecycles.md).
+
+ACL changes, sharing changes, and deletions publish an eviction event through
+Redis. The sidecar closes matching room connections, and short token TTLs bound
+stale access if an event is missed.
+
+The editor never requires the member roster. Comment authorship arrives on the
+discussion payloads, and mention autocomplete reads a redacted collaborator
+directory that shared-link visitors may also fetch. Neither blocks the first
+paint: a failed directory request disables mentions rather than the document.
 
 ## Editor lifecycle
 

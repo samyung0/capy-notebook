@@ -41,7 +41,10 @@ INSERT INTO workspace_members (workspace_id, user_id, role) VALUES
   ('ws_e2e_mutate',  'u_owner',  'owner'),
   ('ws_e2e_private', 'u_editor', 'editor'),
   ('ws_e2e_private', 'u_commenter', 'commenter'),
-  ('ws_e2e_private', 'u_viewer', 'viewer')
+  ('ws_e2e_private', 'u_viewer', 'viewer'),
+  -- Invited as a viewer on a workspace whose link already grants editing, so
+  -- the effective role has to resolve to the more permissive of the two.
+  ('ws_e2e_edit', 'u_viewer', 'viewer')
 ON CONFLICT (workspace_id, user_id) DO UPDATE SET role = EXCLUDED.role;
 
 INSERT INTO chapters (id, workspace_id, name, position) VALUES

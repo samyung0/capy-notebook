@@ -262,7 +262,10 @@ export function ShareDialog({
               onValueChange={(v) => handlePrivacyChange(v as Privacy)}
               value={privacy}
             >
-              <SelectTrigger loading={savingField === 'privacy'}>
+              <SelectTrigger
+                aria-label="Visibility"
+                loading={savingField === 'privacy'}
+              >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -301,7 +304,10 @@ export function ShareDialog({
                   }
                   value={shareRole}
                 >
-                  <SelectTrigger loading={savingField === 'shareRole'}>
+                  <SelectTrigger
+                    aria-label="Anyone with access"
+                    loading={savingField === 'shareRole'}
+                  >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>

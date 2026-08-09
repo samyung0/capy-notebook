@@ -125,6 +125,7 @@ function DraggableBlock(props: PlateElementProps) {
           ? 'group/container'
           : 'group'
       )}
+      data-slot="block-wrapper"
       onMouseEnter={() => {
         if (isDragging) return;
         const block = editor.api.toDOMNode(element);

@@ -118,6 +118,7 @@ export function WorkspaceMemberManager({
         />
         <RoleSelect
           disabled={createInviteIsPending}
+          label="Invite role"
           onChange={setRole}
           value={role}
         />
@@ -182,6 +183,7 @@ export function WorkspaceMemberManager({
             <InputTitle>Role</InputTitle>
             <RoleSelect
               disabled={updateMemberIsPending}
+              label="Role"
               onChange={(nextRole) => {
                 setManagedRole(nextRole);
                 updateMember({
@@ -222,10 +224,12 @@ function RoleSelect({
   value,
   onChange,
   disabled,
+  label,
 }: {
   value: MemberRole;
   onChange: (role: MemberRole) => void;
   disabled?: boolean;
+  label: string;
 }) {
   return (
     <Select
@@ -233,7 +237,7 @@ function RoleSelect({
       onValueChange={(next) => onChange(next as MemberRole)}
       value={value}
     >
-      <SelectTrigger className="w-28">
+      <SelectTrigger aria-label={label} className="w-28">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>

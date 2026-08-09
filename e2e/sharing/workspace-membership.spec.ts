@@ -17,14 +17,14 @@ test.describe('workspace invitations', () => {
     });
     await ownerPage.goto(`/workspaces/${workspace.id}`);
     await ownerPage.getByRole('button', { name: 'Share' }).click();
-    await expect(ownerPage.getByRole('combobox').first()).toContainText(
-      'Invite only'
-    );
+    await expect(
+      ownerPage.getByRole('combobox', { name: 'Visibility' })
+    ).toContainText('Invite only');
 
     await ownerPage
       .getByPlaceholder('Email or user ID')
       .fill('commenter@evonotes.test');
-    await ownerPage.getByRole('combobox').nth(1).click();
+    await ownerPage.getByRole('combobox', { name: 'Invite role' }).click();
     await ownerPage.getByRole('option', { name: 'Comment' }).click();
 
     const createResponse = waitForApi(

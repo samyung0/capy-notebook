@@ -22,11 +22,7 @@ import {
   useResolveMaterialDiscussion,
   useUpdateMaterialComment,
 } from '@/api/hooks';
-import type {
-  MaterialComment,
-  MaterialDiscussion,
-  WorkspaceMember,
-} from '@/api/types';
+import type { MaterialComment, MaterialDiscussion } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { InputTitle } from '@/components/ui/Input';
@@ -48,7 +44,6 @@ export interface EditorCollaborationOptions {
   currentUserId: string | null;
   discussions: MaterialDiscussion[];
   mode: NoteEditorMode;
-  users: Record<string, WorkspaceMember>;
 }
 
 export interface CollaborationActions {
@@ -69,7 +64,6 @@ export interface CollaborationActions {
   openComment: () => void;
   resolve: (discussion: MaterialDiscussion) => void;
   updateComment: (commentId: string, text: string) => Promise<void>;
-  users: Record<string, WorkspaceMember>;
 }
 
 const CollaborationActionsContext = createContext<CollaborationActions | null>(
@@ -122,9 +116,15 @@ function CommentDecorationLeaf(props: PlateLeafProps) {
   return (
     <PlateLeaf
       {...props}
+      // text-inherit neutralises the UA `mark { color: MarkText }` default.
+      as="mark"
+      attributes={{
+        ...props.attributes,
+        'data-comment-decoration': 'true',
+      }}
       className={cn(
         props.className,
-        'rounded-sm bg-tint-accent-2 underline decoration-2 decoration-action-accent/50 underline-offset-2'
+        'rounded-sm bg-tint-accent-2 text-inherit underline decoration-2 decoration-action-accent/50 underline-offset-2'
       )}
     >
       {props.children}
@@ -221,7 +221,6 @@ export const discussionPlugin = createPlatePlugin({
   options: {
     currentUserId: null as string | null,
     discussions: [] as MaterialDiscussion[],
-    users: {} as Record<string, WorkspaceMember>,
   },
   render: { aboveNodes: BlockDiscussion as never },
 });
@@ -233,12 +232,10 @@ function richComment(text: string): MaterialValue {
 export function CollaborationProvider({
   children,
   discussions,
-  users,
   currentUserId,
 }: {
   children: React.ReactNode;
   discussions: MaterialDiscussion[];
-  users: Record<string, WorkspaceMember>;
   currentUserId: string | null;
 }) {
   const editor = useEditorRef();
@@ -355,7 +352,6 @@ export function CollaborationProvider({
         contentRich: richComment(text),
       });
     },
-    users,
   };
 
   return (
@@ -401,8 +397,11 @@ export function CollaborationProvider({
   );
 }
 
-function userName(actions: CollaborationActions, userId: string) {
-  return actions.users[userId]?.name ?? 'Unknown user';
+// Authors travel with the thread, so a contributor who has since left the
+// workspace stays attributed and readers without a member roster still see who
+// wrote what.
+function authorName(entry: { authorName?: string }) {
+  return entry.authorName?.trim() || 'Unknown user';
 }
 
 export function DiscussionThread({
@@ -548,9 +547,7 @@ function CommentEntry({
         depth === 1 && 'ml-5'
       )}
     >
-      <p className="font-medium text-fg-muted text-xs">
-        {userName(actions, entry.userId)}
-      </p>
+      <p className="font-medium text-fg-muted text-xs">{authorName(entry)}</p>
       {editing ? (
         <div className="mt-1 flex flex-col gap-1">
           <Textarea

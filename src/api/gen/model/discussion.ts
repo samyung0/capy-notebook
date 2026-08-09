@@ -13,6 +13,8 @@ export interface Discussion {
   anchorQuote: string;
   anchorStart?: string;
   anchorVersion: number;
+  authorAvatarUrl?: string;
+  authorName: string;
   blockId?: string;
   comments: Comment[];
   createdAt: string;

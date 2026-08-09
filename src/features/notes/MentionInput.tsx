@@ -18,7 +18,7 @@ import {
   useEditorRef,
 } from 'platejs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useWorkspaceMembers } from '@/api/hooks';
+import { useWorkspaceCollaborators } from '@/api/hooks';
 import { useEditorRuntime } from './EditorRuntime';
 
 const onSelectMention = getMentionOnSelectItem();
@@ -32,7 +32,7 @@ export function MentionInputElement(
     data: members = [],
     isPending,
     isError,
-  } = useWorkspaceMembers(workspaceId);
+  } = useWorkspaceCollaborators(workspaceId);
   const rootRef = useRef<HTMLSpanElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const insertPointRef = useRef<PointRef | null>(null);
@@ -105,9 +105,7 @@ export function MentionInputElement(
     return members
       .filter(
         (member) =>
-          !normalized ||
-          member.name.toLowerCase().includes(normalized) ||
-          member.email.toLowerCase().includes(normalized)
+          !normalized || member.name.toLowerCase().includes(normalized)
       )
       .slice(0, 8);
   }, [members, query]);
@@ -224,7 +222,6 @@ export function MentionInputElement(
                   <span className="font-medium text-fg text-sm">
                     {member.name}
                   </span>
-                  <span className="text-fg-muted text-xs">{member.email}</span>
                 </button>
               ))}
             {!isPending && !isError && !matches.length && (

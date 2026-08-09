@@ -52,7 +52,7 @@ test.describe('live Yjs collaboration', () => {
       })
       .toContain(`${body}${suffix}`);
 
-    const modes = ownerPage.getByRole('combobox');
+    const modes = ownerPage.getByRole('combobox', { name: 'Material mode' });
     await modes.click();
     await ownerPage.getByRole('option', { name: 'View' }).click();
     await expect(

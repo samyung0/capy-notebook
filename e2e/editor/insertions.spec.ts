@@ -88,7 +88,7 @@ test.describe('inline and block insertions', () => {
     await page.keyboard.press('End');
     await chooseAllBlocksEntry(page, 'Three equal columns');
 
-    const columns = editor.locator('.group\\/column');
+    const columns = editor.locator('[data-slot="column"]');
     await expect(columns).toHaveCount(3);
     for (const column of await columns.all()) {
       const box = await column.boundingBox();

@@ -82,7 +82,9 @@ function applySeed() {
 function runBackendAccessTests() {
   const result = spawnSync(
     'go',
-    ['test', './internal/store', './internal/httpapi', '-count=1'],
+    // -p 1 because both packages reapply the migration on start-up, and
+    // concurrent DDL on one database deadlocks.
+    ['test', '-p', '1', './internal/store', './internal/httpapi', '-count=1'],
     {
       cwd: path.join(root, 'server'),
       encoding: 'utf8',

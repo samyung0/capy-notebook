@@ -250,6 +250,17 @@ type WorkspaceMember struct {
 	CreatedAt   time.Time     `json:"createdAt"`
 }
 
+// WorkspaceCollaborator is the directory entry served to everyone who may
+// comment, which on a link or public workspace includes nonmembers. It carries
+// only what a mention menu renders. Email is personal data collected through
+// the invitation flow and would enable account enumeration, and the roster of
+// who holds which role is the workspace owner's business, so neither is here.
+type WorkspaceCollaborator struct {
+	UserID    string `json:"userId"`
+	Name      string `json:"name"`
+	AvatarURL string `json:"avatarUrl,omitempty"`
+}
+
 type WorkspaceInvite struct {
 	ID            string        `json:"id"`
 	WorkspaceID   string        `json:"workspaceId"`
@@ -264,20 +275,27 @@ type WorkspaceInvite struct {
 	CreatedAt     time.Time     `json:"createdAt"`
 }
 
+// Discussion and Comment carry their author's display identity rather than
+// leaving the client to join against the current member list. Attribution
+// belongs to the moment the thread was written: a contributor who has since
+// been removed from the workspace still wrote it, and a reader who is not a
+// member has no roster to look them up in.
 type Discussion struct {
-	ID            string    `json:"id"`
-	MaterialID    string    `json:"materialId"`
-	BlockID       *string   `json:"blockId,omitempty"`
-	AnchorStart   []byte    `json:"anchorStart,omitempty"`
-	AnchorEnd     []byte    `json:"anchorEnd,omitempty"`
-	AnchorVersion int       `json:"anchorVersion"`
-	AnchorQuote   string    `json:"anchorQuote"`
-	CreatedBy     string    `json:"userId"`
-	IsResolved    bool      `json:"isResolved"`
-	IsDeleted     bool      `json:"isDeleted"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
-	Comments      []Comment `json:"comments" nullable:"false"`
+	ID              string    `json:"id"`
+	MaterialID      string    `json:"materialId"`
+	BlockID         *string   `json:"blockId,omitempty"`
+	AnchorStart     []byte    `json:"anchorStart,omitempty"`
+	AnchorEnd       []byte    `json:"anchorEnd,omitempty"`
+	AnchorVersion   int       `json:"anchorVersion"`
+	AnchorQuote     string    `json:"anchorQuote"`
+	CreatedBy       string    `json:"userId"`
+	AuthorName      string    `json:"authorName"`
+	AuthorAvatarURL string    `json:"authorAvatarUrl,omitempty"`
+	IsResolved      bool      `json:"isResolved"`
+	IsDeleted       bool      `json:"isDeleted"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
+	Comments        []Comment `json:"comments" nullable:"false"`
 }
 
 type Comment struct {
@@ -285,6 +303,8 @@ type Comment struct {
 	DiscussionID    string          `json:"discussionId"`
 	ParentCommentID *string         `json:"parentCommentId,omitempty"`
 	UserID          string          `json:"userId"`
+	AuthorName      string          `json:"authorName"`
+	AuthorAvatarURL string          `json:"authorAvatarUrl,omitempty"`
 	ContentRich     json.RawMessage `json:"contentRich"`
 	IsEdited        bool            `json:"isEdited"`
 	IsDeleted       bool            `json:"isDeleted"`

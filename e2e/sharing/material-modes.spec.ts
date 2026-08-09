@@ -44,7 +44,9 @@ test.describe('shared material modes', () => {
       await expect(
         anonymousPage.locator('[contenteditable="true"]')
       ).toHaveCount(0);
-      await expect(anonymousPage.getByRole('combobox')).toHaveCount(0);
+      await expect(
+        anonymousPage.getByRole('combobox', { name: 'Material mode' })
+      ).toHaveCount(0);
     }
   });
 
@@ -66,7 +68,9 @@ test.describe('shared material modes', () => {
       material.id,
       true
     );
-    await expect(otherPage.getByRole('combobox')).toContainText('Comment');
+    await expect(
+      otherPage.getByRole('combobox', { name: 'Material mode' })
+    ).toContainText('Comment');
     await expect(otherPage.getByText('Synced', { exact: true })).toBeVisible();
     await expect(
       otherPage.getByRole('toolbar', { name: 'Document formatting' })
@@ -75,11 +79,14 @@ test.describe('shared material modes', () => {
 
     const editor = otherPage.locator('[data-slate-editor="true"]').first();
     await editor.getByText(body, { exact: true }).dblclick();
+    // Comment mode mounts the sticky "Comment tools" bar, not the edit-only
+    // floating selection toolbar.
     await otherPage
-      .getByRole('toolbar', { name: 'Material collaboration' })
+      .getByRole('toolbar', { name: 'Comment tools' })
       .getByRole('button', { exact: true, name: 'Comment' })
       .click();
     const dialog = otherPage.getByRole('dialog', { name: 'Add comment' });
+    await expect(dialog).toBeVisible();
     await dialog
       .getByRole('textbox', { name: 'Comment' })
       .fill('E2E relative comment');
@@ -87,9 +94,9 @@ test.describe('shared material modes', () => {
       .getByRole('button', { exact: true, name: 'Add comment' })
       .click();
 
-    await expect(
-      editor.locator('[class~="bg-tint-accent-2"][class~="underline"]')
-    ).toContainText('selected');
+    await expect(editor.locator('[data-comment-decoration]')).toContainText(
+      'selected'
+    );
     await otherPage
       .getByRole('button', { name: 'Show 1 comment thread' })
       .click();
@@ -108,7 +115,7 @@ test.describe('shared material modes', () => {
       seed.editableNote.id,
       true
     );
-    const modes = otherPage.getByRole('combobox');
+    const modes = otherPage.getByRole('combobox', { name: 'Material mode' });
     await expect(modes).toContainText('Edit');
     await modes.click();
     await expect(otherPage.getByRole('option', { name: 'Edit' })).toBeVisible();
@@ -143,12 +150,14 @@ test.describe('shared material modes', () => {
     await ownerPage.keyboard.press('Escape');
 
     const menu = await openAllBlocks(ownerPage);
+    // Only WIDGET_GROUPS that contribute all-block commands render a section;
+    // toolbar-only groups (history, font styles, text decorations) do not.
     for (const heading of [
-      'Basic blocks',
-      'Lists',
-      'Media',
-      'Advanced blocks',
-      'Inline',
+      'File operations',
+      'General',
+      'Inline elements',
+      'Block decorations',
+      'Block elements',
     ]) {
       await expect(
         menu.getByRole('heading', { exact: true, name: heading })

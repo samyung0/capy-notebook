@@ -8,6 +8,8 @@
 export interface Comment {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  authorAvatarUrl?: string;
+  authorName: string;
   contentRich: unknown;
   createdAt: string;
   discussionId: string;

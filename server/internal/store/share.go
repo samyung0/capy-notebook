@@ -63,6 +63,43 @@ func (s *Store) WorkspaceRole(ctx context.Context, userID, wsID string) (Workspa
 	return role, err
 }
 
+// WorkspaceEffectiveRole is the workspace-wide counterpart of
+// MaterialEffectiveAccess: membership raised by the share role wherever the
+// workspace is link/public. It answers collaboration questions that are not
+// scoped to one material, such as who may read the collaborator directory.
+// Structural authorization keeps using WorkspaceRole.
+func (s *Store) WorkspaceEffectiveRole(ctx context.Context, userID, wsID string) (WorkspaceRole, error) {
+	var owner *string
+	var privacy Privacy
+	var shareRole *ShareRole
+	var memberRole WorkspaceRole
+	err := s.pool.QueryRow(ctx, `
+		SELECT w.user_id, w.privacy, w.share_role, COALESCE(wm.role,'')
+		FROM workspaces w
+		LEFT JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$2
+		WHERE w.id=$1`, wsID, userID).Scan(&owner, &privacy, &shareRole, &memberRole)
+	if isNoRows(err) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if userID != "" && owner != nil && *owner == userID {
+		return RoleOwner, nil
+	}
+	var sharedRole WorkspaceRole
+	if privacy == PrivacyLink || privacy == PrivacyPublic {
+		sharedRole = RoleViewer
+		if userID != "" && shareRole != nil {
+			sharedRole = shareRole.WorkspaceRole()
+		}
+	}
+	if memberRole == "" && sharedRole == "" {
+		return "", ErrNotFound
+	}
+	return MaxRole(memberRole, sharedRole), nil
+}
+
 func (s *Store) AssertWorkspaceEditor(ctx context.Context, userID, wsID string) error {
 	role, err := s.WorkspaceRole(ctx, userID, wsID)
 	if err != nil {
@@ -87,6 +124,30 @@ func (s *Store) AssertWorkspaceCommenter(ctx context.Context, userID, wsID strin
 
 func RoleCanEdit(role WorkspaceRole) bool {
 	return role == RoleOwner || role == RoleEditor
+}
+
+func roleRank(role WorkspaceRole) int {
+	switch role {
+	case RoleOwner:
+		return 4
+	case RoleEditor:
+		return 3
+	case RoleCommenter:
+		return 2
+	case RoleViewer:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// MaxRole returns the more permissive of two grants. Roles are grants rather
+// than caps, so a caller holding several of them keeps the strongest.
+func MaxRole(a, b WorkspaceRole) WorkspaceRole {
+	if roleRank(b) > roleRank(a) {
+		return b
+	}
+	return a
 }
 
 func RoleCanComment(role WorkspaceRole) bool {
@@ -124,16 +185,27 @@ func (s *Store) MaterialRole(ctx context.Context, userID, matID string) (Workspa
 	return "", nil
 }
 
-// MaterialAccessInfo distinguishes persisted membership from an effective
-// link/public material role. Explicit membership always wins, even when the
-// workspace's share role is more permissive.
+// MaterialAccessInfo separates the caller's persisted membership from the
+// role that actually applies to this request.
+//
+// Role is the more permissive of the two grants that can reach the caller:
+// their membership and, on a link/public workspace, the share role. Capping a
+// member at their invited role would not restrain anyone — a workspace shared
+// for editing hands that same access to every other signed-in account — while
+// it does surprise the one person who accepted an invitation.
+//
+// MemberRole carries the persisted role on its own for the checks that must
+// stay membership-based, such as material metadata edits. A shared grant
+// governs document collaboration and never workspace structure.
 type MaterialAccessInfo struct {
-	Role     WorkspaceRole
-	Explicit bool
+	Role       WorkspaceRole
+	MemberRole WorkspaceRole
 }
 
 // MaterialEffectiveAccess derives material access for this request:
-//   - direct owner / explicit member: persisted role
+//   - direct owner: owner
+//   - explicit member: their role, raised to the share role where the
+//     workspace is shared more permissively
 //   - signed-in nonmember of a link/public workspace: workspace share_role
 //   - anonymous shared reader: viewer
 //   - material-level sharing without a shared workspace: viewer
@@ -166,28 +238,37 @@ func (s *Store) MaterialEffectiveAccess(ctx context.Context, userID, matID strin
 		return MaterialAccessInfo{}, err
 	}
 	if userID != "" && materialOwner != nil && *materialOwner == userID {
-		return MaterialAccessInfo{Role: RoleOwner, Explicit: true}, nil
+		return MaterialAccessInfo{Role: RoleOwner, MemberRole: RoleOwner}, nil
 	}
 	if userID != "" && workspaceOwner != nil && *workspaceOwner == userID {
-		return MaterialAccessInfo{Role: RoleOwner, Explicit: true}, nil
-	}
-	if memberRole != "" {
-		return MaterialAccessInfo{Role: memberRole, Explicit: true}, nil
+		return MaterialAccessInfo{Role: RoleOwner, MemberRole: RoleOwner}, nil
 	}
 
 	workspaceShared := wsID != nil && workspacePrivacy != nil &&
 		(*workspacePrivacy == PrivacyLink || *workspacePrivacy == PrivacyPublic)
 	materialShared := materialPrivacy == PrivacyLink || materialPrivacy == PrivacyPublic
-	if workspaceShared {
-		if userID != "" && shareRole != nil {
-			return MaterialAccessInfo{Role: shareRole.WorkspaceRole()}, nil
-		}
-		return MaterialAccessInfo{Role: RoleViewer}, nil
-	}
-	if materialShared {
+	var sharedRole WorkspaceRole
+	switch {
+	case workspaceShared && userID != "" && shareRole != nil:
+		sharedRole = shareRole.WorkspaceRole()
+	case workspaceShared:
+		// Anonymous readers are viewers whatever the share role says, because
+		// every write route requires a session.
+		sharedRole = RoleViewer
+	case materialShared:
 		// Material-only links are intentionally view-only, including when the
 		// material still belongs to a private workspace.
-		return MaterialAccessInfo{Role: RoleViewer}, nil
+		sharedRole = RoleViewer
+	}
+
+	if memberRole != "" {
+		return MaterialAccessInfo{
+			Role:       MaxRole(memberRole, sharedRole),
+			MemberRole: memberRole,
+		}, nil
+	}
+	if sharedRole != "" {
+		return MaterialAccessInfo{Role: sharedRole}, nil
 	}
 	return MaterialAccessInfo{}, ErrNotFound
 }

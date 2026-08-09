@@ -368,6 +368,10 @@ components:
           format: uri
           readOnly: true
           type: string
+        authorAvatarUrl:
+          type: string
+        authorName:
+          type: string
         contentRich: {}
         createdAt:
           format: date-time
@@ -395,6 +399,7 @@ components:
         - id
         - discussionId
         - userId
+        - authorName
         - contentRich
         - isEdited
         - isDeleted
@@ -828,6 +833,10 @@ components:
         anchorVersion:
           format: int64
           type: integer
+        authorAvatarUrl:
+          type: string
+        authorName:
+          type: string
         blockId:
           type: string
         comments:
@@ -856,6 +865,7 @@ components:
         - anchorVersion
         - anchorQuote
         - userId
+        - authorName
         - isResolved
         - isDeleted
         - createdAt
@@ -1202,8 +1212,10 @@ components:
         id:
           type: string
         maxDepth:
+          format: int64
           type: integer
         nodeCount:
+          format: int64
           type: integer
         position:
           format: int64
@@ -1217,10 +1229,10 @@ components:
         - type
         - title
         - chapterId
-        - maxDepth
-        - nodeCount
         - position
         - createdAt
+        - nodeCount
+        - maxDepth
       type: object
     MaterialRevision:
       additionalProperties: false
@@ -2314,6 +2326,19 @@ components:
         - isOwner
         - capabilities
         - storageOwnerName
+      type: object
+    WorkspaceCollaborator:
+      additionalProperties: false
+      properties:
+        avatarUrl:
+          type: string
+        name:
+          type: string
+        userId:
+          type: string
+      required:
+        - userId
+        - name
       type: object
     WorkspaceMember:
       additionalProperties: false
@@ -4485,6 +4510,34 @@ paths:
       summary: Clone a shared workspace
       tags:
         - Sharing
+  /api/workspaces/{id}/collaborators:
+    get:
+      operationId: listWorkspaceCollaborators
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/WorkspaceCollaborator"
+                nullable: true
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List mentionable workspace collaborators
+      tags:
+        - Workspace collaboration
   /api/workspaces/{id}/content/reorder:
     post:
       operationId: reorderContent

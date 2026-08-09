@@ -509,6 +509,24 @@ export const handlers = [
     }
     return HttpResponse.json(collaborators);
   }),
+  http.get('/api/workspaces/:id/collaborators', async ({ params }) => {
+    const workspaceId = String(params.id);
+    const ws = db.workspaces.find((workspace) => workspace.id === params.id);
+    const directory = mockWorkspaceMembers
+      .filter((member) => member.workspaceId === workspaceId)
+      .map((member) => ({
+        avatarUrl: member.avatarUrl,
+        name: member.name,
+        userId: member.userId,
+      }));
+    if (ws?.role === 'owner') {
+      return HttpResponse.json([
+        { name: db.user.name, userId: db.user.id },
+        ...directory,
+      ]);
+    }
+    return HttpResponse.json(directory);
+  }),
   http.post('/api/workspaces/:id/invites', async ({ params, request }) => {
     const body = (await request.json()) as {
       identifier: string;
@@ -1020,9 +1038,11 @@ export const handlers = [
       anchorQuote: body.anchorQuote ?? '',
       anchorStart: body.anchorStart,
       anchorVersion: body.anchorVersion ?? 1,
+      authorName: db.user.name,
       blockId: body.blockId,
       comments: [
         {
+          authorName: db.user.name,
           contentRich: body.contentRich,
           createdAt: now,
           discussionId: '',
@@ -1056,6 +1076,7 @@ export const handlers = [
     };
     const now = new Date().toISOString();
     const comment: MaterialDiscussion['comments'][number] = {
+      authorName: db.user.name,
       contentRich: body.contentRich,
       createdAt: now,
       discussionId: discussion.id,

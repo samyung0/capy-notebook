@@ -167,7 +167,10 @@ func (a *api) updateMaterial(
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	if !access.Explicit {
+	// Metadata is workspace structure, so it needs an editing membership rather
+	// than the effective role: a link share can raise someone to editing the
+	// document body without letting them retitle, refile, or publish it.
+	if !store.RoleCanEdit(access.MemberRole) {
 		return nil, collaborationError(store.ErrForbidden)
 	}
 	if in.Body.Title != nil && in.Body.ExpectedRevision == nil {

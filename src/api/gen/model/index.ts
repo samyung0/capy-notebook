@@ -124,6 +124,7 @@ export * from './uRLResp.ts';
 export * from './user.ts';
 export * from './userColor.ts';
 export * from './workspace.ts';
+export * from './workspaceCollaborator.ts';
 export * from './workspaceMember.ts';
 export * from './workspaceRole.ts';
 export * from './workspaceStats.ts';

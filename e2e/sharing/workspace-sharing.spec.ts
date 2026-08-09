@@ -98,12 +98,12 @@ test.describe('workspace sharing', () => {
           'PATCH'
         )
       );
-      await ownerPage.getByRole('combobox').first().click();
+      await ownerPage.getByRole('combobox', { name: 'Visibility' }).click();
       await ownerPage.getByRole('option', { name: /Shared link/i }).click();
       expect((await patchPromise).status()).toBe(200);
-      await expect(ownerPage.getByRole('combobox').nth(1)).toContainText(
-        'Can view'
-      );
+      await expect(
+        ownerPage.getByRole('combobox', { name: 'Anyone with access' })
+      ).toContainText('Can view');
 
       for (const page of [anonymousPage, otherPage]) {
         const resPromise = waitForApi(
@@ -315,5 +315,88 @@ test.describe('workspace sharing', () => {
       }
     );
     expect(chapter.status()).toBe(404);
+  });
+
+  test('a viewer member is raised by a more permissive share role', async ({
+    materialFactory,
+    seed,
+    viewerApi,
+  }) => {
+    const fixture = await materialFactory.createNote({
+      blockId: 'union-viewer-member-body',
+      body: 'Invited as a viewer where the link grants editing',
+      title: 'E2E Union Viewer Member Material',
+      workspaceId: seed.editableWorkspace.id,
+    });
+
+    const material = await viewerApi.get(`/api/materials/${fixture.id}`);
+    expect(material.status()).toBe(200);
+    const body = await material.json();
+    expect(body.capabilities).toMatchObject({
+      canComment: true,
+      canEdit: true,
+      canView: true,
+    });
+
+    const collaborationToken = await viewerApi.post(
+      `/api/materials/${fixture.id}/collaboration-token`
+    );
+    expect(collaborationToken.status()).toBe(201);
+    expect(await collaborationToken.json()).toMatchObject({ access: 'write' });
+
+    // The raise covers document collaboration only. Metadata and workspace
+    // structure still answer to the persisted viewer membership.
+    const metadataEdit = await viewerApi.patch(`/api/materials/${fixture.id}`, {
+      data: {
+        expectedRevision: body.revision,
+        title: 'A raised viewer must not rename',
+      },
+    });
+    expect(metadataEdit.status()).toBe(403);
+
+    const chapter = await viewerApi.post(
+      `/api/workspaces/${seed.editableWorkspace.id}/chapters`,
+      { data: { name: 'A raised viewer cannot add chapters' } }
+    );
+    expect(chapter.status()).toBe(404);
+  });
+
+  test('the mention directory is redacted and gated on commenting', async ({
+    anonymousApi,
+    otherApi,
+    ownerApi,
+    seed,
+  }) => {
+    const shared = await otherApi.get(
+      `/api/workspaces/${seed.publicWorkspace.id}/collaborators`
+    );
+    expect(shared.status()).toBe(200);
+    const directory = await shared.json();
+    expect(directory.length).toBeGreaterThan(0);
+    for (const entry of directory) {
+      expect(entry).toHaveProperty('name');
+      expect(entry).not.toHaveProperty('email');
+      expect(entry).not.toHaveProperty('role');
+    }
+
+    // The full roster stays membership-gated, so the same caller cannot reach
+    // the emails and roles through the members endpoint.
+    const roster = await otherApi.get(
+      `/api/workspaces/${seed.publicWorkspace.id}/members`
+    );
+    expect(roster.status()).toBe(403);
+
+    // Anonymous visitors read the workspace but never comment, so the
+    // directory is not theirs to enumerate.
+    const anonymous = await anonymousApi.get(
+      `/api/workspaces/${seed.publicWorkspace.id}/collaborators`
+    );
+    expect(anonymous.status()).toBe(403);
+
+    const ownerRoster = await ownerApi.get(
+      `/api/workspaces/${seed.publicWorkspace.id}/members`
+    );
+    expect(ownerRoster.status()).toBe(200);
+    expect((await ownerRoster.json())[0]).toHaveProperty('email');
   });
 });

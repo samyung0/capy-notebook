@@ -29,8 +29,10 @@ export async function hoverBlockHandle(
 ): Promise<Locator> {
   const editor = page.locator('[contenteditable="true"]').first();
   await editor.getByText(blockText, { exact: true }).hover();
+  // Nested blocks all match, so the innermost wrapper is the one that owns the
+  // hovered text.
   const handle = page
-    .locator('div.group, div.group\\/container')
+    .locator('[data-slot="block-wrapper"]')
     .filter({ hasText: blockText })
     .last()
     .getByRole('button', { exact: true, name: 'Drag block' });
