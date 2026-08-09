@@ -848,6 +848,9 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 	if err != nil {
 		return Material{}, err
 	}
+	if err := metrics.LimitError(); err != nil {
+		return Material{}, err
+	}
 	var cardIDs []string
 	if mt.Kind == "flashcards" {
 		cards, err := materialdoc.ExtractFlashcards(content)
@@ -1021,6 +1024,9 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		if metricsErr != nil {
 			return Material{}, metricsErr
 		}
+		if err := contentMetrics.LimitError(); err != nil {
+			return Material{}, err
+		}
 		add("content", json.RawMessage(*p.Content))
 		add("node_count", contentMetrics.NodeCount)
 		add("max_depth", contentMetrics.MaxDepth)
@@ -1167,7 +1173,7 @@ func (s *Store) MaterialWorkspaceID(ctx context.Context, id string) (string, err
 // as the legacy ref type "deck".
 func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRef, error) {
 	out := []MaterialRef{}
-	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at, node_count, max_depth
+	rows, err := s.pool.Query(ctx, `SELECT id, kind, title, chapter_id, position, created_at, size_bytes, node_count, max_depth
 		FROM materials WHERE workspace_id=$1 ORDER BY position, created_at DESC`, wsID)
 	if err != nil {
 		return nil, err
@@ -1183,6 +1189,7 @@ func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRe
 			&r.ChapterID,
 			&r.Position,
 			&r.CreatedAt,
+			&r.SizeBytes,
 			&r.NodeCount,
 			&r.MaxDepth,
 		); err != nil {

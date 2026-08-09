@@ -180,6 +180,16 @@ mean it silently never persists again. `NoteEditor` responds by remounting
 durable state. Invalidating the collaboration token alone is not enough, because
 an unchanged room string leaves the editor mounted on its forked document.
 
+None of this gates **opening** a document. Limits protect the collaboration
+service and the database on write; a document that already exists always opens.
+`MaterialBody` reads `sizeBytes` / `nodeCount` from the cached material list and
+shows `HeavyMaterialGate` when either passes `MATERIAL_RENDER_WARNING`, offering
+read-only (static `MaterialPreview`, no Yjs handshake and no editing plugins) or
+open-anyway. Absent list metadata always opens: the gate must never become a
+door the reader cannot pass. When the API cannot decode stored content it
+answers 422 `material_content_unreadable`, which `NoteEditor` and `MaterialBody`
+report as "this note could not be loaded" rather than "not found".
+
 ## PostgreSQL read projection
 
 `material_yjs_documents.state` stores the encoded Y.Doc and is the durable
@@ -278,6 +288,13 @@ validation and are not rendered.
   only when load tests or production usage justify one.
 - Keep Yjs garbage collection enabled. Compaction/rebasing requires a separately
   tested maintenance procedure.
+- Remote cursor decorations must match Slate paths structurally (not
+  dot-joined path strings). Shared-link editors may be absent from the
+  workspace member directory, so cursor labels fall back to the authenticated
+  user's name. Because decorations split text leaves, editor end navigation
+  should use the Plate document API.
+- Static `PlateStatic` output still carries a `data-slate-editor` marker but is
+  not editable; editability checks should use `contenteditable`.
 
 ## Verification
 

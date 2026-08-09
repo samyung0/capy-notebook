@@ -14,6 +14,7 @@ export interface MaterialRef {
   maxDepth: number;
   nodeCount: number;
   position: number;
+  sizeBytes: number;
   title: string;
   type: MaterialRefType;
 }

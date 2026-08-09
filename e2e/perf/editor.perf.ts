@@ -90,7 +90,12 @@ async function openNote(
   await page.goto(
     `/workspaces/${PERF_WORKSPACE_ID}?material=${encodeURIComponent(materialId)}`
   );
+  // The near-limit fixture is heavy enough to earn the open-anyway
+  // interstitial; the harness measures the interactive path behind it.
+  const openAnyway = page.getByTestId('heavy-material-open');
   const editor = page.locator('[contenteditable="true"]').first();
+  await expect(openAnyway.or(editor).first()).toBeVisible({ timeout: 60_000 });
+  if (await openAnyway.isVisible()) await openAnyway.click();
   await expect(editor).toBeVisible({ timeout: 60_000 });
   await expect(editor.getByText(readyText).first()).toBeVisible({
     timeout: 60_000,

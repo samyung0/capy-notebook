@@ -2040,6 +2040,7 @@ export const ListMaterialsResponseItem = zod.object({
   "maxDepth": zod.int(),
   "nodeCount": zod.int(),
   "position": zod.int(),
+  "sizeBytes": zod.int(),
   "title": zod.string(),
   "type": zod.enum(['mindmap', 'diagram', 'quiz', 'deck', 'note'])
 })

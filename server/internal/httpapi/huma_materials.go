@@ -56,7 +56,10 @@ func (a *api) assertMaterialOwner(ctx context.Context, matID string) error {
 	return err
 }
 
-func materialWithAccess(material store.Material, role store.WorkspaceRole) apimodel.Material {
+func materialWithAccess(
+	material store.Material,
+	role store.WorkspaceRole,
+) (apimodel.Material, error) {
 	material.IsOwner = role == store.RoleOwner
 	material.Capabilities = store.CapabilitiesForRole(role, true)
 	if role == "" {
@@ -65,6 +68,17 @@ func materialWithAccess(material store.Material, role store.WorkspaceRole) apimo
 		material.Role = &role
 	}
 	return apimodel.FromMaterial(material)
+}
+
+func materialResponse(
+	material store.Material,
+	role store.WorkspaceRole,
+) (*materialOutput, error) {
+	body, err := materialWithAccess(material, role)
+	if err != nil {
+		return nil, materialContentError(err)
+	}
+	return &materialOutput{Body: body}, nil
 }
 
 func (a *api) listMaterials(ctx context.Context, in *workspaceIDInput) (*materialRefsOutput, error) {
@@ -128,7 +142,7 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &materialOutput{Body: materialWithAccess(res, role)}, nil
+	return materialResponse(res, role)
 }
 
 func (a *api) getMaterial(ctx context.Context, in *materialIDInput) (*materialOutput, error) {
@@ -143,7 +157,7 @@ func (a *api) getMaterial(ctx context.Context, in *materialIDInput) (*materialOu
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &materialOutput{Body: materialWithAccess(res, role)}, nil
+	return materialResponse(res, role)
 }
 
 func (a *api) updateMaterial(

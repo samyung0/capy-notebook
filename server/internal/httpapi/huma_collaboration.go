@@ -101,7 +101,10 @@ func (a *api) listMaterialRevisions(ctx context.Context, in *materialIDInput) (*
 	}
 	out := make([]apimodel.MaterialRevision, len(rows))
 	for i, revision := range rows {
-		out[i] = apimodel.FromMaterialRevision(revision)
+		out[i], err = apimodel.FromMaterialRevision(revision)
+		if err != nil {
+			return nil, materialContentError(err)
+		}
 	}
 	return &materialRevisionsOutput{Body: out}, nil
 }

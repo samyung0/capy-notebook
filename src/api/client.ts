@@ -43,12 +43,24 @@ export function isStorageQuotaError(err: unknown): err is ApiError {
   return isApiError(err) && err.code === 'storage_quota_exceeded';
 }
 
+/** The stored document exists but the server could not decode it. Distinct from
+ * a missing material, which the UI reports as deleted. */
+export function isMaterialContentUnreadable(err: unknown): err is ApiError {
+  return isApiError(err) && err.code === 'material_content_unreadable';
+}
+
 const ACCOUNT_FORBIDDEN_CODES = new Set([
   'account_deleted',
   'account_suspended',
   'account_deletion_pending',
   'account_over_quota',
   'account_locked',
+]);
+
+const CODED_ERROR_MESSAGES = new Set([
+  'storage_quota_exceeded',
+  'material_content_unreadable',
+  ...ACCOUNT_FORBIDDEN_CODES,
 ]);
 
 /** Auth middleware / write gates refuse the session or mutation. */
@@ -79,9 +91,8 @@ function parseErrorBody(value: unknown): ApiErrorBody | null {
   // Huma packs machine codes in errors[].message (quota + account locks).
   const coded = body.errors?.find(
     (error) =>
-      error.message === 'storage_quota_exceeded' ||
-      (typeof error.message === 'string' &&
-        ACCOUNT_FORBIDDEN_CODES.has(error.message))
+      typeof error.message === 'string' &&
+      CODED_ERROR_MESSAGES.has(error.message)
   );
   if (!coded?.message) return body;
   const details =

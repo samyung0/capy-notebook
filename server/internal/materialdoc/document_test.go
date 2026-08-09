@@ -3,6 +3,7 @@ package materialdoc
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -297,6 +298,78 @@ func TestDiagramContract(t *testing.T) {
 	}
 	if _, hasCode := node["code"]; hasCode {
 		t.Fatalf("legacy code property survived: %#v", node)
+	}
+}
+
+// overLimitEnvelope builds a document whose node count is past MaxNodes.
+func overLimitEnvelope() Envelope {
+	value := make([]map[string]any, 0, MaxNodes)
+	for i := range MaxNodes {
+		value = append(value, map[string]any{
+			"type":     "p",
+			"id":       fmt.Sprintf("block_%d", i),
+			"children": []any{textLeaf("x")},
+		})
+	}
+	return Envelope{SchemaVersion: SchemaVersion, Value: value}
+}
+
+func TestLimitsGateWritesButNotReads(t *testing.T) {
+	doc := overLimitEnvelope()
+	// Encode without Marshal so the fixture bypasses the write gate the way a
+	// bypassed user, an operator import or a lowered limit would.
+	encoded, err := marshalCanonicalJSON(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := string(encoded)
+
+	parsed, err := Parse(raw)
+	if err != nil {
+		t.Fatalf("read of an over-limit document failed: %v", err)
+	}
+	if len(parsed.Value) != len(doc.Value) {
+		t.Fatalf("read returned %d nodes, want %d", len(parsed.Value), len(doc.Value))
+	}
+
+	metrics, err := Metrics(raw)
+	if err != nil {
+		t.Fatalf("metrics of an over-limit document failed: %v", err)
+	}
+	if metrics.NodeCount <= MaxNodes {
+		t.Fatalf("fixture is not over the node limit: %d", metrics.NodeCount)
+	}
+	if err := metrics.LimitError(); !errors.Is(err, ErrLimitExceeded) {
+		t.Fatalf("metrics.LimitError() = %v, want ErrLimitExceeded", err)
+	}
+
+	if _, err := Marshal(doc); !errors.Is(err, ErrLimitExceeded) {
+		t.Fatalf("Marshal accepted an over-limit document: %v", err)
+	}
+}
+
+// A limit breach still reads as invalid so the handlers that already answer 400
+// for rejected writes keep doing so.
+func TestLimitExceededIsAnInvalidDocument(t *testing.T) {
+	if !errors.Is(ErrLimitExceeded, ErrInvalid) {
+		t.Fatal("ErrLimitExceeded no longer satisfies errors.Is(err, ErrInvalid)")
+	}
+}
+
+func TestParseRejectsNestingBeyondTheRecursionCeiling(t *testing.T) {
+	var builder strings.Builder
+	builder.WriteString(`{"schemaVersion":1,"value":[`)
+	depth := depthCeiling + 2
+	for range depth {
+		builder.WriteString(`{"type":"p","id":"b","children":[`)
+	}
+	builder.WriteString(`{"text":"x"}`)
+	for range depth {
+		builder.WriteString(`]}`)
+	}
+	builder.WriteString(`]}`)
+	if _, err := Parse(builder.String()); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("pathological nesting error = %v, want invalid", err)
 	}
 }
 

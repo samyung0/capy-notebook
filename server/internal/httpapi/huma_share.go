@@ -146,7 +146,7 @@ func (a *api) cloneMaterial(ctx context.Context, in *materialIDInput) (*material
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &materialOutput{Body: materialWithAccess(mt, store.RoleOwner)}, nil
+	return materialResponse(mt, store.RoleOwner)
 }
 
 /* -------------------------------------------------------------------- decks */

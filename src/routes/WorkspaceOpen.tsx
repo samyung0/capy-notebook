@@ -720,6 +720,7 @@ export default function WorkspaceOpen() {
                               maxDepth: 0,
                               nodeCount: 0,
                               position: Number.MAX_SAFE_INTEGER,
+                              sizeBytes: 0,
                               title: GENERATING_MATERIAL[generating].title,
                               type: GENERATING_MATERIAL[generating].type,
                             }}

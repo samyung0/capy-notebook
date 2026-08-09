@@ -50,6 +50,8 @@ import {
   EDITOR_NOTE,
   EDITOR_WORKSPACE_ID,
 } from './editorSeed';
+import { seedNotes } from './noteContent';
+import { buildBiologyLoadTestValue } from './noteContent/loadTest';
 import {
   buildLargePerfDocument,
   buildSmallPerfDocument,
@@ -1152,56 +1154,29 @@ const seedMaterials: MaterialDraft[] = [
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',
   },
-  {
-    capabilities: ownerCapabilities,
-    chapterId: null,
-    content: createMaterialDocument([
-      { children: [{ text: 'Lecture notes - the cell' }], type: 'h1' },
-      {
-        children: [
-          { text: 'The ' },
-          { bold: true, text: 'cell' },
-          { text: ' is the basic unit of life. Key points from today:' },
-        ],
-        type: 'p',
-      },
-      {
-        children: [{ text: 'Prokaryotes lack a membrane-bound nucleus' }],
-        indent: 1,
-        listStyleType: 'disc',
-        type: 'p',
-      },
-      {
-        children: [{ text: 'Eukaryotes have organelles' }],
-        indent: 1,
-        listStyleType: 'disc',
-        type: 'p',
-      },
-      {
-        children: [
-          {
-            children: [
-              { text: 'Remember: mitochondria is the powerhouse of the cell.' },
-            ],
-            type: 'p',
-          },
-        ],
-        type: 'blockquote',
-      },
-    ]),
-    createdAt: days(0),
-    id: 'mat_note_1',
-    kind: 'note',
-    privacy: 'private',
-    role: 'owner',
-    scopeChapters: [],
-    scopeFileNames: [],
-    title: 'Lecture notes — the cell',
-    workspaceId: 'ws_bio',
-    workspaceName: 'Biology 101',
-  },
 ];
 for (const draft of seedMaterials) materials.push(makeMaterial(draft));
+
+/* Rich Plate notes live in mocks/noteContent (one fixture set per workspace). */
+for (const note of seedNotes) {
+  materials.push(
+    makeMaterial({
+      capabilities: ownerCapabilities,
+      chapterId: note.chapterId,
+      content: createMaterialDocument(note.value),
+      createdAt: days(note.daysAgo),
+      id: note.id,
+      kind: 'note',
+      privacy: 'private',
+      role: 'owner',
+      scopeChapters: [],
+      scopeFileNames: [],
+      title: note.title,
+      workspaceId: note.workspaceId,
+      workspaceName: note.workspaceName,
+    })
+  );
+}
 
 /* ---------------- chat: conversations + messages ---------------- */
 export const conversations: Conversation[] = [
@@ -1415,6 +1390,27 @@ if (import.meta.env.VITE_PERF_SEED === 'true') {
       })
     );
   }
+}
+
+/* ---------------- ~2MB biology load-test note (opt-in; slow to build) ---------------- */
+if (import.meta.env.VITE_LOAD_TEST_SEED === 'true') {
+  materials.push(
+    makeMaterial({
+      capabilities: ownerCapabilities,
+      chapterId: null,
+      content: createMaterialDocument(buildBiologyLoadTestValue()),
+      createdAt: days(0),
+      id: 'mat_note_bio_load_test',
+      kind: 'note',
+      privacy: 'private',
+      role: 'owner',
+      scopeChapters: [],
+      scopeFileNames: [],
+      title: 'Load test — near 2MB feature soup',
+      workspaceId: 'ws_bio',
+      workspaceName: 'Biology 101',
+    })
+  );
 }
 
 /** Derive the typed Quiz view from a quiz material (questions from the fence). */

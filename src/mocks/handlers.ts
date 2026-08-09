@@ -923,6 +923,7 @@ export const handlers = [
         maxDepth: mt.maxDepth,
         nodeCount: mt.nodeCount,
         position: mt.position,
+        sizeBytes: mt.contentBytes,
         title: mt.title,
         type: refType(mt.kind),
       }))

@@ -86,6 +86,22 @@ func hErr(err error) error {
 	return huma.Error500InternalServerError(err.Error())
 }
 
+// materialContentError answers a read whose stored document cannot be decoded.
+// Reads no longer substitute an empty envelope for undecodable content, because
+// a blank body is indistinguishable from data loss. The machine code lets the
+// client say "this note could not be loaded" instead of "not found".
+func materialContentError(err error) error {
+	return &huma.ErrorModel{
+		Status: http.StatusUnprocessableEntity,
+		Title:  http.StatusText(http.StatusUnprocessableEntity),
+		Detail: "material content could not be decoded",
+		Errors: []*huma.ErrorDetail{{
+			Message: "material_content_unreadable",
+			Value:   map[string]any{"reason": err.Error()},
+		}},
+	}
+}
+
 const materialRequestMaxBytes = 3 << 20
 
 // reg is a thin wrapper over huma.Register that sets the common operation

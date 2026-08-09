@@ -1,3 +1,16 @@
+## OpenWiki (`openwiki/`)
+
+Read these only when the task touches that domain. Prefer the listed file over guessing from code alone.
+
+| When you need… | Read |
+| --- | --- |
+| Roles, share visibility, who can mutate what, account states (`over_quota_*`, suspension, deletion), **who pays** for storage, upload/blob cleanup policy | [`authorization-permissions-lifecycles.md`](openwiki/authorization-permissions-lifecycles.md) |
+| How quota bytes are accounted (`user_storage` / deltas), plan limits, material size/shape bounds, Yjs compaction, reservation/clone gating math | [`backend-storage-quota.md`](openwiki/backend-storage-quota.md) |
+| Plate/Yjs editor, collab tokens/modes (`view`/`comment`/`edit`), checkpoints, projections, comment anchors, AI previews | [`frontend/plate-editor.md`](openwiki/frontend/plate-editor.md) |
+| How to run pipeline cassette tests and their disposable Postgres/Redis setup | [`pipeline-tests.md`](openwiki/pipeline-tests.md) |
+
+Cross-links: plate-editor defers structural ACL to authorization; authorization defers accounting internals to storage-quota.
+
 ## Getting Started
 
 ### Code Changes

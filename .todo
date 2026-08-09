@@ -37,8 +37,6 @@ low priority:
 
 high PRIORITIES:
 
-1. Define a backend MaterialRefType enum with mindmap, diagram, quiz, deck, note to replace hand written
-2. does workspace member permission take priority over workspace visibility/sharing mode? If I invite a member to be a viewer/commentor but I set the sharing mode of workspace to link shared with edit, does it resolve to the highest permission? what do we need to change
 3. track material generations and display progress bar like how filelistitem does it?
 4. additional configurations like time limit for materials? 
 5. in centercontent header, add in the action menu (with same functions found in filelistitem) with an additional action full screen

@@ -20,12 +20,19 @@ const (
 	MaxDocumentBytes = 2 << 20
 	MaxDepth         = 16
 	MaxNodes         = 10000
-	maxDocument      = MaxDocumentBytes
-	maxDepth         = MaxDepth
-	maxNodes         = MaxNodes
+	// depthCeiling bounds recursion while decoding untrusted JSON. It is not a
+	// product limit: MaxDepth gates writes only, so a document seeded outside
+	// the write paths or predating a limit change stays readable.
+	depthCeiling = 1024
 )
 
-var ErrInvalid = errors.New("invalid material document")
+var (
+	ErrInvalid = errors.New("invalid material document")
+	// ErrLimitExceeded marks a structurally valid document that breaches a
+	// product cap. It satisfies errors.Is(err, ErrInvalid) so the request
+	// mappings that already answer 400 for rejected writes keep working.
+	ErrLimitExceeded = fmt.Errorf("%w: exceeds a document limit", ErrInvalid)
+)
 
 var (
 	questionTypes   = set("mcq", "multi", "boolean", "fill", "short", "matching", "ordering")
@@ -43,6 +50,22 @@ type DocumentMetrics struct {
 	SizeBytes int
 	NodeCount int
 	MaxDepth  int
+}
+
+// LimitError reports the first product cap the document breaches. Only write
+// paths call it. Reads deliberately do not, because refusing to decode an
+// already-persisted document would hide content the user cannot otherwise
+// reach, including the deletions needed to bring it back under the cap.
+func (m DocumentMetrics) LimitError() error {
+	switch {
+	case m.SizeBytes > MaxDocumentBytes:
+		return fmt.Errorf("%w: %d bytes over %d", ErrLimitExceeded, m.SizeBytes, MaxDocumentBytes)
+	case m.NodeCount > MaxNodes:
+		return fmt.Errorf("%w: %d nodes over %d", ErrLimitExceeded, m.NodeCount, MaxNodes)
+	case m.MaxDepth > MaxDepth:
+		return fmt.Errorf("%w: nesting depth %d over %d", ErrLimitExceeded, m.MaxDepth, MaxDepth)
+	}
+	return nil
 }
 
 // Card is the plain-text API projection of one authored flashcard. Scheduling
@@ -85,14 +108,18 @@ func Marshal(doc Envelope) (string, error) {
 	}
 	doc.Value = stripRuntimeCommentMarks(doc.Value)
 	b, err := marshalCanonicalJSON(doc)
-	if err == nil && len(b) > maxDocument {
-		return "", fmt.Errorf("%w: document size", ErrInvalid)
+	if err != nil {
+		return "", err
 	}
-	return string(b), err
+	if err := measure(b, doc.Value).LimitError(); err != nil {
+		return "", err
+	}
+	return string(b), nil
 }
 
 // Metrics validates a canonical document and returns the serialized size and
-// shape metrics used by storage accounting and the editor properties view.
+// shape metrics used by storage accounting and the editor properties view. The
+// caps are not applied here; write paths pair this with metrics.LimitError.
 func Metrics(raw string) (DocumentMetrics, error) {
 	doc, err := Parse(raw)
 	if err != nil {
@@ -106,11 +133,15 @@ func Metrics(raw string) (DocumentMetrics, error) {
 	if err != nil {
 		return DocumentMetrics{}, err
 	}
+	return measure(encoded, normalized), nil
+}
+
+func measure(encoded []byte, nodes []map[string]any) DocumentMetrics {
 	metrics := DocumentMetrics{SizeBytes: len(encoded)}
-	for _, node := range normalized {
+	for _, node := range nodes {
 		measureNode(node, 0, &metrics)
 	}
-	return metrics, nil
+	return metrics
 }
 
 func measureNode(node map[string]any, depth int, metrics *DocumentMetrics) {
@@ -156,9 +187,13 @@ func stripRuntimeCommentMarks(nodes []map[string]any) []map[string]any {
 	return result
 }
 
+// Parse decodes and structurally validates a stored document. It intentionally
+// applies no size or shape cap: those gate writes, and a read that refuses to
+// decode would turn an over-limit material into a blank page. Inbound request
+// bodies are bounded by the HTTP layer, not here.
 func Parse(raw string) (Envelope, error) {
-	if len(raw) == 0 || len(raw) > maxDocument {
-		return Envelope{}, fmt.Errorf("%w: document size", ErrInvalid)
+	if len(raw) == 0 {
+		return Envelope{}, fmt.Errorf("%w: document is empty", ErrInvalid)
 	}
 	dec := json.NewDecoder(strings.NewReader(raw))
 	dec.UseNumber()
@@ -183,9 +218,8 @@ func Validate(doc Envelope) error {
 	if len(doc.Value) == 0 {
 		return fmt.Errorf("%w: value must be a non-empty array", ErrInvalid)
 	}
-	count := 0
 	for i, node := range doc.Value {
-		if err := validateNode(node, 0, &count); err != nil {
+		if err := validateNode(node, 0); err != nil {
 			return fmt.Errorf("%w: value[%d]: %v", ErrInvalid, i, err)
 		}
 	}
@@ -220,10 +254,9 @@ func ValidateKind(raw, kind string) error {
 	return nil
 }
 
-func validateNode(node map[string]any, depth int, count *int) error {
-	*count++
-	if depth > maxDepth || *count > maxNodes {
-		return errors.New("document complexity limit exceeded")
+func validateNode(node map[string]any, depth int) error {
+	if depth > depthCeiling {
+		return errors.New("document nesting is too deep to decode")
 	}
 	for key := range node {
 		if key == "suggestion" || strings.HasPrefix(key, "suggestion_") {
@@ -252,7 +285,7 @@ func validateNode(node map[string]any, depth int, count *int) error {
 		if !ok {
 			return fmt.Errorf("children[%d] must be an object", i)
 		}
-		if err := validateNode(m, depth+1, count); err != nil {
+		if err := validateNode(m, depth+1); err != nil {
 			return fmt.Errorf("children[%d]: %w", i, err)
 		}
 	}

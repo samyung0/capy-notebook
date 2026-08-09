@@ -108,6 +108,12 @@ func (s *Store) ProjectMaterialContent(
 			materialID, err.Error())
 		return Material{}, err
 	}
+	// Deliberately no metrics.LimitError() here. The collaboration service is
+	// the write gate for room content and already refused every update that
+	// grows an over-limit document; what reaches this projection is either
+	// within the caps or a shrink that recovers towards them. Re-rejecting it
+	// would strand materials.content behind the authoritative Y.Doc for exactly
+	// the documents that are trying to get back under the limit.
 	metrics, err := materialdoc.Metrics(content)
 	if err != nil {
 		_, _ = tx.Exec(ctx, `UPDATE material_yjs_documents

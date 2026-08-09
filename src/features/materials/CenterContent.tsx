@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { useFile, useMaterial } from '@/api/hooks';
+import { isMaterialContentUnreadable } from '@/api/client';
+import { useFile, useMaterial, useMaterials } from '@/api/hooks';
 import type { Chapter, UserColor } from '@/api/types';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -9,6 +10,8 @@ import { IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { cn } from '@/lib/cn';
 import { Header } from './CenterContentHeader';
+import { HeavyMaterialGate } from './HeavyMaterialGate';
+import { type HeavyMaterialChoice, heavyMaterial } from './heavyDocument';
 import {
   isInteractiveMaterialMode,
   type MaterialMode,
@@ -97,9 +100,11 @@ export function CenterContent({
         {item.kind === 'material' && (
           <MaterialBody
             allowExternalAssets={!readOnly}
+            key={item.id}
             materialId={item.id}
             mode={materialMode}
             onEditorStatusChange={setEditorStatus}
+            workspaceId={workspaceId}
           />
         )}
         {item.kind === 'file' && (
@@ -115,26 +120,84 @@ export function CenterContent({
   );
 }
 
+/** Gates the fetch on a confirmation when the list metadata says the document
+ * is heavy. The weight comes from the already-cached material list, so nothing
+ * of the document itself is downloaded before the reader chooses. Keyed by
+ * material id at the call site: resetting the choice in an effect would let the
+ * next document start fetching for the render before the reset lands. */
 function MaterialBody({
   materialId,
+  workspaceId,
   mode,
   allowExternalAssets,
   onEditorStatusChange,
 }: {
   materialId: string;
+  workspaceId: string;
   mode: MaterialMode | null;
   allowExternalAssets: boolean;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
 }) {
-  const { data: material, isLoading, isError } = useMaterial(materialId);
+  const { data: materials, isPending } = useMaterials(workspaceId);
+  const [choice, setChoice] = useState<HeavyMaterialChoice | null>(null);
+
+  // Wait for the list before deciding. Rendering first and gating afterwards
+  // would download the very document the gate exists to avoid, then throw the
+  // mounted editor away.
+  if (workspaceId && isPending) return <FileLoading />;
+
+  const reference = materials?.find((entry) => entry.id === materialId);
+  const heavy = heavyMaterial(reference);
+  if (heavy && !choice) {
+    return (
+      <HeavyMaterialGate
+        material={heavy}
+        onChoose={setChoice}
+        title={reference?.title ?? 'This note'}
+      />
+    );
+  }
+
+  return (
+    <MaterialContent
+      allowExternalAssets={allowExternalAssets}
+      forceReadOnly={choice === 'readOnly'}
+      materialId={materialId}
+      mode={mode}
+      onEditorStatusChange={onEditorStatusChange}
+    />
+  );
+}
+
+function MaterialContent({
+  materialId,
+  mode,
+  allowExternalAssets,
+  forceReadOnly,
+  onEditorStatusChange,
+}: {
+  materialId: string;
+  mode: MaterialMode | null;
+  allowExternalAssets: boolean;
+  forceReadOnly: boolean;
+  onEditorStatusChange: (status: NoteEditorStatus | null) => void;
+}) {
+  const { data: material, error, isLoading } = useMaterial(materialId);
   if (isLoading) {
     return <FileLoading />;
   }
-  if (isError || !material) {
-    return <FileError />;
+  if (error || !material) {
+    return isMaterialContentUnreadable(error) ? (
+      <FileError
+        message="Its stored content could not be decoded, so nothing is shown rather than an empty page. Support can recover it from an earlier version."
+        title="This note could not be loaded"
+      />
+    ) : (
+      <FileError />
+    );
   }
   const policy = materialModePolicy(material.kind, material.capabilities);
-  const activeMode = resolveMaterialMode(mode, policy);
+  const activeMode = forceReadOnly ? 'view' : resolveMaterialMode(mode, policy);
 
   return (
     <div className="h-full min-h-0">

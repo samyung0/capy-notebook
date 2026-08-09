@@ -1228,6 +1228,9 @@ components:
         position:
           format: int64
           type: integer
+        sizeBytes:
+          format: int64
+          type: integer
         title:
           type: string
         type:
@@ -1239,6 +1242,7 @@ components:
         - chapterId
         - position
         - createdAt
+        - sizeBytes
         - nodeCount
         - maxDepth
       type: object

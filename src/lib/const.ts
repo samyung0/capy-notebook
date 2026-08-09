@@ -9,3 +9,17 @@ export const MATERIAL_DOCUMENT_LIMITS = {
   maxDepth: 16,
   maxNodes: 10_000,
 } as const;
+
+/**
+ * When to warn before opening a document, deliberately NOT derived from
+ * MATERIAL_DOCUMENT_LIMITS. Those caps protect the collaboration service and
+ * the database and apply on write; these describe what this browser can mount
+ * comfortably. Keeping them independent means a document that legitimately
+ * exceeds a cap — an operator import, an account allowed to bypass, a limit
+ * lowered after the fact — still opens, and lowering a cap does not silently
+ * start nagging about documents that were fine yesterday.
+ */
+export const MATERIAL_RENDER_WARNING = {
+  contentBytes: 1_500_000,
+  nodeCount: 6000,
+} as const;

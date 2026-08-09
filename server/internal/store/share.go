@@ -705,6 +705,10 @@ func (s *Store) snapshotWorkspaceForClone(
 			rows.Close()
 			return workspaceCloneSnapshot{}, err
 		}
+		if err := metrics.LimitError(); err != nil {
+			rows.Close()
+			return workspaceCloneSnapshot{}, err
+		}
 		snapshot.materials = append(snapshot.materials, workspaceCloneMaterial{
 			material:  material,
 			content:   content,
@@ -914,6 +918,9 @@ func (s *Store) CloneMaterial(ctx context.Context, userID, matID string) (Materi
 	}
 	metrics, err := materialdoc.Metrics(content)
 	if err != nil {
+		return Material{}, err
+	}
+	if err := metrics.LimitError(); err != nil {
 		return Material{}, err
 	}
 

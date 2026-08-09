@@ -142,10 +142,14 @@ type MaterialUpdateResult struct {
 	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
-func FromMaterial(m store.Material) Material {
+// FromMaterial fails rather than substituting an empty document. Serving a
+// blank body for content that exists on disk reads as data loss and invites the
+// user to type over a note they cannot see; an explicit error lets the client
+// say so.
+func FromMaterial(m store.Material) (Material, error) {
 	content, err := materialdoc.Parse(m.Content)
 	if err != nil {
-		content = materialdoc.Empty()
+		return Material{}, err
 	}
 	return Material{
 		ID: m.ID, WorkspaceID: m.WorkspaceID, WorkspaceName: m.WorkspaceName,
@@ -156,7 +160,7 @@ func FromMaterial(m store.Material) Material {
 		Privacy: m.Privacy, Color: m.Color, CreatedAt: m.CreatedAt, UpdatedAt: m.UpdatedAt,
 		Revision: m.Revision,
 		IsOwner:  m.IsOwner, Role: m.Role, Capabilities: m.Capabilities,
-	}
+	}, nil
 }
 
 type MaterialRevision struct {
@@ -171,10 +175,10 @@ type MaterialRevision struct {
 	CreatedAt      time.Time                   `json:"createdAt"`
 }
 
-func FromMaterialRevision(r store.MaterialRevision) MaterialRevision {
+func FromMaterialRevision(r store.MaterialRevision) (MaterialRevision, error) {
 	content, err := materialdoc.Parse(r.Content)
 	if err != nil {
-		content = materialdoc.Empty()
+		return MaterialRevision{}, err
 	}
 	out := MaterialRevision{
 		MaterialID: r.MaterialID, Revision: r.Revision, Title: r.Title,
@@ -183,7 +187,7 @@ func FromMaterialRevision(r store.MaterialRevision) MaterialRevision {
 		CreatedBy:     r.CreatedBy, CreatedAt: r.CreatedAt,
 	}
 	_ = json.Unmarshal(r.EventMetadata, &out.EventMetadata)
-	return out
+	return out, nil
 }
 
 type (

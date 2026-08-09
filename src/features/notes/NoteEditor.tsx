@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
+import { isMaterialContentUnreadable } from '@/api/client';
 import {
   useMaterial,
   useMaterialCollaborationToken,
@@ -28,13 +29,21 @@ export function NoteEditor({
   allowExternalAssets?: boolean;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
 }) {
-  const { data: material, isLoading } = useMaterial(materialId);
+  const { data: material, error, isLoading } = useMaterial(materialId);
 
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
         <Spinner />
       </div>
+    );
+  }
+  if (isMaterialContentUnreadable(error)) {
+    return (
+      <FileError
+        message="Its stored content could not be decoded, so nothing is shown rather than an empty page. Support can recover it from an earlier version."
+        title="This note could not be loaded"
+      />
     );
   }
   if (!material) {

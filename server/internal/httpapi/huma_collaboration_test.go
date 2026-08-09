@@ -70,10 +70,14 @@ func TestMaterialResponseIncludesDecodedContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := json.Marshal(apimodel.FromMaterial(store.Material{
+	material, err := apimodel.FromMaterial(store.Material{
 		ID: "mat_1", Kind: "note", Content: raw,
 		ScopeChapters: []string{}, ScopeFileNames: []string{},
-	}))
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(material)
 	if err != nil {
 		t.Fatal(err)
 	}

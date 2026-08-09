@@ -268,7 +268,7 @@ Sources: [lifecycle states and gate methods](../server/internal/store/account_st
 
 ### What the gate checks
 
-Every storage-creating transaction checks both conditions:
+Every storage-**creating** transaction checks both conditions:
 
 1. the storage owner's lifecycle permits creation; and
 2. `used bytes + reserved bytes + requested bytes <= plan limit`.
@@ -277,6 +277,12 @@ The current limits are 100 MiB for free accounts and 1 GiB for Pro accounts.
 Upload reservations count immediately so concurrent uploads cannot both spend
 the same remaining quota. Quota errors use `storage_quota_exceeded`; lifecycle
 over-quota errors use `account_over_quota`.
+
+Growing an **existing** material does not re-run the plan-byte creation gate;
+it only appends size deltas. Over-quota owners are still limited to
+shrink-only document edits via collaboration token access (see account
+lifecycle gates above). Byte measurement, counters, and material shape bounds
+are documented in [storage accounting](backend-storage-quota.md).
 
 Deleting content, transferring a workspace away, and shrinking existing
 material content remain available to an over-quota owner so the account has a
