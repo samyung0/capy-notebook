@@ -1,0 +1,74 @@
+Perf baselines: compare new vs old runs under controlled slowdown
+
+Status: not implemented. `pnpm perf` only asserts absolute `BUDGET` ceilings in
+e2e/perf/editor.perf.ts. Results are logged/attached per run; nothing stores a
+reference or diffs against a prior run. CI does not run `pnpm perf` today.
+
+Why this exists (motive)
+
+Absolute budgets absorb machine noise with generous headroom (~2x observed at
+recalibration), so they only catch large cliffs. They cannot answer "did this
+PR make typing 20% worse on the same harness?" Numbers already fluctuate under
+identical PERF_CPU throttle (dev build, MSW, runner load), so a single run's
+absolute ms is a weak signal for creeping regressions. Without a same-condition
+baseline, "unreliable numbers" stays a permanent excuse and small editor
+regressions land until they blow past the ceiling.
+
+Proposal
+
+TLDR: use consistent machine(s) for testing, run the test multiple times for higer accuracy (and compare to baseline). and since its time costly, only run after major checkpoints have been reached (multiple feature rich commits/development regarding the editor workflow) or before releases 
+
+Keep the existing absolute budgets as a catastrophic backstop. Add a relative
+comparison layer on top:
+
+1. Persist a structured JSON snapshot per budget case (openMs, INP /
+   blockingPerKeystroke, saveCycle blocking, scroll FPS, document weight,
+   PERF_CPU, Chromium version, commit SHA). Reuse what reportMetrics already
+   emits.
+2. Store a reference baseline from a controlled environment — prefer one fixed
+   CI runner class (or a labeled self-hosted runner), not "whoever ran it
+   last on a laptop." Update the baseline on main after a green perf job, or
+   check in a periodically refreshed artifact.
+3. On PR / local compare: fail (or warn) if a metric worsens beyond a relative
+   threshold (e.g. blockingPerKeystroke > baseline * 1.25) under the same
+   PERF_CPU and same fixtures. Report deltas in the job summary / Playwright
+   attachment so humans see "new vs old," not only pass/fail.
+4. Do not assert on the opt-in V8 profile cases (typingProfile /
+   saveCycleProfile); they remain forensic dumps. Relative gates apply only to
+   the four budget specs in editor.perf.ts.
+5. Optional later: multi-run median (N=3) before compare, to dampen single-run
+   spikes without widening absolute budgets forever.
+
+Pros
+
+- Catches creeping regressions that absolute ceilings miss until they are huge.
+- Same controlled slowdown becomes meaningful: delta is the signal, absolute ms
+  is context.
+- Forces a shared harness story (fixture, CPU rate, build mode) instead of
+  tribal recalibration comments alone.
+- Absolute budgets stay as a safety net for "completely broken."
+
+Cons / pitfalls
+
+- Cross-machine baselines are worse than none: laptop vs GHA will false-fail.
+  Relative compare only works if reference and candidate share environment class.
+- CI cost and flake: near-limit cases already take minutes; adding N repeats or
+  a dedicated perf job lengthens the pipeline. Shared ubuntu-latest is also
+  noisier than a pinned runner.
+- Dev-build inflation remains; relative gates still measure Vite/React-dev, not
+  production UX. Do not treat deltas as user-facing SLOs.
+- MSW save-cycle work on the main thread can move independently of real collab
+  servers — relative fails there need the same caveat as today's absolute
+  saveCycle budget.
+- Stale or hand-edited baselines become a new footgun; need a clear "how
+  baseline is refreshed" rule (main-only artifact vs checked-in file).
+- Threshold tuning is political: too tight = flake, too loose = back to
+  absolute-only.
+
+Related current behavior
+
+- e2e/perf/editor.perf.ts — BUDGET + reportMetrics
+- e2e/perf/metrics.ts — instrumentation; no history
+- e2e/perf/typingProfile.perf.ts / saveCycleProfile.perf.ts — PERF_PROFILE=1
+  diagnostics, assert nothing
+- .github/workflows/ci.yml — does not run pnpm perf
