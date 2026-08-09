@@ -39,7 +39,7 @@ export default defineConfig({
   retries: 0,
   testDir: perfDir,
   testMatch: '**/*.perf.ts',
-  timeout: 300_000,
+  timeout: 600_000,
   use: {
     baseURL,
     screenshot: 'off',
@@ -52,7 +52,9 @@ export default defineConfig({
     env: {
       ...process.env,
       VITE_CLERK_PUBLISHABLE_KEY: '',
-      // Adds the deterministic large/small perf notes to the mock db.
+      // The near-limit fixture is the shared ~2MB load-test note.
+      VITE_LOAD_TEST_SEED: 'true',
+      // Adds the small baseline note to the mock db.
       VITE_PERF_SEED: 'true',
       VITE_USE_MSW: 'true',
     },

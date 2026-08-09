@@ -19,6 +19,7 @@ import {
   type useMaterialDiscussions,
 } from '@/api/hooks';
 import type { Material } from '@/api/types';
+import { FileLoading } from '@/features/files/FileStates';
 import {
   type MaterialValue,
   parseMaterialDocument,
@@ -225,9 +226,15 @@ export function NoteEditorCore({
   const pendingCheckpoints = useRef(new Set<string>());
   const unsavedChanges = useRef(false);
   const rejected = useRef(false);
-  const initialValue =
-    parseMaterialDocument(material.content)?.value ??
-    ([{ children: [{ text: '' }], type: 'p' }] as MaterialValue);
+  // Parsing normalizes and copies every node, so on a near-limit document this
+  // costs seconds. It is the *initial* value — the room is authoritative from
+  // sync onwards — so it is computed once per mount rather than on every
+  // render that a status change or a projection refetch causes.
+  const [initialValue] = useState<MaterialValue>(
+    () =>
+      parseMaterialDocument(material.content)?.value ??
+      ([{ children: [{ text: '' }], type: 'p' }] as MaterialValue)
+  );
   // Seeded from the last projection so the footer has numbers before the first
   // checkpoint receipt; the service owns every value after that.
   const [documentStats, setDocumentStats] = useState<MaterialDocumentStats>(
@@ -240,7 +247,7 @@ export function NoteEditorCore({
   const [documentLimitError, setDocumentLimitError] = useState<string | null>(
     null
   );
-  const [_saveState, setSaveState] =
+  const [saveState, setSaveState] =
     useState<NoteEditorStatus['saveState']>('connecting');
   const name = currentUserName;
 
@@ -468,8 +475,11 @@ export function NoteEditorCore({
     const id = crypto.randomUUID();
     pendingCheckpoints.current.add(id);
     unsavedChanges.current = false;
-    sendCheckpointRequest(editor, id);
+    // Enter the pending state before dispatching: a provider that answers
+    // synchronously — the mock one does — would otherwise have its `saved`
+    // acknowledgement overwritten by this line.
     setStatus('synced');
+    sendCheckpointRequest(editor, id);
   }, [editor, mode, setStatus]);
 
   const scheduleCheckpoint = useCallback(() => {
@@ -512,15 +522,27 @@ export function NoteEditorCore({
             <NoteToolbar />
             <div className="min-h-0 flex-1 overflow-auto">
               <div className="mx-auto min-h-full w-full max-w-7xl">
-                <NoteEditorContent
-                  discussions={discussions}
-                  readOnly={mode === 'comment'}
-                  stats={documentStats}
-                />
-                <DocumentStatsFooter
-                  limitError={documentLimitError}
-                  stats={documentStats}
-                />
+                {/* The room replaces the projection copy the moment it syncs,
+                 * so painting that copy first renders the whole document
+                 * twice — seconds of it on a near-limit note. Anything other
+                 * than a healthy handshake still paints, otherwise a broken
+                 * collaboration service would leave a readable note hidden
+                 * behind a spinner. */}
+                {saveState === 'connecting' ? (
+                  <FileLoading message="Connecting…" />
+                ) : (
+                  <>
+                    <NoteEditorContent
+                      discussions={discussions}
+                      readOnly={mode === 'comment'}
+                      stats={documentStats}
+                    />
+                    <DocumentStatsFooter
+                      limitError={documentLimitError}
+                      stats={documentStats}
+                    />
+                  </>
+                )}
               </div>
             </div>
             {mode === 'edit' && <FloatingToolbar />}

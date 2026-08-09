@@ -232,6 +232,10 @@ export function buildBiologyLoadTestValue(
   const value: MaterialValue = featureSkeleton();
   const encoder = new TextEncoder();
 
+  // Serializing a 2MB document is expensive, so the builder prices one pad
+  // against the real serializer and then sizes the run arithmetically. Only the
+  // corrections below re-measure, and each one moves by the computed distance
+  // rather than a single node at a time.
   const measure = (candidate: MaterialValue) => {
     const { document, metrics } = createMaterialDocumentWithMetrics(candidate);
     return {
@@ -241,28 +245,38 @@ export function buildBiologyLoadTestValue(
     };
   };
 
-  let measured = measure(value);
+  const skeleton = measure(value);
+  let measured = skeleton;
   const hardNodeCap = MATERIAL_DOCUMENT_LIMITS.maxNodes - NODE_HEADROOM;
-  const nodesLeft = Math.max(0, hardNodeCap - measured.metrics.nodeCount);
+  const nodesLeft = Math.max(0, hardNodeCap - skeleton.metrics.nodeCount);
   const spiceEvery = 16;
   const spiceNodeEstimate = 6;
   // Single-leaf paragraphs normalize to 2 nodes; reserve room for spice blocks.
   const tentativePads = Math.max(1, Math.floor(nodesLeft / 2));
   const spiceSlots = Math.floor(tentativePads / spiceEvery);
-  const purePads = Math.max(
+  const nodeBudgetPads = Math.max(
     1,
     Math.floor((nodesLeft - spiceSlots * spiceNodeEstimate) / 2)
   );
-  const bytesNeeded = Math.max(0, targetBytes - measured.bytes);
+  const bytesNeeded = Math.max(0, targetBytes - skeleton.bytes);
   const overheadPerPad = 96;
   const charsPerPad = Math.max(
     512,
-    Math.floor(bytesNeeded / purePads) - overheadPerPad
+    Math.floor(bytesNeeded / nodeBudgetPads) - overheadPerPad
   );
+
+  const pad = (index: number) => p(`Pad ${index}. ${filler(charsPerPad)}`);
+  // Measured rather than estimated: normalization adds an id to every element,
+  // which a raw stringify of the draft would miss.
+  const padBytes = Math.max(
+    1,
+    measure([...value, pad(0)]).bytes - skeleton.bytes
+  );
+  const padCount = Math.min(nodeBudgetPads, Math.floor(bytesNeeded / padBytes));
 
   let runningNodes = countNodes(value);
 
-  for (let i = 0; i < purePads; i += 1) {
+  for (let i = 0; i < padCount; i += 1) {
     if (i > 0 && i % spiceEvery === 0) {
       const spice = spiceBlock(i);
       const spiceNodes = countNodes(spice);
@@ -271,19 +285,28 @@ export function buildBiologyLoadTestValue(
       runningNodes += spiceNodes;
     }
     if (runningNodes + 2 > hardNodeCap) break;
-    value.push(p(`Pad ${i}. ${filler(charsPerPad)}`));
+    value.push(pad(i));
     runningNodes += 2;
   }
 
   measured = measure(value);
 
-  // Trim from the end if we overshot either hard limit.
+  // Trim from the end if the spice blocks pushed us past either hard limit.
   while (
     (measured.bytes > MATERIAL_DOCUMENT_LIMITS.maxContentBytes ||
       measured.metrics.nodeCount > MATERIAL_DOCUMENT_LIMITS.maxNodes) &&
     value.length > 0
   ) {
-    value.pop();
+    const drop = Math.max(
+      1,
+      Math.ceil(
+        (measured.bytes - MATERIAL_DOCUMENT_LIMITS.maxContentBytes) / padBytes
+      ),
+      Math.ceil(
+        (measured.metrics.nodeCount - MATERIAL_DOCUMENT_LIMITS.maxNodes) / 2
+      )
+    );
+    value.splice(Math.max(0, value.length - drop));
     measured = measure(value);
   }
 

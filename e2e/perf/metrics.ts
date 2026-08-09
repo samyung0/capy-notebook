@@ -1,4 +1,4 @@
-import type { Page, TestInfo } from '@playwright/test';
+import type { CDPSession, Page, TestInfo } from '@playwright/test';
 
 /** CPU slowdown applied while measuring (not during page load). 4x roughly
  * approximates a mid-tier laptop; use PERF_CPU=6 or higher for low-end
@@ -112,11 +112,26 @@ export async function installPerfInstrumentation(page: Page): Promise<void> {
   });
 }
 
+/** One CDP session per page. Chromium keeps the throttling rate of every
+ * attached session and applies the slowest one, so a fresh session can raise
+ * the rate but never lower it — `throttleCpu(page, 1)` on a second session
+ * leaves the earlier slowdown in place. */
+const cdpSessions = new WeakMap<Page, Promise<CDPSession>>();
+
+function cdpSession(page: Page): Promise<CDPSession> {
+  let session = cdpSessions.get(page);
+  if (!session) {
+    session = page.context().newCDPSession(page);
+    cdpSessions.set(page, session);
+  }
+  return session;
+}
+
 export async function throttleCpu(
   page: Page,
   rate: number = CPU_RATE
 ): Promise<void> {
-  const session = await page.context().newCDPSession(page);
+  const session = await cdpSession(page);
   await session.send('Emulation.setCPUThrottlingRate', { rate });
 }
 
@@ -160,9 +175,27 @@ export function percentile(values: number[], p: number): number {
   return sorted[Math.max(0, index)];
 }
 
-/** Summarize keystroke responsiveness. `keystrokes` is the number of
- * characters typed; events faster than the 16ms reporting threshold are
- * counted as responsive by definition. */
+/** Total main-thread blocking (time beyond 50ms inside long animation frames)
+ * plus the script attribution for the worst offenders. */
+export function blockingStats(state: PerfState) {
+  return {
+    loafCount: state.loafs.length,
+    loafTotalBlockingMs: Math.round(
+      state.loafs.reduce((sum, loaf) => sum + loaf.blocking, 0)
+    ),
+    worstLoafs: [...state.loafs]
+      .sort((a, b) => b.blocking - a.blocking)
+      .slice(0, 3),
+  };
+}
+
+/**
+ * Summarize keystroke responsiveness. `keystrokes` is the number of characters
+ * typed. Only events slower than the observer's 16ms threshold are reported at
+ * all, so `slowKeyEventRatio` saturates near 1 under CPU throttling and is kept
+ * as context rather than as an assertion; per-keystroke blocking and the worst
+ * interaction are the numbers that still move when the editor gets slower.
+ */
 export function typingStats(state: PerfState, keystrokes: number) {
   const keyEvents = state.events.filter(
     (e) => e.name === 'keydown' || e.name === 'keyup'
@@ -179,22 +212,23 @@ export function typingStats(state: PerfState, keystrokes: number) {
     }
   }
   const interactionDurations = [...byInteraction.values()];
+  const blocking = blockingStats(state);
   return {
+    ...blocking,
+    blockingPerKeystrokeMs:
+      Math.round(
+        (blocking.loafTotalBlockingMs / Math.max(1, keystrokes)) * 10
+      ) / 10,
     inpApproxMs: interactionDurations.length
       ? Math.max(...interactionDurations)
       : 0,
     keystrokes,
-    loafCount: state.loafs.length,
-    loafTotalBlockingMs: Math.round(
-      state.loafs.reduce((sum, l) => sum + l.blocking, 0)
-    ),
     maxKeyEventMs: durations.length ? Math.max(...durations) : 0,
     p95SlowKeyEventMs: percentile(durations, 95),
-    slowKeyEventRatio: keyEvents.length / Math.max(1, keystrokes * 2),
+    slowKeyEventRatio:
+      Math.round((keyEvents.length / Math.max(1, keystrokes * 2)) * 1000) /
+      1000,
     slowKeyEvents: keyEvents.length,
-    worstLoafs: [...state.loafs]
-      .sort((a, b) => b.blocking - a.blocking)
-      .slice(0, 3),
   };
 }
 

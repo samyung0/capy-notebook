@@ -8,6 +8,7 @@ Read these only when the task touches that domain. Prefer the listed file over g
 | How quota bytes are accounted (`user_storage` / deltas), plan limits, material size/shape bounds, Yjs compaction, reservation/clone gating math | [`backend-storage-quota.md`](openwiki/backend-storage-quota.md) |
 | Plate/Yjs editor, collab tokens/modes (`view`/`comment`/`edit`), checkpoints, projections, comment anchors, AI previews | [`frontend/plate-editor.md`](openwiki/frontend/plate-editor.md) |
 | How to run pipeline cassette tests and their disposable Postgres/Redis setup | [`pipeline-tests.md`](openwiki/pipeline-tests.md) |
+| Inventory of Vitest / Go / Python / Playwright / Cloudflare tests with one-line descriptions | [`test-catalog.md`](openwiki/test-catalog.md) |
 
 Cross-links: plate-editor defers structural ACL to authorization; authorization defers accounting internals to storage-quota.
 

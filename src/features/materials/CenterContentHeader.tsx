@@ -221,6 +221,7 @@ export function Header({
                 editorStatus.saveState === 'error' &&
                 'text-solid-error'
             )}
+            data-testid="editor-save-state"
             role="status"
           >
             {statusLabel}

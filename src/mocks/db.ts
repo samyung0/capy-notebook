@@ -53,10 +53,10 @@ import {
 import { seedNotes } from './noteContent';
 import { buildBiologyLoadTestValue } from './noteContent/loadTest';
 import {
-  buildLargePerfDocument,
   buildSmallPerfDocument,
   PERF_LARGE_NOTE,
   PERF_SMALL_NOTE,
+  PERF_WORKSPACE_ID,
 } from './perfSeed';
 
 export const uid = (p = 'id') =>
@@ -1366,33 +1366,30 @@ if (import.meta.env.VITE_E2E_EDITOR_SEED === 'true') {
   );
 }
 
-/* ---------------- perf harness fixtures (e2e/perf) ---------------- */
+/* ---------------- perf harness baseline note (e2e/perf) ---------------- */
 if (import.meta.env.VITE_PERF_SEED === 'true') {
-  for (const [note, content] of [
-    [PERF_LARGE_NOTE, buildLargePerfDocument()],
-    [PERF_SMALL_NOTE, buildSmallPerfDocument()],
-  ] as const) {
-    materials.push(
-      makeMaterial({
-        capabilities: ownerCapabilities,
-        chapterId: null,
-        content: createMaterialDocument(content.value as MaterialValue),
-        createdAt: days(1),
-        id: note.id,
-        kind: 'note',
-        privacy: 'private',
-        role: 'owner',
-        scopeChapters: [],
-        scopeFileNames: [],
-        title: note.title,
-        workspaceId: 'ws_bio',
-        workspaceName: 'Biology 101',
-      })
-    );
-  }
+  materials.push(
+    makeMaterial({
+      capabilities: ownerCapabilities,
+      chapterId: null,
+      content: createMaterialDocument(
+        buildSmallPerfDocument().value as MaterialValue
+      ),
+      createdAt: days(1),
+      id: PERF_SMALL_NOTE.id,
+      kind: 'note',
+      privacy: 'private',
+      role: 'owner',
+      scopeChapters: [],
+      scopeFileNames: [],
+      title: PERF_SMALL_NOTE.title,
+      workspaceId: PERF_WORKSPACE_ID,
+      workspaceName: 'Biology 101',
+    })
+  );
 }
 
-/* ---------------- ~2MB biology load-test note (opt-in; slow to build) ---------------- */
+/* ---------------- ~2MB biology load-test note (opt-in) ---------------- */
 if (import.meta.env.VITE_LOAD_TEST_SEED === 'true') {
   materials.push(
     makeMaterial({
@@ -1400,14 +1397,14 @@ if (import.meta.env.VITE_LOAD_TEST_SEED === 'true') {
       chapterId: null,
       content: createMaterialDocument(buildBiologyLoadTestValue()),
       createdAt: days(0),
-      id: 'mat_note_bio_load_test',
+      id: PERF_LARGE_NOTE.id,
       kind: 'note',
       privacy: 'private',
       role: 'owner',
       scopeChapters: [],
       scopeFileNames: [],
-      title: 'Load test — near 2MB feature soup',
-      workspaceId: 'ws_bio',
+      title: PERF_LARGE_NOTE.title,
+      workspaceId: PERF_WORKSPACE_ID,
       workspaceName: 'Biology 101',
     })
   );
