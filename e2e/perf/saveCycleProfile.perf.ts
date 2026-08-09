@@ -12,6 +12,10 @@ import { CPU_RATE } from './metrics';
  *   $env:PERF_PROFILE=1; pnpm perf --grep "save cycle profile"
  */
 
+/** Kept identical to `TYPING_TEXT` in editor.perf.ts. */
+const PROBE_TEXT =
+  'measuring editor latency with plain words that avoid every input rule trigger in the registry';
+
 interface CallFrame {
   functionName: string;
   url: string;
@@ -193,9 +197,10 @@ test(`save cycle profile — near-limit document (cpu x${CPU_RATE})`, async ({
   await client.send('Profiler.setSamplingInterval', { interval: 200 });
   await client.send('Emulation.setCPUThrottlingRate', { rate: CPU_RATE });
 
-  // Phase 1: the keystrokes themselves.
+  // Phase 1: the keystrokes themselves. Same text and cadence as the budgeted
+  // run, because the save that follows scales with the pending edit.
   await client.send('Profiler.start');
-  await page.keyboard.type(' probe', { delay: 40 });
+  await page.keyboard.type(` ${PROBE_TEXT}`, { delay: 40 });
   const typingProfile = (await client.send('Profiler.stop')) as unknown as {
     profile: CpuProfile;
   };

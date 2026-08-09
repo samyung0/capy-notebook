@@ -35,16 +35,17 @@ const KEY_DELAY_MS = 40;
  *
  * Observed at recalibration against the ~2MB / 7.4k-node load-test note (dev
  * build, unthrottled opens, cpu x4 elsewhere):
- * - opening it: ~16s interactive (11s blocking), ~2s read-only (0.25s blocking)
- * - small doc typing: INP ~150ms, ~30ms blocking per keystroke
- * - near-limit typing: INP ~1.6s, ~900ms blocking per keystroke (!) —
- *   per-keystroke cost scales with document size
- * - save cycle: ~24s blocking, of which ~9s is the projection refetch and the
- *   rest is the editor re-rendering the whole document because the checkpoint
- *   acknowledgement updates the footer stats. Both are React render storms
- *   rather than serialization cost, so this budget is deliberately loose: it
- *   documents a known problem instead of pretending the number is healthy.
- * - scroll: ~7 FPS, ~95% janky frames
+ * - opening it: ~19s interactive (11s blocking), ~2s read-only (0.25s blocking)
+ * - small doc typing: INP ~160ms, ~35ms blocking per keystroke
+ * - near-limit typing: INP 1.9-3.3s, ~1.1s blocking per keystroke (!) —
+ *   per-keystroke cost scales with document size, and this is the one number
+ *   still worth attacking. Each keystroke is a synchronous render of the whole
+ *   document (`DIV#root.oninput` -> `dispatchDiscreteEvent`).
+ * - save cycle: ~0.5s blocking. It was ~24s until the checkpoint
+ *   acknowledgement stopped re-rendering the document: the footer stats reached
+ *   `NoteEditorContent`, and the projection refetch re-parsed 2MB nobody was
+ *   reading. Both were React render storms rather than serialization cost.
+ * - scroll: ~7 FPS, ~93% janky frames
  */
 const BUDGET = {
   large: {
@@ -52,11 +53,15 @@ const BUDGET = {
     // unthrottled: this path is already tens of seconds without any slowdown.
     interactiveOpenMs: 35_000,
     readOnlyOpenMs: 8000,
-    // The checkpoint cycle: debounce, Yjs commit, the acknowledgement's state
-    // updates, and the projection refetch that follows.
-    saveCycleBlockingMs: 45_000,
+    // Debounce, Yjs commit, the acknowledgement's state updates, and the
+    // projection invalidation. Nothing here may touch the document tree, so
+    // this budget is tight on purpose — it is the tripwire for a regression
+    // that reconnects the save path to the editor's render.
+    saveCycleBlockingMs: 3000,
     typingBlockingPerKeystrokeMs: 1800,
-    typingInpMs: 3000,
+    // Run-to-run spread on this metric is wide (1.9-3.3s observed on the same
+    // build), because a single unlucky keystroke sets it.
+    typingInpMs: 4500,
   },
   scroll: {
     avgFps: 4,
@@ -292,8 +297,10 @@ test.describe('editor performance', () => {
     );
 
     // The checkpoint fires 1s after the last keystroke; the acknowledgement
-    // then invalidates the material query, and the projection response
-    // re-renders the editor. Measure that whole tail separately.
+    // updates the footer stats and invalidates the projection. Measure that
+    // whole tail separately. React runs it through the scheduler rather than an
+    // input handler, so a regression shows up as one long
+    // `performWorkUntilDeadline` frame rather than as slower keystrokes.
     //
     // CAVEAT: under MSW the mock collaboration provider does the service's job
     // — Yjs-to-Slate conversion, validation, byte accounting — synchronously on

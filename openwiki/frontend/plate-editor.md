@@ -206,6 +206,12 @@ Static previews, study views, exports, and domain reads can lag the live room by
 the persistence/projection debounce. They must never write their projection
 back into an initialized Y.Doc.
 
+A mounted editor answers `projection-updated` by marking the material query
+stale without refetching, and flushes one real invalidation when it unmounts.
+The room is the content authority while the editor is open, so refetching there
+only re-downloads and re-parses a document nobody is reading — on a near-limit
+note that is seconds of main-thread time per save.
+
 Server-origin content mutations use the sidecar command endpoint. Commands load
 the current Y.Doc and replace one stable custom block through headless
 Slate-Yjs transforms with a stale-block precondition. They do not replace the
@@ -288,6 +294,15 @@ validation and are not rendered.
   only when load tests or production usage justify one.
 - Keep Yjs garbage collection enabled. Compaction/rebasing requires a separately
   tested maintenance procedure.
+- Nothing outside the document may re-render the document. A near-limit note is
+  ~7.4k Slate nodes, so one extra render is seconds of blocking. Concretely:
+  context values read from inside the tree (`EditorRuntime`, collaboration
+  actions) must be identity-stable; the `decorate` and `onKeyDown` props of
+  `PlateContent` must be stable, because Plate treats new editable props as a
+  full re-render; and save/footer state must not reach `NoteEditorContent`,
+  which is memoized for that reason. `e2e/perf/editor.perf.ts` guards this with
+  a save-cycle blocking budget, and `saveCycleProfile.perf.ts` attributes a
+  regression to functions.
 - Remote cursor decorations must match Slate paths structurally (not
   dot-joined path strings). Shared-link editors may be absent from the
   workspace member directory, so cursor labels fall back to the authenticated

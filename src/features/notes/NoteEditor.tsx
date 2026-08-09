@@ -1,5 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { isMaterialContentUnreadable } from '@/api/client';
 import {
   useMaterial,
@@ -17,6 +17,12 @@ import {
 } from './EditorRuntime';
 import type { NoteEditorMode, NoteEditorStatus } from './editorMode';
 import { NoteEditorCore } from './NoteEditorCore';
+
+/** Shared so a pending discussions query does not hand the editor a new array
+ * identity on every render. */
+const NO_DISCUSSIONS: NonNullable<
+  ReturnType<typeof useMaterialDiscussions>['data']
+> = [];
 
 export function NoteEditor({
   materialId,
@@ -122,6 +128,32 @@ function CollaborativeNoteEditor({
   } = useMaterialCollaborationToken(material.id);
   const canEdit = material.capabilities.canEdit;
   const canComment = material.capabilities.canComment || canEdit;
+  // Identity matters more than the allocation: this context is read from inside
+  // the document tree, so a fresh object on every render makes React walk every
+  // node's fiber looking for consumers instead of bailing out at the top.
+  const currentUserId = meData?.id ?? null;
+  const runtime = useMemo<EditorRuntimeValue>(
+    () => ({
+      allowExternalAssets,
+      canComment,
+      canEdit,
+      currentUserId,
+      materialId: material.id,
+      mode,
+      role,
+      workspaceId: material.workspaceId,
+    }),
+    [
+      allowExternalAssets,
+      canComment,
+      canEdit,
+      currentUserId,
+      material.id,
+      material.workspaceId,
+      mode,
+      role,
+    ]
+  );
 
   if (meIsPending || discussionsIsPending || collaborationTokenIsPending) {
     return <FileLoading />;
@@ -139,17 +171,6 @@ function CollaborativeNoteEditor({
     );
   }
 
-  const runtime: EditorRuntimeValue = {
-    allowExternalAssets,
-    canComment,
-    canEdit,
-    currentUserId: meData.id,
-    materialId: material.id,
-    mode,
-    role,
-    workspaceId: material.workspaceId,
-  };
-
   return (
     <EditorRuntimeProvider value={runtime}>
       <div className="flex h-full flex-col gap-0 overflow-hidden">
@@ -158,7 +179,7 @@ function CollaborativeNoteEditor({
           collaborationToken={collaborationTokenData}
           currentUserId={meData.id}
           currentUserName={meData.name}
-          discussions={discussionsData ?? []}
+          discussions={discussionsData ?? NO_DISCUSSIONS}
           key={`${collaborationTokenData.room}:${editorGeneration}`}
           material={material}
           mode={mode}

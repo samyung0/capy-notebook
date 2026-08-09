@@ -1,5 +1,6 @@
 import { YjsPlugin } from '@platejs/yjs/react';
 import { useQueryClient } from '@tanstack/react-query';
+import type { Path } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
 import {
   Plate,
@@ -9,7 +10,7 @@ import {
   useEditorSelector,
   usePlateEditor,
 } from 'platejs/react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import { qk } from '@/api/client';
@@ -81,6 +82,14 @@ function sendCheckpointRequest(editor: PlateEditor, id: string) {
   );
 }
 
+function sameStats(a: MaterialDocumentStats, b: MaterialDocumentStats) {
+  return (
+    a.contentBytes === b.contentBytes &&
+    a.maxDepth === b.maxDepth &&
+    a.nodeCount === b.nodeCount
+  );
+}
+
 function cursorColor(userId: string | null) {
   let hash = 0;
   for (const character of userId ?? 'anonymous') {
@@ -133,17 +142,22 @@ function DocumentStatsFooter({
   );
 }
 
-function NoteEditorContent({
-  stats,
+/**
+ * Memoized deliberately. Every prop change here re-renders all ~7k nodes of a
+ * near-limit document, and the checkpoint acknowledgement updates footer stats
+ * once per save — so the footer must not be able to reach this subtree. It only
+ * needs to know whether the footer reserves space, not what the footer says.
+ */
+const NoteEditorContent = memo(function NoteEditorContent({
   discussions,
   readOnly,
+  shouldShowStats,
 }: {
-  stats: MaterialDocumentStats;
   discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>['data']>;
   readOnly: boolean;
+  shouldShowStats: boolean;
 }) {
   const editor = useEditorRef();
-  const shouldShowStats = shouldShowDocumentStats(stats);
   const showEditorPlaceholder = useEditorSelector(
     (current) => {
       const firstNode = current.children[0];
@@ -157,11 +171,57 @@ function NoteEditorContent({
     },
     [readOnly]
   );
-  const decorations = resolveCommentDecorations(
-    editor as Parameters<typeof resolveCommentDecorations>[0],
-    discussions
-  );
   const remoteCursors = useRemoteCursorDecorations(editor);
+  // Read through refs so `decorate` keeps one identity: Plate treats a new
+  // decorate function as new editable props and re-renders the whole document.
+  const latest = useRef({ discussions, remoteCursors });
+  latest.current = { discussions, remoteCursors };
+  // Comment anchors resolve to Slate ranges that shift with the document, so
+  // they are recomputed once per document version rather than once per node.
+  const anchors = useRef<{
+    discussions: unknown;
+    ranges: ReturnType<typeof resolveCommentDecorations>;
+    version: unknown;
+  } | null>(null);
+
+  const decorate = useCallback(
+    ({ entry }: { entry: [unknown, Path] }) => {
+      const { discussions: current, remoteCursors: cursors } = latest.current;
+      if (
+        anchors.current?.version !== editor.children ||
+        anchors.current.discussions !== current
+      ) {
+        anchors.current = {
+          discussions: current,
+          ranges: resolveCommentDecorations(
+            editor as Parameters<typeof resolveCommentDecorations>[0],
+            current
+          ),
+          version: editor.children,
+        };
+      }
+      return [
+        ...commentDecorationRangesForEntry(entry, anchors.current.ranges),
+        ...remoteCursorRangesForEntry(entry, cursors),
+      ] as never;
+    },
+    [editor]
+  );
+
+  const onKeyDown = useCallback(
+    (event: React.KeyboardEvent) => {
+      // Only the modifier combo jumps to the end of the note. Bare End is
+      // end-of-line and Shift+End extends a selection; both stay native.
+      const jumpToNoteEnd =
+        event.key === 'End' &&
+        !event.shiftKey &&
+        (event.ctrlKey || event.metaKey);
+      if (!jumpToNoteEnd) return;
+      event.preventDefault();
+      editor.tf.select(editor.api.end([]));
+    },
+    [editor]
+  );
 
   return (
     <PlateContainer className="relative [&_.slate-selection-area]:z-50 [&_.slate-selection-area]:border [&_.slate-selection-area]:border-action-accent/25 [&_.slate-selection-area]:bg-action-accent/15">
@@ -170,29 +230,14 @@ function NoteEditorContent({
           'note-editor mx-auto min-h-75 max-w-3xl px-10 pt-4 pb-36 text-base outline-none **:data-slate-placeholder:translate-y-1 **:data-slate-placeholder:text-placeholder **:data-slate-placeholder:text-sm **:data-slate-placeholder:leading-loose **:data-slate-placeholder:opacity-100! max-sm:px-5',
           shouldShowStats && 'pb-16'
         )}
-        decorate={({ entry }) =>
-          [
-            ...commentDecorationRangesForEntry(entry, decorations),
-            ...remoteCursorRangesForEntry(entry, remoteCursors),
-          ] as never
-        }
-        onKeyDown={(event) => {
-          // Only the modifier combo jumps to the end of the note. Bare End is
-          // end-of-line and Shift+End extends a selection; both stay native.
-          const jumpToNoteEnd =
-            event.key === 'End' &&
-            !event.shiftKey &&
-            (event.ctrlKey || event.metaKey);
-          if (!jumpToNoteEnd) return;
-          event.preventDefault();
-          editor.tf.select(editor.api.end([]));
-        }}
+        decorate={decorate}
+        onKeyDown={onKeyDown}
         placeholder={showEditorPlaceholder ? NOTE_PLACEHOLDER : undefined}
         readOnly={readOnly}
       />
     </PlateContainer>
   );
-}
+});
 
 export function NoteEditorCore({
   material,
@@ -251,9 +296,15 @@ export function NoteEditorCore({
     useState<NoteEditorStatus['saveState']>('connecting');
   const name = currentUserName;
 
+  // The parent stores the reported status in state, so re-announcing a status it
+  // already holds re-renders the whole document for nothing.
+  const reportedStatus = useRef<string | null>(null);
   const setStatus = useCallback(
     (next: NoteEditorStatus['saveState']) => {
       setSaveState(next);
+      const reported = `${mode}:${next}`;
+      if (reportedStatus.current === reported) return;
+      reportedStatus.current = reported;
       onEditorStatusChange?.({ mode, saveState: next });
     },
     [mode, onEditorStatusChange]
@@ -264,6 +315,16 @@ export function NoteEditorCore({
   const saveNow = useRef(() => {});
   const resendCheckpoints = useRef(() => {});
   const reportRejection = useRef(onDocumentRejected);
+  const projectionStale = useRef(false);
+
+  useEffect(
+    () => () => {
+      if (!projectionStale.current) return;
+      projectionStale.current = false;
+      void qc.invalidateQueries({ queryKey: qk.material(material.id) });
+    },
+    [qc, material.id]
+  );
 
   const handleStatelessEvent = useCallback(
     (payload: string) => {
@@ -273,7 +334,9 @@ export function NoteEditorCore({
         event.type === 'checkpoint-persisted' &&
         event.materialId === material.id
       ) {
-        setDocumentStats(event.metrics);
+        setDocumentStats((previous) =>
+          sameStats(previous, event.metrics) ? previous : event.metrics
+        );
         setDocumentLimitError(
           event.limitCode
             ? `${materialLimitMessage(event.limitCode)} Only edits that remove content will be saved.`
@@ -315,7 +378,15 @@ export function NoteEditorCore({
         event.type === 'projection-updated' &&
         event.materialId === material.id
       ) {
-        void qc.invalidateQueries({ queryKey: qk.material(material.id) });
+        // The room is the content authority while this editor is mounted, so
+        // refetching now would re-download and re-parse the whole document for
+        // a reader that does not exist. Mark it stale and flush on teardown,
+        // when static previews and exports start reading the projection again.
+        projectionStale.current = true;
+        void qc.invalidateQueries({
+          queryKey: qk.material(material.id),
+          refetchType: 'none',
+        });
         return;
       }
       if (
@@ -535,7 +606,7 @@ export function NoteEditorCore({
                     <NoteEditorContent
                       discussions={discussions}
                       readOnly={mode === 'comment'}
-                      stats={documentStats}
+                      shouldShowStats={shouldShowDocumentStats(documentStats)}
                     />
                     <DocumentStatsFooter
                       limitError={documentLimitError}

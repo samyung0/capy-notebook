@@ -14,7 +14,7 @@ export interface EventSample {
 export interface LoafSample {
   blocking: number;
   duration: number;
-  scripts: { name: string; duration: number }[];
+  scripts: { name: string; duration: number; source: string }[];
 }
 
 export interface PerfState {
@@ -87,6 +87,8 @@ export async function installPerfInstrumentation(page: Page): Promise<void> {
             scripts?: {
               invoker?: string;
               sourceURL?: string;
+              sourceFunctionName?: string;
+              sourceCharPosition?: number;
               duration: number;
             }[];
           };
@@ -97,6 +99,12 @@ export async function installPerfInstrumentation(page: Page): Promise<void> {
               .map((s) => ({
                 duration: s.duration,
                 name: s.invoker || s.sourceURL || 'unknown',
+                // `invoker` only names the listener kind ("MessagePort.onmessage"
+                // covers React's scheduler, MSW, and Hocuspocus alike), so keep
+                // the registering script too.
+                source: `${s.sourceFunctionName || '?'} @ ${
+                  s.sourceURL || '?'
+                }:${s.sourceCharPosition ?? -1}`,
               }))
               .sort((a, b) => b.duration - a.duration)
               .slice(0, 3),

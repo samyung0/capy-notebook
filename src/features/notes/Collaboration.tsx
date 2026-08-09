@@ -12,7 +12,7 @@ import {
   type PlateLeafProps,
   useEditorRef,
 } from 'platejs/react';
-import { createContext, useContext, useRef, useState } from 'react';
+import { createContext, useContext, useMemo, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import {
   useCreateMaterialComment,
@@ -72,6 +72,29 @@ const CollaborationActionsContext = createContext<CollaborationActions | null>(
 
 export function useCollaborationActions() {
   return useContext(CollaborationActionsContext);
+}
+
+/**
+ * Threads indexed by block. Kept separate from the action context on purpose:
+ * `BlockDiscussionContent` renders above *every* node, so whichever context it
+ * subscribes to is read thousands of times per document. Subscribing it to the
+ * action bag would make an unrelated change — a pending comment mutation, a
+ * dialog error — force React to walk and re-render the whole document.
+ */
+const NO_THREADS = new Map<string, MaterialDiscussion[]>();
+const BlockDiscussionsContext =
+  createContext<Map<string, MaterialDiscussion[]>>(NO_THREADS);
+
+function discussionsByBlock(discussions: MaterialDiscussion[]) {
+  if (discussions.length === 0) return NO_THREADS;
+  const index = new Map<string, MaterialDiscussion[]>();
+  for (const discussion of discussions) {
+    if (!discussion.blockId) continue;
+    const existing = index.get(discussion.blockId);
+    if (existing) existing.push(discussion);
+    else index.set(discussion.blockId, [discussion]);
+  }
+  return index;
 }
 
 function bytesToBase64(value: Uint8Array): string {
@@ -144,21 +167,38 @@ const BlockDiscussion = () => (props: PlateElementProps) => (
 
 function BlockDiscussionContent({
   children,
-  editor,
   element,
+  path,
 }: PlateElementProps) {
-  const actions = useCollaborationActions();
-  const path = editor.api.findPath(element);
-  const isTopLevel = path?.length === 1;
+  const isTopLevel = path.length === 1;
   const blockId =
     typeof element.id === 'string' && element.id.trim() ? element.id : null;
-  const discussions =
-    actions?.discussions.filter((item) => item.blockId === blockId) ?? [];
-  const [open, setOpen] = useState(false);
+  const threads = useContext(BlockDiscussionsContext).get(
+    isTopLevel && blockId ? blockId : ''
+  );
 
   if (!isTopLevel) return <>{children}</>;
-  if (!actions || discussions.length === 0)
-    return <div className="w-full">{children}</div>;
+  if (!threads?.length) return <div className="w-full">{children}</div>;
+
+  return (
+    <BlockDiscussionThreads threads={threads}>
+      {children}
+    </BlockDiscussionThreads>
+  );
+}
+
+/** Only mounted for the handful of blocks that actually carry a thread, so it
+ * is free to subscribe to the full action bag. */
+function BlockDiscussionThreads({
+  children,
+  threads: discussions,
+}: {
+  children: React.ReactNode;
+  threads: MaterialDiscussion[];
+}) {
+  const actions = useCollaborationActions();
+  const [open, setOpen] = useState(false);
+  if (!actions) return <div className="w-full">{children}</div>;
 
   return (
     <div className="flex w-full justify-between">
@@ -306,57 +346,80 @@ export function CollaborationProvider({
     }
   }
 
-  const actions: CollaborationActions = {
-    addComment: async (discussionId, text) => {
-      await addComment({
-        contentRich: richComment(text),
-        discussionId,
-      });
-    },
-    addReply: async (discussionId, parentCommentId, text) => {
-      await addComment({
-        contentRich: richComment(text),
-        discussionId,
-        parentCommentId,
-      });
-    },
-    canComment,
-    canEdit,
-    collaborationError: error,
-    currentUserId,
-    deleteComment: (entry) => {
-      if (!window.confirm('Delete this comment?')) return;
-      deleteComment(entry.id);
-    },
-    deleteDiscussion: (discussion) => {
-      if (!window.confirm('Delete this comment thread?')) return;
-      deleteDiscussion(discussion.id);
-    },
-    discussions,
-    mutationPending,
-    openComment: () => {
-      if (!canComment || !editor.selection || editor.api.isCollapsed()) return;
-      commentSelection.current = structuredClone(editor.selection);
-      setComment('');
-      setError(null);
-      setDialogOpen(true);
-    },
-    resolve: (discussion) =>
-      resolveDiscussion({
-        discussionId: discussion.id,
-        isResolved: !discussion.isResolved,
-      }),
-    updateComment: async (commentId, text) => {
-      await updateComment({
-        commentId,
-        contentRich: richComment(text),
-      });
-    },
-  };
+  const actions = useMemo<CollaborationActions>(
+    () => ({
+      addComment: async (discussionId, text) => {
+        await addComment({
+          contentRich: richComment(text),
+          discussionId,
+        });
+      },
+      addReply: async (discussionId, parentCommentId, text) => {
+        await addComment({
+          contentRich: richComment(text),
+          discussionId,
+          parentCommentId,
+        });
+      },
+      canComment,
+      canEdit,
+      collaborationError: error,
+      currentUserId,
+      deleteComment: (entry) => {
+        if (!window.confirm('Delete this comment?')) return;
+        deleteComment(entry.id);
+      },
+      deleteDiscussion: (discussion) => {
+        if (!window.confirm('Delete this comment thread?')) return;
+        deleteDiscussion(discussion.id);
+      },
+      discussions,
+      mutationPending,
+      openComment: () => {
+        if (!canComment || !editor.selection || editor.api.isCollapsed())
+          return;
+        commentSelection.current = structuredClone(editor.selection);
+        setComment('');
+        setError(null);
+        setDialogOpen(true);
+      },
+      resolve: (discussion) =>
+        resolveDiscussion({
+          discussionId: discussion.id,
+          isResolved: !discussion.isResolved,
+        }),
+      updateComment: async (commentId, text) => {
+        await updateComment({
+          commentId,
+          contentRich: richComment(text),
+        });
+      },
+    }),
+    [
+      addComment,
+      canComment,
+      canEdit,
+      currentUserId,
+      deleteComment,
+      deleteDiscussion,
+      discussions,
+      editor,
+      error,
+      mutationPending,
+      resolveDiscussion,
+      updateComment,
+    ]
+  );
+  const threadsByBlock = useMemo(
+    () => discussionsByBlock(discussions),
+    [discussions]
+  );
 
   return (
     <CollaborationActionsContext.Provider value={actions}>
-      {children}
+      <BlockDiscussionsContext.Provider value={threadsByBlock}>
+        {children}
+      </BlockDiscussionsContext.Provider>
       <SimpleDialog
         footer={
           <>
