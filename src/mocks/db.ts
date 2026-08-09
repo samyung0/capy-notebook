@@ -39,6 +39,7 @@ import {
   flashcardsNode,
   type MaterialValue,
   mermaidNode,
+  parseMaterialDocumentWithMetrics,
   type QuizElement,
   quizElementToBlock,
   quizNode,
@@ -164,6 +165,7 @@ export const workspaces: Workspace[] = [
     createdAt: days(40),
     fileCount: 24,
     id: 'ws_bio',
+    isOwner: true,
     lastAccessedAt: hours(3),
     name: 'Biology 101',
     privacy: 'private',
@@ -184,6 +186,7 @@ export const workspaces: Workspace[] = [
     createdAt: days(30),
     fileCount: 12,
     id: 'ws_calc',
+    isOwner: true,
     lastAccessedAt: days(1),
     name: 'Calculus II',
     privacy: 'private',
@@ -204,6 +207,7 @@ export const workspaces: Workspace[] = [
     createdAt: days(22),
     fileCount: 18,
     id: 'ws_hist',
+    isOwner: true,
     lastAccessedAt: days(2),
     name: 'World History',
     privacy: 'link',
@@ -224,6 +228,7 @@ export const workspaces: Workspace[] = [
     createdAt: days(12),
     fileCount: 9,
     id: 'ws_chem',
+    isOwner: true,
     lastAccessedAt: days(5),
     name: 'Organic Chemistry',
     privacy: 'private',
@@ -244,6 +249,7 @@ export const workspaces: Workspace[] = [
     createdAt: days(8),
     fileCount: 21,
     id: 'ws_eng',
+    isOwner: true,
     lastAccessedAt: hours(20),
     name: 'English Literature',
     privacy: 'public',
@@ -299,6 +305,7 @@ export const files: SourceFile[] = [
     id: 'f_1',
     kind: 'pdf',
     name: 'Cell structure.pdf',
+    position: 0,
     sizeBytes: 2480 * 1024,
     url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
     workspaceId: 'ws_bio',
@@ -311,6 +318,7 @@ export const files: SourceFile[] = [
     id: 'f_2',
     kind: 'md',
     name: 'Organelles cheatsheet.md',
+    position: 1,
     sizeBytes: 14 * 1024,
     workspaceId: 'ws_bio',
   },
@@ -322,6 +330,7 @@ export const files: SourceFile[] = [
     id: 'f_3',
     kind: 'txt',
     name: 'Osmosis notes.txt',
+    position: 0,
     sizeBytes: 6 * 1024,
     workspaceId: 'ws_bio',
   },
@@ -331,6 +340,7 @@ export const files: SourceFile[] = [
     id: 'f_4',
     kind: 'pdf',
     name: 'Mendelian genetics.pdf',
+    position: 0,
     sizeBytes: 1890 * 1024,
     url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
     workspaceId: 'ws_bio',
@@ -341,6 +351,7 @@ export const files: SourceFile[] = [
     id: 'f_5',
     kind: 'image',
     name: 'Punnett squares.png',
+    position: 0,
     sizeBytes: 420 * 1024,
     url: 'https://picsum.photos/2000/3000',
     workspaceId: 'ws_bio',
@@ -351,6 +362,7 @@ export const files: SourceFile[] = [
     id: 'f_6',
     kind: 'pdf',
     name: 'Integration by parts.pdf',
+    position: 0,
     sizeBytes: 980 * 1024,
     url: 'https://raw.githubusercontent.com/mozilla/pdf.js/master/web/compressed.tracemonkey-pldi-09.pdf',
     workspaceId: 'ws_calc',
@@ -363,6 +375,7 @@ export const files: SourceFile[] = [
     id: 'f_7',
     kind: 'md',
     name: 'Taylor series.md',
+    position: 0,
     sizeBytes: 11 * 1024,
     workspaceId: 'ws_calc',
   },
@@ -372,6 +385,7 @@ export const files: SourceFile[] = [
     id: 'f_8',
     kind: 'audio',
     name: 'dummy_audio.wav',
+    position: 1,
     sizeBytes: 10_000 * 1024,
     url: 'https://essentials.pixfort.com/original/wp-content/uploads/sites/4/2020/02/skanews.wav',
     workspaceId: 'ws_bio',
@@ -383,6 +397,7 @@ const seedQuizzes: Quiz[] = [
     chapters: ['Cell structure', 'Membranes & transport'],
     createdAt: days(4),
     id: 'qz_1',
+    isOwner: true,
     name: 'Cell biology basics',
     privacy: 'private',
     questions: [
@@ -498,6 +513,7 @@ const seedQuizzes: Quiz[] = [
     chapters: ['Genetics'],
     createdAt: days(2),
     id: 'qz_2',
+    isOwner: true,
     name: 'Genetics check-in',
     privacy: 'private',
     questions: [
@@ -594,6 +610,7 @@ const seedQuizzes: Quiz[] = [
     chapters: ['Techniques of integration'],
     createdAt: days(6),
     id: 'qz_3',
+    isOwner: true,
     name: 'Integration techniques',
     privacy: 'public',
     questions: [
@@ -792,8 +809,10 @@ const seedDecks: Deck[] = [
     color: 'green',
     dueCount: 0,
     id: 'dk_1',
+    isOwner: true,
     knownPct: 80,
     name: 'Cell organelles',
+    privacy: 'private',
     workspaceId: 'ws_bio',
     workspaceName: 'Biology 101',
   },
@@ -802,8 +821,10 @@ const seedDecks: Deck[] = [
     color: 'purple',
     dueCount: 0,
     id: 'dk_2',
+    isOwner: true,
     knownPct: 55,
     name: 'Integration rules',
+    privacy: 'private',
     workspaceId: 'ws_calc',
     workspaceName: 'Calculus II',
   },
@@ -812,8 +833,10 @@ const seedDecks: Deck[] = [
     color: 'amber',
     dueCount: 0,
     id: 'dk_3',
+    isOwner: true,
     knownPct: 30,
     name: 'History dates',
+    privacy: 'private',
     workspaceId: 'ws_hist',
     workspaceName: 'World History',
   },
@@ -1038,7 +1061,51 @@ const ownerCapabilities = {
   canView: true,
 };
 
-export const materials: Material[] = [
+/** Counters `makeMaterial` owns outright — they are a function of the document,
+ * so letting a fixture state them is how they drift. */
+type MaterialMetrics = 'contentBytes' | 'maxDepth' | 'nodeCount';
+
+/** Wire fields with an obvious default for authored content. */
+type MaterialDefaults = 'isOwner' | 'position' | 'revision' | 'updatedAt';
+
+export type MaterialDraft = Omit<Material, MaterialMetrics | MaterialDefaults> &
+  Partial<Pick<Material, MaterialDefaults>>;
+
+/** Next free slot in the bucket an item is filed under. Files and materials
+ * share one ordering per (workspace, chapter). */
+export function nextContentPosition(
+  workspaceId: string,
+  chapterId: string | null
+): number {
+  const taken = [...files, ...materials]
+    .filter(
+      (item) => item.workspaceId === workspaceId && item.chapterId === chapterId
+    )
+    .map((item) => item.position);
+  return taken.length ? Math.max(...taken) + 1 : 0;
+}
+
+/** Complete a fixture draft into the full wire shape the API always returns. */
+export function makeMaterial(draft: MaterialDraft): Material {
+  const metrics = parseMaterialDocumentWithMetrics(draft.content)?.metrics ?? {
+    maxDepth: 0,
+    nodeCount: 0,
+  };
+  return {
+    isOwner: true,
+    position: nextContentPosition(draft.workspaceId, draft.chapterId),
+    revision: 1,
+    updatedAt: draft.createdAt,
+    ...draft,
+    contentBytes: materialContentBytes(draft.content),
+    maxDepth: metrics.maxDepth,
+    nodeCount: metrics.nodeCount,
+  };
+}
+
+export const materials: Material[] = [];
+
+const seedMaterials: MaterialDraft[] = [
   {
     capabilities: ownerCapabilities,
     chapterId: 'ch_1',
@@ -1134,6 +1201,7 @@ export const materials: Material[] = [
     workspaceName: 'Biology 101',
   },
 ];
+for (const draft of seedMaterials) materials.push(makeMaterial(draft));
 
 /* ---------------- chat: conversations + messages ---------------- */
 export const conversations: Conversation[] = [
@@ -1182,6 +1250,7 @@ export const publicWorkspaces: PublicWorkspace[] = [
     author: 'mrslee',
     clones: 1240,
     id: 'pub_ws_1',
+    isOwner: false,
     name: 'AP Biology — full course',
     privacy: 'public',
   },
@@ -1190,6 +1259,7 @@ export const publicWorkspaces: PublicWorkspace[] = [
     author: 'historyhub',
     clones: 860,
     id: 'pub_ws_2',
+    isOwner: false,
     name: 'Modern World History',
     privacy: 'public',
   },
@@ -1200,6 +1270,7 @@ export const publicQuizzes: PublicQuiz[] = [
     author: 'mrslee',
     clones: 540,
     id: 'pub_qz_1',
+    isOwner: false,
     name: 'Cell biology — 50 questions',
     privacy: 'public',
   },
@@ -1208,6 +1279,7 @@ export const publicQuizzes: PublicQuiz[] = [
     author: 'mathpro',
     clones: 410,
     id: 'pub_qz_2',
+    isOwner: false,
     name: 'Calculus II mega quiz',
     privacy: 'public',
   },
@@ -1249,66 +1321,74 @@ for (const c of seedCards)
   cardStats[c.id] = { known: c.known, materialId: c.deckId, srs: c.srs };
 
 seedQuizzes.forEach((q) => {
-  materials.push({
-    capabilities: ownerCapabilities,
-    chapterId: null,
-    content: createMaterialDocument([
-      quizNode({ questions: q.questions, timeLimitMin: q.timeLimitMin }, q.id),
-    ]),
-    createdAt: q.createdAt,
-    id: q.id,
-    kind: 'quiz',
-    privacy: q.privacy,
-    role: 'owner',
-    scopeChapters: q.chapters,
-    scopeFileNames: [],
-    title: q.name,
-    workspaceId: q.workspaceId,
-    workspaceName: q.workspaceName,
-  });
+  materials.push(
+    makeMaterial({
+      capabilities: ownerCapabilities,
+      chapterId: null,
+      content: createMaterialDocument([
+        quizNode(
+          { questions: q.questions, timeLimitMin: q.timeLimitMin },
+          q.id
+        ),
+      ]),
+      createdAt: q.createdAt,
+      id: q.id,
+      kind: 'quiz',
+      privacy: q.privacy,
+      role: 'owner',
+      scopeChapters: q.chapters,
+      scopeFileNames: [],
+      title: q.name,
+      workspaceId: q.workspaceId,
+      workspaceName: q.workspaceName,
+    })
+  );
 });
 seedDecks.forEach((d, i) => {
   const deckCards = seedCards.filter((c) => c.deckId === d.id);
-  materials.push({
-    capabilities: ownerCapabilities,
-    chapterId: null,
-    color: d.color,
-    content: createMaterialDocument([
-      flashcardsNode(
-        deckCards.map((c) => ({ back: c.back, front: c.front, id: c.id })),
-        d.id
-      ),
-    ]),
-    createdAt: days(5 + i),
-    id: d.id,
-    kind: 'flashcards',
-    privacy: 'private',
-    role: 'owner',
-    scopeChapters: [],
-    scopeFileNames: [],
-    title: d.name,
-    workspaceId: d.workspaceId,
-    workspaceName: d.workspaceName,
-  });
+  materials.push(
+    makeMaterial({
+      capabilities: ownerCapabilities,
+      chapterId: null,
+      color: d.color,
+      content: createMaterialDocument([
+        flashcardsNode(
+          deckCards.map((c) => ({ back: c.back, front: c.front, id: c.id })),
+          d.id
+        ),
+      ]),
+      createdAt: days(5 + i),
+      id: d.id,
+      kind: 'flashcards',
+      privacy: 'private',
+      role: 'owner',
+      scopeChapters: [],
+      scopeFileNames: [],
+      title: d.name,
+      workspaceId: d.workspaceId,
+      workspaceName: d.workspaceName,
+    })
+  );
 });
 /* ---------------- editor matrix fixtures (e2e/editor) ---------------- */
 if (import.meta.env.VITE_E2E_EDITOR_SEED === 'true') {
-  materials.push({
-    capabilities: ownerCapabilities,
-    chapterId: null,
-    content: createMaterialDocument(buildEditorNoteValue() as MaterialValue),
-    createdAt: days(1),
-    id: EDITOR_NOTE.id,
-    kind: 'note',
-    privacy: 'private',
-    revision: 1,
-    role: 'owner',
-    scopeChapters: [],
-    scopeFileNames: [],
-    title: EDITOR_NOTE.title,
-    workspaceId: EDITOR_WORKSPACE_ID,
-    workspaceName: 'Biology 101',
-  });
+  materials.push(
+    makeMaterial({
+      capabilities: ownerCapabilities,
+      chapterId: null,
+      content: createMaterialDocument(buildEditorNoteValue() as MaterialValue),
+      createdAt: days(1),
+      id: EDITOR_NOTE.id,
+      kind: 'note',
+      privacy: 'private',
+      role: 'owner',
+      scopeChapters: [],
+      scopeFileNames: [],
+      title: EDITOR_NOTE.title,
+      workspaceId: EDITOR_WORKSPACE_ID,
+      workspaceName: 'Biology 101',
+    })
+  );
 }
 
 /* ---------------- perf harness fixtures (e2e/perf) ---------------- */
@@ -1317,26 +1397,25 @@ if (import.meta.env.VITE_PERF_SEED === 'true') {
     [PERF_LARGE_NOTE, buildLargePerfDocument()],
     [PERF_SMALL_NOTE, buildSmallPerfDocument()],
   ] as const) {
-    materials.push({
-      capabilities: ownerCapabilities,
-      chapterId: null,
-      content: createMaterialDocument(content.value as MaterialValue),
-      createdAt: days(1),
-      id: note.id,
-      kind: 'note',
-      privacy: 'private',
-      revision: 1,
-      role: 'owner',
-      scopeChapters: [],
-      scopeFileNames: [],
-      title: note.title,
-      workspaceId: 'ws_bio',
-      workspaceName: 'Biology 101',
-    });
+    materials.push(
+      makeMaterial({
+        capabilities: ownerCapabilities,
+        chapterId: null,
+        content: createMaterialDocument(content.value as MaterialValue),
+        createdAt: days(1),
+        id: note.id,
+        kind: 'note',
+        privacy: 'private',
+        role: 'owner',
+        scopeChapters: [],
+        scopeFileNames: [],
+        title: note.title,
+        workspaceId: 'ws_bio',
+        workspaceName: 'Biology 101',
+      })
+    );
   }
 }
-
-for (const material of materials) refreshMaterialContentBytes(material);
 
 /** Derive the typed Quiz view from a quiz material (questions from the fence). */
 export function quizFromMaterial(mt: Material): Quiz {

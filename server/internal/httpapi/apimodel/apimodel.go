@@ -109,7 +109,7 @@ type Material struct {
 	ID             string                   `json:"id"`
 	WorkspaceID    string                   `json:"workspaceId"`
 	WorkspaceName  string                   `json:"workspaceName"`
-	Kind           string                   `json:"kind"`
+	Kind           store.MaterialKind       `json:"kind"`
 	Title          string                   `json:"title"`
 	Content        materialdoc.Envelope     `json:"content"`
 	ContentBytes   int                      `json:"contentBytes" doc:"UTF-8 byte length of persisted content JSON"`

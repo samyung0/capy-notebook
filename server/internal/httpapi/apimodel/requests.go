@@ -64,7 +64,7 @@ type UpdateFileReq struct {
 // CreateMaterialReq is the body for POST /api/workspaces/{id}/materials. Used to
 // create a user-authored note (markdown editor). Kind defaults to "note".
 type CreateMaterialReq struct {
-	Kind           string                `json:"kind,omitempty" doc:"Material kind; defaults to note"`
+	Kind           store.MaterialKind    `json:"kind,omitempty" doc:"Material kind; defaults to note"`
 	Title          string                `json:"title,omitempty"`
 	Content        *materialdoc.Envelope `json:"content,omitempty" doc:"Versioned Plate document"`
 	ScopeChapters  []string              `json:"scopeChapters,omitempty"`

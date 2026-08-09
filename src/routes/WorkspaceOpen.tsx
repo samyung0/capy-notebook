@@ -84,14 +84,14 @@ type WorkspaceContentItem =
   | {
       type: 'file';
       id: string;
-      position?: number;
+      position: number;
       createdAt: string;
       data: SourceFile;
     }
   | {
       type: 'material';
       id: string;
-      position?: number;
+      position: number;
       createdAt: string;
       data: MaterialRef;
     };
@@ -181,9 +181,7 @@ export default function WorkspaceOpen() {
         })
       ),
     ].sort((a, b) => {
-      const positionDiff =
-        (a.position ?? Number.MAX_SAFE_INTEGER) -
-        (b.position ?? Number.MAX_SAFE_INTEGER);
+      const positionDiff = a.position - b.position;
       if (positionDiff) return positionDiff;
       if (a.type !== b.type) return a.type === 'file' ? -1 : 1;
       return +new Date(b.createdAt) - +new Date(a.createdAt);
@@ -829,7 +827,7 @@ export default function WorkspaceOpen() {
           open={shareOpen}
           privacy={ws.privacy}
           saving={updateSharingIsPending}
-          shareRole={ws.shareRole ?? 'viewer'}
+          shareRole={ws.shareRole}
           title={'Share Workspace'}
           workspaceId={ws.id}
         />

@@ -20,33 +20,39 @@
    ============================================================ */
 
 import type {
-  Attempt as GenAttempt,
   AttemptDetail as GenAttemptDetail,
-  Chapter as GenChapter,
   Comment as GenComment,
-  Deck as GenDeck,
   Discussion as GenDiscussion,
-  Event as GenEvent,
   File as GenFile,
+  Material as GenMaterial,
+  MaterialRevision as GenMaterialRevision,
+  PublicQuiz as GenPublicQuiz,
   Quiz as GenQuiz,
   SearchResult as GenSearchResult,
-  Workspace as GenWorkspace,
-  Privacy,
+  MaterialKind,
   UserColor,
 } from './gen/model';
 
 /* ---------------- pass-through wire contracts ---------------- */
 export type {
   AccountStatus,
+  Attempt,
   BillingInfo,
   Canvas as ThinkingCanvas,
+  Chapter,
+  CloneWorkspaceResp as CloneWorkspaceResult,
+  Deck,
   DeletionPreflight,
+  Event as CalendarEvent,
   Flashcard,
   IntegrationsStatus,
   Label,
+  MaterialRef,
   Notification as AppNotification,
   NotificationPage,
   NotificationPrefs,
+  PublicDeck,
+  PublicWorkspace,
   SourceUploadPolicy,
   SrsState,
   SubscriptionBlocker,
@@ -55,6 +61,9 @@ export type {
   Task,
   TransferWorkspaceReq,
   User,
+  Workspace,
+  WorkspaceCollaborator,
+  WorkspaceMember,
 } from './gen/model';
 
 /* ---------------- enums & scalars (straight from the generated spec) ---------------- */
@@ -62,12 +71,17 @@ export {
   AccountState,
   FileKind,
   FileStatus,
+  MaterialKind,
+  MaterialRefType,
+  MaterialRevisionEvent,
   NotificationKind,
   PlanTier,
   Privacy,
   SearchKind,
+  ShareRole,
   SubscriptionStatus,
   UserColor,
+  WorkspaceRole,
 } from './gen/model';
 
 /* ---------------- UI-only color extras (not on the wire) ---------------- */
@@ -79,59 +93,27 @@ export type SystemColor =
   | 'accent-1'
   | 'accent-2';
 
-/* ---------------- pass-through contracts (identical to the wire) ---------------- */
-export type Workspace = Omit<GenWorkspace, 'isOwner'> & {
-  isOwner?: boolean;
-  /** General material permission for signed-in link/public visitors. */
-  shareRole?: 'viewer' | 'commenter' | 'editor';
-};
-export type Chapter = GenChapter;
-export type Attempt = GenAttempt;
-export type CalendarEvent = GenEvent;
+/* ---------------- overridden contracts ----------------
+   Same generated shape, minus the wire's opaque / client-only fields. */
 
 /** A past attempt with its per-question breakdown. `questions` is the rich
  * union (opaque on the wire); `answers` maps question id -> the user's answer
  * (the `Answer` union from grade.ts, kept loose here to avoid an import cycle). */
-export type AttemptDetail = Omit<GenAttemptDetail, 'questions' | 'answers'> & {
+export type AttemptDetail = Omit<GenAttemptDetail, 'questions'> & {
   questions: Question[];
-  answers: Record<string, unknown>;
 };
 
-/* ---------------- overridden contracts ----------------
-   Same generated shape, minus the wire's opaque / client-only fields. */
-
-/** Adds transient client state while tolerating legacy mock rows without a position. */
-export type SourceFile = Omit<GenFile, 'position'> & {
-  position?: number;
-  ingestPct?: number;
-};
+/** `ingestPct` is transient upload progress, never persisted. */
+export type SourceFile = GenFile & { ingestPct?: number };
 
 /** `color` is a client-side tint derived from the owning workspace/label/deck. */
 export type SearchResult = GenSearchResult & { color?: UserColor };
 
 /** `questions` is the rich discriminated union; the wire keeps it opaque. */
-export type Quiz = Omit<GenQuiz, 'questions' | 'isOwner'> & {
+export type Quiz = Omit<GenQuiz, 'questions'> & { questions: Question[] };
+export type PublicQuiz = Omit<GenPublicQuiz, 'questions'> & {
   questions: Question[];
-  isOwner?: boolean;
 };
-
-/** Legacy mock rows omit new sharing fields; real API always returns both. */
-export type Deck = Omit<GenDeck, 'privacy' | 'isOwner'> & {
-  privacy?: Privacy;
-  isOwner?: boolean;
-};
-
-export type PublicWorkspace = Workspace & { author: string; clones: number };
-export type PublicQuiz = Quiz & { author: string; clones: number };
-export type PublicDeck = Deck & { author: string; clones: number };
-
-/** Response of POST /workspaces/{id}/clone. `ragCloned` is false when the
- * pipeline was offline — the copied files exist but have no knowledge graph
- * until they are re-ingested. */
-export interface CloneWorkspaceResult {
-  ragCloned: boolean;
-  workspace: Workspace;
-}
 
 /* ---------------- chat ----------------
    Conversation + Message + Citation are modelled on the wire (huma) and come
@@ -222,7 +204,7 @@ export type Question =
    source material. The backend resolves chapter ids to their member files (for
    retrieval) and to names (for display + the LLM scope hint). Empty scope means
    the whole workspace. */
-export type GenerateKind = 'flashcards' | 'quiz' | 'mindmap' | 'diagram';
+export type GenerateKind = Exclude<MaterialKind, 'note'>;
 
 export interface GenerateScope {
   chapters: string[]; // chapter ids
@@ -265,67 +247,12 @@ export type GenerateOptions =
    Persisted, workspace-scoped (not chapter-scoped) study artifacts rendered
    in-pane. Mindmaps and diagrams are markdown documents (mermaid fences);
    quizzes and decks are referenced by the unified materials index. */
-export type MaterialKind =
-  | 'mindmap'
-  | 'diagram'
-  | 'quiz'
-  | 'flashcards'
-  | 'note';
-
-export interface Material {
-  capabilities: import('./gen/model').AccessCapabilities;
-  /** Chapter this material is filed under (membership). null = unfiled.
-   * Orthogonal to scopeChapters (provenance of the generated content). */
-  chapterId: string | null;
-  /** Presentation tint; only meaningful for flashcards decks. */
-  color?: UserColor;
-  /** Versioned Universal Plate document. */
+/** `content` is the rich Plate document; the wire keeps its nodes opaque. */
+export type Material = Omit<GenMaterial, 'content'> & {
   content: import('@/features/materials/document').MaterialDocument;
-  /** UTF-8 byte length of the persisted content JSON returned by the backend. */
-  contentBytes?: number;
-  createdAt: string;
-  id: string;
-  /** Request-scoped: false when viewing someone else's shared material. */
-  isOwner?: boolean;
-  kind: MaterialKind;
-  maxDepth?: number;
-  nodeCount?: number;
-  /** Shared ordering position among files and materials in the same bucket. */
-  position?: number;
-  privacy: Privacy;
-  revision?: number;
-  role?: WorkspaceRole;
-  scopeChapters: string[];
-  scopeFileNames: string[];
-  title: string;
-  updatedAt?: string;
-  workspaceId: string;
-  workspaceName: string;
-}
+};
 
 /* ---------------- Plate collaboration ---------------- */
-export type WorkspaceRole = 'owner' | 'editor' | 'commenter' | 'viewer';
-
-export interface WorkspaceMember {
-  avatarUrl?: string;
-  createdAt: string;
-  email: string;
-  name: string;
-  role: WorkspaceRole;
-  userId: string;
-  workspaceId: string;
-}
-
-/**
- * Mention directory entry. Readable by anyone who may comment, shared-link
- * visitors included, so it deliberately carries no email or role.
- */
-export interface WorkspaceCollaborator {
-  avatarUrl?: string;
-  name: string;
-  userId: string;
-}
-
 export type MaterialComment = Omit<GenComment, 'contentRich' | 'replies'> & {
   contentRich: import('@/features/materials/document').MaterialValue | null;
   replies: MaterialComment[];
@@ -335,30 +262,9 @@ export type MaterialDiscussion = Omit<GenDiscussion, 'comments'> & {
   comments: MaterialComment[];
 };
 
-export interface MaterialRevision {
+export type MaterialRevision = Omit<GenMaterialRevision, 'content'> & {
   content: import('@/features/materials/document').MaterialDocument;
-  createdAt: string;
-  createdBy?: string;
-  materialId: string;
-  revision: number;
-  title: string;
-}
-
-/** A row in the left-panel materials list. Aggregates markdown materials plus
- * the workspace's quizzes and decks into one flat (non chapter-scoped) list. */
-export type MaterialRefType = 'mindmap' | 'diagram' | 'quiz' | 'deck' | 'note';
-export interface MaterialRef {
-  /** Chapter this material is filed under (membership). null = unfiled. */
-  chapterId: string | null;
-  createdAt: string;
-  id: string;
-  maxDepth: number;
-  nodeCount: number;
-  /** Shared ordering position among files and materials in the same bucket. */
-  position: number;
-  title: string;
-  type: MaterialRefType;
-}
+};
 
 /* ---------------- Raw generated namespace ----------------
    Reach for `Gen` when you need the exact backend contract (e.g. nullable

@@ -115,7 +115,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
             open={shareOpen}
             privacy={workspace.privacy}
             saving={updateSharingIsPending}
-            shareRole={workspace.shareRole ?? 'viewer'}
+            shareRole={workspace.shareRole}
             title={'Share Workspace'}
             workspaceId={workspace.id}
           />

@@ -98,6 +98,44 @@ func (r ShareRole) WorkspaceRole() WorkspaceRole {
 	}
 }
 
+// MaterialKind is the canonical persisted kind for a study material.
+type MaterialKind string
+
+const (
+	MaterialMindmap    MaterialKind = "mindmap"
+	MaterialDiagram    MaterialKind = "diagram"
+	MaterialQuiz       MaterialKind = "quiz"
+	MaterialFlashcards MaterialKind = "flashcards"
+	MaterialNote       MaterialKind = "note"
+)
+
+func (MaterialKind) Schema(r huma.Registry) *huma.Schema {
+	return enumRef(r, "MaterialKind", "mindmap", "diagram", "quiz", "flashcards", "note")
+}
+
+// MaterialRefType is the kind exposed by the unified materials list. It keeps
+// the legacy "deck" name for persisted flashcard materials.
+type MaterialRefType string
+
+const (
+	MaterialRefMindmap MaterialRefType = "mindmap"
+	MaterialRefDiagram MaterialRefType = "diagram"
+	MaterialRefQuiz    MaterialRefType = "quiz"
+	MaterialRefDeck    MaterialRefType = "deck"
+	MaterialRefNote    MaterialRefType = "note"
+)
+
+func (MaterialRefType) Schema(r huma.Registry) *huma.Schema {
+	return enumRef(r, "MaterialRefType", "mindmap", "diagram", "quiz", "deck", "note")
+}
+
+func (k MaterialKind) RefType() MaterialRefType {
+	if k == MaterialFlashcards {
+		return MaterialRefDeck
+	}
+	return MaterialRefType(k)
+}
+
 // MaterialRevisionEvent records why a complete material snapshot was written.
 type MaterialRevisionEvent string
 

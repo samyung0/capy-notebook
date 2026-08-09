@@ -643,8 +643,8 @@ components:
           $ref: "#/components/schemas/Envelope"
           description: Versioned Plate document
         kind:
+          $ref: "#/components/schemas/MaterialKind"
           description: Material kind; defaults to note
-          type: string
         scopeChapters:
           items:
             type: string
@@ -1145,7 +1145,7 @@ components:
         isOwner:
           type: boolean
         kind:
-          type: string
+          $ref: "#/components/schemas/MaterialKind"
         maxDepth:
           format: int64
           type: integer
@@ -1200,6 +1200,14 @@ components:
         - isOwner
         - capabilities
       type: object
+    MaterialKind:
+      enum:
+        - mindmap
+        - diagram
+        - quiz
+        - flashcards
+        - note
+      type: string
     MaterialRef:
       additionalProperties: false
       properties:
@@ -1223,7 +1231,7 @@ components:
         title:
           type: string
         type:
-          type: string
+          $ref: "#/components/schemas/MaterialRefType"
       required:
         - id
         - type
@@ -1234,6 +1242,14 @@ components:
         - nodeCount
         - maxDepth
       type: object
+    MaterialRefType:
+      enum:
+        - mindmap
+        - diagram
+        - quiz
+        - deck
+        - note
+      type: string
     MaterialRevision:
       additionalProperties: false
       properties:

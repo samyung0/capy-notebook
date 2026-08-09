@@ -107,7 +107,7 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	if err := materialdoc.ValidateKind(raw, kind); err != nil {
+	if err := materialdoc.ValidateKind(raw, string(kind)); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	res, err := a.s.CreateMaterial(ctx, store.Material{

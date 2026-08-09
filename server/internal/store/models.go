@@ -175,12 +175,12 @@ type Material struct {
 	// CreatedBy is the author; empty when the authoring account was hard-deleted.
 	// OwnerUserID is the storage owner and is never empty. See the FK notes in
 	// the migration for why the two axes differ.
-	CreatedBy     string `json:"-"`
-	OwnerUserID   string `json:"-"`
-	WorkspaceID   string `json:"workspaceId"`
-	WorkspaceName string `json:"workspaceName"`
-	Kind          string `json:"kind"` // mindmap | diagram | quiz | flashcards
-	Title         string `json:"title"`
+	CreatedBy     string       `json:"-"`
+	OwnerUserID   string       `json:"-"`
+	WorkspaceID   string       `json:"workspaceId"`
+	WorkspaceName string       `json:"workspaceName"`
+	Kind          MaterialKind `json:"kind"`
+	Title         string       `json:"title"`
 	// Content is the encoded materialdoc.Envelope stored as jsonb. The API
 	// model decodes it so clients receive an object rather than a JSON string.
 	Content        string    `json:"-"`
@@ -317,14 +317,14 @@ type Comment struct {
 // markdown materials plus the workspace's quizzes and decks. ChapterID lets the
 // tree group refs under their chapter (null = unfiled).
 type MaterialRef struct {
-	ID        string    `json:"id"`
-	Type      string    `json:"type"` // mindmap | diagram | quiz | deck
-	Title     string    `json:"title"`
-	ChapterID *string   `json:"chapterId"`
-	Position  int64     `json:"position"`
-	CreatedAt time.Time `json:"createdAt"`
-	NodeCount int       `json:"nodeCount"`
-	MaxDepth  int       `json:"maxDepth"`
+	ID        string          `json:"id"`
+	Type      MaterialRefType `json:"type"`
+	Title     string          `json:"title"`
+	ChapterID *string         `json:"chapterId"`
+	Position  int64           `json:"position"`
+	CreatedAt time.Time       `json:"createdAt"`
+	NodeCount int             `json:"nodeCount"`
+	MaxDepth  int             `json:"maxDepth"`
 }
 
 type ContentOrderItem struct {

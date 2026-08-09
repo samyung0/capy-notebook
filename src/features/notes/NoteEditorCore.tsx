@@ -93,7 +93,7 @@ function DocumentStatsFooter({
   stats,
 }: {
   limitError: string | null;
-  stats: MaterialDocumentStats | null;
+  stats: MaterialDocumentStats;
 }) {
   if (!(limitError || shouldShowDocumentStats(stats))) return null;
   return (
@@ -103,23 +103,23 @@ function DocumentStatsFooter({
     >
       <span
         className={cn(
-          (stats?.nodeCount ?? 0) >= MATERIAL_DOCUMENT_LIMITS.maxNodes * 0.85 &&
+          stats.nodeCount >= MATERIAL_DOCUMENT_LIMITS.maxNodes * 0.85 &&
             'text-solid-error'
         )}
       >
-        Nodes: {(stats?.nodeCount ?? 0).toLocaleString()}/
+        Nodes: {stats.nodeCount.toLocaleString()}/
         {MATERIAL_DOCUMENT_LIMITS.maxNodes.toLocaleString()}
       </span>
       <span
         className={cn(
-          (stats?.maxDepth ?? 0) >= MATERIAL_DOCUMENT_LIMITS.maxDepth * 0.85 &&
+          stats.maxDepth >= MATERIAL_DOCUMENT_LIMITS.maxDepth * 0.85 &&
             'text-solid-error'
         )}
       >
-        Depth: {stats?.maxDepth ?? 0}/{MATERIAL_DOCUMENT_LIMITS.maxDepth}
+        Depth: {stats.maxDepth}/{MATERIAL_DOCUMENT_LIMITS.maxDepth}
       </span>
       <span>
-        Size: {formatContentSize(stats?.contentBytes ?? null)}/
+        Size: {formatContentSize(stats.contentBytes)}/
         {contentSizeKilobytes(
           MATERIAL_DOCUMENT_LIMITS.maxContentBytes
         ).toLocaleString()}{' '}
@@ -137,7 +137,7 @@ function NoteEditorContent({
   discussions,
   readOnly,
 }: {
-  stats: MaterialDocumentStats | null;
+  stats: MaterialDocumentStats;
   discussions: NonNullable<ReturnType<typeof useMaterialDiscussions>['data']>;
   readOnly: boolean;
 }) {
@@ -176,7 +176,13 @@ function NoteEditorContent({
           ] as never
         }
         onKeyDown={(event) => {
-          if (event.key !== 'End' || event.shiftKey) return;
+          // Only the modifier combo jumps to the end of the note. Bare End is
+          // end-of-line and Shift+End extends a selection; both stay native.
+          const jumpToNoteEnd =
+            event.key === 'End' &&
+            !event.shiftKey &&
+            (event.ctrlKey || event.metaKey);
+          if (!jumpToNoteEnd) return;
           event.preventDefault();
           editor.tf.select(editor.api.end([]));
         }}
@@ -224,16 +230,13 @@ export function NoteEditorCore({
     ([{ children: [{ text: '' }], type: 'p' }] as MaterialValue);
   // Seeded from the last projection so the footer has numbers before the first
   // checkpoint receipt; the service owns every value after that.
-  const [documentStats, setDocumentStats] =
-    useState<MaterialDocumentStats | null>(() =>
-      material.contentBytes == null
-        ? null
-        : {
-            contentBytes: material.contentBytes,
-            maxDepth: material.maxDepth ?? 0,
-            nodeCount: material.nodeCount ?? 0,
-          }
-    );
+  const [documentStats, setDocumentStats] = useState<MaterialDocumentStats>(
+    () => ({
+      contentBytes: material.contentBytes,
+      maxDepth: material.maxDepth,
+      nodeCount: material.nodeCount,
+    })
+  );
   const [documentLimitError, setDocumentLimitError] = useState<string | null>(
     null
   );

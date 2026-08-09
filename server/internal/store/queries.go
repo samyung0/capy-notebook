@@ -836,11 +836,11 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 	if mt.Color == "" {
 		mt.Color = "green"
 	}
-	content, err := materialdoc.FromLegacyMarkdown(mt.Kind, mt.Title, mt.Content)
+	content, err := materialdoc.FromLegacyMarkdown(string(mt.Kind), mt.Title, mt.Content)
 	if err != nil {
 		return Material{}, err
 	}
-	if err := materialdoc.ValidateKind(content, mt.Kind); err != nil {
+	if err := materialdoc.ValidateKind(content, string(mt.Kind)); err != nil {
 		return Material{}, err
 	}
 	mt.Content = content
@@ -1175,9 +1175,10 @@ func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRe
 	defer rows.Close()
 	for rows.Next() {
 		var r MaterialRef
+		var kind MaterialKind
 		if err := rows.Scan(
 			&r.ID,
-			&r.Type,
+			&kind,
 			&r.Title,
 			&r.ChapterID,
 			&r.Position,
@@ -1187,9 +1188,7 @@ func (s *Store) ListMaterialRefs(ctx context.Context, wsID string) ([]MaterialRe
 		); err != nil {
 			return nil, err
 		}
-		if r.Type == "flashcards" {
-			r.Type = "deck"
-		}
+		r.Type = kind.RefType()
 		out = append(out, r)
 	}
 	return out, rows.Err()

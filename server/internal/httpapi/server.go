@@ -455,19 +455,19 @@ func (a *api) chat(w http.ResponseWriter, r *http.Request) {
 }
 
 type generateOpts struct {
-	Kind         string   `json:"kind"`
-	Length       string   `json:"length"`
-	Format       string   `json:"format"`
-	Count        int      `json:"count"`
-	Style        string   `json:"style"`
-	Types        []string `json:"types"`
-	Levels       []string `json:"levels"`      // cognitive levels: recall|application|analysis
-	Difficulty   []string `json:"difficulty"`  // legacy alias, still accepted
-	Chapters     []string `json:"chapters"`    // chapter ids; resolved to files + names in resolveScope
-	FileIds      []string `json:"fileIds"`     // file-scoped retrieval filtering
-	Detail       string   `json:"detail"`      // mindmap: brief|standard|detailed
-	DiagramType  string   `json:"diagramType"` // diagram: auto|flowchart|sequence|class|state|er
-	TimeLimitMin *int     `json:"timeLimitMin"`
+	Kind         store.MaterialKind `json:"kind"`
+	Length       string             `json:"length"`
+	Format       string             `json:"format"`
+	Count        int                `json:"count"`
+	Style        string             `json:"style"`
+	Types        []string           `json:"types"`
+	Levels       []string           `json:"levels"`      // cognitive levels: recall|application|analysis
+	Difficulty   []string           `json:"difficulty"`  // legacy alias, still accepted
+	Chapters     []string           `json:"chapters"`    // chapter ids; resolved to files + names in resolveScope
+	FileIds      []string           `json:"fileIds"`     // file-scoped retrieval filtering
+	Detail       string             `json:"detail"`      // mindmap: brief|standard|detailed
+	DiagramType  string             `json:"diagramType"` // diagram: auto|flowchart|sequence|class|state|er
+	TimeLimitMin *int               `json:"timeLimitMin"`
 }
 
 // cognitiveLevels resolves the requested levels, accepting the legacy
@@ -662,7 +662,7 @@ func (a *api) generateViaPipe(
 			Content string `json:"content"`
 		}
 		_ = json.Unmarshal(raw, &mp)
-		res, err := a.persistMaterial(ctx, userID, wsID, wsName, head.Kind, mp.Title, mp.Content, opts, chapterNames, fileNames)
+		res, err := a.persistMaterial(ctx, userID, wsID, wsName, store.MaterialKind(head.Kind), mp.Title, mp.Content, opts, chapterNames, fileNames)
 		if err != nil {
 			return nil, false, err
 		}
@@ -725,9 +725,9 @@ func (a *api) persistDeck(ctx context.Context, userID, wsID, wsName string, card
 //
 // userID is the author. Without it CreateMaterial falls back to the workspace
 // owner, which records a generation an editor ran as the owner's own work.
-func (a *api) persistMaterial(ctx context.Context, userID, wsID, wsName, kind, title, content string, opts *generateOpts, chapterNames, fileNames []string) (any, error) {
+func (a *api) persistMaterial(ctx context.Context, userID, wsID, wsName string, kind store.MaterialKind, title, content string, opts *generateOpts, chapterNames, fileNames []string) (any, error) {
 	if title == "" {
-		title = wsName + " " + kind
+		title = wsName + " " + string(kind)
 	}
 	if content == "" {
 		content = localMaterialContent(wsName, *opts)

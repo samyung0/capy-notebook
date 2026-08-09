@@ -414,7 +414,7 @@ export const handlers = [
     const ws = db.workspaces.find((w) => w.id === params.id);
     if (!ws) return new HttpResponse(null, { status: 404 });
     ws.lastAccessedAt = new Date().toISOString();
-    return HttpResponse.json({ ...ws, isOwner: ws.isOwner ?? true });
+    return HttpResponse.json(ws);
   }),
   http.get('/api/workspaces/:id/stats', async ({ params }) => {
     const ws = db.workspaces.find((w) => w.id === params.id);
@@ -455,6 +455,7 @@ export const handlers = [
       createdAt: new Date().toISOString(),
       fileCount: 0,
       id: uid('ws'),
+      isOwner: true,
       lastAccessedAt: new Date().toISOString(),
       name: body.name ?? 'Untitled workspace',
       privacy: 'private',
@@ -916,12 +917,12 @@ export const handlers = [
     const refs: MaterialRef[] = db.materials
       .filter((mt) => mt.workspaceId === wsId)
       .map((mt) => ({
-        chapterId: mt.chapterId ?? null,
+        chapterId: mt.chapterId,
         createdAt: mt.createdAt,
         id: mt.id,
-        maxDepth: mt.maxDepth ?? 0,
-        nodeCount: mt.nodeCount ?? 0,
-        position: mt.position ?? 0,
+        maxDepth: mt.maxDepth,
+        nodeCount: mt.nodeCount,
+        position: mt.position,
         title: mt.title,
         type: refType(mt.kind),
       }))
@@ -938,7 +939,7 @@ export const handlers = [
       scopeChapters?: string[];
       scopeFileNames?: string[];
     };
-    const mt: Material = {
+    const mt = db.makeMaterial({
       ...ownerMaterialAccess,
       chapterId: null,
       content: body.content ?? emptyMaterialDocument(),
@@ -946,14 +947,12 @@ export const handlers = [
       id: uid('mat'),
       kind: body.kind ?? 'note',
       privacy: 'private',
-      revision: 1,
       scopeChapters: body.scopeChapters ?? [],
       scopeFileNames: body.scopeFileNames ?? [],
       title: body.title || 'Untitled note',
       workspaceId: wsId,
       workspaceName: ws?.name ?? '',
-    };
-    db.refreshMaterialContentBytes(mt);
+    });
     db.materials.unshift(mt);
     return HttpResponse.json(mt, { status: 201 });
   }),
@@ -989,7 +988,7 @@ export const handlers = [
     if (
       body.title != null &&
       body.expectedRevision != null &&
-      body.expectedRevision !== (mt.revision ?? 1)
+      body.expectedRevision !== mt.revision
     ) {
       return HttpResponse.json(
         { message: 'material revision is stale' },
@@ -997,7 +996,7 @@ export const handlers = [
       );
     }
     if (body.title != null) mt.title = body.title;
-    if (body.title != null) mt.revision = (mt.revision ?? 1) + 1;
+    if (body.title != null) mt.revision += 1;
     // Empty-string sentinel unfiles; a real id files it; omitted leaves it.
     if (body.chapterId != null)
       mt.chapterId = body.chapterId === '' ? null : body.chapterId;
@@ -1225,6 +1224,7 @@ export const handlers = [
       id: uid('f'),
       kind,
       name,
+      position: db.nextContentPosition(String(params.id), chapterId),
       sizeBytes: Math.round(200 + Math.random() * 3000) * 1024,
       // Mirror the real backend: uploads start 'processing' and the client
       // animates progress (useUploadSource) before flipping to 'ready'.
@@ -1564,7 +1564,7 @@ export const handlers = [
         front: `Term ${i + 1}`,
         id: uid('c'),
       }));
-      const material: Material = {
+      const material = db.makeMaterial({
         ...ownerMaterialAccess,
         chapterId: null,
         color: 'green',
@@ -1578,8 +1578,7 @@ export const handlers = [
         title: name,
         workspaceId: wsId,
         workspaceName: wsName,
-      };
-      db.refreshMaterialContentBytes(material);
+      });
       db.materials.unshift(material);
       for (const c of cardContents)
         db.cardStats[c.id] = {
@@ -1595,7 +1594,7 @@ export const handlers = [
     }
 
     if (opts.kind === 'mindmap' || opts.kind === 'diagram') {
-      const material: Material = {
+      const material = db.makeMaterial({
         ...ownerMaterialAccess,
         chapterId: null,
         content: createMaterialDocument([
@@ -1619,8 +1618,7 @@ export const handlers = [
         title: `${wsName} ${opts.kind}`,
         workspaceId: wsId,
         workspaceName: wsName,
-      };
-      db.refreshMaterialContentBytes(material);
+      });
       db.materials.unshift(material);
       return HttpResponse.json({ kind: opts.kind, material });
     }
@@ -1703,7 +1701,7 @@ export const handlers = [
       }
     });
     const name = `${wsName} quiz`;
-    const quizMat: Material = {
+    const quizMat = db.makeMaterial({
       ...ownerMaterialAccess,
       chapterId: null,
       content: quizDocument(qs, opts.timeLimitMin),
@@ -1716,8 +1714,7 @@ export const handlers = [
       title: name,
       workspaceId: wsId,
       workspaceName: wsName,
-    };
-    db.refreshMaterialContentBytes(quizMat);
+    });
     db.materials.unshift(quizMat);
     return HttpResponse.json({
       kind: 'quiz',
@@ -1732,7 +1729,7 @@ export const handlers = [
     const body = (await request.json()) as Partial<Quiz>;
     const ws = db.workspaces.find((w) => w.id === body.workspaceId);
     const name = body.name ?? 'Untitled quiz';
-    const material: Material = {
+    const material = db.makeMaterial({
       ...ownerMaterialAccess,
       chapterId: null,
       content: quizDocument(body.questions ?? [], body.timeLimitMin),
@@ -1745,8 +1742,7 @@ export const handlers = [
       title: name,
       workspaceId: body.workspaceId ?? '',
       workspaceName: ws?.name ?? '',
-    };
-    db.refreshMaterialContentBytes(material);
+    });
     db.materials.unshift(material);
     return HttpResponse.json(db.quizFromMaterial(material), { status: 201 });
   }),
@@ -1756,6 +1752,7 @@ export const handlers = [
       chapters: [],
       createdAt: new Date().toISOString(),
       id: 'review_mistakes',
+      isOwner: true,
       name: 'Review mistakes',
       privacy: 'private',
       questions: db.mistakes,
@@ -1770,6 +1767,7 @@ export const handlers = [
         chapters: [],
         createdAt: new Date().toISOString(),
         id: 'review_mistakes',
+        isOwner: true,
         name: 'Review mistakes',
         privacy: 'private',
         questions: db.mistakes,
@@ -1819,7 +1817,7 @@ export const handlers = [
     const source = sourceMaterial
       ? db.quizFromMaterial(sourceMaterial)
       : publicQuiz!;
-    const material: Material = {
+    const material = db.makeMaterial({
       ...ownerMaterialAccess,
       chapterId: null,
       content: quizDocument(source.questions, source.timeLimitMin),
@@ -1833,8 +1831,7 @@ export const handlers = [
       title: source.name,
       workspaceId: '',
       workspaceName: '',
-    };
-    db.refreshMaterialContentBytes(material);
+    });
     db.materials.unshift(material);
     return HttpResponse.json(db.quizFromMaterial(material), { status: 201 });
   }),
@@ -1907,7 +1904,7 @@ export const handlers = [
     const ws = db.workspaces.find((w) => w.id === body.workspaceId);
     const name = body.name ?? 'Untitled deck';
     const id = uid('dk');
-    const material: Material = {
+    const material = db.makeMaterial({
       ...ownerMaterialAccess,
       chapterId: null,
       color: body.color ?? 'green',
@@ -1921,8 +1918,7 @@ export const handlers = [
       title: name,
       workspaceId: body.workspaceId ?? '',
       workspaceName: ws?.name ?? body.workspaceName ?? '',
-    };
-    db.refreshMaterialContentBytes(material);
+    });
     db.materials.unshift(material);
     return HttpResponse.json(db.deckFromMaterial(material), { status: 201 });
   }),
@@ -1959,18 +1955,21 @@ export const handlers = [
       id: uid('c'),
     }));
     const id = uid('dk');
-    const material: Material = {
-      ...source,
+    const material = db.makeMaterial({
+      ...ownerMaterialAccess,
       chapterId: null,
+      color: source.color,
       content: flashcardsDocument(cards, id),
       createdAt: new Date().toISOString(),
       id,
-      isOwner: true,
+      kind: 'flashcards',
       privacy: 'private',
+      scopeChapters: source.scopeChapters,
       scopeFileNames: [],
+      title: source.title,
       workspaceId: '',
       workspaceName: '',
-    };
+    });
     db.materials.unshift(material);
     cards.forEach((card) => {
       db.cardStats[card.id] = {
@@ -2192,6 +2191,7 @@ export const handlers = [
           ingestPct: 0,
           kind: 'pdf' as const,
           name: `${body.provider}-import-${i + 1}.pdf`,
+          position: db.nextContentPosition(wsId, body.chapterId ?? null),
           sizeBytes: 512 * 1024,
           status: 'processing' as const,
           workspaceId: wsId,
