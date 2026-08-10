@@ -21,6 +21,18 @@ go mod tidy                   # resolve deps + write go.sum (first run)
 go run ./cmd/api
 ```
 
+### OpenAPI reference
+
+From the repository root, run:
+
+```bash
+pnpm api:docs
+```
+
+This serves the checked-in `openapi.yaml` at `http://localhost:3000`, so it does
+not require Go. When Go is available and the contract needs regeneration, use
+`pnpm api:docs:generate` instead.
+
 Backblaze B2 is required. Set every `B2_*` variable in `.env`; startup verifies
 bucket access and exits if those credentials are invalid.
 

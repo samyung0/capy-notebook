@@ -7,7 +7,7 @@ import { defineConfig, loadEnv } from 'vite';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   // Match src/main.tsx: MSW is on unless explicitly disabled.
-  const useMsw = env.VITE_USE_MSW !== 'false';
+  const useMsw = env.VITE_USE_MSW !== 'false' && mode === 'development';
   return {
     plugins: [
       react(),

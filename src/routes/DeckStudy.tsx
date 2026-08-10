@@ -11,7 +11,7 @@ import {
 } from '@/api/hooks';
 import type { Flashcard } from '@/api/types';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
-import { PrivateOrUnavailable } from '@/components/app/PrivateOrUnavailable';
+import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
@@ -103,7 +103,7 @@ export default function DeckStudy() {
       const denied =
         isApiError(err) && (err.status === 404 || err.status === 401);
       return (
-        <PrivateOrUnavailable
+        <WorkspaceError
           backLabel="Back to flashcards"
           backTo="/flashcards"
           title={

@@ -14,7 +14,7 @@
 
 export const PERF_WORKSPACE_ID = 'ws_bio';
 
-/** Seeded by `VITE_LOAD_TEST_SEED`, not `VITE_PERF_SEED`. */
+/** Seeded by `VITE_LOAD_TEST_SEED`. */
 export const PERF_LARGE_NOTE = {
   id: 'mat_note_bio_load_test',
   readyText: 'Load test — near 2MB feature soup',

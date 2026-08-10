@@ -52,12 +52,7 @@ import {
 } from './editorSeed';
 import { seedNotes } from './noteContent';
 import { buildBiologyLoadTestValue } from './noteContent/loadTest';
-import {
-  buildSmallPerfDocument,
-  PERF_LARGE_NOTE,
-  PERF_SMALL_NOTE,
-  PERF_WORKSPACE_ID,
-} from './perfSeed';
+import { PERF_LARGE_NOTE, PERF_WORKSPACE_ID } from './perfSeed';
 
 export const uid = (p = 'id') =>
   `${p}_${Math.random().toString(36).slice(2, 9)}`;
@@ -1361,29 +1356,6 @@ if (import.meta.env.VITE_E2E_EDITOR_SEED === 'true') {
       scopeFileNames: [],
       title: EDITOR_NOTE.title,
       workspaceId: EDITOR_WORKSPACE_ID,
-      workspaceName: 'Biology 101',
-    })
-  );
-}
-
-/* ---------------- perf harness baseline note (e2e/perf) ---------------- */
-if (import.meta.env.VITE_PERF_SEED === 'true') {
-  materials.push(
-    makeMaterial({
-      capabilities: ownerCapabilities,
-      chapterId: null,
-      content: createMaterialDocument(
-        buildSmallPerfDocument().value as MaterialValue
-      ),
-      createdAt: days(1),
-      id: PERF_SMALL_NOTE.id,
-      kind: 'note',
-      privacy: 'private',
-      role: 'owner',
-      scopeChapters: [],
-      scopeFileNames: [],
-      title: PERF_SMALL_NOTE.title,
-      workspaceId: PERF_WORKSPACE_ID,
       workspaceName: 'Biology 101',
     })
   );

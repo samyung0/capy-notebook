@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 
 /** Non-disclosing empty state for private/missing shared resources. */
-export function PrivateOrUnavailable({
+export function WorkspaceError({
   title = 'This item is private or unavailable.',
   description = 'You may not have access, or the link may no longer be valid.',
   backTo,

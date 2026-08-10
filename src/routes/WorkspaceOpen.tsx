@@ -32,8 +32,8 @@ import type {
 } from '@/api/types';
 import { LoadingLarge } from '@/components/app/LoadingLarge';
 import { Panel } from '@/components/app/layout';
-import { PrivateOrUnavailable } from '@/components/app/PrivateOrUnavailable';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
+import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
@@ -434,7 +434,7 @@ export default function WorkspaceOpen() {
     const denied =
       isApiError(wsErr) && (wsErr.status === 404 || wsErr.status === 401);
     return (
-      <PrivateOrUnavailable
+      <WorkspaceError
         backLabel="Back to workspaces"
         backTo="/workspaces"
         description={

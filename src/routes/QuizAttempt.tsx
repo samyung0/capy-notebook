@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { isApiError } from '@/api/client';
 import { useCloneQuiz, useQuiz, useSubmitAttempt } from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
-import { PrivateOrUnavailable } from '@/components/app/PrivateOrUnavailable';
+import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
@@ -52,7 +52,7 @@ export default function QuizAttempt() {
     const denied =
       isApiError(error) && (error.status === 404 || error.status === 401);
     return (
-      <PrivateOrUnavailable
+      <WorkspaceError
         backLabel="Back to quizzes"
         backTo="/quizzes"
         title={

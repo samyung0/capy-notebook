@@ -76,7 +76,8 @@ import type {
 import { quizQuestionElementToQuestion } from './document';
 import { Katex } from './Katex';
 import { type MediaAssetNode, MediaAssetView } from './MediaAssetView';
-import { Mermaid, mermaidBlockLabel } from './Mermaid';
+import { Mermaid } from './Mermaid';
+import { mermaidBlockLabel } from './MermaidBlockLabel';
 import { YouTubeEmbed, type YouTubeNode } from './YouTubeEmbed';
 
 /* ------------------------------------------------------------- helpers */

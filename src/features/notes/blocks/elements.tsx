@@ -32,7 +32,8 @@ import {
   quizNodeFromFence,
   quizQuestionElementToQuestion,
 } from '@/features/materials/document';
-import { Mermaid, mermaidBlockLabel } from '@/features/materials/Mermaid';
+import { Mermaid } from '@/features/materials/Mermaid';
+import { mermaidBlockLabel } from '@/features/materials/MermaidBlockLabel';
 import { answerKey } from '@/features/quizzes/grade';
 import {
   QuestionRunner,

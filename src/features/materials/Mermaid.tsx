@@ -2,8 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { getLocale } from '@/i18n';
 import { THEMES } from '@/theme/ThemeProvider';
 
-const mindmapRegex = /^\s*mindmap(?:\s|$)/i;
-
 /** Lazily-initialized mermaid singleton so the (heavy) library is only loaded
  * when a diagram is actually rendered. */
 let mermaidPromise: Promise<typeof import('mermaid').default> | null = null;
@@ -28,38 +26,64 @@ async function getMermaid() {
 
 let idSeq = 0;
 
-export function mermaidBlockLabel(code: string): 'Diagram' | 'Mindmap' {
-  return mindmapRegex.test(code) ? 'Mindmap' : 'Diagram';
-}
-
 /** Renders a mermaid code block to inline SVG. Falls back to the raw source in
  * a <pre> if the diagram fails to parse. */
 export function Mermaid({ code }: { code: string }) {
   const [svg, setSvg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const idRef = useRef(`mmd-${++idSeq}`);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
+    let rendering = false;
+    const container = containerRef.current;
+    if (!container) return;
+    const renderHost = document.createElement('div');
+    Object.assign(renderHost.style, {
+      height: '0',
+      left: '0',
+      overflow: 'hidden',
+      position: 'fixed',
+      top: '0',
+      visibility: 'hidden',
+      width: `${container.clientWidth || window.innerWidth}px`,
+    });
+    document.body.append(renderHost);
     setError(null);
-    getMermaid()
-      .then((mermaid) => mermaid.render(idRef.current, code.trim()))
-      .then(({ svg }) => {
-        if (!cancelled) setSvg(svg);
-      })
-      .catch((e: unknown) => {
+
+    void (async () => {
+      try {
+        const mermaid = await getMermaid();
+        if (cancelled) return;
+        rendering = true;
+        const result = await mermaid.render(
+          idRef.current,
+          code.trim(),
+          renderHost
+        );
+        if (!cancelled) setSvg(result.svg);
+      } catch (e: unknown) {
         if (!cancelled)
           setError(e instanceof Error ? e.message : 'Failed to render diagram');
-      });
+      } finally {
+        renderHost.remove();
+      }
+    })();
+
     return () => {
       cancelled = true;
+      if (!rendering) renderHost.remove();
     };
     // getLocale is referenced so a locale change (and its theme) re-renders.
   }, [code, getLocale?.()]);
 
   if (error) {
     return (
-      <div className="my-3 rounded-card border border-solid-error/40 bg-tint-error/40 p-3">
+      <div
+        className="my-3 rounded-card border border-solid-error/40 bg-tint-error/40 p-3"
+        ref={containerRef}
+      >
         <p className="mb-2 font-medium text-solid-error text-xs">
           Diagram error: {error}
         </p>
@@ -69,7 +93,10 @@ export function Mermaid({ code }: { code: string }) {
   }
   if (!svg) {
     return (
-      <div className="my-3 grid h-40 place-items-center rounded-card border border-line bg-surface text-fg-muted">
+      <div
+        className="my-3 grid h-40 place-items-center rounded-card border border-line bg-surface text-fg-muted"
+        ref={containerRef}
+      >
         <span className="text-xs">Rendering diagram…</span>
       </div>
     );
@@ -79,6 +106,7 @@ export function Mermaid({ code }: { code: string }) {
       className="mermaid-render my-3 flex justify-center overflow-auto rounded-card border border-line bg-surface p-4"
       // eslint-disable-next-line react/no-danger -- mermaid returns sanitized SVG (securityLevel: strict)
       dangerouslySetInnerHTML={{ __html: svg }}
+      ref={containerRef}
     />
   );
 }

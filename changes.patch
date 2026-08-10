@@ -1,0 +1,527 @@
+diff --git a/.env.example b/.env.example
+index 34a130d..661d66e 100644
+--- a/.env.example
++++ b/.env.example
+@@ -17,5 +17,4 @@ VITE_STRIPE_PUBLISHABLE_KEY=
+ # This is useful if you want to bypass the proxy and upload files directly to B2.
+ VITE_DIRECT_B2_UPLOAD=true
+ 
+-VITE_PERF_SEED=false
+ VITE_LOAD_TEST_SEED=false
+\ No newline at end of file
+diff --git a/.todo b/.todo
+index c4f707c..664cdb7 100644
+--- a/.todo
++++ b/.todo
+@@ -34,33 +34,29 @@ low priority:
+ 32. check how the router should be implemented, manually typing routes dont seemt to be recommened (and lazyRouteComponent is not in the docs?), also sometimes when navigating in dev with msw, it seems to take a bit to render the component (but shouldnt be the case if the loader is non blocking? there is a 1 second delay simulated in msw handler but is data is loaded async and non blocked, this delay shouldnt occur?) and if the component takes a bit to render, then switching between open workspace and other pages causes significant layout shifts because in openworkspace the sidenav is not rendered. With the delay, when navigating away from openworkspace, the sidebar renders instantly but the route component is still stuck on openworkspace, or when navigating to openworkspace, the sidebar disappears first before the content renders
+ 33. manage feature flags better than just env, likely in posthog?
+ 34. optimize types.ts more, some types like materials shouldnt be manually typed?
++35. add layout adjust in editor to make the document smaller or larger in width
+ 
+ high PRIORITIES:
+ 
+-3. track material generations and display progress bar like how filelistitem does it?
+-4. additional configurations like time limit for materials? 
+-5. in centercontent header, add in the action menu (with same functions found in filelistitem) with an additional action full screen
+-6.  if copy and pasting markdown, render it directly rather than inside a code block (? what determines if a code block gets inserted or not?)
+-7.  handle file loading errors (not unable to fetch from backend, thats handled, but onload error from urls, both in centercontent and in plate editor)
+-8.  all frontend test cases should only select elements using data-testid? (e.g. when getByRole dont use filter has text or names etc) and they should only match the results using text that is seeded for testing rather than relying on element names (translations may change anytime)
+-10. in editor we need to use custom tooltips rather than title=xxx, include shortcut as well
+-11. add layout adjust in editor to make the document smaller or larger in width
+-12. check what test cases/e2e test cases there are, what features are they testing and how much of the user journeys they cover, ideally they should check every single part, but what to do when responsivess moves the layouts around/mounts or unmount some components (or should we try to use display none which keeps the component mounted so test cases can select the elements with no issues)?
+-13. workspaces tag validation should limit to 5 tags at most
+-14. set loading state for submit buttons (esp dialogs)
+-15. enable ordering of doucments within chapters with drag and drop (right now it just drops in the chapter)
+-16. add icons for common file format
+-17. enrich the global searches (in the topinsetbar)
++1. track material generations and display progress bar like how filelistitem does it?
++2. additional configurations like time limit for materi
++3.  if copy and pasting markdown, render it directly rather than inside a code block (? what determines if a code block gets inserted or not?)
++4.  in editor we need to use custom tooltips rather than title=xxx, include shortcut as well
++5.  workspaces tag validation should limit to 5 tags at most
++6.  set loading state for submit buttons (esp dialogs)
++7.  enable ordering of doucments within chapters with drag and drop (right now it just drops in the chapter)
++8.  add icons for common file format
++9.  enrich the global searches (in the topinsetbar)
+     - workspace names & chapters
+     - files and materials names
+     - calendar event names
+     - tasks title
+     - Remove: thinking space (not worked on yet)
+-18. make the onsuccess invalidate queries async await so awaiting a mutateAsync awaits both the mutate call AND the refetch query call, this is good for UI since loading states spans data mutation + refetch, refetch is where user actually sees the display changes, if loading state exits early, there is a gap between user seeing action finishes and UI updates
+-19. when calling backend, we should always use react hook form paired with zod schema validations (auto generated), the submit button should be disabled when submitDisabled is true (const submitDisabled =
++10. make the onsuccess invalidate queries async await so awaiting a mutateAsync awaits both the mutate call AND the refetch query call, this is good for UI since loading states spans data mutation + refetch, refetch is where user actually sees the display changes, if loading state exits early, there is a gap between user seeing action finishes and UI updates
++11. when calling backend, we should always use react hook form paired with zod schema validations (auto generated), the submit button should be disabled when submitDisabled is true (const submitDisabled =
+     !form.formState.isDirty || !form.formState.isValid || form.formState.isSubmitting;) when error happens inside handleSubmit, a userToast must always show. editing existing resources or creating resources shouldnt need to show toast unless there is minimal to no UI change to let user know the action is successful (e.g. inviting members to workspace, or updaing privacy inside the shareDialog (very minimal select value changes))
+-20. enable website mcp for the LLM so users can ask (summarize file page x to xx or how to answer quiz A question 5), curate list of tools available to workspace chat llm/website convo llm (two different set of tools & context provided since workspace can provide more informations)
+-21. modularize ai models, let user choose what cloud/local models they want to use for different scenarios:
++12. enable website mcp for the LLM so users can ask (summarize file page x to xx or how to answer quiz A question 5), curate list of tools available to workspace chat llm/website convo llm (two different set of tools & context provided since workspace can provide more informations)
++13. modularize ai models, let user choose what cloud/local models they want to use for different scenarios:
+     exhaustive list:
+ 
+ - file parsing
+diff --git a/e2e/perf/playwright.perf.config.ts b/e2e/perf/playwright.perf.config.ts
+index 0fecc68..2293b7e 100644
+--- a/e2e/perf/playwright.perf.config.ts
++++ b/e2e/perf/playwright.perf.config.ts
+@@ -55,7 +55,6 @@ export default defineConfig({
+       // The near-limit fixture is the shared ~2MB load-test note.
+       VITE_LOAD_TEST_SEED: 'true',
+       // Adds the small baseline note to the mock db.
+-      VITE_PERF_SEED: 'true',
+       VITE_USE_MSW: 'true',
+     },
+     reuseExistingServer: true,
+diff --git a/package.json b/package.json
+index d8d558d..75c543a 100644
+--- a/package.json
++++ b/package.json
+@@ -89,6 +89,7 @@
+     "@react-email/components": "^1.0.12",
+     "@react-email/render": "^2.1.0",
+     "@react-email/ui": "^6.9.1",
++    "@scalar/api-reference": "1.64.1",
+     "@tailwindcss/vite": "^4.0.0",
+     "@tanstack/react-query-devtools": "^5.59.0",
+     "@tanstack/router-devtools": "^1.58.0",
+@@ -126,6 +127,8 @@
+     "email:check": "pnpm run email:build && tsx scripts/check-emails.ts",
+     "email:compile": "paraglide-js compile --project ./project.inlang --outdir ./src/i18n/paraglide",
+     "email:dev": "pnpm run email:compile && email dev --dir emails",
++    "api:docs": "node scripts/serve-openapi.mjs",
++    "api:docs:generate": "pnpm gen:openapi && node scripts/serve-openapi.mjs",
+     "perf": "playwright test --config=e2e/perf/playwright.perf.config.ts",
+     "chaos:peers": "pnpm --filter @evo-notes/collaboration chaos --",
+     "check": "ultracite check && pnpm run typecheck",
+diff --git a/scripts/serve-openapi.mjs b/scripts/serve-openapi.mjs
+new file mode 100644
+index 0000000..549e4ac
+--- /dev/null
++++ b/scripts/serve-openapi.mjs
+@@ -0,0 +1,94 @@
++// a hand written scalar server to avoid calling any remote servers/registry
++// completely offline based solely on the openapi.yaml
++
++import { readFile } from 'node:fs/promises';
++import { createServer } from 'node:http';
++import path from 'node:path';
++import { fileURLToPath } from 'node:url';
++
++const projectRoot = path.resolve(
++  path.dirname(fileURLToPath(import.meta.url)),
++  '..'
++);
++const openApiPath = path.join(projectRoot, 'openapi.yaml');
++const scalarPackageRoot = path.resolve(
++  path.dirname(fileURLToPath(import.meta.resolve('@scalar/api-reference'))),
++  '..'
++);
++const [scalarScript, scalarStyles] = await Promise.all([
++  readFile(path.join(scalarPackageRoot, 'dist/browser/standalone.js')),
++  readFile(path.join(scalarPackageRoot, 'dist/style.css')),
++]);
++
++const configuredPort = Number.parseInt(
++  process.env.OPENAPI_DOCS_PORT ?? '3000',
++  10
++);
++const port =
++  Number.isInteger(configuredPort) && configuredPort > 0
++    ? configuredPort
++    : 3000;
++const html = `<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="utf-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1" />
++    <title>Evo Notes API Reference</title>
++    <link rel="stylesheet" href="/scalar.css" />
++  </head>
++  <body>
++    <div id="app"></div>
++    <script src="/scalar.js"></script>
++    <script>
++      window.Scalar.createApiReference('#app', { url: '/openapi.yaml' });
++    </script>
++  </body>
++</html>`;
++
++function send(response, statusCode, contentType, body) {
++  response.writeHead(statusCode, { 'Content-Type': contentType });
++  response.end(body);
++}
++
++const server = createServer(async (request, response) => {
++  if (request.method !== 'GET') {
++    send(response, 405, 'text/plain; charset=utf-8', 'Method Not Allowed');
++    return;
++  }
++
++  const pathname = new URL(request.url ?? '/', 'http://localhost').pathname;
++  if (pathname === '/') {
++    send(response, 200, 'text/html; charset=utf-8', html);
++    return;
++  }
++  if (pathname === '/scalar.js') {
++    send(response, 200, 'application/javascript; charset=utf-8', scalarScript);
++    return;
++  }
++  if (pathname === '/scalar.css') {
++    send(response, 200, 'text/css; charset=utf-8', scalarStyles);
++    return;
++  }
++  if (pathname === '/openapi.yaml') {
++    try {
++      const openApi = await readFile(openApiPath);
++      send(response, 200, 'text/yaml; charset=utf-8', openApi);
++    } catch (error) {
++      console.error(error);
++      send(
++        response,
++        500,
++        'text/plain; charset=utf-8',
++        'Could not read openapi.yaml'
++      );
++    }
++    return;
++  }
++
++  send(response, 404, 'text/plain; charset=utf-8', 'Not Found');
++});
++
++server.listen(port, '127.0.0.1', () => {
++  // biome-ignore lint: no-console
++  console.log(`Scalar API Reference: http://localhost:${port}`);
++});
+diff --git a/server/README.md b/server/README.md
+index 48ddc9e..676ee8e 100644
+--- a/server/README.md
++++ b/server/README.md
+@@ -21,6 +21,18 @@ go mod tidy                   # resolve deps + write go.sum (first run)
+ go run ./cmd/api
+ ```
+ 
++### OpenAPI reference
++
++From the repository root, run:
++
++```bash
++pnpm api:docs
++```
++
++This serves the checked-in `openapi.yaml` at `http://localhost:3000`, so it does
++not require Go. When Go is available and the contract needs regeneration, use
++`pnpm api:docs:generate` instead.
++
+ Backblaze B2 is required. Set every `B2_*` variable in `.env`; startup verifies
+ bucket access and exits if those credentials are invalid.
+ 
+diff --git a/src/components/app/PrivateOrUnavailable.tsx b/src/components/app/WorkspaceError.tsx
+similarity index 97%
+rename from src/components/app/PrivateOrUnavailable.tsx
+rename to src/components/app/WorkspaceError.tsx
+index 488ad06..295712c 100644
+--- a/src/components/app/PrivateOrUnavailable.tsx
++++ b/src/components/app/WorkspaceError.tsx
+@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/Button';
+ import { Icon } from '@/components/ui/Icon';
+ 
+ /** Non-disclosing empty state for private/missing shared resources. */
+-export function PrivateOrUnavailable({
++export function WorkspaceError({
+   title = 'This item is private or unavailable.',
+   description = 'You may not have access, or the link may no longer be valid.',
+   backTo,
+diff --git a/src/features/materials/Mermaid.tsx b/src/features/materials/Mermaid.tsx
+index 0559120..d274b3f 100644
+--- a/src/features/materials/Mermaid.tsx
++++ b/src/features/materials/Mermaid.tsx
+@@ -2,8 +2,6 @@ import { useEffect, useRef, useState } from 'react';
+ import { getLocale } from '@/i18n';
+ import { THEMES } from '@/theme/ThemeProvider';
+ 
+-const mindmapRegex = /^\s*mindmap(?:\s|$)/i;
+-
+ /** Lazily-initialized mermaid singleton so the (heavy) library is only loaded
+  * when a diagram is actually rendered. */
+ let mermaidPromise: Promise<typeof import('mermaid').default> | null = null;
+@@ -28,38 +26,64 @@ async function getMermaid() {
+ 
+ let idSeq = 0;
+ 
+-export function mermaidBlockLabel(code: string): 'Diagram' | 'Mindmap' {
+-  return mindmapRegex.test(code) ? 'Mindmap' : 'Diagram';
+-}
+-
+ /** Renders a mermaid code block to inline SVG. Falls back to the raw source in
+  * a <pre> if the diagram fails to parse. */
+ export function Mermaid({ code }: { code: string }) {
+   const [svg, setSvg] = useState<string | null>(null);
+   const [error, setError] = useState<string | null>(null);
+   const idRef = useRef(`mmd-${++idSeq}`);
++  const containerRef = useRef<HTMLDivElement>(null);
+ 
+   useEffect(() => {
+     let cancelled = false;
++    let rendering = false;
++    const container = containerRef.current;
++    if (!container) return;
++    const renderHost = document.createElement('div');
++    Object.assign(renderHost.style, {
++      height: '0',
++      left: '0',
++      overflow: 'hidden',
++      position: 'fixed',
++      top: '0',
++      visibility: 'hidden',
++      width: `${container.clientWidth || window.innerWidth}px`,
++    });
++    document.body.append(renderHost);
+     setError(null);
+-    getMermaid()
+-      .then((mermaid) => mermaid.render(idRef.current, code.trim()))
+-      .then(({ svg }) => {
+-        if (!cancelled) setSvg(svg);
+-      })
+-      .catch((e: unknown) => {
++
++    void (async () => {
++      try {
++        const mermaid = await getMermaid();
++        if (cancelled) return;
++        rendering = true;
++        const result = await mermaid.render(
++          idRef.current,
++          code.trim(),
++          renderHost
++        );
++        if (!cancelled) setSvg(result.svg);
++      } catch (e: unknown) {
+         if (!cancelled)
+           setError(e instanceof Error ? e.message : 'Failed to render diagram');
+-      });
++      } finally {
++        renderHost.remove();
++      }
++    })();
++
+     return () => {
+       cancelled = true;
++      if (!rendering) renderHost.remove();
+     };
+     // getLocale is referenced so a locale change (and its theme) re-renders.
+   }, [code, getLocale?.()]);
+ 
+   if (error) {
+     return (
+-      <div className="my-3 rounded-card border border-solid-error/40 bg-tint-error/40 p-3">
++      <div
++        className="my-3 rounded-card border border-solid-error/40 bg-tint-error/40 p-3"
++        ref={containerRef}
++      >
+         <p className="mb-2 font-medium text-solid-error text-xs">
+           Diagram error: {error}
+         </p>
+@@ -69,7 +93,10 @@ export function Mermaid({ code }: { code: string }) {
+   }
+   if (!svg) {
+     return (
+-      <div className="my-3 grid h-40 place-items-center rounded-card border border-line bg-surface text-fg-muted">
++      <div
++        className="my-3 grid h-40 place-items-center rounded-card border border-line bg-surface text-fg-muted"
++        ref={containerRef}
++      >
+         <span className="text-xs">Rendering diagram…</span>
+       </div>
+     );
+@@ -79,6 +106,7 @@ export function Mermaid({ code }: { code: string }) {
+       className="mermaid-render my-3 flex justify-center overflow-auto rounded-card border border-line bg-surface p-4"
+       // eslint-disable-next-line react/no-danger -- mermaid returns sanitized SVG (securityLevel: strict)
+       dangerouslySetInnerHTML={{ __html: svg }}
++      ref={containerRef}
+     />
+   );
+ }
+diff --git a/src/features/materials/MermaidBlockLabel.ts b/src/features/materials/MermaidBlockLabel.ts
+new file mode 100644
+index 0000000..105c2fb
+--- /dev/null
++++ b/src/features/materials/MermaidBlockLabel.ts
+@@ -0,0 +1,5 @@
++const mindmapRegex = /^\s*mindmap(?:\s|$)/i;
++
++export function mermaidBlockLabel(code: string): 'Diagram' | 'Mindmap' {
++  return mindmapRegex.test(code) ? 'Mindmap' : 'Diagram';
++}
+diff --git a/src/features/materials/staticNodeComponents.tsx b/src/features/materials/staticNodeComponents.tsx
+index 0945197..0040f26 100644
+--- a/src/features/materials/staticNodeComponents.tsx
++++ b/src/features/materials/staticNodeComponents.tsx
+@@ -76,7 +76,8 @@ import type {
+ import { quizQuestionElementToQuestion } from './document';
+ import { Katex } from './Katex';
+ import { type MediaAssetNode, MediaAssetView } from './MediaAssetView';
+-import { Mermaid, mermaidBlockLabel } from './Mermaid';
++import { Mermaid } from './Mermaid';
++import { mermaidBlockLabel } from './MermaidBlockLabel';
+ import { YouTubeEmbed, type YouTubeNode } from './YouTubeEmbed';
+ 
+ /* ------------------------------------------------------------- helpers */
+diff --git a/src/features/notes/blocks/elements.tsx b/src/features/notes/blocks/elements.tsx
+index b7b7de5..beb4a51 100644
+--- a/src/features/notes/blocks/elements.tsx
++++ b/src/features/notes/blocks/elements.tsx
+@@ -32,7 +32,8 @@ import {
+   quizNodeFromFence,
+   quizQuestionElementToQuestion,
+ } from '@/features/materials/document';
+-import { Mermaid, mermaidBlockLabel } from '@/features/materials/Mermaid';
++import { Mermaid } from '@/features/materials/Mermaid';
++import { mermaidBlockLabel } from '@/features/materials/MermaidBlockLabel';
+ import { answerKey } from '@/features/quizzes/grade';
+ import {
+   QuestionRunner,
+diff --git a/src/mocks/db.ts b/src/mocks/db.ts
+index 6bddef8..e71724d 100644
+--- a/src/mocks/db.ts
++++ b/src/mocks/db.ts
+@@ -52,12 +52,7 @@ import {
+ } from './editorSeed';
+ import { seedNotes } from './noteContent';
+ import { buildBiologyLoadTestValue } from './noteContent/loadTest';
+-import {
+-  buildSmallPerfDocument,
+-  PERF_LARGE_NOTE,
+-  PERF_SMALL_NOTE,
+-  PERF_WORKSPACE_ID,
+-} from './perfSeed';
++import { PERF_LARGE_NOTE, PERF_WORKSPACE_ID } from './perfSeed';
+ 
+ export const uid = (p = 'id') =>
+   `${p}_${Math.random().toString(36).slice(2, 9)}`;
+@@ -1366,29 +1361,6 @@ if (import.meta.env.VITE_E2E_EDITOR_SEED === 'true') {
+   );
+ }
+ 
+-/* ---------------- perf harness baseline note (e2e/perf) ---------------- */
+-if (import.meta.env.VITE_PERF_SEED === 'true') {
+-  materials.push(
+-    makeMaterial({
+-      capabilities: ownerCapabilities,
+-      chapterId: null,
+-      content: createMaterialDocument(
+-        buildSmallPerfDocument().value as MaterialValue
+-      ),
+-      createdAt: days(1),
+-      id: PERF_SMALL_NOTE.id,
+-      kind: 'note',
+-      privacy: 'private',
+-      role: 'owner',
+-      scopeChapters: [],
+-      scopeFileNames: [],
+-      title: PERF_SMALL_NOTE.title,
+-      workspaceId: PERF_WORKSPACE_ID,
+-      workspaceName: 'Biology 101',
+-    })
+-  );
+-}
+-
+ /* ---------------- ~2MB biology load-test note (opt-in) ---------------- */
+ if (import.meta.env.VITE_LOAD_TEST_SEED === 'true') {
+   materials.push(
+diff --git a/src/mocks/perfSeed.ts b/src/mocks/perfSeed.ts
+index ed7200d..0d79797 100644
+--- a/src/mocks/perfSeed.ts
++++ b/src/mocks/perfSeed.ts
+@@ -14,7 +14,7 @@
+ 
+ export const PERF_WORKSPACE_ID = 'ws_bio';
+ 
+-/** Seeded by `VITE_LOAD_TEST_SEED`, not `VITE_PERF_SEED`. */
++/** Seeded by `VITE_LOAD_TEST_SEED`. */
+ export const PERF_LARGE_NOTE = {
+   id: 'mat_note_bio_load_test',
+   readyText: 'Load test — near 2MB feature soup',
+diff --git a/src/routes/DeckStudy.tsx b/src/routes/DeckStudy.tsx
+index 7c30de8..137f90f 100644
+--- a/src/routes/DeckStudy.tsx
++++ b/src/routes/DeckStudy.tsx
+@@ -11,7 +11,7 @@ import {
+ } from '@/api/hooks';
+ import type { Flashcard } from '@/api/types';
+ import { PanelWithInvertedRadius } from '@/components/app/layout';
+-import { PrivateOrUnavailable } from '@/components/app/PrivateOrUnavailable';
++import { WorkspaceError } from '@/components/app/WorkspaceError';
+ import { Badge } from '@/components/ui/Badge';
+ import { Button } from '@/components/ui/Button';
+ import { Skeleton } from '@/components/ui/feedback';
+@@ -103,7 +103,7 @@ export default function DeckStudy() {
+       const denied =
+         isApiError(err) && (err.status === 404 || err.status === 401);
+       return (
+-        <PrivateOrUnavailable
++        <WorkspaceError
+           backLabel="Back to flashcards"
+           backTo="/flashcards"
+           title={
+diff --git a/src/routes/QuizAttempt.tsx b/src/routes/QuizAttempt.tsx
+index 089d495..037d6b7 100644
+--- a/src/routes/QuizAttempt.tsx
++++ b/src/routes/QuizAttempt.tsx
+@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
+ import { isApiError } from '@/api/client';
+ import { useCloneQuiz, useQuiz, useSubmitAttempt } from '@/api/hooks';
+ import { PanelWithInvertedRadius } from '@/components/app/layout';
+-import { PrivateOrUnavailable } from '@/components/app/PrivateOrUnavailable';
++import { WorkspaceError } from '@/components/app/WorkspaceError';
+ import { Button } from '@/components/ui/Button';
+ import { Skeleton } from '@/components/ui/feedback';
+ import { Icon } from '@/components/ui/Icon';
+@@ -52,7 +52,7 @@ export default function QuizAttempt() {
+     const denied =
+       isApiError(error) && (error.status === 404 || error.status === 401);
+     return (
+-      <PrivateOrUnavailable
++      <WorkspaceError
+         backLabel="Back to quizzes"
+         backTo="/quizzes"
+         title={
+diff --git a/src/routes/WorkspaceOpen.tsx b/src/routes/WorkspaceOpen.tsx
+index ce0c650..5afaeb2 100644
+--- a/src/routes/WorkspaceOpen.tsx
++++ b/src/routes/WorkspaceOpen.tsx
+@@ -32,8 +32,8 @@ import type {
+ } from '@/api/types';
+ import { LoadingLarge } from '@/components/app/LoadingLarge';
+ import { Panel } from '@/components/app/layout';
+-import { PrivateOrUnavailable } from '@/components/app/PrivateOrUnavailable';
+ import { TopInsetBar } from '@/components/app/TopInsetBar';
++import { WorkspaceError } from '@/components/app/WorkspaceError';
+ import { Button } from '@/components/ui/Button';
+ import { SkeletonList } from '@/components/ui/feedback';
+ import { HoverActions } from '@/components/ui/HoverActions';
+@@ -434,7 +434,7 @@ export default function WorkspaceOpen() {
+     const denied =
+       isApiError(wsErr) && (wsErr.status === 404 || wsErr.status === 401);
+     return (
+-      <PrivateOrUnavailable
++      <WorkspaceError
+         backLabel="Back to workspaces"
+         backTo="/workspaces"
+         description={
+diff --git a/vite.config.ts b/vite.config.ts
+index 2284983..b722344 100644
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -7,7 +7,7 @@ import { defineConfig, loadEnv } from 'vite';
+ export default defineConfig(({ mode }) => {
+   const env = loadEnv(mode, process.cwd(), '');
+   // Match src/main.tsx: MSW is on unless explicitly disabled.
+-  const useMsw = env.VITE_USE_MSW !== 'false';
++  const useMsw = env.VITE_USE_MSW !== 'false' && mode === 'development';
+   return {
+     plugins: [
+       react(),
+
+          

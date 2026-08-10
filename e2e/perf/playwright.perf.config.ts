@@ -55,7 +55,6 @@ export default defineConfig({
       // The near-limit fixture is the shared ~2MB load-test note.
       VITE_LOAD_TEST_SEED: 'true',
       // Adds the small baseline note to the mock db.
-      VITE_PERF_SEED: 'true',
       VITE_USE_MSW: 'true',
     },
     reuseExistingServer: true,
