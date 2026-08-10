@@ -76,7 +76,9 @@ export default defineConfig({
   use: {
     baseURL,
     screenshot: 'only-on-failure',
-    trace: 'on-first-retry',
+    // on-first-retry leaves the first failure untraced, and a flake that the
+    // retry does not reproduce then has no trace at all.
+    trace: 'retain-on-failure',
     video: 'retain-on-failure',
   },
   webServer: {

@@ -352,3 +352,11 @@
     background-color: var(--tint-error-bg);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation: none !important;
+    transition-property: background-color, border-color, color, opacity, fill, stroke !important;
+    /* or simply: transition: none and live with instant everything */
+  }
+}

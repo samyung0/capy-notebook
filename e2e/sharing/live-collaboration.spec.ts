@@ -36,13 +36,27 @@ test.describe('live Yjs collaboration', () => {
       ownerPage.locator('[data-remote-cursor="E2E Editor"]')
     ).toBeVisible();
 
-    await editor.getByText(body, { exact: true }).click();
-    await editorPage.keyboard.press('End');
+    // Bare End is native caret movement, and Slate only learns about it through
+    // a selectionchange listener throttled at 100ms. Awareness traffic re-renders
+    // the editable meanwhile, and that render restores the caret from the
+    // still-stale Slate selection, so the suffix lands inside the word. Mod+End
+    // moves the caret through the editor's own document API instead.
+    await editorPage.keyboard.press('ControlOrMeta+End');
     await editorPage.keyboard.type(suffix);
+    // Assert locally first: a caret that never reached the end is a typing
+    // failure, not the convergence failure the next assertion reports.
+    await expect(
+      editorPage.getByText(`${body}${suffix}`, { exact: true })
+    ).toBeVisible();
     await expect(
       ownerPage.getByText(`${body}${suffix}`, { exact: true })
     ).toBeVisible();
-    await expect(editorPage.getByText('Saved', { exact: true })).toBeVisible();
+    // Durability is the client's 1s checkpoint debounce plus the sidecar's store
+    // debounce, which stretches to COLLABORATION_MAX_DEBOUNCE_MS (10s) under
+    // continuous updates. The default 10s expect budget cannot cover that.
+    await expect(editorPage.getByText('Saved', { exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
 
     // Projection completion invalidates the material query before static mode.
     await expect

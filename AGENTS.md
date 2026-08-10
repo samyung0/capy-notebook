@@ -2,24 +2,34 @@
 
 Read these only when the task touches that domain. Prefer the listed file over guessing from code alone.
 
-| When you need… | Read |
-| --- | --- |
-| Roles, share visibility, who can mutate what, account states (`over_quota_*`, suspension, deletion), **who pays** for storage, upload/blob cleanup policy | [`authorization-permissions-lifecycles.md`](openwiki/authorization-permissions-lifecycles.md) |
-| How quota bytes are accounted (`user_storage` / deltas), plan limits, material size/shape bounds, Yjs compaction, reservation/clone gating math | [`backend-storage-quota.md`](openwiki/backend-storage-quota.md) |
-| Plate/Yjs editor, collab tokens/modes (`view`/`comment`/`edit`), checkpoints, projections, comment anchors, AI previews | [`frontend/plate-editor.md`](openwiki/frontend/plate-editor.md) |
-| How to run pipeline cassette tests and their disposable Postgres/Redis setup | [`pipeline-tests.md`](openwiki/pipeline-tests.md) |
-| Inventory of Vitest / Go / Python / Playwright / Cloudflare tests with one-line descriptions | [`test-catalog.md`](openwiki/test-catalog.md) |
+
+| When you need…                                                                                                                                            | Read                                                                                          |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Roles, share visibility, who can mutate what, account states (`over_quota_*`, suspension, deletion), **who pays** for storage, upload/blob cleanup policy | `[authorization-permissions-lifecycles.md](openwiki/authorization-permissions-lifecycles.md)` |
+| How quota bytes are accounted (`user_storage` / deltas), plan limits, material size/shape bounds, Yjs compaction, reservation/clone gating math           | `[backend-storage-quota.md](openwiki/backend-storage-quota.md)`                               |
+| Plate/Yjs editor, collab tokens/modes (`view`/`comment`/`edit`), checkpoints, projections, comment anchors, AI previews                                   | `[frontend/plate-editor.md](openwiki/frontend/plate-editor.md)`                               |
+| How to run pipeline cassette tests and their disposable Postgres/Redis setup                                                                              | `[pipeline-tests.md](openwiki/pipeline-tests.md)`                                             |
+| Inventory of Vitest / Go / Python / Playwright / Cloudflare tests with one-line descriptions                                                              | `[test-catalog.md](openwiki/test-catalog.md)`                                                 |
+
 
 Cross-links: plate-editor defers structural ACL to authorization; authorization defers accounting internals to storage-quota.
 
 ## Getting Started
+
+
 
 ### Code Changes
 
 - run `pnpm run fmt` and `pnpm run fix` to fix and format codes after frontend changes
 - run `pnpm run fmt:go` to format golang sever codes
 
+### Test Changes
+
+- update `test-catalog.md`
+
 ## Common Pitfalls
+
+
 
 ### Frontend
 
@@ -30,3 +40,4 @@ Cross-links: plate-editor defers structural ACL to authorization; authorization 
 - Sometimes its ok to use arbitary values instead of canonical values for tailwind, e.g. w-[200px] instead of w-50, in order to prevent element size changing when switching themes.
 - DO NOT use template strings NOR variables just to hold classNames for tailwind, use `cn()` to inject conditional themes
 - DO NOT make an index file for UI components, it will lead to cyclical import erorr during vite build
+

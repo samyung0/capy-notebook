@@ -37,6 +37,19 @@ jobs:
       - run: pnpm run e2e:install
       - run: pnpm run e2e
       - run: pnpm run e2e:editor
+      # Docker/Vite make these suites timing sensitive, and a failure that only
+      # reproduces on the runner is undiagnosable without the traces.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: ignore
+          name: playwright-artifacts
+          path: |
+            playwright-report/
+            test-results/
+            e2e/editor/playwright-report-editor/
+            e2e/editor/test-results/
+          retention-days: 7
 
   backend_check:
     runs-on: ubuntu-latest

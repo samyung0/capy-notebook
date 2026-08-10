@@ -135,7 +135,12 @@ test(`typing profile — near-limit document (cpu x${CPU_RATE})`, async ({
 
   // Phase 3: typing in a body paragraph in the middle of the document, which
   // is what editing a document of this size actually looks like.
-  const paragraph = editor.locator('p').filter({ hasText: 'Pad 100.' }).first();
+  // Paragraphs render as div.slate-p (Plate default), not HTML <p>, so indent
+  // lists can nest block wrappers without invalid DOM nesting.
+  const paragraph = editor
+    .locator('.slate-p')
+    .filter({ hasText: 'Pad 100.' })
+    .first();
   await paragraph.click();
   await page.keyboard.press('End');
   await readDomCounter(page, true);

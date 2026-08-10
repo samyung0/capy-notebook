@@ -79,6 +79,7 @@ import {
   CursorOverlayPlugin,
 } from '@platejs/selection/react';
 import { SlashInputPlugin, SlashPlugin } from '@platejs/slash-command/react';
+import { getCellTypes } from '@platejs/table';
 import {
   TableCellHeaderPlugin,
   TableCellPlugin,
@@ -90,11 +91,14 @@ import { common, createLowlight } from 'lowlight';
 import {
   createSlatePlugin,
   createTextSubstitutionInputRule,
+  ElementApi,
   ExitBreakPlugin,
   isHotkey,
   KEYS,
+  PathApi,
   type SlateEditor,
   type TElement,
+  TextApi,
 } from 'platejs';
 import {
   BlockPlaceholderPlugin,
@@ -130,6 +134,7 @@ import { noteMarkdownPlugin } from './markdown';
 import { remoteCursorDecorationPlugin } from './RemoteCursors';
 import { SlashInputElement } from './SlashInput';
 import { stableElementIdsPlugin } from './stableElementIds';
+import { mergeTableCellsSafe, sanitizeTableStructure } from './tableStructure';
 import { queryHeadings } from './tocHeadings';
 
 // Plugin-derived editor types are intentionally wider than Plate's base tuple.
@@ -533,7 +538,39 @@ export const MaterialKit: AnyPlugin[] = [
   CodeLinePlugin,
   CodeSyntaxPlugin,
   CodeBlockListCleanupPlugin,
-  TablePlugin.configure({ options: { minColumnWidth: 48 } }),
+  TablePlugin.configure({ options: { minColumnWidth: 48 } })
+    .extendEditorTransforms(({ editor }) => ({
+      table: {
+        merge: () => {
+          mergeTableCellsSafe(editor);
+        },
+      },
+    }))
+    .overrideEditor(({ editor, tf: { normalizeNode } }) => ({
+      transforms: {
+        normalizeNode(entry) {
+          const [node, path] = entry;
+          if (
+            ElementApi.isElement(node) &&
+            node.type === editor.getType(KEYS.tr)
+          ) {
+            const cellTypes = new Set(getCellTypes(editor));
+            const hasStrayText = node.children.some((child) =>
+              TextApi.isText(child)
+            );
+            const hasCell = node.children.some(
+              (child) =>
+                ElementApi.isElement(child) && cellTypes.has(child.type)
+            );
+            if (hasStrayText || !hasCell) {
+              sanitizeTableStructure(editor, PathApi.parent(path));
+              return;
+            }
+          }
+          normalizeNode(entry);
+        },
+      },
+    })),
   TableRowPlugin,
   TableCellPlugin,
   TableCellHeaderPlugin,

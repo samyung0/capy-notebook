@@ -131,10 +131,11 @@ function Paragraph(props: PlateElementProps) {
     element.listStyleType !== KEYS.listTodo &&
     isOrderedList(props.element);
 
+  // Default PlateElement tag is `div`. Do not force `as="p"`: indent-list
+  // belowNodes wrappers inject <ol>/<div> as children, which is illegal inside <p>.
   return (
     <PlateElement
       {...props}
-      as="p"
       className={cn(PARAGRAPH_CLASS, isNumberedList && 'before:left-6')}
     >
       {props.children}

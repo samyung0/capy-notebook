@@ -510,7 +510,9 @@ export const staticNoteComponents = {
   mermaid: MermaidElement,
   mermaid_caption: element('p', MERMAID_CAPTION_CLASS),
   ol: element('ol', OL_CLASS),
-  p: element('p', PARAGRAPH_CLASS),
+  // Match editable Paragraph: default to div so indent-list belowNodes can
+  // inject <ol>/<div> without nesting block elements inside <p>.
+  p: element('div', PARAGRAPH_CLASS),
   /* study blocks */
   quiz: QuizElement,
   quiz_explanation: QuizExplanationElement,

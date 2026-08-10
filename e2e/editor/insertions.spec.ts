@@ -54,12 +54,22 @@ test.describe('inline and block insertions', () => {
       EDITOR_NOTE.thirdParagraph
     );
 
-    await editor.getByText(EDITOR_NOTE.thirdParagraph, { exact: true }).click();
+    // Clicking the text node often lands mid-word; End+Enter then race and
+    // `/table` gets inserted as plain text ("paragr/tableaph") with no menu.
+    const paragraph = editor.getByText(EDITOR_NOTE.thirdParagraph, {
+      exact: true,
+    });
+    const box = await paragraph.boundingBox();
+    expect(box, 'paragraph has a bounding box').not.toBeNull();
+    await page.mouse.click(box!.x + box!.width - 1, box!.y + box!.height / 2);
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
-    await page.keyboard.type('/table');
+    await page.keyboard.type('/');
+    const listbox = page.getByRole('listbox');
+    await expect(listbox).toBeVisible();
+    await page.keyboard.type('table');
 
-    const option = page
+    const option = listbox
       .getByRole('option')
       .filter({ hasText: 'Insert a 2 × 2 table' });
     await expect(option).toBeVisible();
@@ -69,10 +79,10 @@ test.describe('inline and block insertions', () => {
     await expect(table).toBeVisible();
     // Content cells only: the first td of each row is the 8px drag-grip cell.
     const contentCell = table.locator('td[data-table-cell-id]').first();
-    const box = await contentCell.boundingBox();
-    expect(box, 'table cell has a bounding box').not.toBeNull();
+    const cellBox = await contentCell.boundingBox();
+    expect(cellBox, 'table cell has a bounding box').not.toBeNull();
     // Regression: cells collapsed to (near) zero width.
-    expect(box!.width).toBeGreaterThan(100);
+    expect(cellBox!.width).toBeGreaterThan(100);
   });
 
   test('toolbar table menu inserts a table', async ({ page }) => {
