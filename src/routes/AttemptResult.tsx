@@ -1,6 +1,8 @@
 import { Link, useParams } from '@tanstack/react-router';
 import { useAttempt } from '@/api/hooks';
+import { ErrorState } from '@/components/app/ErrorState';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
@@ -20,7 +22,22 @@ function scoreTone(pct: number): 'green' | 'amber' | 'coral' {
 export default function AttemptResult() {
   const params = useParams({ strict: false });
   const attemptId = (params as { attemptId: string }).attemptId;
-  const { data: attempt, isLoading, isError } = useAttempt(attemptId);
+  const {
+    data: attempt,
+    fetchStatus,
+    isLoading,
+    isError,
+  } = useAttempt(attemptId, {
+    errorBoundary: false,
+  });
+
+  if (fetchStatus === 'paused') {
+    return (
+      <PanelWithInvertedRadius>
+        <QueryPausedState className="h-full" />
+      </PanelWithInvertedRadius>
+    );
+  }
 
   if (isLoading) {
     return (
@@ -35,15 +52,15 @@ export default function AttemptResult() {
   if (isError || !attempt) {
     return (
       <PanelWithInvertedRadius>
-        <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-4 px-6 text-center">
-          <span className="flex h-16 w-16 items-center justify-center rounded-card-lg bg-tint-error text-tint-error-fg">
-            <Icon name="x" size={30} />
-          </span>
-          <h2 className="t-large-card-title">This attempt is unavailable.</h2>
-          <Link preload="intent" to="/quizzes">
-            <Button iconLeft="chevronLeft">Back to quizzes</Button>
-          </Link>
-        </div>
+        <ErrorState
+          action={
+            <Link preload="intent" to="/quizzes">
+              <Button iconLeft="chevronLeft">Back to quizzes</Button>
+            </Link>
+          }
+          title="This attempt is unavailable."
+          variant="page"
+        />
       </PanelWithInvertedRadius>
     );
   }

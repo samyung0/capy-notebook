@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { useCanvases, useCreateCanvas } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Card } from '@/components/ui/Card';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
@@ -8,7 +9,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { m } from '@/i18n';
 
 export default function Thinking() {
-  const { data, isLoading } = useCanvases();
+  const { data, fetchStatus, isLoading } = useCanvases();
   const { mutate: createCanvas } = useCreateCanvas();
 
   return (
@@ -28,7 +29,9 @@ export default function Thinking() {
         title={m.nav_thinking()}
       />
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
-        {isLoading ? (
+        {fetchStatus === 'paused' ? (
+          <QueryPausedState />
+        ) : isLoading ? (
           <SkeletonCardGrid cardHeight={172} count={6} />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

@@ -1,55 +1,38 @@
+import { ErrorState } from '@/components/app/ErrorState';
 import { Spinner } from '@/components/ui/feedback';
-import { Icon } from '@/components/ui/Icon';
+import { m } from '@/i18n';
+import { useOnlineStatus } from '@/lib/online';
 
 export function FileLoading({
   message = 'Loading preview...',
 }: {
   message?: string;
 }) {
+  const online = useOnlineStatus();
   return (
     <div className="flex h-full flex-1 flex-col items-center justify-center gap-3">
       <Spinner className="size-6.5" />
-      <p>{message}</p>
+      <p>{online ? message : m.connection_waiting()}</p>
     </div>
   );
 }
 
 export function FileError({
-  title = 'Something went wrong',
-  message = "We can't load the file. The file maybe missing or deleted.",
+  title = m.error_file_title(),
+  message = m.error_file_body(),
 }: {
   title?: string;
   message?: string;
 }) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-3">
-      <span className="flex size-14 items-center justify-center rounded-card bg-tint-error text-tint-error-fg">
-        <Icon className="size-6.5" name="warning" />
-      </span>
-      <div className="flex flex-col items-center justify-center gap-1.5 text-center">
-        <p className="t-card-title mt-1 font-bold">{title}</p>
-        <p>{message}</p>
-      </div>
-    </div>
-  );
+  return <ErrorState description={message} title={title} variant="panel" />;
 }
 
 export function FileEmpty({
-  title = 'Something went wrong',
-  message = 'The file is empty or corrupted. Please reupload and try again.',
+  title = m.error_file_empty_title(),
+  message = m.error_file_empty_body(),
 }: {
   title?: string;
   message?: string;
 }) {
-  return (
-    <div className="flex h-full flex-col items-center justify-center gap-3">
-      <span className="flex size-14 items-center justify-center rounded-card bg-tint-error text-tint-error-fg">
-        <Icon className="size-6.5" name="warning" />
-      </span>
-      <div className="flex flex-col items-center justify-center gap-1.5 text-center">
-        <p className="t-card-title mt-1 font-bold">{title}</p>
-        <p>{message}</p>
-      </div>
-    </div>
-  );
+  return <ErrorState description={message} title={title} variant="panel" />;
 }

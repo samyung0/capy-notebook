@@ -8,6 +8,7 @@ import {
 } from '@/api/hooks';
 import { CloudConnectBanner } from '@/components/app/CloudConnectBanner';
 import { Panel } from '@/components/app/layout';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import DashboardDefaultBanner from '@/components/banners/DashboardDefaultBanner';
 import { Button } from '@/components/ui/Button';
@@ -24,7 +25,7 @@ import { cn } from '@/lib/cn';
 import { usePortals } from '@/stores/portals';
 
 function StreakHeading() {
-  const { data: me } = useMe();
+  const { data: me } = useMe({ errorBoundary: false });
   const streak = me?.streak ?? 0;
   return (
     <div>
@@ -44,7 +45,10 @@ function StreakHeading() {
 const DASHBOARD_WORKSPACE_LIMIT = 12;
 
 function WorkspacesSection() {
-  const { data, isLoading } = useWorkspaces({ sort: 'accessed' });
+  const { data, fetchStatus, isLoading } = useWorkspaces(
+    { sort: 'accessed' },
+    { errorBoundary: false }
+  );
   const recent = data?.slice(0, DASHBOARD_WORKSPACE_LIMIT);
   const hasMore = (data?.length ?? 0) > DASHBOARD_WORKSPACE_LIMIT;
   return (
@@ -57,14 +61,15 @@ function WorkspacesSection() {
           </Link>
         </Button>
       </div>
-      {isLoading && (
+      {fetchStatus === 'paused' ? (
+        <QueryPausedState />
+      ) : isLoading ? (
         <div className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
           {Array.from({ length: DASHBOARD_WORKSPACE_LIMIT }).map((_, i) => (
             <WorkspaceCardSkeleton key={i} />
           ))}
         </div>
-      )}
-      {!isLoading && (!recent || recent.length === 0) && (
+      ) : !recent || recent.length === 0 ? (
         <div className="mt-30 flex w-full items-center justify-center">
           <p>
             No workspaces yet.{' '}
@@ -77,8 +82,7 @@ function WorkspacesSection() {
             </Link>
           </p>
         </div>
-      )}
-      {!isLoading && recent && recent.length > 0 && (
+      ) : (
         <div className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">
           {recent?.map((w) => (
             <WorkspaceCard key={w.id} workspace={w} />
@@ -102,7 +106,7 @@ function WorkspacesSection() {
 }
 
 function TasksCard() {
-  const { data } = useTasks();
+  const { data } = useTasks({ errorBoundary: false });
   const { mutate: toggle } = useToggleTask();
   const { mutate: remove } = useDeleteTask();
   const openTaskEdit = usePortals((s) => s.openTaskEdit);

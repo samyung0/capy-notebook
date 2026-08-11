@@ -19,6 +19,7 @@ import {
   plateAiCopilotUrl,
   plateAiFetch,
 } from '@/api/plateAiTransport';
+import { userToast } from '@/components/ui/userToast';
 import { useEditorRuntime } from '../EditorRuntime';
 import { openAiMenu } from './aiMenuState';
 import { getAiPreview, setAiPreview } from './aiPreviewState';
@@ -53,8 +54,7 @@ function bytesToBase64(bytes: Uint8Array): string {
 function usePlateChat(workspaceId: string) {
   const editor = useEditorRef();
   const { materialId } = useEditorRuntime();
-  const { mutateAsync: createDiscussion } =
-    useCreateMaterialDiscussion(materialId);
+  const { mutate: createDiscussion } = useCreateMaterialDiscussion(materialId);
   const transport = useMemo(
     () => createPlateAiTransport(workspaceId),
     [workspaceId]
@@ -101,7 +101,7 @@ function usePlateChat(workspaceId: string) {
           editor,
           range
         );
-        void createDiscussion({
+        createDiscussion({
           anchorEnd: bytesToBase64(Y.encodeRelativePosition(relative.focus)),
           anchorQuote: editor.api.string(range).slice(0, 1000),
           anchorStart: bytesToBase64(Y.encodeRelativePosition(relative.anchor)),
@@ -110,7 +110,7 @@ function usePlateChat(workspaceId: string) {
           contentRich: [
             { children: [{ text: data.comment.comment }], type: 'p' },
           ],
-        }).catch(() => undefined);
+        });
       }
     },
     transport,
@@ -230,6 +230,14 @@ function createCopilotPlugin(workspaceId: string) {
         api: plateAiCopilotUrl(workspaceId),
         body: { instructions: COPILOT_INSTRUCTIONS },
         fetch: plateAiFetch,
+        onError: () => {
+          userToast({
+            description: 'Inline suggestions are temporarily unavailable.',
+            id: 'plate-copilot-error',
+            title: 'Could not generate a suggestion',
+            variant: 'error',
+          });
+        },
         onFinish: (_, completion) => {
           if (completion && completion !== '0') {
             api.copilot.setBlockSuggestion({ text: stripMarkdown(completion) });

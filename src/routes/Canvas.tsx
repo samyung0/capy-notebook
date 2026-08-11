@@ -2,6 +2,7 @@ import { Link, useParams } from '@tanstack/react-router';
 import { lazy, Suspense } from 'react';
 import { useCanvas, useSaveCanvas } from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 
@@ -10,7 +11,7 @@ const CanvasEditor = lazy(() => import('@/features/thinking/CanvasEditor'));
 export default function Canvas() {
   const params = useParams({ strict: false });
   const canvasId = (params as { canvasId: string }).canvasId;
-  const { data: canvas, isLoading } = useCanvas(canvasId);
+  const { data: canvas, fetchStatus, isLoading } = useCanvas(canvasId);
   const { isPending: saveIsPending, mutate: save } = useSaveCanvas(canvasId);
 
   return (
@@ -27,7 +28,9 @@ export default function Canvas() {
         {saveIsPending && <p className="t-meta text-fg-muted">Saving…</p>}
       </div>
       <div className="min-h-0 flex-1">
-        {isLoading ? (
+        {fetchStatus === 'paused' ? (
+          <QueryPausedState className="h-full" />
+        ) : isLoading ? (
           <Skeleton className="h-full w-full rounded-none" />
         ) : (
           <Suspense

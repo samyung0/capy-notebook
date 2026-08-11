@@ -26,8 +26,10 @@ function blockingCodeFromError(err: unknown): string | null {
 
 /** Lifecycle warnings + full-screen block for locked accounts. */
 export function AccountStatusBanner() {
-  const { data: statusData, error: statusError } = useAccountStatus();
-  const { error: meError } = useMe();
+  const { data: statusData, error: statusError } = useAccountStatus({
+    errorBoundary: false,
+  });
+  const { error: meError } = useMe({ errorBoundary: false });
 
   const blockingCode =
     blockingCodeFromError(statusError) ??

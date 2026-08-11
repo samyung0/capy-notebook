@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAllFiles } from '@/api/hooks';
 import type { SourceFile } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { SimpleDialog } from '@/components/ui/Dialog';
@@ -12,14 +13,16 @@ import { formatFileSize } from '@/features/files/fileUtils';
 import { m } from '@/i18n';
 
 export default function Files() {
-  const { data, isLoading } = useAllFiles();
+  const { data, fetchStatus, isLoading } = useAllFiles();
   const [open, setOpen] = useState<SourceFile | null>(null);
 
   return (
     <PanelWithInvertedRadius>
       <PageHeader title={m.nav_files()} />
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
-        {isLoading ? (
+        {fetchStatus === 'paused' ? (
+          <QueryPausedState />
+        ) : isLoading ? (
           <SkeletonCardGrid cardHeight={72} count={6} />
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

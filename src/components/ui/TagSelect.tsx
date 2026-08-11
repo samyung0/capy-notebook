@@ -33,7 +33,7 @@ export function TagSelect({
   placeholder = 'Search or create a tag…',
   invalid,
 }: TagSelectProps) {
-  const { data: catalog = [] } = useTags(kind);
+  const { data: catalog = [] } = useTags(kind, { errorBoundary: false });
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);

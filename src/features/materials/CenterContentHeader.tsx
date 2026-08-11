@@ -53,9 +53,12 @@ function useHeader(item: OpenItem): {
   modeOptions?: { value: MaterialMode; label: string }[];
   defaultMode?: MaterialMode;
 } {
-  const { data: fileData } = useFile(item.kind === 'file' ? item.id : null);
+  const { data: fileData } = useFile(item.kind === 'file' ? item.id : null, {
+    errorBoundary: false,
+  });
   const { data: materialData } = useMaterial(
-    item.kind === 'material' ? item.id : null
+    item.kind === 'material' ? item.id : null,
+    { errorBoundary: false }
   );
   if (item.kind === 'file') {
     return {
@@ -85,7 +88,9 @@ function useHeader(item: OpenItem): {
 }
 
 function DeckPreviewActions({ deckId }: { deckId: string }) {
-  const { data: deckData, isLoading: deckIsLoading } = useDeck(deckId);
+  const { data: deckData, isLoading: deckIsLoading } = useDeck(deckId, {
+    errorBoundary: false,
+  });
   const navigate = useNavigate();
   const summary = deckData
     ? `${deckData.cardCount} card${deckData.cardCount === 1 ? '' : 's'} · ${deckData.knownPct}% known`
@@ -115,7 +120,9 @@ function DeckPreviewActions({ deckId }: { deckId: string }) {
 }
 
 function QuizPreviewActions({ quizId }: { quizId: string }) {
-  const { data: quizData, isLoading: quizIsLoading } = useQuiz(quizId);
+  const { data: quizData, isLoading: quizIsLoading } = useQuiz(quizId, {
+    errorBoundary: false,
+  });
   const navigate = useNavigate();
   const summary = quizData
     ? `${quizData.questions.length} question${quizData.questions.length === 1 ? '' : 's'}${

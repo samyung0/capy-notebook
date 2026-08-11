@@ -103,11 +103,15 @@ function loadGooglePicker(): Promise<void> {
     const script = document.createElement('script');
     script.src = 'https://apis.google.com/js/api.js';
     script.onload = () => {
-      (
-        window as unknown as {
-          gapi: { load: (n: string, cb: () => void) => void };
-        }
-      ).gapi.load('picker', () => resolve());
+      try {
+        (
+          window as unknown as {
+            gapi: { load: (n: string, cb: () => void) => void };
+          }
+        ).gapi.load('picker', () => resolve());
+      } catch (error) {
+        reject(error);
+      }
     };
     script.onerror = () => reject(new Error('failed to load google picker'));
     document.head.appendChild(script);
@@ -244,8 +248,12 @@ function UploadFiles({
   className?: string;
 }) {
   const { mutateAsync: uploadSource } = useUploadSource(workspaceId);
-  const { data: uploadPolicy } = useSourceUploadPolicy();
-  const { data: chapters } = useChapters(workspaceId);
+  const { data: uploadPolicy } = useSourceUploadPolicy({
+    errorBoundary: false,
+  });
+  const { data: chapters } = useChapters(workspaceId, {
+    errorBoundary: false,
+  });
   const inputRef = useRef<HTMLInputElement>(null);
   const uploadControllers = useRef(new Map<string, AbortController>());
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -632,9 +640,9 @@ function ImportFiles({
 }) {
   // const [chapterId, setChapterId] = useState<string | null>(null);
   const openMsImport = usePortals((s) => s.openMsImport);
-  const { data: integrations } = useIntegrations();
+  const { data: integrations } = useIntegrations({ errorBoundary: false });
   const { isPending: importSourcesIsPending, mutate: importSources } =
-    useImportSources(workspaceId);
+    useImportSources(workspaceId, { errorToast: false });
   // const { data: msFiles } = useMicrosoftRecentFiles(msOpen && !!integrations?.microsoft);
 
   const connectProvider = useProviderConnect();
@@ -695,31 +703,36 @@ function ImportFiles({
       onClose();
       return;
     }
-    const { accessToken } = await api.get<{ accessToken: string }>(
-      '/integrations/google/picker-token'
-    );
-    await loadGooglePicker();
-    const g = window.google!.picker;
-    const view = new g.DocsView(g.ViewId.DOCS);
-    view.setIncludeFolders(true);
-    const picker = new g.PickerBuilder()
-      .addView(view)
-      .setOAuthToken(accessToken)
-      .setCallback((data: { action: string; docs?: { id: string }[] }) => {
-        if (data.action === 'picked' && data.docs?.length) {
-          importSources(
-            {
-              chapterId: null,
-              fileIds: data.docs.map((d: { id: string }) => d.id),
-              provider: 'google',
-            },
-            { onError: handleImportError }
-          );
-          onClose();
-        }
-      })
-      .build() as { setVisible: (v: boolean) => void };
-    picker.setVisible(true);
+    try {
+      const { accessToken } = await api.get<{ accessToken: string }>(
+        '/integrations/google/picker-token'
+      );
+      await loadGooglePicker();
+      const g = window.google?.picker;
+      if (!g) throw new Error('Google Picker did not finish loading.');
+      const view = new g.DocsView(g.ViewId.DOCS);
+      view.setIncludeFolders(true);
+      const picker = new g.PickerBuilder()
+        .addView(view)
+        .setOAuthToken(accessToken)
+        .setCallback((data: { action: string; docs?: { id: string }[] }) => {
+          if (data.action === 'picked' && data.docs?.length) {
+            importSources(
+              {
+                chapterId: null,
+                fileIds: data.docs.map((d: { id: string }) => d.id),
+                provider: 'google',
+              },
+              { onError: handleImportError }
+            );
+            onClose();
+          }
+        })
+        .build() as { setVisible: (v: boolean) => void };
+      picker.setVisible(true);
+    } catch (error) {
+      handleImportError(error);
+    }
   }
 
   async function onGoogleClick() {

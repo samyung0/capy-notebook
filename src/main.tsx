@@ -1,10 +1,12 @@
 import { QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { RouterProvider } from '@tanstack/react-router';
-import { StrictMode } from 'react';
+import { lazy, StrictMode, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
 import { Toaster } from 'sonner';
 import { queryClient } from './api/queryClient';
+import { AppErrorBoundary } from './components/app/AppErrorBoundary';
 import { AppAuthProvider } from './components/app/AuthProvider';
 import { router } from './router';
 import { ThemeProvider } from './theme/ThemeProvider';
@@ -16,6 +18,9 @@ import 'streamdown/styles.css';
 const USE_MOCKS =
   import.meta.env.VITE_USE_MSW !== 'false' &&
   import.meta.env.MODE === 'development';
+const MockScenarioPanel = USE_MOCKS
+  ? lazy(() => import('./components/dev/MockScenarioPanel'))
+  : null;
 async function enableMocks() {
   if (!USE_MOCKS) return;
   const { startMockServer } = await import('./mocks/browser');
@@ -32,10 +37,18 @@ enableMocks().finally(() => {
       <ThemeProvider>
         <AppAuthProvider>
           <QueryClientProvider client={queryClient}>
-            <RouterProvider context={{ queryClient }} router={router} />
+            <AppErrorBoundary variant="page">
+              <RouterProvider context={{ queryClient }} router={router} />
+              {MockScenarioPanel && (
+                <Suspense fallback={null}>
+                  <MockScenarioPanel />
+                </Suspense>
+              )}
+            </AppErrorBoundary>
+            {import.meta.env.DEV && <ReactQueryDevtools />}
             {/* Outside the router so public /share routes and router error
                 boundaries can surface toasts too. */}
-            {createPortal(<Toaster />, document.body)}
+            {createPortal(<Toaster visibleToasts={3} />, document.body)}
           </QueryClientProvider>
         </AppAuthProvider>
       </ThemeProvider>

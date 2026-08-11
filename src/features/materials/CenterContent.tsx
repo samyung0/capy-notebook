@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState } from 'react';
 import { isMaterialContentUnreadable } from '@/api/client';
 import { useFile, useMaterial, useMaterials } from '@/api/hooks';
 import type { Chapter, UserColor } from '@/api/types';
+import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { FileError, FileLoading } from '@/features/files/FileStates';
@@ -183,7 +184,13 @@ function MaterialContent({
   forceReadOnly: boolean;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
 }) {
-  const { data: material, error, isLoading } = useMaterial(materialId);
+  const {
+    data: material,
+    error,
+    isLoading,
+  } = useMaterial(materialId, {
+    errorBoundary: false,
+  });
   if (isLoading) {
     return <FileLoading />;
   }
@@ -210,15 +217,17 @@ function MaterialContent({
         </div>
       )}
       {isInteractiveMaterialMode(activeMode) && (
-        <Suspense fallback={<FileLoading />}>
-          <NoteEditor
-            allowExternalAssets={allowExternalAssets}
-            key={`${materialId}:${activeMode}`}
-            materialId={materialId}
-            mode={activeMode}
-            onEditorStatusChange={onEditorStatusChange}
-          />
-        </Suspense>
+        <AppErrorBoundary resetKeys={[materialId, activeMode]}>
+          <Suspense fallback={<FileLoading />}>
+            <NoteEditor
+              allowExternalAssets={allowExternalAssets}
+              key={`${materialId}:${activeMode}`}
+              materialId={materialId}
+              mode={activeMode}
+              onEditorStatusChange={onEditorStatusChange}
+            />
+          </Suspense>
+        </AppErrorBoundary>
       )}
     </div>
   );
@@ -254,7 +263,13 @@ function FileBody({
   onImageZoomChange: (next: number) => void;
   page?: number;
 }) {
-  const { data: file, isLoading, isError } = useFile(fileId);
+  const {
+    data: file,
+    isLoading,
+    isError,
+  } = useFile(fileId, {
+    errorBoundary: false,
+  });
   if (isLoading) return <FileLoading />;
   if (!isLoading && isError) return <FileError />;
   if (file?.status === 'processing') {

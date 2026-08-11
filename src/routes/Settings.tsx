@@ -1,7 +1,6 @@
 import { useClerk } from '@clerk/react';
 import { useState } from 'react';
 import { USE_MSW } from '@/api/auth';
-import { isApiError } from '@/api/client';
 import {
   useDeletionPreflight,
   useMe,
@@ -57,24 +56,27 @@ function AccountDangerZoneInner({
   async function onRequestDeletion() {
     try {
       await requestDeletion(confirmEmail.trim());
-      setConfirmEmail('');
-      userToast({
-        title: m.settings_deletion_requested_toast(),
-        variant: 'success',
-      });
-      // Sessions are revoked server-side; sign out locally so the next paint
-      // does not keep probing APIs that now return account_deletion_pending.
-      if (signOut) await signOut();
-    } catch (err) {
-      userToast({
-        description: isApiError(err)
-          ? (err.body?.message ?? err.message)
-          : err instanceof Error
-            ? err.message
-            : undefined,
-        title: m.settings_deletion_request_failed(),
-        variant: 'error',
-      });
+    } catch {
+      // The global mutation handler shows the normalized failure.
+      return;
+    }
+    setConfirmEmail('');
+    userToast({
+      title: m.settings_deletion_requested_toast(),
+      variant: 'success',
+    });
+    // Sessions are revoked server-side; sign out locally so the next paint
+    // does not keep probing APIs that now return account_deletion_pending.
+    if (signOut) {
+      try {
+        await signOut();
+      } catch {
+        userToast({
+          description: m.error_generic_body(),
+          title: m.settings_deletion_requested_toast(),
+          variant: 'warning',
+        });
+      }
     }
   }
 

@@ -64,7 +64,7 @@ function AssistantBubble({
   const empty = !msg.content;
   return (
     <div className="mr-auto max-w-[92%] px-3.5 py-2.5">
-      {empty && streaming ? (
+      {empty && streaming && msg.status === 'streaming' ? (
         <Spinner />
       ) : (
         <div className="streamdown-body max-w-none [&_p]:my-1.5 [&_pre]:my-2">
@@ -90,6 +90,15 @@ function AssistantBubble({
       {msg.status === 'aborted' && (
         <p className="mt-1 py-1 text-fg-muted italic">Stopped.</p>
       )}
+      {msg.status === 'error' && (
+        <div
+          className="mt-2 rounded-card border border-tint-error bg-tint-error px-3 py-2 text-sm text-solid-error"
+          role="alert"
+        >
+          <p className="font-medium">The response was interrupted.</p>
+          <p>Check your connection and send your message again.</p>
+        </div>
+      )}
       <Citations msg={msg} onOpen={onOpenCitation} />
     </div>
   );
@@ -107,12 +116,14 @@ export function ChatPanel({
 }) {
   const { messages, conversationId, streaming, send, stop, startNew, hydrate } =
     useChatStream(workspaceId);
-  const { data: conversations } = useConversations(workspaceId);
+  const { data: conversations } = useConversations(workspaceId, {
+    errorBoundary: false,
+  });
   // TODO: add time stamp for convos (last chat), show timestamp and action menu in chat history dropdown items
 
   const [text, setText] = useState('');
   const [selectId, setSelectId] = useState<string | null>(null);
-  const { data: history } = useMessages(selectId);
+  const { data: history } = useMessages(selectId, { errorBoundary: false });
   const hydratedRef = useRef<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 

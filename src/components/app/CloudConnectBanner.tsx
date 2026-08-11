@@ -8,7 +8,7 @@ import { useProviderConnect } from '@/lib/useProviderConnect';
 const DISMISS_KEY = 'evo_cloud_connect_dismissed';
 
 export function CloudConnectBanner() {
-  const { data: integrations } = useIntegrations();
+  const { data: integrations } = useIntegrations({ errorBoundary: false });
   const connectProvider = useProviderConnect();
   const [dismissed, setDismissed] = useState(
     () => localStorage.getItem(DISMISS_KEY) === '1'

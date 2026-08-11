@@ -34,6 +34,8 @@ at the top of each section.
 | [`src/api/notifications.test.ts`](../src/api/notifications.test.ts) | Reconciles SSE notification cache for re-invites without double-counting. |
 | [`src/api/plateAiTransport.test.ts`](../src/api/plateAiTransport.test.ts) | Scopes Plate AI routes to the workspace and strips browser provider credentials. |
 | [`src/api/sse.test.ts`](../src/api/sse.test.ts) | Reassembles SSE events that arrive split across response chunks. |
+| [`src/lib/errors.test.ts`](../src/lib/errors.test.ts) | Normalizes API, network, cancellation, quota, and chunk-load failures into safe UI error kinds and actions. |
+| [`src/mocks/scenarios.test.ts`](../src/mocks/scenarios.test.ts) | Validates unique development error scenarios, runtime-handler mappings, and Huma coded error envelopes. |
 
 ### Materials
 
@@ -165,12 +167,13 @@ See also [`pipeline-tests.md`](pipeline-tests.md) for disposable Postgres/Redis 
 
 ---
 
-## Playwright e2e — sharing / API (`e2e/sharing/`)
+## Playwright e2e — real stack (`e2e/errors/`, `e2e/sharing/`)
 
 Real stack via Docker (`pnpm e2e`). Editor specs are ignored by the root Playwright config.
 
 | File | About |
 | --- | --- |
+| [`e2e/errors/error-surfaces.spec.ts`](../e2e/errors/error-surfaces.spec.ts) | Primary workspace failure, non-disclosing public 401/404 responses, and browser-offline status surfaces. |
 | [`e2e/sharing/deck-sharing.spec.ts`](../e2e/sharing/deck-sharing.spec.ts) | Deck privacy/link/public visibility, Explore listing, clone, and non-member mutation denial. |
 | [`e2e/sharing/live-collaboration.spec.ts`](../e2e/sharing/live-collaboration.spec.ts) | Two live editors converge, show remote selections, and project to static view. |
 | [`e2e/sharing/material-modes.spec.ts`](../e2e/sharing/material-modes.spec.ts) | Shared material view/comment/edit modes, anonymous static, room tokens, and comment APIs. |

@@ -8,7 +8,7 @@ export function WorkspaceStatsDialog({
   id: string;
   onClose: () => void;
 }) {
-  const { data } = useWorkspaceStats(id);
+  const { data } = useWorkspaceStats(id, { errorBoundary: false });
   const rows = [
     ['Chapters', data?.chapters],
     ['Files', data?.files],

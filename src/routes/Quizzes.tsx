@@ -11,6 +11,7 @@ import {
 } from '@/api/hooks';
 import type { Attempt, Quiz } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -30,7 +31,7 @@ function scoreTone(pct: number): 'success' | 'warning' | 'error' {
 }
 
 function ReviewMistakesCard() {
-  const { data: mistakes } = useMistakes();
+  const { data: mistakes } = useMistakes({ errorBoundary: false });
   const navigate = useNavigate();
   const count = mistakes?.questions.length ?? 0;
   return (
@@ -60,7 +61,7 @@ function ReviewMistakesCard() {
 }
 
 function AllQuizzes() {
-  const { data, isLoading } = useQuizzes();
+  const { data, fetchStatus, isLoading } = useQuizzes();
   const navigate = useNavigate();
   const { mutate: deleteQuiz } = useDeleteQuiz();
   const { mutate: cloneQuiz } = useCloneQuiz();
@@ -70,6 +71,7 @@ function AllQuizzes() {
   const [info, setInfo] = useState<Quiz | null>(null);
   const [sharing, setSharing] = useState<Quiz | null>(null);
 
+  if (fetchStatus === 'paused') return <QueryPausedState />;
   if (isLoading) return <SkeletonCardGrid cardHeight={150} count={6} />;
 
   return (
@@ -215,8 +217,9 @@ function AllQuizzes() {
 }
 
 function PastAttempts() {
-  const { data, isLoading } = useAttempts();
+  const { data, fetchStatus, isLoading } = useAttempts();
   const navigate = useNavigate();
+  if (fetchStatus === 'paused') return <QueryPausedState />;
   if (isLoading) return <SkeletonList count={6} rowHeight={52} />;
   if (!data?.length)
     return <p className="py-8 text-center text-fg-muted">No attempts yet.</p>;

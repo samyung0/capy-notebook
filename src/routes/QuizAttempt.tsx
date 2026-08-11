@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { isApiError } from '@/api/client';
 import { useCloneQuiz, useQuiz, useSubmitAttempt } from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
@@ -21,9 +22,21 @@ import { toastCloneError, toastSignInRequired } from '@/lib/authToasts';
 export default function QuizAttempt() {
   const params = useParams({ strict: false });
   const quizId = (params as { quizId: string }).quizId;
-  const { data: quiz, isLoading, isError, error } = useQuiz(quizId);
-  const { isPending: submitIsPending, mutate: submit } = useSubmitAttempt();
-  const { isPending: cloneQuizIsPending, mutate: cloneQuiz } = useCloneQuiz();
+  const {
+    data: quiz,
+    error,
+    fetchStatus,
+    isError,
+    isLoading,
+  } = useQuiz(quizId, {
+    errorBoundary: false,
+  });
+  const { isPending: submitIsPending, mutate: submit } = useSubmitAttempt({
+    errorToast: false,
+  });
+  const { isPending: cloneQuizIsPending, mutate: cloneQuiz } = useCloneQuiz({
+    errorToast: false,
+  });
   const navigate = useNavigate();
 
   const [idx, setIdx] = useState(0);
@@ -37,6 +50,14 @@ export default function QuizAttempt() {
     ).length;
     return { correct, total: quiz.questions.length };
   }, [quiz, answers]);
+
+  if (fetchStatus === 'paused') {
+    return (
+      <PanelWithInvertedRadius>
+        <QueryPausedState className="h-full" />
+      </PanelWithInvertedRadius>
+    );
+  }
 
   if (isLoading) {
     return (

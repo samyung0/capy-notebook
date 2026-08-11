@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { USE_MSW } from '@/api/auth';
 import { useMe, useSearch } from '@/api/hooks';
 import type { SearchKind } from '@/api/types';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
 import {
@@ -50,7 +51,9 @@ export function SearchDialog({
 }) {
   const [q, setQ] = useState('');
   const debounced = useDebounced(q, 400);
-  const { data, isFetching } = useSearch(debounced);
+  const { data, fetchStatus, isFetching } = useSearch(debounced, {
+    errorBoundary: false,
+  });
   const navigate = useNavigate();
   const query = debounced.trim();
 
@@ -96,55 +99,59 @@ export function SearchDialog({
             </DialogClose>
           </div>
           <div className="relative min-h-40 flex-1 overflow-auto py-1">
-            {isFetching && (
+            {fetchStatus === 'paused' ? (
+              <QueryPausedState />
+            ) : isFetching ? (
               <SkeletonList className="p-1 px-2.5" count={5} rowHeight={48} />
-            )}
-            {!isFetching && !query && (
+            ) : query ? (
+              data?.length ? (
+                data.map((r) => {
+                  const c = r.color ? userColorPair(r.color) : null;
+                  return (
+                    <button
+                      className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-surface-hover-bg"
+                      key={`${r.kind}-${r.id}`}
+                      onClick={() => {
+                        setOpen(false);
+                        navigate({ to: r.href });
+                      }}
+                      type="button"
+                    >
+                      <span
+                        className="flex h-8 w-8 items-center justify-center rounded-button bg-surface-hover-bg text-fg-secondary"
+                        style={
+                          c ? { background: c.bg, color: c.fg } : undefined
+                        }
+                      >
+                        <Icon name={KIND_ICON[r.kind]} size={16} />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium text-fg text-sm">
+                          {r.title}
+                        </span>
+                        {r.subtitle && (
+                          <span className="block truncate text-fg-muted text-xs">
+                            {r.subtitle}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })
+              ) : (
+                <div className="absolute inset-0 flex items-center justify-center text-center">
+                  <span className="-translate-y-1/2">
+                    No matches for "{query}".
+                  </span>
+                </div>
+              )
+            ) : (
               <div className="absolute inset-0 flex items-center justify-center text-center">
                 <span className="-translate-y-1/2">
                   {m.search_result_placeholder()}
                 </span>
               </div>
             )}
-            {!isFetching && query && !data?.length && (
-              <div className="absolute inset-0 flex items-center justify-center text-center">
-                <span className="-translate-y-1/2">
-                  No matches for "{query}".
-                </span>
-              </div>
-            )}
-            {!isFetching &&
-              data?.map((r) => {
-                const c = r.color ? userColorPair(r.color) : null;
-                return (
-                  <button
-                    className="flex w-full items-center gap-3 px-4 py-2.5 text-left hover:bg-surface-hover-bg"
-                    key={`${r.kind}-${r.id}`}
-                    onClick={() => {
-                      setOpen(false);
-                      navigate({ to: r.href });
-                    }}
-                    type="button"
-                  >
-                    <span
-                      className="flex h-8 w-8 items-center justify-center rounded-button bg-surface-hover-bg text-fg-secondary"
-                      style={c ? { background: c.bg, color: c.fg } : undefined}
-                    >
-                      <Icon name={KIND_ICON[r.kind]} size={16} />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium text-fg text-sm">
-                        {r.title}
-                      </span>
-                      {r.subtitle && (
-                        <span className="block truncate text-fg-muted text-xs">
-                          {r.subtitle}
-                        </span>
-                      )}
-                    </span>
-                  </button>
-                );
-              })}
           </div>
         </div>
       </DialogContent>
@@ -167,7 +174,7 @@ function SearchButton() {
 }
 
 function ProfilePillInner({ onLogout }: { onLogout?: () => void }) {
-  const { data: me } = useMe();
+  const { data: me } = useMe({ errorBoundary: false });
   const navigate = useNavigate();
   const [themeOpen, setThemeOpen] = useState(false);
 

@@ -1,5 +1,6 @@
 import { lazy, type ReactNode, Suspense } from 'react';
 import type { SourceFile } from '@/api/types';
+import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Icon } from '@/components/ui/Icon';
 import { ImageViewer } from '@/features/files/ImageViewer';
 import { FileEmpty, FileLoading } from './FileStates';
@@ -46,18 +47,28 @@ function UnsupportedPreview({ file }: { file: SourceFile }) {
   );
 }
 
-export function FileViewer({
-  file,
-  imageZoom = IMAGE_MIN_ZOOM,
-  onImageZoomChange,
-  page,
-}: {
+interface FileViewerProps {
   file: SourceFile | null;
   imageZoom?: number;
   onImageZoomChange?: (next: number) => void;
   /** 1-based page to scroll to, from a chat citation. PDFs only. */
   page?: number;
-}) {
+}
+
+export function FileViewer(props: FileViewerProps) {
+  return (
+    <AppErrorBoundary resetKeys={[props.file?.id]}>
+      <FileViewerContent {...props} />
+    </AppErrorBoundary>
+  );
+}
+
+function FileViewerContent({
+  file,
+  imageZoom = IMAGE_MIN_ZOOM,
+  onImageZoomChange,
+  page,
+}: FileViewerProps) {
   if (!file) {
     return (
       <div className="grid h-full place-items-center">

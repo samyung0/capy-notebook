@@ -35,7 +35,13 @@ export function NoteEditor({
   allowExternalAssets?: boolean;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
 }) {
-  const { data: material, error, isLoading } = useMaterial(materialId);
+  const {
+    data: material,
+    error,
+    isLoading,
+  } = useMaterial(materialId, {
+    errorBoundary: false,
+  });
 
   if (isLoading) {
     return (
@@ -97,7 +103,13 @@ function CollaborativeNoteEditor({
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
 }) {
   const qc = useQueryClient();
-  const { data: meData, isError: meIsError, isPending: meIsPending } = useMe();
+  const {
+    data: meData,
+    isError: meIsError,
+    isPending: meIsPending,
+  } = useMe({
+    errorBoundary: false,
+  });
   // The collaboration service discards a room whose document breaks the
   // material limits, so the local Y.Doc becomes a fork the moment that happens.
   // Remounting is the only way back onto the authoritative state: invalidating
@@ -120,12 +132,14 @@ function CollaborativeNoteEditor({
   const role: WorkspaceRole | null =
     material.role ?? (material.isOwner ? 'owner' : null);
   const { data: discussionsData, isPending: discussionsIsPending } =
-    useMaterialDiscussions(material.id);
+    useMaterialDiscussions(material.id, { errorBoundary: false });
   const {
     data: collaborationTokenData,
     isError: collaborationTokenIsError,
     isPending: collaborationTokenIsPending,
-  } = useMaterialCollaborationToken(material.id);
+  } = useMaterialCollaborationToken(material.id, true, {
+    errorBoundary: false,
+  });
   const canEdit = material.capabilities.canEdit;
   const canComment = material.capabilities.canComment || canEdit;
   // Identity matters more than the allocation: this context is read from inside

@@ -46,7 +46,9 @@ export function WorkspaceMemberManager({
     null
   );
   const [managedRole, setManagedRole] = useState<MemberRole>('viewer');
-  const { data: membersData } = useWorkspaceMembers(workspaceId);
+  const { data: membersData } = useWorkspaceMembers(workspaceId, true, {
+    errorBoundary: false,
+  });
   const { isPending: createInviteIsPending, mutateAsync: createInvite } =
     useCreateWorkspaceInvite(workspaceId);
   const { isPending: updateMemberIsPending, mutate: updateMember } =
@@ -66,11 +68,7 @@ export function WorkspaceMemberManager({
         title: 'Invitation submitted',
       });
     } catch {
-      userToast({
-        description: 'Something went wrong. Please try again.',
-        title: 'Could not send invitation',
-        variant: 'error',
-      });
+      // The global mutation handler shows the normalized failure.
     }
   }
 
@@ -83,15 +81,8 @@ export function WorkspaceMemberManager({
         title: m.workspace_transfer_success(),
         variant: 'success',
       });
-    } catch (err) {
-      userToast({
-        description:
-          err instanceof Error
-            ? err.message
-            : 'Something went wrong. Please try again.',
-        title: m.workspace_transfer_failed(),
-        variant: 'error',
-      });
+    } catch {
+      // The global mutation handler shows the normalized failure.
     }
   }
 

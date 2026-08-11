@@ -77,17 +77,39 @@ import type {
 
 const USE_DIRECT_B2_UPLOAD = import.meta.env.VITE_DIRECT_B2_UPLOAD !== 'false';
 
+export interface QueryUiOptions {
+  errorBoundary?: false;
+}
+
+export interface MutationUiOptions {
+  errorToast?: false;
+}
+
+function queryMeta(options?: QueryUiOptions) {
+  return options?.errorBoundary === false
+    ? ({ errorBoundary: false } as const)
+    : undefined;
+}
+
+function mutationMeta(options?: MutationUiOptions) {
+  return options?.errorToast === false
+    ? ({ errorToast: false } as const)
+    : undefined;
+}
+
 /* ---------------- account / shell ---------------- */
 export const meQuery = () =>
   queryOptions({ queryFn: () => api.get<User>('/me'), queryKey: qk.me });
-export const useMe = () => useQuery(meQuery());
+export const useMe = (options?: QueryUiOptions) =>
+  useQuery({ ...meQuery(), meta: queryMeta(options) });
 
 export const accountStatusQuery = () =>
   queryOptions({
     queryFn: () => api.get<AccountStatus>('/account/status'),
     queryKey: qk.accountStatus,
   });
-export const useAccountStatus = () => useQuery(accountStatusQuery());
+export const useAccountStatus = (options?: QueryUiOptions) =>
+  useQuery({ ...accountStatusQuery(), meta: queryMeta(options) });
 
 export const deletionPreflightQuery = () =>
   queryOptions({
@@ -127,9 +149,10 @@ export function useTransferWorkspace(workspaceId: string) {
   });
 }
 
-export const useSearch = (q: string) =>
+export const useSearch = (q: string, options?: QueryUiOptions) =>
   useQuery({
     enabled: q.trim().length > 0,
+    meta: queryMeta(options),
     queryFn: () =>
       api.get<SearchResult[]>(`/search?q=${encodeURIComponent(q)}`),
     queryKey: qk.search(q),
@@ -140,7 +163,7 @@ type NotificationStreamState = {
   status: 'connecting' | 'connected' | 'disconnected';
 };
 
-export const useNotifications = () =>
+export const useNotifications = (options?: QueryUiOptions) =>
   useInfiniteQuery<
     NotificationPage,
     Error,
@@ -150,6 +173,7 @@ export const useNotifications = () =>
   >({
     getNextPageParam: (page) => page.next || undefined,
     initialPageParam: '',
+    meta: queryMeta(options),
     queryFn: ({ pageParam }) => {
       const query = new URLSearchParams({
         limit: String(NOTIFICATION_PAGE_SIZE),
@@ -161,8 +185,9 @@ export const useNotifications = () =>
     refetchOnWindowFocus: true,
   });
 
-export const useUnreadNotificationCount = () =>
+export const useUnreadNotificationCount = (options?: QueryUiOptions) =>
   useQuery({
+    meta: queryMeta(options),
     queryFn: () => api.get<{ count: number }>('/notifications/unread-count'),
     queryKey: qk.notificationUnread,
   });
@@ -331,6 +356,7 @@ export function useNotificationStream(enabled = true) {
 export function useMarkNotificationRead() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorToast: false },
     mutationFn: (id: string) => api.post<void>(`/notifications/${id}/read`),
     onSuccess: (_data, id) => {
       applyNotificationEvent(qc, { ids: [id], type: 'read' });
@@ -341,6 +367,7 @@ export function useMarkNotificationRead() {
 export function useMarkNotificationsRead() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorToast: false },
     mutationFn: () => api.post<void>('/notifications/read'),
     onSuccess: () => {
       const ids =
@@ -352,8 +379,9 @@ export function useMarkNotificationsRead() {
   });
 }
 
-export const useNotificationPrefs = () =>
+export const useNotificationPrefs = (options?: QueryUiOptions) =>
   useQuery({
+    meta: queryMeta(options),
     queryFn: () => api.get<NotificationPrefs>('/notification-prefs'),
     queryKey: qk.notificationPrefs,
   });
@@ -402,7 +430,8 @@ export const billingQuery = () =>
     queryFn: () => api.get<BillingInfo>('/billing'),
     queryKey: qk.billing,
   });
-export const useBilling = () => useQuery(billingQuery());
+export const useBilling = (options?: QueryUiOptions) =>
+  useQuery({ ...billingQuery(), meta: queryMeta(options) });
 
 export function useBillingCheckout() {
   return useMutation({
@@ -425,11 +454,16 @@ export const integrationsQuery = () =>
     queryFn: () => api.get<IntegrationsStatus>('/integrations'),
     queryKey: qk.integrations,
   });
-export const useIntegrations = () => useQuery(integrationsQuery());
+export const useIntegrations = (options?: QueryUiOptions) =>
+  useQuery({ ...integrationsQuery(), meta: queryMeta(options) });
 
-export function useImportSources(workspaceId: string) {
+export function useImportSources(
+  workspaceId: string,
+  options?: MutationUiOptions
+) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: (body: {
       provider: 'google' | 'microsoft';
       fileIds: string[];
@@ -443,9 +477,13 @@ export function useImportSources(workspaceId: string) {
   });
 }
 
-export function useMicrosoftRecentFiles(enabled: boolean) {
+export function useMicrosoftRecentFiles(
+  enabled: boolean,
+  options?: QueryUiOptions
+) {
   return useQuery({
     enabled,
+    meta: queryMeta(options),
     queryFn: () =>
       api.get<{ id: string; name: string }[]>('/integrations/microsoft/recent'),
     queryKey: ['integrations', 'microsoft', 'recent'],
@@ -460,7 +498,8 @@ export const tagsQuery = (kind = 'workspace') =>
     queryFn: () => api.get<Tag[]>(`/tags?kind=${encodeURIComponent(kind)}`),
     queryKey: qk.tags(kind),
   });
-export const useTags = (kind = 'workspace') => useQuery(tagsQuery(kind));
+export const useTags = (kind = 'workspace', options?: QueryUiOptions) =>
+  useQuery({ ...tagsQuery(kind), meta: queryMeta(options) });
 
 /* ---------------- workspaces ---------------- */
 export interface WorkspaceQuery {
@@ -493,8 +532,10 @@ export const workspacesQuery = (params: WorkspaceQuery = {}) => {
     queryKey: qk.workspaces(params),
   });
 };
-export const useWorkspaces = (params: WorkspaceQuery = {}) =>
-  useQuery(workspacesQuery(params));
+export const useWorkspaces = (
+  params: WorkspaceQuery = {},
+  options?: QueryUiOptions
+) => useQuery({ ...workspacesQuery(params), meta: queryMeta(options) });
 
 export const workspaceQuery = (id: string) =>
   queryOptions({
@@ -502,7 +543,8 @@ export const workspaceQuery = (id: string) =>
     queryFn: () => api.get<Workspace>(`/workspaces/${id}`),
     queryKey: qk.workspace(id),
   });
-export const useWorkspace = (id: string) => useQuery(workspaceQuery(id));
+export const useWorkspace = (id: string, options?: QueryUiOptions) =>
+  useQuery({ ...workspaceQuery(id), meta: queryMeta(options) });
 
 export const workspaceStatsQuery = (id: string) =>
   queryOptions({
@@ -517,8 +559,8 @@ export const workspaceStatsQuery = (id: string) =>
       }>(`/workspaces/${id}/stats`),
     queryKey: qk.workspaceStats(id),
   });
-export const useWorkspaceStats = (id: string) =>
-  useQuery(workspaceStatsQuery(id));
+export const useWorkspaceStats = (id: string, options?: QueryUiOptions) =>
+  useQuery({ ...workspaceStatsQuery(id), meta: queryMeta(options) });
 
 export function useCreateWorkspace() {
   const qc = useQueryClient();
@@ -553,6 +595,7 @@ export function useUpdateWorkspace() {
 export function useUpdateWorkspaceSharing() {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorToast: false },
     mutationFn: ({ id, ...body }: UpdateWorkspaceSharingReq & { id: string }) =>
       api.patch<Workspace>(`/workspaces/${id}/sharing`, body),
     // Await invalidation so mutateAsync (and ShareDialog's savingField) stay
@@ -579,7 +622,8 @@ export const sourceUploadPolicyQuery = () =>
     queryFn: () => api.get<SourceUploadPolicy>('/source-upload-policy'),
     queryKey: qk.sourceUploadPolicy,
   });
-export const useSourceUploadPolicy = () => useQuery(sourceUploadPolicyQuery());
+export const useSourceUploadPolicy = (options?: QueryUiOptions) =>
+  useQuery({ ...sourceUploadPolicyQuery(), meta: queryMeta(options) });
 
 export const chaptersQuery = (wsId: string) =>
   queryOptions({
@@ -587,7 +631,8 @@ export const chaptersQuery = (wsId: string) =>
     queryFn: () => api.get<Chapter[]>(`/workspaces/${wsId}/chapters`),
     queryKey: qk.chapters(wsId),
   });
-export const useChapters = (wsId: string) => useQuery(chaptersQuery(wsId));
+export const useChapters = (wsId: string, options?: QueryUiOptions) =>
+  useQuery({ ...chaptersQuery(wsId), meta: queryMeta(options) });
 
 export const filesQuery = (wsId: string) =>
   queryOptions({
@@ -595,11 +640,13 @@ export const filesQuery = (wsId: string) =>
     queryFn: () => api.get<SourceFile[]>(`/workspaces/${wsId}/files`),
     queryKey: qk.files(wsId),
   });
-export const useFiles = (wsId: string) => useQuery(filesQuery(wsId));
+export const useFiles = (wsId: string, options?: QueryUiOptions) =>
+  useQuery({ ...filesQuery(wsId), meta: queryMeta(options) });
 
-export const useFile = (id: string | null) =>
+export const useFile = (id: string | null, options?: QueryUiOptions) =>
   useQuery({
     enabled: !!id,
+    meta: queryMeta(options),
     queryFn: () => api.get<SourceFile>(`/files/${id}`),
     queryKey: qk.file(id ?? ''),
   });
@@ -640,6 +687,7 @@ export function useMoveFile(wsId: string) {
     { id: string; chapterId: string | null },
     { prev?: SourceFile[] }
   >({
+    meta: { errorToast: false },
     mutationFn: ({ id, chapterId }: { id: string; chapterId: string | null }) =>
       api.patch<SourceFile>(`/files/${id}`, { chapterId: chapterId ?? '' }),
     onError: (_e, _v, ctx) => {
@@ -710,6 +758,7 @@ export function useReorderContent(wsId: string) {
     { chapterId: string | null; items: ContentOrderItem[] },
     { prevFiles?: SourceFile[]; prevMaterials?: MaterialRef[] }
   >({
+    meta: { errorToast: false },
     mutationFn: ({
       chapterId,
       items,
@@ -810,6 +859,7 @@ function simulateMswProgress(qc: QueryClient, wsId: string, fileId: string) {
 export function useUploadSource(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorToast: false },
     mutationFn: ({
       file,
       kind,
@@ -895,31 +945,82 @@ export function useUploadSource(wsId: string) {
 
 /** Subscribe to live ingest progress for a workspace (SSE) and patch the file
  * caches as events arrive. No-op under MSW (dev mock has no event stream). */
+export type IngestStreamState = {
+  status: 'connecting' | 'connected' | 'disconnected';
+};
+
 export function useIngestProgress(wsId: string, enabled = true) {
   const qc = useQueryClient();
   useEffect(() => {
-    if (!wsId || !enabled || USE_MSW) return;
-    const es = new EventSource(`${API_BASE}/workspaces/${wsId}/ingest-events`);
-    es.onmessage = (e) => {
-      try {
-        const ev = JSON.parse(e.data) as {
-          fileId: string;
-          pct: number;
-          status: FileStatus;
-        };
-        patchFileInCache(qc, wsId, ev.fileId, {
-          ingestPct: ev.pct,
-          status: ev.status,
+    const streamKey = qk.ingestStream(wsId);
+    if (!wsId || !enabled || USE_MSW) {
+      qc.removeQueries({ queryKey: streamKey });
+      return;
+    }
+
+    let stopped = false;
+    let source: EventSource | undefined;
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let retryDelay = 1000;
+
+    const connect = () => {
+      if (stopped) return;
+      qc.setQueryData<IngestStreamState>(streamKey, (current) =>
+        current?.status === 'disconnected' ? current : { status: 'connecting' }
+      );
+      source = new EventSource(`${API_BASE}/workspaces/${wsId}/ingest-events`);
+      source.onopen = () => {
+        retryDelay = 1000;
+        qc.setQueryData<IngestStreamState>(streamKey, {
+          status: 'connected',
         });
-        if (ev.status === 'ready' || ev.status === 'failed') {
-          qc.invalidateQueries({ queryKey: qk.files(wsId) });
-          qc.invalidateQueries({ queryKey: qk.file(ev.fileId) });
+      };
+      source.onmessage = (event) => {
+        try {
+          const value = JSON.parse(event.data) as Record<string, unknown>;
+          if (
+            typeof value.fileId !== 'string' ||
+            typeof value.pct !== 'number' ||
+            !Number.isFinite(value.pct) ||
+            !['processing', 'ready', 'failed'].includes(String(value.status))
+          ) {
+            return;
+          }
+          const status = value.status as FileStatus;
+          patchFileInCache(qc, wsId, value.fileId, {
+            ingestPct: value.pct,
+            status,
+          });
+          if (status === 'ready' || status === 'failed') {
+            qc.invalidateQueries({ queryKey: qk.files(wsId) });
+            qc.invalidateQueries({ queryKey: qk.file(value.fileId) });
+          }
+        } catch {
+          /* ignore malformed events */
         }
-      } catch {
-        /* ignore malformed events */
-      }
+      };
+      source.onerror = () => {
+        source?.close();
+        source = undefined;
+        if (stopped || retryTimer) return;
+        qc.setQueryData<IngestStreamState>(streamKey, {
+          status: 'disconnected',
+        });
+        retryTimer = setTimeout(() => {
+          retryTimer = undefined;
+          connect();
+        }, retryDelay);
+        retryDelay = Math.min(retryDelay * 2, 30_000);
+      };
     };
-    return () => es.close();
+
+    connect();
+    return () => {
+      stopped = true;
+      source?.close();
+      if (retryTimer) clearTimeout(retryTimer);
+      qc.removeQueries({ queryKey: streamKey });
+    };
   }, [wsId, enabled, qc]);
 }
 
@@ -931,8 +1032,8 @@ export const conversationsQuery = (wsId: string) =>
     queryFn: () => api.get<Conversation[]>(`/workspaces/${wsId}/conversations`),
     queryKey: qk.conversations(wsId),
   });
-export const useConversations = (wsId: string) =>
-  useQuery(conversationsQuery(wsId));
+export const useConversations = (wsId: string, options?: QueryUiOptions) =>
+  useQuery({ ...conversationsQuery(wsId), meta: queryMeta(options) });
 
 export const messagesQuery = (convId: string | null) =>
   queryOptions({
@@ -940,8 +1041,8 @@ export const messagesQuery = (convId: string | null) =>
     queryFn: () => api.get<WireMessage[]>(`/conversations/${convId}/messages`),
     queryKey: qk.messages(convId ?? ''),
   });
-export const useMessages = (convId: string | null) =>
-  useQuery(messagesQuery(convId));
+export const useMessages = (convId: string | null, options?: QueryUiOptions) =>
+  useQuery({ ...messagesQuery(convId), meta: queryMeta(options) });
 
 export function useDeleteConversation(wsId: string) {
   const qc = useQueryClient();
@@ -974,7 +1075,8 @@ export const materialsQuery = (wsId: string) =>
     queryFn: () => api.get<MaterialRef[]>(`/workspaces/${wsId}/materials`),
     queryKey: qk.materials(wsId),
   });
-export const useMaterials = (wsId: string) => useQuery(materialsQuery(wsId));
+export const useMaterials = (wsId: string, options?: QueryUiOptions) =>
+  useQuery({ ...materialsQuery(wsId), meta: queryMeta(options) });
 
 export const materialQuery = (id: string | null) =>
   queryOptions({
@@ -982,7 +1084,8 @@ export const materialQuery = (id: string | null) =>
     queryFn: () => api.get<Material>(`/materials/${id}`),
     queryKey: qk.material(id ?? ''),
   });
-export const useMaterial = (id: string | null) => useQuery(materialQuery(id));
+export const useMaterial = (id: string | null, options?: QueryUiOptions) =>
+  useQuery({ ...materialQuery(id), meta: queryMeta(options) });
 
 export function useDeleteMaterial(wsId: string) {
   const qc = useQueryClient();
@@ -1068,8 +1171,15 @@ export const workspaceMembersQuery = (workspaceId: string, enabled = true) =>
     queryKey: qk.workspaceMembers(workspaceId),
   });
 
-export const useWorkspaceMembers = (workspaceId: string, enabled = true) =>
-  useQuery(workspaceMembersQuery(workspaceId, enabled));
+export const useWorkspaceMembers = (
+  workspaceId: string,
+  enabled = true,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    ...workspaceMembersQuery(workspaceId, enabled),
+    meta: queryMeta(options),
+  });
 
 /**
  * Mention directory. Unlike the member roster this is readable by shared-link
@@ -1091,8 +1201,13 @@ export const workspaceCollaboratorsQuery = (
 
 export const useWorkspaceCollaborators = (
   workspaceId: string,
-  enabled = true
-) => useQuery(workspaceCollaboratorsQuery(workspaceId, enabled));
+  enabled = true,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    ...workspaceCollaboratorsQuery(workspaceId, enabled),
+    meta: queryMeta(options),
+  });
 
 export function useCreateWorkspaceInvite(workspaceId: string) {
   return useMutation({
@@ -1162,8 +1277,14 @@ export const materialDiscussionsQuery = (materialId: string) =>
     queryKey: qk.materialDiscussions(materialId),
   });
 
-export const useMaterialDiscussions = (materialId: string) =>
-  useQuery(materialDiscussionsQuery(materialId));
+export const useMaterialDiscussions = (
+  materialId: string,
+  options?: QueryUiOptions
+) =>
+  useQuery({
+    ...materialDiscussionsQuery(materialId),
+    meta: queryMeta(options),
+  });
 
 export function useCreateMaterialDiscussion(materialId: string) {
   const qc = useQueryClient();
@@ -1281,10 +1402,12 @@ export const getMaterialCollaborationToken = (materialId: string) =>
 
 export function useMaterialCollaborationToken(
   materialId: string,
-  enabled = true
+  enabled = true,
+  options?: QueryUiOptions
 ) {
   return useQuery({
     enabled: !!materialId && enabled,
+    meta: queryMeta(options),
     queryFn: () => getMaterialCollaborationToken(materialId),
     queryKey: ['material', materialId, 'collaboration-token'],
     refetchInterval: 4 * 60 * 1000,
@@ -1303,6 +1426,7 @@ export function useMoveMaterial(wsId: string) {
     { id: string; chapterId: string | null },
     { prevList?: MaterialRef[]; prevMaterial?: Material }
   >({
+    meta: { errorToast: false },
     mutationFn: ({ id, chapterId }: { id: string; chapterId: string | null }) =>
       api.patch<MaterialUpdateResult>(`/materials/${id}`, {
         chapterId: chapterId ?? '',
@@ -1345,7 +1469,8 @@ export const quizQuery = (id: string) =>
     queryFn: () => api.get<Quiz>(`/quizzes/${id}`),
     queryKey: qk.quiz(id),
   });
-export const useQuiz = (id: string) => useQuery(quizQuery(id));
+export const useQuiz = (id: string, options?: QueryUiOptions) =>
+  useQuery({ ...quizQuery(id), meta: queryMeta(options) });
 
 export const attemptsQuery = () =>
   queryOptions({
@@ -1360,7 +1485,8 @@ export const attemptQuery = (id: string) =>
     queryFn: () => api.get<AttemptDetail>(`/attempts/${id}`),
     queryKey: qk.attempt(id),
   });
-export const useAttempt = (id: string) => useQuery(attemptQuery(id));
+export const useAttempt = (id: string, options?: QueryUiOptions) =>
+  useQuery({ ...attemptQuery(id), meta: queryMeta(options) });
 
 /** Ad-hoc quiz built from recently-missed questions. */
 export const mistakesQuery = () =>
@@ -1368,7 +1494,8 @@ export const mistakesQuery = () =>
     queryFn: () => api.get<Quiz>('/mistakes'),
     queryKey: qk.mistakes,
   });
-export const useMistakes = () => useQuery(mistakesQuery());
+export const useMistakes = (options?: QueryUiOptions) =>
+  useQuery({ ...mistakesQuery(), meta: queryMeta(options) });
 
 /** Invalidate every workspace's materials list (quiz/deck edits change titles
  * shown in the left panel but don't carry a workspace id). */
@@ -1420,9 +1547,10 @@ export function useDeleteQuiz() {
     },
   });
 }
-export function useSubmitAttempt() {
+export function useSubmitAttempt(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: ({
       quizId,
       correct,
@@ -1500,7 +1628,8 @@ export const deckQuery = (id: string) =>
     queryFn: () => api.get<Deck>(`/decks/${id}`),
     queryKey: qk.deck(id),
   });
-export const useDeck = (id: string) => useQuery(deckQuery(id));
+export const useDeck = (id: string, options?: QueryUiOptions) =>
+  useQuery({ ...deckQuery(id), meta: queryMeta(options) });
 
 export const cardsQuery = (deckId: string) =>
   queryOptions({
@@ -1508,7 +1637,8 @@ export const cardsQuery = (deckId: string) =>
     queryFn: () => api.get<Flashcard[]>(`/decks/${deckId}/cards`),
     queryKey: qk.cards(deckId),
   });
-export const useCards = (deckId: string) => useQuery(cardsQuery(deckId));
+export const useCards = (deckId: string, options?: QueryUiOptions) =>
+  useQuery({ ...cardsQuery(deckId), meta: queryMeta(options) });
 export function useUpdateCard(deckId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -1525,6 +1655,7 @@ export function useUpdateCard(deckId: string) {
 export function useReviewCard(deckId: string) {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorToast: false },
     mutationFn: ({ id, srs, known }: Pick<Flashcard, 'id' | 'srs' | 'known'>) =>
       api.patch<Flashcard>(`/cards/${id}`, { known, srs }),
     onSuccess: () => {
@@ -1540,14 +1671,16 @@ export const eventsQuery = () =>
     queryFn: () => api.get<CalendarEvent[]>('/events'),
     queryKey: qk.events,
   });
-export const useEvents = () => useQuery(eventsQuery());
+export const useEvents = (options?: QueryUiOptions) =>
+  useQuery({ ...eventsQuery(), meta: queryMeta(options) });
 
 export const labelsQuery = () =>
   queryOptions({
     queryFn: () => api.get<Label[]>('/labels'),
     queryKey: qk.labels,
   });
-export const useLabels = () => useQuery(labelsQuery());
+export const useLabels = (options?: QueryUiOptions) =>
+  useQuery({ ...labelsQuery(), meta: queryMeta(options) });
 export function useUpdateLabel() {
   const qc = useQueryClient();
   return useMutation({
@@ -1589,7 +1722,8 @@ export const tasksQuery = () =>
     queryFn: () => api.get<Task[]>('/tasks'),
     queryKey: qk.tasks,
   });
-export const useTasks = () => useQuery(tasksQuery());
+export const useTasks = (options?: QueryUiOptions) =>
+  useQuery({ ...tasksQuery(), meta: queryMeta(options) });
 
 interface TasksMutationContext {
   prev?: Task[];
@@ -1612,6 +1746,7 @@ export function useToggleTask() {
     { id: string; done: boolean },
     TasksMutationContext
   >({
+    meta: { errorToast: false },
     mutationFn: ({ id, done }) => api.patch<Task>(`/tasks/${id}`, { done }),
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(qk.tasks, ctx.prev);
@@ -1634,6 +1769,7 @@ export function useUpdateTask() {
     { id: string } & Partial<Pick<Task, 'title' | 'meta' | 'done'>>,
     TasksMutationContext
   >({
+    meta: { errorToast: false },
     mutationFn: ({ id, ...patch }) => api.patch<Task>(`/tasks/${id}`, patch),
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(qk.tasks, ctx.prev);
@@ -1651,6 +1787,7 @@ export function useUpdateTask() {
 export function useDeleteTask() {
   const qc = useQueryClient();
   return useMutation<void, Error, string, TasksMutationContext>({
+    meta: { errorToast: false },
     mutationFn: (id) => api.del<void>(`/tasks/${id}`),
     onError: (_e, _v, ctx) => {
       if (ctx?.prev) qc.setQueryData(qk.tasks, ctx.prev);
@@ -1672,7 +1809,8 @@ export const canvasesQuery = () =>
     queryFn: () => api.get<ThinkingCanvas[]>('/thinking'),
     queryKey: qk.thinking,
   });
-export const useCanvases = () => useQuery(canvasesQuery());
+export const useCanvases = (options?: QueryUiOptions) =>
+  useQuery({ ...canvasesQuery(), meta: queryMeta(options) });
 
 export const canvasQuery = (id: string) =>
   queryOptions({
@@ -1680,7 +1818,8 @@ export const canvasQuery = (id: string) =>
     queryFn: () => api.get<ThinkingCanvas>(`/thinking/${id}`),
     queryKey: qk.canvas(id),
   });
-export const useCanvas = (id: string) => useQuery(canvasQuery(id));
+export const useCanvas = (id: string, options?: QueryUiOptions) =>
+  useQuery({ ...canvasQuery(id), meta: queryMeta(options) });
 export function useCreateCanvas() {
   const qc = useQueryClient();
   return useMutation({
@@ -1692,6 +1831,7 @@ export function useCreateCanvas() {
 export function useSaveCanvas(id: string) {
   const qc = useQueryClient();
   return useMutation({
+    meta: { errorToast: false },
     mutationFn: (body: { scene?: unknown; name?: string }) =>
       api.put<ThinkingCanvas>(`/thinking/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.thinking }),
@@ -1724,9 +1864,10 @@ export const useExploreDecks = () => useQuery(exploreDecksQuery());
 
 /** Deep-copy a shared workspace (chapters, files, materials and — via the
  * pipeline — the parsed knowledge graph) into the caller's account. */
-export function useCloneWorkspace() {
+export function useCloneWorkspace(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: (id: string) =>
       api.post<CloneWorkspaceResult>(`/workspaces/${id}/clone`),
     onSuccess: () => {
@@ -1739,9 +1880,10 @@ export function useCloneWorkspace() {
 }
 
 /** Copy a shared quiz into the caller's library (most recent workspace). */
-export function useCloneQuiz() {
+export function useCloneQuiz(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: (id: string) => api.post<Quiz>(`/quizzes/${id}/clone`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.quizzes });
@@ -1752,9 +1894,10 @@ export function useCloneQuiz() {
 }
 
 /** Copy a shared deck (with reset SRS state) into the caller's library. */
-export function useCloneDeck() {
+export function useCloneDeck(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
+    meta: mutationMeta(options),
     mutationFn: (id: string) => api.post<Deck>(`/decks/${id}/clone`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.decks });

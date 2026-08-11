@@ -2,6 +2,8 @@ import { Link } from '@tanstack/react-router';
 import { Panel } from '@/components/app/layout';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/feedback';
+import { m } from '@/i18n';
+import { useOnlineStatus } from '@/lib/online';
 
 /** Non-disclosing empty state for private/missing shared resources. */
 export function LoadingLarge({
@@ -13,6 +15,7 @@ export function LoadingLarge({
   backTo?: string;
   backLabel?: string;
 }) {
+  const online = useOnlineStatus();
   return (
     <Panel sectionClassName="items-center justify-center h-full">
       <div
@@ -22,7 +25,9 @@ export function LoadingLarge({
         <span>
           <Spinner className="size-7" />
         </span>
-        <h1 className="t-large-card-title">{title}</h1>
+        <h1 className="t-large-card-title">
+          {online ? title : m.connection_waiting()}
+        </h1>
         {backTo && (
           <Link className="-translate-x-1" preload="intent" to={backTo}>
             <Button iconLeft="chevronLeft" variant="ghost">

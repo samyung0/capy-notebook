@@ -9,6 +9,7 @@ import {
   useExploreWorkspaces,
 } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -20,10 +21,21 @@ import { userColorPair } from '@/lib/userColor';
 
 export default function Explore() {
   const [tab, setTab] = useState('workspaces');
-  const { data: workspaces, isLoading: workspacesIsLoading } =
-    useExploreWorkspaces();
-  const { data: quizzes, isLoading: quizzesIsLoading } = useExploreQuizzes();
-  const { data: decks, isLoading: decksIsLoading } = useExploreDecks();
+  const {
+    data: workspaces,
+    fetchStatus: workspacesFetchStatus,
+    isLoading: workspacesIsLoading,
+  } = useExploreWorkspaces();
+  const {
+    data: quizzes,
+    fetchStatus: quizzesFetchStatus,
+    isLoading: quizzesIsLoading,
+  } = useExploreQuizzes();
+  const {
+    data: decks,
+    fetchStatus: decksFetchStatus,
+    isLoading: decksIsLoading,
+  } = useExploreDecks();
   const { isPending: cloneWorkspaceIsPending, mutate: cloneWorkspace } =
     useCloneWorkspace();
   const { isPending: cloneQuizIsPending, mutate: cloneQuiz } = useCloneQuiz();
@@ -49,7 +61,9 @@ export default function Explore() {
       </div>
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
         {tab === 'workspaces' ? (
-          workspacesIsLoading ? (
+          workspacesFetchStatus === 'paused' ? (
+            <QueryPausedState />
+          ) : workspacesIsLoading ? (
             <SkeletonCardGrid cardHeight={170} count={6} />
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -90,6 +104,8 @@ export default function Explore() {
               })}
             </div>
           )
+        ) : tab === 'quizzes' && quizzesFetchStatus === 'paused' ? (
+          <QueryPausedState />
         ) : tab === 'quizzes' && quizzesIsLoading ? (
           <SkeletonCardGrid cardHeight={190} count={6} />
         ) : tab === 'quizzes' ? (
@@ -127,6 +143,8 @@ export default function Explore() {
               </Card>
             ))}
           </div>
+        ) : decksFetchStatus === 'paused' ? (
+          <QueryPausedState />
         ) : decksIsLoading ? (
           <SkeletonCardGrid cardHeight={190} count={6} />
         ) : (

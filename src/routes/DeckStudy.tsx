@@ -11,6 +11,7 @@ import {
 } from '@/api/hooks';
 import type { Flashcard } from '@/api/types';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -50,19 +51,23 @@ export default function DeckStudy() {
   const deckId = (params as { deckId: string }).deckId;
   const {
     data: deck,
+    fetchStatus: deckFetchStatus,
     isLoading: deckLoading,
     isError: deckError,
     error: deckErr,
-  } = useDeck(deckId);
+  } = useDeck(deckId, { errorBoundary: false });
   const {
     data: cards,
+    fetchStatus: cardsFetchStatus,
     isLoading,
     isError: cardsError,
     error: cardsErr,
-  } = useCards(deckId);
+  } = useCards(deckId, { errorBoundary: false });
   const { mutate: reviewCard } = useReviewCard(deckId);
   const { mutate: deleteCard } = useDeleteCard(deckId);
-  const { isPending: cloneDeckIsPending, mutate: cloneDeck } = useCloneDeck();
+  const { isPending: cloneDeckIsPending, mutate: cloneDeck } = useCloneDeck({
+    errorToast: false,
+  });
   const { isPending: updateDeckIsPending, mutateAsync: updateDeck } =
     useUpdateDeck();
   const navigate = useNavigate();
@@ -91,6 +96,14 @@ export default function DeckStudy() {
     setQueue(ids);
     setSessionTotal(ids.length);
     setFlipped(false);
+  }
+
+  if (deckFetchStatus === 'paused' || cardsFetchStatus === 'paused') {
+    return (
+      <PanelWithInvertedRadius>
+        <QueryPausedState className="h-full" />
+      </PanelWithInvertedRadius>
+    );
   }
 
   if (deckLoading || isLoading || !deck || !cards || queue === null) {

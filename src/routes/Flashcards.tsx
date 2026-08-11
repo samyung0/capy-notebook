@@ -8,6 +8,7 @@ import {
 } from '@/api/hooks';
 import type { Deck } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
@@ -20,7 +21,7 @@ import { m } from '@/i18n';
 import { userColorPair } from '@/lib/userColor';
 
 export default function Flashcards() {
-  const { data, isLoading } = useDecks();
+  const { data, fetchStatus, isLoading } = useDecks();
   const { isPending: createDeckIsPending, mutate: createDeck } =
     useCreateDeck();
   const { mutate: cloneDeck } = useCloneDeck();
@@ -54,7 +55,9 @@ export default function Flashcards() {
         title={m.nav_flashcards()}
       />
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
-        {isLoading ? (
+        {fetchStatus === 'paused' ? (
+          <QueryPausedState />
+        ) : isLoading ? (
           <SkeletonCardGrid cardHeight={190} count={6} />
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

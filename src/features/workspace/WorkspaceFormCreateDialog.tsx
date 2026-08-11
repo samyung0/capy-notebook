@@ -16,7 +16,6 @@ import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { TagSelect } from '@/components/ui/TagSelect';
 import { UserColorChooser } from '@/components/ui/UserColorChooser';
-import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 
 export function WorkspaceFormCreateDialog({
@@ -48,16 +47,9 @@ export function WorkspaceFormCreateDialog({
       try {
         await onSubmit(v);
         setOpen(false);
-      } catch (err) {
+      } catch {
         // Keep the dialog open so the user can retry without losing input.
-        userToast({
-          description:
-            err instanceof Error
-              ? err.message
-              : 'Something went wrong. Please try again.',
-          title: 'Damn what happened',
-          variant: 'error',
-        });
+        // The global mutation handler shows the normalized failure.
       }
     },
     [onSubmit, setOpen]

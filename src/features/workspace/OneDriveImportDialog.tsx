@@ -17,8 +17,10 @@ export function OneDriveImportDialog({
 }) {
   const [chapterId] = useState<string | null>(null);
   const { mutate: importSources } = useImportSources(workspaceId);
-  const { data: integrations } = useIntegrations();
-  const { data: msFiles } = useMicrosoftRecentFiles(!!integrations?.microsoft);
+  const { data: integrations } = useIntegrations({ errorBoundary: false });
+  const { data: msFiles } = useMicrosoftRecentFiles(!!integrations?.microsoft, {
+    errorBoundary: false,
+  });
 
   function importMicrosoft(ids: string[]) {
     importSources({ chapterId, fileIds: ids, provider: 'microsoft' });

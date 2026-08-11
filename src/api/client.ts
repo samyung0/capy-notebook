@@ -295,6 +295,7 @@ export const qk = {
   exploreWorkspaces: ['explore', 'workspaces'] as const,
   file: (id: string) => ['file', id] as const,
   files: (wsId: string) => ['workspace', wsId, 'files'] as const,
+  ingestStream: (wsId: string) => ['workspace', wsId, 'ingest-stream'] as const,
   integrations: ['integrations'] as const,
   labels: ['labels'] as const,
   material: (id: string) => ['material', id] as const,

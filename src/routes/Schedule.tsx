@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useDeleteLabel, useEvents, useLabels } from '@/api/hooks';
 import type { CalendarEvent } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Card } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
@@ -24,8 +25,8 @@ const LABEL_LIMIT = 7;
 export default function Schedule() {
   const navigate = useNavigate();
   const { event: eventParam } = useSearch({ from: '/auth-shell/schedule' });
-  const { data: events, isLoading } = useEvents();
-  const { data: labels } = useLabels();
+  const { data: events, fetchStatus, isLoading } = useEvents();
+  const { data: labels } = useLabels({ errorBoundary: false });
   const { mutate: deleteLabel } = useDeleteLabel();
   const openLabelEdit = usePortals((s) => s.openLabelEdit);
   const openConfirm = usePortals((s) => s.openConfirm);
@@ -276,7 +277,9 @@ export default function Schedule() {
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto px-3 pb-4" ref={scrollRef}>
-          {isLoading ? (
+          {fetchStatus === 'paused' ? (
+            <QueryPausedState className="h-full min-h-[560px]" />
+          ) : isLoading ? (
             <Skeleton className="h-full min-h-[560px] w-full" />
           ) : view === 'month' ? (
             <div className="h-full min-h-[560px]">

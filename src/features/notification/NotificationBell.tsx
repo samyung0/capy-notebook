@@ -21,8 +21,10 @@ import { NotificationItem } from '../../features/notification/NotificationItem';
 
 export function NotificationsBell() {
   const { data, fetchNextPage, hasNextPage, isFetchingNextPage } =
-    useNotifications();
-  const { data: unreadCount } = useUnreadNotificationCount();
+    useNotifications({ errorBoundary: false });
+  const { data: unreadCount } = useUnreadNotificationCount({
+    errorBoundary: false,
+  });
   useNotificationStream();
   const { mutate: markNotificationRead } = useMarkNotificationRead();
   const { mutate: markRead } = useMarkNotificationsRead();

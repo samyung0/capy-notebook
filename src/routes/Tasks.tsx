@@ -1,11 +1,12 @@
 import { useTasks, useToggleTask } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { SkeletonList } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 
 export default function Tasks() {
-  const { data, isLoading } = useTasks();
+  const { data, fetchStatus, isLoading } = useTasks();
   const { mutate: toggle } = useToggleTask();
 
   const groups = (data ?? []).reduce<Record<string, typeof data>>((acc, t) => {
@@ -27,7 +28,9 @@ export default function Tasks() {
     <PanelWithInvertedRadius>
       <PageHeader title={m.nav_tasks()} />
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
-        {isLoading ? (
+        {fetchStatus === 'paused' ? (
+          <QueryPausedState />
+        ) : isLoading ? (
           <div className="mx-auto max-w-2xl">
             <SkeletonList count={6} rowHeight={56} />
           </div>

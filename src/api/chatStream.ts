@@ -35,6 +35,19 @@ export interface ChatStreamBody {
   text: string;
 }
 
+function errorMessage(payload: unknown, fallback: string): string {
+  if (!payload || typeof payload !== 'object') return fallback;
+  const body = payload as {
+    detail?: unknown;
+    error?: { message?: unknown };
+    message?: unknown;
+  };
+  if (typeof body.error?.message === 'string') return body.error.message;
+  if (typeof body.message === 'string') return body.message;
+  if (typeof body.detail === 'string') return body.detail;
+  return fallback;
+}
+
 /** POST to the workspace chat stream and dispatch parsed SSE events. Resolves
  * when the stream ends (naturally, on error, or on abort). */
 export async function streamChat(
@@ -43,9 +56,15 @@ export async function streamChat(
   handlers: ChatStreamHandlers,
   signal?: AbortSignal
 ): Promise<void> {
-  const auth = await authHeaders();
+  let terminal = false;
+  const reportError = (message: string) => {
+    if (terminal || signal?.aborted) return;
+    terminal = true;
+    handlers.onError?.(message);
+  };
   let res: Response;
   try {
+    const auth = await authHeaders();
     res = await fetch(`${API_BASE}/workspaces/${workspaceId}/chat/stream`, {
       body: JSON.stringify(body),
       headers: {
@@ -58,12 +77,16 @@ export async function streamChat(
     });
   } catch (e) {
     if ((e as Error).name === 'AbortError') return;
-    handlers.onError?.((e as Error).message);
+    reportError((e as Error).message);
     return;
   }
 
   if (!res.ok || !res.body) {
-    handlers.onError?.(`${res.status} ${res.statusText}`);
+    const fallback = res.ok
+      ? 'The chat connection could not be opened.'
+      : `${res.status} ${res.statusText}`;
+    const payload = res.ok ? null : await res.json().catch(() => null);
+    reportError(errorMessage(payload, fallback));
     return;
   }
 
@@ -105,6 +128,8 @@ export async function streamChat(
         handlers.onCitations?.(ev.citations ?? []);
         break;
       case 'done':
+        if (terminal) break;
+        terminal = true;
         handlers.onDone?.({
           generationId: ev.generationId,
           status: ev.status ?? 'complete',
@@ -112,7 +137,7 @@ export async function streamChat(
         });
         break;
       case 'error':
-        handlers.onError?.(ev.message ?? 'stream error');
+        reportError(ev.message ?? 'stream error');
         break;
     }
   };
@@ -120,7 +145,10 @@ export async function streamChat(
   try {
     await consumeSSE(res.body, dispatch);
   } catch (e) {
-    if ((e as Error).name !== 'AbortError')
-      handlers.onError?.((e as Error).message);
+    if ((e as Error).name !== 'AbortError') reportError((e as Error).message);
+    return;
+  }
+  if (!terminal && !signal?.aborted) {
+    reportError('The chat connection closed before the response finished.');
   }
 }

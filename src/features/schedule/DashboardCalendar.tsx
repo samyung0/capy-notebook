@@ -17,8 +17,8 @@ const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
  * and clicking opens the event form pre-filled for that hour.
  */
 export function DashboardCalendar() {
-  const { data: events } = useEvents();
-  const { data: labels } = useLabels();
+  const { data: events } = useEvents({ errorBoundary: false });
+  const { data: labels } = useLabels({ errorBoundary: false });
   const openEventForm = usePortals((s) => s.openEventForm);
 
   const [now, setNow] = useState(() => new Date());

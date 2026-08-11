@@ -53,7 +53,7 @@ export function GlobalDialogs() {
   const { mutate: updateLabel } = useUpdateLabel();
   const { mutate: createEvent } = useCreateEvent();
   const { mutate: updateEvent } = useUpdateEvent();
-  const { data: labels } = useLabels();
+  const { data: labels } = useLabels({ errorBoundary: false });
 
   const isTopBarSearchOpen = usePortals((s) => s.isTopBarSearchOpen);
   const setTopBarSearchOpen = usePortals((s) => s.setTopBarSearchOpen);

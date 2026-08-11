@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useTags, useWorkspaces } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -39,12 +40,12 @@ export default function Workspaces() {
   const [tagFilters, setTagFilters] = useState<string[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
 
-  const { data, isLoading } = useWorkspaces({
+  const { data, fetchStatus, isLoading } = useWorkspaces({
     color: colorFilters,
     sort,
     tag: tagFilters,
   });
-  const { data: tags = [] } = useTags('workspace');
+  const { data: tags = [] } = useTags('workspace', { errorBoundary: false });
   const openWorkspaceCreate = usePortals((s) => s.openWorkspaceCreate);
 
   const sortLabel = useMemo(
@@ -186,7 +187,9 @@ export default function Workspaces() {
       </div>
 
       <div className="min-h-0 w-full flex-1 overflow-auto px-6 pt-2 pb-6">
-        {isLoading ? (
+        {fetchStatus === 'paused' ? (
+          <QueryPausedState />
+        ) : isLoading ? (
           <SkeletonCardGrid count={9} />
         ) : (
           <div className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4">

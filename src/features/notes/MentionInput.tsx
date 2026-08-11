@@ -32,7 +32,9 @@ export function MentionInputElement(
     data: members = [],
     isPending,
     isError,
-  } = useWorkspaceCollaborators(workspaceId);
+  } = useWorkspaceCollaborators(workspaceId, true, {
+    errorBoundary: false,
+  });
   const rootRef = useRef<HTMLSpanElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const insertPointRef = useRef<PointRef | null>(null);

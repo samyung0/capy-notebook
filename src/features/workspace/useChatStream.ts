@@ -71,6 +71,7 @@ export function useChatStream(workspaceId: string) {
       };
       const placeholderId = tempId();
       let currentId = placeholderId;
+      let terminal = false;
       setMessages((prev) => [
         ...prev,
         userMsg,
@@ -86,47 +87,66 @@ export function useChatStream(workspaceId: string) {
       const ac = new AbortController();
       abortRef.current = ac;
 
-      await streamChat(
-        workspaceId,
-        { conversationId: conversationId ?? undefined, model, text: trimmed },
-        {
-          onCitations: (c) => patch(currentId, { citations: c }),
-          onDone: ({ status }) => patch(currentId, { status }),
-          onError: (msg) =>
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === currentId
-                  ? { ...m, content: m.content || `⚠ ${msg}`, status: 'error' }
-                  : m
-              )
-            ),
-          onStart: ({ messageId, conversationId: cid }) => {
-            currentId = messageId;
-            setConversationId(cid);
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === placeholderId
-                  ? { ...m, conversationId: cid, id: messageId }
-                  : m
-              )
-            );
+      const fail = (message: string) => {
+        if (terminal || ac.signal.aborted) return;
+        terminal = true;
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === currentId
+              ? { ...m, content: m.content || message, status: 'error' }
+              : m
+          )
+        );
+      };
+
+      try {
+        await streamChat(
+          workspaceId,
+          { conversationId: conversationId ?? undefined, model, text: trimmed },
+          {
+            onCitations: (c) => patch(currentId, { citations: c }),
+            onDone: ({ status }) => {
+              if (terminal) return;
+              terminal = true;
+              patch(currentId, { status });
+            },
+            onError: fail,
+            onStart: ({ messageId, conversationId: cid }) => {
+              currentId = messageId;
+              setConversationId(cid);
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === placeholderId
+                    ? { ...m, conversationId: cid, id: messageId }
+                    : m
+                )
+              );
+            },
+            onToken: (t) =>
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === currentId ? { ...m, content: m.content + t } : m
+                )
+              ),
           },
-          onToken: (t) =>
-            setMessages((prev) =>
-              prev.map((m) =>
-                m.id === currentId ? { ...m, content: m.content + t } : m
-              )
-            ),
-        },
-        ac.signal
-      );
-
-      // Aborted streams finalize server-side as 'aborted'; reflect it locally.
-      if (ac.signal.aborted) patch(currentId, { status: 'aborted' });
-
-      setStreaming(false);
-      abortRef.current = null;
-      void qc.invalidateQueries({ queryKey: qk.conversations(workspaceId) });
+          ac.signal
+        );
+        if (!terminal && !ac.signal.aborted) {
+          fail('The chat connection closed before the response finished.');
+        }
+      } catch (error) {
+        fail(
+          error instanceof Error
+            ? error.message
+            : 'The chat response could not be completed.'
+        );
+      } finally {
+        // Aborted streams finalize server-side as 'aborted'; reflect it locally.
+        if (ac.signal.aborted) patch(currentId, { status: 'aborted' });
+        setStreaming(false);
+        if (abortRef.current === ac) abortRef.current = null;
+        void qc.invalidateQueries({ queryKey: qk.conversations(workspaceId) });
+      }
     },
     [conversationId, qc, patch, streaming, workspaceId]
   );

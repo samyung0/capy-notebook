@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { isStorageQuotaError } from '@/api/client';
 import { useGenerate } from '@/api/hooks';
 import type {
   Chapter,
@@ -12,7 +11,6 @@ import type {
 import { Button } from '@/components/ui/Button';
 import { ButtonCard } from '@/components/ui/ButtonCard';
 import type { IconName } from '@/components/ui/Icon';
-import { userToast } from '@/components/ui/userToast';
 import type { OpenItem } from '@/features/materials/openItem';
 import { m } from '@/i18n';
 import { GenerateFormDialog, type GenerateMode } from './GenerateFormDialog';
@@ -61,18 +59,8 @@ export function GeneratePanel({
             ? r.deck?.id
             : r.material?.id;
       if (materialId) onOpenItem?.({ id: materialId, kind: 'material' });
-    } catch (error) {
-      userToast({
-        description: isStorageQuotaError(error)
-          ? 'Delete content or upgrade to Pro before generating more material.'
-          : error instanceof Error
-            ? error.message
-            : 'Something went wrong.',
-        title: isStorageQuotaError(error)
-          ? 'Storage limit reached'
-          : 'Could not generate material',
-        variant: 'error',
-      });
+    } catch {
+      // The global mutation handler shows the normalized failure.
     } finally {
       onGeneratingChange?.(null);
     }

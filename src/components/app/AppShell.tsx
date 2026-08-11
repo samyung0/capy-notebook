@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
 import { cn } from '@/lib/cn';
 import { AccountStatusBanner } from './AccountStatusBanner';
+import { ConnectionBanner } from './ConnectionBanner';
 import { GlobalDialogs } from './GlobalDialogs';
 import { Sidebar } from './Sidebar';
 
@@ -26,6 +27,7 @@ export function AppShell() {
       )}
       <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden p-1.5 sm:p-2.5">
         <AccountStatusBanner />
+        <ConnectionBanner />
         <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
           <Outlet />
         </div>

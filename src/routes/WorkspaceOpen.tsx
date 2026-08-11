@@ -30,6 +30,7 @@ import type {
   SourceFile,
   UserColor,
 } from '@/api/types';
+import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { LoadingLarge } from '@/components/app/LoadingLarge';
 import { Panel } from '@/components/app/layout';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
@@ -107,7 +108,7 @@ export default function WorkspaceOpen() {
     isLoading: wsLoading,
     isError: wsError,
     error: wsErr,
-  } = useWorkspace(workspaceId);
+  } = useWorkspace(workspaceId, { errorBoundary: false });
   const { data: chapters } = useChapters(workspaceId);
   const { data: files } = useFiles(workspaceId);
   const { data: materials } = useMaterials(workspaceId);
@@ -123,7 +124,7 @@ export default function WorkspaceOpen() {
   const { mutate: reorderContent } = useReorderContent(workspaceId);
   const { mutate: createNote } = useCreateNote(workspaceId);
   const { isPending: cloneWorkspaceIsPending, mutate: cloneWorkspace } =
-    useCloneWorkspace();
+    useCloneWorkspace({ errorToast: false });
   const { isPending: updateSharingIsPending, mutateAsync: updateSharing } =
     useUpdateWorkspaceSharing();
   const openAddSource = usePortals((s) => s.openAddSource);
@@ -757,14 +758,16 @@ export default function WorkspaceOpen() {
           {/* Center: content viewer */}
           <Panel className="w-full" sectionClassName="h-full gap-0">
             <StorageOwnerBanner workspace={ws} />
-            <CenterContent
-              chapters={chapters ?? []}
-              color={ws?.color}
-              item={openItem}
-              onDeleted={() => setOpenItem(null)}
-              readOnly={readOnly}
-              workspaceId={workspaceId}
-            />
+            <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
+              <CenterContent
+                chapters={chapters ?? []}
+                color={ws?.color}
+                item={openItem}
+                onDeleted={() => setOpenItem(null)}
+                readOnly={readOnly}
+                workspaceId={workspaceId}
+              />
+            </AppErrorBoundary>
           </Panel>
         </ResizablePanel>
         {!readOnly && (
@@ -796,13 +799,15 @@ export default function WorkspaceOpen() {
                   </div>
                   <div className="h-full flex-1 overflow-hidden">
                     {mode === 'chat' ? (
-                      <ChatPanel
-                        color={ws?.color}
-                        onOpenCitation={(fileId, page) =>
-                          setOpenItem({ id: fileId, kind: 'file', page })
-                        }
-                        workspaceId={workspaceId}
-                      />
+                      <AppErrorBoundary resetKeys={[workspaceId, mode]}>
+                        <ChatPanel
+                          color={ws?.color}
+                          onOpenCitation={(fileId, page) =>
+                            setOpenItem({ id: fileId, kind: 'file', page })
+                          }
+                          workspaceId={workspaceId}
+                        />
+                      </AppErrorBoundary>
                     ) : (
                       <GeneratePanel
                         chapters={chapters ?? []}

@@ -103,6 +103,9 @@ export function AiMenu() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const loading =
     chat.status === 'streaming' || chat.status === 'submitted' || streaming;
+  const streamError = chat.error
+    ? 'AI could not complete this request. Check your connection and try again.'
+    : null;
 
   useEffect(() => {
     if (!open) return;
@@ -227,6 +230,15 @@ export function AiMenu() {
             <X className="size-4" />
           </button>
         </div>
+
+        {streamError && (
+          <p
+            className="border-divider border-b bg-tint-error px-3 py-2 text-sm text-solid-error"
+            role="alert"
+          >
+            {streamError}
+          </p>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-between gap-2 p-3 text-fg-muted text-sm">

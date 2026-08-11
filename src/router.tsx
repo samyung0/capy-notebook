@@ -34,6 +34,11 @@ import {
   workspacesQuery,
 } from '@/api/hooks';
 import { queryClient } from '@/api/queryClient';
+import {
+  RouteErrorComponent,
+  RouteNotFoundComponent,
+  ShareRouteErrorComponent,
+} from '@/components/app/AppErrorBoundary';
 import { AppShell } from '@/components/app/AppShell';
 import { AuthGate } from '@/components/app/AuthProvider';
 import { parseWorkspaceOpenSearch } from '@/features/materials/openItem';
@@ -86,6 +91,7 @@ const page = <const T extends string>(
 const publicRoutes = [
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/WorkspaceOpen')),
+    errorComponent: ShareRouteErrorComponent,
     getParentRoute: () => rootRoute,
     loader: ({ context: { queryClient: qc }, params }) => {
       const id = params.workspaceId;
@@ -99,6 +105,7 @@ const publicRoutes = [
   }),
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/QuizAttempt')),
+    errorComponent: ShareRouteErrorComponent,
     getParentRoute: () => rootRoute,
     loader: ({ context: { queryClient: qc }, params }) =>
       qc.prefetchQuery(quizQuery(params.quizId)),
@@ -106,6 +113,7 @@ const publicRoutes = [
   }),
   createRoute({
     component: lazyRouteComponent(() => import('@/routes/DeckStudy')),
+    errorComponent: ShareRouteErrorComponent,
     getParentRoute: () => rootRoute,
     loader: ({ context: { queryClient: qc }, params }) => {
       qc.prefetchQuery(deckQuery(params.deckId));
@@ -274,6 +282,8 @@ const routeTree = rootRoute.addChildren([
 
 export const router = createRouter({
   context: { queryClient },
+  defaultErrorComponent: RouteErrorComponent,
+  defaultNotFoundComponent: RouteNotFoundComponent,
   defaultPreload: 'intent',
   defaultPreloadStaleTime: 0,
   routeTree,
