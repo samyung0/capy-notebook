@@ -23,10 +23,16 @@ type chatStreamReq struct {
 
 // pipeChatEvent is one event line emitted by the Python retrieval service's
 // /chat/stream (and re-emitted to the browser). Type is one of:
-// token | citations | done | error.
+// token | tool | citations | done | error.
+//
+// tool events are progress only ("searching…", "created a quiz"): the agent's
+// tool calls are executed inside the retrieval service, and anything with a
+// side effect goes through /api/internal/* so this gateway still owns authz.
 type pipeChatEvent struct {
 	Type         string           `json:"type"`
 	Text         string           `json:"text,omitempty"`
+	Tool         string           `json:"tool,omitempty"`
+	Detail       string           `json:"detail,omitempty"`
 	Citations    []store.Citation `json:"citations,omitempty"`
 	TokenCount   int              `json:"tokenCount,omitempty"`
 	GenerationID string           `json:"generationId,omitempty"`
@@ -109,11 +115,13 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		send(pipeChatEvent{Type: "token", Text: t})
 	}
 
-	streamErr := a.relayChat(ctx, conv.WorkspaceID, req.Text, req.Model, conv.ID, onToken, func(ev pipeChatEvent) {
+	streamErr := a.relayChat(ctx, userID, conv.WorkspaceID, req.Text, req.Model, conv.ID, onToken, func(ev pipeChatEvent) {
 		switch ev.Type {
 		case "citations":
 			citations = ev.Citations
 			send(pipeChatEvent{Type: "citations", Citations: citations})
+		case "tool":
+			send(pipeChatEvent{Type: "tool", Tool: ev.Tool, Detail: ev.Detail})
 		case "done":
 			if ev.TokenCount > 0 {
 				tokens = ev.TokenCount
@@ -165,14 +173,20 @@ func (a *api) resolveConversation(ctx context.Context, userID, wsID, convID stri
 // invoking onToken for each text chunk and onEvent for citations/done. When the
 // pipeline is unavailable it falls back to a streamed placeholder so the UI
 // still works end-to-end.
-func (a *api) relayChat(ctx context.Context, wsID, query, model, convID string, onToken func(string), onEvent func(pipeChatEvent)) error {
+func (a *api) relayChat(ctx context.Context, userID, wsID, query, model, convID string, onToken func(string), onEvent func(pipeChatEvent)) error {
 	if a.pipe == nil {
 		a.streamFallback(ctx, query, onToken)
 		return nil
 	}
 
 	history := a.historyForPrompt(ctx, convID)
-	body := map[string]any{"query": query, "workspaceId": wsID, "model": model, "history": history}
+	// userId travels with the request so tools with side effects can name the
+	// actor when they call back into /api/internal/*; the gateway re-checks the
+	// workspace role there rather than trusting the agent.
+	body := map[string]any{
+		"query": query, "workspaceId": wsID, "userId": userID,
+		"model": model, "history": history,
+	}
 	rc, err := a.pipe.PostStream(ctx, "/chat/stream", body)
 	if err != nil {
 		// Pipeline unreachable: degrade to a placeholder rather than erroring.

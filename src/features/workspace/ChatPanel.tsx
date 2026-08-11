@@ -2,7 +2,7 @@ import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Streamdown } from 'streamdown';
 import { useConversations, useMessages } from '@/api/hooks';
-import type { ChatMessage, UserColor } from '@/api/types';
+import type { ChatMessage, Citation, UserColor } from '@/api/types';
 import { Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
@@ -12,20 +12,42 @@ import { m } from '@/i18n';
 import { userColorPairDark } from '@/lib/userColor';
 import { toChatMessage, useChatStream } from './useChatStream';
 
-function Citations({ msg }: { msg: ChatMessage }) {
-  // TODO: click to jump to file, better yet: instruct llm to surround sentences with quote blocks so I can underline the text for internal hyperlinks
+/** Page label for a citation, absent for sources with no page model (txt/md,
+ * and PDFs parsed in the lightweight 'normal' mode). */
+function pageLabel(c: Citation): string | null {
+  if (!c.pageStart) return null;
+  return c.pageEnd && c.pageEnd !== c.pageStart
+    ? `pp. ${c.pageStart}–${c.pageEnd}`
+    : `p. ${c.pageStart}`;
+}
+
+function Citations({
+  msg,
+  onOpen,
+}: {
+  msg: ChatMessage;
+  onOpen?: (fileId: string, page?: number) => void;
+}) {
+  // TODO: highlight the cited region on the page — the bbox is already stored
+  // on each citation, only the overlay is missing.
   if (!msg.citations?.length) return null;
   return (
     <div className="mt-2 flex flex-wrap gap-1.5">
-      {msg.citations.map((c) => (
-        <span
-          className="inline-flex items-center gap-1 rounded-full bg-tint-info px-2 py-0.5 font-medium text-[11px] text-tint-info-fg"
-          key={c.fileId}
-          title={c.snippet}
-        >
-          <Icon name="files" size={12} /> {c.fileName}
-        </span>
-      ))}
+      {msg.citations.map((c, i) => {
+        const page = pageLabel(c);
+        return (
+          <button
+            className="inline-flex items-center gap-1 rounded-full bg-tint-info px-2 py-0.5 font-medium text-[11px] text-tint-info-fg hover:brightness-97"
+            key={`${c.fileId}:${i}`}
+            onClick={() => onOpen?.(c.fileId, c.pageStart ?? undefined)}
+            title={c.snippet}
+            type="button"
+          >
+            <Icon name="files" size={12} /> {c.fileName}
+            {page && <span className="opacity-70">{page}</span>}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -33,9 +55,11 @@ function Citations({ msg }: { msg: ChatMessage }) {
 function AssistantBubble({
   msg,
   streaming,
+  onOpenCitation,
 }: {
   msg: ChatMessage;
   streaming: boolean;
+  onOpenCitation?: (fileId: string, page?: number) => void;
 }) {
   const empty = !msg.content;
   return (
@@ -66,7 +90,7 @@ function AssistantBubble({
       {msg.status === 'aborted' && (
         <p className="mt-1 py-1 text-fg-muted italic">Stopped.</p>
       )}
-      <Citations msg={msg} />
+      <Citations msg={msg} onOpen={onOpenCitation} />
     </div>
   );
 }
@@ -74,9 +98,12 @@ function AssistantBubble({
 export function ChatPanel({
   workspaceId,
   color,
+  onOpenCitation,
 }: {
   workspaceId: string;
   color?: UserColor;
+  /** Opens a cited source in the center pane, scrolled to the cited page. */
+  onOpenCitation?: (fileId: string, page?: number) => void;
 }) {
   const { messages, conversationId, streaming, send, stop, startNew, hydrate } =
     useChatStream(workspaceId);
@@ -188,7 +215,12 @@ export function ChatPanel({
               {msg.content}
             </div>
           ) : (
-            <AssistantBubble key={msg.id} msg={msg} streaming={streaming} />
+            <AssistantBubble
+              key={msg.id}
+              msg={msg}
+              onOpenCitation={onOpenCitation}
+              streaming={streaming}
+            />
           )
         )}
       </div>

@@ -4,9 +4,14 @@
  * Evo Notes API
  * OpenAPI spec version: 0.1.0
  */
+import type { Region } from './region.ts';
 
 export interface Citation {
   fileId: string;
   fileName: string;
+  pageEnd?: number;
+  pageStart?: number;
+  /** @nullable */
+  regions?: Region[] | null;
   snippet: string;
 }

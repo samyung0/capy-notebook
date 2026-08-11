@@ -1,59 +1,20 @@
-"""Runtime configuration for the RAG pipeline (worker + retrieval).
+"""Runtime configuration for the pipeline (ingest worker + retrieval service).
 
-Everything is env-driven so the same image runs as worker or retrieval service.
+Everything is env-driven so the same image runs as either process.
 
-LightRAG's Postgres storages read their OWN discrete env vars (POSTGRES_HOST,
-POSTGRES_PORT, ...), NOT the libpq ``DATABASE_URL``. To keep a single source of
-truth we parse ``DATABASE_URL`` here and populate the POSTGRES_* vars (without
-clobbering anything the operator set explicitly), and we pin
-``POSTGRES_VECTOR_INDEX_TYPE=HNSW_HALFVEC`` because the embedding dimension
-(2560 for Qwen3-Embedding-4B) exceeds pgvector's 2000-dim cap for plain
-``vector`` HNSW indexes (halfvec indexes up to 4000; requires pgvector >= 0.7.0).
+The retrieval index lives in the same Postgres schema the Go migrations own, so
+there is nothing to configure beyond ``DATABASE_URL`` — no per-workspace storage
+namespaces, no working directory, no graph extension.
 """
 
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from urllib.parse import unquote, urlparse
 
 
 def _env(key: str, default: str = "") -> str:
     return os.getenv(key, default)
-
-
-def _seed_lightrag_pg_env() -> None:
-    """Derive POSTGRES_* from DATABASE_URL for LightRAG's PG storages.
-
-    Only fills vars that are not already set, so explicit overrides win.
-    """
-    dsn = os.getenv("DATABASE_URL", "")
-    if dsn:
-        u = urlparse(dsn)
-        mapping = {
-            "POSTGRES_HOST": u.hostname or "localhost",
-            "POSTGRES_PORT": str(u.port or 5432),
-            "POSTGRES_USER": unquote(u.username) if u.username else "postgres",
-            "POSTGRES_PASSWORD": unquote(u.password) if u.password else "",
-            "POSTGRES_DATABASE": (u.path or "/postgres").lstrip("/") or "postgres",
-        }
-        for k, v in mapping.items():
-            os.environ.setdefault(k, v)
-
-    # 2560-dim embeddings require halfvec HNSW indexes (pgvector >= 0.7.0).
-    os.environ.setdefault("POSTGRES_VECTOR_INDEX_TYPE", "HNSW_HALFVEC")
-    # LightRAG uses POSTGRES_WORKSPACE only as a global default; per-instance
-    # isolation is set explicitly via LightRAG(workspace=...). Leave it unset so
-    # a stray global workspace can't shadow the per-tenant value.
-
-    # LightRAG's parse pipeline resolves pending_parse sources under
-    # ``INPUT_DIR/<workspace>/``; the worker stages each blob there before
-    # enqueueing and cleans up afterwards.
-    working_dir = os.getenv("WORKING_DIR", "/data/rag_storage")
-    os.environ.setdefault("INPUT_DIR", os.path.join(working_dir, "inputs"))
-
-
-_seed_lightrag_pg_env()
 
 
 @dataclass(frozen=True)
@@ -78,25 +39,20 @@ class Config:
     b2_key_id: str = _env("B2_KEY_ID", "")
     b2_app_key: str = _env("B2_APP_KEY", "")
 
-    # LightRAG still wants a working dir handle even with PG backends.
-    working_dir: str = _env("WORKING_DIR", "/data/rag_storage")
-    # Staging dir for pending_parse sources (seeded into INPUT_DIR above).
-    input_dir: str = _env("INPUT_DIR", "")
+    # ---- gateway callback -------------------------------------------------
+    # Tools with side effects (generate_material) POST to the Go gateway rather
+    # than writing materials here, so authorization and storage quota stay in
+    # one place. Unset disables those tools instead of bypassing the checks.
+    gateway_url: str = _env("GATEWAY_URL", "")
+    pipeline_secret: str = _env("PIPELINE_SECRET", "")
 
     # ---- worker -----------------------------------------------------------
     poll_interval: float = float(_env("EVO_POLL_INTERVAL", "2.0"))
-    lightrag_cache_size: int = int(_env("EVO_LIGHTRAG_CACHE_SIZE", "16"))
-    # LightRAG caches extraction LLM responses in Postgres (keyed per workspace)
-    # so re-ingesting identical content is cheap. Disable it to make ingest
-    # deterministic w.r.t. outbound LLM calls — required when recording
-    # record-replay test cassettes (see pipeline/tests/README.md).
-    ingest_llm_cache: bool = _env("EVO_INGEST_LLM_CACHE", "true").lower() != "false"
 
-    # ---- Modal MineRU parse service --------------------------------------
+    # ---- Modal MinerU parse service --------------------------------------
     modal_parse_url: str = _env("MODAL_PARSE_URL", "")
     modal_parse_token: str = _env("MODAL_PARSE_TOKEN", "")
     modal_parse_timeout: int = int(_env("MODAL_PARSE_TIMEOUT", "600"))
-    modal_b2_artifacts: bool = _env("MODAL_B2_ARTIFACTS", "true").lower() != "false"
     parse_method: str = _env("EVO_PARSE_METHOD", "auto")  # auto | ocr | txt
 
     # ---- MinerU lightweight (free) cloud parse API ------------------------
@@ -111,25 +67,47 @@ class Config:
     mineru_relay_token: str = _env("MINERU_RELAY_TOKEN", "")
     mineru_relay_timeout: int = int(_env("MINERU_RELAY_TIMEOUT", "180"))
 
+    # ---- chunking ---------------------------------------------------------
+    # Target size in characters, not tokens: the boundary decisions here are
+    # structural (headings, blocks) and a tokenizer would only add a dependency
+    # and a per-model failure mode for a bound that is already approximate.
+    chunk_chars: int = int(_env("EVO_CHUNK_CHARS", "1600"))
+    chunk_overlap_chars: int = int(_env("EVO_CHUNK_OVERLAP_CHARS", "200"))
+    chunk_min_chars: int = int(_env("EVO_CHUNK_MIN_CHARS", "160"))
+
     # ---- embeddings (OpenRouter, OpenAI-compatible) -----------------------
     embedding = ProviderCfg(
         api_key=_env("OPENROUTER_API_KEY"),
         base_url=_env("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
     )
     embedding_model: str = _env("EVO_MODEL_EMBEDDING", "qwen/qwen3-embedding-4b")
+    # Must match halfvec(N) in server/migrations/0001_init.sql. Writes assert on
+    # it rather than letting a mismatched vector reach Postgres.
     embedding_dim: int = int(_env("EMBEDDING_DIM", "2560"))
-    embedding_max_tokens: int = int(_env("EVO_EMBEDDING_MAX_TOKENS", "8192"))
+    embedding_batch: int = int(_env("EVO_EMBEDDING_BATCH", "64"))
 
     # ---- text LLM (DeepSeek, OpenAI-compatible) ---------------------------
     llm = ProviderCfg(
         api_key=_env("DEEPSEEK_API_KEY"),
         base_url=_env("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
     )
-    # Ingest extraction is fixed to the cheap model.
+    # Summaries and concept extraction are fixed to the cheap model.
     ingest_model: str = _env("EVO_MODEL_EXTRACTION", "deepseek-v4-flash")
     # Query keeps both reachable; defaults to pro, flash selectable per request.
     query_model: str = _env("EVO_QUERY_MODEL", "deepseek-v4-pro")
     query_model_alt: str = _env("EVO_QUERY_MODEL_ALT", "deepseek-v4-flash")
+
+    # ---- retrieval --------------------------------------------------------
+    search_candidates: int = int(_env("EVO_SEARCH_CANDIDATES", "40"))
+    search_top_k: int = int(_env("EVO_SEARCH_TOP_K", "8"))
+    # Cap on chunks one file may contribute to a result set. A textbook whose
+    # every page mentions the query term would otherwise crowd out the four
+    # other sources that answer it.
+    search_per_file_cap: int = int(_env("EVO_SEARCH_PER_FILE_CAP", "3"))
+    # Tool calls per chat turn. The loop is capped rather than open-ended: the
+    # cost of a wrong plan is bounded, and past ~4 rounds a cheap model tends to
+    # re-search rather than answer.
+    agent_max_steps: int = int(_env("EVO_AGENT_MAX_STEPS", "4"))
 
     # ---- vision / image caption (Gemini via its OpenAI-compatible API) ----
     vision = ProviderCfg(
@@ -140,6 +118,10 @@ class Config:
         ),
     )
     vision_model: str = _env("EVO_MODEL_IMAGE_CAPTION", "gemini-3.1-flash-lite-preview")
+    # Captioning is per-image and only pays off on figure-heavy sources; off by
+    # default so a 300-page scan does not turn into 300 VLM calls.
+    caption_images: bool = _env("EVO_CAPTION_IMAGES", "false").lower() == "true"
+    caption_max_per_file: int = int(_env("EVO_CAPTION_MAX_PER_FILE", "40"))
 
     # ---- speech-to-text (Whisper-compatible, OpenAI API) ------------------
     # Used by /transcribe for voice notes. Defaults to OpenAI Whisper; point

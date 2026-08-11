@@ -45,6 +45,9 @@ type Config struct {
 	EmailUnsubscribeSecret string
 	CollaborationSecret    string
 	CollaborationURL       string
+	// PipelineSecret authenticates the retrieval service's callbacks into
+	// /api/internal/*. Empty disables those routes entirely.
+	PipelineSecret string
 	// MailRecorder exposes delivered mail to Playwright. Non-nil only under
 	// APP_ENV=e2e.
 	MailRecorder mail.Recorder
@@ -105,6 +108,9 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		Store:      s,
 		PublicPrefix: []string{
 			"/api/email/unsubscribe",
+			// Service-to-service, authenticated by X-Pipeline-Secret inside the
+			// handler; there is no Clerk session to verify.
+			"/api/internal/",
 		},
 		PublicReadPrefix: []string{
 			"/api/workspaces/",
@@ -147,6 +153,9 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Post("/api/workspaces/{id}/ai/copilot", a.aiCopilot)
 	r.Post("/api/workspaces/{id}/generate", a.generate)
 	r.Post("/api/transcribe", a.transcribe)
+	if cfg.PipelineSecret != "" {
+		r.Post("/api/internal/materials", a.internalCreateMaterial)
+	}
 	r.Get("/api/files/{id}/raw", a.getFileRaw)
 
 	return r
@@ -430,7 +439,9 @@ func (a *api) chat(w http.ResponseWriter, r *http.Request) {
 
 	// Preferred path: grounded answer from the retrieval service.
 	if a.pipe != nil {
-		if raw, err := a.pipe.PostRaw(r.Context(), "/chat", map[string]any{"query": b.Text, "workspaceId": id(r), "k": 6}); err == nil {
+		if raw, err := a.pipe.PostRaw(r.Context(), "/chat", map[string]any{
+			"query": b.Text, "workspaceId": id(r), "userId": uid(r), "k": 6,
+		}); err == nil {
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write(raw)
 			return

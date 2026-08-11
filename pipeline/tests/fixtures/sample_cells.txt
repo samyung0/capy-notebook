@@ -1,0 +1,5 @@
+Mitochondria are the sites of cellular respiration. They oxidise glucose and
+transfer the released energy into ATP through oxidative phosphorylation. The
+ATP produced there powers most of the work a cell does, from active transport
+to protein synthesis. Chloroplasts and mitochondria both build ATP, but they
+run the process in opposite directions.

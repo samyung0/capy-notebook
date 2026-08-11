@@ -1,219 +1,299 @@
-"""Offline unit tests for the custom Modal parser engine (no network).
+"""Offline unit tests for the Modal MinerU client (no network).
 
-Covers the bits we own around LightRAG's MinerU IR builder: registry wiring,
-the raw-bundle cache signature, image-path rewriting, and the bundle -> IR
-conversion. The Modal HTTP call itself is exercised in the cassette suite.
+The client never sees document bytes — it brokers presigned URLs and then
+unpacks a zip that a remote service produced. Everything worth testing is in
+that handoff: artifact addressing (which is what makes re-ingest free), the
+validation of an artifact that arrived from outside this process, and the
+recovery path when a cached artifact turns out to be corrupt.
 """
 
 from __future__ import annotations
 
-import base64
+import hashlib
 import json
 import zipfile
 from pathlib import Path
 
 import pytest
 
-from pipeline.rag import factory  # noqa: F401 — importing registers the engine
-from pipeline.rag.modal_parser import (
-    PARSER_ENGINE_MODAL,
-    ModalParser,
-    _bundle_signature,
-    register_modal_parser,
-)
-
-# 1x1 transparent PNG.
-_PNG = base64.b64decode(
-    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
-)
+from pipeline.parse import modal_parser
 
 
-def _write_bundle(raw_dir: Path) -> None:
-    (raw_dir / "images").mkdir(parents=True)
-    (raw_dir / "images" / "fig1.png").write_bytes(_PNG)
-    content = [
-        {"type": "text", "text": "Introduction", "text_level": 1, "page_idx": 0},
-        {"type": "text", "text": "Body paragraph one.", "page_idx": 0},
-        {
-            "type": "table",
-            "table_body": "<table><tr><td>a</td><td>b</td></tr></table>",
-            "table_caption": ["Table 1"],
-            "page_idx": 1,
-        },
-        {
-            "type": "equation",
-            "text": "$$e=mc^2$$",
-            "text_format": "block",
-            "page_idx": 1,
-        },
-        {
-            "type": "image",
-            "img_path": "images/fig1.png",
-            "img_caption": ["Fig 1"],
-            "page_idx": 2,
-        },
-    ]
-    (raw_dir / "content_list.json").write_text(json.dumps(content), encoding="utf-8")
-
-
-def test_engine_is_registered():
-    from lightrag.parser.registry import get_parser, supported_parser_engines
-
-    register_modal_parser()
-    assert PARSER_ENGINE_MODAL in supported_parser_engines()
-    parser = get_parser(PARSER_ENGINE_MODAL)
-    assert isinstance(parser, ModalParser)
-    assert parser.engine_name == "modal"
-
-
-def test_build_ir_from_bundle(tmp_path: Path):
-    raw = tmp_path / "doc.modal_raw"
-    _write_bundle(raw)
-
-    ir = ModalParser().build_ir(raw, "doc.pdf")
-
-    # Single heading block ("Introduction") absorbs the body + all multimodal items.
-    assert len(ir.blocks) == 1
-    block = ir.blocks[0]
-    assert block.heading == "Introduction"
-    assert len(block.tables) == 1
-    assert len(block.equations) == 1
-    assert len(block.drawings) == 1
-    # The image asset was discovered on disk.
-    assert len(ir.assets) == 1
-
-
-def test_bundle_signature_detects_change(tmp_path: Path):
-    src = tmp_path / "src.pdf"
-    src.write_bytes(b"hello world")
-    sig1 = _bundle_signature(src)
-
-    src.write_bytes(b"hello world, extended")
-    sig2 = _bundle_signature(src)
-
-    # Size (and mtime) change -> different signature -> cache miss -> re-parse.
-    assert sig1 != sig2
-    assert set(sig1) == {"source_size", "source_mtime_ns", "parse_method", "url"}
-
-
-def test_is_bundle_valid_roundtrip(tmp_path: Path):
-    raw = tmp_path / "doc.modal_raw"
-    _write_bundle(raw)
-    src = tmp_path / "doc.pdf"
-    src.write_bytes(b"pdf-bytes")
-
-    parser = ModalParser()
-    # No signature file yet -> invalid.
-    assert parser.is_bundle_valid(raw, src) is False
-
-    # Write a matching signature -> valid; mutate the source -> invalid.
-    (raw / "evo_modal_signature.json").write_text(json.dumps(_bundle_signature(src)))
-    assert parser.is_bundle_valid(raw, src) is True
-
-    src.write_bytes(b"pdf-bytes-changed")
-    assert parser.is_bundle_valid(raw, src) is False
-
-
-def test_fetch_bundle_rewrites_image_paths(tmp_path: Path, monkeypatch):
-    """The Modal response's ``img_path`` is rewritten to the bundle-relative
-    ``images/<name>`` location so MinerUIRBuilder finds the asset bytes."""
-    from pipeline.rag import modal_parser
-
-    payload = {
-        "content_list": [
-            {"type": "image", "img_path": "/tmp/whatever/fig1.png", "page_idx": 0}
-        ],
-        "images": {"fig1.png": base64.b64encode(_PNG).decode()},
-        "md": "",
+def _descriptor(**overrides) -> dict:
+    base = {
+        "blob_path": "sources/blob_1.pdf",
+        "file_id": "f_1",
+        "source_etag": "etag-1",
+        "source_size": 123,
     }
-
-    class _Resp:
-        status_code = 200
-
-        def json(self):
-            return payload
-
-    monkeypatch.setattr(modal_parser.requests, "post", lambda *a, **k: _Resp())
-
-    src = tmp_path / "doc.pdf"
-    src.write_bytes(b"pdf")
-    raw = tmp_path / "doc.modal_raw"
-    raw.mkdir()
-    monkeypatch.setattr(
-        modal_parser.cfg, "modal_parse_url", "https://modal.test/file_parse"
-    )
-
-    modal_parser._fetch_bundle_sync(src, "doc.pdf", raw)
-
-    written = json.loads((raw / "content_list.json").read_text(encoding="utf-8"))
-    assert written[0]["img_path"] == "images/fig1.png"
-    assert (raw / "images" / "fig1.png").is_file()
+    base.update(overrides)
+    return modal_parser.source_descriptor(**base)
 
 
-def test_fetch_bundle_raises_on_http_error(tmp_path: Path, monkeypatch):
-    from pipeline.rag import modal_parser
-
-    class _Resp:
-        status_code = 500
-        text = "boom"
-
-    monkeypatch.setattr(modal_parser.requests, "post", lambda *a, **k: _Resp())
-    monkeypatch.setattr(
-        modal_parser.cfg, "modal_parse_url", "https://modal.test/file_parse"
-    )
-
-    src = tmp_path / "doc.pdf"
-    src.write_bytes(b"pdf")
-    raw = tmp_path / "doc.modal_raw"
-    raw.mkdir()
-
-    with pytest.raises(modal_parser.ModalParseError):
-        modal_parser._fetch_bundle_sync(src, "doc.pdf", raw)
-
-
-def test_remote_descriptor_has_stable_versioned_artifact(tmp_path: Path):
-    from pipeline.rag import modal_parser
-
-    src = tmp_path / "doc.pdf"
-    descriptor = modal_parser.source_descriptor(
-        blob_path="sources/blob_1.pdf",
-        file_id="f_1",
-        source_etag="etag-1",
-        source_size=123,
-    )
-    src.write_text(json.dumps(descriptor), encoding="utf-8")
-
-    key1, fingerprint1 = modal_parser.artifact_identity(descriptor)
-    key2, fingerprint2 = modal_parser.artifact_identity(descriptor)
-    assert key1 == key2
-    assert fingerprint1 == fingerprint2
-    assert key1.startswith(f"parsed/f_1/{modal_parser.PARSER_VERSION}/")
-    assert _bundle_signature(src)["source_fingerprint"] == fingerprint1
-
-
-def test_extract_artifact_rejects_path_traversal(tmp_path: Path, monkeypatch):
-    from pipeline.rag import modal_parser
-
-    archive_path = tmp_path / "malicious.zip"
-    with zipfile.ZipFile(archive_path, "w") as archive:
+def _artifact_zip(
+    path: Path,
+    *,
+    fingerprint: str,
+    content_list=None,
+    extra: dict[str, str] | None = None,
+    parser_version: str | None = None,
+    schema: str | None = None,
+) -> bytes:
+    with zipfile.ZipFile(path, "w") as archive:
         archive.writestr(
             "manifest.json",
             json.dumps(
                 {
-                    "schema": modal_parser.ARTIFACT_SCHEMA,
-                    "parser_version": modal_parser.PARSER_VERSION,
+                    "schema": schema or modal_parser.ARTIFACT_SCHEMA,
+                    "parser_version": parser_version or modal_parser.PARSER_VERSION,
+                    "source_fingerprint": fingerprint,
                 }
             ),
         )
-        archive.writestr("content_list.json", "[]")
-        archive.writestr("../outside.txt", "owned")
+        archive.writestr(
+            "content_list.json",
+            json.dumps(
+                content_list
+                if content_list is not None
+                else [{"type": "text", "text": "Hello", "page_idx": 0}]
+            ),
+        )
+        for name, body in (extra or {}).items():
+            archive.writestr(name, body)
+    return path.read_bytes()
 
-    def fake_download(_key: str, destination: Path):
-        destination.write_bytes(archive_path.read_bytes())
 
-    monkeypatch.setattr(modal_parser.blobstore, "download_to", fake_download)
+# --------------------------------------------------------------- addressing
+
+
+def test_artifact_key_is_stable_and_versioned():
+    descriptor = _descriptor()
+    key1, fingerprint1 = modal_parser.artifact_identity(descriptor)
+    key2, fingerprint2 = modal_parser.artifact_identity(descriptor)
+
+    assert (key1, fingerprint1) == (key2, fingerprint2)
+    assert key1 == f"parsed/f_1/{modal_parser.PARSER_VERSION}/{fingerprint1}.zip"
+
+
+def test_a_changed_source_addresses_a_different_artifact():
+    """The etag is what stops a re-upload under the same key replaying a stale
+    parse."""
+    _, original = modal_parser.artifact_identity(_descriptor())
+    _, reuploaded = modal_parser.artifact_identity(_descriptor(source_etag="etag-2"))
+    _, resized = modal_parser.artifact_identity(_descriptor(source_size=999))
+
+    assert len({original, reuploaded, resized}) == 3
+
+
+def test_parse_method_participates_in_the_fingerprint(monkeypatch):
+    _, before = modal_parser.artifact_identity(_descriptor())
+    monkeypatch.setattr(modal_parser.cfg, "parse_method", "ocr")
+    _, after = modal_parser.artifact_identity(_descriptor())
+
+    assert before != after
+
+
+# ------------------------------------------------------------- request path
+
+
+class _Resp:
+    def __init__(self, status_code: int, payload=None, text: str = ""):
+        self.status_code = status_code
+        self._payload = payload
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+
+def test_a_cache_hit_never_calls_modal(monkeypatch):
+    monkeypatch.setattr(
+        modal_parser.cfg, "modal_parse_url", "https://modal.test/file_parse"
+    )
+    key, fingerprint = modal_parser.artifact_identity(_descriptor())
+    monkeypatch.setattr(
+        modal_parser.blobstore, "object_info", lambda _k: {"size": 10, "etag": "e"}
+    )
+
+    def _explode(*_a, **_k):
+        raise AssertionError("modal must not be called on a cache hit")
+
+    monkeypatch.setattr(modal_parser.requests, "post", _explode)
+
+    artifact = modal_parser._request_artifact(_descriptor(), "doc.pdf")
+
+    assert artifact["key"] == key
+    assert artifact["fingerprint"] == fingerprint
+    assert artifact["cached"] is True
+
+
+def test_missing_modal_url_is_a_configuration_error(monkeypatch):
+    monkeypatch.setattr(modal_parser.cfg, "modal_parse_url", "")
+
+    with pytest.raises(modal_parser.ModalParseError, match="MODAL_PARSE_URL"):
+        modal_parser._request_artifact(_descriptor(), "doc.pdf")
+
+
+def test_http_error_is_wrapped(monkeypatch):
+    monkeypatch.setattr(
+        modal_parser.cfg, "modal_parse_url", "https://modal.test/file_parse"
+    )
+    monkeypatch.setattr(modal_parser.blobstore, "object_info", lambda _k: None)
+    monkeypatch.setattr(modal_parser.blobstore, "presign_get", lambda _k: "https://get")
+    monkeypatch.setattr(
+        modal_parser.blobstore, "presign_put", lambda _k, _t: "https://put"
+    )
+    monkeypatch.setattr(
+        modal_parser.requests, "post", lambda *a, **k: _Resp(500, text="boom")
+    )
+
+    with pytest.raises(modal_parser.ModalParseError, match="modal parse 500"):
+        modal_parser._request_artifact(_descriptor(), "doc.pdf")
+
+
+def test_a_mismatched_artifact_key_is_rejected(monkeypatch):
+    """The key is derived locally; a service returning a different one is either
+    misconfigured or writing somewhere we would never read."""
+    monkeypatch.setattr(
+        modal_parser.cfg, "modal_parse_url", "https://modal.test/file_parse"
+    )
+    monkeypatch.setattr(modal_parser.blobstore, "object_info", lambda _k: None)
+    monkeypatch.setattr(modal_parser.blobstore, "presign_get", lambda _k: "https://get")
+    monkeypatch.setattr(
+        modal_parser.blobstore, "presign_put", lambda _k, _t: "https://put"
+    )
+    monkeypatch.setattr(
+        modal_parser.requests,
+        "post",
+        lambda *a, **k: _Resp(200, {"artifact": {"key": "parsed/somewhere/else.zip"}}),
+    )
+
+    with pytest.raises(modal_parser.ModalParseError, match="unexpected artifact key"):
+        modal_parser._request_artifact(_descriptor(), "doc.pdf")
+
+
+# -------------------------------------------------------------- unpacking
+
+
+def _install_artifact(monkeypatch, tmp_path: Path, **zip_kwargs) -> dict:
+    fingerprint = zip_kwargs.pop("fingerprint", "fp-1")
+    blob = _artifact_zip(
+        tmp_path / "artifact.zip", fingerprint=fingerprint, **zip_kwargs
+    )
+    monkeypatch.setattr(
+        modal_parser.blobstore,
+        "download_to",
+        lambda _key, destination: destination.write_bytes(blob),
+    )
+    return {
+        "key": "parsed/f_1/x.zip",
+        "fingerprint": fingerprint,
+        "sha256": hashlib.sha256(blob).hexdigest(),
+    }
+
+
+def test_extract_writes_the_bundle(tmp_path: Path, monkeypatch):
+    artifact = _install_artifact(
+        monkeypatch, tmp_path, extra={"images/fig1.png": "not-really-a-png"}
+    )
     raw = tmp_path / "raw"
     raw.mkdir()
+
+    modal_parser._extract(artifact, raw)
+
+    assert json.loads((raw / "content_list.json").read_text())[0]["text"] == "Hello"
+    assert (raw / "images" / "fig1.png").is_file()
+
+
+def test_extract_rejects_path_traversal(tmp_path: Path, monkeypatch):
+    artifact = _install_artifact(
+        monkeypatch, tmp_path, extra={"../outside.txt": "owned"}
+    )
+    raw = tmp_path / "raw"
+    raw.mkdir()
+
     with pytest.raises(modal_parser.ModalParseError, match="unsafe path"):
-        modal_parser._extract_artifact("parsed/test.zip", raw)
+        modal_parser._extract(artifact, raw)
     assert not (tmp_path / "outside.txt").exists()
+
+
+def test_extract_rejects_a_checksum_mismatch(tmp_path: Path, monkeypatch):
+    artifact = _install_artifact(monkeypatch, tmp_path)
+    artifact["sha256"] = "0" * 64
+    raw = tmp_path / "raw"
+    raw.mkdir()
+
+    with pytest.raises(modal_parser.ModalParseError, match="checksum mismatch"):
+        modal_parser._extract(artifact, raw)
+
+
+def test_extract_rejects_a_stale_parser_version(tmp_path: Path, monkeypatch):
+    """A bundle from an older parser would silently degrade citations, so it is
+    a cache miss rather than a usable artifact."""
+    artifact = _install_artifact(monkeypatch, tmp_path, parser_version="mineru-0.1")
+    raw = tmp_path / "raw"
+    raw.mkdir()
+
+    with pytest.raises(modal_parser.ModalParseError, match="version mismatch"):
+        modal_parser._extract(artifact, raw)
+
+
+def test_extract_rejects_an_artifact_from_another_source(tmp_path: Path, monkeypatch):
+    artifact = _install_artifact(monkeypatch, tmp_path, fingerprint="fp-other")
+    artifact["fingerprint"] = "fp-expected"
+    raw = tmp_path / "raw"
+    raw.mkdir()
+
+    with pytest.raises(modal_parser.ModalParseError, match="source mismatch"):
+        modal_parser._extract(artifact, raw)
+
+
+def test_parse_to_bundle_discards_a_corrupt_cached_artifact(
+    tmp_path: Path, monkeypatch
+):
+    """A cached zip that will not open must be deleted, not retried forever."""
+    good = _artifact_zip(tmp_path / "good.zip", fingerprint="ignored")
+    deleted: list[str] = []
+    attempts = {"n": 0}
+
+    def _download(_key, destination: Path):
+        attempts["n"] += 1
+        destination.write_bytes(b"not a zip" if attempts["n"] == 1 else good)
+
+    monkeypatch.setattr(modal_parser.blobstore, "download_to", _download)
+    monkeypatch.setattr(
+        modal_parser.blobstore, "delete", lambda key: deleted.append(key)
+    )
+    monkeypatch.setattr(
+        modal_parser,
+        "_request_artifact",
+        lambda *_a: {"key": "parsed/f_1/x.zip", "cached": attempts["n"] == 0},
+    )
+
+    content_list, key, _fingerprint = modal_parser.parse_to_bundle(
+        _descriptor(), "doc.pdf", tmp_path / "raw"
+    )
+
+    assert deleted == ["parsed/f_1/x.zip"]
+    assert content_list[0]["text"] == "Hello"
+    assert key == "parsed/f_1/x.zip"
+
+
+def test_parse_to_bundle_propagates_a_fresh_artifact_failure(
+    tmp_path: Path, monkeypatch
+):
+    """Only a *cached* artifact is worth discarding and retrying; a freshly
+    produced broken one means the parser is broken."""
+    monkeypatch.setattr(
+        modal_parser.blobstore,
+        "download_to",
+        lambda _key, destination: destination.write_bytes(b"not a zip"),
+    )
+    monkeypatch.setattr(
+        modal_parser,
+        "_request_artifact",
+        lambda *_a: {"key": "parsed/f_1/x.zip", "cached": False},
+    )
+
+    with pytest.raises(zipfile.BadZipFile):
+        modal_parser.parse_to_bundle(_descriptor(), "doc.pdf", tmp_path / "raw")

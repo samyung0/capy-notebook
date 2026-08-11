@@ -79,6 +79,7 @@ type (
 	Conversation       = store.Conversation
 	Message            = store.Message
 	Citation           = store.Citation
+	Region             = store.Region
 	MaterialRef        = store.MaterialRef
 )
 
@@ -381,12 +382,11 @@ func FromPublicDecks(ds []store.PublicDeck) []PublicDeck {
 	return out
 }
 
-// CloneWorkspaceResp reports the cloned workspace and whether the parsed
-// LightRAG knowledge base was copied along with it (false = pipeline offline;
-// re-ingest files to rebuild the knowledge graph).
+// CloneWorkspaceResp reports the cloned workspace. The retrieval index is
+// copied in the same transaction as the content, so there is nothing partial to
+// report.
 type CloneWorkspaceResp struct {
 	Workspace Workspace `json:"workspace"`
-	RagCloned bool      `json:"ragCloned"`
 }
 
 // SubscriptionBlocker is a live subscription standing in the way of account

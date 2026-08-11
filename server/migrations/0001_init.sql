@@ -7,11 +7,11 @@
 -- The startup runner (internal/store.Migrate) re-applies this file on every
 -- boot, so everything must stay idempotent: IF NOT EXISTS / ON CONFLICT.
 --
--- Extensions: none. Nothing below uses pgvector or Apache AGE — LightRAG owns
--- its lightrag_* tables and AGE graph and creates both extensions itself in
--- initialize_storages(). They are also provisioned up-front by
--- deploy/postgres/initdb/00-extensions.sql. Keeping them out of this file lets
--- the schema apply to a stock postgres:16 (see .github/workflows/ci.yml).
+-- Extensions: pgvector only. The retrieval chunk store below is owned by this
+-- schema (it was LightRAG's before the in-house cutover), so every environment
+-- that applies this file needs the vector type — hence pgvector/pgvector:pg16
+-- everywhere, including the CI service container (.github/workflows/ci.yml).
+CREATE EXTENSION IF NOT EXISTS vector;
 
 -- ============================================================================
 -- Baseline version guard
@@ -27,8 +27,9 @@
 -- This is only safe because there is no production deployment. Bump
 -- target_version on any destructive change to the definitions below.
 --
--- LightRAG's lightrag_* tables and AGE graphs are deliberately absent from the
--- drop list: that schema is owned by the Python pipeline, not this file.
+-- The lightrag_* tables are listed even though this file never creates them:
+-- the pipeline used to own them, and a database from before the in-house
+-- retrieval cutover would otherwise keep them (and their AGE graphs) forever.
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS schema_baseline (
@@ -38,7 +39,7 @@ CREATE TABLE IF NOT EXISTS schema_baseline (
 
 DO $$
 DECLARE
-  target_version constant int := 5;
+  target_version constant int := 6;
   recorded_version int;
 BEGIN
   -- Serialize concurrent migrators. The runner sends this file as one statement
@@ -59,10 +60,26 @@ BEGIN
       material_comments, material_discussions, material_revisions,
       material_yjs_documents, materials, messages, mistakes,
       notification_prefs, notifications, oauth_connections,
-      pending_blob_deletions, tags, tasks, upload_sessions, user_storage,
+      pending_blob_deletions,
+      rag_chapter_summaries, rag_chunks, rag_concept_mentions, rag_concepts,
+      rag_file_summaries, rag_workspace_summaries,
+      tags, tasks, upload_sessions, user_storage,
       user_storage_deltas, user_subscriptions, users, webhook_events,
-      workspace_invites, workspace_members, workspaces
+      workspace_invites, workspace_members, workspaces,
+      -- Retired LightRAG storages (see the header note).
+      lightrag_doc_chunks, lightrag_doc_full, lightrag_doc_status,
+      lightrag_entity_chunks, lightrag_full_entities, lightrag_full_relations,
+      lightrag_llm_cache, lightrag_relation_chunks, lightrag_vdb_chunks,
+      lightrag_vdb_entity, lightrag_vdb_relation
       CASCADE;
+    -- Apache AGE is gone with LightRAG; dropping the extension takes every
+    -- per-workspace graph schema with it. Tolerated failure: the library is no
+    -- longer preloaded on databases that still carry the extension record.
+    BEGIN
+      DROP EXTENSION IF EXISTS age CASCADE;
+    EXCEPTION WHEN OTHERS THEN
+      RAISE NOTICE 'could not drop the age extension: %', SQLERRM;
+    END;
   END IF;
   INSERT INTO schema_baseline (id, version) VALUES (1, target_version)
     ON CONFLICT (id) DO UPDATE SET version = EXCLUDED.version;
@@ -185,15 +202,15 @@ CREATE TABLE IF NOT EXISTS files (
   blob_path             text,
   url                   text,
   content               text,
-  -- LightRAG document id written back by the Python worker after ingest
-  -- (deterministic md5 of the canonical basename); resolves basename
-  -- collisions / job retries and maps file -> document for deletion.
-  doc_id                text,
   -- Durable parser artifacts (direct-to-B2 upload pipeline).
   parsed_blob_path      text,
   parsed_fingerprint    text,
   parsed_parser_version text,
   source_etag           text,
+  -- sha256 of the parsed text, written by the ingest worker. Two uploads of the
+  -- same document into one workspace are stored twice (they are two files the
+  -- user can see and delete) but indexed once.
+  content_hash          text,
   -- The column list on SET NULL is what makes this work: the default form would
   -- try to null workspace_id too, which is NOT NULL. Requires Postgres 15+.
   FOREIGN KEY (chapter_id, workspace_id)
@@ -202,6 +219,7 @@ CREATE TABLE IF NOT EXISTS files (
 CREATE INDEX IF NOT EXISTS files_ws_idx ON files(workspace_id);
 CREATE INDEX IF NOT EXISTS files_chapter_idx ON files(chapter_id);
 CREATE INDEX IF NOT EXISTS files_user_idx ON files(user_id);
+CREATE INDEX IF NOT EXISTS files_content_hash_idx ON files(workspace_id, content_hash);
 
 -- ============================================================================
 -- Materials — the universal Plate-document envelope for study artifacts
@@ -618,9 +636,9 @@ CREATE INDEX IF NOT EXISTS material_comments_parent_idx
   ON material_comments(parent_comment_id, created_at) WHERE parent_comment_id IS NOT NULL;
 
 -- ============================================================================
--- AI chat persistence. Conversations are workspace-scoped: RAG grounding runs
--- against the owning workspace's per-tenant LightRAG index, so every
--- conversation carries both user_id (ownership) and workspace_id (scope).
+-- AI chat persistence. Conversations are workspace-scoped: grounding searches
+-- the owning workspace's chunks, so every conversation carries both user_id
+-- (ownership) and workspace_id (scope).
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS conversations (
@@ -708,6 +726,168 @@ CREATE TABLE IF NOT EXISTS jobs (
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status, created_at);
+
+-- Summary rollups are debounced rather than queued per edit: moving ten files
+-- between chapters should rebuild the tree once. One pending job per workspace
+-- is all that can exist, and the trigger below inserts ON CONFLICT DO NOTHING.
+CREATE UNIQUE INDEX IF NOT EXISTS jobs_pending_rollup_idx
+  ON jobs ((payload->>'workspaceId'))
+  WHERE type = 'summaries_rollup' AND status = 'pending';
+
+-- ============================================================================
+-- Retrieval store — chunks, the summary tree and the concept index
+--
+-- Owned by this schema (the Python pipeline writes the rows but no longer owns
+-- the DDL), which is what makes deletion automatic: every table cascades from
+-- workspaces/files/chapters, so dropping a workspace drops its index with it.
+-- No teardown job, and cloning a workspace is an INSERT..SELECT away.
+-- ============================================================================
+
+-- One retrievable passage. `text` is what a citation shows and what the model
+-- reads; `indexed_text` is that text prefixed with its file/section header path
+-- (contextual retrieval) and is the string that was embedded and tokenized, so
+-- vector and lexical search agree on what they scored.
+CREATE TABLE IF NOT EXISTS rag_chunks (
+  id           text PRIMARY KEY,
+  workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  file_id      text NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  chunk_idx    int  NOT NULL,
+  -- Heading breadcrumb, e.g. 'Chapter 4 › Light reactions'. Empty for formats
+  -- without headings.
+  section_path text NOT NULL DEFAULT '',
+  text         text NOT NULL,
+  indexed_text text NOT NULL,
+  token_count  int  NOT NULL DEFAULT 0,
+  -- 1-based, null for sources with no page model (txt/md, parseMode=normal).
+  page_start   int,
+  page_end     int,
+  -- [{page, bbox: [x0,y0,x1,y1], space}] for every source block in the chunk.
+  -- `space` records the coordinate convention so a later highlight overlay does
+  -- not have to guess; MinerU emits 'mineru-1000-lefttop'.
+  regions      jsonb NOT NULL DEFAULT '[]'::jsonb,
+  -- Written by the pipeline, not generated: the tokenizer bigrams CJK runs so
+  -- one column serves mixed-language corpora, which no built-in text search
+  -- configuration can do.
+  search       tsvector,
+  -- halfvec because 2560 dims (Qwen3-Embedding-4B) exceeds pgvector's 2000-dim
+  -- ceiling for plain vector HNSW. Changing EMBEDDING_DIM means changing this
+  -- and re-ingesting; the pipeline hard-fails on a mismatch rather than drift.
+  embedding    halfvec(2560),
+  UNIQUE (file_id, chunk_idx)
+);
+CREATE INDEX IF NOT EXISTS rag_chunks_ws_idx ON rag_chunks(workspace_id);
+CREATE INDEX IF NOT EXISTS rag_chunks_file_idx ON rag_chunks(file_id);
+CREATE INDEX IF NOT EXISTS rag_chunks_search_idx ON rag_chunks USING gin(search);
+CREATE INDEX IF NOT EXISTS rag_chunks_embedding_idx
+  ON rag_chunks USING hnsw (embedding halfvec_cosine_ops);
+
+-- Per-file summary + outline, keyed by content so an organizational change
+-- (moving chapters, cloning, renaming) never invalidates it.
+CREATE TABLE IF NOT EXISTS rag_file_summaries (
+  file_id      text PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+  workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  fingerprint  text NOT NULL DEFAULT '',
+  summary      text NOT NULL DEFAULT '',
+  -- [{title, pageStart}] section headings, the agent's table of contents.
+  outline      jsonb NOT NULL DEFAULT '[]'::jsonb,
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS rag_file_summaries_ws_idx ON rag_file_summaries(workspace_id);
+
+-- Rolled up from the file summaries below them, never from raw content, which
+-- is what keeps invalidation local: a moved file rebuilds two rows from a few
+-- KB of existing prose.
+CREATE TABLE IF NOT EXISTS rag_chapter_summaries (
+  chapter_id   text PRIMARY KEY REFERENCES chapters(id) ON DELETE CASCADE,
+  workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  summary      text NOT NULL DEFAULT '',
+  dirty        boolean NOT NULL DEFAULT true,
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS rag_chapter_summaries_dirty_idx
+  ON rag_chapter_summaries(workspace_id) WHERE dirty;
+
+-- Files with no chapter roll up here directly, so 'uncategorized' needs no
+-- placeholder chapter.
+CREATE TABLE IF NOT EXISTS rag_workspace_summaries (
+  workspace_id text PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+  summary      text NOT NULL DEFAULT '',
+  dirty        boolean NOT NULL DEFAULT true,
+  updated_at   timestamptz NOT NULL DEFAULT now()
+);
+
+-- Concept index: the relation-free half of a knowledge graph. Mentions are
+-- per-chunk, so unlike an aggregated entity description they filter cleanly by
+-- file, and co-mention self-joins give the bridging that relation extraction
+-- was supposed to provide.
+CREATE TABLE IF NOT EXISTS rag_concepts (
+  id           text PRIMARY KEY,
+  workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  name         text NOT NULL,
+  -- Casefolded/whitespace-collapsed form; the dedup key across files.
+  norm         text NOT NULL,
+  UNIQUE (workspace_id, norm)
+);
+
+CREATE TABLE IF NOT EXISTS rag_concept_mentions (
+  concept_id text NOT NULL REFERENCES rag_concepts(id) ON DELETE CASCADE,
+  chunk_id   text NOT NULL REFERENCES rag_chunks(id) ON DELETE CASCADE,
+  file_id    text NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  PRIMARY KEY (concept_id, chunk_id)
+);
+CREATE INDEX IF NOT EXISTS rag_concept_mentions_chunk_idx ON rag_concept_mentions(chunk_id);
+CREATE INDEX IF NOT EXISTS rag_concept_mentions_file_idx ON rag_concept_mentions(file_id);
+
+-- Reorganizing files invalidates summaries, and the paths that reorganize them
+-- are many (move, delete, chapter delete's SET NULL, clone, account purge).
+-- A trigger cannot be forgotten by a new writer the way a handler call can.
+CREATE OR REPLACE FUNCTION mark_summaries_dirty() RETURNS trigger AS $$
+DECLARE
+  ws     text;
+  ch     text;
+  before text;
+  after  text;
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    ws := OLD.workspace_id; before := OLD.chapter_id;
+  ELSIF TG_OP = 'INSERT' THEN
+    ws := NEW.workspace_id; after := NEW.chapter_id;
+  ELSE
+    ws := NEW.workspace_id; before := OLD.chapter_id; after := NEW.chapter_id;
+  END IF;
+
+  -- The parent is deleted before its cascade reaches this table, so a workspace
+  -- (or account) delete arrives here with nothing left to summarize. Marking it
+  -- would fail the foreign key and take the delete down with it.
+  IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = ws) THEN
+    RETURN NULL;
+  END IF;
+
+  FOREACH ch IN ARRAY ARRAY[before, after] LOOP
+    CONTINUE WHEN ch IS NULL;
+    -- Selected rather than valued for the same reason: deleting a chapter nulls
+    -- files.chapter_id through RI, and OLD then names a chapter that is gone.
+    INSERT INTO rag_chapter_summaries (chapter_id, workspace_id, dirty)
+    SELECT c.id, c.workspace_id, true FROM chapters c WHERE c.id = ch
+    ON CONFLICT (chapter_id) DO UPDATE SET dirty = true;
+  END LOOP;
+
+  INSERT INTO rag_workspace_summaries (workspace_id, dirty) VALUES (ws, true)
+  ON CONFLICT (workspace_id) DO UPDATE SET dirty = true;
+
+  INSERT INTO jobs (id, type, payload)
+  VALUES ('job_' || substr(md5(random()::text || clock_timestamp()::text), 1, 10),
+          'summaries_rollup', jsonb_build_object('workspaceId', ws))
+  ON CONFLICT DO NOTHING;
+  RETURN NULL;
+END $$ LANGUAGE plpgsql;
+
+-- Only chapter membership matters here; content changes mark themselves dirty
+-- from the ingest worker, which knows whether the text actually changed.
+DROP TRIGGER IF EXISTS files_mark_summaries_dirty ON files;
+CREATE TRIGGER files_mark_summaries_dirty
+  AFTER INSERT OR DELETE OR UPDATE OF chapter_id ON files
+  FOR EACH ROW EXECUTE FUNCTION mark_summaries_dirty();
 
 -- ============================================================================
 -- Blob layer: refcounts and the deletion outbox

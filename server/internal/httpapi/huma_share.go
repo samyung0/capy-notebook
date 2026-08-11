@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"log"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -15,9 +14,9 @@ import (
 
 Read access follows the privacy model in store/share.go: owners get full
 access, link/public resources are readable (and clonable) by any signed-in
-user. Clone endpoints deep-copy into the caller's account; workspace clones
-also ask the pipeline to copy the parsed LightRAG state (best-effort — the
-response reports whether that succeeded). */
+user. Clone endpoints deep-copy into the caller's account; a workspace clone
+copies the retrieval index in the same transaction as the content, so the copy
+is queryable the moment it exists. */
 
 type cloneWorkspaceOutput struct {
 	Body apimodel.CloneWorkspaceResp
@@ -94,25 +93,12 @@ func (a *api) cloneWorkspace(ctx context.Context, in *workspaceIDInput) (*cloneW
 	if err != nil {
 		return nil, hErr(err)
 	}
-	// Copy the parsed LightRAG state (PG rows + AGE graph) keyed by workspace
-	// id. Best-effort: the app rows are already cloned; without the RAG copy
-	// chat/generate has no knowledge until files are re-ingested.
-	ragCloned := false
-	if a.pipe != nil {
-		if _, err := a.pipe.PostRaw(ctx, "/workspace/clone", map[string]any{
-			"sourceWorkspaceId": in.ID, "targetWorkspaceId": ws.ID,
-		}); err == nil {
-			ragCloned = true
-		} else {
-			log.Printf("workspace clone %s -> %s: rag copy failed: %v", in.ID, ws.ID, err)
-		}
-	}
 	ownerState, err := a.workspaceOwnerState(ctx, ws)
 	if err != nil {
 		return nil, err
 	}
 	return &cloneWorkspaceOutput{Body: apimodel.CloneWorkspaceResp{
-		Workspace: apimodel.FromWorkspace(ws, ownerState), RagCloned: ragCloned,
+		Workspace: apimodel.FromWorkspace(ws, ownerState),
 	}}, nil
 }
 

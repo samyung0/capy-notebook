@@ -30,7 +30,7 @@ func openShareHTTP(t *testing.T) http.Handler {
 		t.Fatalf("db: %v", err)
 	}
 	t.Cleanup(st.Close)
-	return httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "linearrag", httpapi.Config{
+	return httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "evo", httpapi.Config{
 		AuthDisabled: true,
 		E2EAuth:      true,
 		E2ESecret:    "e2e-test-secret",
@@ -331,7 +331,7 @@ func TestMaterialRevisionHTTPCapsFreeOwnerAtSevenDailyVersions(t *testing.T) {
 		nil,
 		nil,
 		"docling",
-		"linearrag",
+		"evo",
 		httpapi.Config{
 			AuthDisabled:        true,
 			DevUserID:           userID,

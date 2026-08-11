@@ -4,28 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"time"
-
-	"github.com/jackc/pgx/v5"
 )
-
-// EnqueueRagTeardownTx schedules removal of a workspace's LightRAG tenant (its
-// lightrag_* rows and Apache AGE graph). That state is keyed only by workspace
-// id and is invisible to this schema, so nothing else — not a cascade, not a
-// trigger — will ever collect it.
-//
-// It runs as a job rather than inline because dropping a graph is slow and has
-// to survive a crashed request. Enqueue it in the same transaction as the delete
-// so the two cannot diverge.
-func (s *Store) EnqueueRagTeardownTx(ctx context.Context, tx pgx.Tx, workspaceID string) error {
-	payload, err := json.Marshal(map[string]string{"workspaceId": workspaceID})
-	if err != nil {
-		return err
-	}
-	_, err = tx.Exec(ctx,
-		`INSERT INTO jobs (id, type, payload) VALUES ($1,'rag_teardown',$2)`,
-		uid("job"), payload)
-	return err
-}
 
 // CreateSourceWithJob inserts an uploaded file as 'processing' and enqueues an
 // ingest job in the same transaction (Postgres-backed queue; the Python worker

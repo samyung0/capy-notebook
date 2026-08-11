@@ -787,7 +787,7 @@ export const handlers = [
           workspaceName: workspace.name,
         });
       });
-    return HttpResponse.json({ ragCloned: true, workspace }, { status: 201 });
+    return HttpResponse.json({ workspace }, { status: 201 });
   }),
   /* ---------------- chapters & files ---------------- */
   http.get('/api/workspaces/:id/chapters', async ({ params }) =>

@@ -115,9 +115,9 @@ DATABASE_URL=... go run ./cmd/cancel-deletion -email user@example.com -notify
 - `cmd/cancel-deletion` — support tool to reactivate a deletion-pending account.
 - `internal/store` — pgx pool, models (mirror `src/api/types.ts`), queries.
 - `internal/httpapi` — chi router + handlers (mirror `src/mocks/handlers.ts`).
-- `migrations` — `0001_init.sql` (complete schema and development seed). It needs
-  no extensions, so it applies to a stock Postgres; pgvector and Apache AGE are
-  provisioned by `deploy/postgres` for LightRAG.
+- `migrations` — `0001_init.sql` (complete schema and development seed). It owns
+  the retrieval index (`rag_*`) as well, so it needs the `vector` extension and
+  must run against `pgvector/pgvector:pg16` rather than stock Postgres.
 
 ## Connect the frontend
 

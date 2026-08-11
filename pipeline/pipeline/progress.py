@@ -13,9 +13,9 @@ import logging
 
 import redis
 
-from ..config import cfg
+from .config import cfg
 
-log = logging.getLogger("evo.rag.progress")
+log = logging.getLogger("evo.progress")
 
 _client: redis.Redis | None = None
 

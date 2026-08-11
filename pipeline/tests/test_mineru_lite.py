@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pipeline.rag import mineru_lite
+from pipeline.parse import mineru_lite
 
 
 class _Response:

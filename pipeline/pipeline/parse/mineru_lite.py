@@ -66,9 +66,7 @@ def _create_task(file_name: str) -> tuple[str, str]:
     return data["task_id"], data["file_url"]
 
 
-def _poll_result(
-    task_id: str, on_progress: Callable[[int], None] | None = None
-) -> str:
+def _poll_result(task_id: str, on_progress: Callable[[int], None] | None = None) -> str:
     base = cfg.mineru_lite_base.rstrip("/")
     deadline = time.monotonic() + cfg.mineru_lite_timeout
     pct = 25

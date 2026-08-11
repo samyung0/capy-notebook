@@ -1,12 +1,9 @@
 """Thin psycopg helpers over the shared Postgres job queue.
 
-Only the queue/file/notification plumbing the worker needs lives here — all the
-actual RAG state (entities, relations, vectors, chunks) is owned by LightRAG's
-own ``lightrag_*`` tables, created on ``initialize_storages()``.
-
-These are synchronous (psycopg) and are called from the async worker via
-``asyncio.to_thread`` so a single event loop keeps the cached LightRAG asyncpg
-pools alive across jobs.
+Only queue/file/notification plumbing lives here. The retrieval index has its
+own async access layer in ``pipeline.retrieval.store``; these stay synchronous
+because they run inside short transactions the worker commits explicitly, and
+are called via ``asyncio.to_thread``.
 """
 
 from __future__ import annotations
@@ -60,9 +57,9 @@ def set_file_status(cur, file_id: str, status: str) -> None:
     cur.execute("UPDATE files SET status=%s WHERE id=%s", (status, file_id))
 
 
-def set_file_doc_id(cur, file_id: str, doc_id: str | None) -> None:
-    """Record the LightRAG document id backing this file (None = no doc)."""
-    cur.execute("UPDATE files SET doc_id=%s WHERE id=%s", (doc_id, file_id))
+def set_file_content_hash(cur, file_id: str, content_hash: str) -> None:
+    """Record the hash of the parsed text, used to skip duplicate indexing."""
+    cur.execute("UPDATE files SET content_hash=%s WHERE id=%s", (content_hash, file_id))
 
 
 def set_file_parse_artifact(
@@ -78,20 +75,6 @@ def set_file_parse_artifact(
         WHERE id=%s""",
         (blob_path, fingerprint, parser_version, file_id),
     )
-
-
-def file_ids_for_doc_id(cur, doc_id: str) -> list[str]:
-    """Files (if any) already claiming this LightRAG doc id."""
-    cur.execute("SELECT id FROM files WHERE doc_id=%s", (doc_id,))
-    return [row[0] for row in cur.fetchall()]
-
-
-def file_names_for_ids(cur, file_ids: list[str]) -> list[str]:
-    """Display names for the given file ids (order not guaranteed)."""
-    if not file_ids:
-        return []
-    cur.execute("SELECT name FROM files WHERE id = ANY(%s)", (file_ids,))
-    return [row[0] for row in cur.fetchall()]
 
 
 def add_notification(
@@ -172,13 +155,19 @@ def account_allows_ingest(cur, user_id: str) -> bool:
     if not row:
         return False
     deleted_at, suspended_at, deletion_requested_at, effective_used, period_end = row
-    if deleted_at is not None or suspended_at is not None or deletion_requested_at is not None:
+    if (
+        deleted_at is not None
+        or suspended_at is not None
+        or deletion_requested_at is not None
+    ):
         return False
     from datetime import datetime, timezone
 
     if period_end is not None:
         now = datetime.now(timezone.utc)
-        end = period_end if period_end.tzinfo else period_end.replace(tzinfo=timezone.utc)
+        end = (
+            period_end if period_end.tzinfo else period_end.replace(tzinfo=timezone.utc)
+        )
         if end < now:
             # After lapse the free-tier storage limit applies regardless of the
             # denormalized plan_tier column, which may lag a missed webhook.

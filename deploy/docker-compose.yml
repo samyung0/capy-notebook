@@ -1,15 +1,15 @@
 # Dev stack for the Evo Notes backend.
 #   docker compose -f deploy/docker-compose.yml up --build
 #
-# - db        : Postgres 16 + pgvector + Apache AGE (LightRAG's KV/vector/graph/
-#               doc-status backends). Built from deploy/postgres/Dockerfile;
-#               AGE is preloaded via `-c shared_preload_libraries=age`.
+# - db        : Postgres 16 + pgvector. The retrieval index lives in the same
+#               schema the Go migrations own, so the stock pgvector image is
+#               enough — no custom build, no Apache AGE.
 # - redis     : pub/sub bus for live ingest progress (worker -> server -> SSE).
 # - server    : Go gateway (the frontend's /api). Writes uploads to Backblaze
 #               B2, subscribes to Redis and fans progress out over SSE.
-# - worker    : Python ingest worker (LightRAG). Parses on Modal (GPU MineRU),
-#               builds the LightRAG graph in Postgres, publishes progress.
-# - retrieval : Python FastAPI chat/generate over the per-workspace LightRAG.
+# - worker    : Python ingest worker. Parses on Modal (GPU MinerU) or the MinerU
+#               lite relay, chunks/embeds into rag_chunks, publishes progress.
+# - retrieval : Python FastAPI chat/generate over the in-house retrieval index.
 #
 # Worker downloads B2 objects before parsing. Real ingest needs B2 credentials,
 # API keys (DeepSeek/OpenRouter/Google), and a deployed Modal parse URL.
@@ -17,9 +17,7 @@
 
 services:
   db:
-    build:
-      context: ./postgres
-    command: ["postgres", "-c", "shared_preload_libraries=age"]
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: evo
       POSTGRES_PASSWORD: evo
@@ -94,11 +92,12 @@ services:
       COLLABORATION_SECRET: ${COLLABORATION_SECRET:-dev-collaboration-secret}
       COLLABORATION_URL: ${COLLABORATION_URL:-ws://localhost:1234}
       COLLABORATION_INTERNAL_URL: http://collaboration:1234
-      # Vestigial labels stored on the job payload; the worker always uses
-      # LightRAG + Modal MineRU regardless.
+      # Vestigial labels stored on the job payload; the parse route is chosen by
+      # the file's parseMode, not by these.
       EVO_PARSER: ${EVO_PARSER:-mineru}
-      EVO_ENGINE: ${EVO_ENGINE:-lightrag}
+      EVO_ENGINE: ${EVO_ENGINE:-evo}
       PIPELINE_URL: http://retrieval:8001
+      PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
       APP_URL: ${APP_URL:-http://localhost:5173}
       EMAIL_BACKEND: ${EMAIL_BACKEND:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
@@ -137,9 +136,7 @@ services:
       B2_KEY_ID: ${B2_KEY_ID:-}
       B2_APP_KEY: ${B2_APP_KEY:-}
       REDIS_URL: redis://redis:6379/0
-      WORKING_DIR: /data/rag_storage
-      EVO_LIGHTRAG_CACHE_SIZE: ${EVO_LIGHTRAG_CACHE_SIZE:-16}
-      # Modal GPU MineRU parse service (custom "modal" LightRAG parser engine).
+      # Modal GPU MinerU parse service ('advanced' parse mode).
       MODAL_PARSE_URL: ${MODAL_PARSE_URL:-}
       MODAL_PARSE_TOKEN: ${MODAL_PARSE_TOKEN:-}
       MODAL_PARSE_TIMEOUT: ${MODAL_PARSE_TIMEOUT:-600}
@@ -163,8 +160,6 @@ services:
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
       EVO_MODEL_IMAGE_CAPTION: ${EVO_MODEL_IMAGE_CAPTION:-gemini-3.1-flash-lite-preview}
-    volumes:
-      - evo_rag:/data/rag_storage
     command: ["python", "-m", "pipeline.ingest.worker"]
     depends_on:
       db:
@@ -177,8 +172,10 @@ services:
       context: ../pipeline
     environment:
       DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
-      WORKING_DIR: /data/rag_storage
-      EVO_LIGHTRAG_CACHE_SIZE: ${EVO_LIGHTRAG_CACHE_SIZE:-16}
+      # Tools with side effects call back into the gateway rather than writing
+      # materials directly, so the agent inherits Go's authz and quota checks.
+      GATEWAY_URL: http://server:8080
+      PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       EVO_MODEL_EMBEDDING: ${EVO_MODEL_EMBEDDING:-qwen/qwen3-embedding-4b}
@@ -193,8 +190,6 @@ services:
       EVO_MODEL_IMAGE_CAPTION: ${EVO_MODEL_IMAGE_CAPTION:-gemini-3.1-flash-lite-preview}
     ports:
       - "8001:8001"
-    volumes:
-      - evo_rag:/data/rag_storage
     command:
       [
         "uvicorn",
@@ -225,4 +220,3 @@ services:
 
 volumes:
   evo_pgdata:
-  evo_rag:

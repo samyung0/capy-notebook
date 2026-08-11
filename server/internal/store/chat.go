@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// Conversation is a workspace-scoped chat thread. RAG grounding for its messages
-// runs against WorkspaceID's per-tenant LightRAG index.
+// Conversation is a workspace-scoped chat thread. Grounding for its messages
+// runs against WorkspaceID's chunks in the retrieval store.
 type Conversation struct {
 	ID          string    `json:"id"`
 	WorkspaceID string    `json:"workspaceId"`
@@ -29,12 +29,29 @@ type Message struct {
 	CreatedAt      time.Time  `json:"createdAt"`
 }
 
-// Citation is one RAG source referenced by an assistant message. Shape mirrors
-// Citation in src/api/types.ts.
+// Citation is one retrieved source behind an assistant message. FileID is a
+// real files.id, so the UI can open the source directly.
+//
+// Page numbers are 1-based and absent for sources with no page model (txt/md,
+// and PDFs parsed in 'normal' mode, where the cloud parser returns markdown
+// with no layout).
 type Citation struct {
-	FileID   string `json:"fileId"`
-	FileName string `json:"fileName"`
-	Snippet  string `json:"snippet"`
+	FileID    string   `json:"fileId"`
+	FileName  string   `json:"fileName"`
+	Snippet   string   `json:"snippet"`
+	PageStart *int     `json:"pageStart,omitempty"`
+	PageEnd   *int     `json:"pageEnd,omitempty"`
+	Regions   []Region `json:"regions,omitempty"`
+}
+
+// Region locates one source block inside its page. Stored and shipped ahead of
+// the highlight overlay that will consume it; Space names the coordinate
+// convention ('mineru-1000-lefttop': origin top-left, both axes scaled to
+// 0..1000) so a renderer never has to infer it.
+type Region struct {
+	Page  int       `json:"page"`
+	BBox  []float64 `json:"bbox"`
+	Space string    `json:"space"`
 }
 
 // msgMetadata is the on-disk (jsonb) shape of a message's metadata column.

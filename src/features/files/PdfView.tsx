@@ -9,7 +9,14 @@ pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pd
 
 const MAX_PAGE_WIDTH = 800;
 
-export default function PdfView({ url }: { url: string }) {
+export default function PdfView({
+  url,
+  page,
+}: {
+  url: string;
+  /** 1-based page to scroll to once rendered, from a chat citation. */
+  page?: number;
+}) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [numPages, setNumPages] = useState(0);
   const [pageWidth, setPageWidth] = useState(0);
@@ -17,6 +24,14 @@ export default function PdfView({ url }: { url: string }) {
   useEffect(() => {
     setNumPages(0);
   }, [url]);
+
+  // Waits on numPages because the target element does not exist until the
+  // document reports its length, which is after the citation is clicked.
+  useEffect(() => {
+    if (!page || !numPages) return;
+    const target = containerRef.current?.querySelector(`[data-page="${page}"]`);
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [page, numPages]);
 
   useEffect(() => {
     const container = containerRef.current;

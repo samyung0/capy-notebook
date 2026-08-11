@@ -4,8 +4,7 @@
 FROM python:3.11-slim
 
 WORKDIR /app
-ENV PYTHONUNBUFFERED=1 \
-    WORKING_DIR=/data/rag_storage
+ENV PYTHONUNBUFFERED=1
 
 COPY pyproject.toml ./
 COPY pipeline ./pipeline

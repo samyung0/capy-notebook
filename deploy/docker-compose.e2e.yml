@@ -5,10 +5,10 @@
 # Host ports are offset so this can run alongside the normal dev stack.
 
 services:
-  # Stock Postgres, not the pgvector+AGE image of the dev stack: this stack runs
-  # no worker/retrieval, and the baseline schema needs no extensions.
+  # pgvector, same as the dev stack: the baseline schema creates the extension
+  # for the retrieval index, so stock postgres:16 can no longer apply it.
   db:
-    image: postgres:16
+    image: pgvector/pgvector:pg16
     environment:
       POSTGRES_USER: evo
       POSTGRES_PASSWORD: evo

@@ -513,7 +513,10 @@ type workspaceCloneChapter struct {
 type workspaceCloneFile struct {
 	id, name, kind, status              string
 	chapterID, parser, engine, blobPath *string
-	url, content, docID                 *string
+	url, content                        *string
+	parsedBlobPath, parsedFingerprint   *string
+	parsedParserVersion, sourceETag     *string
+	contentHash                         *string
 	sizeBytes                           int64
 	position                            int64
 }
@@ -629,7 +632,9 @@ func (s *Store) snapshotWorkspaceForClone(
 
 	rows, err = tx.Query(ctx,
 		`SELECT id, chapter_id, position, name, kind, size_bytes, status,
-			parser, engine, blob_path, url, content, doc_id
+			parser, engine, blob_path, url, content,
+			parsed_blob_path, parsed_fingerprint, parsed_parser_version, source_etag,
+			content_hash
 		 FROM files WHERE workspace_id=$1 ORDER BY added_at`,
 		workspaceID,
 	)
@@ -651,7 +656,11 @@ func (s *Store) snapshotWorkspaceForClone(
 			&file.blobPath,
 			&file.url,
 			&file.content,
-			&file.docID,
+			&file.parsedBlobPath,
+			&file.parsedFingerprint,
+			&file.parsedParserVersion,
+			&file.sourceETag,
+			&file.contentHash,
 		); err != nil {
 			rows.Close()
 			return workspaceCloneSnapshot{}, err
@@ -741,13 +750,12 @@ func (s *Store) snapshotWorkspaceForClone(
 }
 
 // CloneWorkspace deep-copies a shared workspace (chapters, files, materials,
-// fresh card stats) into a new workspace owned by userID. Blob objects are shared
-// rather than duplicated: the clone copies blob_path and editor asset object
-// paths, and the refcount triggers make that safe — the object survives until its
-// last holder is gone, so deleting either workspace no longer leaks or destroys
-// the other's bytes. LightRAG state is copied separately by the pipeline (keyed
-// by workspace id). The clone lands private regardless of the source's
-// visibility.
+// fresh card stats, retrieval index) into a new workspace owned by userID. Blob
+// objects are shared rather than duplicated: the clone copies blob_path and
+// editor asset object paths, and the refcount triggers make that safe — the
+// object survives until its last holder is gone, so deleting either workspace no
+// longer leaks or destroys the other's bytes. The clone lands private regardless
+// of the source's visibility.
 func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Workspace, error) {
 	isOwner, err := s.WorkspaceAccess(ctx, userID, srcID)
 	if err != nil {
@@ -806,11 +814,14 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 		}
 	}
 
-	// Files; doc_id is copied so the pipeline's LightRAG
-	// row copy (keyed by workspace) keeps the file <-> document link intact.
+	// Files. The parse artifact pointers ride along so a clone that later
+	// re-ingests (parse mode change, retry) reuses the cached MinerU output
+	// instead of paying for the GPU parse again.
+	fileMap := map[string]string{}
 	{
 		for _, f := range snapshot.files {
 			nid := uid("f")
+			fileMap[f.id] = nid
 			var chapterID *string
 			if f.chapterID != nil {
 				if mapped, ok := chapterMap[*f.chapterID]; ok {
@@ -823,12 +834,18 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 				url = &u
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO files
-				(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, parser, engine, blob_path, url, content, doc_id)
-				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
-				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.parser, f.engine, f.blobPath, url, f.content, f.docID); err != nil {
+				(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, parser, engine, blob_path, url, content,
+				 parsed_blob_path, parsed_fingerprint, parsed_parser_version, source_etag, content_hash)
+				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.parser, f.engine, f.blobPath, url, f.content,
+				f.parsedBlobPath, f.parsedFingerprint, f.parsedParserVersion, f.sourceETag, f.contentHash); err != nil {
 				return Workspace{}, err
 			}
 		}
+	}
+
+	if err := cloneRetrievalIndex(ctx, tx, srcID, newID, fileMap, chapterMap); err != nil {
+		return Workspace{}, err
 	}
 
 	// Ready editor assets are logical resources too. Their blob paths remain
@@ -895,6 +912,99 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 		return Workspace{}, err
 	}
 	return s.GetWorkspace(ctx, userID, newID, false)
+}
+
+// cloneRetrievalIndex copies a workspace's chunks, summary tree and concept
+// index into the clone, inside the same transaction as the content it
+// describes. Chunks carry embeddings, so copying them is pure SQL where
+// re-ingesting would mean paying for the parse and the embeddings again.
+//
+// Nothing here needs an old id -> new id map for chunks or concepts: chunks are
+// identified by (file_id, chunk_idx) and concepts by (workspace_id, norm), both
+// unique, so the mention rows re-derive their targets by joining on the natural
+// keys. Only the file and chapter maps have to come from the caller.
+func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, fileMap, chapterMap map[string]string) error {
+	oldFiles, newFiles := unzipIDs(fileMap)
+	if len(oldFiles) > 0 {
+		if _, err := tx.Exec(ctx, `
+			WITH fmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
+			INSERT INTO rag_chunks
+				(id, workspace_id, file_id, chunk_idx, section_path, text, indexed_text,
+				 token_count, page_start, page_end, regions, search, embedding)
+			SELECT 'rc_' || substr(md5(random()::text || clock_timestamp()::text || c.id), 1, 12),
+			       $3, f.new_id, c.chunk_idx, c.section_path, c.text, c.indexed_text,
+			       c.token_count, c.page_start, c.page_end, c.regions, c.search, c.embedding
+			FROM rag_chunks c JOIN fmap f ON f.old_id = c.file_id`,
+			oldFiles, newFiles, newID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			WITH fmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
+			INSERT INTO rag_file_summaries
+				(file_id, workspace_id, fingerprint, summary, outline, updated_at)
+			SELECT f.new_id, $3, s.fingerprint, s.summary, s.outline, s.updated_at
+			FROM rag_file_summaries s JOIN fmap f ON f.old_id = s.file_id`,
+			oldFiles, newFiles, newID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO rag_concepts (id, workspace_id, name, norm)
+			SELECT 'rcp_' || substr(md5(random()::text || clock_timestamp()::text || k.id), 1, 12),
+			       $1, k.name, k.norm
+			FROM rag_concepts k WHERE k.workspace_id = $2`, newID, srcID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			WITH fmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
+			INSERT INTO rag_concept_mentions (concept_id, chunk_id, file_id)
+			SELECT nk.id, nc.id, nc.file_id
+			FROM rag_concept_mentions m
+			JOIN rag_concepts ok ON ok.id = m.concept_id AND ok.workspace_id = $3
+			JOIN rag_chunks    oc ON oc.id = m.chunk_id
+			JOIN fmap f           ON f.old_id = oc.file_id
+			JOIN rag_chunks    nc ON nc.file_id = f.new_id AND nc.chunk_idx = oc.chunk_idx
+			JOIN rag_concepts  nk ON nk.workspace_id = $4 AND nk.norm = ok.norm
+			ON CONFLICT DO NOTHING`,
+			oldFiles, newFiles, srcID, newID); err != nil {
+			return err
+		}
+	}
+
+	// The file inserts above already tripped the dirty trigger for every chapter
+	// in the clone, so these land on existing rows.
+	oldChapters, newChapters := unzipIDs(chapterMap)
+	if len(oldChapters) > 0 {
+		if _, err := tx.Exec(ctx, `
+			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
+			INSERT INTO rag_chapter_summaries (chapter_id, workspace_id, summary, dirty, updated_at)
+			SELECT c.new_id, $3, s.summary, s.dirty, s.updated_at
+			FROM rag_chapter_summaries s JOIN cmap c ON c.old_id = s.chapter_id
+			ON CONFLICT (chapter_id) DO UPDATE
+			  SET summary = EXCLUDED.summary, dirty = EXCLUDED.dirty, updated_at = EXCLUDED.updated_at`,
+			oldChapters, newChapters, newID); err != nil {
+			return err
+		}
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO rag_workspace_summaries (workspace_id, summary, dirty, updated_at)
+		SELECT $1, s.summary, s.dirty, s.updated_at
+		FROM rag_workspace_summaries s WHERE s.workspace_id = $2
+		ON CONFLICT (workspace_id) DO UPDATE
+		  SET summary = EXCLUDED.summary, dirty = EXCLUDED.dirty, updated_at = EXCLUDED.updated_at`,
+		newID, srcID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func unzipIDs(m map[string]string) (old, fresh []string) {
+	old = make([]string, 0, len(m))
+	fresh = make([]string, 0, len(m))
+	for o, n := range m {
+		old = append(old, o)
+		fresh = append(fresh, n)
+	}
+	return old, fresh
 }
 
 // CloneMaterial copies one shared material into the user's standalone library.

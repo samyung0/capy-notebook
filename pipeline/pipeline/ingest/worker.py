@@ -1,68 +1,46 @@
 """Ingestion worker.
 
-Claims ingest jobs from the Postgres queue and feeds each upload into the
-per-workspace LightRAG ingestion pipeline (v1.5, post RAG-Anything merge):
+Claims jobs from the Postgres queue and turns uploads into retrievable chunks:
 
-- Plain text / markdown is inserted directly as RAW text (``ainsert``).
-- ``parseMode=normal`` parses via the free MinerU lightweight cloud API
-  (mineru_lite) and inserts the returned markdown as RAW text.
-- Everything else (``parseMode=advanced``, the default) is staged under
-  ``INPUT_DIR/<workspace>/`` and enqueued as ``pending_parse`` with the custom
-  ``modal`` engine, which parses on Modal (GPU MineRU) and reuses LightRAG's
-  MinerU IR builder + i/t/e multimodal analysis (Gemini vlm role).
+- ``txt`` / ``md`` are read straight from B2 and chunked as markdown.
+- ``parseMode=normal`` parses via the free MinerU lightweight cloud API, which
+  returns markdown only — so those files are searchable but have no page model
+  and therefore no page-accurate citations.
+- ``parseMode=advanced`` (the default) parses on Modal GPU MinerU, whose
+  ``content_list.json`` carries a page index and bounding box per block. This is
+  the route that produces citations a reader can jump to.
 - ``parseMode=none`` jobs are normally never enqueued (the gateway marks the
   file ready directly); a stray one is finished without indexing.
 
-Live progress is published to Redis; the Go gateway fans it to the browser
-over SSE. The resulting LightRAG doc id is persisted on ``files.doc_id``; it
-resolves basename collisions / job retries and records which document backs
-each file (for future deletion or scoped-retrieval support).
+The second job type is ``summaries_rollup``: a debounced rebuild of the chapter
+and workspace summaries, enqueued by a database trigger whenever files move
+between chapters and by ingest whenever content changes.
+
+Live progress is published to Redis; the Go gateway fans it to the browser over
+SSE.
 
 Run: ``python -m pipeline.ingest.worker``
-
-The whole worker runs on ONE asyncio event loop so the cached LightRAG asyncpg
-pools survive across jobs. Synchronous bits (psycopg queue ops, blob staging)
-are pushed to threads via ``asyncio.to_thread``.
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
-import os
 import shutil
+import tempfile
 from pathlib import Path
 
-from lightrag import LightRAG
-from lightrag.base import DocStatus
-from lightrag.utils import compute_mdhash_id
-from lightrag.utils_pipeline import (
-    doc_status_field,
-    get_existing_doc_by_file_basename,
-    input_dir_path,
-    normalize_document_file_path,
-)
-
+from .. import progress, use_compatible_event_loop
 from ..config import cfg
-from ..rag import mineru_lite, modal_parser, progress
-from ..rag.cache import RagCache
-from ..rag.factory import build_ingest_rag
-from ..rag.teardown import drop_workspace_state
+from ..parse import mineru_lite, modal_parser
+from ..retrieval import indexing, store
+from ..retrieval.chunking import Chunk, chunk_content_list, chunk_markdown
 from ..store import blobstore, db
 
 log = logging.getLogger("evo.worker")
 
-# Ingest as plain RAW text (no GPU parse) for these file kinds.
+# Ingested as plain text (no parse service) for these file kinds.
 _TEXT_KINDS = {"txt", "md"}
-
-# doc_status stage -> coarse progress percentage for the SSE bar.
-_STAGE_PCT = {
-    str(DocStatus.PENDING.value): 20,
-    str(DocStatus.PARSING.value): 35,
-    str(DocStatus.ANALYZING.value): 60,
-    str(DocStatus.PROCESSING.value): 80,
-}
 
 
 # ----------------------------------------------------------- sync DB helpers
@@ -79,10 +57,9 @@ def _claim_one() -> dict | None:
 
 def _finish_ok(
     file_id: str,
-    doc_id: str | None,
     name: str,
     job_id: str,
-    note: str = "",
+    content_hash: str | None = None,
     artifact_key: str | None = None,
     artifact_fingerprint: str | None = None,
     artifact_version: str | None = None,
@@ -92,7 +69,8 @@ def _finish_ok(
     with db.connect() as conn:
         with conn.cursor() as cur:
             db.set_file_status(cur, file_id, "ready")
-            db.set_file_doc_id(cur, file_id, doc_id)
+            if content_hash is not None:
+                db.set_file_content_hash(cur, file_id, content_hash)
             if artifact_key:
                 db.set_file_parse_artifact(
                     cur,
@@ -105,10 +83,7 @@ def _finish_ok(
                 cur,
                 file_id,
                 "system",
-                {
-                    "code": notification_code,
-                    "fileName": name,
-                },
+                {"code": notification_code, "fileName": name},
             )
             db.set_job(cur, job_id, "done")
         conn.commit()
@@ -126,141 +101,6 @@ def _finish_fail(file_id: str | None, job_id: str, error: str) -> None:
         conn.commit()
 
 
-def _read_name(file_id: str) -> str:
-    with db.connect() as conn, conn.cursor() as cur:
-        return db.file_name(cur, file_id)
-
-
-def _doc_owners(doc_id: str) -> list[str]:
-    with db.connect() as conn, conn.cursor() as cur:
-        return db.file_ids_for_doc_id(cur, doc_id)
-
-
-def _read_text(path: str) -> str:
-    with open(path, "r", encoding="utf-8", errors="replace") as fh:
-        return fh.read()
-
-
-# ----------------------------------------------------- naming / doc identity
-
-
-def _suffixed(name: str, n: int) -> str:
-    p = Path(name)
-    return f"{p.stem} ({n}){p.suffix}"
-
-
-async def _resolve_canonical_name(rag: LightRAG, file_id: str, name: str) -> str:
-    """Pick the basename this file will be known by inside LightRAG.
-
-    LightRAG dedups documents by canonical basename, but our files table allows
-    several uploads with the same display name. When another file already owns
-    a doc with this basename, disambiguate with `` (2)`` / `` (3)`` … suffixes
-    (visible in citations, so keep it human-readable). A basename owned by this
-    very file (job retry) is reused so processing resumes instead of forking.
-    """
-    candidate = normalize_document_file_path(name)
-    if candidate == "unknown_source":
-        candidate = f"{file_id}.bin"
-    n = 2
-    while True:
-        match = await get_existing_doc_by_file_basename(rag.doc_status, candidate)
-        if match is None:
-            return candidate
-        existing_doc_id = match[0]
-        owners = await asyncio.to_thread(_doc_owners, existing_doc_id)
-        if not owners or owners == [file_id]:
-            # Unclaimed (retry / pre-migration doc) — claim it and resume.
-            return candidate
-        candidate = _suffixed(normalize_document_file_path(name), n)
-        n += 1
-
-
-# ----------------------------------------------------------------- pipeline
-
-
-async def _publish_doc_progress(
-    rag: LightRAG, ws: str, file_id: str, doc_id: str
-) -> None:
-    """Poll doc_status while the pipeline runs and mirror it to the SSE bar."""
-    last = ""
-    try:
-        while True:
-            await asyncio.sleep(2.0)
-            try:
-                doc = await rag.doc_status.get_by_id(doc_id)
-            except Exception:
-                # Progress is best-effort; keep polling on transient failures.
-                log.debug("doc_status poll failed for %s", doc_id, exc_info=True)
-                continue
-            if not doc:
-                continue
-            status = str(doc_status_field(doc, "status", ""))
-            if status and status != last:
-                last = status
-                pct = _STAGE_PCT.get(status)
-                if pct is not None:
-                    stage = (
-                        "parsing"
-                        if status == str(DocStatus.PARSING.value)
-                        else "indexing"
-                    )
-                    progress.publish(ws, file_id, stage, pct)
-    except asyncio.CancelledError:
-        pass
-
-
-def _stage_remote_source(ws: str, canonical: str, descriptor: dict) -> Path:
-    """Stage a tiny B2 descriptor where LightRAG expects a source file."""
-    dest_dir = input_dir_path() / ws
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / canonical
-    dest.write_text(json.dumps(descriptor), encoding="utf-8")
-    return dest
-
-
-def _stage_local_source(ws: str, local_path: str, canonical: str) -> Path:
-    dest_dir = input_dir_path() / ws
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / canonical
-    shutil.copyfile(local_path, dest)
-    return dest
-
-
-def _cleanup_staged(ws: str, canonical: str) -> None:
-    """Remove the staged source + parse artifacts for one document."""
-    base = input_dir_path() / ws
-    parsed = base / "__parsed__"
-    targets = [
-        base / canonical,
-        parsed / canonical,  # archived source
-        parsed / f"{canonical}.parsed",
-        parsed / f"{canonical}.modal_raw",
-    ]
-    for t in targets:
-        try:
-            if t.is_dir():
-                shutil.rmtree(t, ignore_errors=True)
-            elif t.exists():
-                t.unlink()
-        except OSError:
-            log.debug("cleanup of %s failed", t, exc_info=True)
-
-
-async def process_teardown_job(cache: RagCache, job: dict) -> None:
-    """Drop a deleted workspace's LightRAG state.
-
-    Runs here rather than inline in the Go delete handler because it is slow
-    (a full graph drop) and must survive a crash: none of this state is reachable
-    from the Go schema, so a lost teardown leaks it permanently.
-    """
-    ws = (job["payload"] or {})["workspaceId"]
-    # The instance is finalized before the tables it points at are dropped.
-    await cache.discard(ws)
-    result = await asyncio.to_thread(drop_workspace_state, ws)
-    await asyncio.to_thread(_finish_job_ok, job["id"])
-    log.info("workspace %s teardown: %s", ws, result)
-
-
 def _finish_job_ok(job_id: str) -> None:
     with db.connect() as conn:
         with conn.cursor() as cur:
@@ -268,23 +108,121 @@ def _finish_job_ok(job_id: str) -> None:
         conn.commit()
 
 
+def _read_name(file_id: str) -> str:
+    with db.connect() as conn, conn.cursor() as cur:
+        return db.file_name(cur, file_id)
+
+
 def _account_allows_ingest(file_id: str) -> bool:
-    with db.connect() as conn:
-        with conn.cursor() as cur:
-            owner = db.file_owner_user_id(cur, file_id)
-            if not owner:
-                return False
-            return db.account_allows_ingest(cur, owner)
+    with db.connect() as conn, conn.cursor() as cur:
+        owner = db.file_owner_user_id(cur, file_id)
+        return bool(owner) and db.account_allows_ingest(cur, owner)
 
 
-async def process_job(cache: RagCache, job: dict) -> None:
+def _read_text(path: str) -> str:
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        return fh.read()
+
+
+# ------------------------------------------------------------------ parsing
+
+
+async def _chunks_for(
+    *, payload: dict, name: str, kind: str, parse_mode: str, ws: str, file_id: str
+) -> tuple[list[Chunk], str | None, str | None]:
+    """Parse one source into chunks, plus its parse-artifact identity if any."""
+    blob_path = payload.get("blobPath")
+
+    if kind in _TEXT_KINDS:
+        local_path, cleanup = await asyncio.to_thread(blobstore.fetch_local, blob_path)
+        try:
+            text = await asyncio.to_thread(_read_text, local_path)
+        finally:
+            await asyncio.to_thread(cleanup)
+        progress.publish(ws, file_id, "indexing", 40)
+        return chunk_markdown(text), None, None
+
+    if parse_mode == "normal":
+        # The Cloudflare relay streams B2 -> MinerU's signed upload URL; no
+        # source bytes traverse this worker.
+        progress.publish(ws, file_id, "parsing", 15)
+        markdown = await asyncio.to_thread(
+            mineru_lite.parse_blob,
+            blob_path,
+            name,
+            lambda pct: progress.publish(ws, file_id, "parsing", pct),
+        )
+        progress.publish(ws, file_id, "indexing", 60)
+        return chunk_markdown(markdown), None, None
+
+    info = await asyncio.to_thread(blobstore.object_info, blob_path)
+    if info is None:
+        raise RuntimeError("source blob is missing")
+    descriptor = modal_parser.source_descriptor(
+        blob_path=blob_path,
+        file_id=file_id,
+        source_etag=str(payload.get("sourceETag") or info["etag"]),
+        source_size=int(info["size"]),
+    )
+    progress.publish(ws, file_id, "parsing", 15)
+    raw_dir = Path(tempfile.mkdtemp(prefix="evo_parse_"))
+    try:
+        content_list, artifact_key, fingerprint = await asyncio.to_thread(
+            modal_parser.parse_to_bundle, descriptor, name, raw_dir
+        )
+        progress.publish(ws, file_id, "indexing", 55)
+        if cfg.caption_images:
+            await _caption_figures(content_list, raw_dir, name)
+        return chunk_content_list(content_list), artifact_key, fingerprint
+    finally:
+        shutil.rmtree(raw_dir, ignore_errors=True)
+
+
+async def _caption_figures(content_list: list[dict], raw_dir: Path, name: str) -> None:
+    """Describe figures so they are searchable, in place on the block list.
+
+    Off by default. A figure with no caption is invisible to retrieval, but on a
+    scanned book every page is an image, and captioning them all costs more than
+    the parse did.
+    """
+    import base64
+
+    from ..retrieval import models
+
+    captioned = 0
+    for item in content_list:
+        if captioned >= cfg.caption_max_per_file:
+            break
+        if not isinstance(item, dict) or item.get("type") != "image":
+            continue
+        if item.get("image_caption") or item.get("description"):
+            continue
+        img_path = str(item.get("img_path") or "")
+        if not img_path:
+            continue
+        target = raw_dir.joinpath(*Path(img_path).parts)
+        if not target.is_file():
+            continue
+        encoded = base64.b64encode(target.read_bytes()).decode()
+        suffix = target.suffix.lstrip(".").lower() or "png"
+        described = await models.caption_image(
+            f"data:image/{suffix};base64,{encoded}", name
+        )
+        if described:
+            item["description"] = described
+            captioned += 1
+
+
+# ------------------------------------------------------------------- jobs
+
+
+async def process_ingest_job(job: dict) -> None:
     payload = job["payload"] or {}
     file_id = payload["fileId"]
     ws = payload["workspaceId"]
-    blob_path = payload.get("blobPath")
     kind = (payload.get("kind") or "").lower()
-    # 'advanced' (Modal GPU MinerU, default), 'normal' (MinerU lightweight
-    # cloud API), or 'none' (blob-only; normally never enqueued at all).
+    # 'advanced' (Modal GPU MinerU, default), 'normal' (MinerU lightweight cloud
+    # API), or 'none' (blob-only; normally never enqueued at all).
     parse_mode = (payload.get("parseMode") or "advanced").lower()
 
     name = await asyncio.to_thread(_read_name, file_id)
@@ -297,161 +235,83 @@ async def process_job(cache: RagCache, job: dict) -> None:
 
     if parse_mode == "none" and kind not in _TEXT_KINDS:
         # Safety net: the gateway skips job creation for parseMode=none, but a
-        # stray job must not fall through to a parser that can't handle it.
+        # stray job must not fall through to a parser that cannot handle it.
         note = f"{name}: stored without parsing (not indexed for retrieval)."
         await asyncio.to_thread(
-            _finish_ok,
-            file_id,
-            None,
-            name,
-            job["id"],
-            note,
-            notification_code="source_stored",
+            _finish_ok, file_id, name, job["id"], notification_code="source_stored"
         )
         progress.publish(ws, file_id, "done", 100, status="ready", message=note)
         return
 
-    rag = await cache.get(ws)
-    canonical = await _resolve_canonical_name(rag, file_id, name)
-    doc_id = compute_mdhash_id(canonical, prefix="doc-")
-    staged = False
-    blob_cleanup = lambda: None
-    artifact_key: str | None = None
-    artifact_fingerprint: str | None = None
-    try:
-        track_id: str
-        if kind in _TEXT_KINDS:
-            local_path, blob_cleanup = await asyncio.to_thread(
-                blobstore.fetch_local, blob_path
-            )
-            text = await asyncio.to_thread(_read_text, local_path)
-            progress.publish(ws, file_id, "indexing", 40)
-            track_id = await rag.ainsert(input=text, ids=doc_id, file_paths=canonical)
-        elif parse_mode == "normal":
-            # The Cloudflare relay streams B2 -> MinerU's signed OSS upload URL;
-            # no source bytes traverse this worker.
-            progress.publish(ws, file_id, "parsing", 15)
-            md_text = await asyncio.to_thread(
-                mineru_lite.parse_blob,
-                blob_path,
-                name,
-                lambda pct: progress.publish(ws, file_id, "parsing", pct),
-            )
-            progress.publish(ws, file_id, "indexing", 60)
-            track_id = await rag.ainsert(
-                input=md_text, ids=doc_id, file_paths=canonical
-            )
-        else:
-            if cfg.modal_b2_artifacts:
-                info = await asyncio.to_thread(blobstore.object_info, blob_path)
-                if info is None:
-                    raise RuntimeError("source blob is missing")
-                descriptor = modal_parser.source_descriptor(
-                    blob_path=blob_path,
-                    file_id=file_id,
-                    source_etag=str(payload.get("sourceETag") or info["etag"]),
-                    source_size=int(info["size"]),
-                )
-                artifact_key, artifact_fingerprint = modal_parser.artifact_identity(
-                    descriptor
-                )
-                await asyncio.to_thread(_stage_remote_source, ws, canonical, descriptor)
-            else:
-                local_path, blob_cleanup = await asyncio.to_thread(
-                    blobstore.fetch_local, blob_path
-                )
-                await asyncio.to_thread(_stage_local_source, ws, local_path, canonical)
-            staged = True
-            progress.publish(ws, file_id, "parsing", 15)
-            track_id = await rag.apipeline_enqueue_documents(
-                input="",
-                file_paths=canonical,
-                docs_format="pending_parse",
-                parse_engine="modal",
-                # i/t/e: analyze images, tables and equations with the vlm role.
-                process_options="ite",
-            )
-            poller = asyncio.create_task(
-                _publish_doc_progress(rag, ws, file_id, doc_id)
-            )
-            try:
-                await rag.apipeline_process_enqueue_documents()
-            finally:
-                poller.cancel()
+    chunks, artifact_key, fingerprint = await _chunks_for(
+        payload=payload,
+        name=name,
+        kind=kind,
+        parse_mode=parse_mode,
+        ws=ws,
+        file_id=file_id,
+    )
+    if not chunks:
+        raise RuntimeError("parse produced no indexable content")
 
-        # The pipeline reports per-document failures via doc_status, not
-        # exceptions — read the outcome explicitly.
-        doc = await rag.doc_status.get_by_id(doc_id)
-        status = str(doc_status_field(doc, "status", "")) if doc else ""
-        error = str(doc_status_field(doc, "error_msg", "") or "") if doc else ""
-        if status == str(DocStatus.PROCESSED.value):
-            await asyncio.to_thread(
-                _finish_ok,
-                file_id,
-                doc_id,
-                name,
-                job["id"],
-                "",
-                artifact_key,
-                artifact_fingerprint,
-                modal_parser.PARSER_VERSION if artifact_key else None,
-                "source_duplicate",
-            )
-            progress.publish(ws, file_id, "done", 100, status="ready")
-            return
-
-        # Duplicate detection. Two shapes:
-        # - post-parse content duplicate: OUR doc_id is FAILED with
-        #   metadata.is_duplicate=True;
-        # - enqueue-time duplicate: our doc never materializes and a `dup-*`
-        #   stub carrying this run's track_id records the skip.
-        meta = doc_status_field(doc, "metadata", {}) or {}
-        is_duplicate = bool(isinstance(meta, dict) and meta.get("is_duplicate"))
-        if not is_duplicate and not doc:
-            track_docs = await rag.aget_docs_by_track_id(track_id)
-            is_duplicate = any(
-                (doc_status_field(d, "metadata", {}) or {}).get("is_duplicate")
-                for d in track_docs.values()
-            )
-        if is_duplicate:
-            # The content is queryable via the original document; this file
-            # just doesn't own a LightRAG doc of its own.
-            note = f"{name}: content already ingested; skipped re-indexing."
-            await asyncio.to_thread(
-                _finish_ok,
-                file_id,
-                None,
-                name,
-                job["id"],
-                note,
-                artifact_key,
-                artifact_fingerprint,
-                modal_parser.PARSER_VERSION if artifact_key else None,
-            )
-            progress.publish(ws, file_id, "done", 100, status="ready", message=note)
-            return
-
-        raise RuntimeError(
-            f"ingest did not complete (doc status: {status or 'missing'})"
-            + (f": {error}" if error else "")
+    digest = indexing.content_hash(chunks)
+    twin = await store.content_hash_owner(ws, digest)
+    if twin and twin["id"] != file_id:
+        # The same document uploaded twice. Both files stay (the user can see
+        # and delete each), but indexing it again would double every passage in
+        # every result set.
+        note = f"{name}: identical to {twin['name']}; reusing its index."
+        await asyncio.to_thread(
+            _finish_ok,
+            file_id,
+            name,
+            job["id"],
+            digest,
+            artifact_key,
+            fingerprint,
+            modal_parser.PARSER_VERSION if artifact_key else None,
+            "source_duplicate",
         )
-    finally:
-        if staged:
-            await asyncio.to_thread(_cleanup_staged, ws, canonical)
-        await asyncio.to_thread(blob_cleanup)
+        progress.publish(ws, file_id, "done", 100, status="ready", message=note)
+        return
+
+    result = await indexing.index_file(
+        workspace_id=ws,
+        file_id=file_id,
+        file_name=name,
+        chunks=chunks,
+        on_progress=lambda pct: progress.publish(ws, file_id, "indexing", pct),
+    )
+    await asyncio.to_thread(
+        _finish_ok,
+        file_id,
+        name,
+        job["id"],
+        digest,
+        artifact_key,
+        fingerprint,
+        modal_parser.PARSER_VERSION if artifact_key else None,
+    )
+    progress.publish(ws, file_id, "done", 100, status="ready")
+    log.info("indexed %s: %s", name, result)
+
+
+async def process_rollup_job(job: dict) -> None:
+    ws = (job["payload"] or {})["workspaceId"]
+    result = await indexing.rollup_summaries(ws)
+    await asyncio.to_thread(_finish_job_ok, job["id"])
+    log.info("workspace %s summary rollup: %s", ws, result)
 
 
 async def main_async() -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
     )
-    cache = RagCache(build_ingest_rag, maxsize=cfg.lightrag_cache_size)
     log.info(
-        "worker up — ingest_model=%s embedding=%s modal=%s input_dir=%s",
+        "worker up — ingest_model=%s embedding=%s modal=%s",
         cfg.ingest_model,
         cfg.embedding_model,
         cfg.modal_parse_url or "(unset)",
-        os.getenv("INPUT_DIR", "(unset)"),
     )
 
     try:
@@ -470,10 +330,10 @@ async def main_async() -> None:
             log.info("claimed %s job %s", job.get("type"), job["id"])
             payload = job.get("payload") or {}
             try:
-                if job.get("type") == "rag_teardown":
-                    await process_teardown_job(cache, job)
+                if job.get("type") == "summaries_rollup":
+                    await process_rollup_job(job)
                 else:
-                    await process_job(cache, job)
+                    await process_ingest_job(job)
                 log.info("job %s done", job["id"])
             except Exception as exc:
                 log.exception("%s job %s failed", job.get("type"), job["id"])
@@ -488,10 +348,11 @@ async def main_async() -> None:
                         ws, fid, "failed", 100, status="failed", message=str(exc)[:200]
                     )
     finally:
-        await cache.close()
+        await store.close_pool()
 
 
 def main() -> None:
+    use_compatible_event_loop()
     asyncio.run(main_async())
 
 

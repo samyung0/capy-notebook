@@ -1,20 +1,14 @@
 [project]
 name = "evo-pipeline"
-version = "0.3.0"
-description = "Evo Notes ingest + retrieval pipeline (official LightRAG, post RAG-Anything merge)"
+version = "0.4.0"
+description = "Evo Notes ingest + retrieval pipeline (in-house chunk store, summary tree and concept index)"
 requires-python = ">=3.10"
 dependencies = [
-  # Official LightRAG (v1.5 merged the RAG-Anything multimodal pipeline) with
-  # Postgres/AGE/pgvector storages. Pinned <1.6: we implement a custom parser
-  # plugin against the 1.5 parser registry contract.
-  "lightrag-hku>=1.5.4,<1.6",
-  "asyncpg>=0.29",           # LightRAG PG storages (KV/vector/graph/doc-status)
-  "pgvector>=0.3",           # pgvector.asyncpg registration for PG vector storage
-  # Job queue + notifications over the shared Postgres.
-  "psycopg[binary]>=3.1",
+  # Everything retrieval-related is ours now; the schema is owned by the Go
+  # migrations, so psycopg over the shared Postgres is the whole storage layer.
+  "psycopg[binary,pool]>=3.1",
   # Model providers (OpenAI-compatible: OpenRouter / DeepSeek / Gemini).
   "openai>=1.30",
-  "numpy>=1.26",
   # Modal parse client + Redis progress + retrieval API.
   "requests>=2.31",
   "redis>=5.0",
@@ -31,7 +25,7 @@ dependencies = [
 # vcrpy records the expensive LLM/embedding/VLM/Modal HTTP calls to YAML
 # cassettes so the suite replays them for free (see pipeline/tests/README.md).
 # testcontainers starts fresh Postgres/Redis containers for cassette tests.
-# pytest-asyncio drives the async LightRAG entry points.
+# pytest-asyncio drives the async ingest/retrieval entry points.
 test = [
   "pytest>=8.0",
   "pytest-asyncio>=0.24",
@@ -60,5 +54,6 @@ known-first-party = ["pipeline"]
 testpaths = ["pipeline/tests"]
 asyncio_mode = "auto"
 markers = [
+  "integration: needs Docker (fresh Postgres+Redis), but makes no model calls",
   "cassette: integration test that replays recorded HTTP via a VCR cassette (starts fresh Docker Postgres+Redis)",
 ]

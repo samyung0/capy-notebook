@@ -50,10 +50,13 @@ export function FileViewer({
   file,
   imageZoom = IMAGE_MIN_ZOOM,
   onImageZoomChange,
+  page,
 }: {
   file: SourceFile | null;
   imageZoom?: number;
   onImageZoomChange?: (next: number) => void;
+  /** 1-based page to scroll to, from a chat citation. PDFs only. */
+  page?: number;
 }) {
   if (!file) {
     return (
@@ -70,7 +73,7 @@ export function FileViewer({
 
   if (file.kind === 'pdf' || ext === 'pdf') {
     if (!file.url) return <FileEmpty />;
-    return lazyView(<PdfView url={file.url} />);
+    return lazyView(<PdfView page={page} url={file.url} />);
   }
 
   if (isImageFile(file)) {

@@ -55,7 +55,9 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16
+        # 0001_init.sql creates the vector extension for the retrieval index, so
+        # the baseline no longer applies to a stock postgres image.
+        image: pgvector/pgvector:pg16
         env:
           POSTGRES_DB: evo
           POSTGRES_PASSWORD: evo

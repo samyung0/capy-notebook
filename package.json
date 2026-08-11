@@ -139,7 +139,7 @@
     "gen:api:watch": "pnpm gen:api:clean && orval --watch",
     "fix": "ultracite fix",
     "pipeline:test": "uv run --extra test pytest",
-    "pipeline:test:offline": "uv run --extra test pytest -q -m \"not cassette\""
+    "pipeline:test:offline": "uv run --extra test pytest -q -m \"not cassette and not integration\""
   },
   "type": "module",
   "version": "0.1.0",

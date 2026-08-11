@@ -1,0 +1,617 @@
+interactions:
+- request:
+    body: '{"input":["photosynthesis.txt\n\nPhotosynthesis converts light energy into
+      chemical energy. Chlorophyll absorbs\nmostly red and blue light. The Calvin
+      cycle fixes carbon dioxide into glucose\ninside the stroma of chloroplasts.
+      ATP and NADPH produced by the light reactions\npower the Calvin cycle."],"model":"qwen/qwen3-embedding-4b","dimensions":2560,"encoding_format":"base64"}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '379'
+      content-type:
+      - application/json
+      host:
+      - openrouter.ai
+      user-agent:
+      - AsyncOpenAI/Python 2.44.0
+      x-stainless-arch:
+      - other:amd64
+      x-stainless-async:
+      - async:asyncio
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - Windows
+      x-stainless-package-version:
+      - 2.44.0
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '1'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.12.9
+    method: POST
+    uri: https://openrouter.ai/api/v1/embeddings
+  response:
+    body:
+      string: '{"object":"list","data":[{"object":"embedding","embedding":"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","index":0}],"model":"Qwen/Qwen3-Embedding-4B","usage":{"prompt_tokens":59,"total_tokens":59,"cost":0.00000118,"is_byok":false,"cost_details":{"upstream_inference_cost":0.00000118,"upstream_inference_prompt_cost":0.00000118,"upstream_inference_completions_cost":0}},"provider":"DeepInfra","id":"gen-emb-1786387601-s6QlBCehBABfbCToP8vI"}'
+    headers:
+      access-control-allow-origin:
+      - '*'
+      access-control-expose-headers:
+      - X-Generation-Id,X-Provider-Name,cf-ray
+      cf-ray:
+      - a2912a2eeff5a3e9-SIN
+      connection:
+      - keep-alive
+      content-length:
+      - '14053'
+      content-type:
+      - application/json
+      date:
+      - Mon, 10 Aug 2026 18:46:42 GMT
+      permissions-policy:
+      - payment=(self "https://checkout.stripe.com" "https://connect-js.stripe.com"
+        "https://js.stripe.com" "https://*.js.stripe.com" "https://hooks.stripe.com")
+      referrer-policy:
+      - no-referrer, strict-origin-when-cross-origin
+      server:
+      - cloudflare
+      transfer-encoding:
+      - chunked
+      x-clerk-auth-message:
+      - Invalid JWT form. A JWT consists of three parts separated by dots. (reason=token-invalid,
+        token-carrier=header)
+      x-clerk-auth-reason:
+      - token-invalid
+      x-clerk-auth-status:
+      - signed-out
+      x-content-type-options:
+      - nosniff
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages":[{"role":"system","content":"You summarize study material.
+      Write a dense factual summary that another assistant will use to decide whether
+      this document is worth reading in full. Name the specific topics, terms and
+      results covered. No preamble, no meta-commentary about the document being a
+      document."},{"role":"user","content":"Document: photosynthesis.txt\n\nContent:\nPhotosynthesis
+      converts light energy into chemical energy. Chlorophyll absorbs\nmostly red
+      and blue light. The Calvin cycle fixes carbon dioxide into glucose\ninside the
+      stroma of chloroplasts. ATP and NADPH produced by the light reactions\npower
+      the Calvin cycle.\n\nWrite 4-8 sentences."}],"model":"deepseek-v4-flash","temperature":0.3}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '721'
+      content-type:
+      - application/json
+      host:
+      - api.deepseek.com
+      user-agent:
+      - AsyncOpenAI/Python 2.44.0
+      x-stainless-arch:
+      - other:amd64
+      x-stainless-async:
+      - async:asyncio
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - Windows
+      x-stainless-package-version:
+      - 2.44.0
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '1'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.12.9
+    method: POST
+    uri: https://api.deepseek.com/chat/completions
+  response:
+    body:
+      string: '{"id":"7ec818e9-d163-4547-a72b-3eaa7a33fc5b","object":"chat.completion","created":1786387602,"model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":"Photosynthesis
+        converts light energy into chemical energy. Chlorophyll absorbs primarily
+        red and blue light. The Calvin cycle fixes carbon dioxide into glucose within
+        the stroma of chloroplasts. This cycle is powered by ATP and NADPH, which
+        are produced by the light reactions. The document identifies the key locations
+        (stroma), pigments (chlorophyll), and energy carriers (ATP, NADPH) involved.
+        It also establishes the relationship between the light-dependent reactions
+        and the Calvin cycle.","reasoning_content":"We need to answer as the assistant.
+        The user asks: \"Write 4-8 sentences.\" But the context: user provided a document
+        and implicitly wants a summary? Actually the instruction: \"You summarize
+        study material. Write a dense factual summary that another assistant will
+        use to decide whether this document is worth reading in full. Name the specific
+        topics, terms and results covered. No preamble, no meta-commentary about the
+        document being a document.\" Then the document is photosynthesis.txt with
+        content. Then \"Write 4-8 sentences.\" So I need to output a dense factual
+        summary in 4-8 sentences covering the topics, terms, results from the document.
+        No preamble. Let me do that.\n\nThe document is very short: photosynthesis
+        converts light energy to chemical energy; chlorophyll absorbs red and blue
+        light; Calvin cycle fixes CO2 into glucose in stroma; ATP and NADPH from light
+        reactions power Calvin cycle.\n\nI''ll write 4-8 sentences summarizing these
+        specifics. Ensure dense, factual."},"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":199,"completion_tokens":296,"total_tokens":495,"prompt_tokens_details":{"cached_tokens":128},"completion_tokens_details":{"reasoning_tokens":202},"prompt_cache_hit_tokens":128,"prompt_cache_miss_tokens":71},"system_fingerprint":"fp_a18b46594c_prod0820_fp8_kvcache_20260402"}'
+    headers:
+      access-control-allow-credentials:
+      - 'true'
+      connection:
+      - keep-alive
+      content-length:
+      - '2033'
+      content-type:
+      - application/json
+      date:
+      - Mon, 10 Aug 2026 18:46:42 GMT
+      server:
+      - elb
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      transfer-encoding:
+      - chunked
+      vary:
+      - origin, access-control-request-method, access-control-request-headers
+      via:
+      - 1.1 9b8a860d147083d2447cbe7648a624dc.cloudfront.net (CloudFront)
+      x-amz-cf-id:
+      - LSkmHr-5ltoBCPsoHejlAyhE8kn1aWcEbNxBBhSHdJ7lmFAGN5XXLw==
+      x-amz-cf-pop:
+      - SIN3-P5
+      x-cache:
+      - Miss from cloudfront
+      x-content-type-options:
+      - nosniff
+      x-ds-trace-id:
+      - 0bb411401856b3931f6a52bd46d897af
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages":[{"role":"system","content":"Extract the named concepts a student
+      would look up: theories, methods, terms of art, named entities, formulas, events.
+      Return ONLY a JSON array of strings. No relations, no descriptions, no duplicates,
+      at most 12 items. Skip generic words that carry no meaning outside their sentence."},{"role":"user","content":"Source:
+      photosynthesis.txt\n\nPhotosynthesis converts light energy into chemical energy.
+      Chlorophyll absorbs\nmostly red and blue light. The Calvin cycle fixes carbon
+      dioxide into glucose\ninside the stroma of chloroplasts. ATP and NADPH produced
+      by the light reactions\npower the Calvin cycle."}],"model":"deepseek-v4-flash","temperature":0.0}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '698'
+      content-type:
+      - application/json
+      host:
+      - api.deepseek.com
+      user-agent:
+      - AsyncOpenAI/Python 2.44.0
+      x-stainless-arch:
+      - other:amd64
+      x-stainless-async:
+      - async:asyncio
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - Windows
+      x-stainless-package-version:
+      - 2.44.0
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.12.9
+    method: POST
+    uri: https://api.deepseek.com/chat/completions
+  response:
+    body:
+      string: '{"id":"b8fe956c-4529-4887-b149-150940d7b5c8","object":"chat.completion","created":1786387606,"model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":"[\"Photosynthesis\",\"Chlorophyll\",\"Calvin
+        cycle\",\"Stroma\",\"Chloroplasts\",\"ATP\",\"NADPH\",\"Light reactions\",\"Glucose\"]","reasoning_content":"We
+        need answer only JSON array strings. Extract named concepts student would
+        look up: photosynthesis, chlorophyll, Calvin cycle, stroma, chloroplasts,
+        ATP, NADPH, light reactions, glucose, carbon dioxide? Maybe \"light reactions\"
+        is term. Need at most 12, no duplicates, skip generic. Include \"Photosynthesis\"
+        maybe concept. \"Chlorophyll\" specific. \"Calvin cycle\" named. \"stroma\"
+        term. \"chloroplasts\" organelle. \"ATP\" molecule. \"NADPH\" molecule. \"light
+        reactions\" term. \"glucose\" generic but chemical. \"carbon dioxide\" generic?
+        Maybe skip. Also \"light energy\", \"chemical energy\" generic. We''ll output
+        JSON array of strings. Ensure no descriptions."},"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":199,"completion_tokens":189,"total_tokens":388,"prompt_tokens_details":{"cached_tokens":128},"completion_tokens_details":{"reasoning_tokens":156},"prompt_cache_hit_tokens":128,"prompt_cache_miss_tokens":71},"system_fingerprint":"fp_a18b46594c_prod0820_fp8_kvcache_20260402"}'
+    headers:
+      access-control-allow-credentials:
+      - 'true'
+      connection:
+      - keep-alive
+      content-length:
+      - '1353'
+      content-type:
+      - application/json
+      date:
+      - Mon, 10 Aug 2026 18:46:46 GMT
+      server:
+      - elb
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      transfer-encoding:
+      - chunked
+      vary:
+      - origin, access-control-request-method, access-control-request-headers
+      via:
+      - 1.1 9b8a860d147083d2447cbe7648a624dc.cloudfront.net (CloudFront)
+      x-amz-cf-id:
+      - sgA0ln6_fRJXQoeCR2VhdfHAN_5a2pGejC6CYdwhQMIGjJYo45xDxw==
+      x-amz-cf-pop:
+      - SIN3-P5
+      x-cache:
+      - Miss from cloudfront
+      x-content-type-options:
+      - nosniff
+      x-ds-trace-id:
+      - 3d6dd0ed2a7f42bad9679d4dfa6f9ea3
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"input":["cells.txt\n\nMitochondria oxidise glucose and transfer the released
+      energy into ATP through oxidative phosphorylation, which powers most of the
+      work a cell does."],"model":"qwen/qwen3-embedding-4b","dimensions":2560,"encoding_format":"base64"}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '254'
+      content-type:
+      - application/json
+      host:
+      - openrouter.ai
+      user-agent:
+      - AsyncOpenAI/Python 2.44.0
+      x-stainless-arch:
+      - other:amd64
+      x-stainless-async:
+      - async:asyncio
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - Windows
+      x-stainless-package-version:
+      - 2.44.0
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.12.9
+    method: POST
+    uri: https://openrouter.ai/api/v1/embeddings
+  response:
+    body:
+      string: '{"object":"list","data":[{"object":"embedding","embedding":"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","index":0}],"model":"Qwen/Qwen3-Embedding-4B","usage":{"prompt_tokens":32,"total_tokens":32,"cost":6.4e-7,"is_byok":false,"cost_details":{"upstream_inference_cost":6.4e-7,"upstream_inference_prompt_cost":6.4e-7,"upstream_inference_completions_cost":0}},"provider":"DeepInfra","id":"gen-emb-1786387609-t2ZAx9oGwG8SvURywg8T"}'
+    headers:
+      access-control-allow-origin:
+      - '*'
+      access-control-expose-headers:
+      - X-Generation-Id,X-Provider-Name,cf-ray
+      cf-ray:
+      - a2912a5c7f823dbc-SIN
+      connection:
+      - keep-alive
+      content-length:
+      - '14041'
+      content-type:
+      - application/json
+      date:
+      - Mon, 10 Aug 2026 18:46:49 GMT
+      permissions-policy:
+      - payment=(self "https://checkout.stripe.com" "https://connect-js.stripe.com"
+        "https://js.stripe.com" "https://*.js.stripe.com" "https://hooks.stripe.com")
+      referrer-policy:
+      - no-referrer, strict-origin-when-cross-origin
+      server:
+      - cloudflare
+      transfer-encoding:
+      - chunked
+      x-clerk-auth-message:
+      - Invalid JWT form. A JWT consists of three parts separated by dots. (reason=token-invalid,
+        token-carrier=header)
+      x-clerk-auth-reason:
+      - token-invalid
+      x-clerk-auth-status:
+      - signed-out
+      x-content-type-options:
+      - nosniff
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages":[{"role":"system","content":"You summarize study material.
+      Write a dense factual summary that another assistant will use to decide whether
+      this document is worth reading in full. Name the specific topics, terms and
+      results covered. No preamble, no meta-commentary about the document being a
+      document."},{"role":"user","content":"Document: cells.txt\n\nContent:\nMitochondria
+      oxidise glucose and transfer the released energy into ATP through oxidative
+      phosphorylation, which powers most of the work a cell does.\n\nWrite 4-8 sentences."}],"model":"deepseek-v4-flash","temperature":0.3}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '596'
+      content-type:
+      - application/json
+      host:
+      - api.deepseek.com
+      user-agent:
+      - AsyncOpenAI/Python 2.44.0
+      x-stainless-arch:
+      - other:amd64
+      x-stainless-async:
+      - async:asyncio
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - Windows
+      x-stainless-package-version:
+      - 2.44.0
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.12.9
+    method: POST
+    uri: https://api.deepseek.com/chat/completions
+  response:
+    body:
+      string: '{"id":"004eb065-2b87-4e8b-87d0-154f81c8aaaf","object":"chat.completion","created":1786387609,"model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":"Mitochondria
+        are the organelles responsible for glucose oxidation. This process releases
+        energy that is transferred into ATP molecules. The specific mechanism for
+        ATP production is oxidative phosphorylation. ATP generated via this pathway
+        powers the majority of cellular work. The key terms are mitochondria, glucose,
+        ATP, and oxidative phosphorylation. The document establishes the central role
+        of mitochondrial oxidative phosphorylation in cellular energy metabolism.
+        It defines the functional relationship between glucose catabolism and the
+        cell''s energy currency. This is a foundational statement of bioenergetics.","reasoning_content":"The
+        user wants a dense factual summary of the document \"cells.txt\". The document
+        content is one sentence about mitochondria. I need to write 4-8 sentences
+        covering the specific topics, terms, and results. The document is extremely
+        short, so the summary must elaborate slightly but stay factual, covering the
+        key terms: mitochondria, glucose oxidation, ATP, oxidative phosphorylation,
+        energy transfer, cellular work."},"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":175,"completion_tokens":180,"total_tokens":355,"prompt_tokens_details":{"cached_tokens":128},"completion_tokens_details":{"reasoning_tokens":79},"prompt_cache_hit_tokens":128,"prompt_cache_miss_tokens":47},"system_fingerprint":"fp_a18b46594c_prod0820_fp8_kvcache_20260402"}'
+    headers:
+      access-control-allow-credentials:
+      - 'true'
+      connection:
+      - keep-alive
+      content-length:
+      - '1584'
+      content-type:
+      - application/json
+      date:
+      - Mon, 10 Aug 2026 18:46:49 GMT
+      server:
+      - elb
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      transfer-encoding:
+      - chunked
+      vary:
+      - origin, access-control-request-method, access-control-request-headers
+      via:
+      - 1.1 9b8a860d147083d2447cbe7648a624dc.cloudfront.net (CloudFront)
+      x-amz-cf-id:
+      - Fmk0EB9ToQDi2HLP5V87mvWvnB6iHMrWNJ8f5oRRNvW0qcnUOnvKCg==
+      x-amz-cf-pop:
+      - SIN3-P5
+      x-cache:
+      - Miss from cloudfront
+      x-content-type-options:
+      - nosniff
+      x-ds-trace-id:
+      - 42a06bd7ba694acd09676b6bffb73a46
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"messages":[{"role":"system","content":"Extract the named concepts a student
+      would look up: theories, methods, terms of art, named entities, formulas, events.
+      Return ONLY a JSON array of strings. No relations, no descriptions, no duplicates,
+      at most 12 items. Skip generic words that carry no meaning outside their sentence."},{"role":"user","content":"Source:
+      cells.txt\n\nMitochondria oxidise glucose and transfer the released energy into
+      ATP through oxidative phosphorylation, which powers most of the work a cell
+      does."}],"model":"deepseek-v4-flash","temperature":0.0}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '573'
+      content-type:
+      - application/json
+      host:
+      - api.deepseek.com
+      user-agent:
+      - AsyncOpenAI/Python 2.44.0
+      x-stainless-arch:
+      - other:amd64
+      x-stainless-async:
+      - async:asyncio
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - Windows
+      x-stainless-package-version:
+      - 2.44.0
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.12.9
+    method: POST
+    uri: https://api.deepseek.com/chat/completions
+  response:
+    body:
+      string: '{"id":"54f724ce-e8f6-458d-8b95-d5ec79697564","object":"chat.completion","created":1786387612,"model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":"[\"Mitochondria\",
+        \"glucose\", \"ATP\", \"oxidative phosphorylation\"]","reasoning_content":"We
+        need answer user query. Need extract named concepts from source text: \"Mitochondria
+        oxidise glucose and transfer the released energy into ATP through oxidative
+        phosphorylation, which powers most of the work a cell does.\"\n\nNeed return
+        ONLY JSON array of strings. Concepts a student would look up: theories, methods,
+        terms of art, named entities, formulas, events. Need at most 12 items, no
+        duplicates, skip generic words. Need identify: Mitochondria, glucose, ATP,
+        oxidative phosphorylation. Maybe \"energy\" generic no. \"cell\" generic.
+        \"oxidise\" maybe process? \"oxidative phosphorylation\" is specific. \"ATP\"
+        is term. \"Mitochondria\" organelle. \"glucose\" molecule. Could include \"cellular
+        respiration\"? Not explicitly but maybe? But source says oxidative phosphorylation.
+        Student would look up \"oxidative phosphorylation\". Also \"ATP\" (adenosine
+        triphosphate). Maybe \"mitochondrion\" singular? But source plural \"Mitochondria\".
+        Need list of strings. Ensure no relations, descriptions. JSON array. Let''s
+        craft."},"logprobs":null,"finish_reason":"stop"}],"usage":{"prompt_tokens":175,"completion_tokens":234,"total_tokens":409,"prompt_tokens_details":{"cached_tokens":128},"completion_tokens_details":{"reasoning_tokens":216},"prompt_cache_hit_tokens":128,"prompt_cache_miss_tokens":47},"system_fingerprint":"fp_a18b46594c_prod0820_fp8_kvcache_20260402"}'
+    headers:
+      access-control-allow-credentials:
+      - 'true'
+      connection:
+      - keep-alive
+      content-length:
+      - '1655'
+      content-type:
+      - application/json
+      date:
+      - Mon, 10 Aug 2026 18:46:52 GMT
+      server:
+      - elb
+      strict-transport-security:
+      - max-age=31536000; includeSubDomains; preload
+      transfer-encoding:
+      - chunked
+      vary:
+      - origin, access-control-request-method, access-control-request-headers
+      via:
+      - 1.1 9b8a860d147083d2447cbe7648a624dc.cloudfront.net (CloudFront)
+      x-amz-cf-id:
+      - 433HIYTIEa_L83tcAAtg-6D23WppYsJtvaCbYq61I-GDLShgw0guFw==
+      x-amz-cf-pop:
+      - SIN3-P5
+      x-cache:
+      - Miss from cloudfront
+      x-content-type-options:
+      - nosniff
+      x-ds-trace-id:
+      - 19133c6ad7a0e5c09c95823013cfc475
+    status:
+      code: 200
+      message: OK
+- request:
+    body: '{"input":["chlorophyll and light"],"model":"qwen/qwen3-embedding-4b","dimensions":2560,"encoding_format":"base64"}'
+    headers:
+      accept:
+      - application/json
+      accept-encoding:
+      - gzip, deflate
+      connection:
+      - keep-alive
+      content-length:
+      - '114'
+      content-type:
+      - application/json
+      host:
+      - openrouter.ai
+      user-agent:
+      - AsyncOpenAI/Python 2.44.0
+      x-stainless-arch:
+      - other:amd64
+      x-stainless-async:
+      - async:asyncio
+      x-stainless-lang:
+      - python
+      x-stainless-os:
+      - Windows
+      x-stainless-package-version:
+      - 2.44.0
+      x-stainless-read-timeout:
+      - '600'
+      x-stainless-retry-count:
+      - '0'
+      x-stainless-runtime:
+      - CPython
+      x-stainless-runtime-version:
+      - 3.12.9
+    method: POST
+    uri: https://openrouter.ai/api/v1/embeddings
+  response:
+    body:
+      string: "\n         \n{\"object\":\"list\",\"data\":[{\"object\":\"embedding\",\"embedding\":\"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\",\"index\":0}],\"model\":\"Qwen/Qwen3-Embedding-4B\",\"usage\":{\"prompt_tokens\":6,\"total_tokens\":6,\"cost\":1.2e-7,\"is_byok\":false,\"cost_details\":{\"upstream_inference_cost\":1.2e-7,\"upstream_inference_prompt_cost\":1.2e-7,\"upstream_inference_completions_cost\":0}},\"provider\":\"DeepInfra\",\"id\":\"gen-emb-1786387615-0Nppao4ZNljKimJfGd5p\"}"
+    headers:
+      access-control-allow-origin:
+      - '*'
+      access-control-expose-headers:
+      - X-Generation-Id,X-Provider-Name,cf-ray
+      cf-ray:
+      - a2912a873edd9aaf-SIN
+      connection:
+      - keep-alive
+      content-length:
+      - '14050'
+      content-type:
+      - application/json
+      date:
+      - Mon, 10 Aug 2026 18:46:56 GMT
+      permissions-policy:
+      - payment=(self "https://checkout.stripe.com" "https://connect-js.stripe.com"
+        "https://js.stripe.com" "https://*.js.stripe.com" "https://hooks.stripe.com")
+      referrer-policy:
+      - no-referrer, strict-origin-when-cross-origin
+      server:
+      - cloudflare
+      transfer-encoding:
+      - chunked
+      x-clerk-auth-message:
+      - Invalid JWT form. A JWT consists of three parts separated by dots. (reason=token-invalid,
+        token-carrier=header)
+      x-clerk-auth-reason:
+      - token-invalid
+      x-clerk-auth-status:
+      - signed-out
+      x-content-type-options:
+      - nosniff
+    status:
+      code: 200
+      message: OK
+version: 1

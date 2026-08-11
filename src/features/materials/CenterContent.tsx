@@ -113,6 +113,7 @@ export function CenterContent({
             fileId={item.id}
             imageZoom={imageZoom}
             onImageZoomChange={setImageZoom}
+            page={item.page}
           />
         )}
       </div>
@@ -245,11 +246,13 @@ function FileBody({
   color,
   imageZoom,
   onImageZoomChange,
+  page,
 }: {
   fileId: string;
   color?: UserColor;
   imageZoom: number;
   onImageZoomChange: (next: number) => void;
+  page?: number;
 }) {
   const { data: file, isLoading, isError } = useFile(fileId);
   if (isLoading) return <FileLoading />;
@@ -282,6 +285,7 @@ function FileBody({
       file={file ?? null}
       imageZoom={imageZoom}
       onImageZoomChange={onImageZoomChange}
+      page={page}
     />
   );
 }

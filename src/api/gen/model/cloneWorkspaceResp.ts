@@ -9,6 +9,5 @@ import type { Workspace } from './workspace.ts';
 export interface CloneWorkspaceResp {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  ragCloned: boolean;
   workspace: Workspace;
 }

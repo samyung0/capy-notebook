@@ -304,6 +304,17 @@ components:
           type: string
         fileName:
           type: string
+        pageEnd:
+          format: int64
+          type: integer
+        pageStart:
+          format: int64
+          type: integer
+        regions:
+          items:
+            $ref: "#/components/schemas/Region"
+          nullable: true
+          type: array
         snippet:
           type: string
       required:
@@ -320,13 +331,10 @@ components:
           format: uri
           readOnly: true
           type: string
-        ragCloned:
-          type: boolean
         workspace:
           $ref: "#/components/schemas/Workspace"
       required:
         - workspace
-        - ragCloned
       type: object
     CollaborationTokenResponse:
       additionalProperties: false
@@ -1682,6 +1690,25 @@ components:
       required:
         - id
         - name
+      type: object
+    Region:
+      additionalProperties: false
+      properties:
+        bbox:
+          items:
+            format: double
+            type: number
+          nullable: true
+          type: array
+        page:
+          format: int64
+          type: integer
+        space:
+          type: string
+      required:
+        - page
+        - bbox
+        - space
       type: object
     ReorderChaptersReq:
       additionalProperties: false

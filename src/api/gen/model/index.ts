@@ -88,6 +88,7 @@ export * from './publicWorkspace.ts';
 export * from './quiz.ts';
 export * from './quizQuestionsItem.ts';
 export * from './recentFile.ts';
+export * from './region.ts';
 export * from './reorderChaptersReq.ts';
 export * from './reorderContentReq.ts';
 export * from './requestAccountDeletionReq.ts';

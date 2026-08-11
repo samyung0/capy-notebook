@@ -520,13 +520,9 @@ func (s *Store) DeleteWorkspaceWithResult(ctx context.Context, userID, id string
 	if _, err := tx.Exec(ctx, `DELETE FROM workspaces WHERE id=$1`, id); err != nil {
 		return nil, err
 	}
-	// The workspace's blob objects are queued by the cascade's delete triggers;
-	// its LightRAG tenant is not reachable from this schema at all, so it needs
-	// an explicit job. Enqueued in the same transaction as the delete, because a
-	// teardown lost to a crash leaks that state permanently.
-	if err := s.EnqueueRagTeardownTx(ctx, tx, id); err != nil {
-		return nil, err
-	}
+	// The workspace's blob objects are queued by the cascade's delete triggers,
+	// and its retrieval index cascades away with it now that rag_* lives in this
+	// schema — no teardown job to lose.
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
 	}

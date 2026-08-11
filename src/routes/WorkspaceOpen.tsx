@@ -494,12 +494,8 @@ export default function WorkspaceOpen() {
                 onClick={() =>
                   cloneWorkspace(workspaceId, {
                     onError: (err) => toastCloneError(err, 'workspace'),
-                    onSuccess: ({ workspace, ragCloned }) => {
-                      // TODO: when is rag cloned?
+                    onSuccess: ({ workspace }) => {
                       userToast({
-                        description: ragCloned
-                          ? ''
-                          : 'Files copied. Parsed knowledge needs rebuilding.',
                         title: 'Workspace cloned successfully',
                         variant: 'success',
                       });
@@ -800,7 +796,13 @@ export default function WorkspaceOpen() {
                   </div>
                   <div className="h-full flex-1 overflow-hidden">
                     {mode === 'chat' ? (
-                      <ChatPanel color={ws?.color} workspaceId={workspaceId} />
+                      <ChatPanel
+                        color={ws?.color}
+                        onOpenCitation={(fileId, page) =>
+                          setOpenItem({ id: fileId, kind: 'file', page })
+                        }
+                        workspaceId={workspaceId}
+                      />
                     ) : (
                       <GeneratePanel
                         chapters={chapters ?? []}

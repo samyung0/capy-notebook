@@ -7,12 +7,13 @@ Read these only when the task touches that domain. Prefer the listed file over g
 | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | Roles, share visibility, who can mutate what, account states (`over_quota_*`, suspension, deletion), **who pays** for storage, upload/blob cleanup policy | `[authorization-permissions-lifecycles.md](openwiki/authorization-permissions-lifecycles.md)` |
 | How quota bytes are accounted (`user_storage` / deltas), plan limits, material size/shape bounds, Yjs compaction, reservation/clone gating math           | `[backend-storage-quota.md](openwiki/backend-storage-quota.md)`                               |
+| Ingest → index → hybrid search → chat agent / generate workflows, citations, clone/teardown                                                               | `[agentic-retrieval.md](openwiki/agentic-retrieval.md)`                                       |
 | Plate/Yjs editor, collab tokens/modes (`view`/`comment`/`edit`), checkpoints, projections, comment anchors, AI previews                                   | `[frontend/plate-editor.md](openwiki/frontend/plate-editor.md)`                               |
 | How to run pipeline cassette tests and their disposable Postgres/Redis setup                                                                              | `[pipeline-tests.md](openwiki/pipeline-tests.md)`                                             |
 | Inventory of Vitest / Go / Python / Playwright / Cloudflare tests with one-line descriptions                                                              | `[test-catalog.md](openwiki/test-catalog.md)`                                                 |
 
 
-Cross-links: plate-editor defers structural ACL to authorization; authorization defers accounting internals to storage-quota.
+Cross-links: plate-editor defers structural ACL to authorization; authorization defers accounting internals to storage-quota; agentic-retrieval defers material quota/authz to authorization and test infra to pipeline-tests.
 
 ## Getting Started
 

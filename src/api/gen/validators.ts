@@ -349,6 +349,13 @@ export const ListMessagesResponseItem = zod.object({
   "citations": zod.array(zod.object({
   "fileId": zod.string(),
   "fileName": zod.string(),
+  "pageEnd": zod.int().optional(),
+  "pageStart": zod.int().optional(),
+  "regions": zod.array(zod.object({
+  "bbox": zod.array(zod.number()).nullable(),
+  "page": zod.int(),
+  "space": zod.string()
+})).nullish(),
   "snippet": zod.string()
 })).nullish(),
   "content": zod.string(),
@@ -1874,7 +1881,6 @@ export const cloneWorkspaceResponseWorkspaceTagsItemValueMax = 50;
 
 export const CloneWorkspaceResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "ragCloned": zod.boolean(),
   "workspace": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "capabilities": zod.object({

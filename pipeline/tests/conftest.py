@@ -2,70 +2,48 @@
 
 Why record-replay
 -----------------
-The pipeline's real cost is the model traffic: OpenRouter embeddings, DeepSeek
-LLM extraction/queries, Gemini VLM captions and the Modal MineRU parse call.
-We record those HTTP interactions ONCE into per-test YAML cassettes
-(``tests/cassettes/``) and replay them for free forever after. Postgres and
-Redis are raw TCP (not HTTP), so cassette tests start fresh containers for
-each pytest invocation and tear them down when the session ends.
+The pipeline's real cost is model traffic: OpenRouter embeddings and DeepSeek
+completions for summaries, concept extraction and answers. Those HTTP
+interactions are recorded ONCE into per-test YAML cassettes
+(``tests/cassettes/``) and replayed for free afterwards. Postgres and Redis are
+raw TCP, not HTTP, so cassette tests start fresh containers per pytest session
+and tear them down at the end.
 
 Two modes (see ``tests/README.md``):
-- **replay** (default): ``EVO_TEST_RECORD`` unset. No network to model APIs;
-  cassettes must exist. Provider keys can be dummies.
-- **record**: ``EVO_TEST_RECORD=once`` (or ``new_episodes``) with real API keys
-  + a deployed ``MODAL_PARSE_URL`` exported. Hits the real services and writes
-  cassettes.
+- **replay** (default): ``EVO_TEST_RECORD`` unset. No model traffic; cassettes
+  must exist. Provider keys can be dummies.
+- **record**: ``EVO_TEST_RECORD=once`` with real API keys exported.
 
-Both modes need Docker. The cassette fixture builds the custom pgvector+AGE
-image, starts a disposable Postgres and Redis container, and points the
-pipeline at their dynamically mapped ports.
+Both modes need Docker. The retrieval index is owned by the Go schema now, so
+the container is the stock ``pgvector/pgvector:pg16`` image and the fixture
+applies ``server/migrations/0001_init.sql`` to it — the same file the gateway
+applies at boot. Nothing in the pipeline creates tables.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import tempfile
-import uuid
+import secrets
 from pathlib import Path
 
 import pytest
 
 # --------------------------------------------------------------------------
 # Environment MUST be set before any ``pipeline.*`` import (pipeline.config
-# snapshots os.environ at class-definition time). setdefault so a real
-# exported environment (record mode) always wins over these replay defaults.
-# Database and Redis URLs are installed by the cassette fixture after Docker
-# assigns fresh host ports.
+# snapshots os.environ at class-definition time). setdefault so a real exported
+# environment (record mode) always wins over these replay defaults. Database and
+# Redis URLs are installed by the infra fixture once Docker assigns host ports.
 # --------------------------------------------------------------------------
 FIXTURES = Path(__file__).parent / "fixtures"
 CASSETTES = Path(__file__).parent / "cassettes"
-
-_TEST_WORKING_DIR = tempfile.mkdtemp(prefix="evo_test_rag_")
-
-os.environ.setdefault("WORKING_DIR", _TEST_WORKING_DIR)
-os.environ.setdefault("INPUT_DIR", str(Path(_TEST_WORKING_DIR) / "inputs"))
-
-# Deterministic ingest: no PG-cached extraction responses, so every run issues
-# the same LLM calls (record-replay depends on this).
-os.environ.setdefault("EVO_INGEST_LLM_CACHE", "false")
-
-# Force single-slot concurrency so LLM/embedding calls fire in a stable order
-# and embedding batches have reproducible composition — otherwise the recorded
-# and replayed request bodies (lists of texts) group differently and never
-# match. Tiny test docs, so serial is plenty fast.
-os.environ.setdefault("MAX_ASYNC_LLM", "1")
-os.environ.setdefault("EMBEDDING_FUNC_MAX_ASYNC", "1")
-os.environ.setdefault("MAX_PARALLEL_INSERT", "1")
-# Batch every pending vector into a single embedding request so its text-list
-# composition is deterministic (the matcher additionally sorts that list).
-os.environ.setdefault("EMBEDDING_BATCH_NUM", "1000")
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Request-shaping config is pinned HERE (not read from deploy/.env) so it is
 # byte-identical between record and replay. Cassette matching ignores host/port
 # (see match_on below) but DOES compare the request PATH and JSON body — so the
-# model names and each provider's base-URL *path* must be stable. These values
-# are also the real endpoints, so recording reaches the live services.
+# model names and each provider's base-URL *path* must be stable. These are also
+# the real endpoints, so recording reaches the live services.
 os.environ["EMBEDDING_DIM"] = os.environ.get("EMBEDDING_DIM", "2560")
 os.environ["EVO_MODEL_EMBEDDING"] = "qwen/qwen3-embedding-4b"
 os.environ["EVO_MODEL_EXTRACTION"] = "deepseek-v4-flash"
@@ -78,152 +56,158 @@ os.environ["GEMINI_BASE_URL"] = (
     "https://generativelanguage.googleapis.com/v1beta/openai/"
 )
 os.environ["EVO_PARSE_METHOD"] = "auto"
+# One embedding request per file keeps the batch composition stable, which is
+# what the body matcher compares.
+os.environ["EVO_EMBEDDING_BATCH"] = "1000"
 
 # Dummy provider keys for replay (never sent anywhere — VCR intercepts). Real
 # keys come from the exported environment in record mode.
-for _k in (
-    "OPENROUTER_API_KEY",
-    "DEEPSEEK_API_KEY",
-    "GOOGLE_API_KEY",
-    "MODAL_PARSE_TOKEN",
-):
+for _k in ("OPENROUTER_API_KEY", "DEEPSEEK_API_KEY", "GOOGLE_API_KEY"):
     os.environ.setdefault(_k, "test-dummy-key")
-# Modal host is ignored by the matcher; only the ``/file_parse`` path matters.
-os.environ.setdefault("MODAL_PARSE_URL", "https://modal.test/file_parse")
 
+# Ryuk (testcontainers' container reaper) races its own port publication on
+# Docker Desktop for Windows and fails the session before anything starts. Both
+# containers below are context-managed and CI runners are ephemeral, so the
+# reaper buys nothing here.
+os.environ.setdefault("TESTCONTAINERS_RYUK_DISABLED", "true")
 
 RECORD_MODE = os.getenv("EVO_TEST_RECORD", "none")
+
+# Imported only after the environment above is in place, because pipeline.config
+# snapshots os.environ at class-definition time. pytest-asyncio builds a loop
+# per test from the active policy, so the choice has to be made at collection
+# time; without it every database call on Windows dies as a pool timeout rather
+# than an error naming the cause.
+from pipeline import use_compatible_event_loop
+
+use_compatible_event_loop()
+
+MIGRATION = REPO_ROOT / "server" / "migrations" / "0001_init.sql"
+
+
+def pytest_runtest_setup(item):
+    """Skip cassette tests with no recording, before any fixture runs.
+
+    The check cannot live in the ``cassette`` fixture: ``_test_infra`` is
+    session-scoped, so pytest would start Docker before a function-scoped
+    fixture ever gets the chance to skip.
+    """
+    if RECORD_MODE != "none" or item.get_closest_marker("cassette") is None:
+        return
+    if not (CASSETTES / f"{item.name}.yaml").exists():
+        pytest.skip(
+            f"cassette {item.name}.yaml not recorded — run EVO_TEST_RECORD=once"
+        )
 
 
 # --------------------------------------------------------------------------
 # Ephemeral integration infrastructure
 # --------------------------------------------------------------------------
-def _configure_test_infrastructure(postgres, redis) -> None:
-    """Point imported pipeline modules at the freshly started containers."""
+def _configure_test_infrastructure(postgres, redis) -> str:
+    """Point the imported pipeline config at the freshly started containers."""
     db_host = postgres.get_container_host_ip()
     db_host = f"[{db_host}]" if ":" in db_host else db_host
-    db_port = postgres.get_exposed_port(5432)
     redis_host = redis.get_container_host_ip()
     redis_host = f"[{redis_host}]" if ":" in redis_host else redis_host
-    redis_port = redis.get_exposed_port(6379)
 
-    database_url = f"postgres://evo:evo@{db_host}:{db_port}/evo?sslmode=disable"
-    redis_url = f"redis://{redis_host}:{redis_port}/0"
-    os.environ.update(
-        {
-            "DATABASE_URL": database_url,
-            "REDIS_URL": redis_url,
-            "POSTGRES_HOST": db_host.strip("[]"),
-            "POSTGRES_PORT": str(db_port),
-            "POSTGRES_USER": "evo",
-            "POSTGRES_PASSWORD": "evo",
-            "POSTGRES_DATABASE": "evo",
-        }
+    dsn = (
+        f"postgres://evo:evo@{db_host}:{postgres.get_exposed_port(5432)}"
+        "/evo?sslmode=disable"
     )
+    redis_url = f"redis://{redis_host}:{redis.get_exposed_port(6379)}/0"
+    os.environ.update({"DATABASE_URL": dsn, "REDIS_URL": redis_url})
 
     # pipeline.config is imported while pytest collects test modules, before
-    # this fixture runs. Update its snapshot as well as the environment that
-    # LightRAG reads when each RAG instance is constructed.
+    # this fixture runs, so its snapshot has to be corrected in place.
     from pipeline.config import cfg
 
-    cfg.dsn = database_url
+    cfg.dsn = dsn
     cfg.redis_url = redis_url
+    return dsn
+
+
+def _await_postgres(dsn: str, attempts: int = 60) -> None:
+    """Poll until the server accepts a real connection.
+
+    The log line the wait strategy matches is printed twice: once by initdb
+    while the server is listening on the unix socket only, and again once it is
+    actually up on TCP. Matching the first one wins the race often enough to
+    look like a flaky test suite.
+    """
+    import time
+
+    import psycopg
+
+    last: Exception | None = None
+    for _ in range(attempts):
+        try:
+            with psycopg.connect(dsn, connect_timeout=3) as conn:
+                conn.execute("SELECT 1")
+            return
+        except psycopg.Error as exc:
+            last = exc
+            time.sleep(1)
+    raise RuntimeError(f"postgres never became reachable: {last}")
+
+
+def _apply_migration(dsn: str) -> None:
+    """Apply the gateway's baseline schema, which owns the retrieval index."""
+    import psycopg
+
+    sql = MIGRATION.read_text(encoding="utf-8")
+    # No parameters, so psycopg uses the simple query protocol and the whole
+    # file (DO blocks included) goes over as one statement batch — the same way
+    # internal/store.Migrate sends it.
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        conn.execute(sql)
 
 
 @pytest.fixture(scope="session")
 def _test_infra():
-    """Build and run fresh Postgres/Redis containers for cassette tests."""
+    """Fresh Postgres/Redis containers, migrated, for cassette tests."""
     from testcontainers.core.container import DockerContainer
-    from testcontainers.core.image import DockerImage
     from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
-    repo_root = Path(__file__).resolve().parents[2]
-    postgres_image = DockerImage(
-        path=repo_root / "deploy" / "postgres",
-        tag=f"evo-pipeline-test-postgres:{uuid.uuid4().hex}",
+    postgres = DockerContainer(
+        "pgvector/pgvector:pg16",
+        env={"POSTGRES_USER": "evo", "POSTGRES_PASSWORD": "evo", "POSTGRES_DB": "evo"},
+        ports=[5432],
+    ).waiting_for(
+        LogMessageWaitStrategy(
+            "database system is ready to accept connections"
+        ).with_startup_timeout(180)
     )
-
-    with postgres_image as image:
-        postgres = DockerContainer(
-            str(image),
-            command=["postgres", "-c", "shared_preload_libraries=age"],
-            env={
-                "POSTGRES_USER": "evo",
-                "POSTGRES_PASSWORD": "evo",
-                "POSTGRES_DB": "evo",
-            },
-            ports=[5432],
-        ).waiting_for(
-            LogMessageWaitStrategy(
-                "database system is ready to accept connections"
-            ).with_startup_timeout(180)
-        )
-        with postgres:
-            redis = DockerContainer("redis:7-alpine", ports=[6379]).waiting_for(
-                LogMessageWaitStrategy("Ready to accept connections").with_startup_timeout(
-                    60
-                )
+    with postgres:
+        redis = DockerContainer("redis:7-alpine", ports=[6379]).waiting_for(
+            LogMessageWaitStrategy("Ready to accept connections").with_startup_timeout(
+                60
             )
-            with redis:
-                _configure_test_infrastructure(postgres, redis)
-                yield
+        )
+        with redis:
+            dsn = _configure_test_infrastructure(postgres, redis)
+            _await_postgres(dsn)
+            _apply_migration(dsn)
+            yield dsn
 
 
-def _ensure_tiktoken_encoding() -> None:
-    """Download LightRAG's public tokenizer data before VCR is enabled."""
-    import tiktoken
+@pytest.fixture(autouse=True)
+async def _close_pool():
+    """Drop the async pool between tests.
 
-    tiktoken.encoding_for_model("gpt-4o-mini")
+    pytest-asyncio gives each test its own event loop, and a psycopg pool is
+    bound to the loop that opened it. Reusing one across tests fails in ways
+    that look like unrelated connection errors.
+    """
+    yield
+    from pipeline.retrieval import store
+
+    await store.close_pool()
 
 
 # --------------------------------------------------------------------------
 # VCR
 # --------------------------------------------------------------------------
-import re as _re
-
-# LightRAG stamps each entity/relation/chunk with its ingest-time ``created_at``
-# and renders it into the query context as ``YYYY-MM-DD HH:MM:SS`` (operate.py).
-# Those wall-clock strings differ between record and replay (ingest runs fresh
-# each time), so the query LLM request body would never match verbatim. Blank
-# them on both sides before comparing — they carry no semantic weight for the
-# request identity.
-_VOLATILE_TIMESTAMP = _re.compile(r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}")
-
-
-def _sort_json_line_runs(text: str) -> str:
-    """Sort contiguous runs of newline-delimited JSON-object lines.
-
-    LightRAG renders the retrieved knowledge-graph context as blocks of
-    ``{"entity": ...}`` / ``{"relationship": ...}`` records, one per line. Two
-    records with equal retrieval score come back from Postgres in an arbitrary
-    order, so the query LLM prompt's bytes differ run-to-run even though the
-    content is identical. Sorting each maximal run of JSON-object lines makes the
-    prompt order-insensitive without touching surrounding prose or chunk text.
-    """
-    lines = text.split("\n")
-    out: list[str] = []
-    run: list[str] = []
-
-    def _flush():
-        out.extend(sorted(run))
-        run.clear()
-
-    for line in lines:
-        s = line.strip()
-        if s.startswith("{") and s.endswith("}"):
-            try:
-                json.loads(s)
-                run.append(line)
-                continue
-            except ValueError:
-                pass
-        _flush()
-        out.append(line)
-    _flush()
-    return "\n".join(out)
-
-
-def _normalize_body(raw) -> str:
+def _normalize_body(raw):
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8", "replace")
     text = raw if isinstance(raw, str) else json.dumps(raw, sort_keys=True)
@@ -231,31 +215,20 @@ def _normalize_body(raw) -> str:
         obj = json.loads(text)
     except (TypeError, ValueError):
         return None  # non-JSON (multipart upload / empty)
-    # Embedding requests carry a list of texts whose ordering across concurrent
-    # batches is not stable; sort it so the request identity is order-insensitive.
-    if isinstance(obj, dict) and isinstance(obj.get("input"), list):
-        obj["input"] = sorted(str(x) for x in obj["input"])
-    # Chat requests embed the retrieved KG context; neutralize its record order.
-    if isinstance(obj, dict) and isinstance(obj.get("messages"), list):
-        for msg in obj["messages"]:
-            if isinstance(msg.get("content"), str):
-                msg["content"] = _sort_json_line_runs(msg["content"])
-    return _VOLATILE_TIMESTAMP.sub("<TS>", json.dumps(obj, sort_keys=True))
+    return json.dumps(obj, sort_keys=True)
 
 
 def _json_body_matcher(r1, r2) -> None:
     """Match requests by normalized JSON body.
 
-    LLM/embedding/VLM calls share a host+path (e.g. ``/chat/completions``) and
-    are only told apart by their JSON payload (prompt / input texts). We compare
-    the payloads with keys sorted and volatile ingest timestamps blanked. The
-    Modal parse upload is ``multipart/form-data`` (boundary differs every time)
-    so its body isn't JSON — we skip body comparison there and rely on
-    method+host+path (there is exactly one Modal endpoint).
+    Completion and embedding calls share a host+path (``/chat/completions``,
+    ``/embeddings``) and are told apart only by their payload — the prompt, or
+    the list of texts. Compare those with keys sorted. A non-JSON body (a
+    multipart upload) skips the comparison and relies on method+path.
     """
     n1, n2 = _normalize_body(r1.body), _normalize_body(r2.body)
     if n1 is None or n2 is None:
-        return  # at least one side is non-JSON — disambiguated by path
+        return
     assert n1 == n2, "request JSON body mismatch"
 
 
@@ -280,109 +253,95 @@ def _vcr():
     )
     v.register_matcher("evo_json_body", _json_body_matcher)
     # Deliberately NOT matching scheme/host/port: each provider owns a distinct
-    # PATH (/api/v1/embeddings, /chat/completions, /v1beta/openai/..., /file_parse)
-    # so path + JSON body uniquely identifies every call, and the real provider
+    # PATH, so path + JSON body identifies every call and the real provider
     # hostnames never need to be reproduced at replay time.
     v.match_on = ("method", "path", "evo_json_body")
     return v
 
 
 @pytest.fixture
-def cassette(request, _vcr):
+def cassette(request, _test_infra, _vcr):
     """Open a VCR cassette named after the test function.
 
-    Replay mode fails loudly if the cassette is missing (record it first).
+    A missing cassette has already skipped the test in ``pytest_runtest_setup``.
     """
-    name = f"{request.node.name}.yaml"
-    path = CASSETTES / name
-    if RECORD_MODE == "none" and not path.exists():
-        pytest.skip(f"cassette {name} not recorded yet — run with EVO_TEST_RECORD=once")
-    # Resolve lazily so a missing cassette can skip without requiring Docker.
-    request.getfixturevalue("_test_infra")
-    # LightRAG initializes its tokenizer inside the cassette context. The
-    # public BPE download is not a model call and is intentionally not in the
-    # provider cassettes; populate tiktoken's local cache first.
-    _ensure_tiktoken_encoding()
-    # allow_playback_repeats: concurrent entity extraction can fire an identical
-    # prompt more than once; let a single recorded interaction satisfy them all.
+    path = CASSETTES / f"{request.node.name}.yaml"
+    # allow_playback_repeats: identical prompts can legitimately fire twice
+    # (two chunk groups with the same text); let one interaction satisfy both.
     with _vcr.use_cassette(str(path), allow_playback_repeats=True):
         yield
 
 
 # --------------------------------------------------------------------------
-# Live Postgres helpers: unique workspace per test + full purge on teardown.
-# A fresh workspace means the LLM prompts (content-based) are identical between
-# record and replay while the KG storage starts empty every time.
+# Live Postgres helpers
+#
+# A workspace per test, deleted on teardown. Every rag_* row cascades from it,
+# so isolation needs no table-by-table cleanup and a leaked row is impossible.
 # --------------------------------------------------------------------------
-_LIGHTRAG_TABLES = (
-    "lightrag_doc_chunks",
-    "lightrag_llm_cache",
-    "lightrag_doc_full",
-    "lightrag_doc_status",
-    "lightrag_full_entities",
-    "lightrag_full_relations",
-    "lightrag_entity_chunks",
-    "lightrag_relation_chunks",
-    "lightrag_vdb_entity",
-    "lightrag_vdb_relation",
-    "lightrag_vdb_chunks",
-)
+_SEED_USER = "u_1"  # created by the migration's development seed
 
 
-def _purge_workspace(workspace: str) -> None:
-    """Delete all LightRAG rows + the AGE graph for one workspace."""
-    import psycopg
+class Workspace:
+    """A throwaway workspace plus helpers to put content in it."""
 
-    dsn = os.environ["DATABASE_URL"]
-    graph = f"{workspace}_chunk_entity_relation"
-    with psycopg.connect(dsn, autocommit=True) as conn, conn.cursor() as cur:
-        for table in _LIGHTRAG_TABLES:
-            try:
-                cur.execute(
-                    f"DELETE FROM {table} WHERE workspace = %s", (workspace,)
-                )
-            except psycopg.Error:
-                conn.rollback()
-        try:
-            cur.execute(
-                "SELECT 1 FROM ag_catalog.ag_graph WHERE name = %s", (graph,)
+    def __init__(self, dsn: str, workspace_id: str):
+        self.dsn = dsn
+        self.id = workspace_id
+        self.user_id = _SEED_USER
+
+    def _connect(self):
+        import psycopg
+
+        return psycopg.connect(self.dsn, autocommit=True)
+
+    def add_chapter(self, name: str) -> str:
+        chapter_id = f"ch_{secrets.token_hex(6)}"
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO chapters (id, workspace_id, name) VALUES (%s, %s, %s)",
+                (chapter_id, self.id, name),
             )
-            if cur.fetchone():
-                cur.execute("SELECT ag_catalog.drop_graph(%s, true)", (graph,))
-        except psycopg.Error:
-            conn.rollback()
+        return chapter_id
 
+    def add_file(self, name: str, chapter_id: str | None = None) -> str:
+        """Register a source file row. Indexing it is the test's job.
 
-@pytest.fixture(autouse=True)
-def _serial_graph_phase(monkeypatch):
-    """Force LightRAG's entity/relation merge phase to run strictly serially.
+        user_id is omitted on purpose: a trigger derives the storage owner from
+        the workspace, and setting it here would test the fixture, not the
+        schema.
+        """
+        file_id = f"f_{secrets.token_hex(6)}"
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO files (id, workspace_id, chapter_id, name, kind,
+                                   size_bytes, status, blob_path)
+                VALUES (%s, %s, %s, %s, 'txt', 1024, 'ready', %s)
+                """,
+                (file_id, self.id, chapter_id, name, f"sources/{file_id}"),
+            )
+        return file_id
 
-    ``merge_nodes_and_edges`` guards that phase with
-    ``asyncio.Semaphore(llm_model_max_async * 2)``. With any concurrency >1 the
-    graph workers interleave, so the composition/direction of the merged
-    relations (and thus the text embedded per relation) varies run-to-run — which
-    changes the outbound embedding request bodies and breaks cassette replay.
-    Pinning the semaphore to 1 makes ingest fully deterministic for recording and
-    replay. Production keeps its real concurrency.
-    """
-    import asyncio as _asyncio
-
-    import lightrag.operate as _operate
-
-    real_semaphore = _asyncio.Semaphore
-
-    def _serial_semaphore(_value=1):
-        return real_semaphore(1)
-
-    monkeypatch.setattr(_operate.asyncio, "Semaphore", _serial_semaphore)
+    def scalar(self, sql: str, params: tuple = ()):
+        with self._connect() as conn:
+            row = conn.execute(sql, params).fetchone()
+        return row[0] if row else None
 
 
 @pytest.fixture
-def workspace():
-    """A unique, isolated workspace id; its LightRAG data is purged afterwards."""
-    ws = f"test_{uuid.uuid4().hex[:12]}"
-    yield ws
-    _purge_workspace(ws)
+def workspace(_test_infra) -> Workspace:
+    dsn = _test_infra
+    import psycopg
+
+    workspace_id = f"ws_{secrets.token_hex(6)}"
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO workspaces (id, user_id, name, color) VALUES (%s, %s, %s, 'green')",
+            (workspace_id, _SEED_USER, "Cassette workspace"),
+        )
+    yield Workspace(dsn, workspace_id)
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        conn.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
 
 
 @pytest.fixture
