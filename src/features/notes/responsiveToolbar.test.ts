@@ -11,19 +11,22 @@ describe('responsive toolbar groups', () => {
     expect([...hidden]).toEqual([3, 2]);
   });
 
-  it('keeps persistent groups visible while hiding around them', () => {
+  it('stops hiding as soon as the rest fits', () => {
     const hidden = getHiddenToolbarGroupIndexes(
-      [
-        { width: 80 },
-        { persistent: true, width: 40 },
-        { width: 100 },
-        { width: 60 },
-      ],
+      [{ width: 80 }, { width: 40 }, { width: 100 }, { width: 60 }],
       100
     );
 
-    expect([...hidden]).toEqual([3, 2, 0]);
-    expect(hidden.has(1)).toBe(false);
+    expect([...hidden]).toEqual([3, 2, 1]);
+  });
+
+  it('hides every group when even one does not fit', () => {
+    const hidden = getHiddenToolbarGroupIndexes(
+      [{ width: 80 }, { width: 40 }],
+      10
+    );
+
+    expect([...hidden]).toEqual([1, 0]);
   });
 
   it('does not hide anything when all groups fit', () => {

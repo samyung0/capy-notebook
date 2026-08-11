@@ -51,6 +51,12 @@ export default defineConfig(({ mode }) => {
               target: env.VITE_API_URL || 'http://localhost:8080',
             },
           },
+      // Plate is lazily imported behind a Suspense boundary, so nothing pulls
+      // it until a note is opened and the transform then runs as a serial
+      // import waterfall. Transforming it up front costs a few seconds of
+      // start-up and saves ~10s on the first note opened — which under
+      // Playwright is the difference between passing and timing out.
+      warmup: { clientFiles: ['./src/features/notes/NoteEditor.tsx'] },
       watch: {
         ignored: [
           '**/pipeline/**',

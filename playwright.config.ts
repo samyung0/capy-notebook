@@ -96,5 +96,9 @@ export default defineConfig({
     timeout: 120_000,
     url: baseURL,
   },
-  workers: process.env.CI ? 2 : undefined,
+  // Matches e2e/editor/playwright.editor.config.ts. The default (half the core
+  // count) puts eight Chromium contexts on a workstation, and they all queue
+  // behind one Vite dev server transforming the editor chunk on demand — the
+  // suite then fails on machines that are faster than the CI runner.
+  workers: process.env.CI ? 2 : 4,
 });

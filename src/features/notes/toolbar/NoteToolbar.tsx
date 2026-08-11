@@ -81,11 +81,9 @@ export type AnyEditor = any;
 function ToolbarGroup({
   children,
   className,
-  persistent = false,
 }: {
   children: React.ReactNode;
   className?: string;
-  persistent?: boolean;
 }) {
   return (
     <div
@@ -94,7 +92,6 @@ function ToolbarGroup({
         className
       )}
       data-toolbar-group
-      data-toolbar-persistent={persistent || undefined}
     >
       {children}
     </div>
@@ -109,7 +106,6 @@ function updateResponsiveToolbar(container: HTMLDivElement) {
     element.hidden = false;
   });
   const groups = elements.map((element) => ({
-    persistent: element.hasAttribute('data-toolbar-persistent'),
     width: element.getBoundingClientRect().width,
   }));
   const hiddenIndexes = getHiddenToolbarGroupIndexes(
@@ -262,6 +258,30 @@ export function NoteToolbar({ className }: { className?: string }) {
         )}
         role="toolbar"
       >
+        {/* Outside the responsive container on purpose. The all-blocks menu is
+         * the only way to reach a command whose own group has been dropped, so
+         * it cannot live in a box that hides and clips its children — it sits
+         * ahead of that box and takes its width off the top. */}
+        {enabled.general && (
+          <ToolbarGroup className="gap-1">
+            {canComment && collaboration && (
+              <ToolbarButton
+                disabled={collaboration.mutationPending}
+                label="Comment"
+                onClick={collaboration.openComment}
+              >
+                <MessageSquarePlus />
+              </ToolbarButton>
+            )}
+            <ToolbarAllBlocksMenu
+              allBlockCommands={allBlockCommands}
+              canComment={canComment}
+              collaboration={collaboration}
+              editor={editor}
+            />
+            <BlockTypeMenu onBlock={block} />
+          </ToolbarGroup>
+        )}
         <div
           className="flex h-full min-w-0 flex-1 items-center overflow-hidden"
           ref={toolbarGroupsRef}
@@ -289,26 +309,6 @@ export function NoteToolbar({ className }: { className?: string }) {
               {canCreateAssets && <MediaUploadMenu editor={editor} />}
               {canCreateAssets && <ImportMenu importFile={importFile} />}
               <ExportMenu editor={editor} />
-            </ToolbarGroup>
-          )}
-          {enabled.general && (
-            <ToolbarGroup className="gap-1" persistent>
-              {canComment && collaboration && (
-                <ToolbarButton
-                  disabled={collaboration.mutationPending}
-                  label="Comment"
-                  onClick={collaboration.openComment}
-                >
-                  <MessageSquarePlus />
-                </ToolbarButton>
-              )}
-              <ToolbarAllBlocksMenu
-                allBlockCommands={allBlockCommands}
-                canComment={canComment}
-                collaboration={collaboration}
-                editor={editor}
-              />
-              <BlockTypeMenu onBlock={block} />
             </ToolbarGroup>
           )}
           {enabled.fontStyles && (

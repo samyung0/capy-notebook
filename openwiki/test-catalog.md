@@ -59,7 +59,7 @@ at the top of each section.
 | [`src/features/notes/linkEditor.test.ts`](../src/features/notes/linkEditor.test.ts) | Link upsert restores the captured selection range before applying the link. |
 | [`src/features/notes/media.test.ts`](../src/features/notes/media.test.ts) | Media classification, persistent asset metadata, and upload-purpose rules (no video uploads). |
 | [`src/features/notes/noteEditorPrefs.test.ts`](../src/features/notes/noteEditorPrefs.test.ts) | Toolbar command preference ordering and default hidden groups. |
-| [`src/features/notes/responsiveToolbar.test.ts`](../src/features/notes/responsiveToolbar.test.ts) | Responsive toolbar hides overflow groups right-to-left while keeping persistent ones. |
+| [`src/features/notes/responsiveToolbar.test.ts`](../src/features/notes/responsiveToolbar.test.ts) | Responsive toolbar hides overflow groups right-to-left, stopping as soon as the rest fits. |
 | [`src/features/notes/richBlockConfig.test.ts`](../src/features/notes/richBlockConfig.test.ts) | Callout variant fallbacks, column layouts, and code-language toolbar labels. |
 | [`src/features/notes/stableElementIds.test.ts`](../src/features/notes/stableElementIds.test.ts) | Plugin assigns recursive element IDs before inserted nodes enter the editor. |
 | [`src/features/notes/tocHeadings.test.ts`](../src/features/notes/tocHeadings.test.ts) | Incremental heading scan: nested paths, stable array identity for unrelated edits, and path recomputation after insert/remove. |
@@ -193,6 +193,7 @@ MSW + Vite only (`pnpm e2e:editor`); no Docker.
 | [`e2e/editor/block-interactions.spec.ts`](../e2e/editor/block-interactions.spec.ts) | Drag-handle select, context menu duplicate/delete/turn-into, select-all escalate, reorder. |
 | [`e2e/editor/formatting.spec.ts`](../e2e/editor/formatting.spec.ts) | Bold apply and clear-formatting for single and stacked marks. |
 | [`e2e/editor/insertions.spec.ts`](../e2e/editor/insertions.spec.ts) | Mentions in heading/paragraph, slash-insert table, toolbar table menu, table of contents following a retitle, and column layout widths. |
+| [`e2e/editor/toolbar.spec.ts`](../e2e/editor/toolbar.spec.ts) | The all-blocks menu stays painted and hit-testable from 1280px down to 420px, where every other toolbar group is gone. |
 
 ---
 

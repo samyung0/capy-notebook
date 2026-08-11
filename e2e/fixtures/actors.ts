@@ -39,18 +39,24 @@ type ActorFixtures = {
   workspaceFactory: WorkspaceFactory;
 };
 
+/**
+ * Identity comes from headers the Vite proxy forwards to the Go gateway, and
+ * `EventSource` cannot set headers of its own, so the streaming endpoints need
+ * an interceptor rather than a fetch-level default.
+ *
+ * The pattern has to stay this narrow. Every intercepted request is a round
+ * trip through the test process, and the dev server serves ~500 modules per
+ * page: matching `**\/*` put a thousand of those round trips in front of the
+ * editor's lazy chunk and pushed page load past the assertion budget whenever
+ * several workers loaded the editor at once.
+ */
 async function pageAs(browser: Browser, userId: string) {
   const context = await browser.newContext();
   const appOrigin = new URL(process.env.E2E_BASE_URL!).origin;
   const headers = e2eHeaders(userId);
-  await context.route('**/*', async (route) => {
+  await context.route(`${appOrigin}/api/**`, async (route) => {
     const request = route.request();
-    const url = new URL(request.url());
-    if (url.origin === appOrigin && url.pathname.startsWith('/api/')) {
-      await route.continue({ headers: { ...request.headers(), ...headers } });
-      return;
-    }
-    await route.continue();
+    await route.continue({ headers: { ...request.headers(), ...headers } });
   });
   return { context, page: await context.newPage() };
 }

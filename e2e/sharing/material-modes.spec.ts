@@ -1,5 +1,5 @@
 import { expect, test } from '../fixtures/actors';
-import { openAllBlocks } from '../helpers/editor';
+import { expectEditorLive, openAllBlocks } from '../helpers/editor';
 import { openWorkspaceMaterial } from '../helpers/workspace';
 
 test.describe('shared material modes', () => {
@@ -71,7 +71,7 @@ test.describe('shared material modes', () => {
     await expect(
       otherPage.getByRole('combobox', { name: 'Material mode' })
     ).toContainText('Comment');
-    await expect(otherPage.getByText('Synced', { exact: true })).toBeVisible();
+    await expectEditorLive(otherPage);
     await expect(
       otherPage.getByRole('toolbar', { name: 'Document formatting' })
     ).toHaveCount(0);
@@ -134,7 +134,7 @@ test.describe('shared material modes', () => {
       seed.editableWorkspace.id,
       seed.editableNote.id
     );
-    await expect(ownerPage.getByText('Synced', { exact: true })).toBeVisible();
+    await expectEditorLive(ownerPage);
     await ownerPage.evaluate(() => {
       window.dispatchEvent(
         new KeyboardEvent('keydown', {

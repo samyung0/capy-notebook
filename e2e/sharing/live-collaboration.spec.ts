@@ -1,4 +1,5 @@
 import { expect, test } from '../fixtures/actors';
+import { expectEditorLive } from '../helpers/editor';
 import { openWorkspaceMaterial } from '../helpers/workspace';
 
 test.describe('live Yjs collaboration', () => {
@@ -27,8 +28,8 @@ test.describe('live Yjs collaboration', () => {
         true
       ),
     ]);
-    await expect(ownerPage.getByText('Synced', { exact: true })).toBeVisible();
-    await expect(editorPage.getByText('Synced', { exact: true })).toBeVisible();
+    await expectEditorLive(ownerPage);
+    await expectEditorLive(editorPage);
 
     const editor = editorPage.locator('[contenteditable="true"]').first();
     await editor.getByText(body, { exact: true }).dblclick();
