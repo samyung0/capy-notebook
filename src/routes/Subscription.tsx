@@ -5,7 +5,7 @@ import {
   useBillingPortal,
   useMe,
 } from '@/api/hooks';
-import type { PlanTier } from '@/api/types';
+import type { BillingCheckoutReq, PlanTier } from '@/api/types';
 import { PageHeader, Panel } from '@/components/app/layout';
 import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
@@ -37,9 +37,13 @@ function planLabel(tier: PlanTier) {
   }
 }
 
+/** Only paid tiers can start a checkout session. */
+type CheckoutTier = BillingCheckoutReq['planTier'];
+
 const PLANS: {
   tier: PlanTier;
   bullets: string[];
+  checkoutTier?: CheckoutTier;
 }[] = [
   {
     bullets: [
@@ -56,6 +60,7 @@ const PLANS: {
       'AI generate',
       'Priority ingest',
     ],
+    checkoutTier: 'pro',
     tier: 'pro',
   },
 ];
@@ -111,7 +116,7 @@ export default function Subscription() {
   const { isPending: portalIsPending, mutate: openPortal } = useBillingPortal();
   const [busy, setBusy] = useState<PlanTier | null>(null);
 
-  async function upgrade(tier: PlanTier) {
+  async function upgrade(tier: CheckoutTier) {
     setBusy(tier);
     try {
       const { url } = await checkout(tier);
@@ -159,18 +164,21 @@ export default function Subscription() {
             {m.subscription_plans_heading()}
           </p>
           <div className="grid gap-4 md:grid-cols-2">
-            {PLANS.map((p) => (
-              <PlanCard
-                bullets={p.bullets}
-                current={me?.planTier === p.tier}
-                key={p.tier}
-                loading={busy === p.tier}
-                onUpgrade={
-                  p.tier === 'free' ? undefined : () => upgrade(p.tier)
-                }
-                tier={p.tier}
-              />
-            ))}
+            {PLANS.map((p) => {
+              const checkoutTier = p.checkoutTier;
+              return (
+                <PlanCard
+                  bullets={p.bullets}
+                  current={me?.planTier === p.tier}
+                  key={p.tier}
+                  loading={busy === p.tier}
+                  onUpgrade={
+                    checkoutTier ? () => upgrade(checkoutTier) : undefined
+                  }
+                  tier={p.tier}
+                />
+              );
+            })}
           </div>
         </div>
       </div>

@@ -882,11 +882,46 @@ export const DeleteIntegrationResponse = zod.void()
  * @summary List labels
  */
 export const ListLabelsResponseItem = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "id": zod.string(),
   "name": zod.string()
 })
 export const ListLabelsResponse = zod.array(ListLabelsResponseItem)
+
+
+/**
+ * @summary Delete a label
+ */
+export const DeleteLabelParams = zod.object({
+  "id": zod.string()
+})
+
+export const DeleteLabelResponse = zod.void()
+
+
+/**
+ * @summary Update a label
+ */
+export const UpdateLabelParams = zod.object({
+  "id": zod.string()
+})
+
+export const updateLabelBodyNameMax = 60;
+
+
+
+export const UpdateLabelBody = zod.object({
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).optional(),
+  "name": zod.string().min(1).max(updateLabelBodyNameMax).optional()
+})
+
+export const UpdateLabelResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
+  "id": zod.string(),
+  "name": zod.string()
+})
 
 
 /**
@@ -1508,6 +1543,16 @@ export const ListTasksResponseItem = zod.object({
   "title": zod.string()
 })
 export const ListTasksResponse = zod.array(ListTasksResponseItem)
+
+
+/**
+ * @summary Delete a task
+ */
+export const DeleteTaskParams = zod.object({
+  "id": zod.string()
+})
+
+export const DeleteTaskResponse = zod.void()
 
 
 /**

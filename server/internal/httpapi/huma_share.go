@@ -22,7 +22,7 @@ type cloneWorkspaceOutput struct {
 	Body apimodel.CloneWorkspaceResp
 }
 type publicDecksOutput struct {
-	Body []apimodel.PublicDeck
+	Body []apimodel.PublicDeck `nullable:"false"`
 }
 type updateDeckInput struct {
 	ID   string `path:"id"`

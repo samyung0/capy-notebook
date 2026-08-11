@@ -116,6 +116,7 @@ export * from './updateDeckReq.ts';
 export * from './updateDiscussionReq.ts';
 export * from './updateEventReq.ts';
 export * from './updateFileReq.ts';
+export * from './updateLabelReq.ts';
 export * from './updateMaterialReq.ts';
 export * from './updateQuizReq.ts';
 export * from './updateQuizReqQuestionsItem.ts';

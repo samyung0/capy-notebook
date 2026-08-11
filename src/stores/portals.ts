@@ -1,6 +1,11 @@
 import { create } from 'zustand';
-import type { CreateWorkspaceReq, UpdateWorkspaceReq } from '@/api/gen/model';
-import type { CalendarEvent, Label, Task } from '@/api/types';
+import type {
+  CalendarEvent,
+  CreateWorkspaceReq,
+  Label,
+  Task,
+  UpdateWorkspaceReq,
+} from '@/api/types';
 import type { EventDraft } from '@/features/schedule/EventFormDialog';
 import { createWorkspaceDefaultValues } from '@/stores/defaultValues';
 

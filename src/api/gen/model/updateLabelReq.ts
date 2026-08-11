@@ -6,10 +6,13 @@
  */
 import type { UserColor } from './userColor.ts';
 
-export interface Label {
+export interface UpdateLabelReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  color: UserColor;
-  id: string;
-  name: string;
+  color?: UserColor;
+  /**
+     * @minLength 1
+     * @maxLength 60
+     */
+  name?: string;
 }

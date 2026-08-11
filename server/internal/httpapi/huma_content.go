@@ -12,7 +12,7 @@ import (
 )
 
 type chaptersOutput struct {
-	Body []apimodel.Chapter
+	Body []apimodel.Chapter `nullable:"false"`
 }
 type chapterOutput struct {
 	Body apimodel.Chapter
@@ -37,7 +37,7 @@ type reorderContentInput struct {
 	Body apimodel.ReorderContentReq
 }
 type filesOutput struct {
-	Body []apimodel.File
+	Body []apimodel.File `nullable:"false"`
 }
 type fileOutput struct {
 	Body apimodel.File

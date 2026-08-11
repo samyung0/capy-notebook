@@ -13,7 +13,7 @@ type listTagsInput struct {
 	Kind string `query:"kind" doc:"Tag kind: workspace | quiz | card" default:"workspace"`
 }
 type tagsOutput struct {
-	Body []apimodel.Tag
+	Body []apimodel.Tag `nullable:"false"`
 }
 
 func (a *api) registerTags(api huma.API) {

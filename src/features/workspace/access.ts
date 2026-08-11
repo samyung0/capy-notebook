@@ -1,4 +1,4 @@
-import type { AccessCapabilities } from '@/api/gen/model';
+import type { AccessCapabilities } from '@/api/types';
 
 /** Workspace is editable when the API grants canEdit (owner or editor). */
 export function isWorkspaceReadOnly(

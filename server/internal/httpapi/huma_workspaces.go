@@ -17,7 +17,7 @@ type listWorkspacesInput struct {
 	Tag   string `query:"tag" doc:"Comma-separated tags; OR-matched with colors"`
 }
 type workspacesOutput struct {
-	Body []apimodel.Workspace
+	Body []apimodel.Workspace `nullable:"false"`
 }
 type workspaceOutput struct {
 	Body apimodel.Workspace

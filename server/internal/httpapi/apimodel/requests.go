@@ -192,6 +192,11 @@ type UpdateEventReq struct {
 	Note     *string    `json:"note,omitempty"`
 }
 
+type UpdateLabelReq struct {
+	Name  *string          `json:"name,omitempty" minLength:"1" maxLength:"60"`
+	Color *store.UserColor `json:"color,omitempty"`
+}
+
 type UpdateTaskReq struct {
 	Title *string `json:"title,omitempty"`
 	Meta  *string `json:"meta,omitempty"`

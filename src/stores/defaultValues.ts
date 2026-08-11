@@ -1,4 +1,4 @@
-import type { CreateWorkspaceReq } from '@/api/gen/model';
+import type { CreateWorkspaceReq } from '@/api/types';
 
 export const createWorkspaceDefaultValues: CreateWorkspaceReq = {
   color: 'graphite',

@@ -24,14 +24,13 @@ Cross-links: plate-editor defers structural ACL to authorization; authorization 
 
 - run `pnpm run fmt` and `pnpm run fix` to fix and format codes after frontend changes
 - run `pnpm run fmt:go` to format golang sever codes
+- run `pnpm run fmt:py` to format python codes in pipeline
 
 ### Test Changes
 
 - update `test-catalog.md`
 
 ## Common Pitfalls
-
-
 
 ### Frontend
 

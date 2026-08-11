@@ -114,6 +114,7 @@
     "preview": "vite preview",
     "fmt": "biome format --write .",
     "fmt:go": "cd server && go fmt ./...",
+    "fmt:py": "uv run --with ruff ruff format pipeline && uv run --with ruff ruff check --fix pipeline",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run --dir src",
     "test:collaboration": "vitest run --dir collaboration",

@@ -1095,6 +1095,12 @@ components:
     Label:
       additionalProperties: false
       properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/Label.json
+          format: uri
+          readOnly: true
+          type: string
         color:
           $ref: "#/components/schemas/UserColor"
         id:
@@ -2148,6 +2154,22 @@ components:
         name:
           type: string
       type: object
+    UpdateLabelReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpdateLabelReq.json
+          format: uri
+          readOnly: true
+          type: string
+        color:
+          $ref: "#/components/schemas/UserColor"
+        name:
+          maxLength: 60
+          minLength: 1
+          type: string
+      type: object
     UpdateMaterialReq:
       additionalProperties: false
       properties:
@@ -2534,7 +2556,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/Attempt"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -2828,7 +2849,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/Message"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -2850,7 +2870,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/Deck"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -2957,7 +2976,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/Flashcard"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -3112,7 +3130,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/Event"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -3209,7 +3226,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/PublicDeck"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -3231,7 +3247,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/PublicQuiz"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -3253,7 +3268,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/PublicWorkspace"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -3275,7 +3289,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/File"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -3410,7 +3423,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/RecentFile"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -3453,7 +3465,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/Label"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -3463,6 +3474,57 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: List labels
+      tags:
+        - Schedule
+  /api/labels/{id}:
+    delete:
+      operationId: deleteLabel
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete a label
+      tags:
+        - Schedule
+    patch:
+      operationId: updateLabel
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateLabelReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Label"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Update a label
       tags:
         - Schedule
   /api/materials/{id}:
@@ -3606,7 +3668,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/Discussion"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -3664,7 +3725,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/MaterialRevision"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -3877,7 +3937,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/Quiz"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -4060,7 +4119,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/SearchResult"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -4110,7 +4168,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/Tag"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -4132,7 +4189,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/Task"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -4145,6 +4201,26 @@ paths:
       tags:
         - Schedule
   /api/tasks/{id}:
+    delete:
+      operationId: deleteTask
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Delete a task
+      tags:
+        - Schedule
     patch:
       operationId: updateTask
       parameters:
@@ -4185,7 +4261,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/Canvas"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -4336,7 +4411,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/Workspace"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -4463,7 +4537,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/Chapter"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -4573,7 +4646,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/WorkspaceCollaborator"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -4630,7 +4702,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/Conversation"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -4690,7 +4761,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/File"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -4745,7 +4815,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/MaterialRef"
-                nullable: true
                 type: array
           description: OK
         default:
@@ -4803,7 +4872,6 @@ paths:
               schema:
                 items:
                   $ref: "#/components/schemas/WorkspaceMember"
-                nullable: true
                 type: array
           description: OK
         default:

@@ -8,26 +8,9 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
-import type {
-  MaterialDocument,
-  MaterialValue,
-} from '@/features/materials/document';
 import { NOTIFICATION_PAGE_SIZE } from '@/lib/const';
 import { USE_MSW } from './auth';
 import { API_BASE, api, qk } from './client';
-// TODO: can types be merged to type ts?
-import type {
-  CreateDeckReq,
-  CreateEventReq,
-  CreateQuizReq,
-  CreateWorkspaceReq,
-  MaterialUpdateResult,
-  UpdateCardReq,
-  UpdateChapterReq,
-  UpdateQuizReq,
-  UpdateWorkspaceReq,
-  UpdateWorkspaceSharingReq,
-} from './gen/model';
 import {
   type NotificationStreamEvent,
   readNotificationStream,
@@ -36,11 +19,23 @@ import type {
   AccountStatus,
   Attempt,
   AttemptDetail,
+  BillingCheckoutReq,
   BillingInfo,
   CalendarEvent,
   Chapter,
   CloneWorkspaceResult,
+  ContentOrderItem,
   Conversation,
+  CreateAttemptReq,
+  CreateCardReq,
+  CreateCommentReq,
+  CreateDeckReq,
+  CreateDiscussionReq,
+  CreateEventReq,
+  CreateMaterialReq,
+  CreateQuizReq,
+  CreateWorkspaceInviteReq,
+  CreateWorkspaceReq,
   Deck,
   DeletionPreflight,
   FileStatus,
@@ -49,30 +44,48 @@ import type {
   IntegrationsStatus,
   Label,
   Material,
+  MaterialCollaborationToken,
+  MaterialComment,
   MaterialDiscussion,
   MaterialRef,
   MaterialRevision,
+  MaterialUpdateResult,
+  NotificationCount,
   NotificationPage,
   NotificationPrefs,
-  PlanTier,
-  Privacy,
   PublicDeck,
   PublicQuiz,
   PublicWorkspace,
-  Question,
   Quiz,
+  RecentFile,
+  SaveCanvasReq,
   SearchResult,
   SourceFile,
   SourceUploadPolicy,
   Tag,
   Task,
   ThinkingCanvas,
+  UpdateCardReq,
+  UpdateChapterReq,
+  UpdateCommentReq,
+  UpdateDeckReq,
+  UpdateDiscussionReq,
+  UpdateEventReq,
+  UpdateFileReq,
+  UpdateLabelReq,
+  UpdateMaterialReq,
+  UpdateQuizReq,
+  UpdateTaskReq,
+  UpdateWorkspaceMemberReq,
+  UpdateWorkspaceReq,
+  UpdateWorkspaceSharingReq,
+  URLResp,
   User,
   WireMessage,
   Workspace,
   WorkspaceCollaborator,
   WorkspaceMember,
-  WorkspaceRole,
+  WorkspaceStats,
 } from './types';
 
 const USE_DIRECT_B2_UPLOAD = import.meta.env.VITE_DIRECT_B2_UPLOAD !== 'false';
@@ -188,7 +201,7 @@ export const useNotifications = (options?: QueryUiOptions) =>
 export const useUnreadNotificationCount = (options?: QueryUiOptions) =>
   useQuery({
     meta: queryMeta(options),
-    queryFn: () => api.get<{ count: number }>('/notifications/unread-count'),
+    queryFn: () => api.get<NotificationCount>('/notifications/unread-count'),
     queryKey: qk.notificationUnread,
   });
 
@@ -226,7 +239,7 @@ export function applyNotificationEvent(
       return { ...cache, pages };
     });
     if (wasUnread !== isUnread) {
-      const count = qc.getQueryData<{ count: number }>(qk.notificationUnread);
+      const count = qc.getQueryData<NotificationCount>(qk.notificationUnread);
       if (count) {
         qc.setQueryData(qk.notificationUnread, {
           count: Math.max(0, count.count + (isUnread ? 1 : -1)),
@@ -435,15 +448,15 @@ export const useBilling = (options?: QueryUiOptions) =>
 
 export function useBillingCheckout() {
   return useMutation({
-    mutationFn: (planTier: PlanTier) =>
-      api.post<{ url: string }>('/billing/checkout', { planTier }),
+    mutationFn: (planTier: BillingCheckoutReq['planTier']) =>
+      api.post<URLResp>('/billing/checkout', { planTier }),
   });
 }
 
 export function useBillingPortal() {
   return useMutation({
     mutationFn: async () => {
-      const { url } = await api.post<{ url: string }>('/billing/portal');
+      const { url } = await api.post<URLResp>('/billing/portal');
       window.location.href = url;
     },
   });
@@ -484,8 +497,7 @@ export function useMicrosoftRecentFiles(
   return useQuery({
     enabled,
     meta: queryMeta(options),
-    queryFn: () =>
-      api.get<{ id: string; name: string }[]>('/integrations/microsoft/recent'),
+    queryFn: () => api.get<RecentFile[]>('/integrations/microsoft/recent'),
     queryKey: ['integrations', 'microsoft', 'recent'],
   });
 }
@@ -549,14 +561,7 @@ export const useWorkspace = (id: string, options?: QueryUiOptions) =>
 export const workspaceStatsQuery = (id: string) =>
   queryOptions({
     enabled: !!id,
-    queryFn: () =>
-      api.get<{
-        chapters: number;
-        files: number;
-        quizzes: number;
-        attempts: number;
-        avgScore: number;
-      }>(`/workspaces/${id}/stats`),
+    queryFn: () => api.get<WorkspaceStats>(`/workspaces/${id}/stats`),
     queryKey: qk.workspaceStats(id),
   });
 export const useWorkspaceStats = (id: string, options?: QueryUiOptions) =>
@@ -578,13 +583,8 @@ export function useCreateWorkspace() {
 export function useUpdateWorkspace() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      id,
-      ...body
-    }: UpdateWorkspaceReq & {
-      id: string;
-      shareRole?: Exclude<WorkspaceRole, 'owner'>;
-    }) => api.patch<Workspace>(`/workspaces/${id}`, body),
+    mutationFn: ({ id, ...body }: UpdateWorkspaceReq & { id: string }) =>
+      api.patch<Workspace>(`/workspaces/${id}`, body),
     onSuccess: (_d, v) => {
       qc.invalidateQueries({ queryKey: ['workspaces'] });
       qc.invalidateQueries({ queryKey: qk.workspace(v.id) });
@@ -661,14 +661,8 @@ export const useAllFiles = () => useQuery(allFilesQuery());
 export function useUpdateFile(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      id,
-      ...body
-    }: {
-      id: string;
-      name?: string;
-      chapterId?: string | null;
-    }) => api.patch<SourceFile>(`/files/${id}`, body),
+    mutationFn: ({ id, ...body }: UpdateFileReq & { id: string }) =>
+      api.patch<SourceFile>(`/files/${id}`, body),
     onSuccess: (file) => {
       qc.invalidateQueries({ queryKey: qk.files(wsId) });
       qc.invalidateQueries({ queryKey: qk.file(file.id) });
@@ -742,11 +736,6 @@ export function useReorderChapters(wsId: string) {
       api.post<void>(`/workspaces/${wsId}/chapters/reorder`, { ids }),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.chapters(wsId) }),
   });
-}
-
-export interface ContentOrderItem {
-  id: string;
-  type: 'file' | 'material';
 }
 
 /** Move and reorder the mixed file/material rows in one destination bucket. */
@@ -1100,12 +1089,7 @@ export function useDeleteMaterial(wsId: string) {
 }
 
 /** Create a user-authored note (markdown) material and reveal it in-pane. */
-export interface CreateNoteInput {
-  content?: MaterialDocument;
-  scopeChapters?: string[];
-  scopeFileNames?: string[];
-  title?: string;
-}
+export type CreateNoteInput = Omit<CreateMaterialReq, 'kind'>;
 export function useCreateNote(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
@@ -1122,16 +1106,10 @@ export function useCreateNote(wsId: string) {
 }
 
 /** Patch material metadata. Content is authoritative in the Yjs room. */
-export interface UpdateMaterialInput {
-  expectedRevision?: number;
-  scopeChapters?: string[];
-  scopeFileNames?: string[];
-  title?: string;
-}
 export function useUpdateMaterial(wsId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, patch }: { id: string; patch: UpdateMaterialInput }) =>
+    mutationFn: ({ id, patch }: { id: string; patch: UpdateMaterialReq }) =>
       api.patch<MaterialUpdateResult>(`/materials/${id}`, patch),
     onSuccess: (result, { id, patch }) => {
       qc.setQueryData<Material>(qk.material(id), (current) =>
@@ -1211,10 +1189,8 @@ export const useWorkspaceCollaborators = (
 
 export function useCreateWorkspaceInvite(workspaceId: string) {
   return useMutation({
-    mutationFn: (body: {
-      identifier: string;
-      role: Exclude<WorkspaceRole, 'owner'>;
-    }) => api.post<void>(`/workspaces/${workspaceId}/invites`, body),
+    mutationFn: (body: CreateWorkspaceInviteReq) =>
+      api.post<void>(`/workspaces/${workspaceId}/invites`, body),
   });
 }
 
@@ -1242,12 +1218,9 @@ export function useUpdateWorkspaceMember(workspaceId: string) {
   return useMutation({
     mutationFn: ({
       userId,
-      role,
-    }: {
-      userId: string;
-      role: Exclude<WorkspaceRole, 'owner'>;
-    }) =>
-      api.patch<void>(`/workspaces/${workspaceId}/members/${userId}`, { role }),
+      ...body
+    }: UpdateWorkspaceMemberReq & { userId: string }) =>
+      api.patch<void>(`/workspaces/${workspaceId}/members/${userId}`, body),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: qk.workspaceMembers(workspaceId) }),
   });
@@ -1289,14 +1262,7 @@ export const useMaterialDiscussions = (
 export function useCreateMaterialDiscussion(materialId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: {
-      anchorEnd?: string;
-      anchorQuote?: string;
-      anchorStart?: string;
-      anchorVersion?: number;
-      blockId?: string;
-      contentRich: MaterialValue;
-    }) =>
+    mutationFn: (body: CreateDiscussionReq) =>
       api.post<MaterialDiscussion>(
         `/materials/${materialId}/discussions`,
         body
@@ -1311,17 +1277,9 @@ export function useCreateMaterialComment(materialId: string) {
   return useMutation({
     mutationFn: ({
       discussionId,
-      contentRich,
-      parentCommentId,
-    }: {
-      discussionId: string;
-      contentRich: MaterialValue;
-      parentCommentId?: string;
-    }) =>
-      api.post(`/discussions/${discussionId}/comments`, {
-        contentRich,
-        parentCommentId,
-      }),
+      ...body
+    }: CreateCommentReq & { discussionId: string }) =>
+      api.post<MaterialComment>(`/discussions/${discussionId}/comments`, body),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: qk.materialDiscussions(materialId) }),
   });
@@ -1332,11 +1290,9 @@ export function useResolveMaterialDiscussion(materialId: string) {
   return useMutation({
     mutationFn: ({
       discussionId,
-      isResolved,
-    }: {
-      discussionId: string;
-      isResolved: boolean;
-    }) => api.patch<void>(`/discussions/${discussionId}`, { isResolved }),
+      ...body
+    }: UpdateDiscussionReq & { discussionId: string }) =>
+      api.patch<void>(`/discussions/${discussionId}`, body),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: qk.materialDiscussions(materialId) }),
   });
@@ -1347,11 +1303,9 @@ export function useUpdateMaterialComment(materialId: string) {
   return useMutation({
     mutationFn: ({
       commentId,
-      contentRich,
-    }: {
-      commentId: string;
-      contentRich: MaterialValue;
-    }) => api.patch(`/comments/${commentId}`, { contentRich }),
+      ...body
+    }: UpdateCommentReq & { commentId: string }) =>
+      api.patch<MaterialComment>(`/comments/${commentId}`, body),
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: qk.materialDiscussions(materialId) }),
   });
@@ -1385,14 +1339,6 @@ export function useDeleteMaterialDiscussion(materialId: string) {
     onSuccess: () =>
       qc.invalidateQueries({ queryKey: qk.materialDiscussions(materialId) }),
   });
-}
-
-export interface MaterialCollaborationToken {
-  access: 'write' | 'comment';
-  expiresAt: number;
-  room: string;
-  token: string;
-  url: string;
 }
 
 export const getMaterialCollaborationToken = (materialId: string) =>
@@ -1511,9 +1457,7 @@ function invalidateAllMaterials(qc: ReturnType<typeof useQueryClient>) {
 export function useCreateQuiz() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (
-      body: Omit<CreateQuizReq, 'questions'> & { questions?: Question[] }
-    ) => api.post<Quiz>('/quizzes', body),
+    mutationFn: (body: CreateQuizReq) => api.post<Quiz>('/quizzes', body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.quizzes });
       invalidateAllMaterials(qc);
@@ -1523,13 +1467,8 @@ export function useCreateQuiz() {
 export function useUpdateQuiz() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      id,
-      ...body
-    }: Omit<UpdateQuizReq, 'questions'> & {
-      id: string;
-      questions?: Question[];
-    }) => api.patch<Quiz>(`/quizzes/${id}`, body),
+    mutationFn: ({ id, ...body }: UpdateQuizReq & { id: string }) =>
+      api.patch<Quiz>(`/quizzes/${id}`, body),
     onSuccess: (_d, v) => {
       qc.invalidateQueries({ queryKey: qk.quizzes });
       qc.invalidateQueries({ queryKey: qk.quiz(v.id) });
@@ -1551,28 +1490,8 @@ export function useSubmitAttempt(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
     meta: mutationMeta(options),
-    mutationFn: ({
-      quizId,
-      correct,
-      total,
-      wrong,
-      answers,
-      questions,
-    }: {
-      quizId: string;
-      correct: number;
-      total: number;
-      wrong?: Question[];
-      answers?: Record<string, unknown>;
-      questions?: Question[];
-    }) =>
-      api.post<Attempt>(`/quizzes/${quizId}/attempts`, {
-        answers,
-        correct,
-        questions,
-        total,
-        wrong,
-      }),
+    mutationFn: ({ quizId, ...body }: CreateAttemptReq & { quizId: string }) =>
+      api.post<Attempt>(`/quizzes/${quizId}/attempts`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.attempts });
       qc.invalidateQueries({ queryKey: qk.mistakes });
@@ -1601,7 +1520,7 @@ export function useCreateDeck() {
 export function useCreateCard(deckId: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { front: string; back: string }) =>
+    mutationFn: (body: CreateCardReq) =>
       api.post<Flashcard>(`/decks/${deckId}/cards`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.cards(deckId) });
@@ -1684,7 +1603,7 @@ export const useLabels = (options?: QueryUiOptions) =>
 export function useUpdateLabel() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...body }: Partial<Label> & { id: string }) =>
+    mutationFn: ({ id, ...body }: UpdateLabelReq & { id: string }) =>
       api.patch<Label>(`/labels/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.labels }),
   });
@@ -1710,7 +1629,7 @@ export function useCreateEvent() {
 export function useUpdateEvent() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, ...body }: Partial<CreateEventReq> & { id: string }) =>
+    mutationFn: ({ id, ...body }: UpdateEventReq & { id: string }) =>
       api.patch<CalendarEvent>(`/events/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.events }),
   });
@@ -1766,7 +1685,7 @@ export function useUpdateTask() {
   return useMutation<
     Task,
     Error,
-    { id: string } & Partial<Pick<Task, 'title' | 'meta' | 'done'>>,
+    UpdateTaskReq & { id: string },
     TasksMutationContext
   >({
     meta: { errorToast: false },
@@ -1832,7 +1751,7 @@ export function useSaveCanvas(id: string) {
   const qc = useQueryClient();
   return useMutation({
     meta: { errorToast: false },
-    mutationFn: (body: { scene?: unknown; name?: string }) =>
+    mutationFn: (body: SaveCanvasReq) =>
       api.put<ThinkingCanvas>(`/thinking/${id}`, body),
     onSuccess: () => qc.invalidateQueries({ queryKey: qk.thinking }),
   });
@@ -1911,15 +1830,8 @@ export function useCloneDeck(options?: MutationUiOptions) {
 export function useUpdateDeck() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({
-      id,
-      ...body
-    }: {
-      id: string;
-      name?: string;
-      color?: string;
-      privacy?: Privacy;
-    }) => api.patch<Deck>(`/decks/${id}`, body),
+    mutationFn: ({ id, ...body }: UpdateDeckReq & { id: string }) =>
+      api.patch<Deck>(`/decks/${id}`, body),
     onSuccess: (_d, v) => {
       qc.invalidateQueries({ queryKey: qk.decks });
       qc.invalidateQueries({ queryKey: qk.deck(v.id) });

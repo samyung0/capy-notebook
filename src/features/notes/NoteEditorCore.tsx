@@ -16,10 +16,9 @@ import { USE_MSW } from '@/api/auth';
 import { qk } from '@/api/client';
 import {
   getMaterialCollaborationToken,
-  type MaterialCollaborationToken,
   type useMaterialDiscussions,
 } from '@/api/hooks';
-import type { Material } from '@/api/types';
+import type { Material, MaterialCollaborationToken } from '@/api/types';
 import { FileLoading } from '@/features/files/FileStates';
 import {
   type MaterialValue,

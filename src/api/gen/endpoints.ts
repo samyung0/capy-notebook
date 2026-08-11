@@ -75,6 +75,7 @@ import type {
   UpdateDiscussionReq,
   UpdateEventReq,
   UpdateFileReq,
+  UpdateLabelReq,
   UpdateMaterialReq,
   UpdateQuizReq,
   UpdateTaskReq,
@@ -273,7 +274,7 @@ export const getAccountStatus = async ( options?: RequestInit): Promise<getAccou
 
 
 export type listAttemptsResponse200 = {
-  data: Attempt[] | null
+  data: Attempt[]
   status: 200
 }
 
@@ -876,7 +877,7 @@ export const deleteConversation = async (id: string, options?: RequestInit): Pro
 
 
 export type listMessagesResponse200 = {
-  data: Message[] | null
+  data: Message[]
   status: 200
 }
 
@@ -926,7 +927,7 @@ export const listMessages = async (id: string, options?: RequestInit): Promise<l
 
 
 export type listDecksResponse200 = {
-  data: Deck[] | null
+  data: Deck[]
   status: 200
 }
 
@@ -1127,7 +1128,7 @@ export const updateDeck = async (id: string,
 
 
 export type listCardsResponse200 = {
-  data: Flashcard[] | null
+  data: Flashcard[]
   status: 200
 }
 
@@ -1430,7 +1431,7 @@ export const createMaterialComment = async (id: string,
 
 
 export type listEventsResponse200 = {
-  data: Event[] | null
+  data: Event[]
   status: 200
 }
 
@@ -1631,7 +1632,7 @@ export const updateEvent = async (id: string,
 
 
 export type exploreDecksResponse200 = {
-  data: PublicDeck[] | null
+  data: PublicDeck[]
   status: 200
 }
 
@@ -1681,7 +1682,7 @@ export const exploreDecks = async ( options?: RequestInit): Promise<exploreDecks
 
 
 export type exploreQuizzesResponse200 = {
-  data: PublicQuiz[] | null
+  data: PublicQuiz[]
   status: 200
 }
 
@@ -1731,7 +1732,7 @@ export const exploreQuizzes = async ( options?: RequestInit): Promise<exploreQui
 
 
 export type exploreWorkspacesResponse200 = {
-  data: PublicWorkspace[] | null
+  data: PublicWorkspace[]
   status: 200
 }
 
@@ -1781,7 +1782,7 @@ export const exploreWorkspaces = async ( options?: RequestInit): Promise<explore
 
 
 export type listAllFilesResponse200 = {
-  data: File[] | null
+  data: File[]
   status: 200
 }
 
@@ -2082,7 +2083,7 @@ export const googlePickerToken = async ( options?: RequestInit): Promise<googleP
 
 
 export type microsoftRecentResponse200 = {
-  data: RecentFile[] | null
+  data: RecentFile[]
   status: 200
 }
 
@@ -2182,7 +2183,7 @@ export const deleteIntegration = async (provider: string, options?: RequestInit)
 
 
 export type listLabelsResponse200 = {
-  data: Label[] | null
+  data: Label[]
   status: 200
 }
 
@@ -2227,6 +2228,107 @@ export const listLabels = async ( options?: RequestInit): Promise<listLabelsResp
 
   const data: listLabelsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listLabelsResponse
+}
+
+
+
+export type deleteLabelResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteLabelResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type deleteLabelResponseSuccess = (deleteLabelResponse204) & {
+  headers: Headers;
+};
+export type deleteLabelResponseError = (deleteLabelResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteLabelResponse = (deleteLabelResponseSuccess | deleteLabelResponseError)
+
+export const getDeleteLabelUrl = (id: string,) => {
+
+
+
+
+  return `/api/labels/${id}`
+}
+
+/**
+ * @summary Delete a label
+ */
+export const deleteLabel = async (id: string, options?: RequestInit): Promise<deleteLabelResponse> => {
+
+  const res = await fetch(getDeleteLabelUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteLabelResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteLabelResponse
+}
+
+
+
+export type updateLabelResponse200 = {
+  data: Label
+  status: 200
+}
+
+export type updateLabelResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type updateLabelResponseSuccess = (updateLabelResponse200) & {
+  headers: Headers;
+};
+export type updateLabelResponseError = (updateLabelResponseDefault) & {
+  headers: Headers;
+};
+
+export type updateLabelResponse = (updateLabelResponseSuccess | updateLabelResponseError)
+
+export const getUpdateLabelUrl = (id: string,) => {
+
+
+
+
+  return `/api/labels/${id}`
+}
+
+/**
+ * @summary Update a label
+ */
+export const updateLabel = async (id: string,
+    updateLabelReq: NonReadonly<UpdateLabelReq>, options?: RequestInit): Promise<updateLabelResponse> => {
+
+  const res = await fetch(getUpdateLabelUrl(id),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(updateLabelReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: updateLabelResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateLabelResponse
 }
 
 
@@ -2483,7 +2585,7 @@ export const createMaterialCollaborationToken = async (id: string, options?: Req
 
 
 export type listMaterialDiscussionsResponse200 = {
-  data: Discussion[] | null
+  data: Discussion[]
   status: 200
 }
 
@@ -2584,7 +2686,7 @@ export const createMaterialDiscussion = async (id: string,
 
 
 export type listMaterialRevisionsResponse200 = {
-  data: MaterialRevision[] | null
+  data: MaterialRevision[]
   status: 200
 }
 
@@ -3091,7 +3193,7 @@ export const readNotification = async (id: string, options?: RequestInit): Promi
 
 
 export type listQuizzesResponse200 = {
-  data: Quiz[] | null
+  data: Quiz[]
   status: 200
 }
 
@@ -3443,7 +3545,7 @@ export const cloneQuiz = async (id: string, options?: RequestInit): Promise<clon
 
 
 export type searchResponse200 = {
-  data: SearchResult[] | null
+  data: SearchResult[]
   status: 200
 }
 
@@ -3550,7 +3652,7 @@ export const getSourceUploadPolicy = async ( options?: RequestInit): Promise<get
 
 
 export type listTagsResponse200 = {
-  data: Tag[] | null
+  data: Tag[]
   status: 200
 }
 
@@ -3607,7 +3709,7 @@ export const listTags = async (params?: ListTagsParams, options?: RequestInit): 
 
 
 export type listTasksResponse200 = {
-  data: Task[] | null
+  data: Task[]
   status: 200
 }
 
@@ -3652,6 +3754,56 @@ export const listTasks = async ( options?: RequestInit): Promise<listTasksRespon
 
   const data: listTasksResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listTasksResponse
+}
+
+
+
+export type deleteTaskResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteTaskResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type deleteTaskResponseSuccess = (deleteTaskResponse204) & {
+  headers: Headers;
+};
+export type deleteTaskResponseError = (deleteTaskResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteTaskResponse = (deleteTaskResponseSuccess | deleteTaskResponseError)
+
+export const getDeleteTaskUrl = (id: string,) => {
+
+
+
+
+  return `/api/tasks/${id}`
+}
+
+/**
+ * @summary Delete a task
+ */
+export const deleteTask = async (id: string, options?: RequestInit): Promise<deleteTaskResponse> => {
+
+  const res = await fetch(getDeleteTaskUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteTaskResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteTaskResponse
 }
 
 
@@ -3708,7 +3860,7 @@ export const updateTask = async (id: string,
 
 
 export type listCanvasesResponse200 = {
-  data: Canvas[] | null
+  data: Canvas[]
   status: 200
 }
 
@@ -3959,7 +4111,7 @@ export const acceptWorkspaceInvite = async (token: string, options?: RequestInit
 
 
 export type listWorkspacesResponse200 = {
-  data: Workspace[] | null
+  data: Workspace[]
   status: 200
 }
 
@@ -4217,7 +4369,7 @@ export const updateWorkspace = async (id: string,
 
 
 export type listChaptersResponse200 = {
-  data: Chapter[] | null
+  data: Chapter[]
   status: 200
 }
 
@@ -4419,7 +4571,7 @@ export const cloneWorkspace = async (id: string, options?: RequestInit): Promise
 
 
 export type listWorkspaceCollaboratorsResponse200 = {
-  data: WorkspaceCollaborator[] | null
+  data: WorkspaceCollaborator[]
   status: 200
 }
 
@@ -4520,7 +4672,7 @@ export const reorderContent = async (id: string,
 
 
 export type listConversationsResponse200 = {
-  data: Conversation[] | null
+  data: Conversation[]
   status: 200
 }
 
@@ -4621,7 +4773,7 @@ export const createConversation = async (id: string,
 
 
 export type listWorkspaceFilesResponse200 = {
-  data: File[] | null
+  data: File[]
   status: 200
 }
 
@@ -4722,7 +4874,7 @@ export const createWorkspaceInvite = async (id: string,
 
 
 export type listMaterialsResponse200 = {
-  data: MaterialRef[] | null
+  data: MaterialRef[]
   status: 200
 }
 
@@ -4823,7 +4975,7 @@ export const createMaterial = async (id: string,
 
 
 export type listWorkspaceMembersResponse200 = {
-  data: WorkspaceMember[] | null
+  data: WorkspaceMember[]
   status: 200
 }
 

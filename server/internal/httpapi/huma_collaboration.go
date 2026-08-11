@@ -15,8 +15,12 @@ import (
 	"github.com/evonotes/server/internal/store"
 )
 
-type materialRevisionsOutput struct{ Body []apimodel.MaterialRevision }
-type discussionsOutput struct{ Body []apimodel.Discussion }
+type materialRevisionsOutput struct {
+	Body []apimodel.MaterialRevision `nullable:"false"`
+}
+type discussionsOutput struct {
+	Body []apimodel.Discussion `nullable:"false"`
+}
 type discussionOutput struct{ Body apimodel.Discussion }
 type commentOutput struct{ Body apimodel.Comment }
 

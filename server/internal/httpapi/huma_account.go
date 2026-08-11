@@ -21,7 +21,7 @@ type searchInput struct {
 	Q string `query:"q"`
 }
 type searchOutput struct {
-	Body []apimodel.SearchResult
+	Body []apimodel.SearchResult `nullable:"false"`
 }
 type notificationsOutput struct {
 	Body apimodel.NotificationPage
@@ -65,16 +65,16 @@ type accessTokenOutput struct {
 	Body apimodel.AccessTokenResp
 }
 type recentFilesOutput struct {
-	Body []apimodel.RecentFile
+	Body []apimodel.RecentFile `nullable:"false"`
 }
 type providerInput struct {
 	Provider string `path:"provider"`
 }
 type publicWorkspacesOutput struct {
-	Body []apimodel.PublicWorkspace
+	Body []apimodel.PublicWorkspace `nullable:"false"`
 }
 type publicQuizzesOutput struct {
-	Body []apimodel.PublicQuiz
+	Body []apimodel.PublicQuiz `nullable:"false"`
 }
 
 func (a *api) registerAccount(api huma.API) {

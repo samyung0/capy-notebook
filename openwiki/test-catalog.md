@@ -142,6 +142,7 @@ Node’s built-in test runner (`node --test`).
 | [`server/internal/store/contracts_test.go`](../server/internal/store/contracts_test.go) | Role/share/invite/comment/material JSON contracts and stable card-ID rewrite map. |
 | [`server/internal/store/material_revisions_test.go`](../server/internal/store/material_revisions_test.go) | Daily version overwrite, UTC rollover, tier retention, and downgrade pruning. |
 | [`server/internal/store/notifications_test.go`](../server/internal/store/notifications_test.go) | Notification recipient scoping, email outbox/leases, and category disable atomicity. |
+| [`server/internal/store/schedule_scope_test.go`](../server/internal/store/schedule_scope_test.go) | Label/task/event patches and deletes only touch the caller's own rows; label delete unlinks its events. |
 | [`server/internal/store/share_access_test.go`](../server/internal/store/share_access_test.go) | Workspace/material access matrices, parent-share inheritance, flashcard search via materials. |
 | [`server/internal/store/share_test.go`](../server/internal/store/share_test.go) | Card-ID rewrite on share/clone and clone retention using the target owner’s tier. |
 | [`server/internal/store/subscriptions_test.go`](../server/internal/store/subscriptions_test.go) | Plan projection, stale webhook protection, past-due, Stripe reconcile, lapsed over-quota freeze. |

@@ -13,7 +13,7 @@ import (
 )
 
 type materialRefsOutput struct {
-	Body []apimodel.MaterialRef
+	Body []apimodel.MaterialRef `nullable:"false"`
 }
 type materialOutput struct {
 	Body apimodel.Material

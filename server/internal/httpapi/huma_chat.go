@@ -25,13 +25,13 @@ type conversationIDInput struct {
 }
 
 type conversationsOutput struct {
-	Body []apimodel.Conversation
+	Body []apimodel.Conversation `nullable:"false"`
 }
 type conversationOutput struct {
 	Body apimodel.Conversation
 }
 type messagesOutput struct {
-	Body []apimodel.Message
+	Body []apimodel.Message `nullable:"false"`
 }
 
 func (a *api) registerChat(api huma.API) {

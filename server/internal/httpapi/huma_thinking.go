@@ -11,7 +11,7 @@ import (
 )
 
 type canvasesOutput struct {
-	Body []apimodel.Canvas
+	Body []apimodel.Canvas `nullable:"false"`
 }
 type canvasOutput struct {
 	Body apimodel.Canvas

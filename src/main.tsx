@@ -1,5 +1,4 @@
 import { QueryClientProvider } from '@tanstack/react-query';
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { RouterProvider } from '@tanstack/react-router';
 import { lazy, StrictMode, Suspense } from 'react';
 import { createPortal } from 'react-dom';
@@ -45,7 +44,8 @@ enableMocks().finally(() => {
                 </Suspense>
               )}
             </AppErrorBoundary>
-            {import.meta.env.DEV && <ReactQueryDevtools />}
+            {/* no need for query dev tools for now */}
+            {/* {import.meta.env.DEV && <ReactQueryDevtools />} */}
             {/* Outside the router so public /share routes and router error
                 boundaries can surface toasts too. */}
             {createPortal(<Toaster visibleToasts={3} />, document.body)}

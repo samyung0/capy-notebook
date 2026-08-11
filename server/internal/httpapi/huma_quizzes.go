@@ -12,7 +12,7 @@ import (
 )
 
 type quizzesOutput struct {
-	Body []apimodel.Quiz
+	Body []apimodel.Quiz `nullable:"false"`
 }
 type quizOutput struct {
 	Body apimodel.Quiz
@@ -32,7 +32,7 @@ type createAttemptInput struct {
 	Body apimodel.CreateAttemptReq
 }
 type attemptsOutput struct {
-	Body []apimodel.Attempt
+	Body []apimodel.Attempt `nullable:"false"`
 }
 type attemptOutput struct {
 	Body apimodel.Attempt

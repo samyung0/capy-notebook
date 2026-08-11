@@ -11,10 +11,12 @@ import (
 	"github.com/evonotes/server/internal/store"
 )
 
-type workspaceMembersOutput struct{ Body []apimodel.WorkspaceMember }
+type workspaceMembersOutput struct {
+	Body []apimodel.WorkspaceMember `nullable:"false"`
+}
 type workspaceMemberOutput struct{ Body apimodel.WorkspaceMember }
 type workspaceCollaboratorsOutput struct {
-	Body []apimodel.WorkspaceCollaborator
+	Body []apimodel.WorkspaceCollaborator `nullable:"false"`
 }
 
 type createWorkspaceInviteInput struct {

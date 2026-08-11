@@ -11,7 +11,7 @@ import (
 )
 
 type decksOutput struct {
-	Body []apimodel.Deck
+	Body []apimodel.Deck `nullable:"false"`
 }
 type deckOutput struct {
 	Body apimodel.Deck
@@ -23,7 +23,7 @@ type createDeckInput struct {
 	Body apimodel.CreateDeckReq
 }
 type cardsOutput struct {
-	Body []apimodel.Flashcard
+	Body []apimodel.Flashcard `nullable:"false"`
 }
 type cardOutput struct {
 	Body apimodel.Flashcard

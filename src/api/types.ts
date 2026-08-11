@@ -22,6 +22,13 @@
 import type {
   AttemptDetail as GenAttemptDetail,
   Comment as GenComment,
+  CreateAttemptReq as GenCreateAttemptReq,
+  CreateCardReq as GenCreateCardReq,
+  CreateCommentReq as GenCreateCommentReq,
+  CreateDiscussionReq as GenCreateDiscussionReq,
+  CreateMaterialReq as GenCreateMaterialReq,
+  CreateQuizReq as GenCreateQuizReq,
+  CreateWorkspaceInviteReq as GenCreateWorkspaceInviteReq,
   Discussion as GenDiscussion,
   File as GenFile,
   Material as GenMaterial,
@@ -29,30 +36,57 @@ import type {
   PublicQuiz as GenPublicQuiz,
   Quiz as GenQuiz,
   SearchResult as GenSearchResult,
+  UpdateCommentReq as GenUpdateCommentReq,
+  UpdateQuizReq as GenUpdateQuizReq,
+  UpdateWorkspaceMemberReq as GenUpdateWorkspaceMemberReq,
   MaterialKind,
   UserColor,
+  WorkspaceRole,
 } from './gen/model';
 
-/* ---------------- pass-through wire contracts ---------------- */
+/* ---------------- pass-through wire contracts ----------------
+   Entities, mutation payloads, and the purpose-built bodies of endpoints that
+   answer with something other than an entity, so hooks and the forms feeding
+   them bind to the wire contract instead of restating it. Contracts whose UI
+   shape is richer than the wire (rich text, the Question union,
+   non-transferable roles) are overridden further down. */
 export type {
+  AccessCapabilities,
   AccountStatus,
+  AddChapterReq,
   Attempt,
+  BillingCheckoutReq,
   BillingInfo,
   Canvas as ThinkingCanvas,
   Chapter,
   CloneWorkspaceResp as CloneWorkspaceResult,
+  CollaborationTokenResponse as MaterialCollaborationToken,
+  ContentOrderItem,
+  CreateCanvasReq,
+  CreateConversationReq,
+  CreateDeckReq,
+  CreateEventReq,
+  CreateWorkspaceReq,
   Deck,
   DeletionPreflight,
   Event as CalendarEvent,
   Flashcard,
   IntegrationsStatus,
   Label,
+  LocaleInputBody,
   MaterialRef,
+  MaterialUpdateResult,
   Notification as AppNotification,
+  NotificationCountOutputBody as NotificationCount,
   NotificationPage,
   NotificationPrefs,
   PublicDeck,
   PublicWorkspace,
+  RecentFile,
+  ReorderChaptersReq,
+  ReorderContentReq,
+  RequestAccountDeletionReq,
+  SaveCanvasReq,
   SourceUploadPolicy,
   SrsState,
   SubscriptionBlocker,
@@ -60,10 +94,23 @@ export type {
   TagInput,
   Task,
   TransferWorkspaceReq,
+  UpdateCardReq,
+  UpdateChapterReq,
+  UpdateDeckReq,
+  UpdateDiscussionReq,
+  UpdateEventReq,
+  UpdateFileReq,
+  UpdateLabelReq,
+  UpdateMaterialReq,
+  UpdateTaskReq,
+  UpdateWorkspaceReq,
+  UpdateWorkspaceSharingReq,
+  URLResp,
   User,
   Workspace,
   WorkspaceCollaborator,
   WorkspaceMember,
+  WorkspaceStats,
 } from './gen/model';
 
 /* ---------------- enums & scalars (straight from the generated spec) ---------------- */
@@ -114,6 +161,54 @@ export type Quiz = Omit<GenQuiz, 'questions'> & { questions: Question[] };
 export type PublicQuiz = Omit<GenPublicQuiz, 'questions'> & {
   questions: Question[];
 };
+
+/* ---------------- overridden request bodies ----------------
+   Same wire contract with the UI-facing shape restored: the Question union,
+   Plate values, and roles that cannot be granted through a normal write. */
+export type CreateQuizReq = Omit<GenCreateQuizReq, 'questions'> & {
+  questions?: Question[];
+};
+export type UpdateQuizReq = Omit<GenUpdateQuizReq, 'questions'> & {
+  questions?: Question[];
+};
+export type CreateAttemptReq = Omit<
+  GenCreateAttemptReq,
+  'questions' | 'wrong'
+> & {
+  questions?: Question[];
+  wrong?: Question[];
+};
+
+/** Both faces are optional on the wire; nothing in the UI creates a blank card. */
+export type CreateCardReq = Required<Pick<GenCreateCardReq, 'back' | 'front'>>;
+
+export type CreateMaterialReq = Omit<GenCreateMaterialReq, 'content'> & {
+  content?: import('@/features/materials/document').MaterialDocument;
+};
+export type CreateDiscussionReq = Omit<
+  GenCreateDiscussionReq,
+  'contentRich'
+> & {
+  contentRich: import('@/features/materials/document').MaterialValue;
+};
+export type CreateCommentReq = Omit<GenCreateCommentReq, 'contentRich'> & {
+  contentRich: import('@/features/materials/document').MaterialValue;
+};
+export type UpdateCommentReq = Omit<GenUpdateCommentReq, 'contentRich'> & {
+  contentRich: import('@/features/materials/document').MaterialValue;
+};
+
+/** Ownership moves through the transfer endpoint, never through an invite or a
+ * role change, so those bodies exclude it. */
+export type AssignableRole = Exclude<WorkspaceRole, 'owner'>;
+export type CreateWorkspaceInviteReq = Omit<
+  GenCreateWorkspaceInviteReq,
+  'role'
+> & { role: AssignableRole };
+export type UpdateWorkspaceMemberReq = Omit<
+  GenUpdateWorkspaceMemberReq,
+  'role'
+> & { role: AssignableRole };
 
 /* ---------------- chat ----------------
    Conversation + Message + Citation are modelled on the wire (huma) and come

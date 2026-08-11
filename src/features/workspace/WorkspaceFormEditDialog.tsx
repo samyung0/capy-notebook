@@ -1,9 +1,8 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback } from 'react';
 import { Controller, type FieldError, useForm } from 'react-hook-form';
-import type { UpdateWorkspaceReq } from '@/api/gen/model';
 import { UpdateWorkspaceBody } from '@/api/gen/validators';
-import type { Workspace } from '@/api/types';
+import type { UpdateWorkspaceReq, Workspace } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import {
   Dialog,

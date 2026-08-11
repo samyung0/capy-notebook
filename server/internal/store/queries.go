@@ -49,6 +49,10 @@ type EventPatch struct {
 	Location *string    `json:"location"`
 	Note     *string    `json:"note"`
 }
+type LabelPatch struct {
+	Name  *string    `json:"name"`
+	Color *UserColor `json:"color"`
+}
 
 /* --------------------------------------------------------------- me / shell */
 
@@ -1800,6 +1804,32 @@ func (s *Store) ListLabels(ctx context.Context, userID string) ([]Label, error) 
 	return out, rows.Err()
 }
 
+// Schedule rows are owned outright by one user and have no share model, so the
+// owner id is part of every mutation's WHERE clause rather than a separate
+// access lookup.
+func (s *Store) UpdateLabel(ctx context.Context, userID, id string, p LabelPatch) (Label, error) {
+	var color *string
+	if p.Color != nil {
+		c := string(*p.Color)
+		color = &c
+	}
+	var l Label
+	err := s.pool.QueryRow(ctx, `UPDATE labels SET name=COALESCE($3,name), color=COALESCE($4,color)
+		WHERE id=$1 AND user_id=$2 RETURNING id, name, color`,
+		id, userID, p.Name, color).Scan(&l.ID, &l.Name, &l.Color)
+	if isNoRows(err) {
+		return Label{}, ErrNotFound
+	}
+	return l, err
+}
+
+// Deleting a label cascades its event links away, so events keep only the
+// labels they still reference.
+func (s *Store) DeleteLabel(ctx context.Context, userID, id string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM labels WHERE id=$1 AND user_id=$2`, id, userID)
+	return err
+}
+
 // Label membership is a join table, so the API's flat labelIds array is
 // aggregated on read. Only labels the row still references survive, because a
 // deleted label cascades its links away instead of leaving a dead id behind.
@@ -1876,7 +1906,7 @@ func (s *Store) CreateEvent(ctx context.Context, userID string, e Event) (Event,
 	return scanEvent(s.pool.QueryRow(ctx, `SELECT `+eventCols+` FROM events e WHERE e.id=$1`, e.ID))
 }
 
-func (s *Store) UpdateEvent(ctx context.Context, id string, p EventPatch) (Event, error) {
+func (s *Store) UpdateEvent(ctx context.Context, userID, id string, p EventPatch) (Event, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return Event{}, err
@@ -1884,10 +1914,10 @@ func (s *Store) UpdateEvent(ctx context.Context, id string, p EventPatch) (Event
 	defer tx.Rollback(ctx)
 	var ownerID string
 	err = tx.QueryRow(ctx, `UPDATE events SET
-		title=COALESCE($2,title), start_at=COALESCE($3,start_at), end_at=COALESCE($4,end_at),
-		location=COALESCE($5,location), note=COALESCE($6,note)
-		WHERE id=$1 RETURNING user_id`,
-		id, p.Title, p.Start, p.End, p.Location, p.Note).Scan(&ownerID)
+		title=COALESCE($3,title), start_at=COALESCE($4,start_at), end_at=COALESCE($5,end_at),
+		location=COALESCE($6,location), note=COALESCE($7,note)
+		WHERE id=$1 AND user_id=$2 RETURNING user_id`,
+		id, userID, p.Title, p.Start, p.End, p.Location, p.Note).Scan(&ownerID)
 	if isNoRows(err) {
 		return Event{}, ErrNotFound
 	}
@@ -1905,8 +1935,8 @@ func (s *Store) UpdateEvent(ctx context.Context, id string, p EventPatch) (Event
 	return scanEvent(s.pool.QueryRow(ctx, `SELECT `+eventCols+` FROM events e WHERE e.id=$1`, id))
 }
 
-func (s *Store) DeleteEvent(ctx context.Context, id string) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM events WHERE id=$1`, id)
+func (s *Store) DeleteEvent(ctx context.Context, userID, id string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM events WHERE id=$1 AND user_id=$2`, id, userID)
 	return err
 }
 
@@ -1931,19 +1961,20 @@ func (s *Store) ListTasks(ctx context.Context, userID string) ([]Task, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) UpdateTask(ctx context.Context, id string, p TaskPatch) (Task, error) {
-	ct, err := s.pool.Exec(ctx, `UPDATE tasks SET title=COALESCE($2,title), meta=COALESCE($3,meta), done=COALESCE($4,done) WHERE id=$1`,
-		id, p.Title, p.Meta, p.Done)
-	if err != nil {
-		return Task{}, err
-	}
-	if ct.RowsAffected() == 0 {
+func (s *Store) UpdateTask(ctx context.Context, userID, id string, p TaskPatch) (Task, error) {
+	var t Task
+	err := s.pool.QueryRow(ctx, `UPDATE tasks SET title=COALESCE($3,title), meta=COALESCE($4,meta), done=COALESCE($5,done)
+		WHERE id=$1 AND user_id=$2 RETURNING id, title, meta, done, due_date`,
+		id, userID, p.Title, p.Meta, p.Done).Scan(&t.ID, &t.Title, &t.Meta, &t.Done, &t.DueDate)
+	if isNoRows(err) {
 		return Task{}, ErrNotFound
 	}
-	var t Task
-	err = s.pool.QueryRow(ctx, `SELECT id, title, meta, done, due_date FROM tasks WHERE id=$1`, id).
-		Scan(&t.ID, &t.Title, &t.Meta, &t.Done, &t.DueDate)
 	return t, err
+}
+
+func (s *Store) DeleteTask(ctx context.Context, userID, id string) error {
+	_, err := s.pool.Exec(ctx, `DELETE FROM tasks WHERE id=$1 AND user_id=$2`, id, userID)
+	return err
 }
 
 /* ------------------------------------------------------------ thinking space */

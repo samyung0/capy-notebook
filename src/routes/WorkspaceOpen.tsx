@@ -7,7 +7,6 @@ import {
 import { useRef, useState } from 'react';
 import { isApiError } from '@/api/client';
 import {
-  type ContentOrderItem,
   useAddChapter,
   useChapters,
   useCloneWorkspace,
@@ -25,6 +24,7 @@ import {
   useWorkspace,
 } from '@/api/hooks';
 import type {
+  ContentOrderItem,
   MaterialRef,
   MaterialRefType,
   SourceFile,
