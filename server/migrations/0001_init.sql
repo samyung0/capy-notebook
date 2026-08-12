@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS schema_baseline (
 
 DO $$
 DECLARE
-  target_version constant int := 6;
+  target_version constant int := 7;
   recorded_version int;
 BEGIN
   -- Serialize concurrent migrators. The runner sends this file as one statement
@@ -62,6 +62,7 @@ BEGIN
       notification_prefs, notifications, oauth_connections,
       pending_blob_deletions,
       rag_chapter_summaries, rag_chunks, rag_concept_mentions, rag_concepts,
+      rag_content_summaries, rag_file_contents, rag_contents,
       rag_file_summaries, rag_workspace_summaries,
       tags, tasks, upload_sessions, user_storage,
       user_storage_deltas, user_subscriptions, users, webhook_events,
@@ -211,6 +212,7 @@ CREATE TABLE IF NOT EXISTS files (
   -- same document into one workspace are stored twice (they are two files the
   -- user can see and delete) but indexed once.
   content_hash          text,
+  UNIQUE (id, workspace_id),
   -- The column list on SET NULL is what makes this work: the default form would
   -- try to null workspace_id too, which is NOT NULL. Requires Postgres 15+.
   FOREIGN KEY (chapter_id, workspace_id)
@@ -743,14 +745,35 @@ CREATE UNIQUE INDEX IF NOT EXISTS jobs_pending_rollup_idx
 -- No teardown job, and cloning a workspace is an INSERT..SELECT away.
 -- ============================================================================
 
+-- Parsed content is canonical within a workspace. Multiple logical files may
+-- reference it, so deleting either upload cannot orphan the other file's index.
+CREATE TABLE IF NOT EXISTS rag_contents (
+  id           text PRIMARY KEY,
+  workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  content_hash text NOT NULL,
+  status       text NOT NULL DEFAULT 'processing' CHECK (status IN ('processing','ready')),
+  UNIQUE (workspace_id, content_hash),
+  UNIQUE (id, workspace_id)
+);
+
+CREATE TABLE IF NOT EXISTS rag_file_contents (
+  file_id      text PRIMARY KEY,
+  workspace_id text NOT NULL,
+  content_id   text NOT NULL,
+  FOREIGN KEY (file_id, workspace_id)
+    REFERENCES files(id, workspace_id) ON DELETE CASCADE,
+  FOREIGN KEY (content_id, workspace_id)
+    REFERENCES rag_contents(id, workspace_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS rag_file_contents_content_idx ON rag_file_contents(content_id);
+
 -- One retrievable passage. `text` is what a citation shows and what the model
--- reads; `indexed_text` is that text prefixed with its file/section header path
--- (contextual retrieval) and is the string that was embedded and tokenized, so
--- vector and lexical search agree on what they scored.
+-- reads; `indexed_text` is prefixed with structural headings but not a logical
+-- file name, because the same content may be visible through several files.
 CREATE TABLE IF NOT EXISTS rag_chunks (
   id           text PRIMARY KEY,
   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  file_id      text NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  content_id   text NOT NULL REFERENCES rag_contents(id) ON DELETE CASCADE,
   chunk_idx    int  NOT NULL,
   -- Heading breadcrumb, e.g. 'Chapter 4 › Light reactions'. Empty for formats
   -- without headings.
@@ -773,18 +796,18 @@ CREATE TABLE IF NOT EXISTS rag_chunks (
   -- ceiling for plain vector HNSW. Changing EMBEDDING_DIM means changing this
   -- and re-ingesting; the pipeline hard-fails on a mismatch rather than drift.
   embedding    halfvec(2560),
-  UNIQUE (file_id, chunk_idx)
+  UNIQUE (content_id, chunk_idx)
 );
 CREATE INDEX IF NOT EXISTS rag_chunks_ws_idx ON rag_chunks(workspace_id);
-CREATE INDEX IF NOT EXISTS rag_chunks_file_idx ON rag_chunks(file_id);
+CREATE INDEX IF NOT EXISTS rag_chunks_content_idx ON rag_chunks(content_id);
 CREATE INDEX IF NOT EXISTS rag_chunks_search_idx ON rag_chunks USING gin(search);
 CREATE INDEX IF NOT EXISTS rag_chunks_embedding_idx
   ON rag_chunks USING hnsw (embedding halfvec_cosine_ops);
 
--- Per-file summary + outline, keyed by content so an organizational change
--- (moving chapters, cloning, renaming) never invalidates it.
-CREATE TABLE IF NOT EXISTS rag_file_summaries (
-  file_id      text PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+-- Summary + outline belong to canonical content, so duplicate logical files
+-- share the model output while retaining independent file lifecycles.
+CREATE TABLE IF NOT EXISTS rag_content_summaries (
+  content_id   text PRIMARY KEY REFERENCES rag_contents(id) ON DELETE CASCADE,
   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   fingerprint  text NOT NULL DEFAULT '',
   summary      text NOT NULL DEFAULT '',
@@ -792,7 +815,7 @@ CREATE TABLE IF NOT EXISTS rag_file_summaries (
   outline      jsonb NOT NULL DEFAULT '[]'::jsonb,
   updated_at   timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS rag_file_summaries_ws_idx ON rag_file_summaries(workspace_id);
+CREATE INDEX IF NOT EXISTS rag_content_summaries_ws_idx ON rag_content_summaries(workspace_id);
 
 -- Rolled up from the file summaries below them, never from raw content, which
 -- is what keeps invalidation local: a moved file rebuilds two rows from a few
@@ -832,11 +855,42 @@ CREATE TABLE IF NOT EXISTS rag_concepts (
 CREATE TABLE IF NOT EXISTS rag_concept_mentions (
   concept_id text NOT NULL REFERENCES rag_concepts(id) ON DELETE CASCADE,
   chunk_id   text NOT NULL REFERENCES rag_chunks(id) ON DELETE CASCADE,
-  file_id    text NOT NULL REFERENCES files(id) ON DELETE CASCADE,
   PRIMARY KEY (concept_id, chunk_id)
 );
 CREATE INDEX IF NOT EXISTS rag_concept_mentions_chunk_idx ON rag_concept_mentions(chunk_id);
-CREATE INDEX IF NOT EXISTS rag_concept_mentions_file_idx ON rag_concept_mentions(file_id);
+
+CREATE OR REPLACE FUNCTION delete_unreferenced_rag_concept() RETURNS trigger AS $$
+BEGIN
+  DELETE FROM rag_concepts c
+  WHERE c.id = OLD.concept_id
+    AND NOT EXISTS (
+      SELECT 1 FROM rag_concept_mentions m WHERE m.concept_id = OLD.concept_id
+    );
+  RETURN NULL;
+END $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS rag_concept_mentions_delete_orphan ON rag_concept_mentions;
+CREATE CONSTRAINT TRIGGER rag_concept_mentions_delete_orphan
+  AFTER DELETE ON rag_concept_mentions
+  DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION delete_unreferenced_rag_concept();
+
+-- Canonical content exists only while at least one logical file references it.
+-- File/workspace cascades therefore clean the retrieval index without a job.
+CREATE OR REPLACE FUNCTION delete_unreferenced_rag_content() RETURNS trigger AS $$
+BEGIN
+  DELETE FROM rag_contents c
+  WHERE c.id = OLD.content_id
+    AND NOT EXISTS (
+      SELECT 1 FROM rag_file_contents fc WHERE fc.content_id = OLD.content_id
+    );
+  RETURN NULL;
+END $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS rag_file_contents_delete_orphan ON rag_file_contents;
+CREATE TRIGGER rag_file_contents_delete_orphan
+  AFTER DELETE OR UPDATE OF content_id ON rag_file_contents
+  FOR EACH ROW EXECUTE FUNCTION delete_unreferenced_rag_content();
 
 -- Reorganizing files invalidates summaries, and the paths that reorganize them
 -- are many (move, delete, chapter delete's SET NULL, clone, account purge).

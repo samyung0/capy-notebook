@@ -146,7 +146,6 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Post("/api/workspaces/{id}/sources/import", a.importSources)
 	r.Get("/api/workspaces/{id}/ingest-events", a.ingestEvents)
 	r.Get("/api/editor-assets/{assetId}/resolve", a.resolveEditorAsset)
-	r.Post("/api/workspaces/{id}/chat", a.chat)
 	r.Post("/api/workspaces/{id}/chat/stream", a.chatStream)
 	r.Post("/api/workspaces/{id}/complete/stream", a.completeStream)
 	r.Post("/api/workspaces/{id}/ai/command", a.aiCommand)
@@ -421,49 +420,10 @@ func contentType(kind string) string {
 	}
 }
 
-/* -------------------------------------------------------------- chat/generate
+/* -------------------------------------------------------------- generation
 
-   Phase 1 placeholders: shapes match the frontend (ChatMessage / generate
-   payloads) so the UI works end-to-end. Phase 3 replaces these with calls to
-   the Python retrieval service. Kept on raw chi because the pipeline path is a
-   passthrough of arbitrary JSON and generate is polymorphic. */
-
-func (a *api) chat(w http.ResponseWriter, r *http.Request) {
-	if !a.assertWSRead(w, r, id(r)) {
-		return
-	}
-	var b struct {
-		Text string `json:"text"`
-	}
-	_ = decode(r, &b)
-
-	// Preferred path: grounded answer from the retrieval service.
-	if a.pipe != nil {
-		if raw, err := a.pipe.PostRaw(r.Context(), "/chat", map[string]any{
-			"query": b.Text, "workspaceId": id(r), "userId": uid(r), "k": 6,
-		}); err == nil {
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write(raw)
-			return
-		}
-	}
-
-	// Fallback placeholder (pipeline unreachable).
-	files, _ := a.s.ListFiles(r.Context(), uid(r), id(r))
-	if len(files) > 2 {
-		files = files[:2]
-	}
-	cites := make([]map[string]string, 0, len(files))
-	for _, f := range files {
-		cites = append(cites, map[string]string{"fileId": f.ID, "fileName": f.Name, "snippet": "Relevant passage from your source…"})
-	}
-	writeJSON(w, 200, map[string]any{
-		"id":        randID("m"),
-		"role":      "assistant",
-		"text":      fmt.Sprintf("Based on your sources, %s relates to the key ideas in your materials. (Pipeline offline — showing a placeholder.)", b.Text),
-		"citations": cites,
-	})
-}
+   Kept on raw chi because the pipeline path is a passthrough of arbitrary JSON
+   and generate is polymorphic. */
 
 type generateOpts struct {
 	Kind         store.MaterialKind `json:"kind"`

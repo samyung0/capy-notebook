@@ -8,6 +8,8 @@ schema they assume. That separation matters because a column rename in
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 
 from pipeline.config import cfg
@@ -25,6 +27,10 @@ def _unit_vector(axis: int) -> list[float]:
 
 
 async def _write(ws, file_id: str, texts: list[str], *, axis_base: int = 0) -> None:
+    content_hash = hashlib.sha256("\x00".join(texts).encode()).hexdigest()
+    association = await store.attach_file_content(
+        workspace_id=ws.id, file_id=file_id, content_hash=content_hash
+    )
     rows = [
         {
             "id": f"{file_id}_c{i}",
@@ -43,7 +49,10 @@ async def _write(ws, file_id: str, texts: list[str], *, axis_base: int = 0) -> N
         }
         for i, text in enumerate(texts)
     ]
-    await store.replace_file_chunks(workspace_id=ws.id, file_id=file_id, rows=rows)
+    await store.replace_content_chunks(
+        workspace_id=ws.id, content_id=association["content_id"], rows=rows
+    )
+    await store.mark_content_ready(association["content_id"])
 
 
 # ------------------------------------------------------------------- search
@@ -150,7 +159,9 @@ async def test_reindexing_removes_the_tail_of_the_previous_run(workspace):
 
     assert (
         workspace.scalar(
-            "SELECT count(*) FROM rag_chunks WHERE file_id = %s", (file_id,)
+            "SELECT count(*) FROM rag_chunks c JOIN rag_file_contents fc "
+            "ON fc.content_id = c.content_id WHERE fc.file_id = %s",
+            (file_id,),
         )
         == 1
     )
@@ -160,9 +171,12 @@ async def test_reindexing_removes_the_tail_of_the_previous_run(workspace):
 
 
 async def _concepts(ws, file_id: str, names_to_chunks: dict[str, list[str]]) -> None:
-    await store.replace_file_concepts(
+    content_id = ws.scalar(
+        "SELECT content_id FROM rag_file_contents WHERE file_id = %s", (file_id,)
+    )
+    await store.replace_content_concepts(
         workspace_id=ws.id,
-        file_id=file_id,
+        content_id=content_id,
         concepts=[
             {
                 "id": f"cpt_{file_id}_{i}",
@@ -237,9 +251,12 @@ async def test_workspace_outline_groups_files_under_chapters(workspace):
     filed = workspace.add_file("filed.txt", chapter)
     unfiled = workspace.add_file("unfiled.txt")
     await _write(workspace, filed, ["alpha"])
-    await store.upsert_file_summary(
+    content_id = workspace.scalar(
+        "SELECT content_id FROM rag_file_contents WHERE file_id = %s", (filed,)
+    )
+    await store.upsert_content_summary(
         workspace_id=workspace.id,
-        file_id=filed,
+        content_id=content_id,
         fingerprint="fp",
         summary="A summary.",
         outline=[{"title": "Ch 1", "pageStart": 1}],
@@ -279,6 +296,20 @@ async def test_moving_a_file_between_chapters_marks_both_dirty(workspace):
     )
 
 
+async def test_content_ingest_marks_only_its_chapter_dirty(workspace):
+    changed = workspace.add_chapter("Changed")
+    untouched = workspace.add_chapter("Untouched")
+    file_id = workspace.add_file("a.txt", changed)
+    workspace.add_file("b.txt", untouched)
+    await store.set_chapter_summary(changed, "clean")
+    await store.set_chapter_summary(untouched, "clean")
+
+    await store.mark_workspace_dirty(workspace.id, file_id)
+
+    dirty = {row["chapter_id"] for row in await store.dirty_chapters(workspace.id)}
+    assert dirty == {changed}
+
+
 async def test_deleting_a_chapter_does_not_break_its_files(workspace):
     """The chapter FK is ON DELETE SET NULL, so the trigger fires for a chapter
     that no longer exists — it must not try to mark it dirty."""
@@ -293,37 +324,69 @@ async def test_deleting_a_chapter_does_not_break_its_files(workspace):
     )
 
 
-async def test_content_hash_finds_an_identical_ready_file(workspace):
+async def test_duplicate_alias_survives_deleting_first_file(workspace):
     first = workspace.add_file("a.txt")
     second = workspace.add_file("b.txt")
-    workspace.scalar(
-        "UPDATE files SET content_hash = 'deadbeef' WHERE id = %s RETURNING id",
-        (first,),
+    await _write(workspace, first, ["Chlorophyll absorbs red light"])
+    content_id = workspace.scalar(
+        "SELECT content_id FROM rag_file_contents WHERE file_id = %s", (first,)
+    )
+    content_hash = workspace.scalar(
+        "SELECT content_hash FROM rag_contents WHERE id = %s", (content_id,)
+    )
+    duplicate = await store.attach_file_content(
+        workspace_id=workspace.id, file_id=second, content_hash=content_hash
     )
 
-    twin = await store.content_hash_owner(workspace.id, "deadbeef")
+    assert duplicate["ready"]
+    workspace.scalar("DELETE FROM files WHERE id = %s RETURNING id", (first,))
 
-    assert twin is not None and twin["id"] == first
-    assert await store.content_hash_owner(workspace.id, "nothing") is None
-    assert second  # the second upload exists; it is simply not indexed again
+    rows = await store.hybrid_search(
+        workspace_id=workspace.id,
+        vector=_unit_vector(0),
+        terms="chlorophyll",
+        file_ids=[second],
+        candidates=10,
+    )
+    read = await store.read_file_range(file_id=second, start=0, count=1)
+
+    assert rows and rows[0]["file_id"] == second and rows[0]["file_name"] == "b.txt"
+    assert read and read[0]["file_id"] == second
+    assert (
+        workspace.scalar(
+            "SELECT count(*) FROM rag_contents WHERE id = %s", (content_id,)
+        )
+        == 1
+    )
 
 
 async def test_deleting_a_file_takes_its_index_with_it(workspace):
     file_id = workspace.add_file("a.txt")
     await _write(workspace, file_id, ["alpha"])
     await _concepts(workspace, file_id, {"ATP": [f"{file_id}_c0"]})
+    content_id = workspace.scalar(
+        "SELECT content_id FROM rag_file_contents WHERE file_id = %s", (file_id,)
+    )
 
     workspace.scalar("DELETE FROM files WHERE id = %s RETURNING id", (file_id,))
 
     assert (
         workspace.scalar(
-            "SELECT count(*) FROM rag_chunks WHERE file_id = %s", (file_id,)
+            "SELECT count(*) FROM rag_chunks WHERE content_id = %s", (content_id,)
         )
         == 0
     )
     assert (
         workspace.scalar(
-            "SELECT count(*) FROM rag_concept_mentions WHERE file_id = %s", (file_id,)
+            "SELECT count(*) FROM rag_concept_mentions m JOIN rag_chunks c "
+            "ON c.id = m.chunk_id WHERE c.content_id = %s",
+            (content_id,),
+        )
+        == 0
+    )
+    assert (
+        workspace.scalar(
+            "SELECT count(*) FROM rag_concepts WHERE workspace_id = %s", (workspace.id,)
         )
         == 0
     )

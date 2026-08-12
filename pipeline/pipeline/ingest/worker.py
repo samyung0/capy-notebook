@@ -187,12 +187,13 @@ async def _caption_figures(content_list: list[dict], raw_dir: Path, name: str) -
     """
     import base64
 
+    from PIL import Image, UnidentifiedImageError
+
     from ..retrieval import models
 
-    captioned = 0
+    candidates: list[tuple[float, int, dict, Path]] = []
+    seen_paths: set[Path] = set()
     for item in content_list:
-        if captioned >= cfg.caption_max_per_file:
-            break
         if not isinstance(item, dict) or item.get("type") != "image":
             continue
         if item.get("image_caption") or item.get("description"):
@@ -201,16 +202,42 @@ async def _caption_figures(content_list: list[dict], raw_dir: Path, name: str) -
         if not img_path:
             continue
         target = raw_dir.joinpath(*Path(img_path).parts)
-        if not target.is_file():
+        if not target.is_file() or target in seen_paths or target.stat().st_size < 4096:
             continue
+        seen_paths.add(target)
+        try:
+            with Image.open(target) as image:
+                width, height = image.size
+        except (OSError, UnidentifiedImageError):
+            continue
+        if (
+            width < 160
+            or height < 120
+            or width * height < 40_000
+            or max(width, height) / max(1, min(width, height)) > 8
+        ):
+            continue
+        bbox = item.get("bbox")
+        page_area = 0.0
+        if isinstance(bbox, list) and len(bbox) == 4:
+            page_area = max(0.0, float(bbox[2]) - float(bbox[0])) * max(
+                0.0, float(bbox[3]) - float(bbox[1])
+            )
+            if page_area < 12_000:
+                continue
+        candidates.append((page_area, width * height, item, target))
+
+    candidates.sort(key=lambda candidate: (candidate[0], candidate[1]), reverse=True)
+    for _, _, item, target in candidates[: cfg.caption_max_per_file]:
         encoded = base64.b64encode(target.read_bytes()).decode()
         suffix = target.suffix.lstrip(".").lower() or "png"
+        if suffix == "jpg":
+            suffix = "jpeg"
         described = await models.caption_image(
             f"data:image/{suffix};base64,{encoded}", name
         )
         if described:
             item["description"] = described
-            captioned += 1
 
 
 # ------------------------------------------------------------------- jobs
@@ -255,12 +282,24 @@ async def process_ingest_job(job: dict) -> None:
         raise RuntimeError("parse produced no indexable content")
 
     digest = indexing.content_hash(chunks)
-    twin = await store.content_hash_owner(ws, digest)
-    if twin and twin["id"] != file_id:
-        # The same document uploaded twice. Both files stay (the user can see
-        # and delete each), but indexing it again would double every passage in
-        # every result set.
-        note = f"{name}: identical to {twin['name']}; reusing its index."
+    association = await store.attach_file_content(
+        workspace_id=ws, file_id=file_id, content_hash=digest
+    )
+    while not association["created"] and not association["ready"]:
+        # Another worker owns this content. Wait for its atomic ready marker;
+        # if it fails, its cleanup removes the row and this upload can claim it.
+        await asyncio.sleep(cfg.poll_interval)
+        status = await store.content_status(association["content_id"])
+        if status == "ready":
+            association["ready"] = True
+        elif status is None:
+            association = await store.attach_file_content(
+                workspace_id=ws, file_id=file_id, content_hash=digest
+            )
+
+    if association["ready"]:
+        note = f"{name}: identical content already indexed; reusing its index."
+        await store.mark_workspace_dirty(ws, file_id)
         await asyncio.to_thread(
             _finish_ok,
             file_id,
@@ -275,13 +314,18 @@ async def process_ingest_job(job: dict) -> None:
         progress.publish(ws, file_id, "done", 100, status="ready", message=note)
         return
 
-    result = await indexing.index_file(
-        workspace_id=ws,
-        file_id=file_id,
-        file_name=name,
-        chunks=chunks,
-        on_progress=lambda pct: progress.publish(ws, file_id, "indexing", pct),
-    )
+    try:
+        result = await indexing.index_file(
+            workspace_id=ws,
+            content_id=association["content_id"],
+            file_id=file_id,
+            file_name=name,
+            chunks=chunks,
+            on_progress=lambda pct: progress.publish(ws, file_id, "indexing", pct),
+        )
+    except BaseException:
+        await store.abandon_content(association["content_id"])
+        raise
     await asyncio.to_thread(
         _finish_ok,
         file_id,

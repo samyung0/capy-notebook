@@ -203,9 +203,6 @@ Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L7
   require owner or explicit editor membership. Conversations are private to the
   user who created them, even inside the same workspace.
 - Shared editors who are not members cannot use workspace chat or generation.
-- The legacy non-persistent `POST /api/workspaces/{id}/chat` endpoint is an
-  exception: it allows any requester who can read the workspace. It does not
-  create or expose persisted conversation history.
 - Generated material storage is charged to the workspace owner. The actor is
   recorded as author but does not become storage owner.
 - Inference-credit authorization is currently a placeholder that allows the

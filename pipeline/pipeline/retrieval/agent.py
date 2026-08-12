@@ -171,22 +171,3 @@ def _describe(name: str, args: dict[str, Any]) -> str:
     if name == "generate_material":
         return str(args.get("kind") or "")
     return ""
-
-
-async def answer_once(
-    *, query: str, ctx: ToolContext, model: str
-) -> tuple[str, list[dict[str, Any]]]:
-    """Non-streaming answer: one retrieval, one completion, no tool loop.
-
-    The /chat endpoint exists for callers that cannot stream. Giving it the full
-    loop would make it slow in exactly the situation where nobody is watching
-    tokens arrive, so it stays a single grounded completion.
-    """
-    numbered = tools.remember(ctx, await _prime(ctx, query))
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": query},
-        {"role": "user", "content": _priming_message(numbered)},
-    ]
-    text = await models.complete_text(messages, model=model, temperature=0.4)
-    return text, [p.as_citation() for p in ctx.citations]

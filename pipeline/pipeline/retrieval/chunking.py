@@ -49,11 +49,10 @@ class Chunk:
     page_end: int | None = None
     regions: list[Region] = field(default_factory=list)
 
-    def indexed_text(self, file_name: str) -> str:
-        header = file_name
+    def indexed_text(self) -> str:
         if self.section_path:
-            header = f"{file_name} › {self.section_path}"
-        return f"{header}\n\n{self.text}"
+            return f"{self.section_path}\n\n{self.text}"
+        return self.text
 
 
 @dataclass

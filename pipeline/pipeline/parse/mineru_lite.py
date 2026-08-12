@@ -57,7 +57,6 @@ def _create_task(file_name: str) -> tuple[str, str]:
                 "file_name": file_name,
                 "language": cfg.mineru_lite_language,
                 "enable_table": True,
-                "is_ocr": True,
                 "enable_formula": True,
             },
             timeout=30,

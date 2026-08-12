@@ -24,7 +24,7 @@ Two Python processes share one Postgres schema owned by Go migrations
 | Process | Entry | Role |
 | --- | --- | --- |
 | Ingest worker | `python -m pipeline.ingest.worker` | Claims jobs, parses, chunks, embeds, summarizes, extracts concepts, rolls up summaries |
-| Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat`, `/chat/stream`, `/generate` over the same index |
+| Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate` over the same index |
 
 The Go gateway is the public face: it authenticates the user, proxies chat and
 generate to the retrieval service, and owns material persistence (including the
@@ -54,19 +54,25 @@ The retrieval index is application schema, not pipeline-owned:
 
 | Table | Purpose |
 | --- | --- |
-| `rag_chunks` | Passages: text, heading path, pages/regions, `tsvector`, `halfvec(2560)` |
-| `rag_file_summaries` | Per-file summary + outline, keyed by content fingerprint |
+| `rag_contents` | Canonical parsed content per workspace, unique by parsed-text hash |
+| `rag_file_contents` | Logical file → canonical content aliases |
+| `rag_chunks` | Canonical passages: text, heading path, pages/regions, `tsvector`, `halfvec(2560)` |
+| `rag_content_summaries` | Summary + outline shared by files with identical content |
 | `rag_chapter_summaries` | Rolled up from file summaries; `dirty` flag |
 | `rag_workspace_summaries` | Workspace overview; `dirty` flag |
 | `rag_concepts` | Normalized concept names per workspace |
 | `rag_concept_mentions` | Concept → chunk (and file) links |
 
 All of these FK-cascade from `workspaces` / `files` / `chapters`. Deleting a
-workspace deletes its index; there is no `rag_teardown` job.
+logical file removes its alias; a trigger removes canonical content only after
+its last alias disappears. Deleting a workspace deletes its index; there is no
+`rag_teardown` job.
 
 `files.content_hash` is the sha256 of parsed chunk text. Two uploads of the same
-document in one workspace stay as two file rows the user can see, but only the
-first is indexed.
+document in one workspace stay as two independently selectable/deletable file
+rows, both mapped to one canonical index. Search chooses one in-scope alias for
+each content item, so duplicates do not repeat passages. Deleting either upload
+leaves the other searchable and citable under its own file id and name.
 
 `files.doc_id` is gone. Identity is always `files.id`.
 
@@ -103,7 +109,9 @@ version)` and cached in B2 so retries and clones reuse the GPU result.
 
 Optional VLM figure captioning (`EVO_CAPTION_IMAGES`) writes a description onto
 image blocks before chunking so figures become searchable. Off by default —
-scanned books would otherwise turn into hundreds of vision calls.
+scanned books would otherwise turn into hundreds of vision calls. Before the
+per-file cap, candidates are filtered by byte size, pixel dimensions, pixel
+area, aspect ratio and normalized page area, then ranked by page coverage.
 
 ### Chunking
 
@@ -127,26 +135,30 @@ Korean.
 
 `pipeline/retrieval/indexing.py` is idempotent per file:
 
-1. Embed all `indexed_text` values in provider-sized batches.
-2. Replace that file's `rag_chunks` (delete-then-insert so a shorter re-ingest
-   does not leave a stale tail).
-3. One cheap-model call → file summary; upsert `rag_file_summaries`.
-4. Concept extraction in groups of chunks (not per chunk) → upsert concepts and
+1. Attach the logical file to canonical workspace content by parsed-text hash.
+  If ready content already exists, reuse it without model calls.
+2. Embed all canonical `indexed_text` values in provider-sized batches. These
+  use heading breadcrumbs but not a mutable logical file name.
+3. Replace that content's `rag_chunks` (delete-then-insert so a shorter
+  re-ingest does not leave a stale tail).
+4. One cheap-model call → content summary; upsert `rag_content_summaries`.
+5. Concept extraction in groups of chunks (not per chunk) → upsert concepts and
    mentions. Relation-free by design: co-mention across files is recovered at
    query time.
-5. Mark chapter/workspace summaries dirty and enqueue `summaries_rollup`.
+6. Mark only the file's current chapter plus the workspace dirty and enqueue
+  `summaries_rollup`.
 
-If another ready file in the same workspace already has the same
-`content_hash`, ingest finishes the duplicate as ready without writing a second
-index.
+Concurrent duplicate jobs coordinate on the canonical content row. The creator
+indexes it; other workers wait for its ready marker. A failed creator removes
+the processing claim so a waiting upload can retry.
 
 ### Summary tree maintenance
 
-File summaries are content-keyed. Moving a file between chapters does **not**
-re-summarize the file; a trigger marks the source and destination chapters (and
-the workspace) dirty and enqueues rollup. Rollup rebuilds chapter and workspace
-prose from existing file summaries only, never from raw chunks — that is what
-keeps reorganization cheap.
+Content summaries are shared by identical files. Moving a file between chapters
+does **not** re-summarize it; a trigger marks the source and destination chapters
+(and the workspace) dirty and enqueues rollup. Rollup rebuilds chapter and
+workspace prose from existing content summaries only, never from raw chunks —
+that is what keeps reorganization cheap.
 
 ## Search workflow
 
@@ -182,8 +194,6 @@ Streaming chat (`POST /chat/stream` via the Go gateway):
    tools entirely so the turn cannot end on another tool call with no answer.
 4. SSE events: `tool` (progress), `citations` (once, before tokens), `token`,
    `done` (or `error`).
-5. Non-streaming `/chat` is a single primed completion with no tool loop — for
-   callers that cannot stream.
 
 ### Tools
 
@@ -246,9 +256,11 @@ page via `OpenItem.page` → `FileViewer` → `PdfView`.
 ## Clone and teardown
 
 `CloneWorkspace` copies the retrieval index **in the same transaction** as the
-content: chunks, summaries, concepts, and mentions, remapping file and chapter
-ids. There is no best-effort follow-up call and no `ragCloned` flag — either the
-clone includes the index or the transaction rolls back.
+content: canonical content, aliases, chunks, summaries, concepts, and mentions,
+remapping file, content and chapter ids. Duplicate files remain aliases of one
+content item inside the clone. There is no best-effort follow-up call and no
+`ragCloned` flag — either the clone includes the index or the transaction rolls
+back.
 
 Teardown is the foreign key. Workspace delete cascades; the old `rag_teardown`
 job and pipeline `/workspace/delete` endpoint are gone.
@@ -260,7 +272,7 @@ job and pipeline `/workspace/delete` endpoint are gone.
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material` |
 | Chunk size | `EVO_CHUNK_*` | Character budgets, not tokens |
 | Embedding | `EVO_MODEL_EMBEDDING`, `EMBEDDING_DIM` | Dim must match `halfvec(N)` |
-| Ingest / query models | `EVO_MODEL_EXTRACTION`, `EVO_QUERY_MODEL*` | Flash for ingest, pro by default for chat |
+| Ingest / query models | `EVO_MODEL_EXTRACTION`, `EVO_QUERY_MODEL` | Flash for ingest and chat |
 | Search | `EVO_SEARCH_CANDIDATES`, `EVO_SEARCH_TOP_K`, `EVO_SEARCH_PER_FILE_CAP` | |
 | Agent | `EVO_AGENT_MAX_STEPS` | Cap is the design, not a safety valve |
 | Captions | `EVO_CAPTION_IMAGES`, `EVO_CAPTION_MAX_PER_FILE` | Off by default |

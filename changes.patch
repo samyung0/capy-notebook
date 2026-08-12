@@ -1,0 +1,2071 @@
+diff --git a/.todo b/.todo
+index 664cdb7..7a0deb0 100644
+--- a/.todo
++++ b/.todo
+@@ -36,27 +36,31 @@ low priority:
+ 34. optimize types.ts more, some types like materials shouldnt be manually typed?
+ 35. add layout adjust in editor to make the document smaller or larger in width
+ 
++https://mineru.shmakov.tools/guides/choosing-gpu/
+ high PRIORITIES:
+ 
+-1. track material generations and display progress bar like how filelistitem does it?
+-2. additional configurations like time limit for materi
+-3.  if copy and pasting markdown, render it directly rather than inside a code block (? what determines if a code block gets inserted or not?)
+-4.  in editor we need to use custom tooltips rather than title=xxx, include shortcut as well
+-5.  workspaces tag validation should limit to 5 tags at most
+-6.  set loading state for submit buttons (esp dialogs)
+-7.  enable ordering of doucments within chapters with drag and drop (right now it just drops in the chapter)
+-8.  add icons for common file format
+-9.  enrich the global searches (in the topinsetbar)
++1. dont use mineru cloud platform, we need bbox and image data for captioning, plan: just use modal we have 30 dollars free credit, combine multiple pipeline mode requests into one container (max 8?) if vlm start new per request
++2. add in image filtering and fast image labelling after parsing, only send charts and diagrams to gemini 3.1 flash lite for captioning (how does the credit pricng work for images?). rmb to send surrounding context for captioning hints, use luna max for images, do not put a cap on images, a compressed 720p image is extremely cheap given a 0.2 dollars per 1 million input
++3. marker 2 vs mineru? https://www.marktechpost.com/2026/07/24/datalab-marker-v2-vs-mineru-docling-and-liteparse-benchmark-breakdown/
++4. track material generations and display progress bar like how filelistitem does it?
++5. additional configurations like time limit for materi
++6.  if copy and pasting markdown, render it directly rather than inside a code block (? what determines if a code block gets inserted or not?)
++7.  in editor we need to use custom tooltips rather than title=xxx, include shortcut as well
++8.  workspaces tag validation should limit to 5 tags at most
++9.  set loading state for submit buttons (esp dialogs)
++10. enable ordering of doucments within chapters with drag and drop (right now it just drops in the chapter)
++11. add icons for common file format
++12. enrich the global searches (in the topinsetbar)
+     - workspace names & chapters
+     - files and materials names
+     - calendar event names
+     - tasks title
+     - Remove: thinking space (not worked on yet)
+-10. make the onsuccess invalidate queries async await so awaiting a mutateAsync awaits both the mutate call AND the refetch query call, this is good for UI since loading states spans data mutation + refetch, refetch is where user actually sees the display changes, if loading state exits early, there is a gap between user seeing action finishes and UI updates
+-11. when calling backend, we should always use react hook form paired with zod schema validations (auto generated), the submit button should be disabled when submitDisabled is true (const submitDisabled =
++13. make the onsuccess invalidate queries async await so awaiting a mutateAsync awaits both the mutate call AND the refetch query call, this is good for UI since loading states spans data mutation + refetch, refetch is where user actually sees the display changes, if loading state exits early, there is a gap between user seeing action finishes and UI updates
++14. when calling backend, we should always use react hook form paired with zod schema validations (auto generated), the submit button should be disabled when submitDisabled is true (const submitDisabled =
+     !form.formState.isDirty || !form.formState.isValid || form.formState.isSubmitting;) when error happens inside handleSubmit, a userToast must always show. editing existing resources or creating resources shouldnt need to show toast unless there is minimal to no UI change to let user know the action is successful (e.g. inviting members to workspace, or updaing privacy inside the shareDialog (very minimal select value changes))
+-12. enable website mcp for the LLM so users can ask (summarize file page x to xx or how to answer quiz A question 5), curate list of tools available to workspace chat llm/website convo llm (two different set of tools & context provided since workspace can provide more informations)
+-13. modularize ai models, let user choose what cloud/local models they want to use for different scenarios:
++15. enable website mcp for the LLM so users can ask (summarize file page x to xx or how to answer quiz A question 5), curate list of tools available to workspace chat llm/website convo llm (two different set of tools & context provided since workspace can provide more informations)
++16. modularize ai models, let user choose what cloud/local models they want to use for different scenarios:
+     exhaustive list:
+ 
+ - file parsing
+diff --git a/deploy/.env.example b/deploy/.env.example
+index a9a565d..e016984 100644
+--- a/deploy/.env.example
++++ b/deploy/.env.example
+@@ -21,12 +21,11 @@ OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+ EVO_MODEL_EMBEDDING=qwen/qwen3-embedding-4b
+ EMBEDDING_DIM=2560
+ 
+-# ── Text LLM: DeepSeek (flash for ingest, pro/flash for query) ──────────────
++# ── Text LLM: DeepSeek (flash for query) ────────────────────────────────────
+ DEEPSEEK_API_KEY=
+ DEEPSEEK_BASE_URL=https://api.deepseek.com
+ EVO_MODEL_EXTRACTION=deepseek-v4-pro
+-EVO_QUERY_MODEL=deepseek-v4-pro
+-EVO_QUERY_MODEL_ALT=deepseek-v4-flash
++EVO_QUERY_MODEL=deepseek-v4-flash
+ 
+ # ── Vision / image captions: Gemini (OpenAI-compatible endpoint) ────────────
+ GOOGLE_API_KEY=
+diff --git a/deploy/docker-compose.yml b/deploy/docker-compose.yml
+index e110ba7..f9864ff 100644
+--- a/deploy/docker-compose.yml
++++ b/deploy/docker-compose.yml
+@@ -182,9 +182,7 @@ services:
+       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
+       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+-      # Query keeps both reachable; defaults to pro, flash selectable per request.
+-      EVO_QUERY_MODEL: ${EVO_QUERY_MODEL:-deepseek-v4-pro}
+-      EVO_QUERY_MODEL_ALT: ${EVO_QUERY_MODEL_ALT:-deepseek-v4-flash}
++      EVO_QUERY_MODEL: ${EVO_QUERY_MODEL:-deepseek-v4-flash}
+       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+       GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
+       EVO_MODEL_IMAGE_CAPTION: ${EVO_MODEL_IMAGE_CAPTION:-gemini-3.1-flash-lite-preview}
+diff --git a/modal/mineru_app.py b/modal/mineru_app.py
+index 0a46bf7..fc39bf1 100644
+--- a/modal/mineru_app.py
++++ b/modal/mineru_app.py
+@@ -85,7 +85,7 @@ image = (
+     # OCR. Capped below 3.5 so a redeploy can't silently pull a new major that
+     # changes backend names or the aio_do_parse contract this app depends on.
+     .pip_install(
+-        "mineru[all]>=3.4.3,<3.5",
++        "mineru[all]>=3.4.4,<3.5",
+         "fastapi[standard]",
+         "python-multipart",
+         "requests>=2.31",
+diff --git a/openwiki/agentic-retrieval.md b/openwiki/agentic-retrieval.md
+index 69ebfc6..81e1281 100644
+--- a/openwiki/agentic-retrieval.md
++++ b/openwiki/agentic-retrieval.md
+@@ -24,7 +24,7 @@ Two Python processes share one Postgres schema owned by Go migrations
+ | Process | Entry | Role |
+ | --- | --- | --- |
+ | Ingest worker | `python -m pipeline.ingest.worker` | Claims jobs, parses, chunks, embeds, summarizes, extracts concepts, rolls up summaries |
+-| Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat`, `/chat/stream`, `/generate` over the same index |
++| Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate` over the same index |
+ 
+ The Go gateway is the public face: it authenticates the user, proxies chat and
+ generate to the retrieval service, and owns material persistence (including the
+@@ -54,19 +54,25 @@ The retrieval index is application schema, not pipeline-owned:
+ 
+ | Table | Purpose |
+ | --- | --- |
+-| `rag_chunks` | Passages: text, heading path, pages/regions, `tsvector`, `halfvec(2560)` |
+-| `rag_file_summaries` | Per-file summary + outline, keyed by content fingerprint |
++| `rag_contents` | Canonical parsed content per workspace, unique by parsed-text hash |
++| `rag_file_contents` | Logical file → canonical content aliases |
++| `rag_chunks` | Canonical passages: text, heading path, pages/regions, `tsvector`, `halfvec(2560)` |
++| `rag_content_summaries` | Summary + outline shared by files with identical content |
+ | `rag_chapter_summaries` | Rolled up from file summaries; `dirty` flag |
+ | `rag_workspace_summaries` | Workspace overview; `dirty` flag |
+ | `rag_concepts` | Normalized concept names per workspace |
+ | `rag_concept_mentions` | Concept → chunk (and file) links |
+ 
+ All of these FK-cascade from `workspaces` / `files` / `chapters`. Deleting a
+-workspace deletes its index; there is no `rag_teardown` job.
++logical file removes its alias; a trigger removes canonical content only after
++its last alias disappears. Deleting a workspace deletes its index; there is no
++`rag_teardown` job.
+ 
+ `files.content_hash` is the sha256 of parsed chunk text. Two uploads of the same
+-document in one workspace stay as two file rows the user can see, but only the
+-first is indexed.
++document in one workspace stay as two independently selectable/deletable file
++rows, both mapped to one canonical index. Search chooses one in-scope alias for
++each content item, so duplicates do not repeat passages. Deleting either upload
++leaves the other searchable and citable under its own file id and name.
+ 
+ `files.doc_id` is gone. Identity is always `files.id`.
+ 
+@@ -103,7 +109,9 @@ version)` and cached in B2 so retries and clones reuse the GPU result.
+ 
+ Optional VLM figure captioning (`EVO_CAPTION_IMAGES`) writes a description onto
+ image blocks before chunking so figures become searchable. Off by default —
+-scanned books would otherwise turn into hundreds of vision calls.
++scanned books would otherwise turn into hundreds of vision calls. Before the
++per-file cap, candidates are filtered by byte size, pixel dimensions, pixel
++area, aspect ratio and normalized page area, then ranked by page coverage.
+ 
+ ### Chunking
+ 
+@@ -127,26 +135,30 @@ Korean.
+ 
+ `pipeline/retrieval/indexing.py` is idempotent per file:
+ 
+-1. Embed all `indexed_text` values in provider-sized batches.
+-2. Replace that file's `rag_chunks` (delete-then-insert so a shorter re-ingest
+-   does not leave a stale tail).
+-3. One cheap-model call → file summary; upsert `rag_file_summaries`.
+-4. Concept extraction in groups of chunks (not per chunk) → upsert concepts and
++1. Attach the logical file to canonical workspace content by parsed-text hash.
++  If ready content already exists, reuse it without model calls.
++2. Embed all canonical `indexed_text` values in provider-sized batches. These
++  use heading breadcrumbs but not a mutable logical file name.
++3. Replace that content's `rag_chunks` (delete-then-insert so a shorter
++  re-ingest does not leave a stale tail).
++4. One cheap-model call → content summary; upsert `rag_content_summaries`.
++5. Concept extraction in groups of chunks (not per chunk) → upsert concepts and
+    mentions. Relation-free by design: co-mention across files is recovered at
+    query time.
+-5. Mark chapter/workspace summaries dirty and enqueue `summaries_rollup`.
++6. Mark only the file's current chapter plus the workspace dirty and enqueue
++  `summaries_rollup`.
+ 
+-If another ready file in the same workspace already has the same
+-`content_hash`, ingest finishes the duplicate as ready without writing a second
+-index.
++Concurrent duplicate jobs coordinate on the canonical content row. The creator
++indexes it; other workers wait for its ready marker. A failed creator removes
++the processing claim so a waiting upload can retry.
+ 
+ ### Summary tree maintenance
+ 
+-File summaries are content-keyed. Moving a file between chapters does **not**
+-re-summarize the file; a trigger marks the source and destination chapters (and
+-the workspace) dirty and enqueues rollup. Rollup rebuilds chapter and workspace
+-prose from existing file summaries only, never from raw chunks — that is what
+-keeps reorganization cheap.
++Content summaries are shared by identical files. Moving a file between chapters
++does **not** re-summarize it; a trigger marks the source and destination chapters
++(and the workspace) dirty and enqueues rollup. Rollup rebuilds chapter and
++workspace prose from existing content summaries only, never from raw chunks —
++that is what keeps reorganization cheap.
+ 
+ ## Search workflow
+ 
+@@ -182,8 +194,6 @@ Streaming chat (`POST /chat/stream` via the Go gateway):
+    tools entirely so the turn cannot end on another tool call with no answer.
+ 4. SSE events: `tool` (progress), `citations` (once, before tokens), `token`,
+    `done` (or `error`).
+-5. Non-streaming `/chat` is a single primed completion with no tool loop — for
+-   callers that cannot stream.
+ 
+ ### Tools
+ 
+@@ -246,9 +256,11 @@ page via `OpenItem.page` → `FileViewer` → `PdfView`.
+ ## Clone and teardown
+ 
+ `CloneWorkspace` copies the retrieval index **in the same transaction** as the
+-content: chunks, summaries, concepts, and mentions, remapping file and chapter
+-ids. There is no best-effort follow-up call and no `ragCloned` flag — either the
+-clone includes the index or the transaction rolls back.
++content: canonical content, aliases, chunks, summaries, concepts, and mentions,
++remapping file, content and chapter ids. Duplicate files remain aliases of one
++content item inside the clone. There is no best-effort follow-up call and no
++`ragCloned` flag — either the clone includes the index or the transaction rolls
++back.
+ 
+ Teardown is the foreign key. Workspace delete cascades; the old `rag_teardown`
+ job and pipeline `/workspace/delete` endpoint are gone.
+@@ -260,7 +272,7 @@ job and pipeline `/workspace/delete` endpoint are gone.
+ | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material` |
+ | Chunk size | `EVO_CHUNK_*` | Character budgets, not tokens |
+ | Embedding | `EVO_MODEL_EMBEDDING`, `EMBEDDING_DIM` | Dim must match `halfvec(N)` |
+-| Ingest / query models | `EVO_MODEL_EXTRACTION`, `EVO_QUERY_MODEL*` | Flash for ingest, pro by default for chat |
++| Ingest / query models | `EVO_MODEL_EXTRACTION`, `EVO_QUERY_MODEL` | Flash for ingest and chat |
+ | Search | `EVO_SEARCH_CANDIDATES`, `EVO_SEARCH_TOP_K`, `EVO_SEARCH_PER_FILE_CAP` | |
+ | Agent | `EVO_AGENT_MAX_STEPS` | Cap is the design, not a safety valve |
+ | Captions | `EVO_CAPTION_IMAGES`, `EVO_CAPTION_MAX_PER_FILE` | Off by default |
+diff --git a/openwiki/authorization-permissions-lifecycles.md b/openwiki/authorization-permissions-lifecycles.md
+index 631f870..da02cf8 100644
+--- a/openwiki/authorization-permissions-lifecycles.md
++++ b/openwiki/authorization-permissions-lifecycles.md
+@@ -203,9 +203,6 @@ Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L7
+   require owner or explicit editor membership. Conversations are private to the
+   user who created them, even inside the same workspace.
+ - Shared editors who are not members cannot use workspace chat or generation.
+-- The legacy non-persistent `POST /api/workspaces/{id}/chat` endpoint is an
+-  exception: it allows any requester who can read the workspace. It does not
+-  create or expose persisted conversation history.
+ - Generated material storage is charged to the workspace owner. The actor is
+   recorded as author but does not become storage owner.
+ - Inference-credit authorization is currently a placeholder that allows the
+diff --git a/openwiki/test-catalog.md b/openwiki/test-catalog.md
+index 82763fa..2b9ae8a 100644
+--- a/openwiki/test-catalog.md
++++ b/openwiki/test-catalog.md
+@@ -17,7 +17,7 @@ at the top of each section.
+ | Collaboration Vitest | `pnpm test:collaboration` |
+ | Cloudflare MinerU relay | `pnpm test:cloudflare-relay` |
+ | Go server | `pnpm test:go` |
+-| Python pipeline | `pnpm pipeline:test` / offline: `pnpm pipeline:test:offline` |
++| Python pipeline | `pnpm test:pipeline` / offline: `pnpm test:pipeline:offline` |
+ | Playwright sharing/API e2e | `pnpm e2e` |
+ | Playwright editor (MSW) | `pnpm e2e:editor` |
+ | Playwright editor perf | `pnpm perf` |
+@@ -161,10 +161,11 @@ See also [`pipeline-tests.md`](pipeline-tests.md) for disposable Postgres/Redis
+ | [`pipeline/tests/test_chunking.py`](../pipeline/tests/test_chunking.py) | Heading breadcrumbs, page/bbox regions, table/equation/figure handling, oversized-block splitting, CJK bigram tokenizer. |
+ | [`pipeline/tests/test_generate.py`](../pipeline/tests/test_generate.py) | Cassette: even scope coverage, file filtering, and flashcard/quiz JSON surviving into the runner shape. |
+ | [`pipeline/tests/test_ingest_query.py`](../pipeline/tests/test_ingest_query.py) | Cassette: index → search → grounded cited answer, re-index convergence, scope confinement, cross-document concepts, cascade teardown. |
++| [`pipeline/tests/test_ingest_worker.py`](../pipeline/tests/test_ingest_worker.py) | Offline caption candidate filtering, page-area ranking, and per-file cap. |
+ | [`pipeline/tests/test_mineru_lite.py`](../pipeline/tests/test_mineru_lite.py) | MinerU blob parse relay+retry vs legacy local path without relay. |
+ | [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py) | Artifact addressing/caching, rejection of traversal, checksum, version and source mismatches, corrupt-cache recovery. |
+ | [`pipeline/tests/test_retrieval_helpers.py`](../pipeline/tests/test_retrieval_helpers.py) | Tool scope narrowing, stable citation numbering, per-file diversity cap, JSON extraction and question normalization. |
+-| [`pipeline/tests/test_store_sql.py`](../pipeline/tests/test_store_sql.py) | Docker (no model calls): hybrid search halves, CJK recall, scoping, concept co-mention, summary-dirty trigger, cascades. |
++| [`pipeline/tests/test_store_sql.py`](../pipeline/tests/test_store_sql.py) | Docker (no model calls): hybrid search halves, CJK recall, scoping, canonical duplicate ownership/deletion, concept co-mention, narrow summary invalidation, cascades. |
+ 
+ ---
+ 
+diff --git a/package.json b/package.json
+index 37d24ff..10dbc2c 100644
+--- a/package.json
++++ b/package.json
+@@ -114,11 +114,13 @@
+     "preview": "vite preview",
+     "fmt": "biome format --write .",
+     "fmt:go": "cd server && go fmt ./...",
+-    "fmt:py": "uv run --with ruff ruff format pipeline && uv run --with ruff ruff check --fix pipeline",
++    "fmt:py": "uv --native-tls run --with ruff ruff format pipeline && uv --native-tls run --with ruff ruff check --fix pipeline",
+     "typecheck": "tsc -b --noEmit",
+     "test": "vitest run --dir src",
+     "test:collaboration": "vitest run --dir collaboration",
+     "test:cloudflare-relay": "node --test cloudflare/mineru-relay/test/*.test.js",
++    "test:pipeline": "uv --native-tls run --extra test pytest",
++    "test:pipeline:offline": "uv --native-tls run --extra test pytest -q -m \"not cassette and not integration\"",
+     "test:go": "cd server && go run gotest.tools/gotestsum@v1.12.3 --format=testdox -- -p 1 ./...",
+     "e2e": "playwright test",
+     "e2e:ui": "playwright test --ui",
+@@ -138,9 +140,7 @@
+     "gen:api:clean": "node scripts/clean-api-gen.mjs",
+     "gen:api:msw": "pnpm gen:openapi && pnpm gen:api",
+     "gen:api:watch": "pnpm gen:api:clean && orval --watch",
+-    "fix": "ultracite fix",
+-    "pipeline:test": "uv run --extra test pytest",
+-    "pipeline:test:offline": "uv run --extra test pytest -q -m \"not cassette and not integration\""
++    "fix": "ultracite fix"
+   },
+   "type": "module",
+   "version": "0.1.0",
+diff --git a/pipeline/.env.example b/pipeline/.env.example
+index 16d3c5c..16bfbac 100644
+--- a/pipeline/.env.example
++++ b/pipeline/.env.example
+@@ -56,11 +56,9 @@ EMBEDDING_DIM=2560
+ # ── Text LLM: DeepSeek (OpenAI-compatible) ──────────────────────────────────
+ DEEPSEEK_API_KEY=
+ DEEPSEEK_BASE_URL=https://api.deepseek.com
+-# Summaries and concept extraction use the cheap model; query defaults to pro
+-# with flash selectable per request.
++# Summaries, concept extraction, and queries use the flash model.
+ EVO_MODEL_EXTRACTION=deepseek-v4-flash
+-EVO_QUERY_MODEL=deepseek-v4-pro
+-EVO_QUERY_MODEL_ALT=deepseek-v4-flash
++EVO_QUERY_MODEL=deepseek-v4-flash
+ 
+ # ── Retrieval tuning ────────────────────────────────────────────────────────
+ # EVO_SEARCH_CANDIDATES=40    # per-branch candidates before rank fusion
+diff --git a/pipeline/pipeline/config.py b/pipeline/pipeline/config.py
+index 59c438a..ac6c2c8 100644
+--- a/pipeline/pipeline/config.py
++++ b/pipeline/pipeline/config.py
+@@ -91,11 +91,9 @@ class Config:
+         api_key=_env("DEEPSEEK_API_KEY"),
+         base_url=_env("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+     )
+-    # Summaries and concept extraction are fixed to the cheap model.
++    # Summaries, queries, generation, and editor AI use the flash model.
+     ingest_model: str = _env("EVO_MODEL_EXTRACTION", "deepseek-v4-flash")
+-    # Query keeps both reachable; defaults to pro, flash selectable per request.
+-    query_model: str = _env("EVO_QUERY_MODEL", "deepseek-v4-pro")
+-    query_model_alt: str = _env("EVO_QUERY_MODEL_ALT", "deepseek-v4-flash")
++    query_model: str = _env("EVO_QUERY_MODEL", "deepseek-v4-flash")
+ 
+     # ---- retrieval --------------------------------------------------------
+     search_candidates: int = int(_env("EVO_SEARCH_CANDIDATES", "40"))
+@@ -135,7 +133,7 @@ class Config:
+     @property
+     def query_models(self) -> set[str]:
+         """Models the retrieval service is allowed to dispatch to."""
+-        return {m for m in (self.query_model, self.query_model_alt) if m}
++        return {self.query_model} if self.query_model else set()
+ 
+ 
+ cfg = Config()
+diff --git a/pipeline/pipeline/ingest/worker.py b/pipeline/pipeline/ingest/worker.py
+index 2b8f712..60d1c3c 100644
+--- a/pipeline/pipeline/ingest/worker.py
++++ b/pipeline/pipeline/ingest/worker.py
+@@ -187,12 +187,13 @@ async def _caption_figures(content_list: list[dict], raw_dir: Path, name: str) -
+     """
+     import base64
+ 
++    from PIL import Image, UnidentifiedImageError
++
+     from ..retrieval import models
+ 
+-    captioned = 0
++    candidates: list[tuple[float, int, dict, Path]] = []
++    seen_paths: set[Path] = set()
+     for item in content_list:
+-        if captioned >= cfg.caption_max_per_file:
+-            break
+         if not isinstance(item, dict) or item.get("type") != "image":
+             continue
+         if item.get("image_caption") or item.get("description"):
+@@ -201,16 +202,42 @@ async def _caption_figures(content_list: list[dict], raw_dir: Path, name: str) -
+         if not img_path:
+             continue
+         target = raw_dir.joinpath(*Path(img_path).parts)
+-        if not target.is_file():
++        if not target.is_file() or target in seen_paths or target.stat().st_size < 4096:
++            continue
++        seen_paths.add(target)
++        try:
++            with Image.open(target) as image:
++                width, height = image.size
++        except (OSError, UnidentifiedImageError):
++            continue
++        if (
++            width < 160
++            or height < 120
++            or width * height < 40_000
++            or max(width, height) / max(1, min(width, height)) > 8
++        ):
+             continue
++        bbox = item.get("bbox")
++        page_area = 0.0
++        if isinstance(bbox, list) and len(bbox) == 4:
++            page_area = max(0.0, float(bbox[2]) - float(bbox[0])) * max(
++                0.0, float(bbox[3]) - float(bbox[1])
++            )
++            if page_area < 12_000:
++                continue
++        candidates.append((page_area, width * height, item, target))
++
++    candidates.sort(key=lambda candidate: (candidate[0], candidate[1]), reverse=True)
++    for _, _, item, target in candidates[: cfg.caption_max_per_file]:
+         encoded = base64.b64encode(target.read_bytes()).decode()
+         suffix = target.suffix.lstrip(".").lower() or "png"
++        if suffix == "jpg":
++            suffix = "jpeg"
+         described = await models.caption_image(
+             f"data:image/{suffix};base64,{encoded}", name
+         )
+         if described:
+             item["description"] = described
+-            captioned += 1
+ 
+ 
+ # ------------------------------------------------------------------- jobs
+@@ -255,12 +282,24 @@ async def process_ingest_job(job: dict) -> None:
+         raise RuntimeError("parse produced no indexable content")
+ 
+     digest = indexing.content_hash(chunks)
+-    twin = await store.content_hash_owner(ws, digest)
+-    if twin and twin["id"] != file_id:
+-        # The same document uploaded twice. Both files stay (the user can see
+-        # and delete each), but indexing it again would double every passage in
+-        # every result set.
+-        note = f"{name}: identical to {twin['name']}; reusing its index."
++    association = await store.attach_file_content(
++        workspace_id=ws, file_id=file_id, content_hash=digest
++    )
++    while not association["created"] and not association["ready"]:
++        # Another worker owns this content. Wait for its atomic ready marker;
++        # if it fails, its cleanup removes the row and this upload can claim it.
++        await asyncio.sleep(cfg.poll_interval)
++        status = await store.content_status(association["content_id"])
++        if status == "ready":
++            association["ready"] = True
++        elif status is None:
++            association = await store.attach_file_content(
++                workspace_id=ws, file_id=file_id, content_hash=digest
++            )
++
++    if association["ready"]:
++        note = f"{name}: identical content already indexed; reusing its index."
++        await store.mark_workspace_dirty(ws, file_id)
+         await asyncio.to_thread(
+             _finish_ok,
+             file_id,
+@@ -275,13 +314,18 @@ async def process_ingest_job(job: dict) -> None:
+         progress.publish(ws, file_id, "done", 100, status="ready", message=note)
+         return
+ 
+-    result = await indexing.index_file(
+-        workspace_id=ws,
+-        file_id=file_id,
+-        file_name=name,
+-        chunks=chunks,
+-        on_progress=lambda pct: progress.publish(ws, file_id, "indexing", pct),
+-    )
++    try:
++        result = await indexing.index_file(
++            workspace_id=ws,
++            content_id=association["content_id"],
++            file_id=file_id,
++            file_name=name,
++            chunks=chunks,
++            on_progress=lambda pct: progress.publish(ws, file_id, "indexing", pct),
++        )
++    except BaseException:
++        await store.abandon_content(association["content_id"])
++        raise
+     await asyncio.to_thread(
+         _finish_ok,
+         file_id,
+diff --git a/pipeline/pipeline/parse/mineru_lite.py b/pipeline/pipeline/parse/mineru_lite.py
+index 5851122..8241e9f 100644
+--- a/pipeline/pipeline/parse/mineru_lite.py
++++ b/pipeline/pipeline/parse/mineru_lite.py
+@@ -57,7 +57,6 @@ def _create_task(file_name: str) -> tuple[str, str]:
+                 "file_name": file_name,
+                 "language": cfg.mineru_lite_language,
+                 "enable_table": True,
+-                "is_ocr": True,
+                 "enable_formula": True,
+             },
+             timeout=30,
+diff --git a/pipeline/pipeline/retrieval/agent.py b/pipeline/pipeline/retrieval/agent.py
+index f6cd617..e5b5984 100644
+--- a/pipeline/pipeline/retrieval/agent.py
++++ b/pipeline/pipeline/retrieval/agent.py
+@@ -171,22 +171,3 @@ def _describe(name: str, args: dict[str, Any]) -> str:
+     if name == "generate_material":
+         return str(args.get("kind") or "")
+     return ""
+-
+-
+-async def answer_once(
+-    *, query: str, ctx: ToolContext, model: str
+-) -> tuple[str, list[dict[str, Any]]]:
+-    """Non-streaming answer: one retrieval, one completion, no tool loop.
+-
+-    The /chat endpoint exists for callers that cannot stream. Giving it the full
+-    loop would make it slow in exactly the situation where nobody is watching
+-    tokens arrive, so it stays a single grounded completion.
+-    """
+-    numbered = tools.remember(ctx, await _prime(ctx, query))
+-    messages = [
+-        {"role": "system", "content": SYSTEM_PROMPT},
+-        {"role": "user", "content": query},
+-        {"role": "user", "content": _priming_message(numbered)},
+-    ]
+-    text = await models.complete_text(messages, model=model, temperature=0.4)
+-    return text, [p.as_citation() for p in ctx.citations]
+diff --git a/pipeline/pipeline/retrieval/chunking.py b/pipeline/pipeline/retrieval/chunking.py
+index d8e0090..bae8709 100644
+--- a/pipeline/pipeline/retrieval/chunking.py
++++ b/pipeline/pipeline/retrieval/chunking.py
+@@ -49,11 +49,10 @@ class Chunk:
+     page_end: int | None = None
+     regions: list[Region] = field(default_factory=list)
+ 
+-    def indexed_text(self, file_name: str) -> str:
+-        header = file_name
++    def indexed_text(self) -> str:
+         if self.section_path:
+-            header = f"{file_name} › {self.section_path}"
+-        return f"{header}\n\n{self.text}"
++            return f"{self.section_path}\n\n{self.text}"
++        return self.text
+ 
+ 
+ @dataclass
+diff --git a/pipeline/pipeline/retrieval/indexing.py b/pipeline/pipeline/retrieval/indexing.py
+index 0da26bc..08804db 100644
+--- a/pipeline/pipeline/retrieval/indexing.py
++++ b/pipeline/pipeline/retrieval/indexing.py
+@@ -36,20 +36,21 @@ def content_hash(chunks: list[Chunk]) -> str:
+ async def index_file(
+     *,
+     workspace_id: str,
++    content_id: str,
+     file_id: str,
+     file_name: str,
+     chunks: list[Chunk],
+     on_progress=None,
+ ) -> dict[str, Any]:
+-    """Write chunks, the file summary and the concept mentions for one file."""
++    """Write chunks, summary and concepts for canonical parsed content."""
+     if not chunks:
+-        await store.replace_file_chunks(
+-            workspace_id=workspace_id, file_id=file_id, rows=[]
++        await store.replace_content_chunks(
++            workspace_id=workspace_id, content_id=content_id, rows=[]
+         )
+         return {"chunks": 0, "concepts": 0}
+ 
+     fingerprint = content_hash(chunks)
+-    indexed = [chunk.indexed_text(file_name) for chunk in chunks]
++    indexed = [chunk.indexed_text() for chunk in chunks]
+     vectors = await models.embed(indexed)
+     if on_progress:
+         on_progress(70)
+@@ -75,26 +76,27 @@ async def index_file(
+                 "embedding": store.vector_literal(vector),
+             }
+         )
+-    await store.replace_file_chunks(
+-        workspace_id=workspace_id, file_id=file_id, rows=rows
++    await store.replace_content_chunks(
++        workspace_id=workspace_id, content_id=content_id, rows=rows
+     )
+     if on_progress:
+         on_progress(85)
+ 
+     summary = await summarize_file(file_name, chunks)
+-    await store.upsert_file_summary(
++    await store.upsert_content_summary(
+         workspace_id=workspace_id,
+-        file_id=file_id,
++        content_id=content_id,
+         fingerprint=fingerprint,
+         summary=summary,
+         outline=outline_from_chunks(chunks),
+     )
+ 
+     concepts = await extract_concepts(file_name, chunks, rows)
+-    await store.replace_file_concepts(
+-        workspace_id=workspace_id, file_id=file_id, concepts=concepts
++    await store.replace_content_concepts(
++        workspace_id=workspace_id, content_id=content_id, concepts=concepts
+     )
+-    await store.mark_workspace_dirty(workspace_id)
++    await store.mark_content_ready(content_id)
++    await store.mark_workspace_dirty(workspace_id, file_id)
+     if on_progress:
+         on_progress(95)
+     return {"chunks": len(rows), "concepts": len(concepts), "fingerprint": fingerprint}
+diff --git a/pipeline/pipeline/retrieval/models.py b/pipeline/pipeline/retrieval/models.py
+index e6dd15a..9d090b5 100644
+--- a/pipeline/pipeline/retrieval/models.py
++++ b/pipeline/pipeline/retrieval/models.py
+@@ -4,7 +4,7 @@ Routing:
+ - embedding   -> OpenRouter ``qwen/qwen3-embedding-4b`` (dim pinned to the
+                  halfvec column width)
+ - ingest LLM  -> DeepSeek flash (summaries, concepts, map-reduce steps)
+-- query LLM   -> DeepSeek, pro by default, flash selectable per request
++- query LLM   -> DeepSeek flash (the only configured query model)
+ - vision      -> Gemini (DeepSeek is text-only), for figure captions
+ """
+ 
+@@ -35,6 +35,8 @@ def client(provider: ProviderCfg) -> AsyncOpenAI:
+ 
+ 
+ def resolve_query_model(requested: str | None) -> str:
++    # Keep accepting the optional request field for API compatibility, but do
++    # not allow callers to select a second model.
+     return requested if requested in cfg.query_models else cfg.query_model
+ 
+ 
+diff --git a/pipeline/pipeline/retrieval/store.py b/pipeline/pipeline/retrieval/store.py
+index 314336d..092bbfd 100644
+--- a/pipeline/pipeline/retrieval/store.py
++++ b/pipeline/pipeline/retrieval/store.py
+@@ -9,6 +9,7 @@ from __future__ import annotations
+ 
+ import json
+ import logging
++import secrets
+ from typing import Any
+ 
+ from psycopg.rows import dict_row
+@@ -51,10 +52,85 @@ def vector_literal(values: list[float]) -> str:
+ # --------------------------------------------------------------- chunk writes
+ 
+ 
+-async def replace_file_chunks(
+-    *, workspace_id: str, file_id: str, rows: list[dict[str, Any]]
++async def attach_file_content(
++    *, workspace_id: str, file_id: str, content_hash: str
++) -> dict[str, Any]:
++    """Attach a logical file to canonical workspace content."""
++    content_id = f"rgc_{secrets.token_hex(8)}"
++    db = await pool()
++    async with db.connection() as conn, conn.transaction():
++        cur = await conn.execute(
++            """
++            INSERT INTO rag_contents (id, workspace_id, content_hash, status)
++            VALUES (%s, %s, %s, 'processing')
++            ON CONFLICT (workspace_id, content_hash) DO NOTHING
++            RETURNING id, status
++            """,
++            (content_id, workspace_id, content_hash),
++        )
++        row = await cur.fetchone()
++        created = row is not None
++        if row is None:
++            cur = await conn.execute(
++                """
++                SELECT id, status FROM rag_contents
++                WHERE workspace_id = %s AND content_hash = %s
++                FOR UPDATE
++                """,
++                (workspace_id, content_hash),
++            )
++            row = await cur.fetchone()
++        if row is None:
++            raise RuntimeError("canonical retrieval content disappeared")
++        await conn.execute(
++            """
++            INSERT INTO rag_file_contents (file_id, workspace_id, content_id)
++            VALUES (%s, %s, %s)
++            ON CONFLICT (file_id) DO UPDATE SET
++                workspace_id = EXCLUDED.workspace_id,
++                content_id = EXCLUDED.content_id
++            """,
++            (file_id, workspace_id, row["id"]),
++        )
++        return {
++            "content_id": row["id"],
++            "ready": row["status"] == "ready",
++            "created": created,
++        }
++
++
++async def mark_content_ready(content_id: str) -> None:
++    db = await pool()
++    async with db.connection() as conn:
++        await conn.execute(
++            "UPDATE rag_contents SET status = 'ready' WHERE id = %s", (content_id,)
++        )
++
++
++async def content_status(content_id: str) -> str | None:
++    db = await pool()
++    async with db.connection() as conn:
++        cur = await conn.execute(
++            "SELECT status FROM rag_contents WHERE id = %s", (content_id,)
++        )
++        row = await cur.fetchone()
++        return str(row["status"]) if row else None
++
++
++async def abandon_content(content_id: str) -> None:
++    """Release a failed indexing claim so another upload can retry it."""
++    db = await pool()
++    async with db.connection() as conn:
++        await conn.execute(
++            "DELETE FROM rag_contents WHERE id = %s AND status = 'processing'",
++            (content_id,),
++        )
++
++
++async def replace_content_chunks(
++    *, workspace_id: str, content_id: str, rows: list[dict[str, Any]]
+ ) -> None:
+-    """Swap in a file's chunks atomically.
++    """Swap in canonical content chunks atomically.
+ 
+     Delete-then-insert rather than upsert-by-index: a re-ingest that produces
+     fewer chunks must not leave the tail of the previous run behind, and the
+@@ -63,16 +139,18 @@ async def replace_file_chunks(
+     """
+     db = await pool()
+     async with db.connection() as conn, conn.transaction():
+-        await conn.execute("DELETE FROM rag_chunks WHERE file_id = %s", (file_id,))
++        await conn.execute(
++            "DELETE FROM rag_chunks WHERE content_id = %s", (content_id,)
++        )
+         for row in rows:
+             await conn.execute(
+                 """
+                     INSERT INTO rag_chunks (
+-                        id, workspace_id, file_id, chunk_idx, section_path, text,
++                        id, workspace_id, content_id, chunk_idx, section_path, text,
+                         indexed_text, token_count, page_start, page_end, regions,
+                         search, embedding
+                     ) VALUES (
+-                        %(id)s, %(workspace_id)s, %(file_id)s, %(chunk_idx)s,
++                        %(id)s, %(workspace_id)s, %(content_id)s, %(chunk_idx)s,
+                         %(section_path)s, %(text)s, %(indexed_text)s, %(token_count)s,
+                         %(page_start)s, %(page_end)s, %(regions)s,
+                         to_tsvector('simple', %(search_text)s), %(embedding)s::halfvec
+@@ -81,16 +159,16 @@ async def replace_file_chunks(
+                 {
+                     **row,
+                     "workspace_id": workspace_id,
+-                    "file_id": file_id,
++                    "content_id": content_id,
+                     "regions": Jsonb(row["regions"]),
+                 },
+             )
+ 
+ 
+-async def upsert_file_summary(
++async def upsert_content_summary(
+     *,
+     workspace_id: str,
+-    file_id: str,
++    content_id: str,
+     fingerprint: str,
+     summary: str,
+     outline: list[dict[str, Any]],
+@@ -99,34 +177,35 @@ async def upsert_file_summary(
+     async with db.connection() as conn:
+         await conn.execute(
+             """
+-            INSERT INTO rag_file_summaries
+-                (file_id, workspace_id, fingerprint, summary, outline, updated_at)
++            INSERT INTO rag_content_summaries
++                (content_id, workspace_id, fingerprint, summary, outline, updated_at)
+             VALUES (%s, %s, %s, %s, %s, now())
+-            ON CONFLICT (file_id) DO UPDATE SET
++            ON CONFLICT (content_id) DO UPDATE SET
+                 workspace_id = EXCLUDED.workspace_id,
+                 fingerprint  = EXCLUDED.fingerprint,
+                 summary      = EXCLUDED.summary,
+                 outline      = EXCLUDED.outline,
+                 updated_at   = now()
+             """,
+-            (file_id, workspace_id, fingerprint, summary, Jsonb(outline)),
++            (content_id, workspace_id, fingerprint, summary, Jsonb(outline)),
+         )
+ 
+ 
+-async def file_fingerprint(file_id: str) -> str:
++async def content_fingerprint(content_id: str) -> str:
+     db = await pool()
+     async with db.connection() as conn:
+         cur = await conn.execute(
+-            "SELECT fingerprint FROM rag_file_summaries WHERE file_id = %s", (file_id,)
++            "SELECT fingerprint FROM rag_content_summaries WHERE content_id = %s",
++            (content_id,),
+         )
+         row = await cur.fetchone()
+         return str(row["fingerprint"]) if row else ""
+ 
+ 
+-async def replace_file_concepts(
+-    *, workspace_id: str, file_id: str, concepts: list[dict[str, Any]]
++async def replace_content_concepts(
++    *, workspace_id: str, content_id: str, concepts: list[dict[str, Any]]
+ ) -> None:
+-    """Re-link one file's concept mentions.
++    """Re-link one canonical content item's concept mentions.
+ 
+     Concepts themselves are workspace-scoped and shared: two files naming the
+     same idea must land on one row, because co-mention across files is exactly
+@@ -135,7 +214,12 @@ async def replace_file_concepts(
+     db = await pool()
+     async with db.connection() as conn, conn.transaction():
+         await conn.execute(
+-            "DELETE FROM rag_concept_mentions WHERE file_id = %s", (file_id,)
++            """
++            DELETE FROM rag_concept_mentions m
++            USING rag_chunks c
++            WHERE m.chunk_id = c.id AND c.content_id = %s
++            """,
++            (content_id,),
+         )
+         for concept in concepts:
+             cur = await conn.execute(
+@@ -152,10 +236,10 @@ async def replace_file_concepts(
+             for chunk_id in concept["chunk_ids"]:
+                 await conn.execute(
+                     """
+-                    INSERT INTO rag_concept_mentions (concept_id, chunk_id, file_id)
+-                    VALUES (%s, %s, %s) ON CONFLICT DO NOTHING
++                    INSERT INTO rag_concept_mentions (concept_id, chunk_id)
++                    VALUES (%s, %s) ON CONFLICT DO NOTHING
+                     """,
+-                    (concept_id, chunk_id, file_id),
++                    (concept_id, chunk_id),
+                 )
+         # Concepts whose last mention just disappeared.
+         await conn.execute(
+@@ -176,22 +260,31 @@ async def replace_file_concepts(
+ _RRF_K = 60
+ 
+ _SEARCH_SQL = """
+-WITH vec AS (
++WITH scoped_files AS (
++        SELECT DISTINCT ON (fc.content_id)
++                     fc.content_id, f.id AS file_id, f.name AS file_name
++        FROM rag_file_contents fc
++        JOIN rag_contents rc ON rc.id = fc.content_id AND rc.status = 'ready'
++        JOIN files f ON f.id = fc.file_id
++        WHERE fc.workspace_id = %(ws)s
++            AND (%(no_filter)s OR f.id = ANY(%(file_ids)s))
++        ORDER BY fc.content_id, f.added_at, f.id
++),
++vec AS (
+     SELECT id, row_number() OVER (ORDER BY embedding <=> %(vector)s::halfvec) AS rank
+-    FROM rag_chunks
+-    WHERE workspace_id = %(ws)s
+-      AND embedding IS NOT NULL
+-      AND (%(no_filter)s OR file_id = ANY(%(file_ids)s))
++        FROM rag_chunks c JOIN scoped_files sf ON sf.content_id = c.content_id
++        WHERE c.workspace_id = %(ws)s AND embedding IS NOT NULL
+     ORDER BY embedding <=> %(vector)s::halfvec
+     LIMIT %(candidates)s
+ ),
+ lex AS (
+     SELECT c.id,
+            row_number() OVER (ORDER BY ts_rank_cd(c.search, q.query) DESC) AS rank
+-    FROM rag_chunks c, websearch_to_tsquery('simple', %(terms)s) AS q(query)
++        FROM rag_chunks c
++        JOIN scoped_files sf ON sf.content_id = c.content_id,
++            websearch_to_tsquery('simple', %(terms)s) AS q(query)
+     WHERE c.workspace_id = %(ws)s
+       AND c.search @@ q.query
+-      AND (%(no_filter)s OR c.file_id = ANY(%(file_ids)s))
+     ORDER BY ts_rank_cd(c.search, q.query) DESC
+     LIMIT %(candidates)s
+ ),
+@@ -202,11 +295,11 @@ fused AS (
+         SELECT id, 1.0 / (%(rrf_k)s + rank) AS score FROM lex
+     ) parts GROUP BY id
+ )
+-SELECT c.id, c.file_id, c.chunk_idx, c.section_path, c.text, c.page_start,
+-       c.page_end, c.regions, f.name AS file_name, fused.score
++SELECT c.id, sf.file_id, c.chunk_idx, c.section_path, c.text, c.page_start,
++       c.page_end, c.regions, sf.file_name, fused.score
+ FROM fused
+ JOIN rag_chunks c ON c.id = fused.id
+-JOIN files f ON f.id = c.file_id
++JOIN scoped_files sf ON sf.content_id = c.content_id
+ ORDER BY fused.score DESC
+ LIMIT %(candidates)s
+ """
+@@ -256,10 +349,12 @@ async def neighbor_chunks(
+     async with db.connection() as conn:
+         cur = await conn.execute(
+             """
+-            SELECT c.id, c.file_id, c.chunk_idx, c.section_path, c.text, c.page_start,
++            SELECT c.id, fc.file_id, c.chunk_idx, c.section_path, c.text, c.page_start,
+                    c.page_end, c.regions, f.name AS file_name
+-            FROM rag_chunks c JOIN files f ON f.id = c.file_id
+-            WHERE c.file_id = %s AND c.chunk_idx BETWEEN %s AND %s
++            FROM rag_file_contents fc
++            JOIN files f ON f.id = fc.file_id
++            JOIN rag_chunks c ON c.content_id = fc.content_id
++            WHERE fc.file_id = %s AND c.chunk_idx BETWEEN %s AND %s
+             ORDER BY c.chunk_idx
+             """,
+             (file_id, chunk_idx - radius, chunk_idx + radius),
+@@ -293,7 +388,9 @@ async def related_concepts(
+                    array_agg(DISTINCT f.name) AS files
+             FROM rag_concept_mentions m
+             JOIN rag_concepts c ON c.id = m.concept_id
+-            JOIN files f ON f.id = m.file_id
++            JOIN rag_chunks rc ON rc.id = m.chunk_id
++            JOIN rag_file_contents fc ON fc.content_id = rc.content_id
++            JOIN files f ON f.id = fc.file_id
+             WHERE m.chunk_id IN (SELECT chunk_id FROM seed_chunks)
+               AND c.norm <> %(norm)s
+               AND c.workspace_id = %(ws)s
+@@ -331,11 +428,14 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
+ 
+         cur = await conn.execute(
+             """
+-            SELECT f.id, f.name, f.chapter_id, f.status, fs.summary,
+-                   coalesce(fs.outline, '[]'::jsonb) AS outline,
+-                   (SELECT count(*) FROM rag_chunks c WHERE c.file_id = f.id) AS chunks
++                 SELECT f.id, f.name, f.chapter_id, f.status, cs.summary,
++                     coalesce(cs.outline, '[]'::jsonb) AS outline,
++                     (SELECT count(*) FROM rag_chunks c
++                      JOIN rag_file_contents rfc ON rfc.content_id = c.content_id
++                      WHERE rfc.file_id = f.id) AS chunks
+             FROM files f
+-            LEFT JOIN rag_file_summaries fs ON fs.file_id = f.id
++                 LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
++                 LEFT JOIN rag_content_summaries cs ON cs.content_id = fc.content_id
+             WHERE f.workspace_id = %s
+             ORDER BY f.position, f.added_at
+             """,
+@@ -375,10 +475,12 @@ async def read_file_range(
+     async with db.connection() as conn:
+         cur = await conn.execute(
+             """
+-            SELECT c.id, c.file_id, c.chunk_idx, c.section_path, c.text, c.page_start,
++            SELECT c.id, fc.file_id, c.chunk_idx, c.section_path, c.text, c.page_start,
+                    c.page_end, c.regions, f.name AS file_name
+-            FROM rag_chunks c JOIN files f ON f.id = c.file_id
+-            WHERE c.file_id = %s AND c.chunk_idx >= %s
++            FROM rag_file_contents fc
++            JOIN files f ON f.id = fc.file_id
++            JOIN rag_chunks c ON c.content_id = fc.content_id
++            WHERE fc.file_id = %s AND c.chunk_idx >= %s
+             ORDER BY c.chunk_idx
+             LIMIT %s
+             """,
+@@ -392,8 +494,10 @@ async def chapter_file_summaries(chapter_id: str) -> list[dict[str, Any]]:
+     async with db.connection() as conn:
+         cur = await conn.execute(
+             """
+-            SELECT f.name, coalesce(fs.summary, '') AS summary
+-            FROM files f LEFT JOIN rag_file_summaries fs ON fs.file_id = f.id
++            SELECT f.name, coalesce(cs.summary, '') AS summary
++            FROM files f
++            LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
++            LEFT JOIN rag_content_summaries cs ON cs.content_id = fc.content_id
+             WHERE f.chapter_id = %s
+             ORDER BY f.position, f.added_at
+             """,
+@@ -443,7 +547,7 @@ async def set_workspace_summary(workspace_id: str, summary: str) -> None:
+         )
+ 
+ 
+-async def mark_workspace_dirty(workspace_id: str) -> None:
++async def mark_workspace_dirty(workspace_id: str, file_id: str) -> None:
+     """Content changed (as opposed to organization, which the trigger covers)."""
+     db = await pool()
+     async with db.connection() as conn, conn.transaction():
+@@ -460,10 +564,10 @@ async def mark_workspace_dirty(workspace_id: str) -> None:
+             INSERT INTO rag_chapter_summaries (chapter_id, workspace_id, dirty)
+             SELECT f.chapter_id, f.workspace_id, true
+             FROM files f
+-            WHERE f.workspace_id = %s AND f.chapter_id IS NOT NULL
++            WHERE f.id = %s AND f.workspace_id = %s AND f.chapter_id IS NOT NULL
+             ON CONFLICT (chapter_id) DO UPDATE SET dirty = true
+             """,
+-            (workspace_id,),
++            (file_id, workspace_id),
+         )
+         await conn.execute(
+             """
+@@ -476,24 +580,6 @@ async def mark_workspace_dirty(workspace_id: str) -> None:
+         )
+ 
+ 
+-async def content_hash_owner(
+-    workspace_id: str, content_hash: str
+-) -> dict[str, Any] | None:
+-    """Another ready file in this workspace with identical parsed content."""
+-    db = await pool()
+-    async with db.connection() as conn:
+-        cur = await conn.execute(
+-            """
+-            SELECT id, name FROM files
+-            WHERE workspace_id = %s AND content_hash = %s AND status = 'ready'
+-            LIMIT 1
+-            """,
+-            (workspace_id, content_hash),
+-        )
+-        row = await cur.fetchone()
+-        return dict(row) if row else None
+-
+-
+ def decode_regions(value: Any) -> list[dict[str, Any]]:
+     if isinstance(value, list):
+         return value
+diff --git a/pipeline/pipeline/retrieve/ai_adapter.py b/pipeline/pipeline/retrieve/ai_adapter.py
+index ed74332..a03a60b 100644
+--- a/pipeline/pipeline/retrieve/ai_adapter.py
++++ b/pipeline/pipeline/retrieve/ai_adapter.py
+@@ -378,7 +378,7 @@ extraction, questions, and tables are generate. Output one lowercase word.
+     )
+     try:
+         response = await _client().chat.completions.create(
+-            model=cfg.query_model_alt,
++            model=cfg.query_model,
+             messages=[{"role": "user", "content": prompt}],
+             max_tokens=8,
+             temperature=0,
+@@ -446,7 +446,7 @@ async def _structured_events(
+     )
+     response = await _wait_completion(
+         request,
+-        model=cfg.query_model_alt,
++        model=cfg.query_model,
+         messages=[{"role": "user", "content": prompt}],
+         max_tokens=MAX_OUTPUT_TOKENS,
+         temperature=0.2,
+@@ -631,7 +631,7 @@ async def plate_copilot(req: PlateCopilotReq, request: Request):
+     try:
+         response = await _wait_completion(
+             request,
+-            model=cfg.query_model_alt,
++            model=cfg.query_model,
+             messages=[
+                 {"role": "system", "content": instructions},
+                 {"role": "user", "content": req.prompt},
+diff --git a/pipeline/pipeline/retrieve/service.py b/pipeline/pipeline/retrieve/service.py
+index 9a1a510..720df7e 100644
+--- a/pipeline/pipeline/retrieve/service.py
++++ b/pipeline/pipeline/retrieve/service.py
+@@ -1,4 +1,4 @@
+-"""Retrieval HTTP service. The Go gateway proxies /chat and /generate here.
++"""Retrieval HTTP service. The Go gateway proxies /chat/stream and /generate here.
+ 
+ Chat runs a capped tool loop over the workspace index (see retrieval/agent.py).
+ Generation runs fixed workflows instead, because its output has to parse.
+@@ -21,7 +21,7 @@ from pydantic import BaseModel
+ from .. import use_compatible_event_loop
+ from ..config import cfg
+ from ..retrieval import models, store, workflows
+-from ..retrieval.agent import answer_once, run_agent
++from ..retrieval.agent import run_agent
+ from ..retrieval.tools import ToolContext
+ from .ai_adapter import router as plate_ai_router
+ 
+@@ -36,9 +36,8 @@ use_compatible_event_loop()
+ async def lifespan(app: FastAPI):
+     await store.pool()
+     log.info(
+-        "retrieval up — query_model=%s alt=%s embedding=%s tools=%s",
++        "retrieval up — query_model=%s embedding=%s tools=%s",
+         cfg.query_model,
+-        cfg.query_model_alt,
+         cfg.embedding_model,
+         "on" if cfg.gateway_url else "read-only",
+     )
+@@ -56,15 +55,6 @@ def _uid(prefix: str) -> str:
+     return f"{prefix}_{secrets.token_hex(5)}"
+ 
+ 
+-class ChatReq(BaseModel):
+-    query: str
+-    workspaceId: str
+-    userId: str | None = None
+-    fileIds: list[str] | None = None
+-    k: int = 6
+-    model: str | None = None  # deepseek-v4-pro | deepseek-v4-flash
+-
+-
+ class ChatStreamReq(BaseModel):
+     query: str
+     workspaceId: str
+@@ -146,27 +136,6 @@ def healthz():
+     }
+ 
+ 
+-# --------------------------------------------------------------------- chat
+-
+-
+-@app.post("/chat")
+-async def chat(req: ChatReq):
+-    ctx = ToolContext(
+-        workspace_id=req.workspaceId,
+-        user_id=req.userId or "",
+-        file_ids=list(req.fileIds or []),
+-    )
+-    text, citations = await answer_once(
+-        query=req.query, ctx=ctx, model=models.resolve_query_model(req.model)
+-    )
+-    return {
+-        "id": _uid("m"),
+-        "role": "assistant",
+-        "text": text,
+-        "citations": citations,
+-    }
+-
+-
+ async def _chat_events(req: ChatStreamReq, request: Request):
+     ctx = ToolContext(
+         workspace_id=req.workspaceId,
+@@ -326,7 +295,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
+                 instruction=instruction,
+                 passages=passages,
+                 scope=scope,
+-                model=cfg.query_model_alt,
++                model=cfg.query_model,
+                 combine=(
+                     "Merge these per-document summaries into one bullet list, "
+                     "removing duplicates and keeping the source distinctions clear."
+@@ -337,7 +306,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
+                 instruction=instruction,
+                 context=context,
+                 scope=scope,
+-                model=cfg.query_model_alt,
++                model=cfg.query_model,
+             )
+         return {"kind": "summary", "title": "Workspace summary", "body": body}
+ 
+@@ -351,7 +320,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
+             ),
+             context=context,
+             scope=scope,
+-            model=cfg.query_model_alt,
++            model=cfg.query_model,
+         )
+         data = workflows.extract_json(raw) or []
+         cards = [
+@@ -379,7 +348,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
+             ),
+             context=context,
+             scope=scope,
+-            model=cfg.query_model_alt,
++            model=cfg.query_model,
+         )
+         code = workflows.strip_fence(raw) or "mindmap\n  root((Topic))"
+         return {
+@@ -404,7 +373,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
+             ),
+             context=context,
+             scope=scope,
+-            model=cfg.query_model_alt,
++            model=cfg.query_model,
+         )
+         code = workflows.strip_fence(raw) or "flowchart LR\n  A --> B"
+         return {
+diff --git a/pipeline/tests/cassettes/test_answer_is_grounded_and_cited.yaml b/pipeline/tests/cassettes/test_answer_is_grounded_and_cited.yaml
+index 9a1baab..6188cc2 100644
+--- a/pipeline/tests/cassettes/test_answer_is_grounded_and_cited.yaml
++++ b/pipeline/tests/cassettes/test_answer_is_grounded_and_cited.yaml
+@@ -358,7 +358,7 @@ interactions:
+       photosynthesis.txt\nPhotosynthesis converts light energy into chemical energy.
+       Chlorophyll absorbs\nmostly red and blue light. The Calvin cycle fixes carbon
+       dioxide into glucose\ninside the stroma of chloroplasts. ATP and NADPH produced
+-      by the light reactions\npower the Calvin cycle."}],"model":"deepseek-v4-pro","temperature":0.4}'
++      by the light reactions\npower the Calvin cycle."}],"model":"deepseek-v4-flash","temperature":0.0}'
+     headers:
+       accept:
+       - application/json
+@@ -396,7 +396,7 @@ interactions:
+     uri: https://api.deepseek.com/chat/completions
+   response:
+     body:
+-      string: '{"id":"3780fed1-e131-491f-8f1e-ce286c46f887","object":"chat.completion","created":1786387640,"model":"deepseek-v4-pro","choices":[{"index":0,"message":{"role":"assistant","content":"Chlorophyll
++      string: '{"id":"3780fed1-e131-491f-8f1e-ce286c46f887","object":"chat.completion","created":1786387640,"model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":"Chlorophyll
+         absorbs mostly red and blue light [1].","reasoning_content":"We are asked:
+         \"What does chlorophyll absorb?\" The user provided passages. Passage [1]
+         states: \"Photosynthesis converts light energy into chemical energy. Chlorophyll
+diff --git a/pipeline/tests/cassettes/test_generate_flashcards_returns_parseable_json.yaml b/pipeline/tests/cassettes/test_generate_flashcards_returns_parseable_json.yaml
+index 97d67b3..53e713b 100644
+--- a/pipeline/tests/cassettes/test_generate_flashcards_returns_parseable_json.yaml
++++ b/pipeline/tests/cassettes/test_generate_flashcards_returns_parseable_json.yaml
+@@ -273,7 +273,7 @@ interactions:
+       photosynthesis.txt\nPhotosynthesis converts light energy into chemical energy.
+       Chlorophyll absorbs\nmostly red and blue light. The Calvin cycle fixes carbon
+       dioxide into glucose\ninside the stroma of chloroplasts. ATP and NADPH produced
+-      by the light reactions\npower the Calvin cycle."}],"model":"deepseek-v4-pro","temperature":0.4}'
++      by the light reactions\npower the Calvin cycle."}],"model":"deepseek-v4-flash","temperature":0.4}'
+     headers:
+       accept:
+       - application/json
+@@ -311,7 +311,7 @@ interactions:
+     uri: https://api.deepseek.com/chat/completions
+   response:
+     body:
+-      string: '{"id":"4779fc0d-c3ab-43aa-becb-de829f3b526a","object":"chat.completion","created":1786387699,"model":"deepseek-v4-pro","choices":[{"index":0,"message":{"role":"assistant","content":"[\n  {\n    \"front\":
++      string: '{"id":"4779fc0d-c3ab-43aa-becb-de829f3b526a","object":"chat.completion","created":1786387699,"model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":"[\n  {\n    \"front\":
+         \"What does photosynthesis convert?\",\n    \"back\": \"Light energy into
+         chemical energy.\"\n  },\n  {\n    \"front\": \"What light colors does chlorophyll
+         absorb mostly?\",\n    \"back\": \"Red and blue light.\"\n  },\n  {\n    \"front\":
+diff --git a/pipeline/tests/cassettes/test_generate_quiz_normalizes_into_the_runner_shape.yaml b/pipeline/tests/cassettes/test_generate_quiz_normalizes_into_the_runner_shape.yaml
+index 0748c4c..342bb6f 100644
+--- a/pipeline/tests/cassettes/test_generate_quiz_normalizes_into_the_runner_shape.yaml
++++ b/pipeline/tests/cassettes/test_generate_quiz_normalizes_into_the_runner_shape.yaml
+@@ -280,7 +280,7 @@ interactions:
+       photosynthesis.txt\nPhotosynthesis converts light energy into chemical energy.
+       Chlorophyll absorbs\nmostly red and blue light. The Calvin cycle fixes carbon
+       dioxide into glucose\ninside the stroma of chloroplasts. ATP and NADPH produced
+-      by the light reactions\npower the Calvin cycle."}],"model":"deepseek-v4-pro","temperature":0.4}'
++      by the light reactions\npower the Calvin cycle."}],"model":"deepseek-v4-flash","temperature":0.4}'
+     headers:
+       accept:
+       - application/json
+@@ -318,7 +318,7 @@ interactions:
+     uri: https://api.deepseek.com/chat/completions
+   response:
+     body:
+-      string: '{"id":"e7850058-e8b8-4832-9673-26e67ca40521","object":"chat.completion","created":1786387714,"model":"deepseek-v4-pro","choices":[{"index":0,"message":{"role":"assistant","content":"[{\"type\":
++      string: '{"id":"e7850058-e8b8-4832-9673-26e67ca40521","object":"chat.completion","created":1786387714,"model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":"[{\"type\":
+         \"mcq\", \"prompt\": \"What is the primary conversion carried out by photosynthesis?\",
+         \"options\": [\"Light energy into chemical energy\", \"Chemical energy into
+         light energy\", \"Carbon dioxide into oxygen\", \"Glucose into ATP\"], \"answer\":
+diff --git a/pipeline/tests/conftest.py b/pipeline/tests/conftest.py
+index 493b528..a1cb841 100644
+--- a/pipeline/tests/conftest.py
++++ b/pipeline/tests/conftest.py
+@@ -47,8 +47,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
+ os.environ["EMBEDDING_DIM"] = os.environ.get("EMBEDDING_DIM", "2560")
+ os.environ["EVO_MODEL_EMBEDDING"] = "qwen/qwen3-embedding-4b"
+ os.environ["EVO_MODEL_EXTRACTION"] = "deepseek-v4-flash"
+-os.environ["EVO_QUERY_MODEL"] = "deepseek-v4-pro"
+-os.environ["EVO_QUERY_MODEL_ALT"] = "deepseek-v4-flash"
++os.environ["EVO_QUERY_MODEL"] = "deepseek-v4-flash"
+ os.environ["EVO_MODEL_IMAGE_CAPTION"] = "gemini-3.1-flash-lite-preview"
+ os.environ["OPENROUTER_BASE_URL"] = "https://openrouter.ai/api/v1"
+ os.environ["DEEPSEEK_BASE_URL"] = "https://api.deepseek.com"
+diff --git a/pipeline/tests/test_chunking.py b/pipeline/tests/test_chunking.py
+index e7d66b4..f8abc46 100644
+--- a/pipeline/tests/test_chunking.py
++++ b/pipeline/tests/test_chunking.py
+@@ -106,10 +106,10 @@ def test_oversized_block_is_split_at_a_sentence_boundary():
+     assert chunks[0].text.rstrip().endswith(".")
+ 
+ 
+-def test_indexed_text_prefixes_file_and_section():
++def test_indexed_text_prefixes_section_without_logical_file_name():
+     chunk = chunk_markdown("# Cells\n\n" + "Mitochondria make ATP. " * 20)[0]
+ 
+-    assert chunk.indexed_text("bio.pdf").startswith("bio.pdf › Cells\n\n")
++    assert chunk.indexed_text().startswith("Cells\n\n")
+ 
+ 
+ def test_outline_lists_distinct_sections_in_order():
+diff --git a/pipeline/tests/test_generate.py b/pipeline/tests/test_generate.py
+index 3f3608c..760cedc 100644
+--- a/pipeline/tests/test_generate.py
++++ b/pipeline/tests/test_generate.py
+@@ -9,7 +9,7 @@ from __future__ import annotations
+ 
+ import pytest
+ 
+-from pipeline.retrieval import indexing, workflows
++from pipeline.retrieval import indexing, store, workflows
+ from pipeline.retrieval.chunking import chunk_markdown
+ 
+ pytestmark = pytest.mark.cassette
+@@ -17,8 +17,18 @@ pytestmark = pytest.mark.cassette
+ 
+ async def _index(ws, name: str, text: str) -> str:
+     file_id = ws.add_file(name)
++    chunks = chunk_markdown(text)
++    association = await store.attach_file_content(
++        workspace_id=ws.id,
++        file_id=file_id,
++        content_hash=indexing.content_hash(chunks),
++    )
+     await indexing.index_file(
+-        workspace_id=ws.id, file_id=file_id, file_name=name, chunks=chunk_markdown(text)
++        workspace_id=ws.id,
++        content_id=association["content_id"],
++        file_id=file_id,
++        file_name=name,
++        chunks=chunks,
+     )
+     return file_id
+ 
+@@ -70,7 +80,7 @@ async def test_generate_flashcards_returns_parseable_json(
+         ),
+         context=context,
+         scope="documents photosynthesis.txt",
+-        model="deepseek-v4-pro",
++        model="deepseek-v4-flash",
+     )
+     cards = workflows.extract_json(raw)
+ 
+@@ -94,7 +104,7 @@ async def test_generate_quiz_normalizes_into_the_runner_shape(
+         ),
+         context=context,
+         scope="documents photosynthesis.txt",
+-        model="deepseek-v4-pro",
++        model="deepseek-v4-flash",
+     )
+     questions = workflows.normalize_questions(
+         workflows.extract_json(raw), {"easy": "recall", "hard": "analysis"}
+diff --git a/pipeline/tests/test_ingest_query.py b/pipeline/tests/test_ingest_query.py
+index 854c75b..fd479f7 100644
+--- a/pipeline/tests/test_ingest_query.py
++++ b/pipeline/tests/test_ingest_query.py
+@@ -14,21 +14,26 @@ from __future__ import annotations
+ import pytest
+ 
+ from pipeline.retrieval import indexing, store
+-from pipeline.retrieval.agent import answer_once
+ from pipeline.retrieval.chunking import chunk_markdown
+ from pipeline.retrieval.search import search
+-from pipeline.retrieval.tools import ToolContext
+ 
+ pytestmark = pytest.mark.cassette
+ 
+ 
+ async def _index(ws, name: str, text: str, chapter_id: str | None = None) -> str:
+     file_id = ws.add_file(name, chapter_id)
++    chunks = chunk_markdown(text)
++    association = await store.attach_file_content(
++        workspace_id=ws.id,
++        file_id=file_id,
++        content_hash=indexing.content_hash(chunks),
++    )
+     await indexing.index_file(
+         workspace_id=ws.id,
++        content_id=association["content_id"],
+         file_id=file_id,
+         file_name=name,
+-        chunks=chunk_markdown(text),
++        chunks=chunks,
+     )
+     return file_id
+ 
+@@ -40,7 +45,9 @@ async def test_index_file_writes_chunks_summary_and_concepts(
+ 
+     assert (
+         workspace.scalar(
+-            "SELECT count(*) FROM rag_chunks WHERE file_id = %s", (file_id,)
++            "SELECT count(*) FROM rag_chunks c JOIN rag_file_contents fc "
++            "ON fc.content_id = c.content_id WHERE fc.file_id = %s",
++            (file_id,),
+         )
+         >= 1
+     )
+@@ -49,13 +56,16 @@ async def test_index_file_writes_chunks_summary_and_concepts(
+     assert (
+         workspace.scalar(
+             "SELECT count(*) FROM rag_chunks "
+-            "WHERE file_id = %s AND (embedding IS NULL OR search IS NULL)",
++            "WHERE content_id = (SELECT content_id FROM rag_file_contents "
++            "WHERE file_id = %s) AND (embedding IS NULL OR search IS NULL)",
+             (file_id,),
+         )
+         == 0
+     )
+     summary = workspace.scalar(
+-        "SELECT summary FROM rag_file_summaries WHERE file_id = %s", (file_id,)
++        "SELECT s.summary FROM rag_content_summaries s JOIN rag_file_contents fc "
++        "ON fc.content_id = s.content_id WHERE fc.file_id = %s",
++        (file_id,),
+     )
+     assert summary and len(summary) > 40
+     assert (
+@@ -75,21 +85,29 @@ async def test_index_file_writes_chunks_summary_and_concepts(
+ async def test_reindexing_replaces_rather_than_duplicates(
+     cassette, workspace, sample_txt
+ ):
+-    """A retried job must converge. Chunks are keyed on (file_id, chunk_idx), so
++    """A retried job must converge. Chunks are keyed on (content_id, chunk_idx), so
+     a second pass that produced fewer of them would otherwise leave the tail of
+     the first behind."""
+     file_id = workspace.add_file("photosynthesis.txt")
++    chunks = chunk_markdown(sample_txt)
++    association = await store.attach_file_content(
++        workspace_id=workspace.id,
++        file_id=file_id,
++        content_hash=indexing.content_hash(chunks),
++    )
+     for _ in range(2):
+         await indexing.index_file(
+             workspace_id=workspace.id,
++            content_id=association["content_id"],
+             file_id=file_id,
+             file_name="photosynthesis.txt",
+-            chunks=chunk_markdown(sample_txt),
++            chunks=chunks,
+         )
+ 
+     assert workspace.scalar(
+-        "SELECT count(*) FROM rag_chunks WHERE file_id = %s", (file_id,)
+-    ) == len(chunk_markdown(sample_txt))
++        "SELECT count(*) FROM rag_chunks WHERE content_id = %s",
++        (association["content_id"],),
++    ) == len(chunks)
+ 
+ 
+ async def test_hybrid_search_returns_a_citable_passage(cassette, workspace, sample_txt):
+@@ -151,21 +169,6 @@ async def test_related_concepts_bridges_two_documents(cassette, workspace, sampl
+     assert {"photosynthesis.txt", "cells.txt"} & files
+ 
+ 
+-async def test_answer_is_grounded_and_cited(cassette, workspace, sample_txt):
+-    file_id = await _index(workspace, "photosynthesis.txt", sample_txt)
+-    ctx = ToolContext(workspace_id=workspace.id, user_id="u_1")
+-
+-    answer, citations = await answer_once(
+-        query="What does chlorophyll absorb?",
+-        ctx=ctx,
+-        model="deepseek-v4-pro",
+-    )
+-
+-    assert answer.strip()
+-    assert "red" in answer.lower() or "blue" in answer.lower()
+-    assert citations and citations[0]["fileId"] == file_id
+-
+-
+ async def test_workspace_outline_reports_the_tree(cassette, workspace, sample_txt):
+     chapter_id = workspace.add_chapter("Biology")
+     file_id = await _index(workspace, "photosynthesis.txt", sample_txt, chapter_id)
+@@ -189,7 +192,7 @@ async def test_deleting_a_workspace_takes_the_index_with_it(
+         "DELETE FROM workspaces WHERE id = %s RETURNING id", (workspace.id,)
+     )
+ 
+-    for table in ("rag_chunks", "rag_file_summaries", "rag_concepts"):
++    for table in ("rag_chunks", "rag_content_summaries", "rag_concepts"):
+         assert (
+             workspace.scalar(
+                 f"SELECT count(*) FROM {table} WHERE workspace_id = %s", (workspace.id,)
+diff --git a/pipeline/tests/test_ingest_worker.py b/pipeline/tests/test_ingest_worker.py
+new file mode 100644
+index 0000000..69f4dcb
+--- /dev/null
++++ b/pipeline/tests/test_ingest_worker.py
+@@ -0,0 +1,58 @@
++from __future__ import annotations
++
++import base64
++
++import pytest
++from PIL import Image
++
++from pipeline.config import cfg
++from pipeline.ingest import worker
++from pipeline.retrieval import models
++
++
++@pytest.mark.asyncio
++async def test_caption_figures_filters_noise_and_ranks_by_page_area(
++    monkeypatch, tmp_path
++):
++    images = tmp_path / "images"
++    images.mkdir()
++    for name, size in (
++        ("tiny.bmp", (100, 100)),
++        ("decoration.bmp", (400, 300)),
++        ("medium.bmp", (500, 400)),
++        ("large.bmp", (800, 600)),
++    ):
++        Image.new("RGB", size, "white").save(images / name)
++
++    items = [
++        {"type": "image", "img_path": "images/tiny.bmp", "bbox": [0, 0, 500, 500]},
++        {
++            "type": "image",
++            "img_path": "images/decoration.bmp",
++            "bbox": [0, 0, 100, 100],
++        },
++        {
++            "type": "image",
++            "img_path": "images/medium.bmp",
++            "bbox": [100, 100, 500, 500],
++        },
++        {
++            "type": "image",
++            "img_path": "images/large.bmp",
++            "bbox": [50, 50, 950, 850],
++        },
++    ]
++    calls: list[int] = []
++
++    async def caption(data_url: str, _context: str) -> str:
++        calls.append(len(base64.b64decode(data_url.split(",", 1)[1])))
++        return "Useful figure"
++
++    monkeypatch.setattr(cfg, "caption_max_per_file", 1)
++    monkeypatch.setattr(models, "caption_image", caption)
++
++    await worker._caption_figures(items, tmp_path, "notes.pdf")
++
++    assert len(calls) == 1
++    assert items[3]["description"] == "Useful figure"
++    assert all("description" not in item for item in items[:3])
+diff --git a/pipeline/tests/test_store_sql.py b/pipeline/tests/test_store_sql.py
+index cac1709..1a47c4a 100644
+--- a/pipeline/tests/test_store_sql.py
++++ b/pipeline/tests/test_store_sql.py
+@@ -8,6 +8,8 @@ schema they assume. That separation matters because a column rename in
+ 
+ from __future__ import annotations
+ 
++import hashlib
++
+ import pytest
+ 
+ from pipeline.config import cfg
+@@ -25,6 +27,10 @@ def _unit_vector(axis: int) -> list[float]:
+ 
+ 
+ async def _write(ws, file_id: str, texts: list[str], *, axis_base: int = 0) -> None:
++    content_hash = hashlib.sha256("\x00".join(texts).encode()).hexdigest()
++    association = await store.attach_file_content(
++        workspace_id=ws.id, file_id=file_id, content_hash=content_hash
++    )
+     rows = [
+         {
+             "id": f"{file_id}_c{i}",
+@@ -43,7 +49,10 @@ async def _write(ws, file_id: str, texts: list[str], *, axis_base: int = 0) -> N
+         }
+         for i, text in enumerate(texts)
+     ]
+-    await store.replace_file_chunks(workspace_id=ws.id, file_id=file_id, rows=rows)
++    await store.replace_content_chunks(
++        workspace_id=ws.id, content_id=association["content_id"], rows=rows
++    )
++    await store.mark_content_ready(association["content_id"])
+ 
+ 
+ # ------------------------------------------------------------------- search
+@@ -150,7 +159,9 @@ async def test_reindexing_removes_the_tail_of_the_previous_run(workspace):
+ 
+     assert (
+         workspace.scalar(
+-            "SELECT count(*) FROM rag_chunks WHERE file_id = %s", (file_id,)
++            "SELECT count(*) FROM rag_chunks c JOIN rag_file_contents fc "
++            "ON fc.content_id = c.content_id WHERE fc.file_id = %s",
++            (file_id,),
+         )
+         == 1
+     )
+@@ -160,9 +171,12 @@ async def test_reindexing_removes_the_tail_of_the_previous_run(workspace):
+ 
+ 
+ async def _concepts(ws, file_id: str, names_to_chunks: dict[str, list[str]]) -> None:
+-    await store.replace_file_concepts(
++    content_id = ws.scalar(
++        "SELECT content_id FROM rag_file_contents WHERE file_id = %s", (file_id,)
++    )
++    await store.replace_content_concepts(
+         workspace_id=ws.id,
+-        file_id=file_id,
++        content_id=content_id,
+         concepts=[
+             {
+                 "id": f"cpt_{file_id}_{i}",
+@@ -237,9 +251,12 @@ async def test_workspace_outline_groups_files_under_chapters(workspace):
+     filed = workspace.add_file("filed.txt", chapter)
+     unfiled = workspace.add_file("unfiled.txt")
+     await _write(workspace, filed, ["alpha"])
+-    await store.upsert_file_summary(
++    content_id = workspace.scalar(
++        "SELECT content_id FROM rag_file_contents WHERE file_id = %s", (filed,)
++    )
++    await store.upsert_content_summary(
+         workspace_id=workspace.id,
+-        file_id=filed,
++        content_id=content_id,
+         fingerprint="fp",
+         summary="A summary.",
+         outline=[{"title": "Ch 1", "pageStart": 1}],
+@@ -279,6 +296,20 @@ async def test_moving_a_file_between_chapters_marks_both_dirty(workspace):
+     )
+ 
+ 
++async def test_content_ingest_marks_only_its_chapter_dirty(workspace):
++    changed = workspace.add_chapter("Changed")
++    untouched = workspace.add_chapter("Untouched")
++    file_id = workspace.add_file("a.txt", changed)
++    workspace.add_file("b.txt", untouched)
++    await store.set_chapter_summary(changed, "clean")
++    await store.set_chapter_summary(untouched, "clean")
++
++    await store.mark_workspace_dirty(workspace.id, file_id)
++
++    dirty = {row["chapter_id"] for row in await store.dirty_chapters(workspace.id)}
++    assert dirty == {changed}
++
++
+ async def test_deleting_a_chapter_does_not_break_its_files(workspace):
+     """The chapter FK is ON DELETE SET NULL, so the trigger fires for a chapter
+     that no longer exists — it must not try to mark it dirty."""
+@@ -293,37 +324,69 @@ async def test_deleting_a_chapter_does_not_break_its_files(workspace):
+     )
+ 
+ 
+-async def test_content_hash_finds_an_identical_ready_file(workspace):
++async def test_duplicate_alias_survives_deleting_first_file(workspace):
+     first = workspace.add_file("a.txt")
+     second = workspace.add_file("b.txt")
+-    workspace.scalar(
+-        "UPDATE files SET content_hash = 'deadbeef' WHERE id = %s RETURNING id",
+-        (first,),
++    await _write(workspace, first, ["Chlorophyll absorbs red light"])
++    content_id = workspace.scalar(
++        "SELECT content_id FROM rag_file_contents WHERE file_id = %s", (first,)
++    )
++    content_hash = workspace.scalar(
++        "SELECT content_hash FROM rag_contents WHERE id = %s", (content_id,)
+     )
++    duplicate = await store.attach_file_content(
++        workspace_id=workspace.id, file_id=second, content_hash=content_hash
++    )
++
++    assert duplicate["ready"]
++    workspace.scalar("DELETE FROM files WHERE id = %s RETURNING id", (first,))
+ 
+-    twin = await store.content_hash_owner(workspace.id, "deadbeef")
++    rows = await store.hybrid_search(
++        workspace_id=workspace.id,
++        vector=_unit_vector(0),
++        terms="chlorophyll",
++        file_ids=[second],
++        candidates=10,
++    )
++    read = await store.read_file_range(file_id=second, start=0, count=1)
+ 
+-    assert twin is not None and twin["id"] == first
+-    assert await store.content_hash_owner(workspace.id, "nothing") is None
+-    assert second  # the second upload exists; it is simply not indexed again
++    assert rows and rows[0]["file_id"] == second and rows[0]["file_name"] == "b.txt"
++    assert read and read[0]["file_id"] == second
++    assert (
++        workspace.scalar(
++            "SELECT count(*) FROM rag_contents WHERE id = %s", (content_id,)
++        )
++        == 1
++    )
+ 
+ 
+ async def test_deleting_a_file_takes_its_index_with_it(workspace):
+     file_id = workspace.add_file("a.txt")
+     await _write(workspace, file_id, ["alpha"])
+     await _concepts(workspace, file_id, {"ATP": [f"{file_id}_c0"]})
++    content_id = workspace.scalar(
++        "SELECT content_id FROM rag_file_contents WHERE file_id = %s", (file_id,)
++    )
+ 
+     workspace.scalar("DELETE FROM files WHERE id = %s RETURNING id", (file_id,))
+ 
+     assert (
+         workspace.scalar(
+-            "SELECT count(*) FROM rag_chunks WHERE file_id = %s", (file_id,)
++            "SELECT count(*) FROM rag_chunks WHERE content_id = %s", (content_id,)
++        )
++        == 0
++    )
++    assert (
++        workspace.scalar(
++            "SELECT count(*) FROM rag_concept_mentions m JOIN rag_chunks c "
++            "ON c.id = m.chunk_id WHERE c.content_id = %s",
++            (content_id,),
+         )
+         == 0
+     )
+     assert (
+         workspace.scalar(
+-            "SELECT count(*) FROM rag_concept_mentions WHERE file_id = %s", (file_id,)
++            "SELECT count(*) FROM rag_concepts WHERE workspace_id = %s", (workspace.id,)
+         )
+         == 0
+     )
+diff --git a/pyproject.toml b/pyproject.toml
+index 17ab632..4dd07e6 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -14,6 +14,7 @@ dependencies = [
+   "redis>=5.0",
+   # Backblaze B2 source-object downloads in the ingest worker.
+   "boto3>=1.34",
++  "Pillow>=10.0",
+   "fastapi>=0.110",
+   "python-multipart>=0.0.9",  # FastAPI UploadFile (/transcribe) form parsing
+   "uvicorn[standard]>=0.29",
+diff --git a/server/README.md b/server/README.md
+index a490171..e189364 100644
+--- a/server/README.md
++++ b/server/README.md
+@@ -132,7 +132,7 @@ Vite proxies `/api` → `http://localhost:8080` (see `vite.config.ts`).
+ 
+ ## Notes / next
+ 
+-- `POST /workspaces/:id/chat` and `/generate` are Phase-1 placeholders returning
+-  the same shapes as the mock; Phase 3 wires them to the Python retrieval service.
++- Streaming workspace chat and `/generate` are wired to the Python retrieval
++  service; the old non-streaming chat endpoint has been removed.
+ - File uploads currently land `status='ready'`; Phase 2 switches to multipart +
+   `status='processing'` + an `ingest` job on the Postgres-backed `jobs` queue.
+diff --git a/server/internal/httpapi/server.go b/server/internal/httpapi/server.go
+index 49ebdcc..dcdfebb 100644
+--- a/server/internal/httpapi/server.go
++++ b/server/internal/httpapi/server.go
+@@ -146,7 +146,6 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
+ 	r.Post("/api/workspaces/{id}/sources/import", a.importSources)
+ 	r.Get("/api/workspaces/{id}/ingest-events", a.ingestEvents)
+ 	r.Get("/api/editor-assets/{assetId}/resolve", a.resolveEditorAsset)
+-	r.Post("/api/workspaces/{id}/chat", a.chat)
+ 	r.Post("/api/workspaces/{id}/chat/stream", a.chatStream)
+ 	r.Post("/api/workspaces/{id}/complete/stream", a.completeStream)
+ 	r.Post("/api/workspaces/{id}/ai/command", a.aiCommand)
+@@ -421,49 +420,10 @@ func contentType(kind string) string {
+ 	}
+ }
+ 
+-/* -------------------------------------------------------------- chat/generate
++/* -------------------------------------------------------------- generation
+ 
+-   Phase 1 placeholders: shapes match the frontend (ChatMessage / generate
+-   payloads) so the UI works end-to-end. Phase 3 replaces these with calls to
+-   the Python retrieval service. Kept on raw chi because the pipeline path is a
+-   passthrough of arbitrary JSON and generate is polymorphic. */
+-
+-func (a *api) chat(w http.ResponseWriter, r *http.Request) {
+-	if !a.assertWSRead(w, r, id(r)) {
+-		return
+-	}
+-	var b struct {
+-		Text string `json:"text"`
+-	}
+-	_ = decode(r, &b)
+-
+-	// Preferred path: grounded answer from the retrieval service.
+-	if a.pipe != nil {
+-		if raw, err := a.pipe.PostRaw(r.Context(), "/chat", map[string]any{
+-			"query": b.Text, "workspaceId": id(r), "userId": uid(r), "k": 6,
+-		}); err == nil {
+-			w.Header().Set("Content-Type", "application/json")
+-			_, _ = w.Write(raw)
+-			return
+-		}
+-	}
+-
+-	// Fallback placeholder (pipeline unreachable).
+-	files, _ := a.s.ListFiles(r.Context(), uid(r), id(r))
+-	if len(files) > 2 {
+-		files = files[:2]
+-	}
+-	cites := make([]map[string]string, 0, len(files))
+-	for _, f := range files {
+-		cites = append(cites, map[string]string{"fileId": f.ID, "fileName": f.Name, "snippet": "Relevant passage from your source…"})
+-	}
+-	writeJSON(w, 200, map[string]any{
+-		"id":        randID("m"),
+-		"role":      "assistant",
+-		"text":      fmt.Sprintf("Based on your sources, %s relates to the key ideas in your materials. (Pipeline offline — showing a placeholder.)", b.Text),
+-		"citations": cites,
+-	})
+-}
++   Kept on raw chi because the pipeline path is a passthrough of arbitrary JSON
++   and generate is polymorphic. */
+ 
+ type generateOpts struct {
+ 	Kind         store.MaterialKind `json:"kind"`
+diff --git a/server/internal/pipeline/client_test.go b/server/internal/pipeline/client_test.go
+index d854a96..d509ace 100644
+--- a/server/internal/pipeline/client_test.go
++++ b/server/internal/pipeline/client_test.go
+@@ -49,7 +49,7 @@ func TestPostRawErrorStatus(t *testing.T) {
+ 	defer srv.Close()
+ 
+ 	c := New(srv.URL)
+-	if _, err := c.PostRaw(context.Background(), "/chat", map[string]any{}); err == nil {
++	if _, err := c.PostRaw(context.Background(), "/error", map[string]any{}); err == nil {
+ 		t.Errorf("expected error on 500 response")
+ 	}
+ }
+diff --git a/server/internal/store/share.go b/server/internal/store/share.go
+index d500e72..5653a3f 100644
+--- a/server/internal/store/share.go
++++ b/server/internal/store/share.go
+@@ -919,32 +919,73 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
+ // describes. Chunks carry embeddings, so copying them is pure SQL where
+ // re-ingesting would mean paying for the parse and the embeddings again.
+ //
+-// Nothing here needs an old id -> new id map for chunks or concepts: chunks are
+-// identified by (file_id, chunk_idx) and concepts by (workspace_id, norm), both
+-// unique, so the mention rows re-derive their targets by joining on the natural
+-// keys. Only the file and chapter maps have to come from the caller.
++// Canonical content receives fresh ids because it is workspace-scoped, while
++// duplicate logical files in the clone keep sharing one copied index.
+ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, fileMap, chapterMap map[string]string) error {
+ 	oldFiles, newFiles := unzipIDs(fileMap)
+ 	if len(oldFiles) > 0 {
++		contentMap := map[string]string{}
++		rows, err := tx.Query(ctx, `
++			SELECT DISTINCT content_id FROM rag_file_contents
++			WHERE file_id = ANY($1::text[])`, oldFiles)
++		if err != nil {
++			return err
++		}
++		for rows.Next() {
++			var oldContentID string
++			if err := rows.Scan(&oldContentID); err != nil {
++				rows.Close()
++				return err
++			}
++			contentMap[oldContentID] = uid("rgc")
++		}
++		if err := rows.Err(); err != nil {
++			rows.Close()
++			return err
++		}
++		rows.Close()
++		oldContents, newContents := unzipIDs(contentMap)
++
++		if len(oldContents) > 0 {
++			if _, err := tx.Exec(ctx, `
++				WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
++				INSERT INTO rag_contents (id, workspace_id, content_hash, status)
++				SELECT c.new_id, $3, rc.content_hash, rc.status
++				FROM rag_contents rc JOIN cmap c ON c.old_id = rc.id`,
++				oldContents, newContents, newID); err != nil {
++				return err
++			}
++			if _, err := tx.Exec(ctx, `
++				WITH fmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[])),
++				     cmap(old_id, new_id) AS (SELECT * FROM unnest($3::text[], $4::text[]))
++				INSERT INTO rag_file_contents (file_id, workspace_id, content_id)
++				SELECT f.new_id, $5, c.new_id
++				FROM rag_file_contents fc
++				JOIN fmap f ON f.old_id = fc.file_id
++				JOIN cmap c ON c.old_id = fc.content_id`,
++				oldFiles, newFiles, oldContents, newContents, newID); err != nil {
++				return err
++			}
++		}
+ 		if _, err := tx.Exec(ctx, `
+-			WITH fmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
++			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
+ 			INSERT INTO rag_chunks
+-				(id, workspace_id, file_id, chunk_idx, section_path, text, indexed_text,
++				(id, workspace_id, content_id, chunk_idx, section_path, text, indexed_text,
+ 				 token_count, page_start, page_end, regions, search, embedding)
+ 			SELECT 'rc_' || substr(md5(random()::text || clock_timestamp()::text || c.id), 1, 12),
+-			       $3, f.new_id, c.chunk_idx, c.section_path, c.text, c.indexed_text,
++			       $3, m.new_id, c.chunk_idx, c.section_path, c.text, c.indexed_text,
+ 			       c.token_count, c.page_start, c.page_end, c.regions, c.search, c.embedding
+-			FROM rag_chunks c JOIN fmap f ON f.old_id = c.file_id`,
+-			oldFiles, newFiles, newID); err != nil {
++			FROM rag_chunks c JOIN cmap m ON m.old_id = c.content_id`,
++			oldContents, newContents, newID); err != nil {
+ 			return err
+ 		}
+ 		if _, err := tx.Exec(ctx, `
+-			WITH fmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
+-			INSERT INTO rag_file_summaries
+-				(file_id, workspace_id, fingerprint, summary, outline, updated_at)
+-			SELECT f.new_id, $3, s.fingerprint, s.summary, s.outline, s.updated_at
+-			FROM rag_file_summaries s JOIN fmap f ON f.old_id = s.file_id`,
+-			oldFiles, newFiles, newID); err != nil {
++			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
++			INSERT INTO rag_content_summaries
++				(content_id, workspace_id, fingerprint, summary, outline, updated_at)
++			SELECT c.new_id, $3, s.fingerprint, s.summary, s.outline, s.updated_at
++			FROM rag_content_summaries s JOIN cmap c ON c.old_id = s.content_id`,
++			oldContents, newContents, newID); err != nil {
+ 			return err
+ 		}
+ 		if _, err := tx.Exec(ctx, `
+@@ -955,17 +996,17 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, fi
+ 			return err
+ 		}
+ 		if _, err := tx.Exec(ctx, `
+-			WITH fmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
+-			INSERT INTO rag_concept_mentions (concept_id, chunk_id, file_id)
+-			SELECT nk.id, nc.id, nc.file_id
++			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
++			INSERT INTO rag_concept_mentions (concept_id, chunk_id)
++			SELECT nk.id, nc.id
+ 			FROM rag_concept_mentions m
+ 			JOIN rag_concepts ok ON ok.id = m.concept_id AND ok.workspace_id = $3
+ 			JOIN rag_chunks    oc ON oc.id = m.chunk_id
+-			JOIN fmap f           ON f.old_id = oc.file_id
+-			JOIN rag_chunks    nc ON nc.file_id = f.new_id AND nc.chunk_idx = oc.chunk_idx
++			JOIN cmap c           ON c.old_id = oc.content_id
++			JOIN rag_chunks    nc ON nc.content_id = c.new_id AND nc.chunk_idx = oc.chunk_idx
+ 			JOIN rag_concepts  nk ON nk.workspace_id = $4 AND nk.norm = ok.norm
+ 			ON CONFLICT DO NOTHING`,
+-			oldFiles, newFiles, srcID, newID); err != nil {
++			oldContents, newContents, srcID, newID); err != nil {
+ 			return err
+ 		}
+ 	}
+diff --git a/server/migrations/0001_init.sql b/server/migrations/0001_init.sql
+index c70e732..e4d889e 100644
+--- a/server/migrations/0001_init.sql
++++ b/server/migrations/0001_init.sql
+@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS schema_baseline (
+ 
+ DO $$
+ DECLARE
+-  target_version constant int := 6;
++  target_version constant int := 7;
+   recorded_version int;
+ BEGIN
+   -- Serialize concurrent migrators. The runner sends this file as one statement
+@@ -62,6 +62,7 @@ BEGIN
+       notification_prefs, notifications, oauth_connections,
+       pending_blob_deletions,
+       rag_chapter_summaries, rag_chunks, rag_concept_mentions, rag_concepts,
++      rag_content_summaries, rag_file_contents, rag_contents,
+       rag_file_summaries, rag_workspace_summaries,
+       tags, tasks, upload_sessions, user_storage,
+       user_storage_deltas, user_subscriptions, users, webhook_events,
+@@ -211,6 +212,7 @@ CREATE TABLE IF NOT EXISTS files (
+   -- same document into one workspace are stored twice (they are two files the
+   -- user can see and delete) but indexed once.
+   content_hash          text,
++  UNIQUE (id, workspace_id),
+   -- The column list on SET NULL is what makes this work: the default form would
+   -- try to null workspace_id too, which is NOT NULL. Requires Postgres 15+.
+   FOREIGN KEY (chapter_id, workspace_id)
+@@ -743,14 +745,35 @@ CREATE UNIQUE INDEX IF NOT EXISTS jobs_pending_rollup_idx
+ -- No teardown job, and cloning a workspace is an INSERT..SELECT away.
+ -- ============================================================================
+ 
++-- Parsed content is canonical within a workspace. Multiple logical files may
++-- reference it, so deleting either upload cannot orphan the other file's index.
++CREATE TABLE IF NOT EXISTS rag_contents (
++  id           text PRIMARY KEY,
++  workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
++  content_hash text NOT NULL,
++  status       text NOT NULL DEFAULT 'processing' CHECK (status IN ('processing','ready')),
++  UNIQUE (workspace_id, content_hash),
++  UNIQUE (id, workspace_id)
++);
++
++CREATE TABLE IF NOT EXISTS rag_file_contents (
++  file_id      text PRIMARY KEY,
++  workspace_id text NOT NULL,
++  content_id   text NOT NULL,
++  FOREIGN KEY (file_id, workspace_id)
++    REFERENCES files(id, workspace_id) ON DELETE CASCADE,
++  FOREIGN KEY (content_id, workspace_id)
++    REFERENCES rag_contents(id, workspace_id) ON DELETE CASCADE
++);
++CREATE INDEX IF NOT EXISTS rag_file_contents_content_idx ON rag_file_contents(content_id);
++
+ -- One retrievable passage. `text` is what a citation shows and what the model
+--- reads; `indexed_text` is that text prefixed with its file/section header path
+--- (contextual retrieval) and is the string that was embedded and tokenized, so
+--- vector and lexical search agree on what they scored.
++-- reads; `indexed_text` is prefixed with structural headings but not a logical
++-- file name, because the same content may be visible through several files.
+ CREATE TABLE IF NOT EXISTS rag_chunks (
+   id           text PRIMARY KEY,
+   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+-  file_id      text NOT NULL REFERENCES files(id) ON DELETE CASCADE,
++  content_id   text NOT NULL REFERENCES rag_contents(id) ON DELETE CASCADE,
+   chunk_idx    int  NOT NULL,
+   -- Heading breadcrumb, e.g. 'Chapter 4 › Light reactions'. Empty for formats
+   -- without headings.
+@@ -773,18 +796,18 @@ CREATE TABLE IF NOT EXISTS rag_chunks (
+   -- ceiling for plain vector HNSW. Changing EMBEDDING_DIM means changing this
+   -- and re-ingesting; the pipeline hard-fails on a mismatch rather than drift.
+   embedding    halfvec(2560),
+-  UNIQUE (file_id, chunk_idx)
++  UNIQUE (content_id, chunk_idx)
+ );
+ CREATE INDEX IF NOT EXISTS rag_chunks_ws_idx ON rag_chunks(workspace_id);
+-CREATE INDEX IF NOT EXISTS rag_chunks_file_idx ON rag_chunks(file_id);
++CREATE INDEX IF NOT EXISTS rag_chunks_content_idx ON rag_chunks(content_id);
+ CREATE INDEX IF NOT EXISTS rag_chunks_search_idx ON rag_chunks USING gin(search);
+ CREATE INDEX IF NOT EXISTS rag_chunks_embedding_idx
+   ON rag_chunks USING hnsw (embedding halfvec_cosine_ops);
+ 
+--- Per-file summary + outline, keyed by content so an organizational change
+--- (moving chapters, cloning, renaming) never invalidates it.
+-CREATE TABLE IF NOT EXISTS rag_file_summaries (
+-  file_id      text PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
++-- Summary + outline belong to canonical content, so duplicate logical files
++-- share the model output while retaining independent file lifecycles.
++CREATE TABLE IF NOT EXISTS rag_content_summaries (
++  content_id   text PRIMARY KEY REFERENCES rag_contents(id) ON DELETE CASCADE,
+   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+   fingerprint  text NOT NULL DEFAULT '',
+   summary      text NOT NULL DEFAULT '',
+@@ -792,7 +815,7 @@ CREATE TABLE IF NOT EXISTS rag_file_summaries (
+   outline      jsonb NOT NULL DEFAULT '[]'::jsonb,
+   updated_at   timestamptz NOT NULL DEFAULT now()
+ );
+-CREATE INDEX IF NOT EXISTS rag_file_summaries_ws_idx ON rag_file_summaries(workspace_id);
++CREATE INDEX IF NOT EXISTS rag_content_summaries_ws_idx ON rag_content_summaries(workspace_id);
+ 
+ -- Rolled up from the file summaries below them, never from raw content, which
+ -- is what keeps invalidation local: a moved file rebuilds two rows from a few
+@@ -832,11 +855,42 @@ CREATE TABLE IF NOT EXISTS rag_concepts (
+ CREATE TABLE IF NOT EXISTS rag_concept_mentions (
+   concept_id text NOT NULL REFERENCES rag_concepts(id) ON DELETE CASCADE,
+   chunk_id   text NOT NULL REFERENCES rag_chunks(id) ON DELETE CASCADE,
+-  file_id    text NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+   PRIMARY KEY (concept_id, chunk_id)
+ );
+ CREATE INDEX IF NOT EXISTS rag_concept_mentions_chunk_idx ON rag_concept_mentions(chunk_id);
+-CREATE INDEX IF NOT EXISTS rag_concept_mentions_file_idx ON rag_concept_mentions(file_id);
++
++CREATE OR REPLACE FUNCTION delete_unreferenced_rag_concept() RETURNS trigger AS $$
++BEGIN
++  DELETE FROM rag_concepts c
++  WHERE c.id = OLD.concept_id
++    AND NOT EXISTS (
++      SELECT 1 FROM rag_concept_mentions m WHERE m.concept_id = OLD.concept_id
++    );
++  RETURN NULL;
++END $$ LANGUAGE plpgsql;
++
++DROP TRIGGER IF EXISTS rag_concept_mentions_delete_orphan ON rag_concept_mentions;
++CREATE CONSTRAINT TRIGGER rag_concept_mentions_delete_orphan
++  AFTER DELETE ON rag_concept_mentions
++  DEFERRABLE INITIALLY DEFERRED
++  FOR EACH ROW EXECUTE FUNCTION delete_unreferenced_rag_concept();
++
++-- Canonical content exists only while at least one logical file references it.
++-- File/workspace cascades therefore clean the retrieval index without a job.
++CREATE OR REPLACE FUNCTION delete_unreferenced_rag_content() RETURNS trigger AS $$
++BEGIN
++  DELETE FROM rag_contents c
++  WHERE c.id = OLD.content_id
++    AND NOT EXISTS (
++      SELECT 1 FROM rag_file_contents fc WHERE fc.content_id = OLD.content_id
++    );
++  RETURN NULL;
++END $$ LANGUAGE plpgsql;
++
++DROP TRIGGER IF EXISTS rag_file_contents_delete_orphan ON rag_file_contents;
++CREATE TRIGGER rag_file_contents_delete_orphan
++  AFTER DELETE OR UPDATE OF content_id ON rag_file_contents
++  FOR EACH ROW EXECUTE FUNCTION delete_unreferenced_rag_content();
+ 
+ -- Reorganizing files invalidates summaries, and the paths that reorganize them
+ -- are many (move, delete, chapter delete's SET NULL, clone, account purge).
+diff --git a/src/mocks/handlers.ts b/src/mocks/handlers.ts
+index f82b623..f78ef2f 100644
+--- a/src/mocks/handlers.ts
++++ b/src/mocks/handlers.ts
+@@ -1244,21 +1244,6 @@ export const handlers = [
+     return HttpResponse.json(f, { status: 201 });
+   }),
+   /* ---------------- chat & generate ---------------- */
+-  http.post('/api/workspaces/:id/chat', async ({ request }) => {
+-    await delay(700);
+-    const body = (await request.json()) as { text: string };
+-    const sources = db.files.slice(0, 2);
+-    return HttpResponse.json({
+-      citations: sources.map((f) => ({
+-        fileId: f.id,
+-        fileName: f.name,
+-        snippet: 'Relevant passage from your source…',
+-      })),
+-      id: uid('m'),
+-      role: 'assistant',
+-      text: `Based on your sources, ${body.text.replace(/\?$/, '')} relates to the key ideas in your materials. In short: the cell membrane regulates transport, and energy is produced in the mitochondria.`,
+-    });
+-  }),
+   /* ---------------- conversations ---------------- */
+   http.get('/api/workspaces/:id/conversations', async ({ params }) => {
+     const list = db.conversations
+
+          
+      

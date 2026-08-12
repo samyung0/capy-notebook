@@ -49,7 +49,7 @@ func TestPostRawErrorStatus(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL)
-	if _, err := c.PostRaw(context.Background(), "/chat", map[string]any{}); err == nil {
+	if _, err := c.PostRaw(context.Background(), "/error", map[string]any{}); err == nil {
 		t.Errorf("expected error on 500 response")
 	}
 }

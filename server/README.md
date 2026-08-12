@@ -132,7 +132,7 @@ Vite proxies `/api` → `http://localhost:8080` (see `vite.config.ts`).
 
 ## Notes / next
 
-- `POST /workspaces/:id/chat` and `/generate` are Phase-1 placeholders returning
-  the same shapes as the mock; Phase 3 wires them to the Python retrieval service.
+- Streaming workspace chat and `/generate` are wired to the Python retrieval
+  service; the old non-streaming chat endpoint has been removed.
 - File uploads currently land `status='ready'`; Phase 2 switches to multipart +
   `status='processing'` + an `ingest` job on the Postgres-backed `jobs` queue.

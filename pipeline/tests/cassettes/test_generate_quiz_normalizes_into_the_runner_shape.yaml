@@ -280,7 +280,7 @@ interactions:
       photosynthesis.txt\nPhotosynthesis converts light energy into chemical energy.
       Chlorophyll absorbs\nmostly red and blue light. The Calvin cycle fixes carbon
       dioxide into glucose\ninside the stroma of chloroplasts. ATP and NADPH produced
-      by the light reactions\npower the Calvin cycle."}],"model":"deepseek-v4-pro","temperature":0.4}'
+      by the light reactions\npower the Calvin cycle."}],"model":"deepseek-v4-flash","temperature":0.4}'
     headers:
       accept:
       - application/json
@@ -318,7 +318,7 @@ interactions:
     uri: https://api.deepseek.com/chat/completions
   response:
     body:
-      string: '{"id":"e7850058-e8b8-4832-9673-26e67ca40521","object":"chat.completion","created":1786387714,"model":"deepseek-v4-pro","choices":[{"index":0,"message":{"role":"assistant","content":"[{\"type\":
+      string: '{"id":"e7850058-e8b8-4832-9673-26e67ca40521","object":"chat.completion","created":1786387714,"model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":"[{\"type\":
         \"mcq\", \"prompt\": \"What is the primary conversion carried out by photosynthesis?\",
         \"options\": [\"Light energy into chemical energy\", \"Chemical energy into
         light energy\", \"Carbon dioxide into oxygen\", \"Glucose into ATP\"], \"answer\":

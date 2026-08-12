@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from pipeline.retrieval import indexing, workflows
+from pipeline.retrieval import indexing, store, workflows
 from pipeline.retrieval.chunking import chunk_markdown
 
 pytestmark = pytest.mark.cassette
@@ -17,8 +17,18 @@ pytestmark = pytest.mark.cassette
 
 async def _index(ws, name: str, text: str) -> str:
     file_id = ws.add_file(name)
+    chunks = chunk_markdown(text)
+    association = await store.attach_file_content(
+        workspace_id=ws.id,
+        file_id=file_id,
+        content_hash=indexing.content_hash(chunks),
+    )
     await indexing.index_file(
-        workspace_id=ws.id, file_id=file_id, file_name=name, chunks=chunk_markdown(text)
+        workspace_id=ws.id,
+        content_id=association["content_id"],
+        file_id=file_id,
+        file_name=name,
+        chunks=chunks,
     )
     return file_id
 
@@ -70,7 +80,7 @@ async def test_generate_flashcards_returns_parseable_json(
         ),
         context=context,
         scope="documents photosynthesis.txt",
-        model="deepseek-v4-pro",
+        model="deepseek-v4-flash",
     )
     cards = workflows.extract_json(raw)
 
@@ -94,7 +104,7 @@ async def test_generate_quiz_normalizes_into_the_runner_shape(
         ),
         context=context,
         scope="documents photosynthesis.txt",
-        model="deepseek-v4-pro",
+        model="deepseek-v4-flash",
     )
     questions = workflows.normalize_questions(
         workflows.extract_json(raw), {"easy": "recall", "hard": "analysis"}

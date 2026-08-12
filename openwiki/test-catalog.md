@@ -17,7 +17,7 @@ at the top of each section.
 | Collaboration Vitest | `pnpm test:collaboration` |
 | Cloudflare MinerU relay | `pnpm test:cloudflare-relay` |
 | Go server | `pnpm test:go` |
-| Python pipeline | `pnpm pipeline:test` / offline: `pnpm pipeline:test:offline` |
+| Python pipeline | `pnpm test:pipeline` / offline: `pnpm test:pipeline:offline` |
 | Playwright sharing/API e2e | `pnpm e2e` |
 | Playwright editor (MSW) | `pnpm e2e:editor` |
 | Playwright editor perf | `pnpm perf` |
@@ -161,10 +161,11 @@ See also [`pipeline-tests.md`](pipeline-tests.md) for disposable Postgres/Redis 
 | [`pipeline/tests/test_chunking.py`](../pipeline/tests/test_chunking.py) | Heading breadcrumbs, page/bbox regions, table/equation/figure handling, oversized-block splitting, CJK bigram tokenizer. |
 | [`pipeline/tests/test_generate.py`](../pipeline/tests/test_generate.py) | Cassette: even scope coverage, file filtering, and flashcard/quiz JSON surviving into the runner shape. |
 | [`pipeline/tests/test_ingest_query.py`](../pipeline/tests/test_ingest_query.py) | Cassette: index → search → grounded cited answer, re-index convergence, scope confinement, cross-document concepts, cascade teardown. |
+| [`pipeline/tests/test_ingest_worker.py`](../pipeline/tests/test_ingest_worker.py) | Offline caption candidate filtering, page-area ranking, and per-file cap. |
 | [`pipeline/tests/test_mineru_lite.py`](../pipeline/tests/test_mineru_lite.py) | MinerU blob parse relay+retry vs legacy local path without relay. |
 | [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py) | Artifact addressing/caching, rejection of traversal, checksum, version and source mismatches, corrupt-cache recovery. |
 | [`pipeline/tests/test_retrieval_helpers.py`](../pipeline/tests/test_retrieval_helpers.py) | Tool scope narrowing, stable citation numbering, per-file diversity cap, JSON extraction and question normalization. |
-| [`pipeline/tests/test_store_sql.py`](../pipeline/tests/test_store_sql.py) | Docker (no model calls): hybrid search halves, CJK recall, scoping, concept co-mention, summary-dirty trigger, cascades. |
+| [`pipeline/tests/test_store_sql.py`](../pipeline/tests/test_store_sql.py) | Docker (no model calls): hybrid search halves, CJK recall, scoping, canonical duplicate ownership/deletion, concept co-mention, narrow summary invalidation, cascades. |
 
 ---
 

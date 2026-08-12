@@ -91,11 +91,9 @@ class Config:
         api_key=_env("DEEPSEEK_API_KEY"),
         base_url=_env("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
     )
-    # Summaries and concept extraction are fixed to the cheap model.
+    # Summaries, queries, generation, and editor AI use the flash model.
     ingest_model: str = _env("EVO_MODEL_EXTRACTION", "deepseek-v4-flash")
-    # Query keeps both reachable; defaults to pro, flash selectable per request.
-    query_model: str = _env("EVO_QUERY_MODEL", "deepseek-v4-pro")
-    query_model_alt: str = _env("EVO_QUERY_MODEL_ALT", "deepseek-v4-flash")
+    query_model: str = _env("EVO_QUERY_MODEL", "deepseek-v4-flash")
 
     # ---- retrieval --------------------------------------------------------
     search_candidates: int = int(_env("EVO_SEARCH_CANDIDATES", "40"))
@@ -135,7 +133,7 @@ class Config:
     @property
     def query_models(self) -> set[str]:
         """Models the retrieval service is allowed to dispatch to."""
-        return {m for m in (self.query_model, self.query_model_alt) if m}
+        return {self.query_model} if self.query_model else set()
 
 
 cfg = Config()

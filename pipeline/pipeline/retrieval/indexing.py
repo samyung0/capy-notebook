@@ -36,20 +36,21 @@ def content_hash(chunks: list[Chunk]) -> str:
 async def index_file(
     *,
     workspace_id: str,
+    content_id: str,
     file_id: str,
     file_name: str,
     chunks: list[Chunk],
     on_progress=None,
 ) -> dict[str, Any]:
-    """Write chunks, the file summary and the concept mentions for one file."""
+    """Write chunks, summary and concepts for canonical parsed content."""
     if not chunks:
-        await store.replace_file_chunks(
-            workspace_id=workspace_id, file_id=file_id, rows=[]
+        await store.replace_content_chunks(
+            workspace_id=workspace_id, content_id=content_id, rows=[]
         )
         return {"chunks": 0, "concepts": 0}
 
     fingerprint = content_hash(chunks)
-    indexed = [chunk.indexed_text(file_name) for chunk in chunks]
+    indexed = [chunk.indexed_text() for chunk in chunks]
     vectors = await models.embed(indexed)
     if on_progress:
         on_progress(70)
@@ -75,26 +76,27 @@ async def index_file(
                 "embedding": store.vector_literal(vector),
             }
         )
-    await store.replace_file_chunks(
-        workspace_id=workspace_id, file_id=file_id, rows=rows
+    await store.replace_content_chunks(
+        workspace_id=workspace_id, content_id=content_id, rows=rows
     )
     if on_progress:
         on_progress(85)
 
     summary = await summarize_file(file_name, chunks)
-    await store.upsert_file_summary(
+    await store.upsert_content_summary(
         workspace_id=workspace_id,
-        file_id=file_id,
+        content_id=content_id,
         fingerprint=fingerprint,
         summary=summary,
         outline=outline_from_chunks(chunks),
     )
 
     concepts = await extract_concepts(file_name, chunks, rows)
-    await store.replace_file_concepts(
-        workspace_id=workspace_id, file_id=file_id, concepts=concepts
+    await store.replace_content_concepts(
+        workspace_id=workspace_id, content_id=content_id, concepts=concepts
     )
-    await store.mark_workspace_dirty(workspace_id)
+    await store.mark_content_ready(content_id)
+    await store.mark_workspace_dirty(workspace_id, file_id)
     if on_progress:
         on_progress(95)
     return {"chunks": len(rows), "concepts": len(concepts), "fingerprint": fingerprint}

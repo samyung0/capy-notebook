@@ -29,6 +29,7 @@ Cross-links: plate-editor defers structural ACL to authorization; authorization 
 ### Test Changes
 
 - update `test-catalog.md`
+- Pipeline cassette tests (`pipeline/tests/` VCR YAMLs) are currently stale after the `indexed_text` / embedding-input shape change. Do not chase re-records or body-matcher fixes yet — they will be refreshed after the next RAG / LLM rollout change.
 
 ## Common Pitfalls
 

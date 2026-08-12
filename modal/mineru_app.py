@@ -85,7 +85,7 @@ image = (
     # OCR. Capped below 3.5 so a redeploy can't silently pull a new major that
     # changes backend names or the aio_do_parse contract this app depends on.
     .pip_install(
-        "mineru[all]>=3.4.3,<3.5",
+        "mineru[all]>=3.4.4,<3.5",
         "fastapi[standard]",
         "python-multipart",
         "requests>=2.31",

@@ -14,21 +14,26 @@ from __future__ import annotations
 import pytest
 
 from pipeline.retrieval import indexing, store
-from pipeline.retrieval.agent import answer_once
 from pipeline.retrieval.chunking import chunk_markdown
 from pipeline.retrieval.search import search
-from pipeline.retrieval.tools import ToolContext
 
 pytestmark = pytest.mark.cassette
 
 
 async def _index(ws, name: str, text: str, chapter_id: str | None = None) -> str:
     file_id = ws.add_file(name, chapter_id)
-    await indexing.index_file(
+    chunks = chunk_markdown(text)
+    association = await store.attach_file_content(
         workspace_id=ws.id,
         file_id=file_id,
+        content_hash=indexing.content_hash(chunks),
+    )
+    await indexing.index_file(
+        workspace_id=ws.id,
+        content_id=association["content_id"],
+        file_id=file_id,
         file_name=name,
-        chunks=chunk_markdown(text),
+        chunks=chunks,
     )
     return file_id
 
@@ -40,7 +45,9 @@ async def test_index_file_writes_chunks_summary_and_concepts(
 
     assert (
         workspace.scalar(
-            "SELECT count(*) FROM rag_chunks WHERE file_id = %s", (file_id,)
+            "SELECT count(*) FROM rag_chunks c JOIN rag_file_contents fc "
+            "ON fc.content_id = c.content_id WHERE fc.file_id = %s",
+            (file_id,),
         )
         >= 1
     )
@@ -49,13 +56,16 @@ async def test_index_file_writes_chunks_summary_and_concepts(
     assert (
         workspace.scalar(
             "SELECT count(*) FROM rag_chunks "
-            "WHERE file_id = %s AND (embedding IS NULL OR search IS NULL)",
+            "WHERE content_id = (SELECT content_id FROM rag_file_contents "
+            "WHERE file_id = %s) AND (embedding IS NULL OR search IS NULL)",
             (file_id,),
         )
         == 0
     )
     summary = workspace.scalar(
-        "SELECT summary FROM rag_file_summaries WHERE file_id = %s", (file_id,)
+        "SELECT s.summary FROM rag_content_summaries s JOIN rag_file_contents fc "
+        "ON fc.content_id = s.content_id WHERE fc.file_id = %s",
+        (file_id,),
     )
     assert summary and len(summary) > 40
     assert (
@@ -75,21 +85,29 @@ async def test_index_file_writes_chunks_summary_and_concepts(
 async def test_reindexing_replaces_rather_than_duplicates(
     cassette, workspace, sample_txt
 ):
-    """A retried job must converge. Chunks are keyed on (file_id, chunk_idx), so
+    """A retried job must converge. Chunks are keyed on (content_id, chunk_idx), so
     a second pass that produced fewer of them would otherwise leave the tail of
     the first behind."""
     file_id = workspace.add_file("photosynthesis.txt")
+    chunks = chunk_markdown(sample_txt)
+    association = await store.attach_file_content(
+        workspace_id=workspace.id,
+        file_id=file_id,
+        content_hash=indexing.content_hash(chunks),
+    )
     for _ in range(2):
         await indexing.index_file(
             workspace_id=workspace.id,
+            content_id=association["content_id"],
             file_id=file_id,
             file_name="photosynthesis.txt",
-            chunks=chunk_markdown(sample_txt),
+            chunks=chunks,
         )
 
     assert workspace.scalar(
-        "SELECT count(*) FROM rag_chunks WHERE file_id = %s", (file_id,)
-    ) == len(chunk_markdown(sample_txt))
+        "SELECT count(*) FROM rag_chunks WHERE content_id = %s",
+        (association["content_id"],),
+    ) == len(chunks)
 
 
 async def test_hybrid_search_returns_a_citable_passage(cassette, workspace, sample_txt):
@@ -151,21 +169,6 @@ async def test_related_concepts_bridges_two_documents(cassette, workspace, sampl
     assert {"photosynthesis.txt", "cells.txt"} & files
 
 
-async def test_answer_is_grounded_and_cited(cassette, workspace, sample_txt):
-    file_id = await _index(workspace, "photosynthesis.txt", sample_txt)
-    ctx = ToolContext(workspace_id=workspace.id, user_id="u_1")
-
-    answer, citations = await answer_once(
-        query="What does chlorophyll absorb?",
-        ctx=ctx,
-        model="deepseek-v4-pro",
-    )
-
-    assert answer.strip()
-    assert "red" in answer.lower() or "blue" in answer.lower()
-    assert citations and citations[0]["fileId"] == file_id
-
-
 async def test_workspace_outline_reports_the_tree(cassette, workspace, sample_txt):
     chapter_id = workspace.add_chapter("Biology")
     file_id = await _index(workspace, "photosynthesis.txt", sample_txt, chapter_id)
@@ -189,7 +192,7 @@ async def test_deleting_a_workspace_takes_the_index_with_it(
         "DELETE FROM workspaces WHERE id = %s RETURNING id", (workspace.id,)
     )
 
-    for table in ("rag_chunks", "rag_file_summaries", "rag_concepts"):
+    for table in ("rag_chunks", "rag_content_summaries", "rag_concepts"):
         assert (
             workspace.scalar(
                 f"SELECT count(*) FROM {table} WHERE workspace_id = %s", (workspace.id,)

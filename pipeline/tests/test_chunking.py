@@ -106,10 +106,10 @@ def test_oversized_block_is_split_at_a_sentence_boundary():
     assert chunks[0].text.rstrip().endswith(".")
 
 
-def test_indexed_text_prefixes_file_and_section():
+def test_indexed_text_prefixes_section_without_logical_file_name():
     chunk = chunk_markdown("# Cells\n\n" + "Mitochondria make ATP. " * 20)[0]
 
-    assert chunk.indexed_text("bio.pdf").startswith("bio.pdf › Cells\n\n")
+    assert chunk.indexed_text().startswith("Cells\n\n")
 
 
 def test_outline_lists_distinct_sections_in_order():

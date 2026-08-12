@@ -1244,21 +1244,6 @@ export const handlers = [
     return HttpResponse.json(f, { status: 201 });
   }),
   /* ---------------- chat & generate ---------------- */
-  http.post('/api/workspaces/:id/chat', async ({ request }) => {
-    await delay(700);
-    const body = (await request.json()) as { text: string };
-    const sources = db.files.slice(0, 2);
-    return HttpResponse.json({
-      citations: sources.map((f) => ({
-        fileId: f.id,
-        fileName: f.name,
-        snippet: 'Relevant passage from your source…',
-      })),
-      id: uid('m'),
-      role: 'assistant',
-      text: `Based on your sources, ${body.text.replace(/\?$/, '')} relates to the key ideas in your materials. In short: the cell membrane regulates transport, and energy is produced in the mitochondria.`,
-    });
-  }),
   /* ---------------- conversations ---------------- */
   http.get('/api/workspaces/:id/conversations', async ({ params }) => {
     const list = db.conversations

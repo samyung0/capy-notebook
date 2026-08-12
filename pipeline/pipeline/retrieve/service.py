@@ -1,4 +1,4 @@
-"""Retrieval HTTP service. The Go gateway proxies /chat and /generate here.
+"""Retrieval HTTP service. The Go gateway proxies /chat/stream and /generate here.
 
 Chat runs a capped tool loop over the workspace index (see retrieval/agent.py).
 Generation runs fixed workflows instead, because its output has to parse.
@@ -21,7 +21,7 @@ from pydantic import BaseModel
 from .. import use_compatible_event_loop
 from ..config import cfg
 from ..retrieval import models, store, workflows
-from ..retrieval.agent import answer_once, run_agent
+from ..retrieval.agent import run_agent
 from ..retrieval.tools import ToolContext
 from .ai_adapter import router as plate_ai_router
 
@@ -36,9 +36,8 @@ use_compatible_event_loop()
 async def lifespan(app: FastAPI):
     await store.pool()
     log.info(
-        "retrieval up — query_model=%s alt=%s embedding=%s tools=%s",
+        "retrieval up — query_model=%s embedding=%s tools=%s",
         cfg.query_model,
-        cfg.query_model_alt,
         cfg.embedding_model,
         "on" if cfg.gateway_url else "read-only",
     )
@@ -54,15 +53,6 @@ app.include_router(plate_ai_router)
 
 def _uid(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(5)}"
-
-
-class ChatReq(BaseModel):
-    query: str
-    workspaceId: str
-    userId: str | None = None
-    fileIds: list[str] | None = None
-    k: int = 6
-    model: str | None = None  # deepseek-v4-pro | deepseek-v4-flash
 
 
 class ChatStreamReq(BaseModel):
@@ -143,27 +133,6 @@ def healthz():
         "ok": True,
         "query_model": cfg.query_model,
         "embedding": cfg.embedding_model,
-    }
-
-
-# --------------------------------------------------------------------- chat
-
-
-@app.post("/chat")
-async def chat(req: ChatReq):
-    ctx = ToolContext(
-        workspace_id=req.workspaceId,
-        user_id=req.userId or "",
-        file_ids=list(req.fileIds or []),
-    )
-    text, citations = await answer_once(
-        query=req.query, ctx=ctx, model=models.resolve_query_model(req.model)
-    )
-    return {
-        "id": _uid("m"),
-        "role": "assistant",
-        "text": text,
-        "citations": citations,
     }
 
 
@@ -326,7 +295,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
                 instruction=instruction,
                 passages=passages,
                 scope=scope,
-                model=cfg.query_model_alt,
+                model=cfg.query_model,
                 combine=(
                     "Merge these per-document summaries into one bullet list, "
                     "removing duplicates and keeping the source distinctions clear."
@@ -337,7 +306,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
                 instruction=instruction,
                 context=context,
                 scope=scope,
-                model=cfg.query_model_alt,
+                model=cfg.query_model,
             )
         return {"kind": "summary", "title": "Workspace summary", "body": body}
 
@@ -351,7 +320,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
             ),
             context=context,
             scope=scope,
-            model=cfg.query_model_alt,
+            model=cfg.query_model,
         )
         data = workflows.extract_json(raw) or []
         cards = [
@@ -379,7 +348,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
             ),
             context=context,
             scope=scope,
-            model=cfg.query_model_alt,
+            model=cfg.query_model,
         )
         code = workflows.strip_fence(raw) or "mindmap\n  root((Topic))"
         return {
@@ -404,7 +373,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
             ),
             context=context,
             scope=scope,
-            model=cfg.query_model_alt,
+            model=cfg.query_model,
         )
         code = workflows.strip_fence(raw) or "flowchart LR\n  A --> B"
         return {

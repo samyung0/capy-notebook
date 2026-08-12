@@ -4,7 +4,7 @@ Routing:
 - embedding   -> OpenRouter ``qwen/qwen3-embedding-4b`` (dim pinned to the
                  halfvec column width)
 - ingest LLM  -> DeepSeek flash (summaries, concepts, map-reduce steps)
-- query LLM   -> DeepSeek, pro by default, flash selectable per request
+- query LLM   -> DeepSeek flash (the only configured query model)
 - vision      -> Gemini (DeepSeek is text-only), for figure captions
 """
 
@@ -35,6 +35,8 @@ def client(provider: ProviderCfg) -> AsyncOpenAI:
 
 
 def resolve_query_model(requested: str | None) -> str:
+    # Keep accepting the optional request field for API compatibility, but do
+    # not allow callers to select a second model.
     return requested if requested in cfg.query_models else cfg.query_model
 
 

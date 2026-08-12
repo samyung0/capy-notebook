@@ -182,9 +182,7 @@ services:
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
-      # Query keeps both reachable; defaults to pro, flash selectable per request.
-      EVO_QUERY_MODEL: ${EVO_QUERY_MODEL:-deepseek-v4-pro}
-      EVO_QUERY_MODEL_ALT: ${EVO_QUERY_MODEL_ALT:-deepseek-v4-flash}
+      EVO_QUERY_MODEL: ${EVO_QUERY_MODEL:-deepseek-v4-flash}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
       EVO_MODEL_IMAGE_CAPTION: ${EVO_MODEL_IMAGE_CAPTION:-gemini-3.1-flash-lite-preview}

@@ -919,32 +919,73 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 // describes. Chunks carry embeddings, so copying them is pure SQL where
 // re-ingesting would mean paying for the parse and the embeddings again.
 //
-// Nothing here needs an old id -> new id map for chunks or concepts: chunks are
-// identified by (file_id, chunk_idx) and concepts by (workspace_id, norm), both
-// unique, so the mention rows re-derive their targets by joining on the natural
-// keys. Only the file and chapter maps have to come from the caller.
+// Canonical content receives fresh ids because it is workspace-scoped, while
+// duplicate logical files in the clone keep sharing one copied index.
 func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, fileMap, chapterMap map[string]string) error {
 	oldFiles, newFiles := unzipIDs(fileMap)
 	if len(oldFiles) > 0 {
+		contentMap := map[string]string{}
+		rows, err := tx.Query(ctx, `
+			SELECT DISTINCT content_id FROM rag_file_contents
+			WHERE file_id = ANY($1::text[])`, oldFiles)
+		if err != nil {
+			return err
+		}
+		for rows.Next() {
+			var oldContentID string
+			if err := rows.Scan(&oldContentID); err != nil {
+				rows.Close()
+				return err
+			}
+			contentMap[oldContentID] = uid("rgc")
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+		oldContents, newContents := unzipIDs(contentMap)
+
+		if len(oldContents) > 0 {
+			if _, err := tx.Exec(ctx, `
+				WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
+				INSERT INTO rag_contents (id, workspace_id, content_hash, status)
+				SELECT c.new_id, $3, rc.content_hash, rc.status
+				FROM rag_contents rc JOIN cmap c ON c.old_id = rc.id`,
+				oldContents, newContents, newID); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `
+				WITH fmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[])),
+				     cmap(old_id, new_id) AS (SELECT * FROM unnest($3::text[], $4::text[]))
+				INSERT INTO rag_file_contents (file_id, workspace_id, content_id)
+				SELECT f.new_id, $5, c.new_id
+				FROM rag_file_contents fc
+				JOIN fmap f ON f.old_id = fc.file_id
+				JOIN cmap c ON c.old_id = fc.content_id`,
+				oldFiles, newFiles, oldContents, newContents, newID); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.Exec(ctx, `
-			WITH fmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
+			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 			INSERT INTO rag_chunks
-				(id, workspace_id, file_id, chunk_idx, section_path, text, indexed_text,
+				(id, workspace_id, content_id, chunk_idx, section_path, text, indexed_text,
 				 token_count, page_start, page_end, regions, search, embedding)
 			SELECT 'rc_' || substr(md5(random()::text || clock_timestamp()::text || c.id), 1, 12),
-			       $3, f.new_id, c.chunk_idx, c.section_path, c.text, c.indexed_text,
+			       $3, m.new_id, c.chunk_idx, c.section_path, c.text, c.indexed_text,
 			       c.token_count, c.page_start, c.page_end, c.regions, c.search, c.embedding
-			FROM rag_chunks c JOIN fmap f ON f.old_id = c.file_id`,
-			oldFiles, newFiles, newID); err != nil {
+			FROM rag_chunks c JOIN cmap m ON m.old_id = c.content_id`,
+			oldContents, newContents, newID); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `
-			WITH fmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
-			INSERT INTO rag_file_summaries
-				(file_id, workspace_id, fingerprint, summary, outline, updated_at)
-			SELECT f.new_id, $3, s.fingerprint, s.summary, s.outline, s.updated_at
-			FROM rag_file_summaries s JOIN fmap f ON f.old_id = s.file_id`,
-			oldFiles, newFiles, newID); err != nil {
+			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
+			INSERT INTO rag_content_summaries
+				(content_id, workspace_id, fingerprint, summary, outline, updated_at)
+			SELECT c.new_id, $3, s.fingerprint, s.summary, s.outline, s.updated_at
+			FROM rag_content_summaries s JOIN cmap c ON c.old_id = s.content_id`,
+			oldContents, newContents, newID); err != nil {
 			return err
 		}
 		if _, err := tx.Exec(ctx, `
@@ -955,17 +996,17 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, fi
 			return err
 		}
 		if _, err := tx.Exec(ctx, `
-			WITH fmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
-			INSERT INTO rag_concept_mentions (concept_id, chunk_id, file_id)
-			SELECT nk.id, nc.id, nc.file_id
+			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
+			INSERT INTO rag_concept_mentions (concept_id, chunk_id)
+			SELECT nk.id, nc.id
 			FROM rag_concept_mentions m
 			JOIN rag_concepts ok ON ok.id = m.concept_id AND ok.workspace_id = $3
 			JOIN rag_chunks    oc ON oc.id = m.chunk_id
-			JOIN fmap f           ON f.old_id = oc.file_id
-			JOIN rag_chunks    nc ON nc.file_id = f.new_id AND nc.chunk_idx = oc.chunk_idx
+			JOIN cmap c           ON c.old_id = oc.content_id
+			JOIN rag_chunks    nc ON nc.content_id = c.new_id AND nc.chunk_idx = oc.chunk_idx
 			JOIN rag_concepts  nk ON nk.workspace_id = $4 AND nk.norm = ok.norm
 			ON CONFLICT DO NOTHING`,
-			oldFiles, newFiles, srcID, newID); err != nil {
+			oldContents, newContents, srcID, newID); err != nil {
 			return err
 		}
 	}

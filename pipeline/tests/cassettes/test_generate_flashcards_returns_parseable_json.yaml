@@ -273,7 +273,7 @@ interactions:
       photosynthesis.txt\nPhotosynthesis converts light energy into chemical energy.
       Chlorophyll absorbs\nmostly red and blue light. The Calvin cycle fixes carbon
       dioxide into glucose\ninside the stroma of chloroplasts. ATP and NADPH produced
-      by the light reactions\npower the Calvin cycle."}],"model":"deepseek-v4-pro","temperature":0.4}'
+      by the light reactions\npower the Calvin cycle."}],"model":"deepseek-v4-flash","temperature":0.4}'
     headers:
       accept:
       - application/json
@@ -311,7 +311,7 @@ interactions:
     uri: https://api.deepseek.com/chat/completions
   response:
     body:
-      string: '{"id":"4779fc0d-c3ab-43aa-becb-de829f3b526a","object":"chat.completion","created":1786387699,"model":"deepseek-v4-pro","choices":[{"index":0,"message":{"role":"assistant","content":"[\n  {\n    \"front\":
+      string: '{"id":"4779fc0d-c3ab-43aa-becb-de829f3b526a","object":"chat.completion","created":1786387699,"model":"deepseek-v4-flash","choices":[{"index":0,"message":{"role":"assistant","content":"[\n  {\n    \"front\":
         \"What does photosynthesis convert?\",\n    \"back\": \"Light energy into
         chemical energy.\"\n  },\n  {\n    \"front\": \"What light colors does chlorophyll
         absorb mostly?\",\n    \"back\": \"Red and blue light.\"\n  },\n  {\n    \"front\":

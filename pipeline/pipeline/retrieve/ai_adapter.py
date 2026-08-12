@@ -378,7 +378,7 @@ extraction, questions, and tables are generate. Output one lowercase word.
     )
     try:
         response = await _client().chat.completions.create(
-            model=cfg.query_model_alt,
+            model=cfg.query_model,
             messages=[{"role": "user", "content": prompt}],
             max_tokens=8,
             temperature=0,
@@ -446,7 +446,7 @@ async def _structured_events(
     )
     response = await _wait_completion(
         request,
-        model=cfg.query_model_alt,
+        model=cfg.query_model,
         messages=[{"role": "user", "content": prompt}],
         max_tokens=MAX_OUTPUT_TOKENS,
         temperature=0.2,
@@ -631,7 +631,7 @@ async def plate_copilot(req: PlateCopilotReq, request: Request):
     try:
         response = await _wait_completion(
             request,
-            model=cfg.query_model_alt,
+            model=cfg.query_model,
             messages=[
                 {"role": "system", "content": instructions},
                 {"role": "user", "content": req.prompt},
