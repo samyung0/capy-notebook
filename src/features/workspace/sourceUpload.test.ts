@@ -7,6 +7,7 @@ import {
   defaultParseMode,
   getFileKind,
   parseModeIssues,
+  supportsFigures,
 } from './sourceUpload';
 
 const file = (name: string, size = 1) => ({ name, size }) as File;
@@ -22,28 +23,41 @@ describe('source upload policy', () => {
 
   it('selects parser modes using server-provided limits', () => {
     expect(defaultParseMode(file('paper.pdf'), 'pdf', sourceUploadPolicy)).toBe(
-      'normal'
+      'fast'
     );
     expect(
-      defaultParseMode(
-        file('paper.pdf', 11 * 1024 * 1024),
-        'pdf',
-        sourceUploadPolicy
-      )
-    ).toBe('advanced');
-    expect(
       parseModeIssues(
-        file('paper.pdf', 21 * 1024 * 1024),
+        file('paper.pdf', 101 * 1024 * 1024),
         'pdf',
         sourceUploadPolicy
       )
     ).toEqual({
-      advanced: null,
-      normal: 'over 10 MB',
+      accurate: 'over 100 MB',
+      fast: 'over 100 MB',
+    });
+    expect(
+      defaultParseMode(
+        file('paper.pdf', 101 * 1024 * 1024),
+        'pdf',
+        sourceUploadPolicy
+      )
+    ).toBe('none');
+    expect(
+      parseModeIssues(file('archive.zip'), 'unknown', sourceUploadPolicy)
+    ).toEqual({
+      accurate: 'format not supported',
+      fast: 'format not supported',
     });
     expect(defaultParseMode(file('script.py'), 'txt', sourceUploadPolicy)).toBe(
       'none'
     );
+  });
+
+  it('offers image captioning only for modes that extract figures', () => {
+    expect(supportsFigures('fast', 'pdf', sourceUploadPolicy)).toBe(true);
+    expect(supportsFigures('accurate', 'pdf', sourceUploadPolicy)).toBe(true);
+    expect(supportsFigures('none', 'pdf', sourceUploadPolicy)).toBe(false);
+    expect(supportsFigures('fast', 'txt', sourceUploadPolicy)).toBe(false);
   });
 });
 

@@ -3,14 +3,16 @@
 Claims jobs from the Postgres queue and turns uploads into retrievable chunks:
 
 - ``txt`` / ``md`` are read straight from B2 and chunked as markdown.
-- ``parseMode=normal`` parses via the free MinerU lightweight cloud API, which
-  returns markdown only — so those files are searchable but have no page model
-  and therefore no page-accurate citations.
-- ``parseMode=advanced`` (the default) parses on Modal GPU MinerU, whose
-  ``content_list.json`` carries a page index and bounding box per block. This is
-  the route that produces citations a reader can jump to.
+- ``parseMode=fast`` parses on Modal with MinerU's pipeline OCR backend.
+- ``parseMode=accurate`` parses on Modal with MinerU's hybrid VLM backend:
+  better on dense layouts, more GPU seconds per page.
 - ``parseMode=none`` jobs are normally never enqueued (the gateway marks the
   file ready directly); a stray one is finished without indexing.
+
+Both parse routes return the same bundle — a ``content_list.json`` carrying a
+page index and bounding box per block, plus the extracted images — so both
+produce citations a reader can jump to and figures that can be captioned. They
+differ in cost and fidelity, not in output shape.
 
 The second job type is ``summaries_rollup``: a debounced rebuild of the chapter
 and workspace summaries, enqueued by a database trigger whenever files move
@@ -32,7 +34,7 @@ from pathlib import Path
 
 from .. import progress, use_compatible_event_loop
 from ..config import cfg
-from ..parse import mineru_lite, modal_parser
+from ..parse import figures, modal_parser
 from ..retrieval import indexing, store
 from ..retrieval.chunking import Chunk, chunk_content_list, chunk_markdown
 from ..store import blobstore, db
@@ -41,6 +43,11 @@ log = logging.getLogger("evo.worker")
 
 # Ingested as plain text (no parse service) for these file kinds.
 _TEXT_KINDS = {"txt", "md"}
+
+_PARSE_ROUTES = {
+    "accurate": modal_parser.ROUTE_ACCURATE,
+    "fast": modal_parser.ROUTE_FAST,
+}
 
 
 # ----------------------------------------------------------- sync DB helpers
@@ -128,8 +135,15 @@ def _read_text(path: str) -> str:
 
 
 async def _chunks_for(
-    *, payload: dict, name: str, kind: str, parse_mode: str, ws: str, file_id: str
-) -> tuple[list[Chunk], str | None, str | None]:
+    *,
+    payload: dict,
+    name: str,
+    kind: str,
+    parse_mode: str,
+    caption_images: bool,
+    ws: str,
+    file_id: str,
+) -> tuple[list[Chunk], str | None, str | None, str | None]:
     """Parse one source into chunks, plus its parse-artifact identity if any."""
     blob_path = payload.get("blobPath")
 
@@ -140,21 +154,9 @@ async def _chunks_for(
         finally:
             await asyncio.to_thread(cleanup)
         progress.publish(ws, file_id, "indexing", 40)
-        return chunk_markdown(text), None, None
+        return chunk_markdown(text), None, None, None
 
-    if parse_mode == "normal":
-        # The Cloudflare relay streams B2 -> MinerU's signed upload URL; no
-        # source bytes traverse this worker.
-        progress.publish(ws, file_id, "parsing", 15)
-        markdown = await asyncio.to_thread(
-            mineru_lite.parse_blob,
-            blob_path,
-            name,
-            lambda pct: progress.publish(ws, file_id, "parsing", pct),
-        )
-        progress.publish(ws, file_id, "indexing", 60)
-        return chunk_markdown(markdown), None, None
-
+    route = _PARSE_ROUTES.get(parse_mode, modal_parser.ROUTE_ACCURATE)
     info = await asyncio.to_thread(blobstore.object_info, blob_path)
     if info is None:
         raise RuntimeError("source blob is missing")
@@ -163,6 +165,7 @@ async def _chunks_for(
         file_id=file_id,
         source_etag=str(payload.get("sourceETag") or info["etag"]),
         source_size=int(info["size"]),
+        route=route,
     )
     progress.publish(ws, file_id, "parsing", 15)
     raw_dir = Path(tempfile.mkdtemp(prefix="evo_parse_"))
@@ -170,74 +173,29 @@ async def _chunks_for(
         content_list, artifact_key, fingerprint = await asyncio.to_thread(
             modal_parser.parse_to_bundle, descriptor, name, raw_dir
         )
+        progress.publish(
+            ws, file_id, "captioning" if caption_images else "indexing", 45
+        )
+        if caption_images:
+            # Before chunking on purpose: a caption has to be inside the passage
+            # it belongs to before that passage is embedded, summarized and
+            # concept-extracted, or the figure stays invisible to all three.
+            counts = await figures.caption_figures(
+                content_list=content_list,
+                raw_dir=raw_dir,
+                file_name=name,
+                fingerprint=fingerprint,
+            )
+            log.info("captioned figures for %s: %s", name, counts)
         progress.publish(ws, file_id, "indexing", 55)
-        if cfg.caption_images:
-            await _caption_figures(content_list, raw_dir, name)
-        return chunk_content_list(content_list), artifact_key, fingerprint
+        return (
+            chunk_content_list(content_list),
+            artifact_key,
+            fingerprint,
+            modal_parser.parser_version(route),
+        )
     finally:
         shutil.rmtree(raw_dir, ignore_errors=True)
-
-
-async def _caption_figures(content_list: list[dict], raw_dir: Path, name: str) -> None:
-    """Describe figures so they are searchable, in place on the block list.
-
-    Off by default. A figure with no caption is invisible to retrieval, but on a
-    scanned book every page is an image, and captioning them all costs more than
-    the parse did.
-    """
-    import base64
-
-    from PIL import Image, UnidentifiedImageError
-
-    from ..retrieval import models
-
-    candidates: list[tuple[float, int, dict, Path]] = []
-    seen_paths: set[Path] = set()
-    for item in content_list:
-        if not isinstance(item, dict) or item.get("type") != "image":
-            continue
-        if item.get("image_caption") or item.get("description"):
-            continue
-        img_path = str(item.get("img_path") or "")
-        if not img_path:
-            continue
-        target = raw_dir.joinpath(*Path(img_path).parts)
-        if not target.is_file() or target in seen_paths or target.stat().st_size < 4096:
-            continue
-        seen_paths.add(target)
-        try:
-            with Image.open(target) as image:
-                width, height = image.size
-        except (OSError, UnidentifiedImageError):
-            continue
-        if (
-            width < 160
-            or height < 120
-            or width * height < 40_000
-            or max(width, height) / max(1, min(width, height)) > 8
-        ):
-            continue
-        bbox = item.get("bbox")
-        page_area = 0.0
-        if isinstance(bbox, list) and len(bbox) == 4:
-            page_area = max(0.0, float(bbox[2]) - float(bbox[0])) * max(
-                0.0, float(bbox[3]) - float(bbox[1])
-            )
-            if page_area < 12_000:
-                continue
-        candidates.append((page_area, width * height, item, target))
-
-    candidates.sort(key=lambda candidate: (candidate[0], candidate[1]), reverse=True)
-    for _, _, item, target in candidates[: cfg.caption_max_per_file]:
-        encoded = base64.b64encode(target.read_bytes()).decode()
-        suffix = target.suffix.lstrip(".").lower() or "png"
-        if suffix == "jpg":
-            suffix = "jpeg"
-        described = await models.caption_image(
-            f"data:image/{suffix};base64,{encoded}", name
-        )
-        if described:
-            item["description"] = described
 
 
 # ------------------------------------------------------------------- jobs
@@ -248,9 +206,14 @@ async def process_ingest_job(job: dict) -> None:
     file_id = payload["fileId"]
     ws = payload["workspaceId"]
     kind = (payload.get("kind") or "").lower()
-    # 'advanced' (Modal GPU MinerU, default), 'normal' (MinerU lightweight cloud
-    # API), or 'none' (blob-only; normally never enqueued at all).
-    parse_mode = (payload.get("parseMode") or "advanced").lower()
+    # 'fast' (Modal pipeline OCR, default), 'accurate' (Modal hybrid VLM), or
+    # 'none' (blob-only; normally never enqueued at all).
+    parse_mode = (payload.get("parseMode") or "fast").lower()
+    # Chosen per file at upload time; the env default only covers a job that
+    # predates the option or an import path that cannot express one.
+    caption_images = payload.get("captionImages")
+    if caption_images is None:
+        caption_images = cfg.caption_images
 
     name = await asyncio.to_thread(_read_name, file_id)
     if not await asyncio.to_thread(_account_allows_ingest, file_id):
@@ -270,11 +233,12 @@ async def process_ingest_job(job: dict) -> None:
         progress.publish(ws, file_id, "done", 100, status="ready", message=note)
         return
 
-    chunks, artifact_key, fingerprint = await _chunks_for(
+    chunks, artifact_key, fingerprint, artifact_version = await _chunks_for(
         payload=payload,
         name=name,
         kind=kind,
         parse_mode=parse_mode,
+        caption_images=bool(caption_images),
         ws=ws,
         file_id=file_id,
     )
@@ -308,7 +272,7 @@ async def process_ingest_job(job: dict) -> None:
             digest,
             artifact_key,
             fingerprint,
-            modal_parser.PARSER_VERSION if artifact_key else None,
+            artifact_version,
             "source_duplicate",
         )
         progress.publish(ws, file_id, "done", 100, status="ready", message=note)
@@ -334,7 +298,7 @@ async def process_ingest_job(job: dict) -> None:
         digest,
         artifact_key,
         fingerprint,
-        modal_parser.PARSER_VERSION if artifact_key else None,
+        artifact_version,
     )
     progress.publish(ws, file_id, "done", 100, status="ready")
     log.info("indexed %s: %s", name, result)
@@ -352,10 +316,11 @@ async def main_async() -> None:
         level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
     )
     log.info(
-        "worker up — ingest_model=%s embedding=%s modal=%s",
+        "worker up — ingest_model=%s embedding=%s accurate=%s fast=%s",
         cfg.ingest_model,
         cfg.embedding_model,
         cfg.modal_parse_url or "(unset)",
+        cfg.modal_fast_parse_url or "(unset)",
     )
 
     try:

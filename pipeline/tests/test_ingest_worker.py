@@ -1,58 +1,135 @@
+"""Offline unit tests for the ingest worker's parse routing (no network).
+
+Figure selection and captioning live in ``parse/figures.py`` and are tested
+there. What is left here is the branching the worker owns: which parse route a
+job's ``parseMode`` maps to, whether captioning runs at all, and — the ordering
+the whole feature rests on — that captions are on the blocks before chunking, so
+they reach embedding, summarization and concept extraction rather than arriving
+after the passage they belong to has already been built.
+"""
+
 from __future__ import annotations
 
-import base64
+from pathlib import Path
+from typing import Any
 
 import pytest
-from PIL import Image
 
-from pipeline.config import cfg
 from pipeline.ingest import worker
-from pipeline.retrieval import models
+from pipeline.parse import modal_parser
 
 
-@pytest.mark.asyncio
-async def test_caption_figures_filters_noise_and_ranks_by_page_area(
-    monkeypatch, tmp_path
-):
-    images = tmp_path / "images"
-    images.mkdir()
-    for name, size in (
-        ("tiny.bmp", (100, 100)),
-        ("decoration.bmp", (400, 300)),
-        ("medium.bmp", (500, 400)),
-        ("large.bmp", (800, 600)),
-    ):
-        Image.new("RGB", size, "white").save(images / name)
-
-    items = [
-        {"type": "image", "img_path": "images/tiny.bmp", "bbox": [0, 0, 500, 500]},
-        {
-            "type": "image",
-            "img_path": "images/decoration.bmp",
-            "bbox": [0, 0, 100, 100],
-        },
-        {
-            "type": "image",
-            "img_path": "images/medium.bmp",
-            "bbox": [100, 100, 500, 500],
-        },
-        {
-            "type": "image",
-            "img_path": "images/large.bmp",
-            "bbox": [50, 50, 950, 850],
-        },
+@pytest.fixture
+def parse_stub(monkeypatch):
+    """Stand in for Modal and for the captioner; record how both were called."""
+    state: dict[str, Any] = {
+        "descriptor": None,
+        "captioned": 0,
+        "chunked": None,
+    }
+    content_list = [
+        {"type": "text", "text": "Photosynthesis", "page_idx": 0, "text_level": 1},
+        {"type": "image", "img_path": "images/fig.png", "page_idx": 0},
     ]
-    calls: list[int] = []
 
-    async def caption(data_url: str, _context: str) -> str:
-        calls.append(len(base64.b64decode(data_url.split(",", 1)[1])))
-        return "Useful figure"
+    def _parse(descriptor, _name, raw_dir: Path):
+        state["descriptor"] = descriptor
+        raw_dir.mkdir(parents=True, exist_ok=True)
+        return content_list, "parsed/f_1/x.zip", "fp-1"
 
-    monkeypatch.setattr(cfg, "caption_max_per_file", 1)
-    monkeypatch.setattr(models, "caption_image", caption)
+    async def _caption(*, content_list, raw_dir, file_name, fingerprint):
+        state["captioned"] += 1
+        content_list[1]["description"] = "A labelled chloroplast."
+        return {"selected": 1, "cached": 0, "captioned": 1, "applied": 1}
 
-    await worker._caption_figures(items, tmp_path, "notes.pdf")
+    def _chunk(items):
+        state["chunked"] = [dict(item) for item in items]
+        return ["chunk"]
 
-    assert len(calls) == 1
-    assert items[3]["description"] == "Useful figure"
-    assert all("description" not in item for item in items[:3])
+    monkeypatch.setattr(
+        worker.blobstore, "object_info", lambda _p: {"etag": "e", "size": 9}
+    )
+    monkeypatch.setattr(worker.modal_parser, "parse_to_bundle", _parse)
+    monkeypatch.setattr(worker.figures, "caption_figures", _caption)
+    monkeypatch.setattr(worker, "chunk_content_list", _chunk)
+    monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
+    return state
+
+
+async def _run(parse_mode: str, *, caption_images: bool = False):
+    return await worker._chunks_for(
+        payload={"blobPath": "sources/blob_1.pdf"},
+        name="lecture.pdf",
+        kind="pdf",
+        parse_mode=parse_mode,
+        caption_images=caption_images,
+        ws="ws_1",
+        file_id="f_1",
+    )
+
+
+@pytest.mark.parametrize(
+    ("parse_mode", "route"),
+    [
+        ("fast", modal_parser.ROUTE_FAST),
+        ("accurate", modal_parser.ROUTE_ACCURATE),
+        # A job enqueued before the modes were renamed, or by a gateway running
+        # older code: parse it rather than fail it.
+        ("advanced", modal_parser.ROUTE_ACCURATE),
+    ],
+)
+async def test_the_parse_mode_selects_the_route(parse_stub, parse_mode, route):
+    _, _, _, version = await _run(parse_mode)
+
+    assert parse_stub["descriptor"]["route"] == route
+    assert version == modal_parser.PARSER_VERSIONS[route]
+
+
+async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatch):
+    monkeypatch.setattr(
+        worker.blobstore, "fetch_local", lambda _p: ("/tmp/notes.md", lambda: None)
+    )
+    monkeypatch.setattr(worker, "_read_text", lambda _p: "# Notes")
+    monkeypatch.setattr(worker, "chunk_markdown", lambda text: [text])
+
+    chunks, artifact_key, fingerprint, version = await worker._chunks_for(
+        payload={"blobPath": "sources/notes.md"},
+        name="notes.md",
+        kind="md",
+        parse_mode="fast",
+        caption_images=True,
+        ws="ws_1",
+        file_id="f_1",
+    )
+
+    assert chunks == ["# Notes"]
+    assert (artifact_key, fingerprint, version) == (None, None, None)
+    assert parse_stub["descriptor"] is None
+    assert parse_stub["captioned"] == 0
+
+
+async def test_captioning_is_off_unless_the_upload_asked_for_it(parse_stub):
+    await _run("fast")
+
+    assert parse_stub["captioned"] == 0
+    assert "description" not in parse_stub["chunked"][1]
+
+
+async def test_captions_reach_the_chunker(parse_stub):
+    """The ordering the feature depends on: chunking must see the description,
+    otherwise the figure is embedded as an empty block and stays unsearchable."""
+    await _run("fast", caption_images=True)
+
+    assert parse_stub["captioned"] == 1
+    assert parse_stub["chunked"][1]["description"] == "A labelled chloroplast."
+
+
+async def test_a_missing_source_blob_fails_before_paying_for_a_parse(
+    parse_stub, monkeypatch
+):
+    monkeypatch.setattr(worker.blobstore, "object_info", lambda _p: None)
+
+    with pytest.raises(RuntimeError, match="source blob is missing"):
+        await _run("accurate")
+
+    assert parse_stub["descriptor"] is None

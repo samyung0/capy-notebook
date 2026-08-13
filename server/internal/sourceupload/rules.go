@@ -10,14 +10,17 @@ import (
 )
 
 const (
-	ParseModeAdvanced = "advanced"
-	ParseModeNormal   = "normal"
+	// Both parse modes run MinerU on our own GPU and return the same output;
+	// they differ in which backend produced it. "accurate" is the hybrid VLM,
+	// "fast" is the pipeline OCR stack.
+	ParseModeAccurate = "accurate"
+	ParseModeFast     = "fast"
 	ParseModeNone     = "none"
 
-	AdvancedMaxBytes = 100 << 20
-	NormalMaxBytes   = 10 << 20
-	NormalMaxPages   = 20
-	UploadMaxBytes   = AdvancedMaxBytes + (4 << 20)
+	// One limit for both modes. The old, much tighter cap on the cheap mode was
+	// imposed by the free MinerU cloud API it used to call, which is gone.
+	ParseMaxBytes  = 100 << 20
+	UploadMaxBytes = ParseMaxBytes + (4 << 20)
 )
 
 // explicitKindExtensions mirrors AddSourceDialog's KIND_BY_EXT. Text/code
@@ -351,14 +354,33 @@ func IsTextKind(kind string) bool {
 
 func DefaultParseMode(name, kind string) string {
 	if IsTextKind(kind) {
-		// Text is inserted by the worker directly; keeping a job enqueued is
-		// still required for indexing.
-		return ParseModeAdvanced
+		// Text is never sent to MinerU. The worker reads the bytes and chunks
+		// them; parseMode=none still enqueues that job (see NeedsIngestJob).
+		return ParseModeNone
 	}
-	if advancedParseExtensions[extensionKey(name)] {
-		return ParseModeAdvanced
+	if parseExtensions[extensionKey(name)] {
+		return ParseModeFast
 	}
 	return ParseModeNone
+}
+
+// NeedsIngestJob is whether an upload should be queued for indexing rather than
+// stored as a view-only blob. Text always is — there is nothing to parse, but
+// the file still has to be chunked and embedded. Everything else follows the
+// chosen parse mode: none means store only.
+func NeedsIngestJob(kind, mode string) bool {
+	return IsTextKind(kind) || mode != ParseModeNone
+}
+
+// NormalizeCaptionImages clears a caption request that has nothing to act on.
+// Captions are written onto the figures a parse extracted, so an unparsed blob
+// or a plain-text source can never produce one, and letting the flag through
+// would only put a misleading value on the job.
+func NormalizeCaptionImages(kind, mode string, requested bool) bool {
+	if !requested || mode == ParseModeNone || IsTextKind(kind) {
+		return false
+	}
+	return true
 }
 
 func Validate(name, kind, mode string, size int64) error {
@@ -376,7 +398,7 @@ func Validate(name, kind, mode string, size int64) error {
 	if kind != expectedKind {
 		return fmt.Errorf("file kind %q does not match extension %q", kind, Extension(name))
 	}
-	if size < 0 || size > AdvancedMaxBytes {
+	if size < 0 || size > ParseMaxBytes {
 		return fmt.Errorf("uploads support files up to 100 MB")
 	}
 	if IsTextKind(kind) {
@@ -384,19 +406,9 @@ func Validate(name, kind, mode string, size int64) error {
 	}
 
 	switch mode {
-	case ParseModeAdvanced:
-		if !advancedParseExtensions[extensionKey(name)] {
-			return fmt.Errorf("advanced parsing does not support %s files", Extension(name))
-		}
-		if size > AdvancedMaxBytes {
-			return fmt.Errorf("advanced parsing supports files up to 100 MB")
-		}
-	case ParseModeNormal:
-		if !normalParseExtensions[extensionKey(name)] {
-			return fmt.Errorf("normal parsing does not support %s files", Extension(name))
-		}
-		if size > NormalMaxBytes {
-			return fmt.Errorf("normal parsing supports files up to 10 MB")
+	case ParseModeAccurate, ParseModeFast:
+		if !parseExtensions[extensionKey(name)] {
+			return fmt.Errorf("parsing does not support %s files", Extension(name))
 		}
 	case ParseModeNone:
 	default:
@@ -405,12 +417,11 @@ func Validate(name, kind, mode string, size int64) error {
 	return nil
 }
 
-var normalParseExtensions = map[string]bool{
-	"pdf": true, "png": true, "jpg": true, "jpeg": true, "jp2": true,
-	"webp": true, "gif": true, "bmp": true, "docx": true, "pptx": true, "xlsx": true,
-}
-
-var advancedParseExtensions = map[string]bool{
+// parseExtensions is shared by both modes: they are the same MinerU entry point
+// on the same service, so anything one can read the other can too. They used to
+// differ only because the cheap mode was a third-party cloud API with its own
+// narrower format list.
+var parseExtensions = map[string]bool{
 	"pdf": true, "doc": true, "docx": true, "ppt": true, "pptx": true,
 	"xls": true, "xlsx": true, "png": true, "jpg": true, "jpeg": true,
 	"jp2": true, "webp": true, "gif": true, "bmp": true,
@@ -428,17 +439,11 @@ func ExtensionsByKind() map[string][]string {
 }
 
 func ParseExtensions(mode string) []string {
-	var source map[string]bool
-	switch mode {
-	case ParseModeAdvanced:
-		source = advancedParseExtensions
-	case ParseModeNormal:
-		source = normalParseExtensions
-	default:
+	if mode != ParseModeAccurate && mode != ParseModeFast {
 		return []string{}
 	}
-	out := make([]string, 0, len(source))
-	for ext := range source {
+	out := make([]string, 0, len(parseExtensions))
+	for ext := range parseExtensions {
 		out = append(out, "."+ext)
 	}
 	sort.Strings(out)

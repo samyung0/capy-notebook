@@ -1506,7 +1506,8 @@ export const GetSourceUploadPolicyResponse = zod.object({
   "extensions": zod.array(zod.string()),
   "maxBytes": zod.int(),
   "maxPages": zod.int().optional(),
-  "mode": zod.enum(['advanced', 'normal', 'none'])
+  "mode": zod.enum(['accurate', 'fast', 'none']),
+  "supportsFigures": zod.boolean()
 }))
 })
 

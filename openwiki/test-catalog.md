@@ -15,7 +15,6 @@ at the top of each section.
 | --- | --- |
 | Frontend Vitest | `pnpm test` |
 | Collaboration Vitest | `pnpm test:collaboration` |
-| Cloudflare MinerU relay | `pnpm test:cloudflare-relay` |
 | Go server | `pnpm test:go` |
 | Python pipeline | `pnpm test:pipeline` / offline: `pnpm test:pipeline:offline` |
 | Playwright sharing/API e2e | `pnpm e2e` |
@@ -71,7 +70,7 @@ at the top of each section.
 | --- | --- |
 | [`src/features/quizzes/QuizForm.test.ts`](../src/features/quizzes/QuizForm.test.ts) | Quiz question validation and round-trip for every supported question type. |
 | [`src/features/workspace/access.test.ts`](../src/features/workspace/access.test.ts) | Workspace access helpers for read-only viewers, editors, and owner-only share. |
-| [`src/features/workspace/sourceUpload.test.ts`](../src/features/workspace/sourceUpload.test.ts) | Source-upload extension/parser policy from server limits and byte-weighted progress. |
+| [`src/features/workspace/sourceUpload.test.ts`](../src/features/workspace/sourceUpload.test.ts) | Source-upload extension/parser policy from server limits, image-caption availability per mode, and byte-weighted progress. |
 
 ---
 
@@ -87,16 +86,6 @@ at the top of each section.
 
 ---
 
-## Cloudflare MinerU relay (`cloudflare/mineru-relay/`)
-
-Node’s built-in test runner (`node --test`).
-
-| File | About |
-| --- | --- |
-| [`cloudflare/mineru-relay/test/index.test.js`](../cloudflare/mineru-relay/test/index.test.js) | Relay auth, host allowlists, oversized/stalled B2 transfers, and streaming upload. |
-
----
-
 ## Go server (`server/`)
 
 ### `cmd` / auth / blob / mail / pipeline client
@@ -109,7 +98,7 @@ Node’s built-in test runner (`node --test`).
 | [`server/internal/mail/capture_test.go`](../server/internal/mail/capture_test.go) | Recording mail sender keeps bounded history and ignores failed deliveries. |
 | [`server/internal/mail/mail_test.go`](../server/internal/mail/mail_test.go) | Invite email render/localization, role labels, and unsubscribe tokens. |
 | [`server/internal/pipeline/client_test.go`](../server/internal/pipeline/client_test.go) | Pipeline HTTP client success, error status, bad JSON, and connection refused. |
-| [`server/internal/sourceupload/rules_test.go`](../server/internal/sourceupload/rules_test.go) | Source kind-from-name map, upload validation, and policy list parsing. |
+| [`server/internal/sourceupload/rules_test.go`](../server/internal/sourceupload/rules_test.go) | Source kind-from-name map, upload validation, caption-flag normalization, and policy list parsing. |
 
 ### HTTP API
 
@@ -161,9 +150,9 @@ See also [`pipeline-tests.md`](pipeline-tests.md) for disposable Postgres/Redis 
 | [`pipeline/tests/test_chunking.py`](../pipeline/tests/test_chunking.py) | Heading breadcrumbs, page/bbox regions, table/equation/figure handling, oversized-block splitting, CJK bigram tokenizer. |
 | [`pipeline/tests/test_generate.py`](../pipeline/tests/test_generate.py) | Cassette: even scope coverage, file filtering, and flashcard/quiz JSON surviving into the runner shape. |
 | [`pipeline/tests/test_ingest_query.py`](../pipeline/tests/test_ingest_query.py) | Cassette: index → search → grounded cited answer, re-index convergence, scope confinement, cross-document concepts, cascade teardown. |
-| [`pipeline/tests/test_ingest_worker.py`](../pipeline/tests/test_ingest_worker.py) | Offline caption candidate filtering, page-area ranking, and per-file cap. |
-| [`pipeline/tests/test_mineru_lite.py`](../pipeline/tests/test_mineru_lite.py) | MinerU blob parse relay+retry vs legacy local path without relay. |
-| [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py) | Artifact addressing/caching, rejection of traversal, checksum, version and source mismatches, corrupt-cache recovery. |
+| [`pipeline/tests/test_figures.py`](../pipeline/tests/test_figures.py) | Offline: line diagrams surviving the flatness filters, recurring page furniture dropped by perceptual hash, bbox and duplicate handling, caption caching keeping `content_hash` stable. |
+| [`pipeline/tests/test_ingest_worker.py`](../pipeline/tests/test_ingest_worker.py) | Offline: parse-mode → route selection, text sources bypassing the parser, and captions reaching the chunker. |
+| [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py) | Artifact addressing/caching per route, per-route endpoints and versions, rejection of traversal, checksum, version and source mismatches, corrupt-cache recovery. |
 | [`pipeline/tests/test_retrieval_helpers.py`](../pipeline/tests/test_retrieval_helpers.py) | Tool scope narrowing, stable citation numbering, per-file diversity cap, JSON extraction and question normalization. |
 | [`pipeline/tests/test_store_sql.py`](../pipeline/tests/test_store_sql.py) | Docker (no model calls): hybrid search halves, CJK recall, scoping, canonical duplicate ownership/deletion, concept co-mention, narrow summary invalidation, cascades. |
 

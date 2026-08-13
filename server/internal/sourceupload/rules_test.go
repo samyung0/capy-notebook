@@ -33,10 +33,12 @@ func TestValidate(t *testing.T) {
 		size      int64
 		wantError string
 	}{
-		{name: "notes.pdf", kind: "pdf", mode: ParseModeNormal, size: 1},
+		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: 1},
+		{name: "notes.pdf", kind: "pdf", mode: ParseModeAccurate, size: 1},
 		{name: "script.py", kind: "txt", mode: ParseModeNone, size: 1},
-		{name: "notes.pdf", kind: "pdf", mode: ParseModeNormal, size: NormalMaxBytes + 1, wantError: "10 MB"},
-		{name: "notes.pdf", kind: "txt", mode: ParseModeNormal, size: 1, wantError: "does not match"},
+		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: ParseMaxBytes + 1, wantError: "100 MB"},
+		{name: "song.mp3", kind: "audio", mode: ParseModeFast, size: 1, wantError: "does not support"},
+		{name: "notes.pdf", kind: "txt", mode: ParseModeFast, size: 1, wantError: "does not match"},
 		{name: "archive.zip", kind: "unknown", mode: ParseModeNone, size: 1, wantError: "not supported"},
 		{name: "notes.pdf", kind: "pdf", mode: "invalid", size: 1, wantError: "unknown parse mode"},
 	}
@@ -56,18 +58,84 @@ func TestValidate(t *testing.T) {
 	}
 }
 
-func TestParsePolicyLists(t *testing.T) {
-	advanced := ParseExtensions(ParseModeAdvanced)
-	normal := ParseExtensions(ParseModeNormal)
-	supported := SupportedExtensions()
-	if !contains(advanced, ".doc") || !contains(advanced, ".pptx") {
-		t.Fatalf("advanced policy is missing expected extensions: %v", advanced)
+func TestDefaultParseMode(t *testing.T) {
+	tests := map[string]string{
+		"notes.pdf":    ParseModeFast,
+		"slides.pptx":  ParseModeFast,
+		"readme.md":    ParseModeNone,
+		"script.py":    ParseModeNone,
+		"song.mp3":     ParseModeNone,
+		"archive.zip":  ParseModeNone,
+		"no-extension": ParseModeNone,
 	}
-	if !contains(normal, ".docx") || contains(normal, ".doc") {
-		t.Fatalf("normal policy has unexpected extensions: %v", normal)
+	for name, want := range tests {
+		kind := KindFromName(name)
+		if got := DefaultParseMode(name, kind); got != want {
+			t.Errorf("DefaultParseMode(%q, %q) = %q, want %q", name, kind, got, want)
+		}
+	}
+}
+
+func TestNeedsIngestJob(t *testing.T) {
+	tests := []struct {
+		kind, mode string
+		want       bool
+	}{
+		{kind: "txt", mode: ParseModeNone, want: true},
+		{kind: "md", mode: ParseModeNone, want: true},
+		{kind: "json", mode: ParseModeNone, want: true},
+		{kind: "pdf", mode: ParseModeFast, want: true},
+		{kind: "pdf", mode: ParseModeNone, want: false},
+		{kind: "audio", mode: ParseModeNone, want: false},
+	}
+	for _, test := range tests {
+		if got := NeedsIngestJob(test.kind, test.mode); got != test.want {
+			t.Errorf("NeedsIngestJob(%q, %q) = %t, want %t",
+				test.kind, test.mode, got, test.want)
+		}
+	}
+}
+
+func TestParsePolicyLists(t *testing.T) {
+	accurate := ParseExtensions(ParseModeAccurate)
+	fast := ParseExtensions(ParseModeFast)
+	supported := SupportedExtensions()
+	if !contains(accurate, ".doc") || !contains(accurate, ".pptx") {
+		t.Fatalf("accurate policy is missing expected extensions: %v", accurate)
+	}
+	// Both modes are the same MinerU service, so their format support must not
+	// drift apart. They used to differ only because the cheap mode was a
+	// third-party cloud API.
+	if len(fast) != len(accurate) {
+		t.Fatalf("fast policy %v does not match accurate policy %v", fast, accurate)
+	}
+	if contains(ParseExtensions(ParseModeNone), ".pdf") {
+		t.Fatal("parse mode none should advertise no extensions")
 	}
 	if !contains(supported, ".py") || !contains(supported, ".mdc") || contains(supported, ".zip") {
 		t.Fatalf("supported policy does not mirror the frontend allowlist: %v", supported)
+	}
+}
+
+func TestNormalizeCaptionImages(t *testing.T) {
+	tests := []struct {
+		kind, mode string
+		requested  bool
+		want       bool
+	}{
+		{kind: "pdf", mode: ParseModeAccurate, requested: true, want: true},
+		{kind: "pdf", mode: ParseModeFast, requested: true, want: true},
+		{kind: "pdf", mode: ParseModeAccurate, requested: false, want: false},
+		// Nothing to caption: no parse ran, or the source has no figures.
+		{kind: "pdf", mode: ParseModeNone, requested: true, want: false},
+		{kind: "txt", mode: ParseModeAccurate, requested: true, want: false},
+		{kind: "md", mode: ParseModeAccurate, requested: true, want: false},
+	}
+	for _, test := range tests {
+		if got := NormalizeCaptionImages(test.kind, test.mode, test.requested); got != test.want {
+			t.Errorf("NormalizeCaptionImages(%q, %q, %t) = %t, want %t",
+				test.kind, test.mode, test.requested, got, test.want)
+		}
 	}
 }
 

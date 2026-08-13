@@ -136,17 +136,14 @@ services:
       B2_KEY_ID: ${B2_KEY_ID:-}
       B2_APP_KEY: ${B2_APP_KEY:-}
       REDIS_URL: redis://redis:6379/0
-      # Modal GPU MinerU parse service ('advanced' parse mode).
+      # Modal GPU MinerU parse service: one endpoint per parse mode.
       MODAL_PARSE_URL: ${MODAL_PARSE_URL:-}
+      MODAL_FAST_PARSE_URL: ${MODAL_FAST_PARSE_URL:-}
       MODAL_PARSE_TOKEN: ${MODAL_PARSE_TOKEN:-}
-      MODAL_PARSE_TIMEOUT: ${MODAL_PARSE_TIMEOUT:-600}
+      MODAL_PARSE_TIMEOUT: ${MODAL_PARSE_TIMEOUT:-900}
       MODAL_B2_ARTIFACTS: ${MODAL_B2_ARTIFACTS:-true}
       EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-auto}
       MAX_PARALLEL_PARSE_MODAL: ${MAX_PARALLEL_PARSE_MODAL:-2}
-      # Cloudflare Worker that streams B2 sources into MinerU lite.
-      MINERU_RELAY_URL: ${MINERU_RELAY_URL:-}
-      MINERU_RELAY_TOKEN: ${MINERU_RELAY_TOKEN:-}
-      MINERU_RELAY_TIMEOUT: ${MINERU_RELAY_TIMEOUT:-180}
       # Embeddings (OpenRouter) — EMBEDDING_DIM is permanent for the vector store.
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
@@ -156,10 +153,14 @@ services:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       EVO_MODEL_EXTRACTION: ${EVO_MODEL_EXTRACTION:-deepseek-v4-flash}
-      # Vision/caption (Gemini, OpenAI-compatible endpoint).
+      # Figure captions (Gemini, OpenAI-compatible endpoint). Whether a file is
+      # captioned at all is chosen per upload and carried on the job.
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
       EVO_MODEL_IMAGE_CAPTION: ${EVO_MODEL_IMAGE_CAPTION:-gemini-3.1-flash-lite-preview}
+      EVO_CAPTION_CONCURRENCY: ${EVO_CAPTION_CONCURRENCY:-8}
+      EVO_CAPTION_MAX_EDGE: ${EVO_CAPTION_MAX_EDGE:-1280}
+      EVO_CAPTION_VERSION: ${EVO_CAPTION_VERSION:-v1}
     command: ["python", "-m", "pipeline.ingest.worker"]
     depends_on:
       db:

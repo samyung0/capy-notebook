@@ -115,34 +115,41 @@ async def stream_text(
             yield delta
 
 
-async def caption_image(data_url: str, context: str) -> str:
-    """Describe one figure so it becomes searchable text. Best effort."""
+_CAPTION_ATTEMPTS = 3
+
+
+async def caption_image(data_url: str, prompt: str) -> str:
+    """Describe one figure so it becomes searchable text. Best effort.
+
+    Retried with backoff, unlike the other model calls: a figure-heavy document
+    issues hundreds of these at once, so a provider rate limit is an expected
+    condition rather than an outage, and one dropped caption is one figure
+    permanently missing from the index.
+    """
     api = client(cfg.vision)
-    try:
-        resp = await api.chat.completions.create(
-            model=cfg.vision_model,
-            temperature=0.2,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": (
-                                "Describe this figure from a study document in two or "
-                                "three sentences, naming the concepts it shows so the "
-                                "description can be found by search. Context: "
-                                + context
-                            ),
-                        },
-                        {"type": "image_url", "image_url": {"url": data_url}},
-                    ],
-                }
-            ],
-        )
-        return (resp.choices[0].message.content or "").strip() if resp.choices else ""
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        log.warning("image caption failed", exc_info=True)
-        return ""
+    for attempt in range(_CAPTION_ATTEMPTS):
+        try:
+            resp = await api.chat.completions.create(
+                model=cfg.vision_model,
+                temperature=0.2,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                        ],
+                    }
+                ],
+            )
+            return (
+                (resp.choices[0].message.content or "").strip() if resp.choices else ""
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            if attempt == _CAPTION_ATTEMPTS - 1:
+                log.warning("image caption failed", exc_info=True)
+                return ""
+            await asyncio.sleep(2**attempt)
+    return ""

@@ -62,6 +62,24 @@ const supportedExtensions = [...extensionKinds.keys()]
   .map((extension) => `.${extension}`)
   .sort((a, b) => a.localeCompare(b));
 
+/** Mirrors sourceupload.parseExtensions: both modes hit the same MinerU app. */
+const parseExtensions = [
+  '.bmp',
+  '.doc',
+  '.docx',
+  '.gif',
+  '.jp2',
+  '.jpeg',
+  '.jpg',
+  '.pdf',
+  '.png',
+  '.ppt',
+  '.pptx',
+  '.webp',
+  '.xls',
+  '.xlsx',
+];
+
 export const sourceUploadPolicy: SourceUploadPolicy = {
   accept: supportedExtensions.join(','),
   allowNoExtension: false,
@@ -73,47 +91,22 @@ export const sourceUploadPolicy: SourceUploadPolicy = {
   maxBytes: 100 * 1024 * 1024,
   parseModes: [
     {
-      extensions: [
-        '.bmp',
-        '.doc',
-        '.docx',
-        '.gif',
-        '.jpeg',
-        '.jp2',
-        '.jpg',
-        '.pdf',
-        '.png',
-        '.ppt',
-        '.pptx',
-        '.webp',
-        '.xls',
-        '.xlsx',
-      ],
+      extensions: parseExtensions,
       maxBytes: 100 * 1024 * 1024,
-      mode: 'advanced',
+      mode: 'accurate',
+      supportsFigures: true,
     },
     {
-      extensions: [
-        '.bmp',
-        '.docx',
-        '.gif',
-        '.jpeg',
-        '.jp2',
-        '.jpg',
-        '.pdf',
-        '.png',
-        '.pptx',
-        '.webp',
-        '.xlsx',
-      ],
-      maxBytes: 10 * 1024 * 1024,
-      maxPages: 20,
-      mode: 'normal',
+      extensions: parseExtensions,
+      maxBytes: 100 * 1024 * 1024,
+      mode: 'fast',
+      supportsFigures: true,
     },
     {
       extensions: [],
       maxBytes: 100 * 1024 * 1024,
       mode: 'none',
+      supportsFigures: false,
     },
   ],
 };

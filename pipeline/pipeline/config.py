@@ -50,22 +50,17 @@ class Config:
     poll_interval: float = float(_env("EVO_POLL_INTERVAL", "2.0"))
 
     # ---- Modal MinerU parse service --------------------------------------
+    # Both parse routes are Modal GPU endpoints and return the same bundle
+    # (content_list + images). They differ in MinerU backend, and therefore in
+    # cost, accuracy and how many documents one container parses at once:
+    # 'accurate' is the hybrid VLM, 'fast' is the pipeline OCR stack.
     modal_parse_url: str = _env("MODAL_PARSE_URL", "")
+    modal_fast_parse_url: str = _env("MODAL_FAST_PARSE_URL", "")
     modal_parse_token: str = _env("MODAL_PARSE_TOKEN", "")
-    modal_parse_timeout: int = int(_env("MODAL_PARSE_TIMEOUT", "600"))
+    # The fast endpoint may hold a request behind up to five others in its
+    # container, so the client timeout has to cover queueing, not just parsing.
+    modal_parse_timeout: int = int(_env("MODAL_PARSE_TIMEOUT", "900"))
     parse_method: str = _env("EVO_PARSE_METHOD", "auto")  # auto | ocr | txt
-
-    # ---- MinerU lightweight (free) cloud parse API ------------------------
-    # Token-free, IP rate-limited "Agent" endpoints on mineru.net; used for
-    # parseMode=normal jobs. 'ch' OCR pack = Chinese + English only.
-    mineru_lite_base: str = _env(
-        "MINERU_LITE_BASE_URL", "https://mineru.net/api/v1/agent"
-    )
-    mineru_lite_language: str = _env("MINERU_LITE_LANGUAGE", "ch")
-    mineru_lite_timeout: int = int(_env("MINERU_LITE_TIMEOUT", "600"))
-    mineru_relay_url: str = _env("MINERU_RELAY_URL", "")
-    mineru_relay_token: str = _env("MINERU_RELAY_TOKEN", "")
-    mineru_relay_timeout: int = int(_env("MINERU_RELAY_TIMEOUT", "180"))
 
     # ---- chunking ---------------------------------------------------------
     # Target size in characters, not tokens: the boundary decisions here are
@@ -116,10 +111,23 @@ class Config:
         ),
     )
     vision_model: str = _env("EVO_MODEL_IMAGE_CAPTION", "gemini-3.1-flash-lite-preview")
-    # Captioning is per-image and only pays off on figure-heavy sources; off by
-    # default so a 300-page scan does not turn into 300 VLM calls.
+    # Default for uploads that do not carry an explicit captionImages choice.
+    # The real switch is per file, set at upload time and carried on the job.
     caption_images: bool = _env("EVO_CAPTION_IMAGES", "false").lower() == "true"
-    caption_max_per_file: int = int(_env("EVO_CAPTION_MAX_PER_FILE", "40"))
+    # Every surviving figure is captioned — the filters in parse/figures.py, not
+    # a count, are what bound the cost. This is a safety valve for a pathological
+    # document, not a quality knob; 0 disables it.
+    caption_max_per_file: int = int(_env("EVO_CAPTION_MAX_PER_FILE", "0"))
+    # Wall clock, not price, is the binding constraint: a slide deck can have
+    # hundreds of figures and each call is ~1-2s.
+    caption_concurrency: int = int(_env("EVO_CAPTION_CONCURRENCY", "8"))
+    # Longest edge sent to the vision model. Figures are re-encoded to JPEG at
+    # this size, which is well past the resolution a caption needs and keeps the
+    # image-token count (and the upload) small.
+    caption_max_edge: int = int(_env("EVO_CAPTION_MAX_EDGE", "1280"))
+    # Bumped whenever the prompt, the model or the filters change, so cached
+    # captions from an older definition are not reused.
+    caption_version: str = _env("EVO_CAPTION_VERSION", "v1")
 
     # ---- speech-to-text (Whisper-compatible, OpenAI API) ------------------
     # Used by /transcribe for voice notes. Defaults to OpenAI Whisper; point

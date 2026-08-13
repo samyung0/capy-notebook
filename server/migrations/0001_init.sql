@@ -1053,6 +1053,10 @@ CREATE TABLE IF NOT EXISTS upload_sessions (
   name          text NOT NULL DEFAULT '',
   kind          text NOT NULL DEFAULT '',
   parse_mode    text NOT NULL DEFAULT '',
+  -- Whether the ingest worker should describe the figures this parse extracts.
+  -- Chosen per file at reservation time and copied onto the ingest job, because
+  -- the choice changes the indexed text and therefore the content hash.
+  caption_images boolean NOT NULL DEFAULT false,
   source_etag   text,
   file_id       text REFERENCES files(id) ON DELETE SET NULL,
   -- Editor-asset-only: the pending row in editor_assets this fills in.

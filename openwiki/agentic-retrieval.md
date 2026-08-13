@@ -34,8 +34,9 @@ internal materials endpoint the chat agent calls).
 flowchart LR
   Upload[Upload / move file] --> Jobs[(jobs)]
   Jobs --> Worker[Ingest worker]
-  Worker --> Parse[Modal MinerU or MinerU lite]
-  Parse --> Chunk[Heading-aware chunker]
+  Worker --> Parse[Modal MinerU: accurate or fast]
+  Parse --> Caption[Figure filter + caption]
+  Caption --> Chunk[Heading-aware chunker]
   Chunk --> Index[Embed + file summary + concepts]
   Index --> Store[(rag_chunks / summaries / concepts)]
   Store --> Search[Hybrid search RRF]
@@ -98,20 +99,57 @@ Controlled by `parseMode` on the job payload:
 
 | Mode | Parser | Output | Page model |
 | --- | --- | --- | --- |
-| `advanced` (default) | Modal GPU MinerU | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
-| `normal` | MinerU lite cloud API | Markdown only | No |
+| `fast` (default) | Modal MinerU, pipeline OCR backend | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
+| `accurate` | Modal MinerU, hybrid VLM backend | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
 | `none` | — | Blob stored, not indexed | — |
 | txt / md kinds | Direct B2 read | Markdown | No |
 
-`advanced` is the only route that can produce page-accurate citations. Artifacts
-are addressed by fingerprint over `(blob, etag, size, parse method, parser
-version)` and cached in B2 so retries and clones reuse the GPU result.
+Both parse modes are the same MinerU service on our own L4 GPUs and return the
+same bundle, so both give page-accurate citations and both extract the figures
+captioning needs. They differ in the backend that produced it: `accurate` runs
+the hybrid VLM, which reads dense layouts, tables and formulas better and costs
+more GPU seconds per page; `fast` runs pipeline OCR, several documents batched
+into one container. Pipeline OCR uses the `ch` language pack, which covers
+Chinese and English — Korean and Japanese documents should use `accurate`.
 
-Optional VLM figure captioning (`EVO_CAPTION_IMAGES`) writes a description onto
-image blocks before chunking so figures become searchable. Off by default —
-scanned books would otherwise turn into hundreds of vision calls. Before the
-per-file cap, candidates are filtered by byte size, pixel dimensions, pixel
-area, aspect ratio and normalized page area, then ranked by page coverage.
+Artifacts are addressed by fingerprint over `(blob, etag, size, parse method,
+route, parser version)` and cached in B2, so retries and clones reuse the GPU
+result. The route is part of that identity: the same PDF parsed both ways must
+not collide on one cached bundle.
+
+Nothing calls the third-party MinerU cloud API any more. It could not return
+bounding boxes or images, needed polling, and capped files at 10 MB / 20 pages.
+
+### Figure captioning
+
+Chosen per file at upload time (`captionImages` on the job payload;
+`EVO_CAPTION_IMAGES` only covers jobs that carry no choice, such as cloud
+imports). `pipeline/parse/figures.py` describes each surviving figure with the
+vision model and writes it onto the image block **before chunking**, so the
+caption is embedded, summarized, concept-extracted and cited as part of the
+passage it belongs to. That ordering is the point of the feature: a slide deck
+whose substance is in its diagrams is otherwise nearly invisible to search.
+
+Every figure that survives filtering is captioned — the filters, not a count,
+bound the cost. Filtering is deliberately asymmetric, because a dropped figure
+is unreachable forever while a needless caption costs a fraction of a cent:
+
+- Absolute bounds — pixel dimensions, pixel area, aspect ratio, and normalized
+  page area from the bbox (which is what catches an icon rendered large by a
+  300 DPI scan).
+- Repetition — figures are clustered by perceptual hash (dHash, Hamming ≤ 6)
+  and a cluster spanning many pages is dropped as page furniture. This is the
+  load-bearing filter, and the only one that works regardless of language or
+  subject matter.
+- Flatness — near-uniform crops only. The naive "mostly one colour means logo"
+  rule would drop line diagrams on white, which are the most valuable images
+  there are, so the thresholds sit far below any real drawing.
+
+Captions are cached in B2 under `captions/{parse fingerprint}/{caption
+version}.json`, keyed by image content hash. This is not only about money:
+`files.content_hash` is a digest of chunk text and chunk text contains these
+captions, so without the cache the same PDF uploaded twice would produce two
+digests and defeat canonical de-duplication in `rag_contents`.
 
 ### Chunking
 
@@ -245,8 +283,7 @@ A citation is:
 ```
 
 - `fileId` is a real `files.id` (not a LightRAG doc hash).
-- Pages are 1-based and **absent** for sources with no page model (txt/md,
-  `parseMode=normal`).
+- Pages are 1-based and **absent** for sources with no page model (txt/md).
 - `regions` are stored and shipped; the highlight overlay that would consume
   them is not built yet.
 
@@ -270,12 +307,14 @@ job and pipeline `/workspace/delete` endpoint are gone.
 | Concern | Env | Default / note |
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material` |
+| Parse routes | `MODAL_PARSE_URL`, `MODAL_FAST_PARSE_URL` | One per mode; both from one Modal deploy |
 | Chunk size | `EVO_CHUNK_*` | Character budgets, not tokens |
 | Embedding | `EVO_MODEL_EMBEDDING`, `EMBEDDING_DIM` | Dim must match `halfvec(N)` |
 | Ingest / query models | `EVO_MODEL_EXTRACTION`, `EVO_QUERY_MODEL` | Flash for ingest and chat |
 | Search | `EVO_SEARCH_CANDIDATES`, `EVO_SEARCH_TOP_K`, `EVO_SEARCH_PER_FILE_CAP` | |
 | Agent | `EVO_AGENT_MAX_STEPS` | Cap is the design, not a safety valve |
-| Captions | `EVO_CAPTION_IMAGES`, `EVO_CAPTION_MAX_PER_FILE` | Off by default |
+| Captions | `EVO_CAPTION_IMAGES`, `EVO_CAPTION_CONCURRENCY`, `EVO_CAPTION_MAX_EDGE`, `EVO_CAPTION_VERSION` | Per file at upload; the env flag is only a fallback |
+| Caption safety valve | `EVO_CAPTION_MAX_PER_FILE` | `0` (uncapped); the filters bound the cost |
 
 Windows note: psycopg's async driver refuses the Proactor event loop.
 `pipeline.use_compatible_event_loop()` is called by both entrypoints and by the

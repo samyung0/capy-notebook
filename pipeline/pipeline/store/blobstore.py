@@ -101,6 +101,26 @@ def download_to(blob_path: str, destination: Path) -> None:
     _s3_client().download_file(cfg.b2_bucket, blob_path, str(destination))
 
 
+def read_bytes(blob_path: str) -> bytes | None:
+    """Read a small object, or None when it does not exist."""
+    from botocore.exceptions import ClientError
+
+    try:
+        out = _s3_client().get_object(Bucket=cfg.b2_bucket, Key=blob_path)
+    except ClientError as exc:
+        code = str(exc.response.get("Error", {}).get("Code", ""))
+        if code in {"404", "NoSuchKey", "NotFound"}:
+            return None
+        raise
+    return out["Body"].read()
+
+
+def write_bytes(blob_path: str, data: bytes, content_type: str) -> None:
+    _s3_client().put_object(
+        Bucket=cfg.b2_bucket, Key=blob_path, Body=data, ContentType=content_type
+    )
+
+
 def delete(blob_path: str) -> None:
     _s3_client().delete_object(Bucket=cfg.b2_bucket, Key=blob_path)
 

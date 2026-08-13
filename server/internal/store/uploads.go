@@ -25,36 +25,38 @@ type UploadSession struct {
 	WorkspaceID string
 	// UserID is the storage owner charged for the reservation; CreatedBy is the
 	// uploader, which may be a collaborator rather than the workspace owner.
-	UserID       string
-	CreatedBy    *string
-	ChapterID    *string
-	ChapterName  string
-	ObjectPath   string
-	FinalPath    string
-	Name         string
-	Kind         string
-	ContentType  string
-	DeclaredSize int64
-	ParseMode    string
-	Status       string
-	FileID       *string
-	ExpiresAt    time.Time
+	UserID        string
+	CreatedBy     *string
+	ChapterID     *string
+	ChapterName   string
+	ObjectPath    string
+	FinalPath     string
+	Name          string
+	Kind          string
+	ContentType   string
+	DeclaredSize  int64
+	ParseMode     string
+	CaptionImages bool
+	Status        string
+	FileID        *string
+	ExpiresAt     time.Time
 }
 
 type NewUploadSession struct {
-	ID           string
-	WorkspaceID  string
-	CreatedBy    string
-	ChapterID    *string
-	ChapterName  string
-	ObjectPath   string
-	FinalPath    string
-	Name         string
-	Kind         string
-	ContentType  string
-	DeclaredSize int64
-	ParseMode    string
-	ExpiresAt    time.Time
+	ID            string
+	WorkspaceID   string
+	CreatedBy     string
+	ChapterID     *string
+	ChapterName   string
+	ObjectPath    string
+	FinalPath     string
+	Name          string
+	Kind          string
+	ContentType   string
+	DeclaredSize  int64
+	ParseMode     string
+	CaptionImages bool
+	ExpiresAt     time.Time
 }
 
 func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (UploadSession, error) {
@@ -72,11 +74,13 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO upload_sessions
 		(id, target, workspace_id, user_id, created_by, chapter_id, chapter_name,
-		 object_path, final_path, name, kind, content_type, declared_size, parse_mode, expires_at)
-		VALUES ($1,'source',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+		 object_path, final_path, name, kind, content_type, declared_size, parse_mode,
+		 caption_images, expires_at)
+		VALUES ($1,'source',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
 		in.ID, in.WorkspaceID, ownerID, nullStr(in.CreatedBy), in.ChapterID, in.ChapterName,
 		in.ObjectPath, in.FinalPath,
-		in.Name, in.Kind, in.ContentType, in.DeclaredSize, in.ParseMode, in.ExpiresAt)
+		in.Name, in.Kind, in.ContentType, in.DeclaredSize, in.ParseMode,
+		in.CaptionImages, in.ExpiresAt)
 	if err != nil {
 		return UploadSession{}, err
 	}
@@ -89,13 +93,13 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 func scanUploadSession(row interface{ Scan(...any) error }) (UploadSession, error) {
 	var u UploadSession
 	err := row.Scan(&u.ID, &u.WorkspaceID, &u.UserID, &u.CreatedBy, &u.ChapterID, &u.ChapterName, &u.ObjectPath, &u.FinalPath,
-		&u.Name, &u.Kind, &u.ContentType, &u.DeclaredSize, &u.ParseMode,
+		&u.Name, &u.Kind, &u.ContentType, &u.DeclaredSize, &u.ParseMode, &u.CaptionImages,
 		&u.Status, &u.FileID, &u.ExpiresAt)
 	return u, err
 }
 
 const uploadSessionCols = `id, workspace_id, user_id, created_by, chapter_id, chapter_name, object_path, final_path,
-	name, kind, content_type, declared_size, parse_mode, status, file_id, expires_at`
+	name, kind, content_type, declared_size, parse_mode, caption_images, status, file_id, expires_at`
 
 // uploadSessionFrom restricts the shared table to the source flow, so an
 // editor-asset upload id can never be driven through the file finalize path.
@@ -156,7 +160,7 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 	fileID := uid("f")
 	fileURL := "/api/files/" + fileID + "/raw"
 	now := time.Now().UTC()
-	ready := u.ParseMode == "none" && !sourceupload.IsTextKind(u.Kind)
+	ready := !sourceupload.NeedsIngestJob(u.Kind, u.ParseMode)
 	status := "processing"
 	if ready {
 		status = "ready"
@@ -172,10 +176,11 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 
 	if !ready {
 		jobID := uid("job")
-		payload, _ := json.Marshal(map[string]string{
+		payload, _ := json.Marshal(map[string]any{
 			"fileId": fileID, "workspaceId": u.WorkspaceID, "blobPath": u.FinalPath,
 			"kind": u.Kind, "parser": parser, "engine": engine,
-			"parseMode": u.ParseMode, "sourceETag": sourceETag,
+			"parseMode": u.ParseMode, "captionImages": u.CaptionImages,
+			"sourceETag": sourceETag,
 		})
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO jobs (id, type, payload) VALUES ($1,'ingest',$2)`,

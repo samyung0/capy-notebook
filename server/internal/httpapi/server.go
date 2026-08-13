@@ -275,17 +275,12 @@ func (a *api) addSource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, res)
 }
 
-// Parse-mode limits. Advanced runs on the Modal MinerU hybrid backend (we cap
-// uploads at 100 MB); normal uses the free MinerU lightweight cloud API
-// (their hard limits: 10 MB / 20 pages, page count enforced by MinerU).
+// Parse-mode limits. Both modes run MinerU on Modal — accurate on the hybrid
+// VLM backend, fast on the pipeline OCR backend — so one 100 MB upload cap
+// covers both.
 const (
-	parseModeAdvanced = sourceupload.ParseModeAdvanced
-	parseModeNormal   = sourceupload.ParseModeNormal
-	parseModeNone     = sourceupload.ParseModeNone
-
-	advancedMaxBytes = sourceupload.AdvancedMaxBytes
-	normalMaxBytes   = sourceupload.NormalMaxBytes
-	uploadMaxBytes   = sourceupload.UploadMaxBytes // multipart overhead headroom
+	parseMaxBytes  = sourceupload.ParseMaxBytes
+	uploadMaxBytes = sourceupload.UploadMaxBytes // multipart overhead headroom
 )
 
 func defaultParseMode(name, kind string) string {
@@ -349,13 +344,14 @@ func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 		return
 	}
+	captionImages := sourceupload.NormalizeCaptionImages(kind, parseMode, r.FormValue("captionImages") == "true")
 
 	blobPath, size, err := a.blob.Put(sourceObjectKey(randID("blob")), file)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
-	if parseMode == parseModeNone && !sourceupload.IsTextKind(kind) {
+	if !sourceupload.NeedsIngestJob(kind, parseMode) {
 		res, err := a.s.CreateSourceReady(r.Context(), id(r), uid(r), name, kind, chapterID, chapterName, size, blobPath)
 		if err != nil {
 			_ = a.blob.Delete(r.Context(), blobPath)
@@ -365,7 +361,7 @@ func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 201, res)
 		return
 	}
-	res, _, err := a.s.CreateSourceWithJob(r.Context(), id(r), uid(r), name, kind, chapterID, chapterName, size, blobPath, a.parser, a.engine, parseMode)
+	res, _, err := a.s.CreateSourceWithJob(r.Context(), id(r), uid(r), name, kind, chapterID, chapterName, size, blobPath, a.parser, a.engine, parseMode, captionImages)
 	if err != nil {
 		_ = a.blob.Delete(r.Context(), blobPath)
 		a.fail(w, err)

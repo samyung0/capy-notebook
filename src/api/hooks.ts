@@ -855,6 +855,7 @@ export function useUploadSource(wsId: string) {
       chapterId,
       chapterName,
       parseMode,
+      captionImages,
       onUploadProgress,
       signal,
     }: {
@@ -862,9 +863,11 @@ export function useUploadSource(wsId: string) {
       kind: SourceFile['kind'];
       chapterId?: string | null;
       chapterName?: string | null;
-      /** advanced = Modal MinerU hybrid backend, normal = free MinerU
-       * lightweight cloud API, none = store only (no parsing/indexing). */
-      parseMode?: 'advanced' | 'normal' | 'none';
+      /** accurate = Modal MinerU hybrid backend, fast = Modal MinerU pipeline
+       * backend, none = store only (no parsing/indexing). */
+      parseMode?: 'accurate' | 'fast' | 'none';
+      /** Caption the figures found while parsing so they become searchable. */
+      captionImages?: boolean;
       onUploadProgress?: (pct: number) => void;
       signal?: AbortSignal;
     }) => {
@@ -876,6 +879,7 @@ export function useUploadSource(wsId: string) {
         if (chapterId) form.append('chapterId', chapterId);
         if (chapterName) form.append('chapterName', chapterName);
         if (parseMode) form.append('parseMode', parseMode);
+        if (captionImages) form.append('captionImages', 'true');
         return api.upload<SourceFile>(
           `/workspaces/${wsId}/sources`,
           form,
@@ -891,6 +895,7 @@ export function useUploadSource(wsId: string) {
           headers: Record<string, string>;
           expiresAt: string;
         }>(`/workspaces/${wsId}/sources/uploads`, {
+          captionImages: captionImages ?? false,
           chapterId: chapterId ?? null,
           chapterName: chapterName ?? null,
           contentType: file.type || 'application/octet-stream',

@@ -9,10 +9,11 @@ import (
 // CreateSourceWithJob inserts an uploaded file as 'processing' and enqueues an
 // ingest job in the same transaction (Postgres-backed queue; the Python worker
 // claims it with SKIP LOCKED). The file's url points at the raw-blob endpoint
-// so the viewer can render it immediately. parseMode selects how the worker
-// parses the document: 'advanced' (Modal GPU MinerU), 'normal' (MinerU
-// lightweight cloud API) — text kinds ignore it and are inserted directly.
-func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, engine, parseMode string) (File, string, error) {
+// so the viewer can render it immediately. parseMode selects which MinerU
+// backend the worker parses with: 'accurate' (hybrid VLM) or 'fast' (pipeline
+// OCR) — text kinds ignore it and are inserted directly. captionImages asks the
+// worker to describe the figures that parse extracted.
+func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, engine, parseMode string, captionImages bool) (File, string, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return File{}, "", err
@@ -41,9 +42,10 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 	}
 
 	jobID := uid("job")
-	payload, _ := json.Marshal(map[string]string{
+	payload, _ := json.Marshal(map[string]any{
 		"fileId": fileID, "workspaceId": wsID, "blobPath": blobPath, "kind": kind,
 		"parser": parser, "engine": engine, "parseMode": parseMode,
+		"captionImages": captionImages,
 	})
 	if _, err := tx.Exec(ctx, `INSERT INTO jobs (id, type, payload) VALUES ($1,'ingest',$2)`, jobID, payload); err != nil {
 		return File{}, "", err

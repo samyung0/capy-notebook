@@ -1,15 +1,23 @@
-"""Client for the Modal-hosted MinerU GPU parse service ('advanced' mode).
+"""Client for the Modal-hosted MinerU GPU parse service (both parse routes).
 
 The service never receives document bytes from this process: it is handed a
 presigned GET for the source and a presigned PUT for the result, and it streams
 between them. What comes back is a zip containing MinerU's ``content_list.json``
 (one entry per layout block, with page index and bounding box) plus the images
-it extracted. That block list is what makes page-accurate citations possible, so
-this is the only parse route that produces them.
+it extracted. That block list is what makes page-accurate citations and figure
+captioning possible.
+
+Two routes share this client and this bundle format, differing only in which
+MinerU backend produced it:
+
+    accurate -> hybrid VLM, higher fidelity on dense layouts, slower per page
+    fast     -> pipeline OCR, cheaper, batched several documents to a container
 
 Artifacts are addressed by a fingerprint over (source object, etag, size, parse
-options, parser version). Re-ingesting the same document — a retry, a re-upload,
-a cloned workspace — hits the cached zip instead of the GPU.
+options, route, parser version). Re-ingesting the same document — a retry, a
+re-upload, a cloned workspace — hits the cached zip instead of the GPU. The
+route is part of that identity: the same PDF parsed fast and then accurate must
+not collide on one cached artifact.
 """
 
 from __future__ import annotations
@@ -34,15 +42,40 @@ log = logging.getLogger("evo.parse.modal")
 
 SOURCE_DESCRIPTOR_SCHEMA = "evo-b2-source-v1"
 ARTIFACT_SCHEMA = "evo-mineru-bundle-v1"
-PARSER_VERSION = "mineru-3.4-hybrid-v1"
+
+ROUTE_ACCURATE = "accurate"
+ROUTE_FAST = "fast"
+
+# Must match the constants in modal/mineru_app.py: the service rejects a request
+# whose parser_version it does not serve, so a version bump on either side fails
+# loudly instead of writing a bundle nobody can read back.
+PARSER_VERSIONS = {
+    ROUTE_ACCURATE: "mineru-3.4-hybrid-v1",
+    ROUTE_FAST: "mineru-3.4-pipeline-v1",
+}
 
 
 class ModalParseError(RuntimeError):
     pass
 
 
+def parser_version(route: str) -> str:
+    try:
+        return PARSER_VERSIONS[route]
+    except KeyError:
+        raise ModalParseError(f"unknown parse route {route!r}") from None
+
+
+def _endpoint(route: str) -> str:
+    url = cfg.modal_parse_url if route == ROUTE_ACCURATE else cfg.modal_fast_parse_url
+    if not url:
+        env = "MODAL_PARSE_URL" if route == ROUTE_ACCURATE else "MODAL_FAST_PARSE_URL"
+        raise ModalParseError(f"{env} is not configured")
+    return url
+
+
 def source_descriptor(
-    *, blob_path: str, file_id: str, source_etag: str, source_size: int
+    *, blob_path: str, file_id: str, source_etag: str, source_size: int, route: str
 ) -> dict[str, Any]:
     return {
         "schema": SOURCE_DESCRIPTOR_SCHEMA,
@@ -50,22 +83,26 @@ def source_descriptor(
         "file_id": file_id,
         "source_etag": source_etag,
         "source_size": source_size,
+        "route": route,
     }
 
 
 def artifact_identity(descriptor: Mapping[str, Any]) -> tuple[str, str]:
+    route = str(descriptor.get("route") or ROUTE_ACCURATE)
+    version = parser_version(route)
     identity = ":".join(
         [
             str(descriptor.get("blob_path") or ""),
             str(descriptor.get("source_etag") or ""),
             str(descriptor.get("source_size") or ""),
             cfg.parse_method,
-            PARSER_VERSION,
+            route,
+            version,
         ]
     )
     fingerprint = hashlib.sha256(identity.encode()).hexdigest()
     file_id = str(descriptor.get("file_id") or "unknown")
-    return f"parsed/{file_id}/{PARSER_VERSION}/{fingerprint}.zip", fingerprint
+    return f"parsed/{file_id}/{version}/{fingerprint}.zip", fingerprint
 
 
 def _request_artifact(
@@ -76,8 +113,9 @@ def _request_artifact(
     Isolated from unzipping so tests can record/replay this single network call —
     the only expensive, non-deterministic step. See pipeline/tests/README.md.
     """
-    if not cfg.modal_parse_url:
-        raise ModalParseError("MODAL_PARSE_URL is not configured")
+    route = str(descriptor.get("route") or ROUTE_ACCURATE)
+    version = parser_version(route)
+    endpoint = _endpoint(route)
 
     artifact_key, fingerprint = artifact_identity(descriptor)
     cached = blobstore.object_info(artifact_key)
@@ -97,7 +135,7 @@ def _request_artifact(
     if cfg.modal_parse_token:
         headers["Authorization"] = f"Bearer {cfg.modal_parse_token}"
     resp = requests.post(
-        cfg.modal_parse_url,
+        endpoint,
         headers=headers,
         json={
             "source_url": blobstore.presign_get(str(descriptor["blob_path"])),
@@ -106,7 +144,7 @@ def _request_artifact(
             "filename": upload_name,
             "parse_method": cfg.parse_method,
             "artifact_schema": ARTIFACT_SCHEMA,
-            "parser_version": PARSER_VERSION,
+            "parser_version": version,
             "source_fingerprint": fingerprint,
         },
         timeout=cfg.modal_parse_timeout,
@@ -119,7 +157,8 @@ def _request_artifact(
         raise ModalParseError("modal returned an unexpected artifact key")
     artifact["fingerprint"] = fingerprint
     log.info(
-        "modal published parse artifact key=%s bytes=%s parse_s=%s",
+        "modal published %s parse artifact key=%s bytes=%s parse_s=%s",
+        route,
         artifact_key,
         artifact.get("size"),
         payload.get("_server_parse_s"),
@@ -127,7 +166,7 @@ def _request_artifact(
     return artifact
 
 
-def _extract(artifact: Mapping[str, Any], raw_dir: Path) -> None:
+def _extract(artifact: Mapping[str, Any], raw_dir: Path, version: str) -> None:
     fd, tmp_name = tempfile.mkstemp(prefix="evo_parse_", suffix=".zip")
     os.close(fd)
     tmp = Path(tmp_name)
@@ -146,7 +185,7 @@ def _extract(artifact: Mapping[str, Any], raw_dir: Path) -> None:
             manifest = json.loads(archive.read("manifest.json"))
             if manifest.get("schema") != ARTIFACT_SCHEMA:
                 raise ModalParseError("unsupported parsed artifact schema")
-            if manifest.get("parser_version") != PARSER_VERSION:
+            if manifest.get("parser_version") != version:
                 raise ModalParseError("parsed artifact version mismatch")
             fingerprint = str(artifact.get("fingerprint") or "")
             if fingerprint and manifest.get("source_fingerprint") != fingerprint:
@@ -175,10 +214,11 @@ def parse_to_bundle(
 
     Blocking (requests + file IO); call via ``asyncio.to_thread``.
     """
+    version = parser_version(str(descriptor.get("route") or ROUTE_ACCURATE))
     raw_dir.mkdir(parents=True, exist_ok=True)
     artifact = _request_artifact(descriptor, upload_name)
     try:
-        _extract(artifact, raw_dir)
+        _extract(artifact, raw_dir, version)
     except Exception:
         if not artifact.get("cached"):
             raise
@@ -189,7 +229,7 @@ def parse_to_bundle(
         shutil.rmtree(raw_dir, ignore_errors=True)
         raw_dir.mkdir(parents=True, exist_ok=True)
         artifact = _request_artifact(descriptor, upload_name)
-        _extract(artifact, raw_dir)
+        _extract(artifact, raw_dir, version)
 
     content_list = json.loads(
         (raw_dir / "content_list.json").read_text(encoding="utf-8")

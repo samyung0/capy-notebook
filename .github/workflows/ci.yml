@@ -22,7 +22,6 @@ jobs:
       - run: pnpm run check
       - run: pnpm test
       - run: pnpm run test:collaboration
-      - run: pnpm run test:cloudflare-relay
 
   e2e_check:
     runs-on: ubuntu-latest

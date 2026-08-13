@@ -9,7 +9,7 @@ export type SourceUploadParseModePolicyMode = typeof SourceUploadParseModePolicy
 
 
 export const SourceUploadParseModePolicyMode = {
-  advanced: 'advanced',
-  normal: 'normal',
+  accurate: 'accurate',
+  fast: 'fast',
   none: 'none',
 } as const;

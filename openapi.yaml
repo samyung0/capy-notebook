@@ -1850,14 +1850,17 @@ components:
           type: integer
         mode:
           enum:
-            - advanced
-            - normal
+            - accurate
+            - fast
             - none
           type: string
+        supportsFigures:
+          type: boolean
       required:
         - mode
         - extensions
         - maxBytes
+        - supportsFigures
       type: object
     SourceUploadPolicy:
       additionalProperties: false

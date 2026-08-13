@@ -1,6 +1,9 @@
 import type { FileKind, SourceUploadPolicy } from '@/api/types';
 
-export type ParseMode = 'advanced' | 'normal' | 'none';
+export type ParseMode = 'accurate' | 'fast' | 'none';
+
+const PARSING_MODES = ['accurate', 'fast'] as const;
+type ParsingMode = (typeof PARSING_MODES)[number];
 
 export function fileExt(name: string): string {
   return name.includes('.') ? (name.split('.').pop()?.toLowerCase() ?? '') : '';
@@ -36,10 +39,10 @@ export function parseModeIssues(
   kind: FileKind,
   policy: SourceUploadPolicy,
   pageCount?: number | null
-): { advanced: string | null; normal: string | null } {
-  if (isTextKind(kind, policy)) return { advanced: null, normal: null };
+): Record<ParsingMode, string | null> {
+  if (isTextKind(kind, policy)) return { accurate: null, fast: null };
   const ext = extensionWithDot(file.name);
-  const issueFor = (mode: 'advanced' | 'normal') => {
+  const issueFor = (mode: ParsingMode) => {
     const rule = policy.parseModes.find((entry) => entry.mode === mode);
     if (
       !rule?.extensions.some((candidate) => candidate.toLowerCase() === ext)
@@ -50,7 +53,6 @@ export function parseModeIssues(
       return `over ${Math.round(rule.maxBytes / 1024 / 1024)} MB`;
     }
     if (
-      mode === 'normal' &&
       rule.maxPages != null &&
       pageCount != null &&
       pageCount > rule.maxPages
@@ -59,7 +61,7 @@ export function parseModeIssues(
     }
     return null;
   };
-  return { advanced: issueFor('advanced'), normal: issueFor('normal') };
+  return { accurate: issueFor('accurate'), fast: issueFor('fast') };
 }
 
 export function defaultParseMode(
@@ -70,9 +72,22 @@ export function defaultParseMode(
 ): ParseMode {
   if (isTextKind(kind, policy)) return 'none';
   const issues = parseModeIssues(file, kind, policy, pageCount);
-  if (!issues.normal) return 'normal';
-  if (!issues.advanced) return 'advanced';
+  if (!issues.fast) return 'fast';
+  if (!issues.accurate) return 'accurate';
   return 'none';
+}
+
+/** Whether the image-captioning switch has anything to act on for this mode. */
+export function supportsFigures(
+  mode: ParseMode,
+  kind: FileKind,
+  policy: SourceUploadPolicy
+): boolean {
+  if (mode === 'none' || isTextKind(kind, policy)) return false;
+  return (
+    policy.parseModes.find((entry) => entry.mode === mode)?.supportsFigures ??
+    false
+  );
 }
 
 export interface UploadProgressItem {

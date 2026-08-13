@@ -60,20 +60,21 @@ func (a *api) getSourceUploadPolicy(
 
 	parseModes := []apimodel.SourceUploadParseModePolicy{
 		{
-			Mode:       sourceupload.ParseModeAdvanced,
-			Extensions: sourceupload.ParseExtensions(sourceupload.ParseModeAdvanced),
-			MaxBytes:   sourceupload.AdvancedMaxBytes,
+			Mode:            sourceupload.ParseModeAccurate,
+			Extensions:      sourceupload.ParseExtensions(sourceupload.ParseModeAccurate),
+			MaxBytes:        sourceupload.ParseMaxBytes,
+			SupportsFigures: true,
 		},
 		{
-			Mode:       sourceupload.ParseModeNormal,
-			Extensions: sourceupload.ParseExtensions(sourceupload.ParseModeNormal),
-			MaxBytes:   sourceupload.NormalMaxBytes,
-			MaxPages:   sourceupload.NormalMaxPages,
+			Mode:            sourceupload.ParseModeFast,
+			Extensions:      sourceupload.ParseExtensions(sourceupload.ParseModeFast),
+			MaxBytes:        sourceupload.ParseMaxBytes,
+			SupportsFigures: true,
 		},
 		{
 			Mode:       sourceupload.ParseModeNone,
 			Extensions: []string{},
-			MaxBytes:   sourceupload.AdvancedMaxBytes,
+			MaxBytes:   sourceupload.ParseMaxBytes,
 		},
 	}
 	accept := sourceupload.SupportedExtensions()
@@ -83,7 +84,7 @@ func (a *api) getSourceUploadPolicy(
 			Kinds:            kinds,
 			ParseModes:       parseModes,
 			Accept:           joinExtensions(accept),
-			MaxBytes:         sourceupload.AdvancedMaxBytes,
+			MaxBytes:         sourceupload.ParseMaxBytes,
 			AllowNoExtension: false,
 		},
 	}, nil

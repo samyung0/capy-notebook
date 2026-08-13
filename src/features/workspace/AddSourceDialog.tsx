@@ -29,6 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select';
+import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
@@ -43,6 +44,7 @@ import {
   isTextKind,
   type ParseMode,
   parseModeIssues,
+  supportsFigures,
 } from './sourceUpload';
 
 /** Count a PDF's pages with pdfjs (already bundled via react-pdf, loaded on
@@ -184,6 +186,7 @@ function ChapterSelect({
 }
 
 interface PendingFile {
+  captionImages: boolean;
   chapterId: string | null;
   chapterName: string | null;
   file: File;
@@ -212,7 +215,7 @@ function ParseModeSelect({
     policy,
     pending.pageCount
   );
-  if (issues.advanced && issues.normal) return;
+  if (issues.accurate && issues.fast) return;
   return (
     <Select
       onValueChange={(v) => onChange(v as ParseMode)}
@@ -223,11 +226,11 @@ function ParseModeSelect({
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          <SelectItem disabled={!!issues.advanced} size="sm" value="advanced">
-            Advanced parsing{issues.advanced ? ` (${issues.advanced})` : ''}
+          <SelectItem disabled={!!issues.accurate} size="sm" value="accurate">
+            Accurate parsing{issues.accurate ? ` (${issues.accurate})` : ''}
           </SelectItem>
-          <SelectItem disabled={!!issues.normal} size="sm" value="normal">
-            Normal parsing{issues.normal ? ` (${issues.normal})` : ''}
+          <SelectItem disabled={!!issues.fast} size="sm" value="fast">
+            Fast parsing{issues.fast ? ` (${issues.fast})` : ''}
           </SelectItem>
           <SelectItem size="sm" value="none">
             No parsing
@@ -235,6 +238,29 @@ function ParseModeSelect({
         </SelectGroup>
       </SelectContent>
     </Select>
+  );
+}
+
+function CaptionImagesToggle({
+  pending,
+  policy,
+  onChange,
+}: {
+  pending: PendingFile;
+  policy: SourceUploadPolicy;
+  onChange: (captionImages: boolean) => void;
+}) {
+  if (!supportsFigures(pending.parseMode, pending.kind, policy)) return;
+  return (
+    <div className="flex shrink-0 items-center gap-1.5">
+      <Switch
+        aria-label={`Describe images in ${pending.file.name}`}
+        checked={pending.captionImages}
+        onCheckedChange={onChange}
+        size="sm"
+      />
+      <span className="t-meta text-fg-muted">Describe images</span>
+    </div>
   );
 }
 
@@ -284,6 +310,7 @@ function UploadFiles({
     const candidates = Array.from(list).map((f, i) => {
       const kind = getFileKind(f.name, uploadPolicy);
       return {
+        captionImages: false,
         chapterId: null,
         chapterName: null,
         file: f,
@@ -308,7 +335,7 @@ function UploadFiles({
     setFiles((prev) => [...prev, ...added]);
     if (inputRef.current) inputRef.current.value = '';
     // Count PDF pages in the background; if the count invalidates the row's
-    // current mode (normal + >20 pages), fall back to the best valid one.
+    // current mode, fall back to the best valid one.
     for (const row of added) {
       if (fileExt(row.file.name) !== 'pdf') continue;
       void pdfPageCount(row.file).then((n) => {
@@ -366,6 +393,7 @@ function UploadFiles({
         const controller = new AbortController();
         uploadControllers.current.set(f.key, controller);
         return uploadSource({
+          captionImages: f.captionImages,
           chapterId: f.chapterId,
           chapterName: f.chapterName,
           file: f.file,
@@ -409,11 +437,8 @@ function UploadFiles({
     if (totalBytes < 1024 * 1024) return `${(totalBytes / 1024).toFixed(1)} KB`;
     return `${(totalBytes / 1024 / 1024).toFixed(1)} MB`;
   };
-  const normalParse = uploadPolicy?.parseModes.find(
-    (mode) => mode.mode === 'normal'
-  );
-  const advancedParse = uploadPolicy?.parseModes.find(
-    (mode) => mode.mode === 'advanced'
+  const parseMaxMb = Math.round(
+    (uploadPolicy?.maxBytes ?? 100 * 1024 * 1024) / 1024 / 1024
   );
   const aggregateProgress = aggregateUploadPct(
     files.map((file) => ({ size: file.file.size, uploadPct: file.uploadPct }))
@@ -548,13 +573,26 @@ function UploadFiles({
                         {uploadPolicy && (
                           <ParseModeSelect
                             onChange={(mode) =>
-                              patchFile(f.key, { parseMode: mode })
+                              patchFile(f.key, {
+                                captionImages:
+                                  mode === 'none' ? false : f.captionImages,
+                                parseMode: mode,
+                              })
                             }
                             pending={f}
                             policy={uploadPolicy}
                           />
                         )}
                       </div>
+                      {uploadPolicy && (
+                        <CaptionImagesToggle
+                          onChange={(captionImages) =>
+                            patchFile(f.key, { captionImages })
+                          }
+                          pending={f}
+                          policy={uploadPolicy}
+                        />
+                      )}
                     </div>
                   </div>
                   {f.uploadPct != null && (
@@ -571,14 +609,11 @@ function UploadFiles({
         )}
 
         <p className="t-meta pt-3 text-fg-muted">
-          OCR parsing (default) supports English and Chinese documents only (up
-          to {normalParse ? Math.round(normalParse.maxBytes / 1024 / 1024) : 10}{' '}
-          MB / {normalParse?.maxPages ?? 20} pages). VLM parsing accepts files
-          up to{' '}
-          {advancedParse
-            ? Math.round(advancedParse.maxBytes / 1024 / 1024)
-            : 100}{' '}
-          MB.
+          Fast parsing (default) uses OCR and is best for text documents in
+          English or Chinese. Accurate parsing reads dense layouts, tables and
+          formulas more reliably but takes longer. Both accept files up to{' '}
+          {parseMaxMb} MB and can describe the images they find, which makes
+          diagram-heavy slides searchable.
         </p>
       </div>
       <ConfirmDialog

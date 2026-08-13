@@ -8,6 +8,7 @@ import (
 
 	"github.com/evonotes/server/internal/auth"
 	"github.com/evonotes/server/internal/integrations"
+	"github.com/evonotes/server/internal/sourceupload"
 	"github.com/evonotes/server/internal/store"
 )
 
@@ -77,11 +78,13 @@ func (a *api) importSources(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var f store.File
-		if mode == parseModeNone {
+		if !sourceupload.NeedsIngestJob(kind, mode) {
 			// Formats no parser supports (audio/…) land ready, view-only.
 			f, err = a.s.CreateSourceReady(r.Context(), wsID, userID, name, kind, body.ChapterID, "", int64(len(data)), blobPath)
 		} else {
-			f, _, err = a.s.CreateSourceWithJob(r.Context(), wsID, userID, name, kind, body.ChapterID, "", int64(len(data)), blobPath, a.parser, a.engine, mode)
+			// Imports carry no per-file options, so figure captioning follows
+			// the worker's env default rather than a choice nobody made.
+			f, _, err = a.s.CreateSourceWithJob(r.Context(), wsID, userID, name, kind, body.ChapterID, "", int64(len(data)), blobPath, a.parser, a.engine, mode, false)
 		}
 		if err != nil {
 			_ = a.blob.Delete(r.Context(), blobPath)

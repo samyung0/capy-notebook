@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/evonotes/server/internal/sourceupload"
 	"github.com/evonotes/server/internal/store"
 )
 
@@ -29,13 +30,14 @@ func incomingObjectKey(uploadID, name string) string {
 }
 
 type createUploadRequest struct {
-	Name        string  `json:"name"`
-	Kind        string  `json:"kind"`
-	ChapterID   *string `json:"chapterId"`
-	ChapterName string  `json:"chapterName"`
-	ParseMode   string  `json:"parseMode"`
-	SizeBytes   int64   `json:"sizeBytes"`
-	ContentType string  `json:"contentType"`
+	Name          string  `json:"name"`
+	Kind          string  `json:"kind"`
+	ChapterID     *string `json:"chapterId"`
+	ChapterName   string  `json:"chapterName"`
+	ParseMode     string  `json:"parseMode"`
+	CaptionImages bool    `json:"captionImages"`
+	SizeBytes     int64   `json:"sizeBytes"`
+	ContentType   string  `json:"contentType"`
 }
 
 func (a *api) createSourceUpload(w http.ResponseWriter, r *http.Request) {
@@ -73,7 +75,7 @@ func (a *api) createSourceUpload(w http.ResponseWriter, r *http.Request) {
 	if in.ParseMode == "" {
 		in.ParseMode = defaultParseMode(in.Name, in.Kind)
 	}
-	if in.SizeBytes < 0 || in.SizeBytes > advancedMaxBytes {
+	if in.SizeBytes < 0 || in.SizeBytes > parseMaxBytes {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "uploads support files up to 100 MB"})
 		return
 	}
@@ -81,6 +83,7 @@ func (a *api) createSourceUpload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 		return
 	}
+	in.CaptionImages = sourceupload.NormalizeCaptionImages(in.Kind, in.ParseMode, in.CaptionImages)
 	if in.ChapterID != nil {
 		chapterWorkspace, err := a.s.ChapterWorkspaceID(r.Context(), *in.ChapterID)
 		if err != nil || chapterWorkspace != wsID {
@@ -114,14 +117,15 @@ func (a *api) createSourceUpload(w http.ResponseWriter, r *http.Request) {
 		ChapterID: in.ChapterID, ChapterName: in.ChapterName,
 		ObjectPath: incoming, FinalPath: finalPath, Name: in.Name, Kind: in.Kind,
 		ContentType: in.ContentType, DeclaredSize: in.SizeBytes,
-		ParseMode: in.ParseMode, ExpiresAt: signed.ExpiresAt,
+		ParseMode: in.ParseMode, CaptionImages: in.CaptionImages,
+		ExpiresAt: signed.ExpiresAt,
 	})
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
-	log.Printf("direct upload reserved upload=%s workspace=%s bytes=%d mode=%s",
-		session.ID, wsID, session.DeclaredSize, session.ParseMode)
+	log.Printf("direct upload reserved upload=%s workspace=%s bytes=%d mode=%s captions=%t",
+		session.ID, wsID, session.DeclaredSize, session.ParseMode, session.CaptionImages)
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"uploadId": session.ID, "url": signed.URL, "method": "PUT",
 		"headers": signed.Headers, "expiresAt": signed.ExpiresAt,

@@ -11,4 +11,5 @@ export interface SourceUploadParseModePolicy {
   maxBytes: number;
   maxPages?: number;
   mode: SourceUploadParseModePolicyMode;
+  supportsFigures: boolean;
 }

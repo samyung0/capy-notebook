@@ -12,8 +12,8 @@ import { m } from '@/i18n';
 import { userColorPairDark } from '@/lib/userColor';
 import { toChatMessage, useChatStream } from './useChatStream';
 
-/** Page label for a citation, absent for sources with no page model (txt/md,
- * and PDFs parsed in the lightweight 'normal' mode). */
+/** Page label for a citation, absent for sources with no page model (txt/md
+ * and anything stored without parsing). */
 function pageLabel(c: Citation): string | null {
   if (!c.pageStart) return null;
   return c.pageEnd && c.pageEnd !== c.pageStart
