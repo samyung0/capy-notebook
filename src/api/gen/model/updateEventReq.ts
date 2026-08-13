@@ -10,8 +10,14 @@ export interface UpdateEventReq {
   readonly $schema?: string;
   end?: string;
   labelIds?: string[];
+  /** @maxLength 200 */
   location?: string;
+  /** @maxLength 2000 */
   note?: string;
   start?: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
   title?: string;
 }

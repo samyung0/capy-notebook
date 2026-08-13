@@ -9,7 +9,15 @@ import type { SrsState } from './srsState.ts';
 export interface UpdateCardReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
   back?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
   front?: string;
   known?: boolean;
   srs?: SrsState;

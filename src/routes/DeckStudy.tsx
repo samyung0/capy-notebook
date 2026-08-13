@@ -250,12 +250,13 @@ export default function DeckStudy() {
             </div>
           </div>
         </div>
-        {isOwner && (
+        {isOwner && editing !== null && (
           <CardEditModal
-            card={null}
+            card={editing === 'new' ? null : editing}
             deckId={deckId}
+            key={editing === 'new' ? 'new' : editing.id}
             onClose={() => setEditing(null)}
-            open={editing !== null}
+            open
           />
         )}
       </PanelWithInvertedRadius>
@@ -342,12 +343,13 @@ export default function DeckStudy() {
         )}
       </div>
 
-      {isOwner && (
+      {isOwner && editing !== null && (
         <CardEditModal
           card={editing === 'new' ? null : editing}
           deckId={deckId}
+          key={editing === 'new' ? 'new' : editing.id}
           onClose={() => setEditing(null)}
-          open={editing !== null}
+          open
         />
       )}
       {deck && (

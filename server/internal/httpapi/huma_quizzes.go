@@ -162,6 +162,9 @@ func (a *api) createAttempt(ctx context.Context, in *createAttemptInput) (*attem
 			return nil, hErr(err)
 		}
 	}
+	if in.Body.Correct > in.Body.Total {
+		return nil, huma.Error422UnprocessableEntity("correct cannot exceed total")
+	}
 	wrong := make([]json.RawMessage, 0, len(in.Body.Wrong))
 	ids := make([]string, 0, len(in.Body.Wrong))
 	for _, q := range in.Body.Wrong {

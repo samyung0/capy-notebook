@@ -8,5 +8,6 @@
 export interface CreateCanvasReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /** @maxLength 200 */
   name?: string;
 }

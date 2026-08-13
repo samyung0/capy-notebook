@@ -12,10 +12,15 @@ export interface CreateQuizReq {
   readonly $schema?: string;
   /** @nullable */
   chapters?: string[] | null;
+  /** @maxLength 200 */
   name?: string;
   privacy?: Privacy;
   /** @nullable */
   questions?: CreateQuizReqQuestionsItem[] | null;
+  /**
+     * @minimum 1
+     * @maximum 180
+     */
   timeLimitMin?: number;
   workspaceId?: string;
 }

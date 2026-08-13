@@ -11,8 +11,16 @@ export interface UpdateQuizReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   chapters?: string[];
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
   name?: string;
   privacy?: Privacy;
   questions?: UpdateQuizReqQuestionsItem[];
+  /**
+     * @minimum 1
+     * @maximum 180
+     */
   timeLimitMin?: number;
 }

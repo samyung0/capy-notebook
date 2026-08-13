@@ -18,6 +18,9 @@ export interface CreateDiscussionReq {
   /** @minimum 1 */
   anchorVersion?: number;
   blockId?: string;
-  /** @nullable */
+  /**
+     * @minItems 1
+     * @nullable
+     */
   contentRich: CreateDiscussionReqContentRichItem[] | null;
 }

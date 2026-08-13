@@ -475,6 +475,16 @@ func (a *api) generate(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
+	switch opts.Kind {
+	case store.MaterialFlashcards, store.MaterialQuiz, store.MaterialMindmap, store.MaterialDiagram:
+	default:
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "unsupported generate kind"})
+		return
+	}
+	if opts.Count < 0 || opts.Count > 50 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "count must be between 0 and 50"})
+		return
+	}
 	wsID := id(r)
 	wsName := "Workspace"
 	if ws, err := a.s.GetWorkspaceShared(r.Context(), wsID); err == nil {

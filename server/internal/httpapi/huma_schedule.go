@@ -79,6 +79,9 @@ func (a *api) createEvent(ctx context.Context, in *createEventInput) (*eventOutp
 	if err := a.requireAccountCreate(ctx); err != nil {
 		return nil, err
 	}
+	if !in.Body.End.After(in.Body.Start) {
+		return nil, huma.Error422UnprocessableEntity("end must be after start")
+	}
 	e := store.Event{
 		Title: in.Body.Title, Start: in.Body.Start, End: in.Body.End,
 		LabelIDs: in.Body.LabelIDs, Location: in.Body.Location, Note: in.Body.Note,
@@ -96,6 +99,9 @@ func (a *api) createEvent(ctx context.Context, in *createEventInput) (*eventOutp
 func (a *api) updateEvent(ctx context.Context, in *updateEventInput) (*eventOutput, error) {
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
+	}
+	if in.Body.Start != nil && in.Body.End != nil && !in.Body.End.After(*in.Body.Start) {
+		return nil, huma.Error422UnprocessableEntity("end must be after start")
 	}
 	p := store.EventPatch{
 		Title: in.Body.Title, Start: in.Body.Start, End: in.Body.End,

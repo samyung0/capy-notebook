@@ -1,4 +1,6 @@
 import { Link } from '@tanstack/react-router';
+import { useState } from 'react';
+import { createCanvasBodyNameMax } from '@/api/gen/validators';
 import { useCanvases, useCreateCanvas } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
@@ -6,11 +8,13 @@ import { Card } from '@/components/ui/Card';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
+import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import { m } from '@/i18n';
 
 export default function Thinking() {
   const { data, fetchStatus, isLoading } = useCanvases();
-  const { mutate: createCanvas } = useCreateCanvas();
+  const { mutateAsync: createCanvas } = useCreateCanvas();
+  const [createOpen, setCreateOpen] = useState(false);
 
   return (
     <PanelWithInvertedRadius>
@@ -19,10 +23,7 @@ export default function Thinking() {
           <IconButton
             icon="plus"
             label="New canvas"
-            onClick={() => {
-              const n = prompt('Canvas name');
-              if (n) createCanvas(n);
-            }}
+            onClick={() => setCreateOpen(true)}
             variant="dark"
           />
         }
@@ -74,6 +75,17 @@ export default function Thinking() {
           </div>
         )}
       </div>
+      {createOpen && (
+        <NameFormDialog
+          fieldLabel="Name"
+          maxLength={createCanvasBodyNameMax}
+          onClose={() => setCreateOpen(false)}
+          onSubmit={(name) => createCanvas(name)}
+          open
+          submitLabel={m.action_create()}
+          title="New canvas"
+        />
+      )}
     </PanelWithInvertedRadius>
   );
 }

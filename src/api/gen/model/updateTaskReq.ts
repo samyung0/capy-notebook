@@ -9,6 +9,11 @@ export interface UpdateTaskReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   done?: boolean;
+  /** @maxLength 500 */
   meta?: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
   title?: string;
 }

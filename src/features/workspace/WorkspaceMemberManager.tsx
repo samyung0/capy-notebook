@@ -1,4 +1,7 @@
+import { zodResolver } from '@hookform/resolvers/zod';
 import { useState } from 'react';
+import { Controller, useForm } from 'react-hook-form';
+import { CreateWorkspaceInviteBody } from '@/api/gen/validators';
 import {
   useCreateWorkspaceInvite,
   useRemoveWorkspaceMember,
@@ -6,12 +9,16 @@ import {
   useUpdateWorkspaceMember,
   useWorkspaceMembers,
 } from '@/api/hooks';
-import type { WorkspaceMember, WorkspaceRole } from '@/api/types';
+import type {
+  AssignableRole,
+  CreateWorkspaceInviteReq,
+  WorkspaceMember,
+} from '@/api/types';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
-import { Input, InputTitle } from '@/components/ui/Input';
+import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { Menu } from '@/components/ui/Menu';
 import {
   Select,
@@ -24,9 +31,7 @@ import {
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 
-type MemberRole = Exclude<WorkspaceRole, 'owner'>;
-
-const ROLE_OPTIONS: Array<{ value: MemberRole; label: string }> = [
+const ROLE_OPTIONS: Array<{ value: AssignableRole; label: string }> = [
   { label: 'View', value: 'viewer' },
   { label: 'Comment', value: 'commenter' },
   { label: 'Edit', value: 'editor' },
@@ -37,32 +42,43 @@ export function WorkspaceMemberManager({
 }: {
   workspaceId: string;
 }) {
-  const [identifier, setIdentifier] = useState('');
-  const [role, setRole] = useState<MemberRole>('viewer');
   const [transferTarget, setTransferTarget] = useState<WorkspaceMember | null>(
     null
   );
   const [manageTarget, setManageTarget] = useState<WorkspaceMember | null>(
     null
   );
-  const [managedRole, setManagedRole] = useState<MemberRole>('viewer');
+  const [managedRole, setManagedRole] = useState<AssignableRole>('viewer');
   const { data: membersData } = useWorkspaceMembers(workspaceId, true, {
     errorBoundary: false,
   });
-  const { isPending: createInviteIsPending, mutateAsync: createInvite } =
-    useCreateWorkspaceInvite(workspaceId);
+  const { mutateAsync: createInvite } = useCreateWorkspaceInvite(workspaceId);
   const { isPending: updateMemberIsPending, mutate: updateMember } =
     useUpdateWorkspaceMember(workspaceId);
   const { mutate: removeMember } = useRemoveWorkspaceMember(workspaceId);
   const { isPending: transferIsPending, mutateAsync: transfer } =
     useTransferWorkspace(workspaceId);
 
-  async function invite() {
-    const value = identifier.trim();
-    if (!value) return;
+  const {
+    formState: { isValid, isSubmitting },
+    handleSubmit: formSubmit,
+    control,
+    reset,
+  } = useForm<CreateWorkspaceInviteReq>({
+    defaultValues: { identifier: '', role: 'viewer' },
+    mode: 'onChange',
+    resolver: zodResolver(CreateWorkspaceInviteBody),
+  });
+
+  const inviteDisabled = !isValid || isSubmitting;
+
+  async function invite(v: CreateWorkspaceInviteReq) {
     try {
-      await createInvite({ identifier: value, role });
-      setIdentifier('');
+      await createInvite({
+        identifier: v.identifier.trim(),
+        role: v.role,
+      });
+      reset({ identifier: '', role: v.role });
       userToast({
         description: "If an account matches, they'll receive an invitation.",
         title: 'Invitation submitted',
@@ -96,37 +112,48 @@ export function WorkspaceMemberManager({
         </p>
       </div>
 
-      <div className="mt-3 flex gap-2">
-        <Input
-          disabled={createInviteIsPending}
-          onChange={(event) => setIdentifier(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') void invite();
-          }}
-          placeholder="Email or user ID"
-          value={identifier}
-          wrapperClassName="min-w-0 flex-1"
+      <form className="mt-3 flex gap-2" onSubmit={formSubmit(invite)}>
+        <Controller
+          control={control}
+          name="identifier"
+          render={({ field, fieldState }) => (
+            <div className="min-w-0 flex-1">
+              <Input
+                {...field}
+                aria-invalid={fieldState.invalid}
+                disabled={isSubmitting}
+                placeholder="Email or user ID"
+              />
+              {fieldState.invalid && <InputError errors={[fieldState.error]} />}
+            </div>
+          )}
         />
-        <RoleSelect
-          disabled={createInviteIsPending}
-          label="Invite role"
-          onChange={setRole}
-          value={role}
+        <Controller
+          control={control}
+          name="role"
+          render={({ field }) => (
+            <RoleSelect
+              disabled={isSubmitting}
+              label="Invite role"
+              onChange={field.onChange}
+              value={field.value}
+            />
+          )}
         />
         <Button
           className="w-19 rounded-input"
-          disabled={createInviteIsPending || !identifier.trim()}
-          onClick={() => void invite()}
+          disabled={inviteDisabled}
+          type="submit"
           variant="accent"
         >
-          {createInviteIsPending && (
+          {isSubmitting && (
             <span>
               <Spinner />
             </span>
           )}
-          {!createInviteIsPending && 'Invite'}
+          {!isSubmitting && 'Invite'}
         </Button>
-      </div>
+      </form>
 
       <div className="mt-4 flex flex-col gap-1.5">
         {membersData?.map((member) => (
@@ -149,7 +176,7 @@ export function WorkspaceMemberManager({
                     label: 'Manage Member',
                     onClick: () => {
                       setManageTarget(member);
-                      setManagedRole(member.role as MemberRole);
+                      setManagedRole(member.role as AssignableRole);
                     },
                   },
                   {
@@ -217,15 +244,15 @@ function RoleSelect({
   disabled,
   label,
 }: {
-  value: MemberRole;
-  onChange: (role: MemberRole) => void;
+  value: AssignableRole;
+  onChange: (role: AssignableRole) => void;
   disabled?: boolean;
   label: string;
 }) {
   return (
     <Select
       disabled={disabled}
-      onValueChange={(next) => onChange(next as MemberRole)}
+      onValueChange={(next) => onChange(next as AssignableRole)}
       value={value}
     >
       <SelectTrigger aria-label={label} className="w-28">

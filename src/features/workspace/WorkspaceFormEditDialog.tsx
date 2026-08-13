@@ -82,7 +82,7 @@ export function WorkspaceFormEditDialog({
               render={({ field, fieldState }) => (
                 <>
                   <label className="flex flex-col gap-1.5">
-                    <InputTitle required>Chapter</InputTitle>
+                    <InputTitle required>Name</InputTitle>
                     <Input
                       {...field}
                       aria-invalid={fieldState.invalid}

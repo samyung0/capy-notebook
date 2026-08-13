@@ -20,5 +20,9 @@ export interface UpdateMaterialReq {
   privacy?: Privacy;
   scopeChapters?: string[];
   scopeFileNames?: string[];
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
   title?: string;
 }

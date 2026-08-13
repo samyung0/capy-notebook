@@ -9,7 +9,10 @@ import type { CreateCommentReqContentRichItem } from './createCommentReqContentR
 export interface CreateCommentReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** @nullable */
+  /**
+     * @minItems 1
+     * @nullable
+     */
   contentRich: CreateCommentReqContentRichItem[] | null;
   parentCommentId?: string;
 }

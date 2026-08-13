@@ -90,11 +90,18 @@ components:
           type: string
         name:
           description: Chapter name
+          maxLength: 255
           minLength: 1
           type: string
       required:
         - name
       type: object
+    AssignableRole:
+      enum:
+        - editor
+        - commenter
+        - viewer
+      type: string
     Attempt:
       additionalProperties: false
       properties:
@@ -473,6 +480,7 @@ components:
           type: object
         correct:
           format: int64
+          minimum: 0
           type: integer
         questions:
           description: Question snapshot taken at submit time
@@ -483,6 +491,7 @@ components:
           type: array
         total:
           format: int64
+          minimum: 1
           type: integer
         wrong:
           description: Questions answered incorrectly
@@ -505,6 +514,7 @@ components:
           readOnly: true
           type: string
         name:
+          maxLength: 200
           type: string
       type: object
     CreateCardReq:
@@ -517,9 +527,16 @@ components:
           readOnly: true
           type: string
         back:
+          maxLength: 4000
+          minLength: 1
           type: string
         front:
+          maxLength: 4000
+          minLength: 1
           type: string
+      required:
+        - front
+        - back
       type: object
     CreateCommentReq:
       additionalProperties: false
@@ -534,6 +551,7 @@ components:
           items:
             additionalProperties: {}
             type: object
+          minItems: 1
           nullable: true
           type: array
         parentCommentId:
@@ -567,6 +585,7 @@ components:
         color:
           $ref: "#/components/schemas/UserColor"
         name:
+          maxLength: 200
           type: string
         workspaceId:
           type: string
@@ -601,6 +620,7 @@ components:
           items:
             additionalProperties: {}
             type: object
+          minItems: 1
           nullable: true
           type: array
       required:
@@ -624,13 +644,16 @@ components:
           nullable: true
           type: array
         location:
+          maxLength: 200
           type: string
         note:
+          maxLength: 2000
           type: string
         start:
           format: date-time
           type: string
         title:
+          maxLength: 200
           minLength: 1
           type: string
       required:
@@ -664,6 +687,7 @@ components:
           nullable: true
           type: array
         title:
+          maxLength: 200
           type: string
       type: object
     CreateQuizReq:
@@ -681,6 +705,7 @@ components:
           nullable: true
           type: array
         name:
+          maxLength: 200
           type: string
         privacy:
           $ref: "#/components/schemas/Privacy"
@@ -692,6 +717,8 @@ components:
           type: array
         timeLimitMin:
           format: int64
+          maximum: 180
+          minimum: 1
           type: integer
         workspaceId:
           type: string
@@ -707,10 +734,11 @@ components:
           type: string
         identifier:
           description: Exact user ID or email address
+          maxLength: 320
           minLength: 1
           type: string
         role:
-          $ref: "#/components/schemas/WorkspaceRole"
+          $ref: "#/components/schemas/AssignableRole"
       required:
         - identifier
         - role
@@ -1242,6 +1270,9 @@ components:
         position:
           format: int64
           type: integer
+        revision:
+          format: int64
+          type: integer
         sizeBytes:
           format: int64
           type: integer
@@ -1256,6 +1287,7 @@ components:
         - chapterId
         - position
         - createdAt
+        - revision
         - sizeBytes
         - nodeCount
         - maxDepth
@@ -1729,6 +1761,7 @@ components:
           description: Chapter ids in the desired order
           items:
             type: string
+          minItems: 1
           nullable: true
           type: array
       required:
@@ -1769,6 +1802,7 @@ components:
           type: string
         confirmEmail:
           maxLength: 320
+          minLength: 1
           type: string
       required:
         - confirmEmail
@@ -1783,6 +1817,8 @@ components:
           readOnly: true
           type: string
         name:
+          maxLength: 200
+          minLength: 1
           type: string
         scene: {}
       type: object
@@ -2045,8 +2081,12 @@ components:
           readOnly: true
           type: string
         back:
+          maxLength: 4000
+          minLength: 1
           type: string
         front:
+          maxLength: 4000
+          minLength: 1
           type: string
         known:
           type: boolean
@@ -2063,6 +2103,8 @@ components:
           readOnly: true
           type: string
         name:
+          maxLength: 255
+          minLength: 1
           type: string
         order:
           format: int64
@@ -2081,6 +2123,7 @@ components:
           items:
             additionalProperties: {}
             type: object
+          minItems: 1
           nullable: true
           type: array
       required:
@@ -2098,6 +2141,8 @@ components:
         color:
           $ref: "#/components/schemas/UserColor"
         name:
+          maxLength: 200
+          minLength: 1
           type: string
         privacy:
           $ref: "#/components/schemas/Privacy"
@@ -2134,13 +2179,17 @@ components:
             type: string
           type: array
         location:
+          maxLength: 200
           type: string
         note:
+          maxLength: 2000
           type: string
         start:
           format: date-time
           type: string
         title:
+          maxLength: 200
+          minLength: 1
           type: string
       type: object
     UpdateFileReq:
@@ -2155,6 +2204,8 @@ components:
         chapterId:
           type: string
         name:
+          maxLength: 512
+          minLength: 1
           type: string
       type: object
     UpdateLabelReq:
@@ -2202,6 +2253,8 @@ components:
             type: string
           type: array
         title:
+          maxLength: 200
+          minLength: 1
           type: string
       type: object
     UpdateQuizReq:
@@ -2218,6 +2271,8 @@ components:
             type: string
           type: array
         name:
+          maxLength: 200
+          minLength: 1
           type: string
         privacy:
           $ref: "#/components/schemas/Privacy"
@@ -2228,6 +2283,8 @@ components:
           type: array
         timeLimitMin:
           format: int64
+          maximum: 180
+          minimum: 1
           type: integer
       type: object
     UpdateTaskReq:
@@ -2242,8 +2299,11 @@ components:
         done:
           type: boolean
         meta:
+          maxLength: 500
           type: string
         title:
+          maxLength: 200
+          minLength: 1
           type: string
       type: object
     UpdateWorkspaceMemberReq:
@@ -2256,7 +2316,7 @@ components:
           readOnly: true
           type: string
         role:
-          $ref: "#/components/schemas/WorkspaceRole"
+          $ref: "#/components/schemas/AssignableRole"
       required:
         - role
       type: object
@@ -2272,6 +2332,8 @@ components:
         color:
           $ref: "#/components/schemas/UserColor"
         name:
+          maxLength: 100
+          minLength: 1
           type: string
         tags:
           items:

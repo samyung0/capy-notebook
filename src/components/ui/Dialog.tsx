@@ -170,6 +170,7 @@ function SimpleDialog({
   onPointerDownOutside,
   onInteractOutside,
   onEscapeKeyDown,
+  onSubmit,
 }: {
   open: boolean;
   onClose: () => void;
@@ -188,6 +189,7 @@ function SimpleDialog({
   onEscapeKeyDown?: React.ComponentProps<
     typeof DialogPrimitive.Content
   >['onEscapeKeyDown'];
+  onSubmit?: React.FormEventHandler<HTMLFormElement>;
 }) {
   const originalPathname = useRef<string | null>(null);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -203,6 +205,16 @@ function SimpleDialog({
     onClose();
   }, [pathname]);
 
+  const body = (
+    <>
+      {title != null && (
+        <DialogTitle className="pr-10 pb-4">{title}</DialogTitle>
+      )}
+      {children}
+      {footer && <DialogFooter className="mt-3">{footer}</DialogFooter>}
+    </>
+  );
+
   return (
     <Dialog onOpenChange={(o) => !o && onClose()} open={open}>
       <DialogContent
@@ -213,11 +225,16 @@ function SimpleDialog({
         showCloseButton={showCloseButton}
         style={width ? { maxWidth: width } : undefined}
       >
-        {title != null && (
-          <DialogTitle className="pr-10 pb-4">{title}</DialogTitle>
+        {onSubmit ? (
+          <form
+            className="flex h-full min-h-0 w-full flex-col items-stretch"
+            onSubmit={onSubmit}
+          >
+            {body}
+          </form>
+        ) : (
+          body
         )}
-        {children}
-        {footer && <DialogFooter className="mt-3">{footer}</DialogFooter>}
       </DialogContent>
     </Dialog>
   );
@@ -258,6 +275,7 @@ function ConfirmDialog({
             disabled={isSubmitting}
             onClick={onClose}
             size="lg"
+            type="button"
             variant="ghost-hover"
           >
             Cancel
@@ -269,6 +287,7 @@ function ConfirmDialog({
               if (closeOnConfirm) onClose();
             }}
             size="lg"
+            type="button"
             variant={danger ? 'danger' : 'accent'}
           >
             {!isSubmitting && <span>{confirmLabel ?? m.action_confirm()}</span>}

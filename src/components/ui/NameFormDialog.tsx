@@ -1,53 +1,67 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { Controller, useForm } from 'react-hook-form';
-import { UpdateTaskBody } from '@/api/gen/validators';
-import type { Task, UpdateTaskReq } from '@/api/types';
+import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { m } from '@/i18n';
 
-type TaskFormValues = Pick<UpdateTaskReq, 'title' | 'meta'>;
+type NameFields = { name: string };
 
-export function TaskEditDialog({
-  task,
+export function NameFormDialog({
   open,
   onClose,
-  onSave,
+  title,
+  fieldLabel = 'Name',
+  defaultName = '',
+  maxLength,
+  minLength = 1,
+  onSubmit,
+  submitLabel,
 }: {
-  task: Task;
   open: boolean;
   onClose: () => void;
-  onSave: (patch: TaskFormValues) => Promise<unknown> | unknown;
+  title: string;
+  fieldLabel?: string;
+  defaultName?: string;
+  maxLength: number;
+  minLength?: number;
+  onSubmit: (name: string) => Promise<unknown> | unknown;
+  submitLabel?: string;
 }) {
+  const schema = useMemo(
+    () =>
+      z.object({
+        name: z.string().min(minLength).max(maxLength),
+      }),
+    [maxLength, minLength]
+  );
+
   const {
     formState: { isDirty, isValid, isSubmitting },
     handleSubmit: formSubmit,
     control,
-  } = useForm<TaskFormValues>({
-    defaultValues: { meta: task.meta ?? '', title: task.title },
+  } = useForm<NameFields>({
+    defaultValues: { name: defaultName },
     mode: 'onChange',
-    resolver: zodResolver(UpdateTaskBody),
+    resolver: zodResolver(schema),
   });
 
   const submitDisabled = !isDirty || !isValid || isSubmitting;
 
   const handleSubmit = useCallback(
-    async (v: TaskFormValues) => {
+    async (v: NameFields) => {
       try {
-        await onSave({
-          meta: v.meta?.trim() ?? '',
-          title: v.title?.trim(),
-        });
+        await onSubmit(v.name.trim());
         onClose();
       } catch {
         // Keep the dialog open so the user can retry without losing input.
         // The global mutation handler shows the normalized failure.
       }
     },
-    [onClose, onSave]
+    [onClose, onSubmit]
   );
 
   return (
@@ -63,7 +77,7 @@ export function TaskEditDialog({
             Cancel
           </Button>
           <Button disabled={submitDisabled} size="lg" type="submit">
-            {!isSubmitting && <span>Save</span>}
+            {!isSubmitting && <span>{submitLabel ?? m.action_save()}</span>}
             {isSubmitting && (
               <span>
                 <Spinner />
@@ -75,34 +89,20 @@ export function TaskEditDialog({
       onClose={onClose}
       onSubmit={formSubmit(handleSubmit)}
       open={open}
-      title={m.action_edit()}
+      title={title}
     >
       <Controller
         control={control}
-        name="title"
+        name="name"
         render={({ field, fieldState }) => (
           <label className="flex flex-col gap-1.5">
-            <InputTitle required>Title</InputTitle>
+            <InputTitle required>{fieldLabel}</InputTitle>
             <Input
               {...field}
               aria-invalid={fieldState.invalid}
+              autoComplete="off"
               autoFocus
-              value={field.value ?? ''}
-            />
-            {fieldState.invalid && <InputError errors={[fieldState.error]} />}
-          </label>
-        )}
-      />
-      <Controller
-        control={control}
-        name="meta"
-        render={({ field, fieldState }) => (
-          <label className="mt-3 flex flex-col gap-1.5">
-            <InputTitle>Meta</InputTitle>
-            <Input
-              {...field}
-              aria-invalid={fieldState.invalid}
-              value={field.value ?? ''}
+              maxLength={maxLength}
             />
             {fieldState.invalid && <InputError errors={[fieldState.error]} />}
           </label>

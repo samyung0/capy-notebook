@@ -8,6 +8,10 @@
 export interface SaveCanvasReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
   name?: string;
   scene?: unknown;
 }

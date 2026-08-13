@@ -10,6 +10,7 @@ export interface CreateDeckReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   color?: UserColor;
+  /** @maxLength 200 */
   name?: string;
   workspaceId?: string;
 }

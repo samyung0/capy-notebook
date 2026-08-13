@@ -8,6 +8,10 @@
 export interface UpdateChapterReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /**
+     * @minLength 1
+     * @maxLength 255
+     */
   name?: string;
   order?: number;
 }

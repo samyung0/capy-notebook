@@ -11,6 +11,10 @@ export interface UpdateWorkspaceReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   color?: UserColor;
+  /**
+     * @minLength 1
+     * @maxLength 100
+     */
   name?: string;
   tags?: TagInput[];
 }

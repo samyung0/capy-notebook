@@ -323,6 +323,9 @@ type MaterialRef struct {
 	ChapterID *string         `json:"chapterId"`
 	Position  int64           `json:"position"`
 	CreatedAt time.Time       `json:"createdAt"`
+	// Revision is required when renaming from the list so title updates can
+	// satisfy the material expectedRevision precondition.
+	Revision int64 `json:"revision"`
 	// SizeBytes lets the client decide how to open a document before paying to
 	// fetch it. Maintained by the materials trigger as octet_length(content).
 	SizeBytes int64 `json:"sizeBytes"`

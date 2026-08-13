@@ -49,10 +49,10 @@ export function GlobalDialogs() {
 
   const { mutateAsync: createWorkspace } = useCreateWorkspace();
   const { mutateAsync: updateWorkspace } = useUpdateWorkspace();
-  const { mutate: updateTask } = useUpdateTask();
-  const { mutate: updateLabel } = useUpdateLabel();
-  const { mutate: createEvent } = useCreateEvent();
-  const { mutate: updateEvent } = useUpdateEvent();
+  const { mutateAsync: updateTask } = useUpdateTask();
+  const { mutateAsync: updateLabel } = useUpdateLabel();
+  const { mutateAsync: createEvent } = useCreateEvent();
+  const { mutateAsync: updateEvent } = useUpdateEvent();
   const { data: labels } = useLabels({ errorBoundary: false });
 
   const isTopBarSearchOpen = usePortals((s) => s.isTopBarSearchOpen);
@@ -108,6 +108,7 @@ export function GlobalDialogs() {
 
       {taskEdit && (
         <TaskEditDialog
+          key={taskEdit.id}
           onClose={closeTaskEdit}
           onSave={(patch) => updateTask({ id: taskEdit.id, ...patch })}
           open

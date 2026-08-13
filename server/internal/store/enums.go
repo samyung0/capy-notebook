@@ -72,6 +72,24 @@ func (WorkspaceRole) Schema(r huma.Registry) *huma.Schema {
 	return enumRef(r, "WorkspaceRole", "owner", "editor", "commenter", "viewer")
 }
 
+// AssignableRole is a workspace member role that can be granted through invite
+// or role change. Ownership moves only through the transfer endpoint.
+type AssignableRole string
+
+const (
+	AssignableEditor    AssignableRole = "editor"
+	AssignableCommenter AssignableRole = "commenter"
+	AssignableViewer    AssignableRole = "viewer"
+)
+
+func (AssignableRole) Schema(r huma.Registry) *huma.Schema {
+	return enumRef(r, "AssignableRole", "editor", "commenter", "viewer")
+}
+
+func (r AssignableRole) WorkspaceRole() WorkspaceRole {
+	return WorkspaceRole(r)
+}
+
 // ShareRole is the effective material role granted to signed-in nonmembers
 // when a workspace is visible by link or publicly. It intentionally excludes
 // owner: workspace structure remains governed by persisted membership.

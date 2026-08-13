@@ -1,5 +1,9 @@
 import { useState } from 'react';
 import {
+  updateFileBodyNameMax,
+  updateMaterialBodyTitleMax,
+} from '@/api/gen/validators';
+import {
   useDeleteFile,
   useDeleteMaterial,
   useMoveFile,
@@ -14,11 +18,10 @@ import type {
   SourceFile,
   UserColor,
 } from '@/api/types';
-import { Button } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import { HoverActions } from '@/components/ui/HoverActions';
-import { Input, InputTitle } from '@/components/ui/Input';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
+import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import { formatFileSize } from '@/features/files/fileUtils';
 import { MoveToChapterDialog } from '@/features/workspace/MoveToChapterDialog';
 import { m } from '@/i18n';
@@ -32,6 +35,7 @@ export interface ContentActionTarget {
   maxDepth?: number;
   name: string;
   nodeCount?: number;
+  revision?: number;
   sizeBytes?: number;
   status?: SourceFile['status'];
   type: 'file' | 'material';
@@ -61,6 +65,7 @@ export function toMaterialActionTarget(
     maxDepth: material.maxDepth,
     name: material.title,
     nodeCount: material.nodeCount,
+    revision: material.revision,
     type: 'material',
   };
 }
@@ -102,10 +107,10 @@ export function ContentActions({
   renameTitle?: string;
   workspaceId: string;
 }) {
-  const { mutate: updateFile } = useUpdateFile(workspaceId);
+  const { mutateAsync: updateFile } = useUpdateFile(workspaceId);
   const { mutate: moveFile } = useMoveFile(workspaceId);
   const { mutate: deleteFile } = useDeleteFile(workspaceId);
-  const { mutate: updateMaterial } = useUpdateMaterial(workspaceId);
+  const { mutateAsync: updateMaterial } = useUpdateMaterial(workspaceId);
   const { mutate: moveMaterial } = useMoveMaterial(workspaceId);
   const { mutate: deleteMaterial } = useDeleteMaterial(workspaceId);
 
@@ -113,7 +118,6 @@ export function ContentActions({
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
-  const [name, setName] = useState(content?.name ?? '');
 
   const items: MenuItem[] = [
     ...leadingItems,
@@ -123,7 +127,6 @@ export function ContentActions({
             icon: 'write' as const,
             label: m.action_rename(),
             onClick: () => {
-              setName(content.name);
               setRenameOpen(true);
             },
           },
@@ -151,16 +154,19 @@ export function ContentActions({
       : []),
   ];
 
-  const saveName = () => {
-    const nextName = name.trim();
-    if (content && nextName) {
-      if (content.type === 'file') {
-        updateFile({ id: content.id, name: nextName });
-      } else {
-        updateMaterial({ id: content.id, patch: { title: nextName } });
-      }
+  const saveName = async (nextName: string) => {
+    if (!content) return;
+    if (content.type === 'file') {
+      await updateFile({ id: content.id, name: nextName });
+    } else {
+      await updateMaterial({
+        id: content.id,
+        patch: {
+          expectedRevision: content.revision,
+          title: nextName,
+        },
+      });
     }
-    setRenameOpen(false);
   };
 
   const selectChapter = (chapterId: string | null) => {
@@ -198,40 +204,21 @@ export function ContentActions({
 
       {content && (
         <>
-          <SimpleDialog
-            footer={
-              <>
-                <Button
-                  onClick={() => setRenameOpen(false)}
-                  size="lg"
-                  variant="ghost-hover"
-                >
-                  Cancel
-                </Button>
-                <Button onClick={saveName} size="lg">
-                  Save
-                </Button>
-              </>
-            }
-            onClose={() => setRenameOpen(false)}
-            open={renameOpen}
-            title={renameTitle}
-          >
-            {renameFieldLabel ? (
-              <label className="flex flex-col gap-1.5">
-                <InputTitle>{renameFieldLabel}</InputTitle>
-                <Input
-                  onChange={(event) => setName(event.target.value)}
-                  value={name}
-                />
-              </label>
-            ) : (
-              <Input
-                onChange={(event) => setName(event.target.value)}
-                value={name}
-              />
-            )}
-          </SimpleDialog>
+          {renameOpen && (
+            <NameFormDialog
+              defaultName={content.name}
+              fieldLabel={renameFieldLabel}
+              maxLength={
+                content.type === 'file'
+                  ? updateFileBodyNameMax
+                  : updateMaterialBodyTitleMax
+              }
+              onClose={() => setRenameOpen(false)}
+              onSubmit={saveName}
+              open
+              title={renameTitle}
+            />
+          )}
 
           <SimpleDialog
             onClose={() => setPropertiesOpen(false)}

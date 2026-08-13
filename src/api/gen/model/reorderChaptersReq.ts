@@ -10,6 +10,7 @@ export interface ReorderChaptersReq {
   readonly $schema?: string;
   /**
      * Chapter ids in the desired order
+     * @minItems 1
      * @nullable
      */
   ids: string[] | null;

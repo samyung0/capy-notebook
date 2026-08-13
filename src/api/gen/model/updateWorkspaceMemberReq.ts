@@ -4,10 +4,10 @@
  * Evo Notes API
  * OpenAPI spec version: 0.1.0
  */
-import type { WorkspaceRole } from './workspaceRole.ts';
+import type { AssignableRole } from './assignableRole.ts';
 
 export interface UpdateWorkspaceMemberReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  role: WorkspaceRole;
+  role: AssignableRole;
 }

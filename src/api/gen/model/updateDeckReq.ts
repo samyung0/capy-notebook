@@ -11,6 +11,10 @@ export interface UpdateDeckReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   color?: UserColor;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
   name?: string;
   /** Visibility (share standalone) */
   privacy?: Privacy;

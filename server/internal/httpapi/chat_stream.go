@@ -64,6 +64,10 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "text is required"})
 		return
 	}
+	if len(req.Text) > 8000 {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "text is too long"})
+		return
+	}
 
 	ctx := r.Context()
 	userID := uid(r)

@@ -10,6 +10,7 @@ export * from './accessTokenResp.ts';
 export * from './accountState.ts';
 export * from './accountStatus.ts';
 export * from './addChapterReq.ts';
+export * from './assignableRole.ts';
 export * from './attempt.ts';
 export * from './attemptDetail.ts';
 export * from './attemptDetailAnswers.ts';

@@ -1,6 +1,9 @@
 import { useClerk } from '@clerk/react';
-import { useState } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useMemo } from 'react';
+import { Controller, useForm } from 'react-hook-form';
 import { USE_MSW } from '@/api/auth';
+import { RequestAccountDeletionBody } from '@/api/gen/validators';
 import {
   useDeletionPreflight,
   useMe,
@@ -9,10 +12,11 @@ import {
   useSetLocale,
   useSetNotificationPrefs,
 } from '@/api/hooks';
+import type { RequestAccountDeletionReq } from '@/api/types';
 import { LocaleSwitcher } from '@/components/app/LocaleSwitcher';
 import { PageHeader, Panel } from '@/components/app/layout';
 import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
+import { Input, InputError } from '@/components/ui/Input';
 import { Switch } from '@/components/ui/Switch';
 import { userToast } from '@/components/ui/userToast';
 import { getLocale, m, setLocale as setParaglideLocale } from '@/i18n';
@@ -44,23 +48,44 @@ function AccountDangerZoneInner({
   const { data: meData } = useMe();
   const { data: preflightData, isSuccess: preflightIsSuccess } =
     useDeletionPreflight();
-  const { isPending: requestDeletionIsPending, mutateAsync: requestDeletion } =
-    useRequestAccountDeletion();
-  const [confirmEmail, setConfirmEmail] = useState('');
+  const { mutateAsync: requestDeletion } = useRequestAccountDeletion();
 
-  const emailMatches =
-    !!meData?.email &&
-    confirmEmail.trim().toLowerCase() === meData.email.toLowerCase();
-  const canDelete = preflightData?.canDelete === true && emailMatches;
+  const deletionSchema = useMemo(
+    () =>
+      RequestAccountDeletionBody.refine(
+        (v) =>
+          !!meData?.email &&
+          v.confirmEmail.trim().toLowerCase() === meData.email.toLowerCase(),
+        {
+          message: 'Email does not match this account',
+          path: ['confirmEmail'],
+        }
+      ),
+    [meData?.email]
+  );
 
-  async function onRequestDeletion() {
+  const {
+    formState: { isValid, isSubmitting },
+    handleSubmit: formSubmit,
+    control,
+    reset,
+  } = useForm<RequestAccountDeletionReq>({
+    defaultValues: { confirmEmail: '' },
+    mode: 'onChange',
+    resolver: zodResolver(deletionSchema),
+  });
+
+  const canDelete =
+    preflightData?.canDelete === true && isValid && !isSubmitting;
+
+  async function onRequestDeletion(v: RequestAccountDeletionReq) {
     try {
-      await requestDeletion(confirmEmail.trim());
+      await requestDeletion(v.confirmEmail.trim());
     } catch {
       // The global mutation handler shows the normalized failure.
       return;
     }
-    setConfirmEmail('');
+    reset({ confirmEmail: '' });
     userToast({
       title: m.settings_deletion_requested_toast(),
       variant: 'success',
@@ -138,32 +163,39 @@ function AccountDangerZoneInner({
         </div>
       )}
 
-      <div className="mt-4">
+      <form className="mt-4" onSubmit={formSubmit(onRequestDeletion)}>
         <p className="mb-2 text-fg-secondary text-sm">
           {m.settings_deletion_confirm_email({
             email: meData?.email ?? '…',
           })}
         </p>
-        <Input
-          autoComplete="off"
-          disabled={requestDeletionIsPending || !preflightData?.canDelete}
-          onChange={(e) => setConfirmEmail(e.target.value)}
-          placeholder={meData?.email}
-          value={confirmEmail}
+        <Controller
+          control={control}
+          name="confirmEmail"
+          render={({ field, fieldState }) => (
+            <>
+              <Input
+                {...field}
+                aria-invalid={fieldState.invalid}
+                autoComplete="off"
+                disabled={isSubmitting || !preflightData?.canDelete}
+                placeholder={meData?.email}
+              />
+              {fieldState.invalid && <InputError errors={[fieldState.error]} />}
+            </>
+          )}
         />
-      </div>
 
-      <Button
-        className="mt-4"
-        disabled={!canDelete || requestDeletionIsPending}
-        onClick={() => void onRequestDeletion()}
-        size="sm"
-        variant="danger"
-      >
-        {requestDeletionIsPending
-          ? m.common_loading()
-          : m.settings_deletion_request()}
-      </Button>
+        <Button
+          className="mt-4"
+          disabled={!canDelete}
+          size="sm"
+          type="submit"
+          variant="danger"
+        >
+          {isSubmitting ? m.common_loading() : m.settings_deletion_request()}
+        </Button>
+      </form>
     </div>
   );
 }

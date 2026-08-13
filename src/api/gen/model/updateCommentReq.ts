@@ -9,6 +9,9 @@ import type { UpdateCommentReqContentRichItem } from './updateCommentReqContentR
 export interface UpdateCommentReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** @nullable */
+  /**
+     * @minItems 1
+     * @nullable
+     */
   contentRich: UpdateCommentReqContentRichItem[] | null;
 }

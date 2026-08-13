@@ -8,6 +8,9 @@
 export interface RequestAccountDeletionReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** @maxLength 320 */
+  /**
+     * @minLength 1
+     * @maxLength 320
+     */
   confirmEmail: string;
 }

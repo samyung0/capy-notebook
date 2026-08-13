@@ -20,7 +20,7 @@ type CreateWorkspaceReq struct {
 
 // UpdateWorkspaceReq updates general workspace settings only.
 type UpdateWorkspaceReq struct {
-	Name  *string          `json:"name,omitempty"`
+	Name  *string          `json:"name,omitempty" minLength:"1" maxLength:"100"`
 	Color *store.UserColor `json:"color,omitempty"`
 	Tags  *[]TagInput      `json:"tags,omitempty"`
 }
@@ -32,16 +32,16 @@ type UpdateWorkspaceSharingReq struct {
 }
 
 type AddChapterReq struct {
-	Name string `json:"name" minLength:"1" doc:"Chapter name"`
+	Name string `json:"name" minLength:"1" maxLength:"255" doc:"Chapter name"`
 }
 
 type UpdateChapterReq struct {
-	Name  *string `json:"name,omitempty"`
+	Name  *string `json:"name,omitempty" minLength:"1" maxLength:"255"`
 	Order *int    `json:"order,omitempty"`
 }
 
 type ReorderChaptersReq struct {
-	IDs []string `json:"ids" doc:"Chapter ids in the desired order"`
+	IDs []string `json:"ids" minItems:"1" doc:"Chapter ids in the desired order"`
 }
 
 type ContentOrderItem struct {
@@ -57,7 +57,7 @@ type ReorderContentReq struct {
 // UpdateFileReq is the (partial) body for PATCH /api/files/{id} — rename and/or
 // move to a chapter.
 type UpdateFileReq struct {
-	Name      *string `json:"name,omitempty"`
+	Name      *string `json:"name,omitempty" minLength:"1" maxLength:"512"`
 	ChapterID *string `json:"chapterId,omitempty"`
 }
 
@@ -65,7 +65,7 @@ type UpdateFileReq struct {
 // create a user-authored note (markdown editor). Kind defaults to "note".
 type CreateMaterialReq struct {
 	Kind           store.MaterialKind    `json:"kind,omitempty" doc:"Material kind; defaults to note"`
-	Title          string                `json:"title,omitempty"`
+	Title          string                `json:"title,omitempty" maxLength:"200"`
 	Content        *materialdoc.Envelope `json:"content,omitempty" doc:"Versioned Plate document"`
 	ScopeChapters  []string              `json:"scopeChapters,omitempty"`
 	ScopeFileNames []string              `json:"scopeFileNames,omitempty"`
@@ -78,7 +78,7 @@ type CreateMaterialReq struct {
 // empty-string sentinel is needed because JSON null is indistinguishable from
 // an omitted field with a single pointer.
 type UpdateMaterialReq struct {
-	Title            *string        `json:"title,omitempty"`
+	Title            *string        `json:"title,omitempty" minLength:"1" maxLength:"200"`
 	ExpectedRevision *int64         `json:"expectedRevision,omitempty" minimum:"1" doc:"Required when changing title"`
 	ChapterID        *string        `json:"chapterId,omitempty" doc:"Chapter to file under; empty string unfiles; omit to leave unchanged"`
 	ScopeChapters    *[]string      `json:"scopeChapters,omitempty"`
@@ -87,12 +87,12 @@ type UpdateMaterialReq struct {
 }
 
 type CreateWorkspaceInviteReq struct {
-	Identifier string              `json:"identifier" minLength:"1" doc:"Exact user ID or email address"`
-	Role       store.WorkspaceRole `json:"role"`
+	Identifier string               `json:"identifier" minLength:"1" maxLength:"320" doc:"Exact user ID or email address"`
+	Role       store.AssignableRole `json:"role"`
 }
 
 type UpdateWorkspaceMemberReq struct {
-	Role store.WorkspaceRole `json:"role"`
+	Role store.AssignableRole `json:"role"`
 }
 
 // TransferWorkspaceReq hands a workspace to another member. The recipient must
@@ -108,7 +108,7 @@ type CreateDiscussionReq struct {
 	AnchorEnd     []byte           `json:"anchorEnd,omitempty" maxLength:"4096"`
 	AnchorVersion int              `json:"anchorVersion,omitempty" minimum:"1"`
 	AnchorQuote   string           `json:"anchorQuote,omitempty" maxLength:"1000"`
-	ContentRich   []map[string]any `json:"contentRich"`
+	ContentRich   []map[string]any `json:"contentRich" minItems:"1"`
 }
 
 type UpdateDiscussionReq struct {
@@ -117,79 +117,79 @@ type UpdateDiscussionReq struct {
 
 type CreateCommentReq struct {
 	ParentCommentID *string          `json:"parentCommentId,omitempty"`
-	ContentRich     []map[string]any `json:"contentRich"`
+	ContentRich     []map[string]any `json:"contentRich" minItems:"1"`
 }
 
 type UpdateCommentReq struct {
-	ContentRich []map[string]any `json:"contentRich"`
+	ContentRich []map[string]any `json:"contentRich" minItems:"1"`
 }
 
 type CreateQuizReq struct {
-	Name         string           `json:"name,omitempty"`
+	Name         string           `json:"name,omitempty" maxLength:"200"`
 	WorkspaceID  string           `json:"workspaceId,omitempty"`
 	Chapters     []string         `json:"chapters,omitempty"`
 	Questions    []map[string]any `json:"questions,omitempty"`
 	Privacy      store.Privacy    `json:"privacy,omitempty"`
-	TimeLimitMin *int             `json:"timeLimitMin,omitempty"`
+	TimeLimitMin *int             `json:"timeLimitMin,omitempty" minimum:"1" maximum:"180"`
 }
 
 type UpdateQuizReq struct {
-	Name         *string           `json:"name,omitempty"`
+	Name         *string           `json:"name,omitempty" minLength:"1" maxLength:"200"`
 	Chapters     *[]string         `json:"chapters,omitempty"`
 	Questions    *[]map[string]any `json:"questions,omitempty"`
 	Privacy      *store.Privacy    `json:"privacy,omitempty"`
-	TimeLimitMin *int              `json:"timeLimitMin,omitempty"`
+	TimeLimitMin *int              `json:"timeLimitMin,omitempty" minimum:"1" maximum:"180"`
 }
 
 type CreateAttemptReq struct {
-	Correct   int              `json:"correct"`
-	Total     int              `json:"total"`
+	Correct   int              `json:"correct" minimum:"0"`
+	Total     int              `json:"total" minimum:"1"`
 	Wrong     []map[string]any `json:"wrong,omitempty" doc:"Questions answered incorrectly"`
 	Answers   map[string]any   `json:"answers,omitempty" doc:"User answers keyed by question id"`
 	Questions []map[string]any `json:"questions,omitempty" doc:"Question snapshot taken at submit time"`
 }
 
 type CreateDeckReq struct {
-	Name        string          `json:"name,omitempty"`
+	Name        string          `json:"name,omitempty" maxLength:"200"`
 	Color       store.UserColor `json:"color,omitempty"`
 	WorkspaceID string          `json:"workspaceId,omitempty"`
 }
 
 // UpdateDeckReq is the (partial) body for PATCH /api/decks/{id}.
 type UpdateDeckReq struct {
-	Name    *string          `json:"name,omitempty"`
+	Name    *string          `json:"name,omitempty" minLength:"1" maxLength:"200"`
 	Color   *store.UserColor `json:"color,omitempty"`
 	Privacy *store.Privacy   `json:"privacy,omitempty" doc:"Visibility (share standalone)"`
 }
 
 type CreateCardReq struct {
-	Front string `json:"front,omitempty"`
-	Back  string `json:"back,omitempty"`
+	Front string `json:"front" minLength:"1" maxLength:"4000"`
+	Back  string `json:"back" minLength:"1" maxLength:"4000"`
 }
 
 type UpdateCardReq struct {
-	Front *string         `json:"front,omitempty"`
-	Back  *string         `json:"back,omitempty"`
+	Front *string         `json:"front,omitempty" minLength:"1" maxLength:"4000"`
+	Back  *string         `json:"back,omitempty" minLength:"1" maxLength:"4000"`
 	Known *bool           `json:"known,omitempty"`
 	Srs   *store.SrsState `json:"srs,omitempty"`
 }
 
 type CreateEventReq struct {
-	Title    string    `json:"title" minLength:"1"`
+	Title    string    `json:"title" minLength:"1" maxLength:"200"`
 	Start    time.Time `json:"start"`
 	End      time.Time `json:"end"`
 	LabelIDs []string  `json:"labelIds,omitempty"`
-	Location *string   `json:"location,omitempty"`
-	Note     *string   `json:"note,omitempty"`
+	Location *string   `json:"location,omitempty" maxLength:"200"`
+	Note     *string   `json:"note,omitempty" maxLength:"2000"`
 }
 
 type UpdateEventReq struct {
-	Title    *string    `json:"title,omitempty"`
+	Title    *string    `json:"title,omitempty" minLength:"1" maxLength:"200"`
 	Start    *time.Time `json:"start,omitempty"`
 	End      *time.Time `json:"end,omitempty"`
 	LabelIDs *[]string  `json:"labelIds,omitempty"`
-	Location *string    `json:"location,omitempty"`
-	Note     *string    `json:"note,omitempty"`
+	Location *string    `json:"location,omitempty" maxLength:"200"`
+	Note     *string    `json:"note,omitempty" maxLength:"2000"`
 }
 
 type UpdateLabelReq struct {
@@ -198,8 +198,8 @@ type UpdateLabelReq struct {
 }
 
 type UpdateTaskReq struct {
-	Title *string `json:"title,omitempty"`
-	Meta  *string `json:"meta,omitempty"`
+	Title *string `json:"title,omitempty" minLength:"1" maxLength:"200"`
+	Meta  *string `json:"meta,omitempty" maxLength:"500"`
 	Done  *bool   `json:"done,omitempty"`
 }
 
@@ -208,11 +208,11 @@ type CreateConversationReq struct {
 }
 
 type CreateCanvasReq struct {
-	Name string `json:"name,omitempty"`
+	Name string `json:"name,omitempty" maxLength:"200"`
 }
 
 type SaveCanvasReq struct {
-	Name  *string `json:"name,omitempty"`
+	Name  *string `json:"name,omitempty" minLength:"1" maxLength:"200"`
 	Scene any     `json:"scene,omitempty"`
 }
 
@@ -290,5 +290,5 @@ func EncodeRaw(v any) json.RawMessage {
 // RequestAccountDeletionReq confirms an irreversible action. The email is
 // re-typed by the user and verified server-side.
 type RequestAccountDeletionReq struct {
-	ConfirmEmail string `json:"confirmEmail" required:"true" maxLength:"320"`
+	ConfirmEmail string `json:"confirmEmail" required:"true" minLength:"1" maxLength:"320"`
 }

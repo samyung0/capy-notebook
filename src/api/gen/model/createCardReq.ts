@@ -8,6 +8,14 @@
 export interface CreateCardReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  back?: string;
-  front?: string;
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  back: string;
+  /**
+     * @minLength 1
+     * @maxLength 4000
+     */
+  front: string;
 }

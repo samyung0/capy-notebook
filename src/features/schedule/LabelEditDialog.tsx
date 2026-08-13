@@ -1,11 +1,14 @@
-import { useState } from 'react';
-import type { Label, UserColor } from '@/api/types';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useCallback } from 'react';
+import { Controller, useForm } from 'react-hook-form';
+import { UpdateLabelBody } from '@/api/gen/validators';
+import type { Label, UpdateLabelReq, UserColor } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
-import { Input } from '@/components/ui/Input';
+import { Spinner } from '@/components/ui/feedback';
+import { Input, InputError, InputTitle } from '@/components/ui/Input';
+import { UserColorChooser } from '@/components/ui/UserColorChooser';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
-import { USER_COLORS, userColorPair } from '@/lib/userColor';
 
 export interface LabelFormValues {
   color: UserColor;
@@ -21,65 +24,88 @@ export function LabelEditDialog({
   label: Label;
   open: boolean;
   onClose: () => void;
-  onSave: (patch: LabelFormValues) => void;
+  onSave: (patch: LabelFormValues) => Promise<unknown> | unknown;
 }) {
-  const [name, setName] = useState(label.name);
-  const [color, setColor] = useState<UserColor>(label.color);
+  const {
+    formState: { isDirty, isValid, isSubmitting },
+    handleSubmit: formSubmit,
+    control,
+  } = useForm<UpdateLabelReq>({
+    defaultValues: { color: label.color, name: label.name },
+    mode: 'onChange',
+    resolver: zodResolver(UpdateLabelBody),
+  });
+
+  const submitDisabled = !isDirty || !isValid || isSubmitting;
+
+  const handleSubmit = useCallback(
+    async (v: UpdateLabelReq) => {
+      if (!v.name?.trim() || !v.color) return;
+      try {
+        await onSave({ color: v.color, name: v.name.trim() });
+        onClose();
+      } catch {
+        // Keep the dialog open so the user can retry without losing input.
+        // The global mutation handler shows the normalized failure.
+      }
+    },
+    [onClose, onSave]
+  );
 
   return (
     <SimpleDialog
       footer={
         <>
-          <Button onClick={onClose} variant="ghost">
+          <Button onClick={onClose} type="button" variant="ghost">
             Cancel
           </Button>
-          <Button
-            disabled={!name.trim()}
-            onClick={() => {
-              onSave({ color, name: name.trim() });
-              onClose();
-            }}
-          >
-            Save
+          <Button disabled={submitDisabled} type="submit">
+            {!isSubmitting && <span>Save</span>}
+            {isSubmitting && (
+              <span>
+                <Spinner />
+              </span>
+            )}
           </Button>
         </>
       }
       onClose={onClose}
+      onSubmit={formSubmit(handleSubmit)}
       open={open}
       title={m.action_edit()}
     >
       <div className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1.5">
-          <p className="t-label text-fg-muted">Name</p>
-          <Input
-            autoFocus
-            onChange={(e) => setName(e.target.value)}
-            value={name}
-          />
-        </label>
+        <Controller
+          control={control}
+          name="name"
+          render={({ field, fieldState }) => (
+            <label className="flex flex-col gap-1.5">
+              <InputTitle required>Name</InputTitle>
+              <Input
+                {...field}
+                aria-invalid={fieldState.invalid}
+                autoFocus
+                value={field.value ?? ''}
+              />
+              {fieldState.invalid && <InputError errors={[fieldState.error]} />}
+            </label>
+          )}
+        />
 
-        <div className="flex flex-col gap-1.5">
-          <p className="t-label text-fg-muted">Color</p>
-          <div className="flex gap-2">
-            {USER_COLORS.map((c) => {
-              const p = userColorPair(c);
-              return (
-                <button
-                  aria-label={c}
-                  className={cn(
-                    'h-8 w-8 rounded-full transition-transform',
-                    color === c &&
-                      'ring-2 ring-action ring-offset-2 ring-offset-surface'
-                  )}
-                  key={c}
-                  onClick={() => setColor(c)}
-                  style={{ background: p.bg }}
-                  type="button"
-                />
-              );
-            })}
-          </div>
-        </div>
+        <Controller
+          control={control}
+          name="color"
+          render={({ field, fieldState }) => (
+            <div className="flex flex-col gap-1.5">
+              <InputTitle>Color</InputTitle>
+              <UserColorChooser
+                onChange={field.onChange}
+                selected={field.value}
+              />
+              {fieldState.invalid && <InputError errors={[fieldState.error]} />}
+            </div>
+          )}
+        />
       </div>
     </SimpleDialog>
   );

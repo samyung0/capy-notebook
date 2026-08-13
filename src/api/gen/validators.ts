@@ -89,7 +89,7 @@ export const requestAccountDeletionBodyConfirmEmailMax = 320;
 
 
 export const RequestAccountDeletionBody = zod.object({
-  "confirmEmail": zod.string().max(requestAccountDeletionBodyConfirmEmailMax)
+  "confirmEmail": zod.string().min(1).max(requestAccountDeletionBodyConfirmEmailMax)
 })
 
 export const RequestAccountDeletionResponse = zod.object({
@@ -218,9 +218,15 @@ export const UpdateCardParams = zod.object({
   "id": zod.string()
 })
 
+export const updateCardBodyBackMax = 4000;
+
+export const updateCardBodyFrontMax = 4000;
+
+
+
 export const UpdateCardBody = zod.object({
-  "back": zod.string().optional(),
-  "front": zod.string().optional(),
+  "back": zod.string().min(1).max(updateCardBodyBackMax).optional(),
+  "front": zod.string().min(1).max(updateCardBodyFrontMax).optional(),
   "known": zod.boolean().optional(),
   "srs": zod.object({
   "difficulty": zod.number(),
@@ -275,8 +281,12 @@ export const UpdateChapterParams = zod.object({
   "id": zod.string()
 })
 
+export const updateChapterBodyNameMax = 255;
+
+
+
 export const UpdateChapterBody = zod.object({
-  "name": zod.string().optional(),
+  "name": zod.string().min(1).max(updateChapterBodyNameMax).optional(),
   "order": zod.int().optional()
 })
 
@@ -307,8 +317,11 @@ export const UpdateMaterialCommentParams = zod.object({
   "id": zod.string()
 })
 
+
+
+
 export const UpdateMaterialCommentBody = zod.object({
-  "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).nullable()
+  "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).min(1).nullable()
 })
 
 export const UpdateMaterialCommentResponse = zod.object({
@@ -390,9 +403,13 @@ export const ListDecksResponse = zod.array(ListDecksResponseItem)
 /**
  * @summary Create a deck
  */
+export const createDeckBodyNameMax = 200;
+
+
+
 export const CreateDeckBody = zod.object({
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).optional(),
-  "name": zod.string().optional(),
+  "name": zod.string().max(createDeckBodyNameMax).optional(),
   "workspaceId": zod.string().optional()
 })
 
@@ -440,9 +457,13 @@ export const UpdateDeckParams = zod.object({
   "id": zod.string()
 })
 
+export const updateDeckBodyNameMax = 200;
+
+
+
 export const UpdateDeckBody = zod.object({
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).optional(),
-  "name": zod.string().optional(),
+  "name": zod.string().min(1).max(updateDeckBodyNameMax).optional(),
   "privacy": zod.enum(['private', 'public', 'link']).optional().describe('Visibility (share standalone)')
 })
 
@@ -498,9 +519,15 @@ export const CreateCardParams = zod.object({
   "id": zod.string()
 })
 
+export const createCardBodyBackMax = 4000;
+
+export const createCardBodyFrontMax = 4000;
+
+
+
 export const CreateCardBody = zod.object({
-  "back": zod.string().optional(),
-  "front": zod.string().optional()
+  "back": zod.string().min(1).max(createCardBodyBackMax),
+  "front": zod.string().min(1).max(createCardBodyFrontMax)
 })
 
 export const CreateCardResponse = zod.object({
@@ -578,8 +605,11 @@ export const CreateMaterialCommentParams = zod.object({
   "id": zod.string()
 })
 
+
+
+
 export const CreateMaterialCommentBody = zod.object({
-  "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).nullable(),
+  "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).min(1).nullable(),
   "parentCommentId": zod.string().optional()
 })
 
@@ -619,16 +649,21 @@ export const ListEventsResponse = zod.array(ListEventsResponseItem)
 /**
  * @summary Create an event
  */
+export const createEventBodyLocationMax = 200;
+
+export const createEventBodyNoteMax = 2000;
+
+export const createEventBodyTitleMax = 200;
 
 
 
 export const CreateEventBody = zod.object({
   "end": zod.iso.datetime({"offset":true}),
   "labelIds": zod.array(zod.string()).nullish(),
-  "location": zod.string().optional(),
-  "note": zod.string().optional(),
+  "location": zod.string().max(createEventBodyLocationMax).optional(),
+  "note": zod.string().max(createEventBodyNoteMax).optional(),
   "start": zod.iso.datetime({"offset":true}),
-  "title": zod.string().min(1)
+  "title": zod.string().min(1).max(createEventBodyTitleMax)
 })
 
 export const CreateEventResponse = zod.object({
@@ -660,13 +695,21 @@ export const UpdateEventParams = zod.object({
   "id": zod.string()
 })
 
+export const updateEventBodyLocationMax = 200;
+
+export const updateEventBodyNoteMax = 2000;
+
+export const updateEventBodyTitleMax = 200;
+
+
+
 export const UpdateEventBody = zod.object({
   "end": zod.iso.datetime({"offset":true}).optional(),
   "labelIds": zod.array(zod.string()).optional(),
-  "location": zod.string().optional(),
-  "note": zod.string().optional(),
+  "location": zod.string().max(updateEventBodyLocationMax).optional(),
+  "note": zod.string().max(updateEventBodyNoteMax).optional(),
   "start": zod.iso.datetime({"offset":true}).optional(),
-  "title": zod.string().optional()
+  "title": zod.string().min(1).max(updateEventBodyTitleMax).optional()
 })
 
 export const UpdateEventResponse = zod.object({
@@ -818,9 +861,13 @@ export const UpdateFileParams = zod.object({
   "id": zod.string()
 })
 
+export const updateFileBodyNameMax = 512;
+
+
+
 export const UpdateFileBody = zod.object({
   "chapterId": zod.string().optional(),
-  "name": zod.string().optional()
+  "name": zod.string().min(1).max(updateFileBodyNameMax).optional()
 })
 
 export const UpdateFileResponse = zod.object({
@@ -983,6 +1030,8 @@ export const UpdateMaterialParams = zod.object({
 })
 
 
+export const updateMaterialBodyTitleMax = 200;
+
 
 
 export const UpdateMaterialBody = zod.object({
@@ -991,7 +1040,7 @@ export const UpdateMaterialBody = zod.object({
   "privacy": zod.enum(['private', 'public', 'link']).optional().describe('Visibility (share standalone)'),
   "scopeChapters": zod.array(zod.string()).optional(),
   "scopeFileNames": zod.array(zod.string()).optional(),
-  "title": zod.string().optional()
+  "title": zod.string().min(1).max(updateMaterialBodyTitleMax).optional()
 })
 
 export const UpdateMaterialResponse = zod.object({
@@ -1121,13 +1170,14 @@ export const createMaterialDiscussionBodyAnchorStartMax = 4096;
 
 
 
+
 export const CreateMaterialDiscussionBody = zod.object({
   "anchorEnd": zod.string().max(createMaterialDiscussionBodyAnchorEndMax).optional(),
   "anchorQuote": zod.string().max(createMaterialDiscussionBodyAnchorQuoteMax).optional(),
   "anchorStart": zod.string().max(createMaterialDiscussionBodyAnchorStartMax).optional(),
   "anchorVersion": zod.int().min(1).optional(),
   "blockId": zod.string().optional(),
-  "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).nullable()
+  "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).min(1).nullable()
 })
 
 export const CreateMaterialDiscussionResponse = zod.object({
@@ -1335,12 +1385,18 @@ export const ListQuizzesResponse = zod.array(ListQuizzesResponseItem)
 /**
  * @summary Create a quiz
  */
+export const createQuizBodyNameMax = 200;
+
+export const createQuizBodyTimeLimitMinMax = 180;
+
+
+
 export const CreateQuizBody = zod.object({
   "chapters": zod.array(zod.string()).nullish(),
-  "name": zod.string().optional(),
+  "name": zod.string().max(createQuizBodyNameMax).optional(),
   "privacy": zod.enum(['private', 'public', 'link']).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())).nullish(),
-  "timeLimitMin": zod.int().optional(),
+  "timeLimitMin": zod.int().min(1).max(createQuizBodyTimeLimitMinMax).optional(),
   "workspaceId": zod.string().optional()
 })
 
@@ -1398,12 +1454,18 @@ export const UpdateQuizParams = zod.object({
   "id": zod.string()
 })
 
+export const updateQuizBodyNameMax = 200;
+
+export const updateQuizBodyTimeLimitMinMax = 180;
+
+
+
 export const UpdateQuizBody = zod.object({
   "chapters": zod.array(zod.string()).optional(),
-  "name": zod.string().optional(),
+  "name": zod.string().min(1).max(updateQuizBodyNameMax).optional(),
   "privacy": zod.enum(['private', 'public', 'link']).optional(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())).optional(),
-  "timeLimitMin": zod.int().optional()
+  "timeLimitMin": zod.int().min(1).max(updateQuizBodyTimeLimitMinMax).optional()
 })
 
 export const UpdateQuizResponse = zod.object({
@@ -1428,11 +1490,16 @@ export const CreateAttemptParams = zod.object({
   "id": zod.string()
 })
 
+export const createAttemptBodyCorrectMin = 0;
+
+
+
+
 export const CreateAttemptBody = zod.object({
   "answers": zod.record(zod.string(), zod.unknown()).optional().describe('User answers keyed by question id'),
-  "correct": zod.int(),
+  "correct": zod.int().min(createAttemptBodyCorrectMin),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())).nullish().describe('Question snapshot taken at submit time'),
-  "total": zod.int(),
+  "total": zod.int().min(1),
   "wrong": zod.array(zod.record(zod.string(), zod.unknown())).nullish().describe('Questions answered incorrectly')
 })
 
@@ -1563,10 +1630,16 @@ export const UpdateTaskParams = zod.object({
   "id": zod.string()
 })
 
+export const updateTaskBodyMetaMax = 500;
+
+export const updateTaskBodyTitleMax = 200;
+
+
+
 export const UpdateTaskBody = zod.object({
   "done": zod.boolean().optional(),
-  "meta": zod.string().optional(),
-  "title": zod.string().optional()
+  "meta": zod.string().max(updateTaskBodyMetaMax).optional(),
+  "title": zod.string().min(1).max(updateTaskBodyTitleMax).optional()
 })
 
 export const UpdateTaskResponse = zod.object({
@@ -1595,8 +1668,12 @@ export const ListCanvasesResponse = zod.array(ListCanvasesResponseItem)
 /**
  * @summary Create a canvas
  */
+export const createCanvasBodyNameMax = 200;
+
+
+
 export const CreateCanvasBody = zod.object({
-  "name": zod.string().optional()
+  "name": zod.string().max(createCanvasBodyNameMax).optional()
 })
 
 export const CreateCanvasResponse = zod.object({
@@ -1631,8 +1708,12 @@ export const SaveCanvasParams = zod.object({
   "id": zod.string()
 })
 
+export const saveCanvasBodyNameMax = 200;
+
+
+
 export const SaveCanvasBody = zod.object({
-  "name": zod.string().optional(),
+  "name": zod.string().min(1).max(saveCanvasBodyNameMax).optional(),
   "scene": zod.unknown().optional()
 })
 
@@ -1813,13 +1894,15 @@ export const UpdateWorkspaceParams = zod.object({
   "id": zod.string()
 })
 
+export const updateWorkspaceBodyNameMax = 100;
+
 export const updateWorkspaceBodyTagsItemValueMax = 50;
 
 
 
 export const UpdateWorkspaceBody = zod.object({
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).optional(),
-  "name": zod.string().optional(),
+  "name": zod.string().min(1).max(updateWorkspaceBodyNameMax).optional(),
   "tags": zod.array(zod.object({
   "id": zod.string().optional(),
   "value": zod.string().min(1).max(updateWorkspaceBodyTagsItemValueMax)
@@ -1883,11 +1966,12 @@ export const AddChapterParams = zod.object({
   "id": zod.string()
 })
 
+export const addChapterBodyNameMax = 255;
 
 
 
 export const AddChapterBody = zod.object({
-  "name": zod.string().min(1).describe('Chapter name')
+  "name": zod.string().min(1).max(addChapterBodyNameMax).describe('Chapter name')
 })
 
 export const AddChapterResponse = zod.object({
@@ -1907,8 +1991,11 @@ export const ReorderChaptersParams = zod.object({
   "id": zod.string()
 })
 
+
+
+
 export const ReorderChaptersBody = zod.object({
-  "ids": zod.array(zod.string()).nullable().describe('Chapter ids in the desired order')
+  "ids": zod.array(zod.string()).min(1).nullable().describe('Chapter ids in the desired order')
 })
 
 export const ReorderChaptersResponse = zod.void()
@@ -2067,12 +2154,13 @@ export const CreateWorkspaceInviteParams = zod.object({
   "id": zod.string()
 })
 
+export const createWorkspaceInviteBodyIdentifierMax = 320;
 
 
 
 export const CreateWorkspaceInviteBody = zod.object({
-  "identifier": zod.string().min(1).describe('Exact user ID or email address'),
-  "role": zod.enum(['owner', 'editor', 'commenter', 'viewer'])
+  "identifier": zod.string().min(1).max(createWorkspaceInviteBodyIdentifierMax).describe('Exact user ID or email address'),
+  "role": zod.enum(['editor', 'commenter', 'viewer'])
 })
 
 export const CreateWorkspaceInviteResponse = zod.void()
@@ -2092,6 +2180,7 @@ export const ListMaterialsResponseItem = zod.object({
   "maxDepth": zod.int(),
   "nodeCount": zod.int(),
   "position": zod.int(),
+  "revision": zod.int(),
   "sizeBytes": zod.int(),
   "title": zod.string(),
   "type": zod.enum(['mindmap', 'diagram', 'quiz', 'deck', 'note'])
@@ -2106,6 +2195,10 @@ export const CreateMaterialParams = zod.object({
   "id": zod.string()
 })
 
+export const createMaterialBodyTitleMax = 200;
+
+
+
 export const CreateMaterialBody = zod.object({
   "content": zod.object({
   "schemaVersion": zod.int(),
@@ -2114,7 +2207,7 @@ export const CreateMaterialBody = zod.object({
   "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']).optional().describe('Material kind; defaults to note'),
   "scopeChapters": zod.array(zod.string()).nullish(),
   "scopeFileNames": zod.array(zod.string()).nullish(),
-  "title": zod.string().optional()
+  "title": zod.string().max(createMaterialBodyTitleMax).optional()
 })
 
 export const CreateMaterialResponse = zod.object({
@@ -2191,7 +2284,7 @@ export const UpdateWorkspaceMemberParams = zod.object({
 })
 
 export const UpdateWorkspaceMemberBody = zod.object({
-  "role": zod.enum(['owner', 'editor', 'commenter', 'viewer'])
+  "role": zod.enum(['editor', 'commenter', 'viewer'])
 })
 
 export const UpdateWorkspaceMemberResponse = zod.void()

@@ -6,6 +6,7 @@ import {
 } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
 import { isApiError } from '@/api/client';
+import { addChapterBodyNameMax } from '@/api/gen/validators';
 import {
   useAddChapter,
   useChapters,
@@ -40,6 +41,7 @@ import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
+import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import {
   ResizableHandle,
   ResizablePanel,
@@ -115,8 +117,8 @@ export default function WorkspaceOpen() {
   const readOnly = isWorkspaceReadOnly(ws?.capabilities);
   const canShare = canShareWorkspace(ws?.capabilities);
   useIngestProgress(workspaceId, !readOnly);
-  const { mutate: addChapter } = useAddChapter(workspaceId);
-  const { mutate: updateChapter } = useUpdateChapter(workspaceId);
+  const { mutateAsync: addChapter } = useAddChapter(workspaceId);
+  const { mutateAsync: updateChapter } = useUpdateChapter(workspaceId);
   const { mutate: reorder } = useReorderChapters(workspaceId);
   const { mutate: delChapter } = useDeleteChapter(workspaceId);
   const { mutate: delMaterial } = useDeleteMaterial(workspaceId);
@@ -141,6 +143,9 @@ export default function WorkspaceOpen() {
   }
 
   const [generating, setGenerating] = useState<GenerateMode | null>(null);
+  const [chapterForm, setChapterForm] = useState<
+    { mode: 'add' } | { mode: 'rename'; id: string; name: string } | null
+  >(null);
   const [mode, setMode] = useState('chat');
   const [openChapters, setOpenChapters] = useState<Record<string, boolean>>({});
   // Drop-target line while dragging workspace content.
@@ -634,16 +639,11 @@ export default function WorkspaceOpen() {
                                     icon: 'write',
                                     label: m.action_rename(),
                                     onClick: () => {
-                                      // TODO: use dialog
-                                      const n = prompt(
-                                        'Rename chapter',
-                                        ch.name
-                                      );
-                                      if (n)
-                                        updateChapter({
-                                          id: ch.id,
-                                          name: n,
-                                        });
+                                      setChapterForm({
+                                        id: ch.id,
+                                        mode: 'rename',
+                                        name: ch.name,
+                                      });
                                     },
                                   },
                                   {
@@ -717,6 +717,7 @@ export default function WorkspaceOpen() {
                               maxDepth: 0,
                               nodeCount: 0,
                               position: Number.MAX_SAFE_INTEGER,
+                              revision: 0,
                               sizeBytes: 0,
                               title: GENERATING_MATERIAL[generating].title,
                               type: GENERATING_MATERIAL[generating].type,
@@ -737,11 +738,7 @@ export default function WorkspaceOpen() {
               <Button
                 className="m-2 mb-1 h-fit py-2.5"
                 iconLeft="plus"
-                onClick={() => {
-                  // TODO: use dialog
-                  const n = prompt('New chapter name');
-                  if (n) addChapter(n);
-                }}
+                onClick={() => setChapterForm({ mode: 'add' })}
                 variant="outline"
               >
                 {m.action_add_chapter()}
@@ -838,6 +835,31 @@ export default function WorkspaceOpen() {
           shareRole={ws.shareRole}
           title={'Share Workspace'}
           workspaceId={ws.id}
+        />
+      )}
+      {chapterForm && (
+        <NameFormDialog
+          defaultName={chapterForm.mode === 'rename' ? chapterForm.name : ''}
+          fieldLabel="Name"
+          key={
+            chapterForm.mode === 'rename'
+              ? `rename-${chapterForm.id}`
+              : 'add-chapter'
+          }
+          maxLength={addChapterBodyNameMax}
+          onClose={() => setChapterForm(null)}
+          onSubmit={async (name) => {
+            if (chapterForm.mode === 'rename') {
+              await updateChapter({ id: chapterForm.id, name });
+            } else {
+              await addChapter(name);
+            }
+          }}
+          open
+          submitLabel={
+            chapterForm.mode === 'add' ? m.action_create() : m.action_save()
+          }
+          title={chapterForm.mode === 'add' ? 'New chapter' : 'Rename chapter'}
         />
       )}
     </>

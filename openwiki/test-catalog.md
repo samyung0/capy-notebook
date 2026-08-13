@@ -111,6 +111,7 @@ at the top of each section.
 | [`server/internal/httpapi/helpers_test.go`](../server/internal/httpapi/helpers_test.go) | Kind/content-type helpers, random IDs, and quiz question builder defaults/types. |
 | [`server/internal/httpapi/huma_collaboration_test.go`](../server/internal/httpapi/huma_collaboration_test.go) | OpenAPI collab contracts, material content decode on read / omit on update, invite/access metadata. |
 | [`server/internal/httpapi/huma_limits_test.go`](../server/internal/httpapi/huma_limits_test.go) | Material request body size limit enforcement. |
+| [`server/internal/httpapi/huma_validation_test.go`](../server/internal/httpapi/huma_validation_test.go) | Huma 422s for empty/overlong names, owner invite role, empty cards, and invalid attempts. |
 | [`server/internal/httpapi/share_access_test.go`](../server/internal/httpapi/share_access_test.go) | Share HTTP read/write/clone/explore/attempts and free-owner daily revision caps. |
 | [`server/internal/httpapi/sse_notifications_test.go`](../server/internal/httpapi/sse_notifications_test.go) | Notification SSE connection limits are per-user and global. |
 | [`server/internal/httpapi/webhooks_test.go`](../server/internal/httpapi/webhooks_test.go) | Clerk and Stripe webhook provisioning, signatures, idempotency, and subscription state. |

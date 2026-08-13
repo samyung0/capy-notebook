@@ -1,8 +1,16 @@
-import { useState } from 'react';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { useCallback } from 'react';
+import { Controller, useForm } from 'react-hook-form';
+import { z } from 'zod';
+import {
+  CreateEventBody,
+  createEventBodyLocationMax,
+} from '@/api/gen/validators';
 import type { Label } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
-import { Input, InputTitle } from '@/components/ui/Input';
+import { Spinner } from '@/components/ui/feedback';
+import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { cn } from '@/lib/cn';
 import { userColorPair } from '@/lib/userColor';
 
@@ -37,6 +45,22 @@ function defaultStart() {
   return d;
 }
 
+const EventFormSchema = z
+  .object({
+    date: z.string().min(1),
+    endTime: z.string().min(1),
+    labelIds: z.array(z.string()),
+    location: z.string().max(createEventBodyLocationMax),
+    startTime: z.string().min(1),
+    title: CreateEventBody.shape.title,
+  })
+  .refine((v) => v.endTime > v.startTime, {
+    message: 'End must be after start',
+    path: ['endTime'],
+  });
+
+type EventFormFields = z.infer<typeof EventFormSchema>;
+
 export function EventFormDialog({
   open,
   onClose,
@@ -48,7 +72,7 @@ export function EventFormDialog({
   onClose: () => void;
   labels: Label[];
   draft?: EventDraft;
-  onSubmit: (v: EventFormValues) => void;
+  onSubmit: (v: EventFormValues) => Promise<unknown> | unknown;
 }) {
   const isEdit = !!draft?.id;
   const start = draft?.start ? new Date(draft.start) : defaultStart();
@@ -56,99 +80,163 @@ export function EventFormDialog({
     ? new Date(draft.end)
     : new Date(start.getTime() + 60 * 60 * 1000);
 
-  // TODO: use react-hook-form and zod-resolver, refer to workspaceFormEditDialog, relevant schema should be auto generated already
+  const {
+    formState: { isDirty, isValid, isSubmitting },
+    handleSubmit: formSubmit,
+    control,
+    watch,
+    setValue,
+  } = useForm<EventFormFields>({
+    defaultValues: {
+      date: toDateValue(start),
+      endTime: toTimeValue(end),
+      labelIds: draft?.labelIds ?? [],
+      location: draft?.location ?? '',
+      startTime: toTimeValue(start),
+      title: draft?.title ?? '',
+    },
+    mode: 'onChange',
+    resolver: zodResolver(EventFormSchema),
+  });
 
-  const [title, setTitle] = useState(draft?.title ?? '');
-  const [date, setDate] = useState(toDateValue(start));
-  const [startTime, setStartTime] = useState(toTimeValue(start));
-  const [endTime, setEndTime] = useState(toTimeValue(end));
-  const [location, setLocation] = useState(draft?.location ?? '');
-  const [labelIds, setLabelIds] = useState<string[]>(draft?.labelIds ?? []);
+  const labelIds = watch('labelIds');
+  const submitDisabled = !isDirty || !isValid || isSubmitting;
 
-  const toggleLabel = (id: string) =>
-    setLabelIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-    );
+  const toggleLabel = (id: string) => {
+    const next = labelIds.includes(id)
+      ? labelIds.filter((x) => x !== id)
+      : [...labelIds, id];
+    setValue('labelIds', next, { shouldDirty: true, shouldValidate: true });
+  };
 
-  const valid =
-    title.trim() && date && startTime && endTime && endTime > startTime;
+  const handleSubmit = useCallback(
+    async (v: EventFormFields) => {
+      try {
+        await onSubmit({
+          end: combine(v.date, v.endTime),
+          labelIds: v.labelIds,
+          location: v.location.trim() || undefined,
+          start: combine(v.date, v.startTime),
+          title: v.title.trim(),
+        });
+        onClose();
+      } catch {
+        // Keep the dialog open so the user can retry without losing input.
+        // The global mutation handler shows the normalized failure.
+      }
+    },
+    [onClose, onSubmit]
+  );
 
   return (
     <SimpleDialog
       footer={
         <>
-          <Button onClick={onClose} size="lg" variant="ghost-hover">
+          <Button
+            onClick={onClose}
+            size="lg"
+            type="button"
+            variant="ghost-hover"
+          >
             Cancel
           </Button>
-          <Button
-            disabled={!valid}
-            onClick={() => {
-              onSubmit({
-                end: combine(date, endTime),
-                labelIds,
-                location: location.trim() || undefined,
-                start: combine(date, startTime),
-                title: title.trim(),
-              });
-              onClose();
-            }}
-            size="lg"
-          >
-            {isEdit ? 'Save' : 'Create'}
+          <Button disabled={submitDisabled} size="lg" type="submit">
+            {!isSubmitting && <span>{isEdit ? 'Save' : 'Create'}</span>}
+            {isSubmitting && (
+              <span>
+                <Spinner />
+              </span>
+            )}
           </Button>
         </>
       }
       onClose={onClose}
+      onSubmit={formSubmit(handleSubmit)}
       open={open}
       title={isEdit ? 'Edit event' : 'New event'}
     >
       <div className="flex flex-col gap-4">
-        <label className="flex flex-col gap-1.5">
-          <InputTitle>Title</InputTitle>
-          <Input
-            autoFocus
-            onChange={(e) => setTitle(e.target.value)}
-            placeholder="Event title"
-            value={title}
-          />
-        </label>
+        <Controller
+          control={control}
+          name="title"
+          render={({ field, fieldState }) => (
+            <label className="flex flex-col gap-1.5">
+              <InputTitle required>Title</InputTitle>
+              <Input
+                {...field}
+                aria-invalid={fieldState.invalid}
+                autoFocus
+                placeholder="Event title"
+              />
+              {fieldState.invalid && <InputError errors={[fieldState.error]} />}
+            </label>
+          )}
+        />
 
-        <label className="flex flex-col gap-1.5">
-          <InputTitle>Date</InputTitle>
-          <Input
-            onChange={(e) => setDate(e.target.value)}
-            type="date"
-            value={date}
-          />
-        </label>
+        <Controller
+          control={control}
+          name="date"
+          render={({ field, fieldState }) => (
+            <label className="flex flex-col gap-1.5">
+              <InputTitle required>Date</InputTitle>
+              <Input {...field} aria-invalid={fieldState.invalid} type="date" />
+              {fieldState.invalid && <InputError errors={[fieldState.error]} />}
+            </label>
+          )}
+        />
 
         <div className="flex gap-3">
-          <label className="flex flex-1 flex-col gap-1.5">
-            <InputTitle>Start</InputTitle>
-            <Input
-              onChange={(e) => setStartTime(e.target.value)}
-              type="time"
-              value={startTime}
-            />
-          </label>
-          <label className="flex flex-1 flex-col gap-1.5">
-            <InputTitle>End</InputTitle>
-            <Input
-              onChange={(e) => setEndTime(e.target.value)}
-              type="time"
-              value={endTime}
-            />
-          </label>
+          <Controller
+            control={control}
+            name="startTime"
+            render={({ field, fieldState }) => (
+              <label className="flex flex-1 flex-col gap-1.5">
+                <InputTitle required>Start</InputTitle>
+                <Input
+                  {...field}
+                  aria-invalid={fieldState.invalid}
+                  type="time"
+                />
+                {fieldState.invalid && (
+                  <InputError errors={[fieldState.error]} />
+                )}
+              </label>
+            )}
+          />
+          <Controller
+            control={control}
+            name="endTime"
+            render={({ field, fieldState }) => (
+              <label className="flex flex-1 flex-col gap-1.5">
+                <InputTitle required>End</InputTitle>
+                <Input
+                  {...field}
+                  aria-invalid={fieldState.invalid}
+                  type="time"
+                />
+                {fieldState.invalid && (
+                  <InputError errors={[fieldState.error]} />
+                )}
+              </label>
+            )}
+          />
         </div>
 
-        <label className="flex flex-col gap-1.5">
-          <InputTitle>Location</InputTitle>
-          <Input
-            onChange={(e) => setLocation(e.target.value)}
-            placeholder="Optional"
-            value={location}
-          />
-        </label>
+        <Controller
+          control={control}
+          name="location"
+          render={({ field, fieldState }) => (
+            <label className="flex flex-col gap-1.5">
+              <InputTitle>Location</InputTitle>
+              <Input
+                {...field}
+                aria-invalid={fieldState.invalid}
+                placeholder="Optional"
+              />
+              {fieldState.invalid && <InputError errors={[fieldState.error]} />}
+            </label>
+          )}
+        />
 
         {labels.length > 0 && (
           <div className="flex flex-col gap-1.5">

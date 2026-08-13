@@ -106,7 +106,7 @@ func (a *api) createWorkspaceInvite(ctx context.Context, in *createWorkspaceInvi
 		return nil, collaborationError(err)
 	}
 	notification, created, err := a.s.CreateWorkspaceInviteWithResult(
-		ctx, in.ID, in.Body.Identifier, in.Body.Role, userID(ctx),
+		ctx, in.ID, in.Body.Identifier, in.Body.Role.WorkspaceRole(), userID(ctx),
 	)
 	if err != nil {
 		return nil, collaborationError(err)
@@ -138,7 +138,9 @@ func (a *api) updateWorkspaceMember(ctx context.Context, in *updateWorkspaceMemb
 	if err := a.s.AssertWorkspaceOwner(ctx, userID(ctx), in.ID); err != nil {
 		return nil, collaborationError(err)
 	}
-	notification, created, err := a.s.SetWorkspaceMemberRoleWithResult(ctx, in.ID, in.MemberID, in.Body.Role)
+	notification, created, err := a.s.SetWorkspaceMemberRoleWithResult(
+		ctx, in.ID, in.MemberID, in.Body.Role.WorkspaceRole(),
+	)
 	if err != nil {
 		return nil, collaborationError(err)
 	}

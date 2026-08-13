@@ -4,7 +4,7 @@
  * Evo Notes API
  * OpenAPI spec version: 0.1.0
  */
-import type { WorkspaceRole } from './workspaceRole.ts';
+import type { AssignableRole } from './assignableRole.ts';
 
 export interface CreateWorkspaceInviteReq {
   /** A URL to the JSON Schema for this object. */
@@ -12,7 +12,8 @@ export interface CreateWorkspaceInviteReq {
   /**
      * Exact user ID or email address
      * @minLength 1
+     * @maxLength 320
      */
   identifier: string;
-  role: WorkspaceRole;
+  role: AssignableRole;
 }

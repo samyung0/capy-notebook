@@ -39,6 +39,7 @@ func TestCollaborationContractsAreRegistered(t *testing.T) {
 		"contentBytes:",
 		"allowNoExtension:",
 		"parseModes:",
+		"AssignableRole:",
 	} {
 		if !strings.Contains(text, expected) {
 			t.Errorf("OpenAPI contract missing %q", expected)
@@ -117,7 +118,7 @@ func TestMaterialUpdateResultDoesNotEchoContent(t *testing.T) {
 func TestInviteCreateRequestUsesPrivateIdentifier(t *testing.T) {
 	encoded, err := json.Marshal(apimodel.CreateWorkspaceInviteReq{
 		Identifier: "person@example.com",
-		Role:       store.RoleViewer,
+		Role:       store.AssignableViewer,
 	})
 	if err != nil {
 		t.Fatal(err)

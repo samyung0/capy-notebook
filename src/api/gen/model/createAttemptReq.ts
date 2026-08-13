@@ -13,12 +13,14 @@ export interface CreateAttemptReq {
   readonly $schema?: string;
   /** User answers keyed by question id */
   answers?: CreateAttemptReqAnswers;
+  /** @minimum 0 */
   correct: number;
   /**
      * Question snapshot taken at submit time
      * @nullable
      */
   questions?: CreateAttemptReqQuestionsItem[] | null;
+  /** @minimum 1 */
   total: number;
   /**
      * Questions answered incorrectly
