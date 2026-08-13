@@ -1,11 +1,10 @@
 import { Link } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useEvents, useLabels } from '@/api/hooks';
+import { useCreateEvent, useEvents, useLabels } from '@/api/hooks';
 import { Button } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { usePortals } from '@/stores/portals';
 import {
   addDays,
   monthName,
@@ -13,6 +12,7 @@ import {
   startOfDay,
   weekdayName,
 } from './dateUtils';
+import { type EventDraft, EventFormDialog } from './EventFormDialog';
 import { TimeGrid } from './TimeGrid';
 
 /**
@@ -23,7 +23,8 @@ import { TimeGrid } from './TimeGrid';
 export function DashboardCalendar() {
   const { data: events } = useEvents({ errorBoundary: false });
   const { data: labels } = useLabels({ errorBoundary: false });
-  const openEventForm = usePortals((s) => s.openEventForm);
+  const { mutateAsync: createEvent } = useCreateEvent();
+  const [eventForm, setEventForm] = useState<EventDraft | null>(null);
 
   const [now, setNow] = useState(() => new Date());
   const [anchor, setAnchor] = useState(() => startOfDay(new Date()));
@@ -132,11 +133,12 @@ export function DashboardCalendar() {
       <div className="min-h-0 flex-1 overflow-y-auto" ref={scrollRef}>
         <TimeGrid
           days={[selected]}
+          eventFormOpen={eventForm !== null}
           events={events ?? []}
           hideHeader
           labels={labels ?? []}
           onCreateSlot={(start, end) =>
-            openEventForm({
+            setEventForm({
               end: end.toISOString(),
               start: start.toISOString(),
             })
@@ -145,6 +147,16 @@ export function DashboardCalendar() {
           selectedId={null}
         />
       </div>
+      {eventForm && (
+        <EventFormDialog
+          draft={eventForm}
+          key={`${eventForm.start ?? ''}-${eventForm.end ?? ''}`}
+          labels={labels ?? []}
+          onClose={() => setEventForm(null)}
+          onSubmit={(v) => createEvent(v)}
+          open
+        />
+      )}
     </div>
   );
 }

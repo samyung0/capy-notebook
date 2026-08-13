@@ -1,13 +1,18 @@
 import { Link } from '@tanstack/react-router';
 import { useState } from 'react';
-import { useDeleteWorkspace, useUpdateWorkspaceSharing } from '@/api/hooks';
+import {
+  useDeleteWorkspace,
+  useUpdateWorkspace,
+  useUpdateWorkspaceSharing,
+} from '@/api/hooks';
 import type { Workspace } from '@/api/types';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Menu } from '@/components/ui/Menu';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
+import { WorkspaceFormEditDialog } from '@/features/workspace/WorkspaceFormEditDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { userColorPair } from '@/lib/userColor';
-import { usePortals } from '@/stores/portals';
 import { Badge } from './Badge';
 import { Card } from './Card';
 import { Skeleton } from './feedback';
@@ -16,13 +21,13 @@ import { Icon } from './Icon';
 export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const c = userColorPair(workspace.color);
   const { mutate: deleteWorkspace } = useDeleteWorkspace();
+  const { mutateAsync: updateWorkspace } = useUpdateWorkspace();
   const { isPending: updateSharingIsPending, mutateAsync: updateSharing } =
     useUpdateWorkspaceSharing();
   const [shareOpen, setShareOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const canManage = workspace.capabilities.canManageMembers;
-  const openWorkspaceEdit = usePortals((s) => s.openWorkspaceEdit);
-  // const openWorkspaceStats = usePortals((s) => s.openWorkspaceStats);
-  const openConfirm = usePortals((s) => s.openConfirm);
   return (
     <div className="relative">
       <Link
@@ -87,7 +92,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
                 {
                   icon: 'settings',
                   label: m.action_edit(),
-                  onClick: () => openWorkspaceEdit(workspace, workspace.id),
+                  onClick: () => setEditOpen(true),
                 },
                 {
                   icon: 'link',
@@ -98,12 +103,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
                   danger: true,
                   icon: 'trash',
                   label: m.action_delete(),
-                  onClick: () =>
-                    openConfirm({
-                      body: m.confirm_delete_body(),
-                      onConfirm: () => deleteWorkspace(workspace.id),
-                      title: m.confirm_delete_title({ name: workspace.name }),
-                    }),
+                  onClick: () => setConfirmDelete(true),
                 },
               ]}
             />
@@ -123,6 +123,25 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
             shareRole={workspace.shareRole}
             title={m.workspace_share_title()}
             workspaceId={workspace.id}
+          />
+          {editOpen && (
+            <WorkspaceFormEditDialog
+              onSubmit={(v) => updateWorkspace({ id: workspace.id, ...v })}
+              open
+              setOpen={setEditOpen}
+              workspace={{
+                color: workspace.color,
+                name: workspace.name,
+                tags: workspace.tags,
+              }}
+            />
+          )}
+          <ConfirmDialog
+            body={m.confirm_delete_body()}
+            onClose={() => setConfirmDelete(false)}
+            onConfirm={() => deleteWorkspace(workspace.id)}
+            open={confirmDelete}
+            title={m.confirm_delete_title({ name: workspace.name })}
           />
         </>
       )}

@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS schema_baseline (
 
 DO $$
 DECLARE
-  target_version constant int := 7;
+  target_version constant int := 8;
   recorded_version int;
 BEGIN
   -- Serialize concurrent migrators. The runner sends this file as one statement
@@ -194,7 +194,10 @@ CREATE TABLE IF NOT EXISTS files (
   chapter_id            text,
   name                  text NOT NULL,
   kind                  text NOT NULL DEFAULT 'pdf',
-  position              bigint NOT NULL DEFAULT 0,
+  -- Mixed file/material order within a chapter (and the unfiled bucket).
+  -- clock_timestamp() so concurrent inserts do not collide on now().
+  position              bigint NOT NULL DEFAULT
+                          (floor(extract(epoch FROM clock_timestamp()) * 1000000)::bigint),
   size_bytes            bigint NOT NULL DEFAULT 0 CHECK (size_bytes >= 0),
   added_at              timestamptz NOT NULL DEFAULT now(),
   status                text NOT NULL DEFAULT 'ready',   -- processing | ready | failed
@@ -220,6 +223,8 @@ CREATE TABLE IF NOT EXISTS files (
 );
 CREATE INDEX IF NOT EXISTS files_ws_idx ON files(workspace_id);
 CREATE INDEX IF NOT EXISTS files_chapter_idx ON files(chapter_id);
+CREATE INDEX IF NOT EXISTS files_chapter_position_idx
+  ON files(workspace_id, chapter_id, position);
 CREATE INDEX IF NOT EXISTS files_user_idx ON files(user_id);
 CREATE INDEX IF NOT EXISTS files_content_hash_idx ON files(workspace_id, content_hash);
 
@@ -254,7 +259,9 @@ CREATE TABLE IF NOT EXISTS materials (
   scope_file_names text[] NOT NULL DEFAULT '{}',
   privacy        text NOT NULL DEFAULT 'private',
   color          text NOT NULL DEFAULT 'green',
-  position       bigint NOT NULL DEFAULT 0,
+  -- Mixed file/material order within a chapter (and the unfiled bucket).
+  position       bigint NOT NULL DEFAULT
+                   (floor(extract(epoch FROM clock_timestamp()) * 1000000)::bigint),
   size_bytes     bigint NOT NULL DEFAULT 0 CHECK (size_bytes >= 0),
   node_count     int NOT NULL DEFAULT 0 CHECK (node_count >= 0),
   max_depth      int NOT NULL DEFAULT 0 CHECK (max_depth >= 0),
@@ -279,6 +286,8 @@ CREATE TABLE IF NOT EXISTS materials (
 );
 CREATE INDEX IF NOT EXISTS materials_ws_idx ON materials(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS materials_chapter_idx ON materials(chapter_id);
+CREATE INDEX IF NOT EXISTS materials_chapter_position_idx
+  ON materials(workspace_id, chapter_id, position);
 -- Generated artifacts (and notes) share one list per workspace; duplicate
 -- titles are indistinguishable there. Standalone clones have no workspace.
 CREATE UNIQUE INDEX IF NOT EXISTS materials_workspace_title_uidx

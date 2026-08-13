@@ -1,22 +1,35 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useDeleteLabel, useEvents, useLabels } from '@/api/hooks';
-import type { CalendarEvent } from '@/api/types';
+import {
+  useCreateEvent,
+  useDeleteLabel,
+  useEvents,
+  useLabels,
+  useUpdateEvent,
+  useUpdateLabel,
+} from '@/api/hooks';
+import type { CalendarEvent, Label } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Card } from '@/components/ui/Card';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Skeleton } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { monthName, weekDays } from '@/features/schedule/dateUtils';
+import { EventDetailDialog } from '@/features/schedule/EventDetailDialog';
+import {
+  type EventDraft,
+  EventFormDialog,
+} from '@/features/schedule/EventFormDialog';
+import { LabelEditDialog } from '@/features/schedule/LabelEditDialog';
 import { MiniCalendar } from '@/features/schedule/MiniCalendar';
 import { MonthView } from '@/features/schedule/MonthView';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
 import { TimeGrid } from '@/features/schedule/TimeGrid';
 import { m } from '@/i18n';
 import { userColorPair } from '@/lib/userColor';
-import { usePortals } from '@/stores/portals';
 
 type View = 'month' | 'week' | 'day';
 
@@ -28,11 +41,13 @@ export default function Schedule() {
   const { data: events, fetchStatus, isLoading } = useEvents();
   const { data: labels } = useLabels({ errorBoundary: false });
   const { mutate: deleteLabel } = useDeleteLabel();
-  const openLabelEdit = usePortals((s) => s.openLabelEdit);
-  const openConfirm = usePortals((s) => s.openConfirm);
-  const openEventForm = usePortals((s) => s.openEventForm);
-  const openEventDetail = usePortals((s) => s.openEventDetail);
-  const eventDetail = usePortals((s) => s.eventDetail);
+  const { mutateAsync: updateLabel } = useUpdateLabel();
+  const { mutateAsync: createEvent } = useCreateEvent();
+  const { mutateAsync: updateEvent } = useUpdateEvent();
+  const [labelEdit, setLabelEdit] = useState<Label | null>(null);
+  const [labelToDelete, setLabelToDelete] = useState<Label | null>(null);
+  const [eventForm, setEventForm] = useState<EventDraft | null>(null);
+  const [eventDetail, setEventDetail] = useState<CalendarEvent | null>(null);
   const [view] = useState<View>('week');
   const [month, setMonth] = useState(() => new Date());
   const [selected, setSelected] = useState(() => new Date());
@@ -79,8 +94,8 @@ export default function Schedule() {
       return day;
     });
     openedFromParam.current = true;
-    openEventDetail(ev);
-  }, [eventParam, events, openEventDetail, view]);
+    setEventDetail(ev);
+  }, [eventParam, events, view]);
 
   // once a param-opened dialog is dismissed, drop the ?event= param from the URL.
   // guard on a truthy→null transition so we don't strip on the initial mount,
@@ -99,11 +114,11 @@ export default function Schedule() {
   const days = view === 'week' ? weekDays(selected) : [selected];
 
   const createAt = (start: Date, end: Date) =>
-    openEventForm({ end: end.toISOString(), start: start.toISOString() });
+    setEventForm({ end: end.toISOString(), start: start.toISOString() });
   const selectEvent = (event: CalendarEvent) => {
     scheduleAutoScroll.rememberPosition(scrollRef.current?.scrollTop);
     openedFromParam.current = true;
-    openEventDetail(event);
+    setEventDetail(event);
     navigate({ search: { event: event.id }, to: '/schedule' });
   };
   const createOnDay = (day: Date) => {
@@ -215,18 +230,13 @@ export default function Schedule() {
                           {
                             icon: 'write',
                             label: m.action_edit(),
-                            onClick: () => openLabelEdit(l),
+                            onClick: () => setLabelEdit(l),
                           },
                           {
                             danger: true,
                             icon: 'trash',
                             label: m.action_delete(),
-                            onClick: () =>
-                              openConfirm({
-                                body: m.confirm_delete_body(),
-                                onConfirm: () => deleteLabel(l.id),
-                                title: m.confirm_delete_title({ name: l.name }),
-                              }),
+                            onClick: () => setLabelToDelete(l),
                           },
                         ]}
                       />
@@ -259,7 +269,7 @@ export default function Schedule() {
             <IconButton
               icon="plus"
               label={m.schedule_new_event()}
-              onClick={() => openEventForm()}
+              onClick={() => setEventForm({})}
               size="lg"
               variant="page"
             />
@@ -301,6 +311,7 @@ export default function Schedule() {
             <TimeGrid
               autoScrollTracker={scheduleAutoScroll}
               days={days}
+              eventFormOpen={eventForm !== null}
               events={visibleEvents}
               labels={labels ?? []}
               onCreateSlot={createAt}
@@ -311,6 +322,56 @@ export default function Schedule() {
           )}
         </div>
       </PanelWithInvertedRadius>
+      {labelEdit && (
+        <LabelEditDialog
+          key={labelEdit.id}
+          label={labelEdit}
+          onClose={() => setLabelEdit(null)}
+          onSave={(patch) => updateLabel({ id: labelEdit.id, ...patch })}
+          open
+        />
+      )}
+      {eventForm && (
+        <EventFormDialog
+          draft={eventForm}
+          key={
+            eventForm.id ?? `${eventForm.start ?? ''}-${eventForm.end ?? ''}`
+          }
+          labels={labels ?? []}
+          onClose={() => setEventForm(null)}
+          onSubmit={(v) =>
+            eventForm.id
+              ? updateEvent({ id: eventForm.id, ...v })
+              : createEvent(v)
+          }
+          open
+        />
+      )}
+      <EventDetailDialog
+        event={eventDetail}
+        labels={labels ?? []}
+        onClose={() => setEventDetail(null)}
+        onEdit={(ev) => {
+          setEventDetail(null);
+          setEventForm({
+            end: ev.end,
+            id: ev.id,
+            labelIds: ev.labelIds,
+            location: ev.location,
+            start: ev.start,
+            title: ev.title,
+          });
+        }}
+      />
+      <ConfirmDialog
+        body={m.confirm_delete_body()}
+        onClose={() => setLabelToDelete(null)}
+        onConfirm={() => {
+          if (labelToDelete) deleteLabel(labelToDelete.id);
+        }}
+        open={!!labelToDelete}
+        title={m.confirm_delete_title({ name: labelToDelete?.name ?? '' })}
+      />
     </div>
   );
 }

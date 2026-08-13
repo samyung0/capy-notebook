@@ -3,7 +3,6 @@ import { useEffect, useRef, useState } from 'react';
 import type { CalendarEvent, Label } from '@/api/types';
 import { cn } from '@/lib/cn';
 import { userColorPair } from '@/lib/userColor';
-import { usePortals } from '@/stores/portals';
 import { fmtHour, fmtTime, hourOf, sameDay, weekdayName } from './dateUtils';
 
 export const HOUR_H = 48;
@@ -18,6 +17,7 @@ export function TimeGrid({
   autoScrollTracker,
   scrollContainerRef,
   hideHeader = false,
+  eventFormOpen = false,
 }: {
   days: Date[];
   events: CalendarEvent[];
@@ -32,6 +32,7 @@ export function TimeGrid({
   };
   scrollContainerRef?: React.RefObject<HTMLDivElement | null>;
   hideHeader?: boolean;
+  eventFormOpen?: boolean;
 }) {
   const today = new Date();
   const nowTop = (today.getHours() + today.getMinutes() / 60) * HOUR_H;
@@ -48,7 +49,6 @@ export function TimeGrid({
     day: string;
     hour: number;
   } | null>(null);
-  const isEventFormOpen = usePortals((s) => s.eventForm !== null);
 
   // Auto-scroll once per grid mount by default. Schedule supplies a visit-level
   // tracker because its ?event= updates can remount this component.
@@ -77,8 +77,8 @@ export function TimeGrid({
 
   // drop the pending highlight when the event form dialog closes.
   useEffect(() => {
-    if (!isEventFormOpen) setPendingSlot(null);
-  }, [isEventFormOpen]);
+    if (!eventFormOpen) setPendingSlot(null);
+  }, [eventFormOpen]);
 
   function colorFor(ev: CalendarEvent) {
     const first = labels.find((l) => l.id === ev.labelIds[0]);

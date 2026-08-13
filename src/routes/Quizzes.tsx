@@ -15,7 +15,7 @@ import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { SimpleDialog } from '@/components/ui/Dialog';
+import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid, SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
@@ -24,7 +24,6 @@ import { Tabs } from '@/components/ui/Tabs';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { usePortals } from '@/stores/portals';
 
 function scoreTone(pct: number): 'success' | 'warning' | 'error' {
   return pct >= 70 ? 'success' : pct >= 55 ? 'warning' : 'error';
@@ -67,9 +66,9 @@ function AllQuizzes() {
   const { mutate: cloneQuiz } = useCloneQuiz();
   const { isPending: updateIsPending, mutateAsync: updateQuiz } =
     useUpdateQuiz();
-  const openConfirm = usePortals((s) => s.openConfirm);
   const [info, setInfo] = useState<Quiz | null>(null);
   const [sharing, setSharing] = useState<Quiz | null>(null);
+  const [quizToDelete, setQuizToDelete] = useState<Quiz | null>(null);
 
   if (fetchStatus === 'paused') return <QueryPausedState />;
   if (isLoading) return <SkeletonCardGrid cardHeight={150} count={6} />;
@@ -136,12 +135,7 @@ function AllQuizzes() {
                     danger: true,
                     icon: 'trash',
                     label: m.action_delete(),
-                    onClick: () =>
-                      openConfirm({
-                        body: m.confirm_delete_body(),
-                        onConfirm: () => deleteQuiz(q.id),
-                        title: m.confirm_delete_title({ name: q.name }),
-                      }),
+                    onClick: () => setQuizToDelete(q),
                   },
                 ]}
               />
@@ -214,6 +208,15 @@ function AllQuizzes() {
           title={m.flashcards_share_title({ name: sharing.name })}
         />
       )}
+      <ConfirmDialog
+        body={m.confirm_delete_body()}
+        onClose={() => setQuizToDelete(null)}
+        onConfirm={() => {
+          if (quizToDelete) deleteQuiz(quizToDelete.id);
+        }}
+        open={!!quizToDelete}
+        title={m.confirm_delete_title({ name: quizToDelete?.name ?? '' })}
+      />
     </>
   );
 }

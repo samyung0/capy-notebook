@@ -37,6 +37,7 @@ import { Panel } from '@/components/app/layout';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonList } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
@@ -58,6 +59,7 @@ import {
   searchFromOpenItem,
   type WorkspaceOpenSearch,
 } from '@/features/materials/openItem';
+import { AddSourceDialog } from '@/features/workspace/AddSourceDialog';
 import {
   canShareWorkspace,
   isWorkspaceReadOnly,
@@ -71,7 +73,6 @@ import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
 import { cn } from '@/lib/cn';
 import { userColorPair } from '@/lib/userColor';
-import { usePortals } from '@/stores/portals';
 
 const GENERATING_MATERIAL: Record<
   GenerateMode,
@@ -129,8 +130,6 @@ export default function WorkspaceOpen() {
     useCloneWorkspace({ errorToast: false });
   const { isPending: updateSharingIsPending, mutateAsync: updateSharing } =
     useUpdateWorkspaceSharing();
-  const openAddSource = usePortals((s) => s.openAddSource);
-  const openConfirm = usePortals((s) => s.openConfirm);
 
   const openItem = openItemFromSearch(search);
 
@@ -156,6 +155,8 @@ export default function WorkspaceOpen() {
   } | null>(null);
   const draggedItemRef = useRef<ContentOrderItem | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
+  const [addSourceOpen, setAddSourceOpen] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<MaterialRef | null>(null);
 
   const pair = userColorPair(ws?.color);
   const unfiled = files?.filter((f) => f.chapterId === null) ?? [];
@@ -331,28 +332,7 @@ export default function WorkspaceOpen() {
         color={color}
         data={mt}
         key={`${mt.type}:${mt.id}`}
-        onDelete={
-          readOnly
-            ? undefined
-            : () => {
-                openConfirm({
-                  body: m.confirm_delete_body(),
-                  danger: true,
-                  onConfirm: () =>
-                    delMaterial(mt.id, {
-                      onSuccess: () => {
-                        if (
-                          openItem?.kind === 'material' &&
-                          openItem.id === mt.id
-                        ) {
-                          setOpenItem(null);
-                        }
-                      },
-                    }),
-                  title: m.confirm_delete_title({ name: mt.title }),
-                });
-              }
-        }
+        onDelete={readOnly ? undefined : () => setPendingDelete(mt)}
         onMove={(chapterId) => moveMaterial({ chapterId, id: mt.id })}
         onOpen={() => setOpenItem({ id: mt.id, kind: 'material' })}
         readOnly={readOnly}
@@ -527,7 +507,7 @@ export default function WorkspaceOpen() {
                   <Button
                     className="h-fit py-2"
                     iconLeft="newFile"
-                    onClick={() => openAddSource(workspaceId)}
+                    onClick={() => setAddSourceOpen(true)}
                     size="md"
                     variant="surface"
                   >
@@ -870,6 +850,31 @@ export default function WorkspaceOpen() {
           }
         />
       )}
+      {addSourceOpen && (
+        <AddSourceDialog
+          onClose={() => setAddSourceOpen(false)}
+          open
+          workspaceId={workspaceId}
+        />
+      )}
+      <ConfirmDialog
+        body={m.confirm_delete_body()}
+        danger
+        onClose={() => setPendingDelete(null)}
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          const id = pendingDelete.id;
+          delMaterial(id, {
+            onSuccess: () => {
+              if (openItem?.kind === 'material' && openItem.id === id) {
+                setOpenItem(null);
+              }
+            },
+          });
+        }}
+        open={!!pendingDelete}
+        title={m.confirm_delete_title({ name: pendingDelete?.title ?? '' })}
+      />
     </>
   );
 }

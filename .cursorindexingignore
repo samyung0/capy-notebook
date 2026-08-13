@@ -1,0 +1,12 @@
+# Indexed search skip only — Agent can still @-mention these.
+# node_modules / .venv / dist are also gitignored (and in Cursor's
+# default ignore list); listed here so watchers and indexing stay aligned.
+
+node_modules/
+.venv/
+venv/
+dist/
+
+pipeline/tests/cassettes/
+src/api/gen/
+.agents/

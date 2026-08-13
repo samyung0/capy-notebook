@@ -30,7 +30,6 @@ const CLERK_ACTIVE = !USE_MSW && !!CLERK_PUBLISHABLE_KEY;
 import { VisuallyHidden } from 'radix-ui';
 import { NotificationsBell } from '@/features/notification/NotificationBell';
 import { m } from '@/i18n';
-import { usePortals } from '@/stores/portals';
 import { MobileNavDrawer } from './Sidebar';
 import { ThemeSwitchDrawer } from './ThemeSwitchDrawer';
 
@@ -42,7 +41,7 @@ const KIND_ICON: Record<SearchKind, Parameters<typeof Icon>[0]['name']> = {
   workspace: 'workspaces',
 };
 
-export function SearchDialog({
+function SearchDialog({
   open,
   setOpen,
 }: {
@@ -160,16 +159,19 @@ export function SearchDialog({
 }
 
 function SearchButton() {
-  const setTopBarSearchOpen = usePortals((s) => s.setTopBarSearchOpen);
+  const [open, setOpen] = useState(false);
   return (
-    <IconButton
-      className="shrink-0"
-      icon="search"
-      label={m.search_placeholder()}
-      onClick={() => setTopBarSearchOpen(true)}
-      size="md"
-      variant="dark"
-    />
+    <>
+      <IconButton
+        className="shrink-0"
+        icon="search"
+        label={m.search_placeholder()}
+        onClick={() => setOpen(true)}
+        size="md"
+        variant="dark"
+      />
+      <SearchDialog open={open} setOpen={setOpen} />
+    </>
   );
 }
 

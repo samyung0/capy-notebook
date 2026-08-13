@@ -35,7 +35,7 @@ import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useProviderConnect } from '@/lib/useProviderConnect';
-import { usePortals } from '@/stores/portals';
+import { OneDriveImportDialog } from './OneDriveImportDialog';
 import {
   aggregateUploadPct,
   defaultParseMode,
@@ -672,7 +672,7 @@ function ImportFiles({
   className?: string;
 }) {
   // const [chapterId, setChapterId] = useState<string | null>(null);
-  const openMsImport = usePortals((s) => s.openMsImport);
+  const [msOpen, setMsOpen] = useState(false);
   const { data: integrations } = useIntegrations({ errorBoundary: false });
   const { isPending: importSourcesIsPending, mutate: importSources } =
     useImportSources(workspaceId, { errorToast: false });
@@ -778,34 +778,43 @@ function ImportFiles({
       connect('microsoft');
       return;
     }
-    openMsImport(workspaceId);
+    setMsOpen(true);
   }
   return (
-    <div className={cn(className)}>
-      <div className="grid grid-cols-2 gap-3">
-        <Button
-          disabled={importSourcesIsPending}
-          iconLeft="files"
-          onClick={onGoogleClick}
-          variant="outline"
-        >
-          Google Drive
-        </Button>
-        <Button
-          disabled={importSourcesIsPending}
-          iconLeft="files"
-          onClick={onMicrosoftClick}
-          variant="outline"
-        >
-          OneDrive
-        </Button>
+    <>
+      <div className={cn(className)}>
+        <div className="grid grid-cols-2 gap-3">
+          <Button
+            disabled={importSourcesIsPending}
+            iconLeft="files"
+            onClick={onGoogleClick}
+            variant="outline"
+          >
+            Google Drive
+          </Button>
+          <Button
+            disabled={importSourcesIsPending}
+            iconLeft="files"
+            onClick={onMicrosoftClick}
+            variant="outline"
+          >
+            OneDrive
+          </Button>
+        </div>
+        {!integrations?.google && !integrations?.microsoft && !USE_MSW && (
+          <p className="t-meta text-center text-fg-muted">
+            {m.source_cloud_connect_hint()}
+          </p>
+        )}
       </div>
-      {!integrations?.google && !integrations?.microsoft && !USE_MSW && (
-        <p className="t-meta text-center text-fg-muted">
-          {m.source_cloud_connect_hint()}
-        </p>
+      {msOpen && (
+        <OneDriveImportDialog
+          onClose={() => setMsOpen(false)}
+          open
+          workspaceId={workspaceId}
+        />
       )}
-    </div>
+    </>
   );
 }
 

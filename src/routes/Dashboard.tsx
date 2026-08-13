@@ -1,11 +1,14 @@
 import { Link } from '@tanstack/react-router';
+import { useState } from 'react';
 import {
   useDeleteTask,
   useMe,
   useTasks,
   useToggleTask,
+  useUpdateTask,
   useWorkspaces,
 } from '@/api/hooks';
+import type { Task } from '@/api/types';
 import { CloudConnectBanner } from '@/components/app/CloudConnectBanner';
 import { Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
@@ -13,6 +16,7 @@ import { TopInsetBar } from '@/components/app/TopInsetBar';
 import DashboardDefaultBanner from '@/components/banners/DashboardDefaultBanner';
 import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
 import {
@@ -20,9 +24,9 @@ import {
   WorkspaceCardSkeleton,
 } from '@/components/ui/WorkspaceCard';
 import { DashboardCalendar } from '@/features/schedule/DashboardCalendar';
+import { TaskEditDialog } from '@/features/tasks/TaskEditDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { usePortals } from '@/stores/portals';
 
 function StreakHeading() {
   const { data: me } = useMe({ errorBoundary: false });
@@ -108,8 +112,9 @@ function TasksCard() {
   const { data } = useTasks({ errorBoundary: false });
   const { mutate: toggle } = useToggleTask();
   const { mutate: remove } = useDeleteTask();
-  const openTaskEdit = usePortals((s) => s.openTaskEdit);
-  const openConfirm = usePortals((s) => s.openConfirm);
+  const { mutateAsync: updateTask } = useUpdateTask();
+  const [taskEdit, setTaskEdit] = useState<Task | null>(null);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
   const open = data?.filter((t) => !t.done) ?? [];
   const visible = data?.slice(0, 4) ?? [];
   const hasMore = (data?.length ?? 0) > visible.length;
@@ -170,7 +175,7 @@ function TasksCard() {
                 {
                   icon: 'write',
                   label: m.action_edit(),
-                  onClick: () => openTaskEdit(t),
+                  onClick: () => setTaskEdit(t),
                 },
                 {
                   icon: 'check',
@@ -181,12 +186,7 @@ function TasksCard() {
                   danger: true,
                   icon: 'trash',
                   label: m.action_delete(),
-                  onClick: () =>
-                    openConfirm({
-                      body: m.confirm_delete_body(),
-                      onConfirm: () => remove(t.id),
-                      title: m.confirm_delete_title({ name: t.title }),
-                    }),
+                  onClick: () => setTaskToDelete(t),
                 },
               ]}
               radialBackground
@@ -207,6 +207,24 @@ function TasksCard() {
           </Button>
         )}
       </div>
+      {taskEdit && (
+        <TaskEditDialog
+          key={taskEdit.id}
+          onClose={() => setTaskEdit(null)}
+          onSave={(patch) => updateTask({ id: taskEdit.id, ...patch })}
+          open
+          task={taskEdit}
+        />
+      )}
+      <ConfirmDialog
+        body={m.confirm_delete_body()}
+        onClose={() => setTaskToDelete(null)}
+        onConfirm={() => {
+          if (taskToDelete) remove(taskToDelete.id);
+        }}
+        open={!!taskToDelete}
+        title={m.confirm_delete_title({ name: taskToDelete?.title ?? '' })}
+      />
     </div>
   );
 }

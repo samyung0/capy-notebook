@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useTags, useWorkspaces } from '@/api/hooks';
+import { useCreateWorkspace, useTags, useWorkspaces } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Badge } from '@/components/ui/Badge';
@@ -16,10 +16,10 @@ import {
 } from '@/components/ui/Popover';
 import { UserColorChooser } from '@/components/ui/UserColorChooser';
 import { WorkspaceCard } from '@/components/ui/WorkspaceCard';
+import { WorkspaceFormCreateDialog } from '@/features/workspace/WorkspaceFormCreateDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { type USER_COLORS, USER_COLORS_DISPLAY } from '@/lib/userColor';
-import { usePortals } from '@/stores/portals';
 
 const SORTS = [
   { label: m.workspaces_sort_accessed, value: 'accessed' },
@@ -39,6 +39,7 @@ export default function Workspaces() {
   const [colorFilters, setColorFilters] = useState<string[]>([]);
   const [tagFilters, setTagFilters] = useState<string[]>([]);
   const [filterOpen, setFilterOpen] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const { data, fetchStatus, isLoading } = useWorkspaces({
     color: colorFilters,
@@ -46,7 +47,7 @@ export default function Workspaces() {
     tag: tagFilters,
   });
   const { data: tags = [] } = useTags('workspace', { errorBoundary: false });
-  const openWorkspaceCreate = usePortals((s) => s.openWorkspaceCreate);
+  const { mutateAsync: createWorkspace } = useCreateWorkspace();
 
   const sortLabel = useMemo(
     () => SORTS.find((s) => s.value === sort)?.label() ?? '',
@@ -73,7 +74,7 @@ export default function Workspaces() {
           <IconButton
             icon="plus"
             label={m.action_new_workspace()}
-            onClick={() => openWorkspaceCreate()}
+            onClick={() => setCreateOpen(true)}
             size="lg"
             variant="page"
           />
@@ -200,7 +201,7 @@ export default function Workspaces() {
               border="dashed"
               className="min-h-40 cursor-pointer items-center justify-center focus-visible:border-0 focus-visible:ring-2 focus-visible:ring-action focus-visible:transition-none"
               interactive
-              onClick={() => openWorkspaceCreate()}
+              onClick={() => setCreateOpen(true)}
               radius="card-lg"
               tabIndex={0}
             >
@@ -214,6 +215,14 @@ export default function Workspaces() {
           </div>
         )}
       </div>
+      {createOpen && (
+        <WorkspaceFormCreateDialog
+          onSubmit={(v) => createWorkspace(v)}
+          open
+          setOpen={setCreateOpen}
+          workspace={{ color: 'graphite', name: '', tags: [] }}
+        />
+      )}
     </PanelWithInvertedRadius>
   );
 }

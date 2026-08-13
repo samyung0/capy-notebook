@@ -4,7 +4,8 @@ Thumbs.db
 *.swp
 *.swo
 .idea/
-.vscode/
+.vscode/*
+!.vscode/settings.json
 *~
 
 # --- Env / secrets ---
