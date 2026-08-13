@@ -64,6 +64,7 @@ func TestBlobRefcountQueuesOnlyUnreferencedObjects(t *testing.T) {
 	sharedPath := "sources/" + uid("blob")
 	soloPath := "sources/" + uid("blob")
 	parsedPath := "parsed/" + uid("blob")
+	captionPath := "captions/" + uid("blob")
 
 	// Two files naming the same source object, as a workspace clone produces.
 	first, err := s.CreateSourceReady(ctx, ws.ID, ownerID, "first.pdf", "pdf",
@@ -81,8 +82,8 @@ func TestBlobRefcountQueuesOnlyUnreferencedObjects(t *testing.T) {
 	}
 
 	if _, err := s.pool.Exec(ctx, `UPDATE files
-		SET blob_path=$2, parsed_blob_path=$3 WHERE id=$1`,
-		second.ID, soloPath, parsedPath); err != nil {
+		SET blob_path=$2, parsed_blob_path=$3, caption_blob_path=$4 WHERE id=$1`,
+		second.ID, soloPath, parsedPath, captionPath); err != nil {
 		t.Fatal(err)
 	}
 	// Repointing a file dereferences the old path and references both new ones.
@@ -94,6 +95,9 @@ func TestBlobRefcountQueuesOnlyUnreferencedObjects(t *testing.T) {
 	}
 	if got := blobRefCount(t, s, parsedPath); got != 1 {
 		t.Errorf("parsed path refs = %d, want 1", got)
+	}
+	if got := blobRefCount(t, s, captionPath); got != 1 {
+		t.Errorf("caption path refs = %d, want 1", got)
 	}
 	if blobQueued(t, s, sharedPath) {
 		t.Error("shared path was queued while another file still references it")
@@ -115,7 +119,7 @@ func TestBlobRefcountQueuesOnlyUnreferencedObjects(t *testing.T) {
 	if err := s.DeleteWorkspace(ctx, ownerID, ws.ID); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{soloPath, parsedPath} {
+	for _, path := range []string{soloPath, parsedPath, captionPath} {
 		if got := blobRefCount(t, s, path); got != 0 {
 			t.Errorf("%s refs after workspace delete = %d, want 0", path, got)
 		}

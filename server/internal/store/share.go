@@ -516,9 +516,10 @@ type workspaceCloneFile struct {
 	url, content                        *string
 	parsedBlobPath, parsedFingerprint   *string
 	parsedParserVersion, sourceETag     *string
-	contentHash                         *string
+	captionBlobPath, contentHash        *string
 	sizeBytes                           int64
 	position                            int64
+	indexed                             bool
 }
 
 type workspaceCloneAsset struct {
@@ -631,10 +632,10 @@ func (s *Store) snapshotWorkspaceForClone(
 	rows.Close()
 
 	rows, err = tx.Query(ctx,
-		`SELECT id, chapter_id, position, name, kind, size_bytes, status,
+		`SELECT id, chapter_id, position, name, kind, size_bytes, status, indexed,
 			parser, engine, blob_path, url, content,
 			parsed_blob_path, parsed_fingerprint, parsed_parser_version, source_etag,
-			content_hash
+			caption_blob_path, content_hash
 		 FROM files WHERE workspace_id=$1 ORDER BY added_at`,
 		workspaceID,
 	)
@@ -651,6 +652,7 @@ func (s *Store) snapshotWorkspaceForClone(
 			&file.kind,
 			&file.sizeBytes,
 			&file.status,
+			&file.indexed,
 			&file.parser,
 			&file.engine,
 			&file.blobPath,
@@ -660,6 +662,7 @@ func (s *Store) snapshotWorkspaceForClone(
 			&file.parsedFingerprint,
 			&file.parsedParserVersion,
 			&file.sourceETag,
+			&file.captionBlobPath,
 			&file.contentHash,
 		); err != nil {
 			rows.Close()
@@ -834,11 +837,11 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 				url = &u
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO files
-				(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, parser, engine, blob_path, url, content,
-				 parsed_blob_path, parsed_fingerprint, parsed_parser_version, source_etag, content_hash)
-				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
-				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.parser, f.engine, f.blobPath, url, f.content,
-				f.parsedBlobPath, f.parsedFingerprint, f.parsedParserVersion, f.sourceETag, f.contentHash); err != nil {
+				(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, engine, blob_path, url, content,
+				 parsed_blob_path, parsed_fingerprint, parsed_parser_version, source_etag, caption_blob_path, content_hash)
+				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.indexed, f.parser, f.engine, f.blobPath, url, f.content,
+				f.parsedBlobPath, f.parsedFingerprint, f.parsedParserVersion, f.sourceETag, f.captionBlobPath, f.contentHash); err != nil {
 				return Workspace{}, err
 			}
 		}

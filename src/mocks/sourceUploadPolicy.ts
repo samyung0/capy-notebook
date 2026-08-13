@@ -88,23 +88,23 @@ export const sourceUploadPolicy: SourceUploadPolicy = {
     kind,
     text: kind === 'txt' || kind === 'md' || kind === 'json',
   })),
-  maxBytes: 100 * 1024 * 1024,
+  maxBytes: 10 * 1024 * 1024,
   parseModes: [
     {
       extensions: parseExtensions,
-      maxBytes: 100 * 1024 * 1024,
+      maxBytes: 10 * 1024 * 1024,
       mode: 'accurate',
       supportsFigures: true,
     },
     {
       extensions: parseExtensions,
-      maxBytes: 100 * 1024 * 1024,
+      maxBytes: 10 * 1024 * 1024,
       mode: 'fast',
       supportsFigures: true,
     },
     {
       extensions: [],
-      maxBytes: 100 * 1024 * 1024,
+      maxBytes: 10 * 1024 * 1024,
       mode: 'none',
       supportsFigures: false,
     },

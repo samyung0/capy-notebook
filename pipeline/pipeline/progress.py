@@ -44,6 +44,7 @@ def publish(
     pct: int,
     status: str = "processing",
     message: str = "",
+    indexed: bool | None = None,
 ) -> None:
     """Emit a progress event. ``status`` is one of processing|ready|failed."""
     event = {
@@ -54,6 +55,8 @@ def publish(
         "status": status,
         "message": message,
     }
+    if indexed is not None:
+        event["indexed"] = indexed
     try:
         _redis().publish(channel(workspace_id), json.dumps(event))
     except Exception:

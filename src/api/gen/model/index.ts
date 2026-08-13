@@ -58,6 +58,7 @@ export * from './file.ts';
 export * from './fileKind.ts';
 export * from './fileStatus.ts';
 export * from './flashcard.ts';
+export * from './getSourceUploadPolicyParams.ts';
 export * from './integrationsStatus.ts';
 export * from './label.ts';
 export * from './listNotificationsParams.ts';

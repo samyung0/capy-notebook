@@ -85,7 +85,11 @@ stream that closes before a terminal `done` frame both mark that turn as errored
 they do not crash a page boundary or emit the default mutation toast. Ingest and
 notification streams update cached connection status, reconnect with backoff,
 and use the status banner when disconnected. An ingest `failed` event updates
-the affected file state and triggers a refetch.
+the affected file state and triggers a refetch. A file that finished without
+retrieval chunks (`indexed: false`, including ingest failure and
+`parseMode=none` store-only uploads) still renders its viewer. The center pane
+shows a pinned status banner (`[data-testid="file-not-indexed"]`) under the
+header instead of replacing the body with a full-page error.
 
 ## Development scenario panel
 
@@ -110,6 +114,7 @@ The panel is not mounted in production or when `VITE_USE_MSW=false`.
 - Non-disclosing shared-resource state:
   `[data-testid="private-or-unavailable"]`.
 - Development panel: `[data-testid="mock-scenario-panel"]`.
+- Unindexed/failed source file banner: `[data-testid="file-not-indexed"]`.
 
 Playwright tests should use `expectErrorSurface(page, variant, text?)` from
 `e2e/helpers/errors.ts` instead of duplicating selector details.

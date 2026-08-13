@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"mime"
 	"net/http"
@@ -75,11 +76,18 @@ func (a *api) createSourceUpload(w http.ResponseWriter, r *http.Request) {
 	if in.ParseMode == "" {
 		in.ParseMode = defaultParseMode(in.Name, in.Kind)
 	}
-	if in.SizeBytes < 0 || in.SizeBytes > parseMaxBytes {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "uploads support files up to 100 MB"})
+	maxBytes, err := a.sourceMaxBytes(r.Context(), wsID)
+	if err != nil {
+		a.fail(w, err)
 		return
 	}
-	if err := validateParseMode(in.ParseMode, in.Name, in.Kind, in.SizeBytes); err != nil {
+	if in.SizeBytes < 0 || in.SizeBytes > maxBytes {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"message": fmt.Sprintf("uploads support files up to %d MB", maxBytes>>20),
+		})
+		return
+	}
+	if err := validateParseMode(in.ParseMode, in.Name, in.Kind, in.SizeBytes, maxBytes); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 		return
 	}

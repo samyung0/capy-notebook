@@ -617,13 +617,20 @@ export function useDeleteWorkspace() {
 }
 
 /* ---------------- chapters & files ---------------- */
-export const sourceUploadPolicyQuery = () =>
+export const sourceUploadPolicyQuery = (wsId?: string) =>
   queryOptions({
-    queryFn: () => api.get<SourceUploadPolicy>('/source-upload-policy'),
-    queryKey: qk.sourceUploadPolicy,
+    queryFn: () =>
+      api.get<SourceUploadPolicy>(
+        wsId
+          ? `/source-upload-policy?workspaceId=${encodeURIComponent(wsId)}`
+          : '/source-upload-policy'
+      ),
+    queryKey: qk.sourceUploadPolicy(wsId),
   });
-export const useSourceUploadPolicy = (options?: QueryUiOptions) =>
-  useQuery({ ...sourceUploadPolicyQuery(), meta: queryMeta(options) });
+export const useSourceUploadPolicy = (
+  wsId?: string,
+  options?: QueryUiOptions
+) => useQuery({ ...sourceUploadPolicyQuery(wsId), meta: queryMeta(options) });
 
 export const chaptersQuery = (wsId: string) =>
   queryOptions({
@@ -838,7 +845,13 @@ function simulateMswProgress(qc: QueryClient, wsId: string, fileId: string) {
     });
     if (pct >= 100) {
       clearInterval(timer);
-      patchFileInCache(qc, wsId, fileId, { ingestPct: 100, status: 'ready' });
+      const list = qc.getQueryData<SourceFile[]>(qk.files(wsId));
+      const kind = list?.find((entry) => entry.id === fileId)?.kind;
+      patchFileInCache(qc, wsId, fileId, {
+        indexed: kind !== 'audio',
+        ingestPct: 100,
+        status: 'ready',
+      });
     }
   }, 450);
 }
@@ -981,10 +994,14 @@ export function useIngestProgress(wsId: string, enabled = true) {
             return;
           }
           const status = value.status as FileStatus;
-          patchFileInCache(qc, wsId, value.fileId, {
+          const patch: Partial<SourceFile> = {
             ingestPct: value.pct,
             status,
-          });
+          };
+          if (typeof value.indexed === 'boolean') {
+            patch.indexed = value.indexed;
+          }
+          patchFileInCache(qc, wsId, value.fileId, patch);
           if (status === 'ready' || status === 'failed') {
             qc.invalidateQueries({ queryKey: qk.files(wsId) });
             qc.invalidateQueries({ queryKey: qk.file(value.fileId) });

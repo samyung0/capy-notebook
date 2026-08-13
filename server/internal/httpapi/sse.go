@@ -9,7 +9,7 @@ import (
 // ingestEvents streams live ingest progress for a workspace over SSE.
 //
 // The Python worker PUBLISHes JSON events to the Redis channel
-// `ingest:{workspaceId}` ({fileId, stage, pct, status, message}); we subscribe
+// `ingest:{workspaceId}` ({fileId, stage, pct, status, message, indexed}); we subscribe
 // and relay each event to the browser's EventSource. This replaces polling for
 // upload status — the UI patches its file cache as events arrive.
 func (a *api) ingestEvents(w http.ResponseWriter, r *http.Request) {

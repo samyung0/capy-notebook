@@ -15,6 +15,7 @@ export interface File {
   chapterId: string | null;
   content?: string;
   id: string;
+  indexed: boolean;
   kind: FileKind;
   name: string;
   position: number;

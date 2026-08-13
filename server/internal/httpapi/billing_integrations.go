@@ -45,6 +45,12 @@ func (a *api) importSources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	maxBytes, err := a.sourceMaxBytes(r.Context(), wsID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+
 	created := []store.File{}
 	for _, fid := range body.FileIds {
 		var data []byte
@@ -64,7 +70,7 @@ func (a *api) importSources(w http.ResponseWriter, r *http.Request) {
 		}
 		kind := integrations.KindFromName(name)
 		mode := defaultParseMode(name, kind)
-		if err := validateParseMode(mode, name, kind, int64(len(data))); err != nil {
+		if err := validateParseMode(mode, name, kind, int64(len(data)), maxBytes); err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 			return
 		}

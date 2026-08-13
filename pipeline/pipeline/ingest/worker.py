@@ -2,7 +2,7 @@
 
 Claims jobs from the Postgres queue and turns uploads into retrievable chunks:
 
-- ``txt`` / ``md`` are read straight from B2 and chunked as markdown.
+- ``txt`` / ``md`` / ``json`` are read straight from B2 and chunked as markdown.
 - ``parseMode=fast`` parses on Modal with MinerU's pipeline OCR backend.
 - ``parseMode=accurate`` parses on Modal with MinerU's hybrid VLM backend:
   better on dense layouts, more GPU seconds per page.
@@ -42,7 +42,7 @@ from ..store import blobstore, db
 log = logging.getLogger("evo.worker")
 
 # Ingested as plain text (no parse service) for these file kinds.
-_TEXT_KINDS = {"txt", "md"}
+_TEXT_KINDS = {"txt", "md", "json"}
 
 _PARSE_ROUTES = {
     "accurate": modal_parser.ROUTE_ACCURATE,
@@ -71,11 +71,13 @@ def _finish_ok(
     artifact_fingerprint: str | None = None,
     artifact_version: str | None = None,
     notification_code: str = "source_ready",
+    indexed: bool = True,
 ) -> None:
     notification = None
     with db.connect() as conn:
         with conn.cursor() as cur:
             db.set_file_status(cur, file_id, "ready")
+            db.set_file_indexed(cur, file_id, indexed)
             if content_hash is not None:
                 db.set_file_content_hash(cur, file_id, content_hash)
             if artifact_key:
@@ -104,6 +106,7 @@ def _finish_fail(file_id: str | None, job_id: str, error: str) -> None:
         with conn.cursor() as cur:
             if file_id:
                 db.set_file_status(cur, file_id, "failed")
+                db.set_file_indexed(cur, file_id, False)
             db.set_job(cur, job_id, "failed", error[:500])
         conn.commit()
 
@@ -129,6 +132,20 @@ def _account_allows_ingest(file_id: str) -> bool:
 def _read_text(path: str) -> str:
     with open(path, "r", encoding="utf-8", errors="replace") as fh:
         return fh.read()
+
+
+def _record_parse_artifact(
+    file_id: str, key: str, fingerprint: str, version: str
+) -> None:
+    with db.connect() as conn, conn.cursor() as cur:
+        db.set_file_parse_artifact(cur, file_id, key, fingerprint, version)
+        conn.commit()
+
+
+def _record_caption_blob(file_id: str, key: str) -> None:
+    with db.connect() as conn, conn.cursor() as cur:
+        db.set_file_caption_blob(cur, file_id, key)
+        conn.commit()
 
 
 # ------------------------------------------------------------------ parsing
@@ -173,6 +190,17 @@ async def _chunks_for(
         content_list, artifact_key, fingerprint = await asyncio.to_thread(
             modal_parser.parse_to_bundle, descriptor, name, raw_dir
         )
+        source_etag = str(payload.get("sourceETag") or info["etag"])
+        if artifact_key:
+            # Record before captioning: a later vision failure must not leave
+            # the zip untracked for the blob reaper.
+            await asyncio.to_thread(
+                _record_parse_artifact,
+                file_id,
+                artifact_key,
+                fingerprint,
+                modal_parser.parser_version(route),
+            )
         progress.publish(
             ws, file_id, "captioning" if caption_images else "indexing", 45
         )
@@ -184,9 +212,14 @@ async def _chunks_for(
                 content_list=content_list,
                 raw_dir=raw_dir,
                 file_name=name,
-                fingerprint=fingerprint,
+                blob_path=str(blob_path or ""),
+                source_etag=source_etag,
             )
             log.info("captioned figures for %s: %s", name, counts)
+            if counts.get("key"):
+                await asyncio.to_thread(
+                    _record_caption_blob, file_id, str(counts["key"])
+                )
         progress.publish(ws, file_id, "indexing", 55)
         return (
             chunk_content_list(content_list),
@@ -219,7 +252,9 @@ async def process_ingest_job(job: dict) -> None:
     if not await asyncio.to_thread(_account_allows_ingest, file_id):
         note = f"{name}: ingest refused because the account is locked or over quota."
         await asyncio.to_thread(_finish_fail, file_id, job["id"], note)
-        progress.publish(ws, file_id, "failed", 100, status="failed", message=note)
+        progress.publish(
+            ws, file_id, "failed", 100, status="failed", message=note, indexed=False
+        )
         return
     progress.publish(ws, file_id, "queued", 5)
 
@@ -228,9 +263,16 @@ async def process_ingest_job(job: dict) -> None:
         # stray job must not fall through to a parser that cannot handle it.
         note = f"{name}: stored without parsing (not indexed for retrieval)."
         await asyncio.to_thread(
-            _finish_ok, file_id, name, job["id"], notification_code="source_stored"
+            _finish_ok,
+            file_id,
+            name,
+            job["id"],
+            notification_code="source_stored",
+            indexed=False,
         )
-        progress.publish(ws, file_id, "done", 100, status="ready", message=note)
+        progress.publish(
+            ws, file_id, "done", 100, status="ready", message=note, indexed=False
+        )
         return
 
     chunks, artifact_key, fingerprint, artifact_version = await _chunks_for(
@@ -275,7 +317,9 @@ async def process_ingest_job(job: dict) -> None:
             artifact_version,
             "source_duplicate",
         )
-        progress.publish(ws, file_id, "done", 100, status="ready", message=note)
+        progress.publish(
+            ws, file_id, "done", 100, status="ready", message=note, indexed=True
+        )
         return
 
     try:
@@ -300,7 +344,7 @@ async def process_ingest_job(job: dict) -> None:
         fingerprint,
         artifact_version,
     )
-    progress.publish(ws, file_id, "done", 100, status="ready")
+    progress.publish(ws, file_id, "done", 100, status="ready", indexed=True)
     log.info("indexed %s: %s", name, result)
 
 
@@ -354,7 +398,13 @@ async def main_async() -> None:
                     log.exception("failed to record job failure")
                 if ws and fid:
                     progress.publish(
-                        ws, fid, "failed", 100, status="failed", message=str(exc)[:200]
+                        ws,
+                        fid,
+                        "failed",
+                        100,
+                        status="failed",
+                        message=str(exc)[:200],
+                        indexed=False,
                     )
     finally:
         await store.close_pool()

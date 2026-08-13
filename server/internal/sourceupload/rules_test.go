@@ -31,12 +31,15 @@ func TestValidate(t *testing.T) {
 		kind      string
 		mode      string
 		size      int64
+		maxBytes  int64
 		wantError string
 	}{
 		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: 1},
 		{name: "notes.pdf", kind: "pdf", mode: ParseModeAccurate, size: 1},
 		{name: "script.py", kind: "txt", mode: ParseModeNone, size: 1},
-		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: ParseMaxBytes + 1, wantError: "100 MB"},
+		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: FreeSourceMaxBytes + 1, wantError: "10 MB"},
+		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: ProSourceMaxBytes + 1, maxBytes: ProSourceMaxBytes, wantError: "30 MB"},
+		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: ProSourceMaxBytes, maxBytes: ProSourceMaxBytes},
 		{name: "song.mp3", kind: "audio", mode: ParseModeFast, size: 1, wantError: "does not support"},
 		{name: "notes.pdf", kind: "txt", mode: ParseModeFast, size: 1, wantError: "does not match"},
 		{name: "archive.zip", kind: "unknown", mode: ParseModeNone, size: 1, wantError: "not supported"},
@@ -44,7 +47,11 @@ func TestValidate(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name+"-"+test.mode, func(t *testing.T) {
-			err := Validate(test.name, test.kind, test.mode, test.size)
+			maxBytes := test.maxBytes
+			if maxBytes == 0 {
+				maxBytes = FreeSourceMaxBytes
+			}
+			err := Validate(test.name, test.kind, test.mode, test.size, maxBytes)
 			if test.wantError == "" {
 				if err != nil {
 					t.Fatalf("Validate returned unexpected error: %v", err)

@@ -37,10 +37,16 @@ def parse_stub(monkeypatch):
         raw_dir.mkdir(parents=True, exist_ok=True)
         return content_list, "parsed/f_1/x.zip", "fp-1"
 
-    async def _caption(*, content_list, raw_dir, file_name, fingerprint):
+    async def _caption(*, content_list, raw_dir, file_name, blob_path, source_etag):
         state["captioned"] += 1
         content_list[1]["description"] = "A labelled chloroplast."
-        return {"selected": 1, "cached": 0, "captioned": 1, "applied": 1}
+        return {
+            "selected": 1,
+            "cached": 0,
+            "captioned": 1,
+            "applied": 1,
+            "key": "captions/k.json",
+        }
 
     def _chunk(items):
         state["chunked"] = [dict(item) for item in items]
@@ -52,6 +58,8 @@ def parse_stub(monkeypatch):
     monkeypatch.setattr(worker.modal_parser, "parse_to_bundle", _parse)
     monkeypatch.setattr(worker.figures, "caption_figures", _caption)
     monkeypatch.setattr(worker, "chunk_content_list", _chunk)
+    monkeypatch.setattr(worker, "_record_parse_artifact", lambda *a, **k: None)
+    monkeypatch.setattr(worker, "_record_caption_blob", lambda *a, **k: None)
     monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
     return state
 
@@ -108,6 +116,29 @@ async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatc
     assert parse_stub["captioned"] == 0
 
 
+async def test_json_sources_are_ingested_as_text(parse_stub, monkeypatch):
+    monkeypatch.setattr(
+        worker.blobstore, "fetch_local", lambda _p: ("/tmp/data.json", lambda: None)
+    )
+    monkeypatch.setattr(worker, "_read_text", lambda _p: '{"topic": "osmosis"}')
+    monkeypatch.setattr(worker, "chunk_markdown", lambda text: [text])
+
+    chunks, artifact_key, fingerprint, version = await worker._chunks_for(
+        payload={"blobPath": "sources/data.json"},
+        name="data.json",
+        kind="json",
+        parse_mode="none",
+        caption_images=True,
+        ws="ws_1",
+        file_id="f_1",
+    )
+
+    assert chunks == ['{"topic": "osmosis"}']
+    assert (artifact_key, fingerprint, version) == (None, None, None)
+    assert parse_stub["descriptor"] is None
+    assert parse_stub["captioned"] == 0
+
+
 async def test_captioning_is_off_unless_the_upload_asked_for_it(parse_stub):
     await _run("fast")
 
@@ -122,6 +153,27 @@ async def test_captions_reach_the_chunker(parse_stub):
 
     assert parse_stub["captioned"] == 1
     assert parse_stub["chunked"][1]["description"] == "A labelled chloroplast."
+
+
+async def test_a_successful_parse_is_recorded_before_captioning(
+    parse_stub, monkeypatch
+):
+    """A later vision failure must not leave the zip untracked for the reaper."""
+    order: list[str] = []
+
+    def _record(*_a, **_k):
+        order.append("parse")
+
+    async def _caption(**_k):
+        order.append("caption")
+        return {"selected": 0, "cached": 0, "captioned": 0, "applied": 0, "key": ""}
+
+    monkeypatch.setattr(worker, "_record_parse_artifact", _record)
+    monkeypatch.setattr(worker.figures, "caption_figures", _caption)
+
+    await _run("fast", caption_images=True)
+
+    assert order == ["parse", "caption"]
 
 
 async def test_a_missing_source_blob_fails_before_paying_for_a_parse(

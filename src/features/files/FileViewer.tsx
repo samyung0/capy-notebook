@@ -10,14 +10,13 @@ import { fileExt, IMAGE_MIN_ZOOM, isImageFile } from './fileUtils';
 const PdfView = lazy(() => import('./PdfView'));
 const SheetView = lazy(() => import('./SheetView'));
 const DocxView = lazy(() => import('./DocxView'));
-const MaterialPreview = lazy(() =>
-  import('@/features/materials/MaterialPreview').then((m) => ({
-    default: m.MaterialPreview,
-  }))
-);
+const TextView = lazy(() => import('./TextView'));
+const PptxView = lazy(() => import('./PptxView'));
 
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'm4a', 'ogg', 'flac', 'aac']);
 const SHEET_EXTS = new Set(['xlsx', 'xls', 'csv']);
+const SLIDE_EXTS = new Set(['ppt', 'pptx']);
+const TEXT_EXTS = new Set(['txt', 'md', 'markdown', 'mdx', 'mdc', 'json']);
 
 function lazyView(node: ReactNode) {
   return <Suspense fallback={<FileLoading />}>{node}</Suspense>;
@@ -123,21 +122,21 @@ function FileViewerContent({
     return lazyView(<DocxView url={file.url} />);
   }
 
-  // Markdown — render with the static Plate preview. `!= null` so empty
-  // markdown files still preview instead of falling to "unsupported".
-  if (file.kind === 'md') {
-    if (file.content == null) return <FileEmpty />;
-    return lazyView(
-      <MaterialPreview className="mx-auto max-w-175" content={file.content} />
-    );
+  if (file.kind === 'slides' || SLIDE_EXTS.has(ext)) {
+    if (!file.url) return <FileEmpty />;
+    return lazyView(<PptxView url={file.url} />);
   }
 
-  // Plain text (or extracted text content from other kinds).
-  if ((file.kind === 'txt' || file.content) && file.content != null) {
-    return (
-      <article className="mx-auto max-w-175 whitespace-pre-wrap p-6 text-[0.95rem] text-fg leading-relaxed">
-        {file.content}
-      </article>
+  const isMarkdown = file.kind === 'md' || ext === 'md' || ext === 'markdown';
+  const isText =
+    isMarkdown ||
+    file.kind === 'txt' ||
+    file.kind === 'json' ||
+    TEXT_EXTS.has(ext);
+  if (isText) {
+    if (file.content == null && !file.url) return <FileEmpty />;
+    return lazyView(
+      <TextView content={file.content} markdown={isMarkdown} url={file.url} />
     );
   }
 

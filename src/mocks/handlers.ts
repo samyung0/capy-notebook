@@ -1224,6 +1224,7 @@ export const handlers = [
       addedAt: new Date().toISOString(),
       chapterId,
       id: uid('f'),
+      indexed: false,
       kind,
       name,
       position: db.nextContentPosition(String(params.id), chapterId),
@@ -1241,6 +1242,7 @@ export const handlers = [
     // Eventually mark ready so later refetches reflect a finished ingest.
     setTimeout(() => {
       f.status = 'ready';
+      f.indexed = f.kind !== 'audio';
     }, 2600);
     return HttpResponse.json(f, { status: 201 });
   }),
@@ -2203,6 +2205,7 @@ export const handlers = [
           addedAt: new Date().toISOString(),
           chapterId: body.chapterId ?? null,
           id: uid('f'),
+          indexed: false,
           ingestPct: 0,
           kind: 'pdf' as const,
           name: `${body.provider}-import-${i + 1}.pdf`,

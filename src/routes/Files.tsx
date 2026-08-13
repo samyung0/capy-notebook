@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
+import { FileNotIndexedBanner } from '@/features/files/FileStates';
 import { FileViewer } from '@/features/files/FileViewer';
 import { formatFileSize } from '@/features/files/fileUtils';
 import { m } from '@/i18n';
@@ -55,7 +56,12 @@ export default function Files() {
         title={open?.name}
         width={760}
       >
-        <div className="min-h-[50vh]">{open && <FileViewer file={open} />}</div>
+        <div className="flex min-h-[50vh] flex-col">
+          {open && <FileNotIndexedBanner file={open} />}
+          <div className="min-h-0 flex-1">
+            {open && <FileViewer file={open} />}
+          </div>
+        </div>
       </SimpleDialog>
     </PanelWithInvertedRadius>
   );

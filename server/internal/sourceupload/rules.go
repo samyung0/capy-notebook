@@ -17,11 +17,24 @@ const (
 	ParseModeFast     = "fast"
 	ParseModeNone     = "none"
 
-	// One limit for both modes. The old, much tighter cap on the cheap mode was
-	// imposed by the free MinerU cloud API it used to call, which is gone.
-	ParseMaxBytes  = 100 << 20
+	// Per-file source caps, independent of plan storage quota and of editor
+	// assets (which have their own purpose ladder). GPU/LLM cost is metered
+	// separately; these bounds only stop a single upload from being enormous.
+	FreeSourceMaxBytes = 10 << 20
+	ProSourceMaxBytes  = 30 << 20
+	// Absolute ceiling used as the HTTP body limit so a request is rejected
+	// before we look up the owner's plan. Must be >= ProSourceMaxBytes.
+	ParseMaxBytes  = ProSourceMaxBytes
 	UploadMaxBytes = ParseMaxBytes + (4 << 20)
 )
+
+// SourceMaxBytes is the per-file cap for the workspace owner's plan.
+func SourceMaxBytes(pro bool) int64 {
+	if pro {
+		return ProSourceMaxBytes
+	}
+	return FreeSourceMaxBytes
+}
 
 // explicitKindExtensions mirrors AddSourceDialog's KIND_BY_EXT. Text/code
 // extensions are added below, without overriding these explicit kinds.
@@ -383,7 +396,7 @@ func NormalizeCaptionImages(kind, mode string, requested bool) bool {
 	return true
 }
 
-func Validate(name, kind, mode string, size int64) error {
+func Validate(name, kind, mode string, size, maxBytes int64) error {
 	expectedKind := KindFromName(name)
 	if expectedKind == "unknown" {
 		ext := Extension(name)
@@ -398,8 +411,11 @@ func Validate(name, kind, mode string, size int64) error {
 	if kind != expectedKind {
 		return fmt.Errorf("file kind %q does not match extension %q", kind, Extension(name))
 	}
-	if size < 0 || size > ParseMaxBytes {
-		return fmt.Errorf("uploads support files up to 100 MB")
+	if maxBytes <= 0 {
+		maxBytes = ProSourceMaxBytes
+	}
+	if size < 0 || size > maxBytes {
+		return fmt.Errorf("uploads support files up to %d MB", maxBytes>>20)
 	}
 	if IsTextKind(kind) {
 		return nil

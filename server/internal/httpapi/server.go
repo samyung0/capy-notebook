@@ -304,11 +304,10 @@ func (a *api) addSource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, res)
 }
 
-// Parse-mode limits. Both modes run MinerU on Modal — accurate on the hybrid
-// VLM backend, fast on the pipeline OCR backend — so one 100 MB upload cap
-// covers both.
+// Multipart body ceiling. Per-file source caps are plan-aware (10 MB free /
+// 30 MB Pro) and enforced after we know the workspace owner; this limit only
+// stops an oversized request before that lookup.
 const (
-	parseMaxBytes  = sourceupload.ParseMaxBytes
 	uploadMaxBytes = sourceupload.UploadMaxBytes // multipart overhead headroom
 )
 
@@ -316,8 +315,23 @@ func defaultParseMode(name, kind string) string {
 	return sourceupload.DefaultParseMode(name, kind)
 }
 
-func validateParseMode(mode, name, kind string, size int64) error {
-	return sourceupload.Validate(name, kind, mode, size)
+func validateParseMode(mode, name, kind string, size, maxBytes int64) error {
+	return sourceupload.Validate(name, kind, mode, size, maxBytes)
+}
+
+func (a *api) sourceMaxBytes(ctx context.Context, wsID string) (int64, error) {
+	if wsID != "" {
+		tier, err := a.s.WorkspaceOwnerPlan(ctx, wsID)
+		if err != nil {
+			return 0, err
+		}
+		return sourceupload.SourceMaxBytes(tier == store.PlanPro), nil
+	}
+	me, err := a.s.Me(ctx, userID(ctx))
+	if err != nil {
+		return 0, err
+	}
+	return sourceupload.SourceMaxBytes(me.PlanTier == store.PlanPro), nil
 }
 
 func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
@@ -369,7 +383,12 @@ func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
 	if parseMode == "" {
 		parseMode = defaultParseMode(name, kind)
 	}
-	if err := validateParseMode(parseMode, name, kind, hdr.Size); err != nil {
+	maxBytes, err := a.sourceMaxBytes(r.Context(), id(r))
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	if err := validateParseMode(parseMode, name, kind, hdr.Size, maxBytes); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 		return
 	}

@@ -30,6 +30,13 @@ Plan limits: **100 MiB** free, **1 GiB** Pro
 (`FreeStorageLimitBytes` / `ProStorageLimitBytes`). The UI labels them
 100 MB / 1 GB.
 
+Per-file **source upload** caps are separate from that quota and from editor-asset
+purpose limits (images 20 MB, audio 100 MB, …). They follow the **workspace
+owner's** plan, create-only (no retroactive invalidation): **10 MiB** free,
+**30 MiB** Pro (`sourceupload.SourceMaxBytes`). GPU/LLM cost is metered
+elsewhere. `GET /api/source-upload-policy?workspaceId=` returns the cap the
+dialog should enforce.
+
 ## Counter model
 
 `user_storage` holds folded `used_bytes` and `reserved_bytes`.

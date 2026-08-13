@@ -28,10 +28,23 @@ func (a *api) registerSourceUploads(api huma.API) {
 	)
 }
 
+type sourceUploadPolicyInput struct {
+	WorkspaceID string `query:"workspaceId"`
+}
+
 func (a *api) getSourceUploadPolicy(
-	_ context.Context,
-	_ *struct{},
+	ctx context.Context,
+	in *sourceUploadPolicyInput,
 ) (*sourceUploadPolicyOutput, error) {
+	if in.WorkspaceID != "" {
+		if _, err := a.workspaceRead(ctx, in.WorkspaceID); err != nil {
+			return nil, hErr(err)
+		}
+	}
+	maxBytes, err := a.sourceMaxBytes(ctx, in.WorkspaceID)
+	if err != nil {
+		return nil, hErr(err)
+	}
 	extensionsByKind := sourceupload.ExtensionsByKind()
 	kindOrder := []store.FileKind{
 		store.FilePDF,
@@ -62,19 +75,19 @@ func (a *api) getSourceUploadPolicy(
 		{
 			Mode:            sourceupload.ParseModeAccurate,
 			Extensions:      sourceupload.ParseExtensions(sourceupload.ParseModeAccurate),
-			MaxBytes:        sourceupload.ParseMaxBytes,
+			MaxBytes:        maxBytes,
 			SupportsFigures: true,
 		},
 		{
 			Mode:            sourceupload.ParseModeFast,
 			Extensions:      sourceupload.ParseExtensions(sourceupload.ParseModeFast),
-			MaxBytes:        sourceupload.ParseMaxBytes,
+			MaxBytes:        maxBytes,
 			SupportsFigures: true,
 		},
 		{
 			Mode:       sourceupload.ParseModeNone,
 			Extensions: []string{},
-			MaxBytes:   sourceupload.ParseMaxBytes,
+			MaxBytes:   maxBytes,
 		},
 	}
 	accept := sourceupload.SupportedExtensions()
@@ -84,7 +97,7 @@ func (a *api) getSourceUploadPolicy(
 			Kinds:            kinds,
 			ParseModes:       parseModes,
 			Accept:           joinExtensions(accept),
-			MaxBytes:         sourceupload.ParseMaxBytes,
+			MaxBytes:         maxBytes,
 			AllowNoExtension: false,
 		},
 	}, nil

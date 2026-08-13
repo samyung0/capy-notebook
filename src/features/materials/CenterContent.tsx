@@ -5,7 +5,11 @@ import type { Chapter, UserColor } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
-import { FileError, FileLoading } from '@/features/files/FileStates';
+import {
+  FileError,
+  FileLoading,
+  FileNotIndexedBanner,
+} from '@/features/files/FileStates';
 import { FileViewer } from '@/features/files/FileViewer';
 import { IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
@@ -98,7 +102,14 @@ export function CenterContent({
         readOnly={readOnly}
         workspaceId={workspaceId}
       />
-      <div className="relative min-h-0 flex-1 overflow-auto">
+      <div
+        className={cn(
+          'relative min-h-0 flex-1',
+          item.kind === 'file'
+            ? 'flex flex-col overflow-hidden'
+            : 'overflow-auto'
+        )}
+      >
         {item.kind === 'material' && (
           <MaterialBody
             allowExternalAssets={!readOnly}
@@ -289,19 +300,17 @@ function FileBody({
       </div>
     );
   }
-  if (file?.status === 'failed') {
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-3 font-semibold text-solid-error">
-        <p className="mt-3">{m.files_process_failed({ name: file.name })}</p>
-      </div>
-    );
-  }
   return (
-    <FileViewer
-      file={file ?? null}
-      imageZoom={imageZoom}
-      onImageZoomChange={onImageZoomChange}
-      page={page}
-    />
+    <div className="flex min-h-0 flex-1 flex-col">
+      {file && <FileNotIndexedBanner file={file} />}
+      <div className="relative min-h-0 flex-1 overflow-auto">
+        <FileViewer
+          file={file ?? null}
+          imageZoom={imageZoom}
+          onImageZoomChange={onImageZoomChange}
+          page={page}
+        />
+      </div>
+    </div>
   );
 }

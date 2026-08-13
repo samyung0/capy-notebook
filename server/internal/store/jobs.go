@@ -55,7 +55,7 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 		return File{}, "", err
 	}
 
-	f := File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "processing", URL: &url}
+	f := File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "processing", Indexed: false, URL: &url}
 	return f, jobID, nil
 }
 
@@ -92,7 +92,7 @@ func (s *Store) CreateSourceReady(ctx context.Context, wsID, createdBy, name, ki
 	if err := tx.Commit(ctx); err != nil {
 		return File{}, err
 	}
-	return File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "ready", URL: &url}, nil
+	return File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "ready", Indexed: false, URL: &url}, nil
 }
 
 // FileBlob returns the B2 object key and kind for a raw file.

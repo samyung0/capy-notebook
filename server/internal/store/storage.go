@@ -55,6 +55,20 @@ func StorageLimitBytes(tier PlanTier) int64 {
 	return FreeStorageLimitBytes
 }
 
+// WorkspaceOwnerPlan is the plan of the account that pays for the workspace.
+// Per-file upload caps follow this, not the editor who is uploading.
+func (s *Store) WorkspaceOwnerPlan(ctx context.Context, workspaceID string) (PlanTier, error) {
+	var tier PlanTier
+	err := s.pool.QueryRow(ctx, `
+		SELECT u.plan_tier FROM workspaces w
+		JOIN users u ON u.id = w.user_id
+		WHERE w.id=$1`, workspaceID).Scan(&tier)
+	if isNoRows(err) {
+		return "", ErrNotFound
+	}
+	return tier, err
+}
+
 func storageJSONSizeTx(ctx context.Context, tx pgx.Tx, content string) (int64, error) {
 	var size int64
 	err := tx.QueryRow(

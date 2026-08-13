@@ -1,47 +1,25 @@
 low priority:
 
-1.  input validation and sanitizations (after react hook form in frontend, backend go should go more checking and error throwing like required fields, e.g. creating workspace must throw errors if name or privacy is missing, some unimportant fields like color or tags cna have defaults, )
-2.  erorr handling (e.g. when uploading files to parse, what if backend errors or pipeline errors, the error should be logged and saved in db properly (and user prompt that system is busy or whatever))
-3.  check how auth middleware is used in backend
-4.  paginations?
-5.  shortcut keys (ctrl + n in workspace to make a note)
-6.  tooltip (for shortcut key and explanation)
-7.  double check that all actions have isSubmitting/proper isDisabled gates to prevent spams
-8.  use dynamic color paletts for solid colors (these should be user defined colors, system colors should use success/warning/info etc) (prob need an extra field like customColor and a bunch of type changes in backend go)
-9.  paraglide check for any missed text that is not being translated (few in workspaces open walready, PRIVACY_OPTIONS, input placeholders)
-10. make a bunch of integration and backend tests
-11. rate limiting, bot detection (can do some funny things if we have high bot traffic), analytics, promo, posthog
-12. work on thinkg space
-13. check all the skeleton loaders look ok
-14. check that components are reused as much as possible (esp dialog ( to replace modals), popover, and buttons)
-15. rewrite progress bar/other components in cva
-16. check accessibility and aria labels (use radix-ui as primitive as often as possible, which means to enforce the radius primitives in ui components and ensure these ui components are reused as often as possible)
-17. folder organization
-18. react reactivity check (many many fixes needed, give it to fable)
-19. semantics and accessibility check
-20. when deleting files, make a is_deleted flag instead of fully deleting it. then make like a rubbish bin and perma delete the files after 30 days
-21. readme files
-22. investigate how to tie the state between search params and dialog open/close state, right now I see that we listen to change in dialog state in useeffect and then manually remove search params, and listening to change in search params to manually open the dialog. and we also need to factor in navigating cross pages and dont strip the search params on initial mount (because dialog will be initially closed)
-23. elastic search?
-24. what is the backend actually doing
-25. how to not lose ones mind when reading this repo
-26. send workspace invitations by email in addition to in-app notifications
-27. migrate from radix ui to base ui
-28. languine and paraglide?
-29. finish themes
-30. in workspaceopen, chapter vs fileitem hover actions have different behaviors
-31. make a components page to show all the difference components/variants, group by ui elements
-32. check how the router should be implemented, manually typing routes dont seemt to be recommened (and lazyRouteComponent is not in the docs?), also sometimes when navigating in dev with msw, it seems to take a bit to render the component (but shouldnt be the case if the loader is non blocking? there is a 1 second delay simulated in msw handler but is data is loaded async and non blocked, this delay shouldnt occur?) and if the component takes a bit to render, then switching between open workspace and other pages causes significant layout shifts because in openworkspace the sidenav is not rendered. With the delay, when navigating away from openworkspace, the sidebar renders instantly but the route component is still stuck on openworkspace, or when navigating to openworkspace, the sidebar disappears first before the content renders
-33. manage feature flags better than just env, likely in posthog?
-34. optimize types.ts more, some types like materials shouldnt be manually typed?
-35. add layout adjust in editor to make the document smaller or larger in width
-36. marker 2 vs mineru? https://www.marktechpost.com/2026/07/24/datalab-marker-v2-vs-mineru-docling-and-liteparse-benchmark-breakdown/
+1.  use dynamic color paletts for solid colors (these should be user defined colors, system colors should use success/warning/info etc) (prob need an extra field like customColor and a bunch of type changes in backend go)
+2.  rate limiting, bot detection (can do some funny things if we have high bot traffic), analytics, promo, posthog
+3.  work on thinkg space
+4.  check all the skeleton loaders look ok
+5.  apply the skill modern-web-guidance and do a quick scan for the frontend of this repo? DO NOT modify any code yet, I just want some preliminary analysis on particularly browser support, accessibilities, animations, semantics and seo
+6.  investigate how to tie the state between search params and dialog open/close state, right now I see that we listen to change in dialog state in useeffect and then manually remove search params, and listening to change in search params to manually open the dialog. and we also need to factor in navigating cross pages and dont strip the search params on initial mount (because dialog will be initially closed)
+7.  elastic search?
+8.  migrate from radix ui to base ui
+9.  languine and paraglide?
+10. finish themes
+11. integrate storyblocks? (is there a better way to visualize/dev components like dialog/erorr messages that require steps to trigger it to be viisble)
+13. check how the router should be implemented, manually typing routes dont seemt to be recommened (and lazyRouteComponent is not in the docs?), also sometimes when navigating in dev with msw, it seems to take a bit to render the component (but shouldnt be the case if the loader is non blocking? there is a 1 second delay simulated in msw handler but is data is loaded async and non blocked, this delay shouldnt occur?) and if the component takes a bit to render, then switching between open workspace and other pages causes significant layout shifts because in openworkspace the sidenav is not rendered. With the delay, when navigating away from openworkspace, the sidebar renders instantly but the route component is still stuck on openworkspace, or when navigating to openworkspace, the sidebar disappears first before the content renders
+14. manage feature flags better than just env, likely in posthog?
+15. marker 2 vs mineru? https://www.marktechpost.com/2026/07/24/datalab-marker-v2-vs-mineru-docling-and-liteparse-benchmark-breakdown/
 
 https://mineru.shmakov.tools/guides/choosing-gpu/
 high PRIORITIES:
 
 1. track material generations and display progress bar like how filelistitem does it?
-2. additional configurations like time limit for materi
+2. remove time limit for quiz
 3.  if copy and pasting markdown, render it directly rather than inside a code block (? what determines if a code block gets inserted or not?)
 4.  enable ordering of doucments within chapters with drag and drop (right now it just drops in the chapter)
 5.  add icons for common file format

@@ -312,7 +312,8 @@ export const qk = {
   quiz: (id: string) => ['quiz', id] as const,
   quizzes: ['quizzes'] as const,
   search: (q: string) => ['search', q] as const,
-  sourceUploadPolicy: ['source-upload-policy'] as const,
+  sourceUploadPolicy: (wsId?: string) =>
+    ['source-upload-policy', wsId ?? null] as const,
   tags: (kind: string) => ['tags', kind] as const,
   tasks: ['tasks'] as const,
   thinking: ['thinking'] as const,

@@ -810,6 +810,7 @@ export const ListAllFilesResponseItem = zod.object({
   "chapterId": zod.string().nullable(),
   "content": zod.string().optional(),
   "id": zod.string(),
+  "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
@@ -844,6 +845,7 @@ export const GetFileResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "content": zod.string().optional(),
   "id": zod.string(),
+  "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
@@ -876,6 +878,7 @@ export const UpdateFileResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "content": zod.string().optional(),
   "id": zod.string(),
+  "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
@@ -1559,6 +1562,10 @@ export const SearchResponse = zod.array(SearchResponseItem)
 /**
  * @summary Get source upload policy
  */
+export const GetSourceUploadPolicyQueryParams = zod.object({
+  "workspaceId": zod.string().optional()
+})
+
 export const GetSourceUploadPolicyResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "accept": zod.string(),
@@ -2140,6 +2147,7 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "chapterId": zod.string().nullable(),
   "content": zod.string().optional(),
   "id": zod.string(),
+  "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),

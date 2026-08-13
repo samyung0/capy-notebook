@@ -37,6 +37,7 @@ import type {
   Event,
   File,
   Flashcard,
+  GetSourceUploadPolicyParams,
   IntegrationsStatus,
   Label,
   ListNotificationsParams,
@@ -3620,20 +3621,27 @@ export type getSourceUploadPolicyResponseError = (getSourceUploadPolicyResponseD
 
 export type getSourceUploadPolicyResponse = (getSourceUploadPolicyResponseSuccess | getSourceUploadPolicyResponseError)
 
-export const getGetSourceUploadPolicyUrl = () => {
+export const getGetSourceUploadPolicyUrl = (params?: GetSourceUploadPolicyParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/source-upload-policy`
+  return stringifiedParams.length > 0 ? `/api/source-upload-policy?${stringifiedParams}` : `/api/source-upload-policy`
 }
 
 /**
  * @summary Get source upload policy
  */
-export const getSourceUploadPolicy = async ( options?: RequestInit): Promise<getSourceUploadPolicyResponse> => {
+export const getSourceUploadPolicy = async (params?: GetSourceUploadPolicyParams, options?: RequestInit): Promise<getSourceUploadPolicyResponse> => {
 
-  const res = await fetch(getGetSourceUploadPolicyUrl(),
+  const res = await fetch(getGetSourceUploadPolicyUrl(params),
   {
     ...options,
     method: 'GET'

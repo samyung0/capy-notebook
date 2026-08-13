@@ -20,6 +20,13 @@ from PIL import Image, ImageDraw
 
 from pipeline.parse import figures
 
+_SOURCE_BLOB = "sources/lecture.pdf"
+_SOURCE_ETAG = "etag-1"
+
+
+def _caption_key() -> str:
+    return figures.cache_key(_SOURCE_BLOB, _SOURCE_ETAG)
+
 
 def _write(path: Path, image: Image.Image) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -225,7 +232,8 @@ async def _caption_all(tmp_path: Path, content_list: list[dict[str, Any]]) -> di
         content_list=content_list,
         raw_dir=tmp_path,
         file_name="lecture.pdf",
-        fingerprint="fp-1",
+        blob_path=_SOURCE_BLOB,
+        source_etag=_SOURCE_ETAG,
     )
 
 
@@ -263,7 +271,13 @@ async def test_a_reingest_replays_the_cache_so_the_content_hash_is_stable(
     stats = await _caption_all(tmp_path, second)
 
     assert len(captioning["calls"]) == 1
-    assert stats == {"selected": 1, "cached": 1, "captioned": 0, "applied": 1}
+    assert stats == {
+        "selected": 1,
+        "cached": 1,
+        "captioned": 0,
+        "applied": 1,
+        "key": _caption_key(),
+    }
     assert second[0]["description"] == first[0]["description"]
 
 
@@ -278,8 +292,8 @@ async def test_a_bumped_caption_version_invalidates_the_cache(
 
     assert len(captioning["calls"]) == 2
     assert set(captioning["store"]) == {
-        figures.cache_key("fp-1").replace("v2", "v1"),
-        figures.cache_key("fp-1"),
+        _caption_key().replace("v2", "v1"),
+        _caption_key(),
     }
 
 
@@ -323,6 +337,38 @@ async def test_nothing_to_caption_makes_no_calls(tmp_path: Path, captioning):
     assert "description" not in content_list[0]
 
 
+async def test_the_caption_cache_follows_the_source_blob_not_the_parse_route(
+    tmp_path: Path, captioning
+):
+    """Re-parsing the same bytes on a different MinerU route must not recaption."""
+    _write(tmp_path / "images" / "a.png", _diagram(seed=1))
+    first = [_image_block("images/a.png", 0)]
+    second = [_image_block("images/a.png", 0)]
+
+    await _caption_all(tmp_path, first)
+    stats = await figures.caption_figures(
+        content_list=second,
+        raw_dir=tmp_path,
+        file_name="lecture.pdf",
+        blob_path=_SOURCE_BLOB,
+        source_etag=_SOURCE_ETAG,
+    )
+
+    assert len(captioning["calls"]) == 1
+    assert stats["cached"] == 1
+    assert stats["key"] == _caption_key()
+
+    third = [_image_block("images/a.png", 0)]
+    await figures.caption_figures(
+        content_list=third,
+        raw_dir=tmp_path,
+        file_name="lecture.pdf",
+        blob_path=_SOURCE_BLOB,
+        source_etag="other-etag",
+    )
+    assert len(captioning["calls"]) == 2
+
+
 async def test_the_cached_payload_is_keyed_by_image_content(tmp_path: Path, captioning):
     """Keyed by the image digest rather than its path, so the same figure moving
     between pages on a re-parse still hits."""
@@ -331,7 +377,7 @@ async def test_the_cached_payload_is_keyed_by_image_content(tmp_path: Path, capt
 
     await _caption_all(tmp_path, content_list)
 
-    cached = json.loads(captioning["store"][figures.cache_key("fp-1")])
+    cached = json.loads(captioning["store"][_caption_key()])
     digest = next(iter(cached))
     assert len(digest) == 64
     assert cached[digest] == "description 1"

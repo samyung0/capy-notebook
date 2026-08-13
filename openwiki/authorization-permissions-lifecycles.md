@@ -350,7 +350,8 @@ Sources: [upload expiry and pruning](../server/internal/store/uploads.go#L202),
 
 Physical deletion is coordinated through `pending_blob_deletions`, a durable
 database outbox. Reference-count triggers cover source objects, parsed objects,
-editor assets, and upload-session paths. They run for direct row deletion and
+caption-cache objects (`files.caption_blob_path`), editor assets, and
+upload-session paths. They run for direct row deletion and
 foreign-key cascades, so deleting a file, deleting a workspace, or purging an
 account all reach the same cleanup path without relying on an HTTP handler to
 enumerate bucket keys.
@@ -387,7 +388,7 @@ can enqueue that object for the normal reaper.
 The sweep:
 
 - runs once at server startup and then every 30 days;
-- lists `sources/`, `parsed/`, and `editor-assets/`;
+- lists `sources/`, `parsed/`, `captions/`, and `editor-assets/`;
 - ignores objects newer than 48 hours so in-flight finalization is not reported;
 - treats both live blob rows and upload-session source/destination paths as
   known references; and

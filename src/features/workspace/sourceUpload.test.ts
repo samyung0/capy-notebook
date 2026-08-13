@@ -27,17 +27,17 @@ describe('source upload policy', () => {
     );
     expect(
       parseModeIssues(
-        file('paper.pdf', 101 * 1024 * 1024),
+        file('paper.pdf', 11 * 1024 * 1024),
         'pdf',
         sourceUploadPolicy
       )
     ).toEqual({
-      accurate: 'over 100 MB',
-      fast: 'over 100 MB',
+      accurate: 'over 10 MB',
+      fast: 'over 10 MB',
     });
     expect(
       defaultParseMode(
-        file('paper.pdf', 101 * 1024 * 1024),
+        file('paper.pdf', 11 * 1024 * 1024),
         'pdf',
         sourceUploadPolicy
       )

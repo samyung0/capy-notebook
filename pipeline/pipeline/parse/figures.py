@@ -32,12 +32,17 @@ costs one call and is the deliberate trade for never dropping a diagram.
 
 ## Caching
 
-Captions are cached in B2 under the parse fingerprint, keyed by image content
-hash. This is not only about money. ``files.content_hash`` is a digest of chunk
-text, and chunk text contains these captions, so without a cache the same PDF
-uploaded twice would produce two different digests and defeat the canonical
-content de-duplication that ``rag_contents`` is built on. The cache makes a
-re-ingest byte-identical, and makes a retry free.
+Captions are cached in B2 under a source-identity key
+(``captions/{sha256(blob_path + NUL + source_etag)}/{caption version}.json``),
+keyed by image content hash. The parse fingerprint is deliberately not part of
+this path: a re-parse (different MinerU route or parser version) must not
+recaption figures that have not changed. This is not only about money.
+``files.content_hash`` is a digest of chunk text, and chunk text contains these
+captions, so without a cache the same PDF uploaded twice would produce two
+different digests and defeat the canonical content de-duplication that
+``rag_contents`` is built on. The cache makes a re-ingest byte-identical, and
+makes a retry free. The object path is stored on ``files.caption_blob_path`` so
+the blob reaper owns it; a failed ingest keeps the captions.
 """
 
 from __future__ import annotations
@@ -327,15 +332,21 @@ def select_figures(content_list: list[dict[str, Any]], raw_dir: Path) -> list[Fi
 # ------------------------------------------------------------------- caching
 
 
-def cache_key(fingerprint: str) -> str:
-    return f"captions/{fingerprint}/{cfg.caption_version}.json"
+def cache_key(blob_path: str, source_etag: str) -> str:
+    """Stable caption-cache object for one source blob, independent of parse route."""
+    if not blob_path or not source_etag:
+        return ""
+    digest = hashlib.sha256(
+        blob_path.encode("utf-8") + b"\0" + source_etag.encode("utf-8")
+    ).hexdigest()
+    return f"captions/{digest}/{cfg.caption_version}.json"
 
 
-def _load_cache(fingerprint: str) -> dict[str, str]:
-    if not fingerprint:
+def _load_cache(key: str) -> dict[str, str]:
+    if not key:
         return {}
     try:
-        raw = blobstore.read_bytes(cache_key(fingerprint))
+        raw = blobstore.read_bytes(key)
     except Exception:
         log.warning("could not read caption cache", exc_info=True)
         return {}
@@ -350,19 +361,21 @@ def _load_cache(fingerprint: str) -> dict[str, str]:
     return {str(k): str(v) for k, v in parsed.items() if isinstance(v, str)}
 
 
-def _save_cache(fingerprint: str, captions: dict[str, str]) -> None:
-    if not fingerprint or not captions:
-        return
+def _save_cache(key: str, captions: dict[str, str]) -> bool:
+    if not key or not captions:
+        return False
     try:
         blobstore.write_bytes(
-            cache_key(fingerprint),
+            key,
             json.dumps(captions, ensure_ascii=False, separators=(",", ":")).encode(),
             "application/json",
         )
+        return True
     except Exception:
         # A missing cache costs money on the next ingest; it is never a reason
         # to fail a parse that already succeeded.
         log.warning("could not write caption cache", exc_info=True)
+        return False
 
 
 # ---------------------------------------------------------------- captioning
@@ -414,14 +427,18 @@ async def caption_figures(
     content_list: list[dict[str, Any]],
     raw_dir: Path,
     file_name: str,
-    fingerprint: str,
-) -> dict[str, int]:
+    blob_path: str,
+    source_etag: str,
+) -> dict[str, Any]:
     """Describe every figure worth describing, in place on ``content_list``."""
     figures = select_figures(content_list, raw_dir)
+    key = cache_key(blob_path, source_etag)
+    empty = {"selected": 0, "cached": 0, "captioned": 0, "applied": 0, "key": ""}
     if not figures:
-        return {"selected": 0, "cached": 0, "captioned": 0}
+        return empty
 
-    cached = await asyncio.to_thread(_load_cache, fingerprint)
+    cached = await asyncio.to_thread(_load_cache, key)
+    loaded = bool(cached)
     pending = [figure for figure in figures if figure.digest not in cached]
     log.info(
         "captioning %s figures for %s (%s already cached)",
@@ -443,9 +460,10 @@ async def caption_figures(
 
     fresh = await asyncio.gather(*(describe(figure) for figure in pending))
     written = {digest: text for digest, text in fresh if text}
+    saved = False
     if written:
         cached.update(written)
-        await asyncio.to_thread(_save_cache, fingerprint, cached)
+        saved = await asyncio.to_thread(_save_cache, key, cached)
 
     applied = 0
     for figure in figures:
@@ -460,4 +478,5 @@ async def caption_figures(
         "cached": len(figures) - len(pending),
         "captioned": len(written),
         "applied": applied,
+        "key": key if (loaded or saved) else "",
     }

@@ -9,6 +9,10 @@ export default defineConfig(({ mode }) => {
   // Match src/main.tsx: MSW is on unless explicitly disabled.
   const useMsw = env.VITE_USE_MSW !== 'false' && mode === 'development';
   return {
+    assetsInclude: ['**/*.wasm'],
+    optimizeDeps: {
+      exclude: ['@extend-ai/react-pptx'],
+    },
     plugins: [
       react(),
       tailwindcss(),

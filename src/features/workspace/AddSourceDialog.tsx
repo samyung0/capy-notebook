@@ -276,7 +276,7 @@ function UploadFiles({
   className?: string;
 }) {
   const { mutateAsync: uploadSource } = useUploadSource(workspaceId);
-  const { data: uploadPolicy } = useSourceUploadPolicy({
+  const { data: uploadPolicy } = useSourceUploadPolicy(workspaceId, {
     errorBoundary: false,
   });
   const { data: chapters } = useChapters(workspaceId, {
@@ -436,7 +436,7 @@ function UploadFiles({
     return `${(totalBytes / 1024 / 1024).toFixed(1)} MB`;
   };
   const parseMaxMb = Math.round(
-    (uploadPolicy?.maxBytes ?? 100 * 1024 * 1024) / 1024 / 1024
+    (uploadPolicy?.maxBytes ?? 10 * 1024 * 1024) / 1024 / 1024
   );
   const aggregateProgress = aggregateUploadPct(
     files.map((file) => ({ size: file.file.size, uploadPct: file.uploadPct }))

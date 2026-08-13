@@ -4,6 +4,7 @@
     "@base-ui/react": "^1.6.0",
     "@clerk/react": "^6.11.3",
     "@excalidraw/excalidraw": "0.18.1",
+    "@extend-ai/react-pptx": "^0.1.2",
     "@hocuspocus/provider": "3.4.4",
     "@hookform/resolvers": "^5.4.0",
     "@hugeicons/core-free-icons": "^4.2.3",

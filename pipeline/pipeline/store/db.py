@@ -57,6 +57,10 @@ def set_file_status(cur, file_id: str, status: str) -> None:
     cur.execute("UPDATE files SET status=%s WHERE id=%s", (status, file_id))
 
 
+def set_file_indexed(cur, file_id: str, indexed: bool) -> None:
+    cur.execute("UPDATE files SET indexed=%s WHERE id=%s", (indexed, file_id))
+
+
 def set_file_content_hash(cur, file_id: str, content_hash: str) -> None:
     """Record the hash of the parsed text, used to skip duplicate indexing."""
     cur.execute("UPDATE files SET content_hash=%s WHERE id=%s", (content_hash, file_id))
@@ -74,6 +78,13 @@ def set_file_parse_artifact(
         SET parsed_blob_path=%s, parsed_fingerprint=%s, parsed_parser_version=%s
         WHERE id=%s""",
         (blob_path, fingerprint, parser_version, file_id),
+    )
+
+
+def set_file_caption_blob(cur, file_id: str, blob_path: str) -> None:
+    cur.execute(
+        "UPDATE files SET caption_blob_path=%s WHERE id=%s",
+        (blob_path, file_id),
     )
 
 

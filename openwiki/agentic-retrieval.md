@@ -102,7 +102,7 @@ Controlled by `parseMode` on the job payload:
 | `fast` (default) | Modal MinerU, pipeline OCR backend | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
 | `accurate` | Modal MinerU, hybrid VLM backend | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
 | `none` | — | Blob stored, not indexed | — |
-| txt / md kinds | Direct B2 read | Markdown | No |
+| txt / md / json kinds | Direct B2 read | Markdown | No |
 
 Both parse modes are the same MinerU service on our own L4 GPUs and return the
 same bundle, so both give page-accurate citations and both extract the figures
@@ -116,6 +116,19 @@ Artifacts are addressed by fingerprint over `(blob, etag, size, parse method,
 route, parser version)` and cached in B2, so retries and clones reuse the GPU
 result. The route is part of that identity: the same PDF parsed both ways must
 not collide on one cached bundle.
+
+The worker writes `files.parsed_blob_path` as soon as MinerU returns a zip,
+**before** figure captioning. A later vision failure must not leave that object
+untracked for the blob reaper. The worker may `blobstore.delete` only
+**unrecorded** zips (corrupt cache recovery). Once the path is on the file row,
+the reaper owns it.
+
+`files.indexed` is true only after retrieval chunks are written, or reused from
+identical canonical content. `parseMode=none` jobs for non-text kinds (audio,
+store-only uploads) finish `ready` with `indexed=false`: the original blob stays,
+the file is viewable and downloadable, and chat/generate cannot search it. A
+failed ingest is the same shape — nothing is auto-deleted; the UI shows a banner
+on the file rather than replacing the viewer.
 
 Nothing calls the third-party MinerU cloud API any more. It could not return
 bounding boxes or images, needed polling, and capped files at 10 MB / 20 pages.
@@ -145,11 +158,16 @@ is unreachable forever while a needless caption costs a fraction of a cent:
   rule would drop line diagrams on white, which are the most valuable images
   there are, so the thresholds sit far below any real drawing.
 
-Captions are cached in B2 under `captions/{parse fingerprint}/{caption
-version}.json`, keyed by image content hash. This is not only about money:
-`files.content_hash` is a digest of chunk text and chunk text contains these
-captions, so without the cache the same PDF uploaded twice would produce two
-digests and defeat canonical de-duplication in `rag_contents`.
+Captions are cached in B2 under a **source-identity** key
+(`captions/{sha256(blob_path + NUL + etag)}/{caption version}.json`), keyed
+inside the JSON by image content hash. The parse fingerprint is not part of the
+path: a re-parse (different MinerU route or parser version) must not recaption
+unchanged figures. This is not only about money: `files.content_hash` is a digest
+of chunk text and chunk text contains these captions, so without the cache the
+same PDF uploaded twice would produce two digests and defeat canonical
+de-duplication in `rag_contents`. The object path is stored on
+`files.caption_blob_path` and refcounted with the other file blob columns. Failed
+ingest keeps captions; only last-ref file delete reaps them.
 
 ### Chunking
 

@@ -200,7 +200,7 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 	return File{
 		ID: fileID, WorkspaceID: u.WorkspaceID, ChapterID: chapterID,
 		Name: u.Name, Kind: FileKind(u.Kind), SizeBytes: u.DeclaredSize,
-		AddedAt: now, Status: FileStatus(status), URL: &fileURL,
+		AddedAt: now, Status: FileStatus(status), Indexed: false, URL: &fileURL,
 	}, nil
 }
 

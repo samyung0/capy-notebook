@@ -123,7 +123,7 @@ const (
 // sweptPrefixes are the prefixes worth scanning. incoming/ is deliberately
 // excluded: a bucket lifecycle rule expires it after a day, so every key there is
 // either in flight or about to disappear on its own.
-var sweptPrefixes = []string{"sources/", "parsed/", "editor-assets/"}
+var sweptPrefixes = []string{"sources/", "parsed/", "captions/", "editor-assets/"}
 
 // runBlobSweep reports unreferenced objects on a long interval.
 func runBlobSweep(ctx context.Context, st *store.Store, bs blob.Store) {

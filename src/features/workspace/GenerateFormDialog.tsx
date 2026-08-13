@@ -212,9 +212,7 @@ export function GenerateFormDialog({
   );
   const [diagramType, setDiagramType] = useState<DiagramType>('auto');
 
-  const readyFiles = files.filter(
-    (f) => f.status !== 'processing' && f.status !== 'failed'
-  );
+  const readyFiles = files.filter((f) => f.indexed);
   const titleError = useMemo(
     () => validateGenerateTitle(title, existingTitles),
     [existingTitles, title]
