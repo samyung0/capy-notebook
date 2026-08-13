@@ -32,17 +32,24 @@ test.describe('live Yjs collaboration', () => {
     await expectEditorLive(editorPage);
 
     const editor = editorPage.locator('[contenteditable="true"]').first();
-    await editor.getByText(body, { exact: true }).dblclick();
+    const bodyText = editor.getByText(body, { exact: true });
+    await bodyText.dblclick();
     await expect(
       ownerPage.locator('[data-remote-cursor="E2E Editor"]')
     ).toBeVisible();
 
-    // Bare End is native caret movement, and Slate only learns about it through
-    // a selectionchange listener throttled at 100ms. Awareness traffic re-renders
-    // the editable meanwhile, and that render restores the caret from the
-    // still-stale Slate selection, so the suffix lands inside the word. Mod+End
-    // moves the caret through the editor's own document API instead.
-    await editorPage.keyboard.press('ControlOrMeta+End');
+    // Click the end of this paragraph. Bare End is native caret movement that
+    // Slate only learns about through a throttled selectionchange listener, so
+    // awareness re-renders restore a stale caret. Mod+End goes through Plate
+    // but inserts a new block. An out-of-span click is intercepted by <html>.
+    const box = await bodyText.boundingBox();
+    if (!box) {
+      throw new Error('live document body has no layout box');
+    }
+    await bodyText.click({
+      force: true,
+      position: { x: Math.max(box.width - 1, 0), y: box.height / 2 },
+    });
     await editorPage.keyboard.type(suffix);
     // Assert locally first: a caret that never reached the end is a typing
     // failure, not the convergence failure the next assertion reports.

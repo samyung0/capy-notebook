@@ -332,6 +332,7 @@
   "workspace_cloned": "Workspace cloned successfully",
   "workspace_missing_title": "Cannot find workspace",
   "workspace_missing_body": "Oops. You should not be seeing this. Please refresh the page.",
+  "workspace_unable_load": "Unable to load workspace.",
   "workspace_stats_title": "Workspace statistics",
   "workspace_loading": "Loading workspace…",
   "workspace_back_to": "Back to workspaces",

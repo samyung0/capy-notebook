@@ -54,13 +54,15 @@ export function MaterialPreview({
   }, [content, editor]);
 
   return (
-    <PlateStatic
-      className={cn(
-        'note-editor mx-auto min-h-75 w-full max-w-3xl px-10 pt-4 pb-36 text-base outline-none max-sm:px-5',
-        className
-      )}
-      editor={editor}
-      value={value}
-    />
+    <div data-testid="material-preview">
+      <PlateStatic
+        className={cn(
+          'note-editor mx-auto min-h-75 w-full max-w-3xl px-10 pt-4 pb-36 text-base outline-none max-sm:px-5',
+          className
+        )}
+        editor={editor}
+        value={value}
+      />
+    </div>
   );
 }

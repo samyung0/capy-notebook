@@ -1,4 +1,4 @@
-import { expect, type Locator, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
 /**
  * Interactive Plate is a lazy chunk the dev server transforms on demand, so a
@@ -15,6 +15,21 @@ export async function expectEditorLive(page: Page): Promise<void> {
     /^(Synced|Saved)$/,
     { timeout: 60_000 }
   );
+}
+
+/**
+ * Static Plate preview is a lazy chunk. Wait for the preview root to mount
+ * (chunk loaded + document parsed), then assert text inside it — not "this
+ * string appears somewhere within N seconds." The timeout is the test budget,
+ * not a guessed transform duration.
+ */
+export async function expectStaticPreview(
+  page: Page,
+  text: string
+): Promise<void> {
+  const preview = page.getByTestId('material-preview');
+  await expect(preview).toBeVisible({ timeout: test.info().timeout });
+  await expect(preview.getByText(text)).toBeVisible();
 }
 
 export function formattingToolbar(page: Page): Locator {

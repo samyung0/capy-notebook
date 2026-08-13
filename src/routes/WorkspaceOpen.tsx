@@ -426,7 +426,7 @@ export default function WorkspaceOpen() {
         description={
           denied ? m.error_private_body() : m.workspace_missing_body()
         }
-        title={denied ? m.error_private_title() : m.workspace_missing_title()}
+        title={denied ? m.error_private_title() : m.workspace_unable_load()}
       />
     );
   }

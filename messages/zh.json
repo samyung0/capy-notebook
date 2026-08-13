@@ -332,6 +332,7 @@
   "workspace_cloned": "工作区已克隆",
   "workspace_missing_title": "找不到工作区",
   "workspace_missing_body": "出错了。请刷新页面。",
+  "workspace_unable_load": "无法加载工作区。",
   "workspace_stats_title": "工作区统计",
   "workspace_loading": "正在加载工作区…",
   "workspace_back_to": "返回工作区",

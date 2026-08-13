@@ -1,5 +1,9 @@
 import { expect, test } from '../fixtures/actors';
-import { expectEditorLive, openAllBlocks } from '../helpers/editor';
+import {
+  expectEditorLive,
+  expectStaticPreview,
+  openAllBlocks,
+} from '../helpers/editor';
 import { openWorkspaceMaterial } from '../helpers/workspace';
 
 test.describe('shared material modes', () => {
@@ -40,7 +44,7 @@ test.describe('shared material modes', () => {
         material.id,
         true
       );
-      await expect(anonymousPage.getByText(material.body)).toBeVisible();
+      await expectStaticPreview(anonymousPage, material.body);
       await expect(
         anonymousPage.locator('[contenteditable="true"]')
       ).toHaveCount(0);
