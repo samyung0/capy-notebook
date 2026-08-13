@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Skeleton } from '@/components/ui/feedback';
+import { m } from '@/i18n';
 
 /** Word (.docx) viewer. docx-preview is imported on demand so it stays out of
  * the main bundle. Legacy binary .doc files are not supported. */
@@ -39,7 +40,7 @@ export default function DocxView({ url }: { url: string }) {
   if (state === 'error') {
     return (
       <p className="py-8 text-center text-tint-error-fg">
-        Couldn't load this document.
+        {m.files_docx_failed()}
       </p>
     );
   }

@@ -9,7 +9,7 @@ import {
   QUIZ_REVIEW_PROMPT_CLASS,
 } from '@/features/notes/nodeStyles';
 import { cn } from '@/lib/cn';
-import { LEVEL_LABEL, LEVEL_TONE } from '@/lib/levels';
+import { LEVEL_TONE, levelLabel } from '@/lib/levels';
 import { type Answer, fuzzyMatch } from './grade';
 import type { QuizOptionRole } from './quizOptionStyles';
 
@@ -33,7 +33,7 @@ export function QuestionRunner({
     <div className="flex flex-col gap-4">
       <div className="flex items-start gap-2">
         <Badge size="sm" tone={LEVEL_TONE[question.level]}>
-          {LEVEL_LABEL[question.level]}
+          {levelLabel(question.level)}
         </Badge>
         {questionNumber != null && (
           <span className="t-subtitle">{questionNumber}.</span>
@@ -310,7 +310,7 @@ export function QuizQuestionHeader({
   return (
     <div className="mb-3 flex items-center gap-2" contentEditable={false}>
       <Badge className="-translate-y-px" size="sm" tone={LEVEL_TONE[level]}>
-        {LEVEL_LABEL[level]}
+        {levelLabel(level)}
       </Badge>
       <div className={cn(QUIZ_REVIEW_PROMPT_CLASS, 'mb-0')}>
         {questionNumber}.

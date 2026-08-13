@@ -85,7 +85,7 @@ export function ContentActions({
   propertiesClassName = 'grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm',
   propertyLabelClassName = 'text-fg-muted',
   renameFieldLabel,
-  renameTitle = 'Rename',
+  renameTitle,
   readOnly = false,
   workspaceId,
 }: {
@@ -132,12 +132,12 @@ export function ContentActions({
           },
           {
             icon: 'files' as const,
-            label: 'Move File',
+            label: m.content_move_file(),
             onClick: () => setMoveOpen(true),
           },
           {
             icon: 'help' as const,
-            label: 'Properties',
+            label: m.content_properties(),
             onClick: () => setPropertiesOpen(true),
           },
           ...(includeDelete
@@ -216,40 +216,43 @@ export function ContentActions({
               onClose={() => setRenameOpen(false)}
               onSubmit={saveName}
               open
-              title={renameTitle}
+              title={renameTitle ?? m.action_rename()}
             />
           )}
 
           <SimpleDialog
             onClose={() => setPropertiesOpen(false)}
             open={propertiesOpen}
-            title={`${content.type === 'file' ? 'File' : 'Material'} properties`}
+            title={m.content_properties_title({
+              kind:
+                content.type === 'file' ? m.common_file() : m.common_material(),
+            })}
           >
             <dl className={propertiesClassName}>
               <Row
-                label="Name"
+                label={m.common_name()}
                 labelClassName={propertyLabelClassName}
                 value={content.name}
               />
               <Row
-                label="Type"
+                label={m.common_type()}
                 labelClassName={propertyLabelClassName}
                 value={content.kind.toUpperCase()}
               />
               {content.type === 'file' ? (
                 <>
                   <Row
-                    label="Size"
+                    label={m.common_size()}
                     labelClassName={propertyLabelClassName}
                     value={formatFileSize(content.sizeBytes ?? 0)}
                   />
                   <Row
-                    label="Status"
+                    label={m.common_status()}
                     labelClassName={propertyLabelClassName}
                     value={content.status ?? 'ready'}
                   />
                   <Row
-                    label="Added"
+                    label={m.common_added()}
                     labelClassName={propertyLabelClassName}
                     value={new Date(content.createdAt).toLocaleString()}
                   />
@@ -257,17 +260,17 @@ export function ContentActions({
               ) : (
                 <>
                   <Row
-                    label="Nodes"
+                    label={m.content_nodes()}
                     labelClassName={propertyLabelClassName}
                     value={String(content.nodeCount ?? '--')}
                   />
                   <Row
-                    label="Max depth"
+                    label={m.content_max_depth()}
                     labelClassName={propertyLabelClassName}
                     value={String(content.maxDepth ?? '--')}
                   />
                   <Row
-                    label="Created"
+                    label={m.common_created()}
                     labelClassName={propertyLabelClassName}
                     value={new Date(content.createdAt).toLocaleString()}
                   />
@@ -278,14 +281,14 @@ export function ContentActions({
 
           {includeDelete && !onRequestDelete && (
             <ConfirmDialog
-              body={`This removes the ${content.type} from the workspace. This cannot be undone.`}
+              body={m.confirm_delete_body()}
               onClose={() => setConfirmOpen(false)}
               onConfirm={() => {
                 deleteContent();
                 setConfirmOpen(false);
               }}
               open={confirmOpen}
-              title={`Delete ${content.name}?`}
+              title={m.confirm_delete_title({ name: content.name })}
             />
           )}
 

@@ -74,13 +74,9 @@ export default function QuizAttempt() {
       isApiError(error) && (error.status === 404 || error.status === 401);
     return (
       <WorkspaceError
-        backLabel="Back to quizzes"
+        backLabel={m.quiz_back()}
         backTo="/quizzes"
-        title={
-          denied
-            ? 'This item is private or unavailable.'
-            : 'Unable to load quiz.'
-        }
+        title={denied ? m.error_private_title() : m.quiz_unable_load()}
       />
     );
   }
@@ -122,15 +118,15 @@ export default function QuizAttempt() {
         onError: (err) => {
           if (isApiError(err) && err.status === 401) {
             toastSignInRequired(
-              'Sign in to save your score',
-              'Create an account before recording a quiz attempt.'
+              m.quiz_signin_save_title(),
+              m.quiz_signin_save_body()
             );
             return;
           }
           userToast({
             description:
-              err instanceof Error ? err.message : 'Please try again.',
-            title: 'Could not save attempt',
+              err instanceof Error ? err.message : m.quiz_save_attempt_retry(),
+            title: m.quiz_save_attempt_failed(),
             variant: 'error',
           });
         },
@@ -151,7 +147,7 @@ export default function QuizAttempt() {
             {score.correct} / {score.total}
           </p>
           <p className="t-body text-fg-muted">
-            You scored {pct}% on {quiz.name}.
+            {m.quiz_you_scored({ name: quiz.name, pct: String(pct) })}
           </p>
           <div className="w-full max-w-sm">
             <ProgressBar
@@ -190,7 +186,7 @@ export default function QuizAttempt() {
             })}
           </div>
           <Link preload="intent" to="/quizzes">
-            <Button iconLeft="chevronLeft">Back to quizzes</Button>
+            <Button iconLeft="chevronLeft">{m.quiz_back()}</Button>
           </Link>
         </div>
       </PanelWithInvertedRadius>
@@ -233,7 +229,7 @@ export default function QuizAttempt() {
               }
               size="sm"
             >
-              {cloneQuizIsPending ? 'Cloning…' : 'Clone'}
+              {cloneQuizIsPending ? m.action_cloning() : m.action_clone()}
             </Button>
           )}
         </div>
@@ -253,14 +249,14 @@ export default function QuizAttempt() {
             onClick={() => setIdx((i) => i - 1)}
             variant="ghost"
           >
-            Previous
+            {m.action_previous()}
           </Button>
           {idx < quiz.questions.length - 1 ? (
             <Button
               iconRight="chevronRight"
               onClick={() => setIdx((i) => i + 1)}
             >
-              Next
+              {m.action_next()}
             </Button>
           ) : (
             <Button
@@ -269,7 +265,7 @@ export default function QuizAttempt() {
               onClick={finish}
               variant="accent"
             >
-              {submitIsPending ? 'Saving…' : 'Finish'}
+              {submitIsPending ? m.canvas_saving() : m.action_finish()}
             </Button>
           )}
         </div>

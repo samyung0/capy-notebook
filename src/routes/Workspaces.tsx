@@ -96,7 +96,7 @@ export default function Workspaces() {
                 size="md"
                 variant="ghost"
               >
-                Sort: {sortLabel}
+                {m.workspaces_sort_prefix({ label: sortLabel })}
               </Button>
             }
           />

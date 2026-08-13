@@ -1,5 +1,6 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { type ReactElement, type ReactNode, useState } from 'react';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { BASE_BUTTON_STYLE } from './Button';
 import { Card } from './Card';
@@ -81,7 +82,7 @@ export function Menu({
           <IconButton
             className={cn('p-2', iconContainerClassName)}
             icon="moreVertical"
-            label="Open menu"
+            label={m.a11y_open_menu()}
             size="md"
             variant="ghost-hover"
           />

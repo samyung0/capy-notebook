@@ -4,10 +4,9 @@ import type { CalendarEvent, Label } from '@/api/types';
 import { cn } from '@/lib/cn';
 import { userColorPair } from '@/lib/userColor';
 import { usePortals } from '@/stores/portals';
-import { fmtHour, fmtTime, hourOf, sameDay } from './dateUtils';
+import { fmtHour, fmtTime, hourOf, sameDay, weekdayName } from './dateUtils';
 
 export const HOUR_H = 48;
-const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export function TimeGrid({
   days,
@@ -128,7 +127,7 @@ export function TimeGrid({
                 key={d.toDateString()}
               >
                 <div className="font-semibold text-fg-muted text-sm">
-                  {WEEKDAY_SHORT[(d.getDay() + 6) % 7]}
+                  {weekdayName(d)}
                 </div>
                 <div className="mt-0.5 font-semibold">{d.getDate()}</div>
               </div>

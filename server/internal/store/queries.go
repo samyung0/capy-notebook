@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 
@@ -897,6 +898,9 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 		mt.Title, json.RawMessage(mt.Content), mt.ChapterID, mt.ScopeChapters,
 		mt.ScopeFileNames, mt.Privacy, mt.Color, metrics.NodeCount, metrics.MaxDepth, creatorID)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return Material{}, ErrTitleTaken
+		}
 		return Material{}, err
 	}
 	if err := upsertMaterialRevisionTx(ctx, tx, MaterialRevision{
@@ -919,6 +923,63 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 		return Material{}, err
 	}
 	return s.GetMaterial(ctx, mt.ID)
+}
+
+const materialTitleMaxRunes = 200
+
+// MaterialTitleTaken reports whether another material in the workspace already
+// uses this title (trimmed, case-insensitive). Empty workspace id is never taken.
+func (s *Store) MaterialTitleTaken(ctx context.Context, workspaceID, title string) (bool, error) {
+	if workspaceID == "" {
+		return false, nil
+	}
+	var taken bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS(
+			SELECT 1 FROM materials
+			WHERE workspace_id=$1 AND lower(btrim(title)) = lower(btrim($2::text))
+		)`, workspaceID, title).Scan(&taken)
+	return taken, err
+}
+
+// DisambiguateMaterialTitle returns desired if it is free, otherwise
+// "desired 2", "desired 3", … until one is unused in the workspace.
+func (s *Store) DisambiguateMaterialTitle(ctx context.Context, workspaceID, desired string) (string, error) {
+	desired = strings.TrimSpace(desired)
+	if desired == "" {
+		desired = "Untitled"
+	}
+	if utf8.RuneCountInString(desired) > materialTitleMaxRunes {
+		desired = string([]rune(desired)[:materialTitleMaxRunes])
+		desired = strings.TrimSpace(desired)
+	}
+	taken, err := s.MaterialTitleTaken(ctx, workspaceID, desired)
+	if err != nil {
+		return "", err
+	}
+	if !taken {
+		return desired, nil
+	}
+	for n := 2; n < 10000; n++ {
+		candidate := fmt.Sprintf("%s %d", desired, n)
+		if utf8.RuneCountInString(candidate) > materialTitleMaxRunes {
+			base := []rune(desired)
+			suffix := fmt.Sprintf(" %d", n)
+			keep := materialTitleMaxRunes - utf8.RuneCountInString(suffix)
+			if keep < 1 {
+				return "", ErrTitleTaken
+			}
+			candidate = string(base[:keep]) + suffix
+		}
+		taken, err = s.MaterialTitleTaken(ctx, workspaceID, candidate)
+		if err != nil {
+			return "", err
+		}
+		if !taken {
+			return candidate, nil
+		}
+	}
+	return "", ErrTitleTaken
 }
 
 func (s *Store) GetMaterial(ctx context.Context, id string) (Material, error) {
@@ -1111,6 +1172,9 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	defer tx.Rollback(ctx)
 	ct, err := tx.Exec(ctx, `UPDATE materials SET `+strings.Join(sets, ", ")+where, args...)
 	if err != nil {
+		if isUniqueViolation(err) {
+			return Material{}, ErrTitleTaken
+		}
 		return Material{}, err
 	}
 	if ct.RowsAffected() == 0 {

@@ -1,5 +1,6 @@
 import { useWorkspaceStats } from '@/api/hooks';
 import { SimpleDialog } from '@/components/ui/Dialog';
+import { m } from '@/i18n';
 
 export function WorkspaceStatsDialog({
   id,
@@ -10,17 +11,17 @@ export function WorkspaceStatsDialog({
 }) {
   const { data } = useWorkspaceStats(id, { errorBoundary: false });
   const rows = [
-    ['Chapters', data?.chapters],
-    ['Files', data?.files],
-    ['Quizzes', data?.quizzes],
-    ['Attempts', data?.attempts],
-    ['Average score', data ? `${data.avgScore}%` : undefined],
+    [m.quiz_col_chapters(), data?.chapters],
+    [m.nav_files(), data?.files],
+    [m.nav_quizzes(), data?.quizzes],
+    [m.stats_attempts(), data?.attempts],
+    [m.stats_average_score(), data ? `${data.avgScore}%` : undefined],
   ] as const;
   return (
     <SimpleDialog
       onClose={onClose}
       open
-      title="Workspace statistics"
+      title={m.workspace_stats_title()}
       width={420}
     >
       <div className="grid grid-cols-2 gap-3">

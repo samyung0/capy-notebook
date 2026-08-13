@@ -11,6 +11,7 @@ import type { Material, WorkspaceRole } from '@/api/types';
 import { Spinner } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { FileError, FileLoading } from '@/features/files/FileStates';
+import { m } from '@/i18n';
 import {
   EditorRuntimeProvider,
   type EditorRuntimeValue,
@@ -53,16 +54,16 @@ export function NoteEditor({
   if (isMaterialContentUnreadable(error)) {
     return (
       <FileError
-        message="Its stored content could not be decoded, so nothing is shown rather than an empty page. Support can recover it from an earlier version."
-        title="This note could not be loaded"
+        message={m.material_decode_body()}
+        title={m.material_decode_title()}
       />
     );
   }
   if (!material) {
     return (
       <FileError
-        message="This note may have been deleted."
-        title="Note not found"
+        message={m.editor_note_deleted()}
+        title={m.editor_note_not_found()}
       />
     );
   }
@@ -74,8 +75,8 @@ export function NoteEditor({
   if (!modeAllowed) {
     return (
       <FileError
-        message="Your current material permissions do not allow this mode."
-        title="Mode unavailable"
+        message={m.editor_mode_unavailable_body()}
+        title={m.editor_mode_unavailable()}
       />
     );
   }
@@ -118,8 +119,8 @@ function CollaborativeNoteEditor({
   const onDocumentRejected = useCallback(
     (message: string) => {
       userToast({
-        description: `${message} Recent changes were discarded and the note was reloaded from the last saved version.`,
-        title: 'Note too large to save',
+        description: m.editor_too_large_body({ message }),
+        title: m.editor_too_large_title(),
         variant: 'error',
       });
       setEditorGeneration((generation) => generation + 1);
@@ -174,15 +175,11 @@ function CollaborativeNoteEditor({
   }
 
   if (!meData || meIsError) {
-    return (
-      <FileError message="Unable to load user info. Please refresh the page." />
-    );
+    return <FileError message={m.editor_user_info_failed()} />;
   }
 
   if (!collaborationTokenData || collaborationTokenIsError) {
-    return (
-      <FileError message="The live collaboration service is unavailable." />
-    );
+    return <FileError message={m.editor_collab_unavailable()} />;
   }
 
   return (

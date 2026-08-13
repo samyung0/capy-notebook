@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/Popover';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
 import { MenuRow } from '@/features/notes/toolbar/ToolbarMenuRow';
+import { m } from '@/i18n';
 
 export function BlockTypeMenu({
   onBlock,
@@ -32,33 +33,35 @@ export function BlockTypeMenu({
 
     switch (block?.type) {
       case KEYS.h1:
-        return 'Heading 1';
+        return m.editor_heading_1();
       case KEYS.h2:
-        return 'Heading 2';
+        return m.editor_heading_2();
       case KEYS.h3:
-        return 'Heading 3';
+        return m.editor_heading_3();
       case KEYS.h4:
-        return 'Heading 4';
+        return m.editor_heading_4();
       case KEYS.h5:
-        return 'Heading 5';
+        return m.editor_heading_5();
       case KEYS.h6:
-        return 'Heading 6';
+        return m.editor_heading_6();
       case KEYS.blockquote:
-        return 'Blockquote';
+        return m.editor_blockquote();
       case KEYS.codeBlock:
-        return 'Code block';
+        return m.editor_code_block();
       default:
-        return 'Paragraph';
+        return m.editor_block_paragraph();
     }
   }, []);
 
   return (
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
-        <ToolbarButton className="w-23" label="Block Type">
-          <span className="translate-y-px">{blockTypeLabel}</span>
-          <ChevronDown className="size-3! text-fg-secondary" />
-        </ToolbarButton>
+        <span className="inline-flex">
+          <ToolbarButton className="w-23" label={m.editor_block_type()}>
+            <span className="translate-y-px">{blockTypeLabel}</span>
+            <ChevronDown className="size-3! text-fg-secondary" />
+          </ToolbarButton>
+        </span>
       </PopoverTrigger>
       <PopoverContent
         align="start"
@@ -66,47 +69,47 @@ export function BlockTypeMenu({
       >
         <MenuRow
           icon={<Pilcrow />}
-          label="Paragraph"
+          label={m.editor_block_paragraph()}
           onClick={() => onBlock(KEYS.p)}
         />
         <MenuRow
           icon={<Heading1 />}
-          label="Heading 1"
+          label={m.editor_heading_1()}
           onClick={() => onBlock(KEYS.h1)}
         />
         <MenuRow
           icon={<Heading2 />}
-          label="Heading 2"
+          label={m.editor_heading_2()}
           onClick={() => onBlock(KEYS.h2)}
         />
         <MenuRow
           icon={<Heading3 />}
-          label="Heading 3"
+          label={m.editor_heading_3()}
           onClick={() => onBlock(KEYS.h3)}
         />
         <MenuRow
           icon={<Heading4 />}
-          label="Heading 4"
+          label={m.editor_heading_4()}
           onClick={() => onBlock(KEYS.h4)}
         />
         <MenuRow
           icon={<Heading5 />}
-          label="Heading 5"
+          label={m.editor_heading_5()}
           onClick={() => onBlock(KEYS.h5)}
         />
         <MenuRow
           icon={<Heading6 />}
-          label="Heading 6"
+          label={m.editor_heading_6()}
           onClick={() => onBlock(KEYS.h6)}
         />
         <MenuRow
           icon={<Quote />}
-          label="Blockquote"
+          label={m.editor_blockquote()}
           onClick={() => onBlock(KEYS.blockquote)}
         />
         <MenuRow
           icon={<Braces />}
-          label="Code block"
+          label={m.editor_code_block()}
           onClick={() => onBlock(KEYS.codeBlock)}
         />
       </PopoverContent>

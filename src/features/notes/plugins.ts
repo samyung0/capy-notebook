@@ -110,6 +110,7 @@ import { createElement } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { YouTubeEmbedElement } from '@/features/materials/YouTubeEmbed';
+import { m } from '@/i18n';
 import { openAiMenu } from './ai/aiMenuState';
 import { buildAiPlugins } from './ai/aiPlugins';
 import { BlockContextMenu, BlockDraggable } from './BlockInteractions';
@@ -175,8 +176,8 @@ function TodoListItem({
     },
     createElement('input', {
       'aria-label': checkboxProps.checked
-        ? 'Mark task incomplete'
-        : 'Mark task complete',
+        ? m.editor_task_incomplete()
+        : m.editor_task_complete(),
       checked: checkboxProps.checked,
       className:
         'mt-2 size-4 shrink-0 cursor-pointer rounded border-line-strong accent-action-accent',
@@ -653,7 +654,7 @@ export function buildPlugins(options: BuildPluginsOptions): AnyPlugin[] {
             options: {
               className:
                 'before:absolute before:cursor-text before:text-placeholder before:text-sm before:leading-[2] before:font-normal before:content-[attr(placeholder)]',
-              placeholders: { [KEYS.p]: 'Type  /  for commands ...' },
+              placeholders: { [KEYS.p]: m.editor_placeholder() },
               query: ({ path }) => path.length === 1,
             },
           }),

@@ -15,14 +15,14 @@ import (
 type CreateWorkspaceReq struct {
 	Name  string          `json:"name" minLength:"1" maxLength:"100" doc:"Workspace name"`
 	Color store.UserColor `json:"color,omitempty" doc:"User color; defaults to graphite"`
-	Tags  []TagInput      `json:"tags,omitempty" doc:"Tags; reuse existing by id or create new by value"`
+	Tags  []TagInput      `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5; reuse existing by id or create new by value"`
 }
 
 // UpdateWorkspaceReq updates general workspace settings only.
 type UpdateWorkspaceReq struct {
 	Name  *string          `json:"name,omitempty" minLength:"1" maxLength:"100"`
 	Color *store.UserColor `json:"color,omitempty"`
-	Tags  *[]TagInput      `json:"tags,omitempty"`
+	Tags  *[]TagInput      `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5"`
 }
 
 // UpdateWorkspaceSharingReq updates visibility and nonmember permissions.

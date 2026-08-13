@@ -53,6 +53,18 @@ func TestRequestBodyValidation(t *testing.T) {
 			body:   `{"name":""}`,
 		},
 		{
+			name:   "create workspace too many tags",
+			method: http.MethodPost,
+			path:   "/api/workspaces",
+			body:   `{"name":"ok","tags":[{"value":"a"},{"value":"b"},{"value":"c"},{"value":"d"},{"value":"e"},{"value":"f"}]}`,
+		},
+		{
+			name:   "update workspace too many tags",
+			method: http.MethodPatch,
+			path:   "/api/workspaces/ws_1",
+			body:   `{"tags":[{"value":"a"},{"value":"b"},{"value":"c"},{"value":"d"},{"value":"e"},{"value":"f"}]}`,
+		},
+		{
 			name:   "add chapter empty name",
 			method: http.MethodPost,
 			path:   "/api/workspaces/ws_1/chapters",

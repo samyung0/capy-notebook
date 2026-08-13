@@ -761,9 +761,10 @@ components:
           minLength: 1
           type: string
         tags:
-          description: Tags; reuse existing by id or create new by value
+          description: Tags; at most 5; reuse existing by id or create new by value
           items:
             $ref: "#/components/schemas/TagInput"
+          maxItems: 5
           nullable: true
           type: array
       required:
@@ -2336,8 +2337,10 @@ components:
           minLength: 1
           type: string
         tags:
+          description: Tags; at most 5
           items:
             $ref: "#/components/schemas/TagInput"
+          maxItems: 5
           type: array
       type: object
     UpdateWorkspaceSharingReq:

@@ -3,6 +3,7 @@ import type { SourceFile } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Icon } from '@/components/ui/Icon';
 import { ImageViewer } from '@/features/files/ImageViewer';
+import { m } from '@/i18n';
 import { FileEmpty, FileLoading } from './FileStates';
 import { fileExt, IMAGE_MIN_ZOOM, isImageFile } from './fileUtils';
 
@@ -28,7 +29,7 @@ function UnsupportedPreview({ file }: { file: SourceFile }) {
     <div className="grid h-full place-items-center">
       <div className="flex max-w-sm flex-col items-center gap-2 text-center">
         <Icon name="files" size={32} />
-        <p className="t-subtitle">Preview not available</p>
+        <p className="t-subtitle">{m.files_preview_unavailable()}</p>
         <p className="t-meta text-fg-muted">
           {ext ? `.${ext}` : 'This'} files can't be previewed yet.
           {file.url ? ' You can still download the original file.' : ''}
@@ -74,7 +75,7 @@ function FileViewerContent({
       <div className="grid h-full place-items-center">
         <div className="flex flex-col items-center gap-2">
           <Icon name="files" size={32} />
-          <p>Select a file to read it here.</p>
+          <p>{m.files_select_to_read()}</p>
         </div>
       </div>
     );

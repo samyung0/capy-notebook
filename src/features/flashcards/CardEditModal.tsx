@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
+import { m } from '@/i18n';
 
 /**
  * Create or edit a single flashcard. When `card` is provided the modal edits it,
@@ -61,10 +62,12 @@ export function CardEditModal({
       footer={
         <>
           <Button onClick={onClose} type="button" variant="ghost">
-            Cancel
+            {m.action_cancel()}
           </Button>
           <Button disabled={submitDisabled} type="submit">
-            {!isSubmitting && <span>{card ? 'Save' : 'Add card'}</span>}
+            {!isSubmitting && (
+              <span>{card ? m.action_save() : m.flashcards_add_card()}</span>
+            )}
             {isSubmitting && (
               <span>
                 <Spinner />
@@ -85,7 +88,7 @@ export function CardEditModal({
           name="front"
           render={({ field, fieldState }) => (
             <label className="flex flex-col gap-1.5">
-              <InputTitle required>Front (term / question)</InputTitle>
+              <InputTitle required>{m.flashcards_front()}</InputTitle>
               <Input {...field} aria-invalid={fieldState.invalid} autoFocus />
               {fieldState.invalid && <InputError errors={[fieldState.error]} />}
             </label>
@@ -96,7 +99,7 @@ export function CardEditModal({
           name="back"
           render={({ field, fieldState }) => (
             <label className="flex flex-col gap-1.5">
-              <InputTitle required>Back (definition / answer)</InputTitle>
+              <InputTitle required>{m.flashcards_back()}</InputTitle>
               <Input {...field} aria-invalid={fieldState.invalid} />
               {fieldState.invalid && <InputError errors={[fieldState.error]} />}
             </label>

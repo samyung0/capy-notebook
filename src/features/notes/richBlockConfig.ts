@@ -1,13 +1,35 @@
+import { m } from '@/i18n';
+
 export type CalloutVariant = 'danger' | 'info' | 'success' | 'warning';
 
 export const CALLOUT_VARIANTS: readonly {
   label: string;
   value: CalloutVariant;
 }[] = [
-  { label: 'Info', value: 'info' },
-  { label: 'Success', value: 'success' },
-  { label: 'Warning', value: 'warning' },
-  { label: 'Danger', value: 'danger' },
+  {
+    get label() {
+      return m.editor_callout_info();
+    },
+    value: 'info',
+  },
+  {
+    get label() {
+      return m.editor_callout_success();
+    },
+    value: 'success',
+  },
+  {
+    get label() {
+      return m.editor_callout_warning();
+    },
+    value: 'warning',
+  },
+  {
+    get label() {
+      return m.editor_callout_danger();
+    },
+    value: 'danger',
+  },
 ];
 
 export function normalizeCalloutVariant(value: unknown): CalloutVariant {
@@ -63,7 +85,9 @@ export const CODE_BLOCK_LANGUAGES = [
 ] as const;
 
 export function getCodeBlockLanguageLabel(value: unknown): string {
-  if (typeof value !== 'string' || !value) return 'Plain text';
+  if (typeof value !== 'string' || !value) return m.editor_code_plain_text();
+  if (value === 'auto') return m.editor_code_auto_detect();
+  if (value === 'plaintext') return m.editor_code_plain_text();
   return (
     CODE_BLOCK_LANGUAGES.find((language) => language.value === value)?.label ??
     value
@@ -77,19 +101,31 @@ export interface ColumnLayout {
 }
 
 export const COLUMN_LAYOUTS: readonly ColumnLayout[] = [
-  { label: 'Two equal columns', value: 'equal-2', widths: ['50%', '50%'] },
   {
-    label: 'Three equal columns',
+    get label() {
+      return m.editor_columns_equal_2();
+    },
+    value: 'equal-2',
+    widths: ['50%', '50%'],
+  },
+  {
+    get label() {
+      return m.editor_columns_equal_3();
+    },
     value: 'equal-3',
     widths: ['33.333%', '33.333%', '33.334%'],
   },
   {
-    label: 'Two columns, 2:1',
+    get label() {
+      return m.editor_columns_left_wide();
+    },
     value: 'left-wide',
     widths: ['66.667%', '33.333%'],
   },
   {
-    label: 'Two columns, 1:2',
+    get label() {
+      return m.editor_columns_right_wide();
+    },
     value: 'right-wide',
     widths: ['33.333%', '66.667%'],
   },

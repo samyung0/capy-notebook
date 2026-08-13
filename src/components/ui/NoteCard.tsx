@@ -1,4 +1,5 @@
 import type { HTMLAttributes } from 'react';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { Icon } from './Icon';
 
@@ -60,7 +61,7 @@ export function NoteCard({
         <span className="font-bold text-base">{title}</span>
         {onMenu && (
           <button
-            aria-label="Note options"
+            aria-label={m.a11y_note_options()}
             className="ml-auto flex h-[26px] w-[26px] items-center justify-center rounded-button"
             onClick={onMenu}
             style={{

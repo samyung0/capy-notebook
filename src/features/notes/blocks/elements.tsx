@@ -16,6 +16,7 @@ import {
 } from 'platejs/react';
 import { useEffect } from 'react';
 import { Button } from '@/components/ui/Button';
+import { ButtonTooltip } from '@/components/ui/Tooltip';
 import {
   type FlashcardElement as FlashcardNode,
   type FlashcardsElement as FlashcardsNode,
@@ -44,6 +45,7 @@ import {
   type QuizOptionRole,
   quizOptionClassName,
 } from '@/features/quizzes/quizOptionStyles';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import {
   BLOCK_SHELL_CLASS,
@@ -194,7 +196,7 @@ function StudyBlockToolbar({
   return (
     <FloatingPortal>
       <div
-        aria-label="Study block actions"
+        aria-label={m.editor_study_actions()}
         className="z-50 flex items-center gap-0.5 rounded-lg border border-line bg-surface p-1 shadow-pop"
         contentEditable={false}
         data-plate-prevent-deselect
@@ -206,16 +208,16 @@ function StudyBlockToolbar({
       >
         {onEdit && (
           <>
-            <StudyBlockAction label="Edit" onClick={onEdit}>
+            <StudyBlockAction label={m.action_edit()} onClick={onEdit}>
               <PencilLine />
             </StudyBlockAction>
             <span className="mx-1 h-5 w-px bg-divider" />
           </>
         )}
-        <StudyBlockAction label="Duplicate" onClick={onDuplicate}>
+        <StudyBlockAction label={m.editor_duplicate()} onClick={onDuplicate}>
           <Copy />
         </StudyBlockAction>
-        <StudyBlockAction danger label="Delete" onClick={onDelete}>
+        <StudyBlockAction danger label={m.action_delete()} onClick={onDelete}>
           <Trash2 />
         </StudyBlockAction>
       </div>
@@ -235,20 +237,21 @@ function StudyBlockAction({
   onClick: () => void;
 }) {
   return (
-    <button
-      aria-label={label}
-      className={cn(
-        'flex size-8 items-center justify-center rounded-button text-fg-secondary hover:bg-surface-hover-bg hover:text-fg [&_svg]:size-4',
-        danger && 'hover:text-tint-error-fg'
-      )}
-      data-plate-prevent-deselect
-      onClick={onClick}
-      onMouseDown={(event) => event.preventDefault()}
-      title={label}
-      type="button"
-    >
-      {children}
-    </button>
+    <ButtonTooltip label={label}>
+      <button
+        aria-label={label}
+        className={cn(
+          'flex size-8 items-center justify-center rounded-button text-fg-secondary hover:bg-surface-hover-bg hover:text-fg [&_svg]:size-4',
+          danger && 'hover:text-tint-error-fg'
+        )}
+        data-plate-prevent-deselect
+        onClick={onClick}
+        onMouseDown={(event) => event.preventDefault()}
+        type="button"
+      >
+        {children}
+      </button>
+    </ButtonTooltip>
   );
 }
 
@@ -359,7 +362,7 @@ function BlockShell({
               size="sm"
               variant="ghost"
             >
-              Edit
+              {m.action_edit()}
             </Button>
           )}
         </div>
@@ -416,7 +419,7 @@ export function MermaidElement(props: PlateElementProps) {
   const readOnly = useReadOnly();
   const element = props.element as unknown as MermaidNode;
   function edit() {
-    const next = window.prompt('Mermaid diagram source', element.source);
+    const next = window.prompt(m.editor_mermaid_source(), element.source);
     if (next == null) return;
     const at = editor.api.findPath(props.element);
     if (at)
@@ -424,7 +427,11 @@ export function MermaidElement(props: PlateElementProps) {
   }
   return (
     <BlockShell
-      label={mermaidBlockLabel(element.source)}
+      label={
+        mermaidBlockLabel(element.source) === 'Mindmap'
+          ? m.editor_mindmap()
+          : m.editor_diagram()
+      }
       onEdit={readOnly ? undefined : edit}
       props={props}
     >

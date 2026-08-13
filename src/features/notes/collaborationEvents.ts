@@ -1,3 +1,4 @@
+import { m } from '@/i18n';
 import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
 
 /**
@@ -132,12 +133,18 @@ export function parseCollaborationEvent(
 export function materialLimitMessage(code: MaterialLimitCode): string {
   switch (code) {
     case 'document_size_exceeded':
-      return `Document exceeds the ${Math.ceil(
-        MATERIAL_DOCUMENT_LIMITS.maxContentBytes / 1024
-      ).toLocaleString()} KB limit.`;
+      return m.editor_limit_size({
+        kb: Math.ceil(
+          MATERIAL_DOCUMENT_LIMITS.maxContentBytes / 1024
+        ).toLocaleString(),
+      });
     case 'document_nodes_exceeded':
-      return `Document exceeds the ${MATERIAL_DOCUMENT_LIMITS.maxNodes.toLocaleString()} block limit.`;
+      return m.editor_limit_nodes({
+        max: MATERIAL_DOCUMENT_LIMITS.maxNodes.toLocaleString(),
+      });
     case 'document_depth_exceeded':
-      return `Document exceeds the ${MATERIAL_DOCUMENT_LIMITS.maxDepth}-level nesting limit.`;
+      return m.editor_limit_depth({
+        max: String(MATERIAL_DOCUMENT_LIMITS.maxDepth),
+      });
   }
 }

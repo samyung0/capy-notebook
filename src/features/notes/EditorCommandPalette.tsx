@@ -2,6 +2,7 @@ import { MessageSquarePlus, Search, X } from 'lucide-react';
 import { useEditorRef } from 'platejs/react';
 import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import { m } from '@/i18n';
 import { useOptionalNoteBlockDialogs } from './blocks/dialogContext';
 import { useCollaborationActions } from './Collaboration';
 import { useEditorRuntime } from './EditorRuntime';
@@ -37,11 +38,15 @@ export function EditorCommandPalette() {
     const comment: EditorCommand | null =
       canComment && collaboration
         ? {
-            description: 'Add a comment to the current selection',
+            get description() {
+              return m.editor_comment_selection();
+            },
             group: 'general',
             icon: MessageSquarePlus,
             id: 'comment',
-            label: 'Comment',
+            get label() {
+              return m.editor_comment();
+            },
             run: () => collaboration.openComment(),
             shortcut: 'Ctrl/Cmd+Shift+M',
           }
@@ -60,7 +65,7 @@ export function EditorCommandPalette() {
   if (!open) return null;
   return (
     <div
-      aria-label="Editor command palette"
+      aria-label={m.editor_command_palette()}
       className="fixed inset-0 z-60 flex items-start justify-center bg-black/10 px-4 pt-[15dvh] backdrop-blur-xs"
       onMouseDown={() => setOpen(false)}
       role="dialog"
@@ -78,11 +83,11 @@ export function EditorCommandPalette() {
             onKeyDown={(event) => {
               if (event.key === 'Escape') setOpen(false);
             }}
-            placeholder="Search commands"
+            placeholder={m.editor_search_commands()}
             value={query}
           />
           <Button
-            aria-label="Close command palette"
+            aria-label={m.editor_close_palette()}
             onClick={() => setOpen(false)}
             size="sm"
             variant="ghost"
@@ -124,7 +129,7 @@ export function EditorCommandPalette() {
             })
           ) : (
             <p className="px-2 py-5 text-center text-fg-muted text-sm">
-              No commands found
+              {m.editor_commands_none()}
             </p>
           )}
         </div>

@@ -111,7 +111,11 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 	}
 	title := in.Body.Title
 	if title == "" {
-		title = "Untitled note"
+		var err error
+		title, err = a.s.DisambiguateMaterialTitle(ctx, in.ID, "Untitled note")
+		if err != nil {
+			return nil, hErr(err)
+		}
 	}
 	content := materialdoc.Empty()
 	if in.Body.Content != nil {

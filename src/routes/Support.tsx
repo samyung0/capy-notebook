@@ -9,57 +9,42 @@ const CHANNELS: {
   icon: IconName;
   tint: string;
   tintFg: string;
-  title: string;
-  body: string;
-  action: string;
+  title: () => string;
+  body: () => string;
+  action: () => string;
 }[] = [
   {
-    action: 'Start a chat',
-    body: 'Questions about a workspace, an import, or a quiz? Send a message and the team replies within a day.',
+    action: m.support_chat_action,
+    body: m.support_chat_body,
     icon: 'message',
     tint: 'var(--tint-accent-1-bg)',
     tintFg: 'var(--tint-accent-1-fg)',
-    title: 'Chat with us',
+    title: m.support_chat_title,
   },
   {
-    action: 'Send an email',
-    body: 'Prefer email? Reach us at hello@evonotes.app and we’ll pick it up from there.',
+    action: m.support_email_action,
+    body: m.support_email_body,
     icon: 'bell',
     tint: 'var(--tint-info-bg)',
     tintFg: 'var(--tint-info-fg)',
-    title: 'Email support',
+    title: m.support_email_title,
   },
   {
-    action: 'Browse guides',
-    body: 'Step-by-step walkthroughs for building workspaces, generating study sets, and tracking progress.',
+    action: m.support_guides_action,
+    body: m.support_guides_body,
     icon: 'book',
     tint: 'var(--tint-accent-2-bg)',
     tintFg: 'var(--tint-accent-2-fg)',
-    title: 'Guides & docs',
+    title: m.support_guides_title,
   },
 ];
 
-const FAQS: { q: string; a: string }[] = [
-  {
-    a: 'When you add a source, it’s processed into a knowledge base scoped to that workspace. Chat answers and generated summaries, flashcards, and quizzes are grounded only in your own materials.',
-    q: 'How are my files turned into summaries and quizzes?',
-  },
-  {
-    a: 'Workspaces are private by default. You can switch one to public or share it with a link from the workspace’s edit menu. Nothing is shared until you choose to.',
-    q: 'Who can see my workspaces?',
-  },
-  {
-    a: 'Yes — open a workspace, choose Add source, and pick a drive. Drive import activates once the backend connection is set up; uploading from your computer works today.',
-    q: 'Can I import from Google Drive or OneDrive?',
-  },
-  {
-    a: 'Multiple choice, multi-select, true/false, fill-in-the-blank, short answer, matching, and ordering — across easy, medium, and hard difficulty. Pick the mix when you generate.',
-    q: 'What kinds of quiz questions can I generate?',
-  },
-  {
-    a: 'Open Evo Notes on consecutive days to grow your streak, shown at the top of the dashboard. Miss a day and it resets — no penalty beyond starting again.',
-    q: 'How does the login streak work?',
-  },
+const FAQS: { q: () => string; a: () => string }[] = [
+  { a: m.support_faq1_a, q: m.support_faq1_q },
+  { a: m.support_faq2_a, q: m.support_faq2_q },
+  { a: m.support_faq3_a, q: m.support_faq3_q },
+  { a: m.support_faq4_a, q: m.support_faq4_q },
+  { a: m.support_faq5_a, q: m.support_faq5_q },
 ];
 
 function FaqItem({ q, a }: { q: string; a: string }) {
@@ -86,17 +71,14 @@ function FaqItem({ q, a }: { q: string; a: string }) {
 export default function Support() {
   return (
     <Panel>
-      <PageHeader
-        subtitle="Find an answer or reach the team — we’re happy to help."
-        title={m.nav_support()}
-      />
+      <PageHeader subtitle={m.support_subtitle()} title={m.nav_support()} />
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
         <div className="mx-auto flex max-w-4xl flex-col gap-8">
           <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {CHANNELS.map((c) => (
               <Card
                 className="flex flex-col p-5.5"
-                key={c.title}
+                key={c.icon}
                 radius="card-lg"
               >
                 <span
@@ -105,38 +87,41 @@ export default function Support() {
                 >
                   <Icon name={c.icon} size={20} />
                 </span>
-                <p className="t-card-title mt-3">{c.title}</p>
-                <p className="t-label mt-1 flex-1 text-fg-muted">{c.body}</p>
+                <p className="t-card-title mt-3">{c.title()}</p>
+                <p className="t-label mt-1 flex-1 text-fg-muted">{c.body()}</p>
                 <Button
                   className="mt-4 self-start"
                   iconRight="arrowRight"
                   size="sm"
                   variant="outline"
                 >
-                  {c.action}
+                  {c.action()}
                 </Button>
               </Card>
             ))}
           </section>
 
           <section>
-            <p className="t-large-card-title mb-3">Frequently asked</p>
+            <p className="t-large-card-title mb-3">{m.support_faq_heading()}</p>
             <div className="rounded-card-lg border border-line bg-surface px-5">
-              {FAQS.map((f) => (
-                <FaqItem a={f.a} key={f.q} q={f.q} />
-              ))}
+              {FAQS.map((f) => {
+                const q = f.q();
+                return <FaqItem a={f.a()} key={q} q={q} />;
+              })}
             </div>
           </section>
 
           <section className="flex flex-col items-start gap-3 rounded-card-lg bg-tint-accent-1 px-6 py-6 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="t-subtitle text-tint-accent-1-fg">Still stuck?</p>
+              <p className="t-subtitle text-tint-accent-1-fg">
+                {m.support_stuck_title()}
+              </p>
               <p className="t-meta mt-1 text-tint-accent-1-fg/80">
-                Send the team a note and we’ll get you unblocked.
+                {m.support_stuck_body()}
               </p>
             </div>
             <Button iconLeft="message" variant="accent">
-              Contact support
+              {m.support_contact()}
             </Button>
           </section>
         </div>

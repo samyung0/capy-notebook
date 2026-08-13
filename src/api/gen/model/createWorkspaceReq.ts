@@ -19,7 +19,8 @@ export interface CreateWorkspaceReq {
      */
   name: string;
   /**
-     * Tags; reuse existing by id or create new by value
+     * Tags; at most 5; reuse existing by id or create new by value
+     * @maxItems 5
      * @nullable
      */
   tags?: TagInput[] | null;

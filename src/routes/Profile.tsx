@@ -30,10 +30,10 @@ export default function Profile() {
               <Icon name="sparkles" size={20} />
             </span>
             <div>
-              <p className="t-card-title">{me?.streak ?? 0}-day streak</p>
-              <p className="t-meta text-fg-muted">
-                Keep logging in to grow it.
+              <p className="t-card-title">
+                {m.profile_streak({ count: me?.streak ?? 0 })}
               </p>
+              <p className="t-meta text-fg-muted">{m.profile_streak_hint()}</p>
             </div>
           </Card>
         </div>

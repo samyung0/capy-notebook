@@ -4,7 +4,7 @@ import { m } from '@/i18n';
 import { useOnlineStatus } from '@/lib/online';
 
 export function FileLoading({
-  message = 'Loading preview...',
+  message = m.files_loading_preview(),
 }: {
   message?: string;
 }) {

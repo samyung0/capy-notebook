@@ -64,7 +64,7 @@ func (a *api) completeStream(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	onToken := func(t string) { send(map[string]any{"type": "token", "text": t}) }
 
-	streamErr := a.relayComplete(ctx, wsID, req, onToken)
+	streamErr := a.relayComplete(ctx, uid(r), wsID, req, onToken)
 	if ctx.Err() != nil {
 		return
 	}
@@ -80,7 +80,7 @@ func (a *api) completeStream(w http.ResponseWriter, r *http.Request) {
 
 // relayComplete streams the completion from the Python service. Provider/model
 // configuration is server-owned; browser model fields are intentionally ignored.
-func (a *api) relayComplete(ctx context.Context, wsID string, req completeReq, onToken func(string)) error {
+func (a *api) relayComplete(ctx context.Context, userID, wsID string, req completeReq, onToken func(string)) error {
 	if a.pipe == nil {
 		return errors.New("AI service is unavailable")
 	}
@@ -89,6 +89,7 @@ func (a *api) relayComplete(ctx context.Context, wsID string, req completeReq, o
 		"mode":        req.Mode,
 		"prompt":      req.Prompt,
 		"context":     req.Context,
+		"locale":      a.userLocale(ctx, userID),
 	}
 	rc, err := a.pipe.PostStream(ctx, "/complete/stream", body)
 	if err != nil {

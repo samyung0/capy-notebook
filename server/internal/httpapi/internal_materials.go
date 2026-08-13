@@ -70,12 +70,18 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 		wsName = ws.Name
 	}
 	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = wsName + " " + req.Kind
+	}
+	disambiguated, err := a.s.DisambiguateMaterialTitle(ctx, req.WorkspaceID, title)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	title = disambiguated
 
 	switch req.Kind {
 	case "quiz":
-		if title == "" {
-			title = wsName + " quiz"
-		}
 		quiz, err := a.s.CreateQuiz(ctx, store.Quiz{
 			UserID: req.UserID, Name: title, WorkspaceID: req.WorkspaceID, WorkspaceName: wsName,
 			Chapters: req.Chapters, Questions: req.Questions, Privacy: "private",
@@ -89,9 +95,6 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 			"kind": "quiz", "materialId": quiz.ID, "title": quiz.Name,
 		})
 	case "flashcards":
-		if title == "" {
-			title = wsName + " flashcards"
-		}
 		cards := make([][2]string, 0, len(req.Cards))
 		for _, c := range req.Cards {
 			cards = append(cards, [2]string{c.Front, c.Back})
@@ -105,9 +108,6 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 			"kind": "flashcards", "materialId": deck.ID, "title": title, "count": len(cards),
 		})
 	case "mindmap", "diagram", "note":
-		if title == "" {
-			title = wsName + " " + req.Kind
-		}
 		mt, err := a.s.CreateMaterial(ctx, store.Material{
 			CreatedBy: req.UserID, WorkspaceID: req.WorkspaceID, WorkspaceName: wsName,
 			Kind: store.MaterialKind(req.Kind), Title: title, Content: req.Content,

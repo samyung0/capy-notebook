@@ -40,18 +40,20 @@ export function FontColorControl({
   return (
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
-        <ToolbarButton
-          active={Boolean(currentColor)}
-          className="relative"
-          label={label}
-        >
-          {icon}
-          <span
-            aria-hidden
-            className="absolute right-1.5 bottom-0.5 left-1.5 h-1 rounded-full border border-line-strong"
-            style={{ backgroundColor: currentColor || fallbackColor }}
-          />
-        </ToolbarButton>
+        <span className="inline-flex">
+          <ToolbarButton
+            active={Boolean(currentColor)}
+            className="relative"
+            label={label}
+          >
+            {icon}
+            <span
+              aria-hidden
+              className="absolute right-1.5 bottom-0.5 left-1.5 h-1 rounded-full border border-line-strong"
+              style={{ backgroundColor: currentColor || fallbackColor }}
+            />
+          </ToolbarButton>
+        </span>
       </PopoverTrigger>
       <PopoverContent
         align="center"

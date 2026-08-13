@@ -7,6 +7,7 @@ import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { QuizForm } from '@/features/quizzes/QuizForm';
+import { m } from '@/i18n';
 
 export default function QuizEdit() {
   const params = useParams({ strict: false });
@@ -52,18 +53,18 @@ export default function QuizEdit() {
               onClick={back}
               variant="ghost"
             >
-              Back
+              {m.action_back()}
             </Button>
             <Button
               disabled={updateIsPending || !seeded.current}
               iconLeft="check"
               onClick={save}
             >
-              {updateIsPending ? 'Saving…' : 'Save'}
+              {updateIsPending ? m.canvas_saving() : m.action_save()}
             </Button>
           </>
         }
-        title={name || 'Edit quiz'}
+        title={name || m.quiz_edit()}
       />
       <div className="min-h-0 flex-1 overflow-auto px-6 py-5">
         {fetchStatus === 'paused' ? (
@@ -80,7 +81,7 @@ export default function QuizEdit() {
             />
           </div>
         ) : (
-          <p className="py-8 text-center text-fg-muted">Quiz not found.</p>
+          <p className="py-8 text-center text-fg-muted">{m.quiz_not_found()}</p>
         )}
       </div>
     </PanelWithInvertedRadius>

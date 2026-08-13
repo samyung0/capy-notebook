@@ -1,5 +1,6 @@
 import { isApiError, isStorageQuotaError } from '@/api/client';
 import { userToast } from '@/components/ui/userToast';
+import { m } from '@/i18n';
 
 /** Safe same-origin return path for post-auth redirect. */
 export function signInHref(
@@ -16,9 +17,8 @@ export function toastCloneError(
 ) {
   if (isStorageQuotaError(err)) {
     userToast({
-      description:
-        'This content is larger than the available storage. Delete content or upgrade to Pro before cloning.',
-      title: 'Storage limit reached',
+      description: m.clone_quota_body(),
+      title: m.clone_quota_title(),
       variant: 'error',
     });
     return;
@@ -26,22 +26,24 @@ export function toastCloneError(
   if (isApiError(err) && err.status === 401) {
     userToast({
       button: {
-        label: 'Sign in',
+        label: m.action_sign_in(),
         onClick: () => {
           window.location.href = signInHref();
         },
       },
-      description: `Create an account before cloning this ${kind}.`,
-      title: 'Sign in to clone',
+      description:
+        kind === 'workspace'
+          ? m.clone_signin_workspace()
+          : kind === 'quiz'
+            ? m.clone_signin_quiz()
+            : m.clone_signin_deck(),
+      title: m.clone_signin_title(),
     });
     return;
   }
   userToast({
-    description:
-      err instanceof Error
-        ? err.message
-        : 'Something went wrong. Please try again.',
-    title: 'Could not clone',
+    description: err instanceof Error ? err.message : m.source_try_again(),
+    title: m.clone_failed(),
     variant: 'error',
   });
 }
@@ -49,7 +51,7 @@ export function toastCloneError(
 export function toastSignInRequired(title: string, description: string) {
   userToast({
     button: {
-      label: 'Sign in',
+      label: m.action_sign_in(),
       onClick: () => {
         window.location.href = signInHref();
       },

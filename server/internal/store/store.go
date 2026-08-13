@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/evonotes/server/migrations"
@@ -33,6 +34,10 @@ var ErrConflict = errors.New("revision conflict")
 // ErrForbidden reports authenticated access without the required workspace
 // role. Shared-resource probing still uses ErrNotFound.
 var ErrForbidden = errors.New("forbidden")
+
+// ErrTitleTaken means another material in the same workspace already uses that
+// title (case-insensitive, trimmed). Standalone materials are not in this set.
+var ErrTitleTaken = errors.New("material title already used in this workspace")
 
 // ErrAuthorityUnavailable means an initialized Y.Doc could not be mutated
 // through the collaboration authority. Callers must fail closed with 503.
@@ -103,3 +108,8 @@ func uid(prefix string) string {
 
 // isNoRows reports whether err is pgx's no-rows sentinel.
 func isNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
+
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}

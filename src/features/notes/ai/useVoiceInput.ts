@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '@/api/client';
+import { m } from '@/i18n';
 
 /** Records microphone audio via MediaRecorder and transcribes it through the
  * gateway's /transcribe (Whisper) endpoint. `toggle` starts/stops; on stop the
@@ -26,7 +27,7 @@ export function useVoiceInput(onText: (text: string) => void) {
   const start = useCallback(async () => {
     setError(null);
     if (!navigator.mediaDevices?.getUserMedia) {
-      setError('Microphone not supported');
+      setError(m.editor_mic_unsupported());
       return;
     }
     try {

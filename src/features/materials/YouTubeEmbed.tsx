@@ -1,6 +1,7 @@
 import { ExternalLink } from 'lucide-react';
 import type { PlateElementProps } from 'platejs/react';
 import { PlateElement } from 'platejs/react';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
 export interface YouTubeNode {
@@ -30,7 +31,7 @@ export function YouTubeEmbed({
           className="size-full"
           loading="lazy"
           src={youtubeEmbedUrl(videoId)}
-          title="YouTube video"
+          title="YouTube"
         />
       </div>
       {editable && (
@@ -40,7 +41,7 @@ export function YouTubeEmbed({
           rel="noreferrer"
           target="_blank"
         >
-          Open on YouTube
+          {m.youtube_open()}
           <ExternalLink className="size-3" />
         </a>
       )}
@@ -66,7 +67,7 @@ export function YouTubeEmbedElement(props: PlateElementProps) {
           <YouTubeEmbed editable videoId={videoId} />
         ) : (
           <p className="p-3 text-sm text-solid-error">
-            This YouTube embed is missing a video ID.
+            {m.youtube_missing_id()}
           </p>
         )}
       </div>

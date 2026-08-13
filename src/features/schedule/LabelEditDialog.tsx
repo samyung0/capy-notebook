@@ -57,10 +57,10 @@ export function LabelEditDialog({
       footer={
         <>
           <Button onClick={onClose} type="button" variant="ghost">
-            Cancel
+            {m.action_cancel()}
           </Button>
           <Button disabled={submitDisabled} type="submit">
-            {!isSubmitting && <span>Save</span>}
+            {!isSubmitting && <span>{m.action_save()}</span>}
             {isSubmitting && (
               <span>
                 <Spinner />
@@ -80,7 +80,7 @@ export function LabelEditDialog({
           name="name"
           render={({ field, fieldState }) => (
             <label className="flex flex-col gap-1.5">
-              <InputTitle required>Name</InputTitle>
+              <InputTitle required>{m.common_name()}</InputTitle>
               <Input
                 {...field}
                 aria-invalid={fieldState.invalid}
@@ -97,7 +97,7 @@ export function LabelEditDialog({
           name="color"
           render={({ field, fieldState }) => (
             <div className="flex flex-col gap-1.5">
-              <InputTitle>Color</InputTitle>
+              <InputTitle>{m.common_color()}</InputTitle>
               <UserColorChooser
                 onChange={field.onChange}
                 selected={field.value}

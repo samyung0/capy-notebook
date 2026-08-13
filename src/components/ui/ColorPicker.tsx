@@ -1,5 +1,6 @@
 import { Check, RotateCcw } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
 export interface ColorOption {
@@ -103,7 +104,7 @@ export function ColorPicker({
     <div className="flex flex-col gap-2">
       <div className="flex items-center justify-between gap-3">
         <span className="font-semibold text-fg-secondary text-xs">
-          Document colors
+          {m.color_document_colors()}
         </span>
         <button
           className="inline-flex h-7 items-center gap-1 rounded-button px-2 text-fg-secondary text-xs outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-focus"
@@ -113,12 +114,12 @@ export function ColorPicker({
           type="button"
         >
           <RotateCcw className="size-3.5" />
-          <span className="translate-y-px">Default</span>
+          <span className="translate-y-px">{m.color_default()}</span>
         </button>
       </div>
 
       <div
-        aria-label="Document color palette"
+        aria-label={m.color_document_palette()}
         className="grid grid-cols-8 gap-1.5"
         role="grid"
       >
@@ -157,11 +158,11 @@ export function ColorPicker({
       </div>
 
       <label className="mt-2 flex items-center justify-between gap-3 border-divider border-t pt-2 font-semibold text-fg-secondary text-xs">
-        Custom color
+        {m.color_custom()}
         <span className="flex items-center gap-2 font-mono font-normal text-fg">
           {customDraft}
           <input
-            aria-label="Choose a custom color"
+            aria-label={m.color_choose_custom()}
             className="h-7 w-9 cursor-pointer rounded-button border border-line bg-transparent p-0.5"
             data-plate-prevent-deselect
             defaultValue={customValue}

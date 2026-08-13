@@ -1,6 +1,7 @@
 import { FileText, LoaderCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { resolveEditorAsset } from '@/api/editorAssets';
+import { m } from '@/i18n';
 
 /** Persisted media node shape for workspace-backed asset elements. */
 export interface MediaAssetNode {
@@ -13,7 +14,7 @@ export interface MediaAssetNode {
 type AssetState =
   | { status: 'loading' }
   | { status: 'ready'; url: string; name: string; contentType: string }
-  | { status: 'error'; message: string };
+  | { status: 'error'; kind: 'missing' | 'failed' };
 
 export function useResolvedAsset(assetId: string | undefined) {
   const [state, setState] = useState<AssetState>({ status: 'loading' });
@@ -21,7 +22,7 @@ export function useResolvedAsset(assetId: string | undefined) {
   useEffect(() => {
     const controller = new AbortController();
     if (!assetId) {
-      setState({ message: 'Missing asset reference', status: 'error' });
+      setState({ kind: 'missing', status: 'error' });
       return () => controller.abort();
     }
     setState({ status: 'loading' });
@@ -34,11 +35,10 @@ export function useResolvedAsset(assetId: string | undefined) {
           url: asset.url,
         })
       )
-      .catch((cause) => {
+      .catch(() => {
         if (!controller.signal.aborted) {
           setState({
-            message:
-              cause instanceof Error ? cause.message : 'Unable to load asset',
+            kind: 'failed',
             status: 'error',
           });
         }
@@ -62,7 +62,9 @@ export function MediaAssetView({ element }: { element: MediaAssetNode }) {
       )}
       {asset.status === 'error' && (
         <div className="rounded-card border border-solid-error/30 bg-tint-error px-3 py-4 text-sm text-solid-error">
-          {asset.message}
+          {asset.kind === 'missing'
+            ? m.material_missing_asset()
+            : m.material_asset_failed()}
         </div>
       )}
       {asset.status === 'ready' && element.type === 'img' && (

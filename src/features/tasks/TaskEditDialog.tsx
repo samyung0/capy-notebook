@@ -60,10 +60,10 @@ export function TaskEditDialog({
             type="button"
             variant="ghost-hover"
           >
-            Cancel
+            {m.action_cancel()}
           </Button>
           <Button disabled={submitDisabled} size="lg" type="submit">
-            {!isSubmitting && <span>Save</span>}
+            {!isSubmitting && <span>{m.action_save()}</span>}
             {isSubmitting && (
               <span>
                 <Spinner />
@@ -82,7 +82,7 @@ export function TaskEditDialog({
         name="title"
         render={({ field, fieldState }) => (
           <label className="flex flex-col gap-1.5">
-            <InputTitle required>Title</InputTitle>
+            <InputTitle required>{m.common_title()}</InputTitle>
             <Input
               {...field}
               aria-invalid={fieldState.invalid}
@@ -98,7 +98,7 @@ export function TaskEditDialog({
         name="meta"
         render={({ field, fieldState }) => (
           <label className="mt-3 flex flex-col gap-1.5">
-            <InputTitle>Meta</InputTitle>
+            <InputTitle>{m.common_meta()}</InputTitle>
             <Input
               {...field}
               aria-invalid={fieldState.invalid}

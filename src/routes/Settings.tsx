@@ -57,7 +57,7 @@ function AccountDangerZoneInner({
           !!meData?.email &&
           v.confirmEmail.trim().toLowerCase() === meData.email.toLowerCase(),
         {
-          message: 'Email does not match this account',
+          message: m.settings_email_mismatch(),
           path: ['confirmEmail'],
         }
       ),
@@ -242,7 +242,9 @@ export default function Settings() {
                     onClick={() => setStyle(t.value)}
                     type="button"
                   >
-                    {t.label}
+                    {t.value === 'classroom'
+                      ? m.theme_style_classroom()
+                      : m.theme_style_notion()}
                   </button>
                 ))}
               </div>

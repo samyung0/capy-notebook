@@ -17,6 +17,7 @@ import { OneDriveImportDialog } from '@/features/workspace/OneDriveImportDialog'
 import { WorkspaceFormCreateDialog } from '@/features/workspace/WorkspaceFormCreateDialog';
 import { WorkspaceFormEditDialog } from '@/features/workspace/WorkspaceFormEditDialog';
 import { WorkspaceStatsDialog } from '@/features/workspace/WorkspaceStatsDialog';
+import { m } from '@/i18n';
 import { usePortals } from '@/stores/portals';
 import { userToast } from '../ui/userToast';
 import { SearchDialog } from './TopInsetBar';
@@ -80,9 +81,8 @@ export function GlobalDialogs() {
           onSubmit={async (v) => {
             if (!workspaceId) {
               userToast({
-                description:
-                  'Oops. You should not be seeing this. Please refresh the page.',
-                title: 'Cannot find workspace',
+                description: m.workspace_missing_body(),
+                title: m.workspace_missing_title(),
                 variant: 'error',
               });
               return;

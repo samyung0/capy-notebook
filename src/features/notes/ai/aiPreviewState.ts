@@ -7,6 +7,7 @@ import {
 import type { TElement } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
 import { useSyncExternalStore } from 'react';
+import { m } from '@/i18n';
 
 export interface AiTableUpdate {
   content: string;
@@ -95,19 +96,19 @@ export function applyAiPreview(editor: PlateEditor) {
   const yjsEditor = editor as PlateEditor & YjsEditor;
   const document = yjsEditor.sharedRoot?.doc;
   if (!yjsEditor.sharedRoot || !document) {
-    throw new Error('The collaborative document is not ready');
+    throw new Error(m.editor_ai_not_ready());
   }
 
   let editRange: ReturnType<typeof relativeRangeToSlateRange> = null;
   if (preview.kind === 'edit') {
-    if (!preview.targetRange) throw new Error('The AI target is unavailable');
+    if (!preview.targetRange) throw new Error(m.editor_ai_target_unavailable());
     editRange = relativeRangeToSlateRange(
       yjsEditor.sharedRoot,
       editor,
       preview.targetRange
     );
     if (!editRange) {
-      throw new Error('The selected text changed; retry the AI command');
+      throw new Error(m.editor_ai_text_changed());
     }
   }
   const insertPath =
@@ -115,11 +116,11 @@ export function applyAiPreview(editor: PlateEditor) {
       ? findPath(editor.children, preview.insertAfterId)
       : null;
   if (preview.kind === 'insert' && !insertPath) {
-    throw new Error('The insertion target changed; retry the AI command');
+    throw new Error(m.editor_ai_insert_changed());
   }
   for (const update of preview.tableUpdates ?? []) {
     if (!findPath(editor.children, update.id)) {
-      throw new Error('A table cell changed; retry the AI command');
+      throw new Error(m.editor_ai_cell_changed());
     }
   }
 

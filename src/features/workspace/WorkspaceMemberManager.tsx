@@ -31,11 +31,13 @@ import {
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 
-const ROLE_OPTIONS: Array<{ value: AssignableRole; label: string }> = [
-  { label: 'View', value: 'viewer' },
-  { label: 'Comment', value: 'commenter' },
-  { label: 'Edit', value: 'editor' },
-];
+function roleOptions(): Array<{ value: AssignableRole; label: string }> {
+  return [
+    { label: m.members_role_view(), value: 'viewer' },
+    { label: m.members_role_comment(), value: 'commenter' },
+    { label: m.members_role_edit(), value: 'editor' },
+  ];
+}
 
 export function WorkspaceMemberManager({
   workspaceId,
@@ -80,8 +82,8 @@ export function WorkspaceMemberManager({
       });
       reset({ identifier: '', role: v.role });
       userToast({
-        description: "If an account matches, they'll receive an invitation.",
-        title: 'Invitation submitted',
+        description: m.members_invite_sent_body(),
+        title: m.members_invite_sent_title(),
       });
     } catch {
       // The global mutation handler shows the normalized failure.
@@ -105,11 +107,10 @@ export function WorkspaceMemberManager({
   return (
     <section aria-labelledby="workspace-members-title">
       <div>
-        <InputTitle id="workspace-members-title">People with access</InputTitle>
-        <p className="t-meta text-fg-muted">
-          Invite by exact email or user ID. They must accept before access is
-          granted.
-        </p>
+        <InputTitle id="workspace-members-title">
+          {m.members_people()}
+        </InputTitle>
+        <p className="t-meta text-fg-muted">{m.members_invite_hint()}</p>
       </div>
 
       <form className="mt-3 flex gap-2" onSubmit={formSubmit(invite)}>
@@ -122,7 +123,7 @@ export function WorkspaceMemberManager({
                 {...field}
                 aria-invalid={fieldState.invalid}
                 disabled={isSubmitting}
-                placeholder="Email or user ID"
+                placeholder={m.members_invite_placeholder()}
               />
               {fieldState.invalid && <InputError errors={[fieldState.error]} />}
             </div>
@@ -134,7 +135,7 @@ export function WorkspaceMemberManager({
           render={({ field }) => (
             <RoleSelect
               disabled={isSubmitting}
-              label="Invite role"
+              label={m.members_invite_role()}
               onChange={field.onChange}
               value={field.value}
             />
@@ -151,7 +152,7 @@ export function WorkspaceMemberManager({
               <Spinner />
             </span>
           )}
-          {!isSubmitting && 'Invite'}
+          {!isSubmitting && m.members_invite()}
         </Button>
       </form>
 
@@ -167,13 +168,13 @@ export function WorkspaceMemberManager({
             </div>
             {member.role === 'owner' ? (
               <span className="px-2 font-medium text-fg-muted text-xs">
-                Owner
+                {m.common_owner()}
               </span>
             ) : (
               <Menu
                 items={[
                   {
-                    label: 'Manage Member',
+                    label: m.members_manage(),
                     onClick: () => {
                       setManageTarget(member);
                       setManagedRole(member.role as AssignableRole);
@@ -181,7 +182,7 @@ export function WorkspaceMemberManager({
                   },
                   {
                     danger: true,
-                    label: 'Remove',
+                    label: m.members_remove(),
                     onClick: () => removeMember(member.userId),
                   },
                 ]}
@@ -194,14 +195,14 @@ export function WorkspaceMemberManager({
       <SimpleDialog
         onClose={() => setManageTarget(null)}
         open={!!manageTarget}
-        title="Manage Member"
+        title={m.members_manage()}
       >
         {manageTarget && (
           <div className="flex flex-col gap-1.5">
-            <InputTitle>Role</InputTitle>
+            <InputTitle>{m.common_role()}</InputTitle>
             <RoleSelect
               disabled={updateMemberIsPending}
-              label="Role"
+              label={m.common_role()}
               onChange={(nextRole) => {
                 setManagedRole(nextRole);
                 updateMember({
@@ -260,7 +261,7 @@ function RoleSelect({
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          {ROLE_OPTIONS.map((option) => (
+          {roleOptions().map((option) => (
             <SelectItem key={option.value} value={option.value}>
               {option.label}
             </SelectItem>

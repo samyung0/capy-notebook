@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import type {
   Chapter,
   CognitiveLevel,
@@ -15,9 +15,15 @@ import {
   DialogTitle,
 } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
+import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { LEVEL_LABEL, LEVELS } from '@/lib/levels';
+import { LEVELS, levelLabel } from '@/lib/levels';
+import {
+  GENERATE_TITLE_MAX,
+  nextGenerateTitle,
+  validateGenerateTitle,
+} from './generateTitle';
 
 export type GenerateMode = 'flashcards' | 'quiz' | 'mindmap' | 'diagram';
 
@@ -30,15 +36,25 @@ const Q_TYPES: QuestionType[] = [
   'matching',
   'ordering',
 ];
-const Q_TYPE_LABEL: Record<QuestionType, string> = {
-  boolean: 'True / false',
-  fill: 'Fill blank',
-  matching: 'Matching',
-  mcq: 'Multiple choice',
-  multi: 'Multi-select',
-  ordering: 'Ordering',
-  short: 'Short answer',
-};
+
+function questionTypeLabel(type: QuestionType): string {
+  switch (type) {
+    case 'boolean':
+      return m.quiz_type_boolean();
+    case 'fill':
+      return m.quiz_type_fill();
+    case 'matching':
+      return m.quiz_type_matching();
+    case 'mcq':
+      return m.quiz_type_mcq();
+    case 'multi':
+      return m.quiz_type_multi();
+    case 'ordering':
+      return m.quiz_type_ordering();
+    case 'short':
+      return m.quiz_type_short();
+  }
+}
 
 const DIAGRAM_TYPES: DiagramType[] = [
   'auto',
@@ -48,21 +64,36 @@ const DIAGRAM_TYPES: DiagramType[] = [
   'state',
   'er',
 ];
-const DIAGRAM_LABEL: Record<DiagramType, string> = {
-  auto: 'Auto',
-  class: 'Class',
-  er: 'Entity-relation',
-  flowchart: 'Flowchart',
-  sequence: 'Sequence',
-  state: 'State',
-};
 
-const MODE_LABEL: Record<GenerateMode, string> = {
-  diagram: 'diagram',
-  flashcards: 'flashcards',
-  mindmap: 'mindmap',
-  quiz: 'quiz',
-};
+function diagramTypeLabel(type: DiagramType): string {
+  switch (type) {
+    case 'auto':
+      return m.generate_diagram_auto();
+    case 'class':
+      return m.generate_diagram_class();
+    case 'er':
+      return m.generate_diagram_er();
+    case 'flowchart':
+      return m.generate_diagram_flowchart();
+    case 'sequence':
+      return m.generate_diagram_sequence();
+    case 'state':
+      return m.generate_diagram_state();
+  }
+}
+
+function generateModeLabel(mode: GenerateMode): string {
+  switch (mode) {
+    case 'diagram':
+      return m.generate_kind_diagram();
+    case 'flashcards':
+      return m.generate_flashcards();
+    case 'mindmap':
+      return m.generate_kind_mindmap();
+    case 'quiz':
+      return m.generate_quiz();
+  }
+}
 
 function Chip({
   active,
@@ -123,7 +154,7 @@ function CountRow({
 }) {
   return (
     <div className="flex items-center justify-between">
-      <p className="t-label text-fg-muted">Count</p>
+      <p className="t-label text-fg-muted">{m.common_count()}</p>
       <div className="flex items-center gap-2">
         {[5, 10, 15, 20].map((n) => (
           <Chip active={value === n} key={n} onClick={() => onChange(n)}>
@@ -149,6 +180,8 @@ export function GenerateFormDialog({
   mode,
   chapters,
   files,
+  workspaceName,
+  existingTitles,
   pending,
   onGenerate,
 }: {
@@ -157,11 +190,16 @@ export function GenerateFormDialog({
   mode: GenerateMode;
   chapters: Chapter[];
   files: SourceFile[];
+  workspaceName: string;
+  existingTitles: string[];
   pending: boolean;
   onGenerate: (opts: GenerateOptions) => Promise<unknown>;
 }) {
   const [chapterScope, setChapterScope] = useState<string[]>([]);
   const [fileScope, setFileScope] = useState<string[]>([]);
+  const [title, setTitle] = useState(() =>
+    nextGenerateTitle(mode, workspaceName, existingTitles)
+  );
   const [count, setCount] = useState(10);
   const [style, setStyle] = useState<'term-def' | 'qa' | 'cloze'>('term-def');
   const [types, setTypes] = useState<QuestionType[]>(['mcq', 'boolean']);
@@ -177,9 +215,18 @@ export function GenerateFormDialog({
   const readyFiles = files.filter(
     (f) => f.status !== 'processing' && f.status !== 'failed'
   );
+  const titleError = useMemo(
+    () => validateGenerateTitle(title, existingTitles),
+    [existingTitles, title]
+  );
 
   async function run() {
-    const scope = { chapters: chapterScope, fileIds: fileScope };
+    if (titleError) return;
+    const scope = {
+      chapters: chapterScope,
+      fileIds: fileScope,
+      title: title.trim(),
+    };
     let opts: GenerateOptions;
     if (mode === 'flashcards')
       opts = { count, kind: 'flashcards', style, ...scope };
@@ -193,13 +240,28 @@ export function GenerateFormDialog({
   return (
     <Dialog onOpenChange={setOpen} open={open}>
       <DialogContent className="top-1/2 -translate-y-1/2">
-        <DialogTitle className="capitalize">
-          {m.generate_title()} · {MODE_LABEL[mode]}
+        <DialogTitle>
+          {m.generate_title()} · {generateModeLabel(mode)}
         </DialogTitle>
 
         <div className="flex max-h-[70vh] flex-col gap-5 overflow-auto">
+          <label className="flex flex-col gap-1.5">
+            <InputTitle required>{m.generate_file_name()}</InputTitle>
+            <Input
+              aria-invalid={!!titleError}
+              autoComplete="off"
+              autoFocus
+              maxLength={GENERATE_TITLE_MAX}
+              onChange={(e) => setTitle(e.target.value)}
+              value={title}
+            />
+            {titleError && <InputError>{titleError}</InputError>}
+          </label>
+
           <div className="flex flex-col gap-1.5">
-            <p className="t-label text-fg-muted">Chapter scope</p>
+            <p className="t-label text-fg-muted">
+              {m.generate_chapter_scope()}
+            </p>
             <div className="flex flex-wrap gap-1.5">
               {chapters.map((c) => (
                 <Chip
@@ -217,13 +279,15 @@ export function GenerateFormDialog({
                 </Chip>
               ))}
               {!chapters.length && (
-                <p className="t-meta text-fg-muted">No chapters</p>
+                <p className="t-meta text-fg-muted">
+                  {m.generate_no_chapters()}
+                </p>
               )}
             </div>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <p className="t-label text-fg-muted">File scope</p>
+            <p className="t-label text-fg-muted">{m.generate_file_scope()}</p>
             <div className="flex flex-wrap gap-1.5">
               {readyFiles.map((f) => (
                 <Chip
@@ -241,12 +305,12 @@ export function GenerateFormDialog({
                 </Chip>
               ))}
               {!readyFiles.length && (
-                <p className="t-meta text-fg-muted">No files</p>
+                <p className="t-meta text-fg-muted">{m.generate_no_files()}</p>
               )}
             </div>
             {!chapterScope.length && !fileScope.length && (
               <p className="t-meta text-fg-muted">
-                Nothing selected — the whole workspace will be used.
+                {m.generate_nothing_selected()}
               </p>
             )}
           </div>
@@ -255,7 +319,7 @@ export function GenerateFormDialog({
             <>
               <CountRow onChange={setCount} value={count} />
               <OptionRow
-                label="Style"
+                label={m.common_style()}
                 onChange={(v) => setStyle(v as typeof style)}
                 options={['term-def', 'qa', 'cloze']}
                 value={style}
@@ -266,7 +330,9 @@ export function GenerateFormDialog({
             <>
               <CountRow onChange={setCount} value={count} />
               <div className="flex flex-col gap-1.5">
-                <p className="t-label text-fg-muted">Question types</p>
+                <p className="t-label text-fg-muted">
+                  {m.generate_question_types()}
+                </p>
                 <div className="flex flex-wrap gap-1.5">
                   {Q_TYPES.map((t) => (
                     <Chip
@@ -278,13 +344,15 @@ export function GenerateFormDialog({
                         )
                       }
                     >
-                      {Q_TYPE_LABEL[t]}
+                      {questionTypeLabel(t)}
                     </Chip>
                   ))}
                 </div>
               </div>
               <div className="flex flex-col gap-1.5">
-                <p className="t-label text-fg-muted">Cognitive level</p>
+                <p className="t-label text-fg-muted">
+                  {m.generate_cognitive_level()}
+                </p>
                 <div className="flex flex-wrap gap-1.5">
                   {LEVELS.map((lvl) => (
                     <Chip
@@ -298,7 +366,7 @@ export function GenerateFormDialog({
                         )
                       }
                     >
-                      {LEVEL_LABEL[lvl]}
+                      {levelLabel(lvl)}
                     </Chip>
                   ))}
                 </div>
@@ -307,7 +375,7 @@ export function GenerateFormDialog({
           )}
           {mode === 'mindmap' && (
             <OptionRow
-              label="Detail"
+              label={m.common_detail()}
               onChange={(v) => setDetail(v as typeof detail)}
               options={['brief', 'standard', 'detailed']}
               value={detail}
@@ -315,7 +383,9 @@ export function GenerateFormDialog({
           )}
           {mode === 'diagram' && (
             <div className="flex flex-col gap-1.5">
-              <p className="t-label text-fg-muted">Diagram type</p>
+              <p className="t-label text-fg-muted">
+                {m.generate_diagram_type()}
+              </p>
               <div className="flex flex-wrap gap-1.5">
                 {DIAGRAM_TYPES.map((t) => (
                   <Chip
@@ -323,7 +393,7 @@ export function GenerateFormDialog({
                     key={t}
                     onClick={() => setDiagramType(t)}
                   >
-                    {DIAGRAM_LABEL[t]}
+                    {diagramTypeLabel(t)}
                   </Chip>
                 ))}
               </div>
@@ -337,14 +407,16 @@ export function GenerateFormDialog({
             onClick={() => setOpen(false)}
             variant="ghost"
           >
-            Cancel
+            {m.action_cancel()}
           </Button>
           <Button
-            disabled={pending || (mode === 'quiz' && !types.length)}
+            disabled={
+              pending || !!titleError || (mode === 'quiz' && !types.length)
+            }
             iconLeft={pending ? undefined : 'sparkles'}
             onClick={run}
           >
-            {pending ? <Spinner /> : `Generate ${MODE_LABEL[mode]}`}
+            {pending ? <Spinner /> : m.workspace_tab_generate()}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -16,5 +16,9 @@ export interface UpdateWorkspaceReq {
      * @maxLength 100
      */
   name?: string;
+  /**
+     * Tags; at most 5
+     * @maxItems 5
+     */
   tags?: TagInput[];
 }

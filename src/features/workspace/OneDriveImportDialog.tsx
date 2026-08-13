@@ -5,6 +5,7 @@ import {
   useMicrosoftRecentFiles,
 } from '@/api/hooks';
 import { SimpleDialog } from '@/components/ui/Dialog';
+import { m } from '@/i18n';
 
 export function OneDriveImportDialog({
   open,
@@ -27,9 +28,9 @@ export function OneDriveImportDialog({
     onClose();
   }
 
-  //  TODO: i18n, select chapters
+  // TODO: select chapters
   return (
-    <SimpleDialog onClose={onClose} open={open} title="OneDrive files">
+    <SimpleDialog onClose={onClose} open={open} title={m.onedrive_title()}>
       <div className="flex max-h-64 flex-col gap-1 overflow-auto">
         {(msFiles ?? []).map((f) => (
           <button
@@ -42,7 +43,7 @@ export function OneDriveImportDialog({
           </button>
         ))}
         {!msFiles?.length && (
-          <p className="t-meta text-fg-muted">No recent files found.</p>
+          <p className="t-meta text-fg-muted">{m.onedrive_empty()}</p>
         )}
       </div>
     </SimpleDialog>

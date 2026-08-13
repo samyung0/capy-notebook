@@ -107,7 +107,7 @@ function DialogContent({
                   size="md"
                   variant="ghost-hover"
                 >
-                  <span className="sr-only">Close</span>
+                  <span className="sr-only">{m.action_close()}</span>
                 </IconButton>
               </DialogPrimitive.Close>
             )}
@@ -278,7 +278,7 @@ function ConfirmDialog({
             type="button"
             variant="ghost-hover"
           >
-            Cancel
+            {m.action_cancel()}
           </Button>
           <Button
             disabled={disabled || isSubmitting}

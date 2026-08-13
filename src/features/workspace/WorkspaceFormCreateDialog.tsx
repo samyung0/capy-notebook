@@ -1,7 +1,10 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useCallback } from 'react';
-import { Controller, type FieldError, useForm } from 'react-hook-form';
-import { CreateWorkspaceBody } from '@/api/gen/validators';
+import { Controller, useForm } from 'react-hook-form';
+import {
+  CreateWorkspaceBody,
+  createWorkspaceBodyTagsMax,
+} from '@/api/gen/validators';
 import type { CreateWorkspaceReq, Workspace } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import {
@@ -13,7 +16,7 @@ import {
 } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
-import { TagSelect } from '@/components/ui/TagSelect';
+import { flattenTagErrors, TagSelect } from '@/components/ui/TagSelect';
 import { UserColorChooser } from '@/components/ui/UserColorChooser';
 import { m } from '@/i18n';
 
@@ -69,8 +72,7 @@ export function WorkspaceFormCreateDialog({
         }}
         showCloseButton={true}
       >
-        {/* TODO: i18n */}
-        <DialogTitle>{'Create Workspace'}</DialogTitle>
+        <DialogTitle>{m.workspace_create_title()}</DialogTitle>
 
         <form
           className="flex h-full flex-col"
@@ -83,13 +85,13 @@ export function WorkspaceFormCreateDialog({
               render={({ field, fieldState }) => (
                 <>
                   <label className="flex flex-col gap-1.5">
-                    <InputTitle required>Name</InputTitle>
+                    <InputTitle required>{m.common_name()}</InputTitle>
                     <Input
                       {...field}
                       aria-invalid={fieldState.invalid}
                       autoComplete="off"
                       autoFocus
-                      placeholder="Workspace name"
+                      placeholder={m.workspace_name_placeholder()}
                       required
                     />
                     {fieldState.invalid && (
@@ -102,38 +104,21 @@ export function WorkspaceFormCreateDialog({
             <Controller
               control={control}
               name={'tags'}
-              render={({ field, fieldState }) => {
-                const uniqueErrors = new Set();
-                let uniqueErrorsArray: FieldError[] = [];
-
-                if (fieldState.error) {
-                  uniqueErrorsArray = (
-                    fieldState.error as any as {
-                      value: FieldError;
-                    }[]
-                  )
-                    .map((error) => error.value)
-                    .filter((error) => {
-                      if (uniqueErrors.has(error.message)) return false;
-                      uniqueErrors.add(error.message);
-                      return true;
-                    });
-                }
-                return (
-                  <div className="flex flex-col gap-1.5">
-                    <InputTitle>Tags</InputTitle>
-                    <TagSelect
-                      invalid={fieldState.invalid}
-                      kind="workspace"
-                      onChange={field.onChange}
-                      value={field.value ?? []}
-                    />
-                    {fieldState.invalid && (
-                      <InputError errors={uniqueErrorsArray} />
-                    )}
-                  </div>
-                );
-              }}
+              render={({ field, fieldState }) => (
+                <div className="flex flex-col gap-1.5">
+                  <InputTitle>{m.common_tags()}</InputTitle>
+                  <TagSelect
+                    invalid={fieldState.invalid}
+                    kind="workspace"
+                    max={createWorkspaceBodyTagsMax}
+                    onChange={field.onChange}
+                    value={field.value ?? []}
+                  />
+                  {fieldState.invalid && (
+                    <InputError errors={flattenTagErrors(fieldState.error)} />
+                  )}
+                </div>
+              )}
             />
             <Controller
               control={control}
@@ -141,7 +126,7 @@ export function WorkspaceFormCreateDialog({
               render={({ field, fieldState }) => (
                 <>
                   <div className="flex flex-col gap-1.5">
-                    <InputTitle>Color</InputTitle>
+                    <InputTitle>{m.common_color()}</InputTitle>
                     <UserColorChooser
                       aria-invalid={fieldState.invalid}
                       onChange={field.onChange}
@@ -162,7 +147,7 @@ export function WorkspaceFormCreateDialog({
                 size="lg"
                 variant="ghost-hover"
               >
-                Cancel
+                {m.action_cancel()}
               </Button>
             </DialogClose>
             <Button disabled={submitDisabled} size="lg">

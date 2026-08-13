@@ -1,4 +1,5 @@
 import type { MaterialMode } from '@/features/materials/modePolicy';
+import { m } from '@/i18n';
 
 export type NoteEditorMode = Extract<MaterialMode, 'edit' | 'comment'>;
 
@@ -21,15 +22,15 @@ export function noteEditorStatusLabel(
   if (!status) return null;
   switch (status.saveState) {
     case 'connecting':
-      return 'Connecting…';
+      return m.editor_connecting();
     case 'synced':
-      return 'Synced';
+      return m.editor_status_synced();
     case 'saved':
-      return 'Saved';
+      return m.editor_status_saved();
     case 'offline':
-      return 'Offline';
+      return m.editor_status_offline();
     case 'error':
-      return 'Collaboration unavailable';
+      return m.editor_status_unavailable();
   }
 }
 

@@ -1795,6 +1795,8 @@ export const createWorkspaceBodyNameMax = 100;
 
 export const createWorkspaceBodyTagsItemValueMax = 50;
 
+export const createWorkspaceBodyTagsMax = 5;
+
 
 
 export const CreateWorkspaceBody = zod.object({
@@ -1803,7 +1805,7 @@ export const CreateWorkspaceBody = zod.object({
   "tags": zod.array(zod.object({
   "id": zod.string().optional(),
   "value": zod.string().min(1).max(createWorkspaceBodyTagsItemValueMax)
-})).nullish().describe('Tags; reuse existing by id or create new by value')
+})).max(createWorkspaceBodyTagsMax).nullish().describe('Tags; at most 5; reuse existing by id or create new by value')
 })
 
 export const createWorkspaceResponseTagsItemValueMax = 50;
@@ -1898,6 +1900,8 @@ export const updateWorkspaceBodyNameMax = 100;
 
 export const updateWorkspaceBodyTagsItemValueMax = 50;
 
+export const updateWorkspaceBodyTagsMax = 5;
+
 
 
 export const UpdateWorkspaceBody = zod.object({
@@ -1906,7 +1910,7 @@ export const UpdateWorkspaceBody = zod.object({
   "tags": zod.array(zod.object({
   "id": zod.string().optional(),
   "value": zod.string().min(1).max(updateWorkspaceBodyTagsItemValueMax)
-})).optional()
+})).max(updateWorkspaceBodyTagsMax).optional().describe('Tags; at most 5')
 })
 
 export const updateWorkspaceResponseTagsItemValueMax = 50;

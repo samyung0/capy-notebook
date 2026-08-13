@@ -59,7 +59,10 @@ import { getHiddenToolbarGroupIndexes } from '@/features/notes/responsiveToolbar
 import { AlignMenu } from '@/features/notes/toolbar/ToolbarAlignMenu';
 import { ToolbarAllBlocksMenu } from '@/features/notes/toolbar/ToolbarAllBlocksMenu';
 import { BlockTypeMenu } from '@/features/notes/toolbar/ToolbarBlockTypeMenu';
-import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
+import {
+  EDITOR_SHORTCUTS,
+  ToolbarButton,
+} from '@/features/notes/toolbar/ToolbarButton';
 import { ExportMenu } from '@/features/notes/toolbar/ToolbarExportMenu';
 import { FontColorControl } from '@/features/notes/toolbar/ToolbarFontColorControl';
 import { FontSizeControl } from '@/features/notes/toolbar/ToolbarFontSizeControl';
@@ -70,6 +73,7 @@ import {
 import { MediaUploadMenu } from '@/features/notes/toolbar/ToolbarMediaUploadMenu';
 import { TableMenu } from '@/features/notes/toolbar/ToolbarTableMenu';
 import { WidgetSettingsDialog } from '@/features/notes/toolbar/ToolbarWidgetSettingsDialog';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { VoiceButton } from '../ai/VoiceButton';
 
@@ -199,20 +203,18 @@ export function NoteToolbar({ className }: { className?: string }) {
     const url = encodeUrlIfNeeded(linkUrl.trim());
     if (!url) return;
     if (!validateUrl(editor, url)) {
-      setLinkError("Hey, that's not a valid link.");
+      setLinkError(m.editor_link_invalid());
       return;
     }
 
     const selection = linkSelectionRef.current;
     if (!selection) {
-      setLinkError(
-        'The text selection is no longer available. Select the text and try again.'
-      );
+      setLinkError(m.editor_link_selection_lost());
       return;
     }
 
     if (!upsertLinkAtSelection(editor, selection, { text: linkText, url })) {
-      setLinkError('Hey, select some text so I can place the link.');
+      setLinkError(m.editor_link_select_text());
       return;
     }
 
@@ -226,7 +228,7 @@ export function NoteToolbar({ className }: { className?: string }) {
   if (mode === 'comment') {
     return (
       <div
-        aria-label="Comment tools"
+        aria-label={m.editor_comment_tools()}
         className={cn(
           'sticky top-0 z-20 flex h-10 items-center border-divider border-b bg-surface/95 px-2 backdrop-blur-sm',
           className
@@ -237,7 +239,7 @@ export function NoteToolbar({ className }: { className?: string }) {
           <ToolbarGroup>
             <ToolbarButton
               disabled={collaboration.mutationPending}
-              label="Comment"
+              label={m.editor_comment()}
               onClick={collaboration.openComment}
             >
               <MessageSquarePlus />
@@ -251,7 +253,7 @@ export function NoteToolbar({ className }: { className?: string }) {
   return (
     <>
       <div
-        aria-label="Document formatting"
+        aria-label={m.editor_doc_formatting()}
         className={cn(
           'sticky top-0 z-20 flex h-10 items-center border-divider border-b bg-surface/95 px-2 backdrop-blur-sm',
           className
@@ -267,7 +269,7 @@ export function NoteToolbar({ className }: { className?: string }) {
             {canComment && collaboration && (
               <ToolbarButton
                 disabled={collaboration.mutationPending}
-                label="Comment"
+                label={m.editor_comment()}
                 onClick={collaboration.openComment}
               >
                 <MessageSquarePlus />
@@ -290,15 +292,17 @@ export function NoteToolbar({ className }: { className?: string }) {
             <ToolbarGroup>
               <ToolbarButton
                 disabled={!canUndo}
-                label="Undo"
+                label={m.editor_undo()}
                 onClick={() => editor.tf.undo()}
+                shortcut={EDITOR_SHORTCUTS.undo}
               >
                 <Undo2 />
               </ToolbarButton>
               <ToolbarButton
                 disabled={!canRedo}
-                label="Redo"
+                label={m.editor_redo()}
                 onClick={() => editor.tf.redo()}
+                shortcut={EDITOR_SHORTCUTS.redo}
               >
                 <Redo2 />
               </ToolbarButton>
@@ -317,40 +321,51 @@ export function NoteToolbar({ className }: { className?: string }) {
               <FontColorControl
                 fallbackColor="var(--color-fg)"
                 icon={<Baseline />}
-                label="Text color"
+                label={m.editor_text_color()}
                 markKey={KEYS.color}
               />
               <FontColorControl
                 fallbackColor="transparent"
                 icon={<PaintBucket />}
-                label="Background color"
+                label={m.editor_bg_color()}
                 markKey={KEYS.backgroundColor}
               />
             </ToolbarGroup>
           )}
           {enabled.textDecorations && (
             <ToolbarGroup>
-              <ToolbarButton label="Bold" onClick={() => mark(KEYS.bold)}>
+              <ToolbarButton
+                label={m.editor_bold()}
+                onClick={() => mark(KEYS.bold)}
+                shortcut={EDITOR_SHORTCUTS.bold}
+              >
                 <Bold />
               </ToolbarButton>
-              <ToolbarButton label="Italic" onClick={() => mark(KEYS.italic)}>
+              <ToolbarButton
+                label={m.editor_italic()}
+                onClick={() => mark(KEYS.italic)}
+                shortcut={EDITOR_SHORTCUTS.italic}
+              >
                 <Italic />
               </ToolbarButton>
               <ToolbarButton
-                label="Underline"
+                label={m.editor_underline()}
                 onClick={() => mark(KEYS.underline)}
+                shortcut={EDITOR_SHORTCUTS.underline}
               >
                 <Underline />
               </ToolbarButton>
               <ToolbarButton
-                label="Strikethrough"
+                label={m.editor_strikethrough()}
                 onClick={() => mark(KEYS.strikethrough)}
+                shortcut={EDITOR_SHORTCUTS.strikethrough}
               >
                 <Strikethrough />
               </ToolbarButton>
               <ToolbarButton
-                label="Highlight"
+                label={m.editor_highlight()}
                 onClick={() => mark(KEYS.highlight)}
+                shortcut={EDITOR_SHORTCUTS.highlight}
               >
                 <Highlighter />
               </ToolbarButton>
@@ -367,13 +382,14 @@ export function NoteToolbar({ className }: { className?: string }) {
                 </ToolbarButton>
               )}
               <ToolbarButton
-                label="Inline code"
+                label={m.editor_inline_code()}
                 onClick={() => mark(KEYS.code)}
+                shortcut={EDITOR_SHORTCUTS.code}
               >
                 <Code2 />
               </ToolbarButton>
               <ToolbarButton
-                label="Link"
+                label={m.editor_link()}
                 onClick={() => {
                   const selection = cloneLinkSelection(editor.selection);
                   const entry = editor.api.above({
@@ -410,7 +426,7 @@ export function NoteToolbar({ className }: { className?: string }) {
             <ToolbarGroup>
               <AlignMenu editor={editor} />
               <ToolbarButton
-                label="Numbered list"
+                label={m.editor_numbered_list()}
                 onClick={() =>
                   toggleList(editor, { listStyleType: ListStyleType.Decimal })
                 }
@@ -418,7 +434,7 @@ export function NoteToolbar({ className }: { className?: string }) {
                 <ListOrdered />
               </ToolbarButton>
               <ToolbarButton
-                label="Bulleted list"
+                label={m.editor_bulleted_list()}
                 onClick={() =>
                   toggleList(editor, { listStyleType: ListStyleType.Disc })
                 }
@@ -426,7 +442,7 @@ export function NoteToolbar({ className }: { className?: string }) {
                 <List />
               </ToolbarButton>
               <ToolbarButton
-                label="Task list"
+                label={m.editor_task_list()}
                 onClick={() =>
                   toggleList(editor, { listStyleType: KEYS.listTodo })
                 }
@@ -459,12 +475,15 @@ export function NoteToolbar({ className }: { className?: string }) {
           {enabled.indentation && (
             <ToolbarGroup>
               <ToolbarButton
-                label="Outdent"
+                label={m.editor_outdent()}
                 onClick={() => editor.tf.outdent()}
               >
                 <IndentDecrease />
               </ToolbarButton>
-              <ToolbarButton label="Indent" onClick={() => editor.tf.indent()}>
+              <ToolbarButton
+                label={m.editor_indent()}
+                onClick={() => editor.tf.indent()}
+              >
                 <IndentIncrease />
               </ToolbarButton>
             </ToolbarGroup>
@@ -474,8 +493,9 @@ export function NoteToolbar({ className }: { className?: string }) {
           {mode === 'edit' && allowExternalAssets && <VoiceButton />}
           {allowExternalAssets && (
             <ToolbarButton
-              label="AI commands (Ctrl/Cmd+J)"
+              label={m.editor_ai_commands()}
               onClick={() => openAiMenu(editor)}
+              shortcut={EDITOR_SHORTCUTS.ai}
             >
               <Sparkles />
             </ToolbarButton>
@@ -503,7 +523,9 @@ export function NoteToolbar({ className }: { className?: string }) {
             editor.tf.focus();
           }}
         >
-          <DialogTitle>{editingLink ? 'Edit link' : 'Insert link'}</DialogTitle>
+          <DialogTitle>
+            {editingLink ? m.editor_link_edit() : m.editor_insert_link()}
+          </DialogTitle>
           <form
             className="flex flex-col gap-4"
             onSubmit={(event) => {
@@ -512,7 +534,7 @@ export function NoteToolbar({ className }: { className?: string }) {
             }}
           >
             <label className="flex flex-col gap-1.5">
-              <InputTitle>Link URL</InputTitle>
+              <InputTitle>{m.editor_link_url()}</InputTitle>
               <Input
                 aria-invalid={Boolean(linkError)}
                 autoFocus
@@ -526,10 +548,10 @@ export function NoteToolbar({ className }: { className?: string }) {
               <InputError>{linkError}</InputError>
             </label>
             <label className="flex flex-col gap-1.5">
-              <InputTitle>Displayed text</InputTitle>
+              <InputTitle>{m.editor_link_text()}</InputTitle>
               <Input
                 onChange={(event) => setLinkText(event.target.value)}
-                placeholder="Use the URL as text"
+                placeholder={m.editor_link_text_placeholder()}
                 value={linkText}
               />
             </label>
@@ -539,10 +561,10 @@ export function NoteToolbar({ className }: { className?: string }) {
                 type="button"
                 variant="ghost-hover"
               >
-                Cancel
+                {m.action_cancel()}
               </Button>
               <Button disabled={!linkUrl.trim()} type="submit" variant="accent">
-                {editingLink ? 'Save' : 'Apply'}
+                {editingLink ? m.action_save() : m.action_apply()}
               </Button>
             </DialogFooter>
           </form>

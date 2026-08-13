@@ -1,18 +1,15 @@
-export const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
-export const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+import { getLocale } from '@/i18n';
+
+export function monthName(d: Date, style: 'long' | 'short' = 'long'): string {
+  return new Intl.DateTimeFormat(getLocale(), { month: style }).format(d);
+}
+
+export function weekdayName(
+  d: Date,
+  style: 'short' | 'long' = 'short'
+): string {
+  return new Intl.DateTimeFormat(getLocale(), { weekday: style }).format(d);
+}
 
 export function startOfMonth(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), 1);
@@ -59,7 +56,7 @@ export function weekDays(d: Date): Date[] {
 }
 
 export function fmtTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], {
+  return new Date(iso).toLocaleTimeString(getLocale(), {
     hour: '2-digit',
     minute: '2-digit',
   });
@@ -70,11 +67,10 @@ export function hourOf(iso: string): number {
   return d.getHours() + d.getMinutes() / 60;
 }
 
-/** "1 AM", "12 PM" — bare-hour label for the time gutter. */
+/** Locale-aware hour label for the time gutter (12h vs 24h follows locale). */
 export function fmtHour(h: number): string {
-  const ap = h % 24 < 12 ? 'AM' : 'PM';
-  const hh = h % 12 === 0 ? 12 : h % 12;
-  return `${hh} ${ap}`;
+  const d = new Date(2000, 0, 1, h % 24, 0, 0);
+  return new Intl.DateTimeFormat(getLocale(), { hour: 'numeric' }).format(d);
 }
 
 /** Midnight of the given date — strips the time component. */

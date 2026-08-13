@@ -3,8 +3,9 @@ import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Icon } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { LEVEL_LABEL, LEVELS } from '@/lib/levels';
+import { LEVELS, levelLabel } from '@/lib/levels';
 
 const Q_TYPES: QuestionType[] = [
   'mcq',
@@ -15,15 +16,25 @@ const Q_TYPES: QuestionType[] = [
   'matching',
   'ordering',
 ];
-const Q_TYPE_LABEL: Record<QuestionType, string> = {
-  boolean: 'True / false',
-  fill: 'Fill blank',
-  matching: 'Matching',
-  mcq: 'Multiple choice',
-  multi: 'Multi-select',
-  ordering: 'Ordering',
-  short: 'Short answer',
-};
+
+function quizTypeLabel(type: QuestionType): string {
+  switch (type) {
+    case 'boolean':
+      return m.quiz_type_boolean();
+    case 'fill':
+      return m.quiz_type_fill();
+    case 'matching':
+      return m.quiz_type_matching();
+    case 'mcq':
+      return m.quiz_type_mcq();
+    case 'multi':
+      return m.quiz_type_multi();
+    case 'ordering':
+      return m.quiz_type_ordering();
+    case 'short':
+      return m.quiz_type_short();
+  }
+}
 
 const newId = () => `q_${Math.random().toString(36).slice(2, 9)}`;
 
@@ -166,7 +177,7 @@ export function QuizForm({
     <div className="flex flex-col gap-5">
       {showName && (
         <label className="flex flex-col gap-1.5">
-          <p className="t-label text-fg-muted">Quiz name</p>
+          <p className="t-label text-fg-muted">{m.quiz_name()}</p>
           <Input onChange={(e) => onNameChange(e.target.value)} value={name} />
         </label>
       )}
@@ -185,7 +196,7 @@ export function QuizForm({
             >
               {Q_TYPES.map((t) => (
                 <option key={t} value={t}>
-                  {Q_TYPE_LABEL[t]}
+                  {quizTypeLabel(t)}
                 </option>
               ))}
             </select>
@@ -198,12 +209,12 @@ export function QuizForm({
             >
               {LEVELS.map((lvl) => (
                 <option key={lvl} value={lvl}>
-                  {LEVEL_LABEL[lvl]}
+                  {levelLabel(lvl)}
                 </option>
               ))}
             </select>
             <button
-              aria-label="Delete question"
+              aria-label={m.quiz_delete_question()}
               className="ml-auto text-fg-muted hover:text-tint-error-fg"
               onClick={() => removeQuestion(i)}
               type="button"
@@ -214,7 +225,7 @@ export function QuizForm({
 
           <Input
             onChange={(e) => update(i, { ...q, prompt: e.target.value })}
-            placeholder="Question prompt"
+            placeholder={m.quiz_prompt_placeholder()}
             value={q.prompt}
           />
 
@@ -243,12 +254,12 @@ export function QuizForm({
                         options[oi] = { ...options[oi], value: e.target.value };
                         update(i, { ...q, options });
                       }}
-                      placeholder={`Option ${oi + 1}`}
+                      placeholder={m.quiz_option_n({ n: oi + 1 })}
                       value={opt.value}
                       wrapperClassName="flex-1"
                     />
                     <button
-                      aria-label="Remove option"
+                      aria-label={m.quiz_remove_option()}
                       className="text-fg-muted hover:text-fg disabled:opacity-30"
                       disabled={q.options.length <= 2}
                       onClick={() => {
@@ -272,14 +283,14 @@ export function QuizForm({
                       };
                       update(i, { ...q, options });
                     }}
-                    placeholder={`Why option ${oi + 1} is right / wrong (optional)`}
+                    placeholder={m.quiz_option_why({ n: oi + 1 })}
                     value={opt.explanation ?? ''}
                     wrapperClassName="ml-7"
                   />
                 </div>
               ))}
               <AddRowButton
-                label="Add option"
+                label={m.quiz_add_option()}
                 onClick={() =>
                   update(i, { ...q, options: [...q.options, { value: '' }] })
                 }
@@ -289,7 +300,7 @@ export function QuizForm({
 
           {q.type === 'boolean' && (
             <div className="mt-3 flex items-center gap-2">
-              <p className="t-meta text-fg-muted">Correct answer:</p>
+              <p className="t-meta text-fg-muted">{m.quiz_correct_answer()}</p>
               <Button
                 onClick={() => update(i, { ...q, correct: true })}
                 size="sm"
@@ -310,7 +321,7 @@ export function QuizForm({
           {(q.type === 'fill' || q.type === 'short') && (
             <label className="mt-3 flex flex-col gap-1.5">
               <p className="t-label text-fg-muted">
-                Accepted answers (comma separated)
+                {m.quiz_accepted_answers()}
               </p>
               <Input
                 onChange={(e) =>
@@ -328,9 +339,7 @@ export function QuizForm({
 
           {q.type === 'ordering' && (
             <div className="mt-3 flex flex-col gap-2">
-              <p className="t-label text-fg-muted">
-                Items (listed in correct order)
-              </p>
+              <p className="t-label text-fg-muted">{m.quiz_items_order()}</p>
               {q.items.map((item, oi) => (
                 <div className="flex items-center gap-2" key={oi}>
                   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-surface font-bold text-fg-secondary text-xs">
@@ -342,12 +351,12 @@ export function QuizForm({
                       items[oi] = { value: e.target.value };
                       update(i, { ...q, items });
                     }}
-                    placeholder={`Item ${oi + 1}`}
+                    placeholder={m.quiz_item_n({ n: oi + 1 })}
                     value={item.value}
                     wrapperClassName="flex-1"
                   />
                   <button
-                    aria-label="Remove item"
+                    aria-label={m.quiz_remove_item()}
                     className="text-fg-muted hover:text-fg disabled:opacity-30"
                     disabled={q.items.length <= 2}
                     onClick={() =>
@@ -363,7 +372,7 @@ export function QuizForm({
                 </div>
               ))}
               <AddRowButton
-                label="Add item"
+                label={m.quiz_add_item()}
                 onClick={() =>
                   update(i, { ...q, items: [...q.items, { value: '' }] })
                 }
@@ -383,7 +392,7 @@ export function QuizForm({
                       );
                       update(i, { ...q, pairs });
                     }}
-                    placeholder="Left"
+                    placeholder={m.quiz_matching_left()}
                     value={p.left}
                     wrapperClassName="flex-1"
                   />
@@ -395,12 +404,12 @@ export function QuizForm({
                       );
                       update(i, { ...q, pairs });
                     }}
-                    placeholder="Right"
+                    placeholder={m.quiz_matching_right()}
                     value={p.right}
                     wrapperClassName="flex-1"
                   />
                   <button
-                    aria-label="Remove pair"
+                    aria-label={m.quiz_remove_pair()}
                     className="text-fg-muted hover:text-fg disabled:opacity-30"
                     disabled={q.pairs.length <= 2}
                     onClick={() =>
@@ -416,7 +425,7 @@ export function QuizForm({
                 </div>
               ))}
               <AddRowButton
-                label="Add pair"
+                label={m.quiz_add_pair()}
                 onClick={() =>
                   update(i, {
                     ...q,
@@ -431,7 +440,7 @@ export function QuizForm({
             <p className="t-label text-fg-muted">Explanation (optional)</p>
             <Input
               onChange={(e) => update(i, { ...q, explanation: e.target.value })}
-              placeholder="Shown after answering"
+              placeholder={m.quiz_explanation_placeholder()}
               value={q.explanation ?? ''}
             />
           </label>

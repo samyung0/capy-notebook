@@ -3,6 +3,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
+import { m } from '@/i18n';
 import { fmtTime } from './dateUtils';
 
 export function EventDetailDialog({
@@ -27,7 +28,7 @@ export function EventDetailDialog({
             <IconButton
               className="absolute top-4 right-14"
               icon="write"
-              label="Edit"
+              label={m.action_edit()}
               onClick={() => onEdit?.(event)}
               size="md"
               variant="ghost-hover"

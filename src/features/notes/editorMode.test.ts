@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { m } from '@/i18n';
 import {
   canCreateExternalEditorAssets,
   isEditorCommandAllowed,
@@ -33,19 +34,19 @@ describe('noteEditorStatusLabel', () => {
   it('formats collaboration status', () => {
     expect(noteEditorStatusLabel(null)).toBeNull();
     expect(noteEditorStatusLabel({ mode: 'edit', saveState: 'saved' })).toBe(
-      'Saved'
+      m.editor_status_saved()
     );
     expect(
       noteEditorStatusLabel({ mode: 'comment', saveState: 'connecting' })
-    ).toBe('Connecting…');
+    ).toBe(m.editor_connecting());
     expect(noteEditorStatusLabel({ mode: 'edit', saveState: 'synced' })).toBe(
-      'Synced'
+      m.editor_status_synced()
     );
     expect(noteEditorStatusLabel({ mode: 'edit', saveState: 'offline' })).toBe(
-      'Offline'
+      m.editor_status_offline()
     );
     expect(noteEditorStatusLabel({ mode: 'edit', saveState: 'error' })).toBe(
-      'Collaboration unavailable'
+      m.editor_status_unavailable()
     );
   });
 });

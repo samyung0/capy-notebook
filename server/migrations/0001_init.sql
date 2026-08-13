@@ -279,6 +279,11 @@ CREATE TABLE IF NOT EXISTS materials (
 );
 CREATE INDEX IF NOT EXISTS materials_ws_idx ON materials(workspace_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS materials_chapter_idx ON materials(chapter_id);
+-- Generated artifacts (and notes) share one list per workspace; duplicate
+-- titles are indistinguishable there. Standalone clones have no workspace.
+CREATE UNIQUE INDEX IF NOT EXISTS materials_workspace_title_uidx
+  ON materials (workspace_id, lower(btrim(title)))
+  WHERE workspace_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS materials_privacy_idx ON materials(privacy, kind) WHERE privacy = 'public';
 CREATE INDEX IF NOT EXISTS materials_creator_idx ON materials(created_by, kind, created_at DESC);
 CREATE INDEX IF NOT EXISTS materials_owner_idx ON materials(owner_user_id, created_at DESC);

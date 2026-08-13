@@ -91,11 +91,12 @@ function AllQuizzes() {
             </span>
             <p className="t-card-title mt-3 truncate">{q.name}</p>
             <span className="mt-1 flex items-center gap-1 text-fg-muted text-xs">
-              <Icon name="book" size={13} /> {q.workspaceName || 'Standalone'}
+              <Icon name="book" size={13} />{' '}
+              {q.workspaceName || m.quiz_standalone()}
             </span>
             <p className="t-meta mt-1 text-fg-muted">
               {q.questions.length} questions ·{' '}
-              {q.chapters.join(', ') || 'All chapters'}
+              {q.chapters.join(', ') || m.quiz_all_chapters()}
             </p>
             <div
               className="absolute top-3 right-3"
@@ -114,7 +115,7 @@ function AllQuizzes() {
                   },
                   {
                     icon: 'quiz',
-                    label: 'Start quiz',
+                    label: m.quiz_start(),
                     onClick: () =>
                       navigate({
                         params: { quizId: q.id },
@@ -123,12 +124,12 @@ function AllQuizzes() {
                   },
                   {
                     icon: 'link',
-                    label: 'Share',
+                    label: m.action_share(),
                     onClick: () => setSharing(q),
                   },
                   {
                     icon: 'plus',
-                    label: 'Clone',
+                    label: m.action_clone(),
                     onClick: () => cloneQuiz(q.id),
                   },
                   {
@@ -154,7 +155,7 @@ function AllQuizzes() {
           info && (
             <>
               <Button onClick={() => setInfo(null)} variant="ghost">
-                Cancel
+                {m.action_cancel()}
               </Button>
               <Button
                 iconRight="arrowRight"
@@ -181,7 +182,8 @@ function AllQuizzes() {
               {info.chapters.length || 'all'} chapters.
             </p>
             <p className="text-fg-secondary">
-              Workspace: {info.workspaceName || 'Standalone'}
+              {m.quiz_col_workspace()}:{' '}
+              {info.workspaceName || m.quiz_standalone()}
             </p>
             {(info.timeLimitMin ?? 0) > 0 && (
               <p className="text-fg-secondary">
@@ -209,7 +211,7 @@ function AllQuizzes() {
           open
           privacy={sharing.privacy}
           saving={updateIsPending}
-          title={`Share ${sharing.name}`}
+          title={m.flashcards_share_title({ name: sharing.name })}
         />
       )}
     </>
@@ -222,7 +224,9 @@ function PastAttempts() {
   if (fetchStatus === 'paused') return <QueryPausedState />;
   if (isLoading) return <SkeletonList count={6} rowHeight={52} />;
   if (!data?.length)
-    return <p className="py-8 text-center text-fg-muted">No attempts yet.</p>;
+    return (
+      <p className="py-8 text-center text-fg-muted">{m.quiz_no_attempts()}</p>
+    );
 
   return (
     <div className="overflow-hidden rounded-card border border-line">
@@ -262,7 +266,7 @@ function PastAttempts() {
               size="sm"
               variant="outline"
             >
-              Check result
+              {m.quiz_check_result()}
             </Button>
           </div>
         </div>
@@ -279,7 +283,7 @@ export default function Quizzes() {
 
   function newQuiz() {
     createQuiz(
-      { name: 'Untitled quiz', questions: [] },
+      { name: m.quiz_untitled(), questions: [] },
       {
         onSuccess: (quiz) =>
           navigate({

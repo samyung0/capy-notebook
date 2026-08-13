@@ -34,6 +34,7 @@ import {
   toFileActionTarget,
   toMaterialActionTarget,
 } from '@/features/workspace/ContentActions';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import {
   MATERIALMODE_ICON,
@@ -100,7 +101,7 @@ function DeckPreviewActions({ deckId }: { deckId: string }) {
 
   return (
     <div
-      aria-label="Flashcard actions"
+      aria-label={m.material_flashcard_actions()}
       className="flex min-w-0 items-center gap-3"
       role="toolbar"
     >
@@ -136,7 +137,7 @@ function QuizPreviewActions({ quizId }: { quizId: string }) {
 
   return (
     <div
-      aria-label="Quiz actions"
+      aria-label={m.material_quiz_actions()}
       className="flex min-w-0 items-center gap-3"
       role="toolbar"
     >
@@ -150,7 +151,7 @@ function QuizPreviewActions({ quizId }: { quizId: string }) {
         size="sm"
         variant="ghost-hover"
       >
-        Start quiz
+        {m.quiz_start()}
       </Button>
     </div>
   );
@@ -247,7 +248,7 @@ export function Header({
             value={activeMode}
           >
             <SelectTrigger
-              aria-label="Material mode"
+              aria-label={m.material_mode()}
               className="px-1.5 py-2"
               variant="ghost-hover"
             >
@@ -277,7 +278,7 @@ export function Header({
               // className="p-1.5"
               disabled={imageZoom <= IMAGE_MIN_ZOOM}
               icon="zoomOut"
-              label="Zoom out"
+              label={m.material_zoom_out()}
               onClick={() =>
                 onImageZoomChange(clampImageZoom(imageZoom - IMAGE_ZOOM_STEP))
               }
@@ -289,7 +290,7 @@ export function Header({
               // className="p-1.5"
               disabled={imageZoom >= IMAGE_MAX_ZOOM}
               icon="zoomIn"
-              label="Zoom in"
+              label={m.material_zoom_in()}
               onClick={() =>
                 onImageZoomChange(clampImageZoom(imageZoom + IMAGE_ZOOM_STEP))
               }
@@ -321,7 +322,7 @@ export function Header({
           menuIconContainerClassName="shrink-0"
           onDeleted={onDeleted}
           readOnly={readOnly}
-          renameFieldLabel="File Name"
+          renameFieldLabel={m.files_file_name()}
           workspaceId={workspaceId}
         />
       </div>

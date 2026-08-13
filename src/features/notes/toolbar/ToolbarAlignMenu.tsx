@@ -7,6 +7,7 @@ import {
 } from '@/components/ui/Popover';
 import type { AnyEditor } from '@/features/notes/toolbar/NoteToolbar';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
+import { m } from '@/i18n';
 
 export function AlignMenu({ editor }: { editor: AnyEditor }) {
   const [open, setOpen] = useState(false);
@@ -14,8 +15,11 @@ export function AlignMenu({ editor }: { editor: AnyEditor }) {
   return (
     <Popover onOpenChange={setOpen} open={open}>
       <PopoverTrigger asChild>
-        <span>
-          <ToolbarButton label="Text alignment" onClick={() => setOpen(true)}>
+        <span className="inline-flex">
+          <ToolbarButton
+            label={m.editor_text_alignment()}
+            onClick={() => setOpen(true)}
+          >
             <AlignLeft />
           </ToolbarButton>
         </span>
@@ -24,13 +28,22 @@ export function AlignMenu({ editor }: { editor: AnyEditor }) {
         align="start"
         className="flex w-auto gap-1 border border-line bg-surface p-1 shadow-pop"
       >
-        <ToolbarButton label="Align left" onClick={() => align('left')}>
+        <ToolbarButton
+          label={m.editor_align_left()}
+          onClick={() => align('left')}
+        >
           <AlignLeft />
         </ToolbarButton>
-        <ToolbarButton label="Align center" onClick={() => align('center')}>
+        <ToolbarButton
+          label={m.editor_align_center()}
+          onClick={() => align('center')}
+        >
           <AlignCenter />
         </ToolbarButton>
-        <ToolbarButton label="Align right" onClick={() => align('right')}>
+        <ToolbarButton
+          label={m.editor_align_right()}
+          onClick={() => align('right')}
+        >
           <AlignRight />
         </ToolbarButton>
         {/* <ToolbarButton label="Justify" onClick={() => align('justify')}>

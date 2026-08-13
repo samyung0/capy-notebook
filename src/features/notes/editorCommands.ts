@@ -26,6 +26,7 @@ import {
   Table2,
 } from 'lucide-react';
 import { KEYS } from 'platejs';
+import { m } from '@/i18n';
 import type { NoteBlockDialogsApi } from './blocks/dialogContext';
 import { customBlockNode } from './blocks/shared';
 import { toggleEditorBlock } from './editorTransforms';
@@ -84,7 +85,7 @@ export function insertInlineEquation(
       ? editor.api.string(selection)
       : '';
   const texExpression = promptForExpression(
-    'LaTeX expression',
+    m.editor_latex_prompt(),
     initialExpression
   );
 
@@ -103,7 +104,7 @@ export function insertInlineEquation(
 
 function blockCommand(
   id: string,
-  label: string,
+  label: () => string,
   type: string,
   icon: LucideIcon,
   group: EditorCommandGroup,
@@ -111,12 +112,16 @@ function blockCommand(
   shortcut?: string
 ) {
   return {
-    description: `Turn the current block into ${label.toLowerCase()}`,
+    get description() {
+      return m.editor_cmd_turn_into({ label: label() });
+    },
     group,
     icon,
     id,
     keywords,
-    label,
+    get label() {
+      return label();
+    },
     run: (editor: NoteEditorInstance) => {
       editor.tf.focus();
       toggleEditorBlock(editor, type);
@@ -127,18 +132,22 @@ function blockCommand(
 
 function listCommand(
   id: string,
-  label: string,
+  label: () => string,
   listStyleType: string,
   icon: LucideIcon,
   keywords: string[] = []
 ) {
   return {
-    description: `Create an indented ${label.toLowerCase()}`,
+    get description() {
+      return m.editor_cmd_create_indented({ label: label() });
+    },
     group: 'blockDecorations',
     icon,
     id,
     keywords,
-    label,
+    get label() {
+      return label();
+    },
     run: (editor: NoteEditorInstance) => {
       editor.tf.focus();
       toggleList(editor, { listStyleType });
@@ -148,18 +157,22 @@ function listCommand(
 
 function columnCommand(
   id: string,
-  label: string,
+  label: () => string,
   widths: readonly string[],
   icon: LucideIcon,
   keywords: string[] = []
 ) {
   return {
-    description: `Insert ${label.toLowerCase()}`,
+    get description() {
+      return m.editor_cmd_insert({ label: label() });
+    },
     group: 'blockElements',
     icon,
     id,
     keywords,
-    label,
+    get label() {
+      return label();
+    },
     run: (editor: NoteEditorInstance) =>
       insertEditorNode(editor, columnGroupFromWidths(widths)),
     widget: 'columns',
@@ -167,13 +180,17 @@ function columnCommand(
 }
 
 export const EDITOR_COMMANDS: EditorCommand[] = [
-  blockCommand('paragraph', 'Text', 'p', Pilcrow, 'general', [
+  blockCommand(
     'paragraph',
-    'plain',
-  ]),
+    () => m.editor_block_text(),
+    'p',
+    Pilcrow,
+    'general',
+    ['paragraph', 'plain']
+  ),
   blockCommand(
     'heading-1',
-    'Heading 1',
+    () => m.editor_heading_1(),
     'h1',
     Heading1,
     'general',
@@ -182,7 +199,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   ),
   blockCommand(
     'heading-2',
-    'Heading 2',
+    () => m.editor_heading_2(),
     'h2',
     Heading2,
     'general',
@@ -191,19 +208,40 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   ),
   blockCommand(
     'heading-3',
-    'Heading 3',
+    () => m.editor_heading_3(),
     'h3',
     Heading3,
     'general',
     ['section', 'h3'],
     'Ctrl/Cmd+Alt+3'
   ),
-  blockCommand('heading-4', 'Heading 4', 'h4', Heading1, 'general', ['h4']),
-  blockCommand('heading-5', 'Heading 5', 'h5', Heading2, 'general', ['h5']),
-  blockCommand('heading-6', 'Heading 6', 'h6', Heading3, 'general', ['h6']),
+  blockCommand(
+    'heading-4',
+    () => m.editor_heading_4(),
+    'h4',
+    Heading1,
+    'general',
+    ['h4']
+  ),
+  blockCommand(
+    'heading-5',
+    () => m.editor_heading_5(),
+    'h5',
+    Heading2,
+    'general',
+    ['h5']
+  ),
+  blockCommand(
+    'heading-6',
+    () => m.editor_heading_6(),
+    'h6',
+    Heading3,
+    'general',
+    ['h6']
+  ),
   blockCommand(
     'quote',
-    'Blockquote',
+    () => m.editor_blockquote(),
     'blockquote',
     Quote,
     'general',
@@ -212,7 +250,7 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   ),
   blockCommand(
     'code-block',
-    'Code block',
+    () => m.editor_code_block(),
     'code_block',
     Braces,
     'general',
@@ -220,36 +258,49 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     'Ctrl/Cmd+Alt+8'
   ),
   {
-    description: 'Insert a horizontal divider',
+    get description() {
+      return m.editor_cmd_divider();
+    },
     group: 'general',
     icon: Minus,
     id: 'divider',
-    label: 'Divider',
+    get label() {
+      return m.editor_divider();
+    },
     run: (editor) =>
       insertEditorNode(editor, { children: [{ text: '' }], type: KEYS.hr }),
   },
-  listCommand('bulleted-list', 'Bulleted list', ListStyleType.Disc, List, [
-    'unordered',
-    'ul',
-    'bullet',
-  ]),
+  listCommand(
+    'bulleted-list',
+    () => m.editor_bulleted_list(),
+    ListStyleType.Disc,
+    List,
+    ['unordered', 'ul', 'bullet']
+  ),
   listCommand(
     'numbered-list',
-    'Numbered list',
+    () => m.editor_numbered_list(),
     ListStyleType.Decimal,
     ListOrdered,
     ['ordered', 'ol', 'number']
   ),
-  listCommand('task-list', 'Task list', KEYS.listTodo, ListChecks, [
-    'todo',
-    'checklist',
-  ]),
+  listCommand(
+    'task-list',
+    () => m.editor_task_list(),
+    KEYS.listTodo,
+    ListChecks,
+    ['todo', 'checklist']
+  ),
   {
-    description: 'Insert a 2 × 2 table',
+    get description() {
+      return m.editor_cmd_table();
+    },
     group: 'blockElements',
     icon: Table2,
     id: 'table',
-    label: 'Table',
+    get label() {
+      return m.editor_table();
+    },
     run: (editor) =>
       insertEditorNode(editor, {
         children: [0, 1].map(() => ({
@@ -264,11 +315,15 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     widget: 'table',
   },
   {
-    description: 'Insert a highlighted note box',
+    get description() {
+      return m.editor_cmd_callout();
+    },
     group: 'blockElements',
     icon: Info,
     id: 'callout',
-    label: 'Callout',
+    get label() {
+      return m.editor_callout();
+    },
     run: (editor) =>
       insertEditorNode(editor, {
         children: [emptyParagraph()],
@@ -280,7 +335,9 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   ...COLUMN_LAYOUTS.map((layout) =>
     columnCommand(
       layout.value === 'equal-2' ? 'columns' : `columns-${layout.value}`,
-      layout.value === 'equal-2' ? 'Two columns' : layout.label,
+      layout.value === 'equal-2'
+        ? () => m.editor_two_columns()
+        : () => layout.label,
       layout.widths,
       layout.value === 'equal-3'
         ? Columns3
@@ -293,20 +350,28 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     )
   ),
   {
-    description: 'Upload an image through workspace storage',
+    get description() {
+      return m.editor_cmd_image();
+    },
     group: 'fileOperations',
     icon: Image,
     id: 'image',
-    label: 'Image',
+    get label() {
+      return m.editor_image();
+    },
     run: (editor) => insertMediaPlaceholder(editor, 'img'),
     widget: 'media',
   },
   {
-    description: 'Embed a YouTube video without uploading it',
+    get description() {
+      return m.editor_cmd_youtube();
+    },
     group: 'fileOperations',
     icon: ExternalLink,
     id: 'youtube',
-    label: 'YouTube embed',
+    get label() {
+      return m.editor_youtube_embed();
+    },
     run: (editor, dialogs) =>
       dialogs?.openYouTube(undefined, (videoId) => {
         insertYouTubeEmbed(editor, videoId);
@@ -314,31 +379,43 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     widget: 'media',
   },
   {
-    description: 'Upload audio through workspace storage',
+    get description() {
+      return m.editor_cmd_audio();
+    },
     group: 'fileOperations',
     icon: FileAudio,
     id: 'audio',
-    label: 'Audio',
+    get label() {
+      return m.editor_audio();
+    },
     run: (editor) => insertMediaPlaceholder(editor, 'audio'),
     widget: 'media',
   },
   {
-    description: 'Upload a document or attachment',
+    get description() {
+      return m.editor_cmd_file();
+    },
     group: 'fileOperations',
     icon: FileText,
     id: 'file',
-    label: 'File',
+    get label() {
+      return m.editor_file();
+    },
     run: (editor) => insertMediaPlaceholder(editor, 'file'),
     widget: 'media',
   },
   {
-    description: 'Mention a workspace member',
+    get description() {
+      return m.editor_cmd_mention();
+    },
     focusEditor: false,
     group: 'inlineElements',
     icon: AtSign,
     id: 'mention',
     keywords: ['user', '@'],
-    label: 'Mention',
+    get label() {
+      return m.editor_mention();
+    },
     // Use the trigger path (same as typing `@`). Inserting mention_input via
     // insertEditorNode focuses the editor and immediately blur-cancels to `@`.
     run: (editor) => {
@@ -346,11 +423,15 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     },
   },
   {
-    description: 'Insert a block equation',
+    get description() {
+      return m.editor_cmd_equation();
+    },
     group: 'blockElements',
     icon: Sigma,
     id: 'equation',
-    label: 'Equation',
+    get label() {
+      return m.editor_equation();
+    },
     run: (editor) =>
       insertEditorNode(editor, {
         children: [{ text: '' }],
@@ -360,31 +441,43 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     widget: 'math',
   },
   {
-    description: 'Insert an inline equation',
+    get description() {
+      return m.editor_cmd_inline_equation();
+    },
     group: 'inlineElements',
     icon: Sigma,
     id: 'inline-equation',
-    label: 'Inline equation',
+    get label() {
+      return m.editor_inline_equation();
+    },
     run: (editor) => insertInlineEquation(editor),
     widget: 'math',
   },
   {
-    description: 'Insert a generated document outline',
+    get description() {
+      return m.editor_cmd_toc();
+    },
     group: 'blockElements',
     icon: List,
     id: 'toc',
     keywords: ['toc', 'outline'],
-    label: 'Table of contents',
+    get label() {
+      return m.toc_title();
+    },
     run: (editor) =>
       insertEditorNode(editor, { children: [{ text: '' }], type: KEYS.toc }),
     widget: 'toc',
   },
   {
-    description: 'Author an annotatable quiz block',
+    get description() {
+      return m.editor_cmd_quiz();
+    },
     group: 'blockElements',
     icon: CircleAlert,
     id: 'quiz',
-    label: 'Quiz',
+    get label() {
+      return m.editor_quiz();
+    },
     run: (editor, dialogs) =>
       dialogs?.openQuiz(undefined, (code) =>
         insertEditorNode(editor, customBlockNode('quiz', code))
@@ -392,11 +485,15 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     widget: 'quiz',
   },
   {
-    description: 'Author an annotatable flashcard set',
+    get description() {
+      return m.editor_cmd_flashcards();
+    },
     group: 'blockElements',
     icon: ListChecks,
     id: 'flashcards',
-    label: 'Flashcards',
+    get label() {
+      return m.editor_flashcards();
+    },
     run: (editor, dialogs) =>
       dialogs?.openFlashcards(undefined, (code) =>
         insertEditorNode(editor, customBlockNode('flashcards', code))
@@ -404,12 +501,16 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     widget: 'flashcards',
   },
   {
-    description: 'Insert a Mermaid diagram with a rich caption',
+    get description() {
+      return m.editor_cmd_mermaid();
+    },
     group: 'blockElements',
     icon: Braces,
     id: 'mermaid',
     keywords: ['diagram', 'flowchart'],
-    label: 'Mermaid diagram',
+    get label() {
+      return m.editor_mermaid();
+    },
     run: (editor) =>
       insertEditorNode(
         editor,

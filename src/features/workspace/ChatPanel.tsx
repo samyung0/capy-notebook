@@ -8,6 +8,11 @@ import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { Menu } from '@/components/ui/Menu';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/Tooltip';
 import { m } from '@/i18n';
 import { userColorPairDark } from '@/lib/userColor';
 import { toChatMessage, useChatStream } from './useChatStream';
@@ -88,15 +93,15 @@ function AssistantBubble({
         </div>
       )}
       {msg.status === 'aborted' && (
-        <p className="mt-1 py-1 text-fg-muted italic">Stopped.</p>
+        <p className="mt-1 py-1 text-fg-muted italic">{m.chat_stopped()}</p>
       )}
       {msg.status === 'error' && (
         <div
           className="mt-2 rounded-card border border-tint-error bg-tint-error px-3 py-2 text-sm text-solid-error"
           role="alert"
         >
-          <p className="font-medium">The response was interrupted.</p>
-          <p>Check your connection and send your message again.</p>
+          <p className="font-medium">{m.chat_interrupted()}</p>
+          <p>{m.chat_retry_connection()}</p>
         </div>
       )}
       <Citations msg={msg} onOpen={onOpenCitation} />
@@ -169,39 +174,47 @@ export function ChatPanel({
         <div className="flex grow-0 items-center">
           {/* TODO: change chat history/details to dialog for better visibility/responsiveness */}
           {/* TODO: add action menu to the side inside of history item and let user edit name/delete */}
-          <Menu
-            align="start"
-            items={
-              conversations?.length
-                ? conversations.map((c) => ({
-                    icon: 'message' as const,
-                    label: c.title || 'Untitled chat',
-                    onClick: () => {
-                      hydratedRef.current = null;
-                      setSelectId(c.id);
-                    },
-                  }))
-                : [{ disabled: true, label: 'No conversations yet' }]
-            }
-            trigger={
-              <IconButton
-                className="translate-x-px rounded-r-none bg-(--temp-btn-bg) py-1.5 pl-3.5 text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:brightness-97 disabled:opacity-30"
-                icon="clock"
-                label="Open history"
-                size="sm"
-                strokeWidth={1.5}
-                variant="accent-light"
-              />
-            }
-          />
+          <Tooltip>
+            <Menu
+              align="start"
+              items={
+                conversations?.length
+                  ? conversations.map((c) => ({
+                      icon: 'message' as const,
+                      label: c.title || m.chat_untitled(),
+                      onClick: () => {
+                        hydratedRef.current = null;
+                        setSelectId(c.id);
+                      },
+                    }))
+                  : [{ disabled: true, label: m.chat_no_conversations() }]
+              }
+              trigger={
+                <TooltipTrigger
+                  render={
+                    <IconButton
+                      className="translate-x-px rounded-r-none bg-(--temp-btn-bg) py-1.5 pl-3.5 text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:brightness-97 disabled:opacity-30"
+                      icon="clock"
+                      label={m.chat_history()}
+                      size="sm"
+                      strokeWidth={1.5}
+                      variant="accent-light"
+                    />
+                  }
+                />
+              }
+            />
+            <TooltipContent>{m.chat_history()}</TooltipContent>
+          </Tooltip>
           <IconButton
             className="rounded-r-none rounded-l-none bg-(--temp-btn-bg) py-1.5 pr-2.5 text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:brightness-97 disabled:opacity-30"
             disabled={!conversationId}
             icon="plus"
-            label="New chat"
+            label={m.chat_new()}
             onClick={openNew}
             size="sm"
             strokeWidth={1.5}
+            tooltip
             variant="accent-light"
           />
         </div>
@@ -214,7 +227,7 @@ export function ChatPanel({
         {!messages.length && (
           <div className="m-auto max-w-[80%] text-center">
             <Icon className="mx-auto mb-2 size-6.5" name="message" />
-            <p>Ask anything about your sources.</p>
+            <p>{m.chat_empty()}</p>
           </div>
         )}
         {messages.map((msg) =>

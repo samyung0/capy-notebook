@@ -22,6 +22,7 @@ from .. import use_compatible_event_loop
 from ..config import cfg
 from ..retrieval import models, store, workflows
 from ..retrieval.agent import run_agent
+from ..retrieval.locale import response_language_rule, rewrite_language_rule
 from ..retrieval.tools import ToolContext
 from .ai_adapter import router as plate_ai_router
 
@@ -63,6 +64,8 @@ class ChatStreamReq(BaseModel):
     model: str | None = None
     # Prior turns as OpenAI-style role/content pairs, sent to the LLM only.
     history: list[dict] | None = None
+    # Account locale from the gateway (users.locale). Do not trust a browser field.
+    locale: str | None = None
 
 
 class GenerateReq(BaseModel):
@@ -80,6 +83,7 @@ class GenerateReq(BaseModel):
     detail: str | None = None  # mindmap: brief|standard|detailed
     diagramType: str | None = None  # diagram: auto|flowchart|sequence|class|state|er
     timeLimitMin: int | None = None
+    locale: str | None = None
 
 
 # Legacy easy/medium/hard -> cognitive level, so old callers keep working.
@@ -148,6 +152,7 @@ async def _chat_events(req: ChatStreamReq, request: Request):
             ctx=ctx,
             history=req.history,
             model=models.resolve_query_model(req.model),
+            locale=req.locale,
         ):
             if await request.is_disconnected():
                 break
@@ -178,11 +183,14 @@ class CompleteReq(BaseModel):
     prompt: str | None = None
     context: str | None = None
     model: str | None = None
+    locale: str | None = None
 
 
 def _complete_messages(req: CompleteReq) -> list[dict]:
     context = (req.context or "").strip()
     if req.mode == "continue":
+        # Continuation matches the note, not the UI locale — forcing Chinese
+        # onto an English paragraph would be worse than leaving it English.
         system = (
             "You are a writing assistant embedded in a note editor. Continue the "
             "user's note naturally from where it stops. Write only the continuation "
@@ -192,10 +200,15 @@ def _complete_messages(req: CompleteReq) -> list[dict]:
             {"role": "system", "content": system},
             {"role": "user", "content": context or "(empty note)"},
         ]
+    language = (
+        rewrite_language_rule(req.locale)
+        if context
+        else response_language_rule(req.locale)
+    )
     system = (
         "You are a writing assistant embedded in a note editor. Apply the user's "
         "instruction and return ONLY the resulting text to insert (no preamble, no "
-        "code fences unless the instruction asks for code)."
+        "code fences unless the instruction asks for code).\n" + language
     )
     user = f"Instruction: {(req.prompt or '').strip()}"
     if context:
@@ -300,6 +313,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
                     "Merge these per-document summaries into one bullet list, "
                     "removing duplicates and keeping the source distinctions clear."
                 ),
+                locale=req.locale,
             )
         else:
             body = await workflows.produce(
@@ -307,6 +321,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
                 context=context,
                 scope=scope,
                 model=cfg.query_model,
+                locale=req.locale,
             )
         return {"kind": "summary", "title": "Workspace summary", "body": body}
 
@@ -321,6 +336,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
             context=context,
             scope=scope,
             model=cfg.query_model,
+            locale=req.locale,
         )
         data = workflows.extract_json(raw) or []
         cards = [
@@ -349,6 +365,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
             context=context,
             scope=scope,
             model=cfg.query_model,
+            locale=req.locale,
         )
         code = workflows.strip_fence(raw) or "mindmap\n  root((Topic))"
         return {
@@ -374,6 +391,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
             context=context,
             scope=scope,
             model=cfg.query_model,
+            locale=req.locale,
         )
         code = workflows.strip_fence(raw) or "flowchart LR\n  A --> B"
         return {
@@ -406,6 +424,7 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
         context=context,
         scope=scope,
         model=cfg.query_model,
+        locale=req.locale,
     )
     questions = workflows.normalize_questions(
         workflows.extract_json(raw) or [], _LEVEL_ALIASES

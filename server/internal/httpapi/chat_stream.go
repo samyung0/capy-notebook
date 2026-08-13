@@ -190,6 +190,7 @@ func (a *api) relayChat(ctx context.Context, userID, wsID, query, model, convID 
 	body := map[string]any{
 		"query": query, "workspaceId": wsID, "userId": userID,
 		"model": model, "history": history,
+		"locale": a.userLocale(ctx, userID),
 	}
 	rc, err := a.pipe.PostStream(ctx, "/chat/stream", body)
 	if err != nil {

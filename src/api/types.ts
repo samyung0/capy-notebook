@@ -304,6 +304,7 @@ export type GenerateKind = Exclude<MaterialKind, 'note'>;
 export interface GenerateScope {
   chapters: string[]; // chapter ids
   fileIds: string[]; // file ids
+  title: string;
 }
 export interface GenerateFlashcardsOptions extends GenerateScope {
   count: number;

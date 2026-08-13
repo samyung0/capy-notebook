@@ -9,6 +9,7 @@ import { FileError, FileLoading } from '@/features/files/FileStates';
 import { FileViewer } from '@/features/files/FileViewer';
 import { IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { Header } from './CenterContentHeader';
 import { HeavyMaterialGate } from './HeavyMaterialGate';
@@ -197,8 +198,8 @@ function MaterialContent({
   if (error || !material) {
     return isMaterialContentUnreadable(error) ? (
       <FileError
-        message="Its stored content could not be decoded, so nothing is shown rather than an empty page. Support can recover it from an earlier version."
-        title="This note could not be loaded"
+        message={m.material_decode_body()}
+        title={m.material_decode_title()}
       />
     ) : (
       <FileError />
@@ -243,7 +244,7 @@ function EmptyCenter() {
       <div className="grid flex-1 place-items-center p-6">
         <div className="flex flex-col items-center gap-2">
           <Icon className="size-7" name="files" />
-          <p>Select a file or material to view it here.</p>
+          <p>{m.material_select()}</p>
         </div>
       </div>
     </>
@@ -291,7 +292,7 @@ function FileBody({
   if (file?.status === 'failed') {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 font-semibold text-solid-error">
-        <p className="mt-3">Unable to process file {file.name}.</p>
+        <p className="mt-3">{m.files_process_failed({ name: file.name })}</p>
       </div>
     );
   }

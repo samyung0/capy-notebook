@@ -1,14 +1,15 @@
 import { useState } from 'react';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import {
   addMonths,
-  MONTHS,
   monthGrid,
+  monthName,
   sameDay,
   startOfDay,
-  WEEKDAYS,
+  weekdayName,
 } from './dateUtils';
 
 export interface MiniCalendarProps {
@@ -53,13 +54,13 @@ export function MiniCalendar({
           onClick={() => setPicking((p) => !p)}
           type="button"
         >
-          {MONTHS[month.getMonth()]} {month.getFullYear()}
+          {monthName(month)} {month.getFullYear()}
         </button>
         <div className="flex items-center gap-1">
           <IconButton
             className="text-fg-muted hover:bg-surface-hover-bg"
             icon="chevronLeft"
-            label="Previous month"
+            label={m.schedule_prev_month()}
             onClick={() => onMonthChange(addMonths(month, -1))}
             size="sm"
             variant="ghost"
@@ -67,7 +68,7 @@ export function MiniCalendar({
           <IconButton
             className="text-fg-muted hover:bg-surface-hover-bg"
             icon="chevronRight"
-            label="Next month"
+            label={m.schedule_next_month()}
             onClick={() => onMonthChange(addMonths(month, 1))}
             size="sm"
             variant="ghost"
@@ -79,7 +80,7 @@ export function MiniCalendar({
         <div className="py-1">
           <div className="mb-2 flex items-center justify-between">
             <button
-              aria-label="Previous year"
+              aria-label={m.schedule_prev_year()}
               className="rounded-button p-1 text-fg-muted hover:bg-surface-hover-bg"
               onClick={() =>
                 onMonthChange(
@@ -92,7 +93,7 @@ export function MiniCalendar({
             </button>
             <span className="font-bold text-sm">{month.getFullYear()}</span>
             <button
-              aria-label="Next year"
+              aria-label={m.schedule_next_year()}
               className="rounded-button p-1 text-fg-muted hover:bg-surface-hover-bg"
               onClick={() =>
                 onMonthChange(
@@ -105,35 +106,38 @@ export function MiniCalendar({
             </button>
           </div>
           <div className="grid grid-cols-3 gap-1">
-            {MONTHS.map((mo, i) => (
-              <button
-                className={cn(
-                  'rounded-button py-1.5 font-medium text-xs hover:bg-surface-hover-bg',
-                  i === month.getMonth()
-                    ? 'bg-action text-action-fg'
-                    : 'text-fg'
-                )}
-                key={mo}
-                onClick={() => {
-                  onMonthChange(new Date(month.getFullYear(), i, 1));
-                  setPicking(false);
-                }}
-                type="button"
-              >
-                {mo.slice(0, 3)}
-              </button>
-            ))}
+            {Array.from({ length: 12 }, (_, i) => {
+              const d = new Date(month.getFullYear(), i, 1);
+              return (
+                <button
+                  className={cn(
+                    'rounded-button py-1.5 font-medium text-xs hover:bg-surface-hover-bg',
+                    i === month.getMonth()
+                      ? 'bg-action text-action-fg'
+                      : 'text-fg'
+                  )}
+                  key={i}
+                  onClick={() => {
+                    onMonthChange(new Date(month.getFullYear(), i, 1));
+                    setPicking(false);
+                  }}
+                  type="button"
+                >
+                  {monthName(d, 'short')}
+                </button>
+              );
+            })}
           </div>
         </div>
       ) : (
         <>
           <div className="grid grid-cols-7 gap-x-0">
-            {WEEKDAYS.map((w) => (
+            {grid.slice(0, 7).map((d) => (
               <div
                 className="py-1 text-center font-semibold text-[0.68rem] text-fg-muted"
-                key={w}
+                key={d.toISOString()}
               >
-                {w[0]}
+                {weekdayName(d)}
               </div>
             ))}
           </div>

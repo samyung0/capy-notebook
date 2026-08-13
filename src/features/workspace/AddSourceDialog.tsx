@@ -159,7 +159,7 @@ function ChapterSelect({
       <SelectContent className="max-w-47">
         <SelectGroup>
           <SelectItem size="sm" value={NO_CHAPTER}>
-            <span className="text-fg-muted">No chapter</span>
+            <span className="text-fg-muted">{m.source_no_chapter()}</span>
           </SelectItem>
           {chapters.map((o) => (
             <SelectItem key={o.id} size="sm" value={o.id}>
@@ -174,7 +174,7 @@ function ChapterSelect({
               <SelectItem size="sm" value={CREATE_CHAPTER}>
                 <span className="flex items-center gap-1.5">
                   <Icon name="plus" size={14} />
-                  New chapter…
+                  {m.source_new_chapter()}
                 </span>
               </SelectItem>
             </SelectGroup>
@@ -227,13 +227,15 @@ function ParseModeSelect({
       <SelectContent>
         <SelectGroup>
           <SelectItem disabled={!!issues.accurate} size="sm" value="accurate">
-            Accurate parsing{issues.accurate ? ` (${issues.accurate})` : ''}
+            {m.source_accurate_parsing()}
+            {issues.accurate ? ` (${issues.accurate})` : ''}
           </SelectItem>
           <SelectItem disabled={!!issues.fast} size="sm" value="fast">
-            Fast parsing{issues.fast ? ` (${issues.fast})` : ''}
+            {m.source_fast_parsing()}
+            {issues.fast ? ` (${issues.fast})` : ''}
           </SelectItem>
           <SelectItem size="sm" value="none">
-            No parsing
+            {m.source_no_parsing()}
           </SelectItem>
         </SelectGroup>
       </SelectContent>
@@ -254,12 +256,12 @@ function CaptionImagesToggle({
   return (
     <div className="flex shrink-0 items-center gap-1.5">
       <Switch
-        aria-label={`Describe images in ${pending.file.name}`}
+        aria-label={m.source_describe_images_file({ name: pending.file.name })}
         checked={pending.captionImages}
         onCheckedChange={onChange}
         size="sm"
       />
-      <span className="t-meta text-fg-muted">Describe images</span>
+      <span className="t-meta text-fg-muted">{m.source_describe_images()}</span>
     </div>
   );
 }
@@ -301,8 +303,8 @@ function UploadFiles({
     if (!list?.length) return;
     if (!uploadPolicy) {
       userToast({
-        description: 'Please try again in a moment.',
-        title: 'Upload formats are still loading',
+        description: m.source_formats_loading_body(),
+        title: m.source_formats_loading_title(),
         variant: 'error',
       });
       return;
@@ -324,7 +326,7 @@ function UploadFiles({
     if (rejected.length) {
       userToast({
         description: rejected.map((file) => file.file.name).join(', '),
-        title: 'Unsupported file format',
+        title: m.source_unsupported_format(),
         variant: 'error',
       });
     }
@@ -421,12 +423,8 @@ function UploadFiles({
           result.status === 'rejected' && isStorageQuotaError(result.reason)
       );
       userToast({
-        description: quotaFailure
-          ? 'Delete content or upgrade to Pro before uploading more.'
-          : undefined,
-        title: quotaFailure
-          ? 'Storage limit reached'
-          : 'Some files failed to upload',
+        description: quotaFailure ? m.error_quota_body() : undefined,
+        title: quotaFailure ? m.error_quota_title() : m.source_upload_failed(),
         variant: 'error',
       });
     }
@@ -462,10 +460,8 @@ function UploadFiles({
           type="button"
         >
           <Icon className="size-7" name="upload" />
-          <p className="t-subtitle">Upload from your computer</p>
-          <p className="t-meta text-fg-muted">
-            PDF, Office, Markdown, text, images or audio
-          </p>
+          <p className="t-subtitle">{m.source_upload_computer()}</p>
+          <p className="t-meta text-fg-muted">{m.source_upload_hint()}</p>
         </button>
         <input
           accept={uploadPolicy?.accept}
@@ -496,7 +492,7 @@ function UploadFiles({
                     </div>
                     <IconButton
                       icon="x"
-                      label="Remove file"
+                      label={m.source_remove_file()}
                       onClick={() => {
                         uploadControllers.current.get(f.key)?.abort();
                         setFiles((prev) =>
@@ -511,7 +507,7 @@ function UploadFiles({
                     <span className="t-meta shrink-0 text-fg-muted">
                       {formatSize(f.file.size)}
                       {f.pageCount != null &&
-                        ` · ${f.pageCount} ${f.pageCount === 1 ? 'page' : 'pages'}`}
+                        ` · ${f.pageCount === 1 ? m.source_page({ count: f.pageCount }) : m.source_pages({ count: f.pageCount })}`}
                       {` · ${f.kind.toUpperCase()}`}
                     </span>
                     <div className="flex flex-1 items-center justify-end gap-2">
@@ -528,7 +524,7 @@ function UploadFiles({
                                   void confirmCreateChapter(f.key);
                                 if (e.key === 'Escape') setCreatingKey(null);
                               }}
-                              placeholder="New chapter name"
+                              placeholder={m.source_new_chapter_name()}
                               size="sm"
                               value={newChapterName}
                               variant="underline"
@@ -537,7 +533,7 @@ function UploadFiles({
                               className="p-1.5"
                               disabled={!newChapterName.trim()}
                               icon="check"
-                              label="Create chapter"
+                              label={m.source_create_chapter()}
                               onClick={() => void confirmCreateChapter(f.key)}
                               size="xs"
                               variant="ghost-hover"
@@ -545,7 +541,7 @@ function UploadFiles({
                             <IconButton
                               className="p-1.5"
                               icon="x"
-                              label="Cancel"
+                              label={m.action_cancel()}
                               onClick={() => setCreatingKey(null)}
                               size="xs"
                               variant="ghost-hover"
@@ -609,15 +605,14 @@ function UploadFiles({
         )}
 
         <p className="t-meta pt-3 text-fg-muted">
-          Fast parsing (default) uses OCR and is best for text documents in
-          English or Chinese. Accurate parsing reads dense layouts, tables and
-          formulas more reliably but takes longer. Both accept files up to{' '}
-          {parseMaxMb} MB and can describe the images they find, which makes
-          diagram-heavy slides searchable.
+          {m.source_parse_hint({ mb: parseMaxMb })}
         </p>
       </div>
       <ConfirmDialog
-        body={`This will upload ${files.length} files, total size ${formatFileSizes()}.`}
+        body={m.source_confirm_body({
+          count: files.length,
+          size: formatFileSizes(),
+        })}
         closeOnConfirm={false}
         danger={false}
         disabled={!uploadPolicy || files.length === 0 || isSubmitting}
@@ -627,13 +622,16 @@ function UploadFiles({
         }}
         onConfirm={handleUpload}
         open={confirmOpen}
-        title={'Confirm Upload?'}
+        title={m.source_confirm_upload()}
       >
         {isSubmitting && (
           <div className="mt-3 flex flex-col gap-1.5">
             <ProgressBar showLabel value={aggregateProgress} />
             <p className="t-meta text-fg-muted">
-              Uploading {completedUploads} of {files.length} files…
+              {m.source_uploading({
+                done: completedUploads,
+                total: files.length,
+              })}
             </p>
           </div>
         )}
@@ -646,7 +644,7 @@ function UploadFiles({
             size="lg"
             variant="ghost-hover"
           >
-            Cancel
+            {m.action_cancel()}
           </Button>
         </DialogClose>
         <Button
@@ -685,13 +683,13 @@ function ImportFiles({
   function handleImportError(error: unknown) {
     userToast({
       description: isStorageQuotaError(error)
-        ? 'Delete content or upgrade to Pro before importing more.'
+        ? m.error_quota_body()
         : error instanceof Error
           ? error.message
-          : 'Something went wrong. Please try again.',
+          : m.source_try_again(),
       title: isStorageQuotaError(error)
-        ? 'Storage limit reached'
-        : 'Import failed',
+        ? m.error_quota_title()
+        : m.source_import_failed(),
       variant: 'error',
     });
   }
@@ -715,11 +713,8 @@ function ImportFiles({
       await connectProvider(provider);
     } catch (err) {
       userToast({
-        description:
-          err instanceof Error
-            ? err.message
-            : 'Something went wrong. Please try again.',
-        title: `Could not connect ${provider}`,
+        description: err instanceof Error ? err.message : m.source_try_again(),
+        title: m.source_connect_failed({ provider }),
         variant: 'error',
       });
     }
@@ -807,7 +802,7 @@ function ImportFiles({
       </div>
       {!integrations?.google && !integrations?.microsoft && !USE_MSW && (
         <p className="t-meta text-center text-fg-muted">
-          Connect your cloud account on first use.
+          {m.source_cloud_connect_hint()}
         </p>
       )}
     </div>
@@ -827,22 +822,21 @@ export function AddSourceDialog({
   onClose: () => void;
   workspaceId: string;
 }) {
-  // TODO: i18n
   const [mode, setMode] = useState('upload');
   return (
     <SimpleDialog
       className="min-h-150 max-w-3xl"
       onClose={onClose}
       open={open}
-      title="Add file"
+      title={m.action_add_file()}
     >
       <div className="flex h-full flex-col gap-4">
         <Tabs
           onChange={setMode}
           tabs={[
-            { label: 'Upload', value: 'upload' },
-            { label: 'Import', value: 'import' },
-            { label: 'Create', value: 'create' },
+            { label: m.action_upload(), value: 'upload' },
+            { label: m.action_import(), value: 'import' },
+            { label: m.action_create(), value: 'create' },
           ]}
           value={mode}
         />

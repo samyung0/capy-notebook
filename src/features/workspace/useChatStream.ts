@@ -8,6 +8,7 @@ import type {
   ChatStatus,
   WireMessage,
 } from '@/api/types';
+import { m } from '@/i18n';
 
 /** Map a persisted wire message onto the UI turn shape (narrowing role/status). */
 export function toChatMessage(m: WireMessage): ChatMessage {
@@ -132,14 +133,10 @@ export function useChatStream(workspaceId: string) {
           ac.signal
         );
         if (!terminal && !ac.signal.aborted) {
-          fail('The chat connection closed before the response finished.');
+          fail(m.chat_failed());
         }
       } catch (error) {
-        fail(
-          error instanceof Error
-            ? error.message
-            : 'The chat response could not be completed.'
-        );
+        fail(error instanceof Error ? error.message : m.chat_failed());
       } finally {
         // Aborted streams finalize server-side as 'aborted'; reflect it locally.
         if (ac.signal.aborted) patch(currentId, { status: 'aborted' });

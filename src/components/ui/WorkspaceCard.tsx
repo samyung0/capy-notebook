@@ -54,7 +54,10 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
           <div className="flex-1">
             <h3 className="t-card-title truncate">{workspace.name}</h3>
             <p className="t-meta mt-1 text-fg-muted">
-              {workspace.chapterCount} chapters · {workspace.fileCount} files
+              {m.workspace_card_meta({
+                chapters: String(workspace.chapterCount),
+                files: String(workspace.fileCount),
+              })}
             </p>
             <div className="mt-3 flex flex-wrap gap-1">
               {workspace.tags.map((t) => (
@@ -67,7 +70,9 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
                   size="sm"
                   tone={workspace.privacy === 'public' ? 'success' : 'info'}
                 >
-                  {workspace.privacy === 'public' ? 'Public' : 'Shared'}
+                  {workspace.privacy === 'public'
+                    ? m.share_public()
+                    : m.workspace_privacy_shared()}
                 </Badge>
               )}
             </div>
@@ -86,7 +91,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
                 },
                 {
                   icon: 'link',
-                  label: 'Share',
+                  label: m.action_share(),
                   onClick: () => setShareOpen(true),
                 },
                 {
@@ -116,7 +121,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
             privacy={workspace.privacy}
             saving={updateSharingIsPending}
             shareRole={workspace.shareRole}
-            title={'Share Workspace'}
+            title={m.workspace_share_title()}
             workspaceId={workspace.id}
           />
         </>

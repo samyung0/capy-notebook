@@ -3,6 +3,7 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 import { Skeleton } from '@/components/ui/feedback';
+import { m } from '@/i18n';
 
 // Load the worker from a CDN matching the bundled pdfjs version.
 pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
@@ -55,7 +56,7 @@ export default function PdfView({
       <Document
         className="h-full w-full max-w-[800px]"
         error={
-          <p className="py-8 text-tint-error-fg">Couldn't load this PDF.</p>
+          <p className="py-8 text-tint-error-fg">{m.files_pdf_failed()}</p>
         }
         file={url}
         loading={<Skeleton className="h-full w-full" />}

@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { useTags } from '@/api/hooks';
 import type { Tag, TagInput } from '@/api/types';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { Badge } from './Badge';
 import { Icon } from './Icon';
@@ -14,9 +15,40 @@ export interface TagSelectProps {
   invalid?: boolean;
   /** Tag catalog scope — 'workspace' | 'quiz' | 'card'. */
   kind?: string;
+  /** When set, refuse to add tags beyond this count. */
+  max?: number;
   onChange: (next: TagInput[]) => void;
   placeholder?: string;
   value: TagInput[];
+}
+
+/** Flatten RHF/zod errors for a tag array: item `.value` issues plus array-level max. */
+export function flattenTagErrors(error: unknown): Array<{ message?: string }> {
+  if (!error || typeof error !== 'object') return [];
+  const seen = new Set<string>();
+  const out: Array<{ message?: string }> = [];
+  const add = (message?: string) => {
+    if (!message || seen.has(message)) return;
+    seen.add(message);
+    out.push({ message });
+  };
+
+  const rec = error as {
+    message?: string;
+    root?: { message?: string };
+    value?: { message?: string };
+  };
+  add(rec.message);
+  add(rec.root?.message);
+  add(rec.value?.message);
+
+  for (const item of Object.values(error)) {
+    if (!item || typeof item !== 'object') continue;
+    const nested = item as { message?: string; value?: { message?: string } };
+    add(nested.message);
+    add(nested.value?.message);
+  }
+  return out;
 }
 
 /**
@@ -30,7 +62,8 @@ export function TagSelect({
   value,
   onChange,
   kind = 'workspace',
-  placeholder = 'Search or create a tag…',
+  max,
+  placeholder,
   invalid,
 }: TagSelectProps) {
   const { data: catalog = [] } = useTags(kind, { errorBoundary: false });
@@ -41,6 +74,7 @@ export function TagSelect({
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selected = value ?? [];
+  const atMax = max != null && selected.length >= max;
   const selectedKeys = useMemo(
     () => new Set(selected.map((t) => t.value.trim().toLowerCase())),
     [selected]
@@ -67,11 +101,11 @@ export function TagSelect({
   for (const t of suggestions) options.push({ tag: t, type: 'existing' });
 
   const activeIdx = options.length ? Math.min(active, options.length - 1) : 0;
-  const showList = open && options.length > 0;
+  const showList = open && !atMax && options.length > 0;
 
   function addTag(next: TagInput) {
     const key = next.value.trim().toLowerCase();
-    if (!key || selectedKeys.has(key)) return;
+    if (!key || selectedKeys.has(key) || atMax) return;
     onChange([...selected, { id: next.id, value: next.value.trim() }]);
     setQuery('');
     setActive(0);
@@ -124,7 +158,7 @@ export function TagSelect({
           <Badge key={`${t.id ?? 'new'}:${t.value}:${i}`} size="md">
             # {t.value}
             <IconButton
-              aria-label={`Remove ${t.value}`}
+              aria-label={m.tag_remove({ name: t.value })}
               className="-translate-y-px p-0.5"
               icon="x"
               onClick={(e) => {
@@ -137,24 +171,28 @@ export function TagSelect({
             />
           </Badge>
         ))}
-        <input
-          aria-invalid={invalid}
-          autoComplete="off"
-          className="t-body min-w-32 flex-1 border-none bg-transparent px-2 py-1.5 outline-none placeholder:text-placeholder"
-          onBlur={() => {
-            blurTimer.current = setTimeout(() => setOpen(false), 120);
-          }}
-          onChange={(e) => {
-            setQuery(e.target.value);
-            setOpen(true);
-            setActive(0);
-          }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={onKeyDown}
-          placeholder={selected.length ? '' : placeholder}
-          ref={inputRef}
-          value={query}
-        />
+        {!atMax && (
+          <input
+            aria-invalid={invalid}
+            autoComplete="off"
+            className="t-body min-w-32 flex-1 border-none bg-transparent px-2 py-1.5 outline-none placeholder:text-placeholder"
+            onBlur={() => {
+              blurTimer.current = setTimeout(() => setOpen(false), 120);
+            }}
+            onChange={(e) => {
+              setQuery(e.target.value);
+              setOpen(true);
+              setActive(0);
+            }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={onKeyDown}
+            placeholder={
+              selected.length ? '' : (placeholder ?? m.tag_search_placeholder())
+            }
+            ref={inputRef}
+            value={query}
+          />
+        )}
       </div>
 
       {showList && (

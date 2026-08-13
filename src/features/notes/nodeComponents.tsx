@@ -35,8 +35,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/Select';
+import { ButtonTooltip } from '@/components/ui/Tooltip';
 import { Katex } from '@/features/materials/Katex';
 import { YouTubeEmbedElement } from '@/features/materials/YouTubeEmbed';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { Column, ColumnGroup } from './ColumnNodes';
 import { MediaAssetElement } from './MediaNodes';
@@ -96,21 +98,22 @@ export function FloatingActionButton({
   const Component = asChild ? Slot.Root : 'button';
 
   return (
-    <Component
-      aria-label={label}
-      className={cn(
-        'z-10 flex size-8 shrink-0 items-center justify-center rounded-button text-fg-secondary outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-action active:cursor-grabbing [&_svg]:size-4',
-        className
-      )}
-      data-plate-prevent-deselect
-      onClick={onClick}
-      onMouseDown={(event) => event.preventDefault()}
-      title={label}
-      type={asChild ? undefined : 'button'}
-      {...rest}
-    >
-      {children}
-    </Component>
+    <ButtonTooltip label={label}>
+      <Component
+        aria-label={label}
+        className={cn(
+          'z-10 flex size-8 shrink-0 items-center justify-center rounded-button text-fg-secondary outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-action active:cursor-grabbing [&_svg]:size-4',
+          className
+        )}
+        data-plate-prevent-deselect
+        onClick={onClick}
+        onMouseDown={(event) => event.preventDefault()}
+        type={asChild ? undefined : 'button'}
+        {...rest}
+      >
+        {children}
+      </Component>
+    </ButtonTooltip>
   );
 }
 
@@ -207,7 +210,7 @@ function CodeBlock(props: PlateElementProps) {
             value={language}
           >
             <SelectTrigger
-              aria-label="Code language"
+              aria-label={m.editor_code_language()}
               className="h-full w-auto translate-y-px bg-transparent py-0 pr-1.5 pl-2 font-semibold text-fg-muted hover:text-fg"
               data-plate-prevent-deselect
               showDownIcon={false}
@@ -219,18 +222,18 @@ function CodeBlock(props: PlateElementProps) {
             <SelectContent align="end" className="max-h-72">
               {CODE_BLOCK_LANGUAGES.map((item) => (
                 <SelectItem key={item.value} size="sm" value={item.value}>
-                  {item.label}
+                  {getCodeBlockLanguageLabel(item.value)}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         )}
         <button
-          aria-label={copied ? 'Code copied' : 'Copy code'}
+          aria-label={copied ? m.editor_code_copied() : m.editor_copy_code()}
           className="flex size-6 items-center justify-center rounded-md bg-transparent text-fg-muted hover:bg-line/50 hover:text-fg focus-visible:ring-2 focus-visible:ring-action"
           data-plate-prevent-deselect
           onClick={() => void copy()}
-          title={copied ? 'Copied' : 'Copy code'}
+          title={copied ? m.editor_copied() : m.editor_copy_code()}
           type="button"
         >
           {copied ? (
@@ -368,7 +371,7 @@ function Callout(props: PlateElementProps) {
             value={variant}
           >
             <SelectTrigger
-              aria-label="Callout style"
+              aria-label={m.editor_callout_style()}
               className="h-7 w-24 bg-transparent px-2 py-0 text-xs"
               data-plate-prevent-deselect
               size="sm"
@@ -475,7 +478,7 @@ function Toc(props: PlateElementProps) {
   return (
     <PlateElement {...props}>
       <div className={TOC_BOX_CLASS} contentEditable={false}>
-        <p className={TOC_TITLE_CLASS}>Table of contents</p>
+        <p className={TOC_TITLE_CLASS}>{m.toc_title()}</p>
         {headings.length ? (
           <nav className="flex flex-col">
             {headings.map((heading) => (
@@ -489,9 +492,7 @@ function Toc(props: PlateElementProps) {
             ))}
           </nav>
         ) : (
-          <p className={TOC_EMPTY_CLASS}>
-            Create a heading to display the table of contents.
-          </p>
+          <p className={TOC_EMPTY_CLASS}>{m.toc_empty_create()}</p>
         )}
       </div>
       {props.children}
@@ -517,7 +518,7 @@ function BlockEquation(props: PlateElementProps) {
     (props.element as { texExpression?: string }).texExpression ?? ''
   );
   function edit() {
-    const next = window.prompt('LaTeX expression', tex);
+    const next = window.prompt(m.editor_latex_prompt(), tex);
     if (next == null) return;
     const at = editor.api.findPath(props.element);
     if (at) editor.tf.setNodes({ texExpression: next } as object, { at });
@@ -541,7 +542,7 @@ function InlineEquation(props: PlateElementProps) {
     (props.element as { texExpression?: string }).texExpression ?? ''
   );
   function edit() {
-    const next = window.prompt('LaTeX expression', tex);
+    const next = window.prompt(m.editor_latex_prompt(), tex);
     if (next == null) return;
     const at = editor.api.findPath(props.element);
     if (at) editor.tf.setNodes({ texExpression: next } as object, { at });

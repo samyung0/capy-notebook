@@ -30,6 +30,7 @@ import {
 } from 'platejs/react';
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { applyAiPreview, setAiPreview, useAiPreview } from './aiPreviewState';
 
@@ -46,7 +47,9 @@ const ACTIONS: AiAction[] = [
   {
     icon: PenLine,
     id: 'continue',
-    label: 'Continue writing',
+    get label() {
+      return m.editor_ai_continue();
+    },
     mode: 'insert',
     prompt:
       'Continue writing after the current block with one concise sentence.',
@@ -55,7 +58,9 @@ const ACTIONS: AiAction[] = [
   {
     icon: WandSparkles,
     id: 'improve',
-    label: 'Improve writing',
+    get label() {
+      return m.editor_ai_improve();
+    },
     prompt:
       'Improve clarity and flow without changing the meaning or adding new information.',
     toolName: 'edit',
@@ -63,7 +68,9 @@ const ACTIONS: AiAction[] = [
   {
     icon: Check,
     id: 'grammar',
-    label: 'Fix spelling and grammar',
+    get label() {
+      return m.editor_ai_grammar();
+    },
     prompt:
       'Fix spelling, grammar, and punctuation without changing the meaning or tone.',
     toolName: 'edit',
@@ -71,14 +78,18 @@ const ACTIONS: AiAction[] = [
   {
     icon: ListMinus,
     id: 'shorter',
-    label: 'Make shorter',
+    get label() {
+      return m.editor_ai_shorter();
+    },
     prompt: 'Reduce verbosity while preserving all essential information.',
     toolName: 'edit',
   },
   {
     icon: ListPlus,
     id: 'longer',
-    label: 'Make longer',
+    get label() {
+      return m.editor_ai_longer();
+    },
     prompt:
       'Elaborate on existing ideas without introducing unsupported information.',
     toolName: 'edit',
@@ -86,7 +97,9 @@ const ACTIONS: AiAction[] = [
   {
     icon: Feather,
     id: 'simplify',
-    label: 'Simplify language',
+    get label() {
+      return m.editor_ai_simplify();
+    },
     prompt: 'Use clearer, more direct language while preserving the meaning.',
     toolName: 'edit',
   },
@@ -103,9 +116,7 @@ export function AiMenu() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const loading =
     chat.status === 'streaming' || chat.status === 'submitted' || streaming;
-  const streamError = chat.error
-    ? 'AI could not complete this request. Check your connection and try again.'
-    : null;
+  const streamError = chat.error ? m.editor_ai_failed() : null;
 
   useEffect(() => {
     if (!open) return;
@@ -195,7 +206,7 @@ export function AiMenu() {
   return (
     <FloatingPortal>
       <div
-        aria-label="AI commands"
+        aria-label={m.editor_ai_commands()}
         className="z-50 w-[min(360px,calc(100vw-32px))] overflow-hidden rounded-button border border-line bg-surface shadow-pop"
         onPointerDown={(event) => event.stopPropagation()}
         ref={floating.refs.setFloating}
@@ -218,11 +229,11 @@ export function AiMenu() {
               if (event.key === 'Escape')
                 editor.getApi(AIChatPlugin).aiChat.hide();
             }}
-            placeholder="Ask AI anything"
+            placeholder={m.editor_ai_placeholder()}
             value={input}
           />
           <button
-            aria-label="Close AI commands"
+            aria-label={m.editor_ai_close()}
             className="rounded-button p-1 text-fg-muted hover:bg-surface-hover-bg"
             onClick={() => editor.getApi(AIChatPlugin).aiChat.hide()}
             type="button"
@@ -244,19 +255,21 @@ export function AiMenu() {
           <div className="flex items-center justify-between gap-2 p-3 text-fg-muted text-sm">
             <span className="flex items-center gap-2">
               <LoaderCircle className="size-4 animate-spin" />
-              {chat.status === 'submitted' ? 'Thinking…' : 'Writing…'}
+              {chat.status === 'submitted'
+                ? m.editor_ai_thinking()
+                : m.editor_ai_writing_ellipsis()}
             </span>
             <Button
               onClick={() => editor.getApi(AIChatPlugin).aiChat.stop()}
               size="sm"
               variant="ghost"
             >
-              Stop
+              {m.editor_ai_stop()}
             </Button>
           </div>
         ) : preview ? (
           <div className="flex flex-col gap-2 p-2">
-            <p className="px-1 font-medium text-sm">Review the AI preview</p>
+            <p className="px-1 font-medium text-sm">{m.editor_ai_review()}</p>
             <div className="max-h-56 overflow-auto rounded-card border border-divider bg-surface-secondary p-2 font-mono text-xs">
               {preview.originalText && (
                 <p className="whitespace-pre-wrap bg-tint-error text-solid-error line-through">
@@ -264,7 +277,7 @@ export function AiMenu() {
                 </p>
               )}
               <p className="whitespace-pre-wrap bg-tint-success text-solid-success">
-                {preview.proposedText || 'Generated block changes'}
+                {preview.proposedText || m.editor_ai_generated_changes()}
               </p>
             </div>
             {previewError && (
@@ -280,7 +293,7 @@ export function AiMenu() {
                 size="sm"
                 variant="ghost"
               >
-                Reject
+                {m.editor_ai_reject()}
               </Button>
               <Button
                 onClick={() => {
@@ -292,14 +305,14 @@ export function AiMenu() {
                     setPreviewError(
                       cause instanceof Error
                         ? cause.message
-                        : 'The target changed; retry the AI command'
+                        : m.editor_ai_target_changed()
                     );
                   }
                 }}
                 size="sm"
                 variant="accent"
               >
-                Accept
+                {m.editor_ai_accept()}
               </Button>
             </div>
           </div>
@@ -334,7 +347,7 @@ export function AiMenu() {
                 type="button"
               >
                 <RotateCcw className="size-4 text-fg-muted" />
-                Try again
+                {m.action_retry()}
               </button>
             )}
           </div>

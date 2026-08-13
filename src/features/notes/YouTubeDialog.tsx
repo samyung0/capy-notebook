@@ -6,6 +6,7 @@ import {
   YouTubeEmbed,
   youtubeEmbedUrl,
 } from '@/features/materials/YouTubeEmbed';
+import { m } from '@/i18n';
 import { youtubeVideoId } from './youtube';
 
 export function YouTubeDialog({
@@ -32,7 +33,7 @@ export function YouTubeDialog({
   function save() {
     const id = youtubeVideoId(url);
     if (!id) {
-      setError('Paste a valid YouTube video URL.');
+      setError(m.editor_youtube_invalid());
       return;
     }
     onSave(id);
@@ -43,22 +44,19 @@ export function YouTubeDialog({
       footer={
         <>
           <Button onClick={onClose} variant="ghost">
-            Cancel
+            {m.action_cancel()}
           </Button>
           <Button disabled={!videoId} onClick={save}>
-            Insert
+            {m.action_insert()}
           </Button>
         </>
       }
       onClose={onClose}
       open={open}
-      title="YouTube embed"
+      title={m.youtube_dialog_title()}
     >
       <div className="flex flex-col gap-3">
-        <p className="text-fg-muted text-sm">
-          Embed a YouTube video without uploading a video file or using
-          workspace storage.
-        </p>
+        <p className="text-fg-muted text-sm">{m.youtube_dialog_body()}</p>
         <Input
           autoFocus
           onChange={(event) => {

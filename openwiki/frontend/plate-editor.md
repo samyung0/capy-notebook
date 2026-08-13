@@ -267,8 +267,10 @@ Yjs transaction. Accept re-resolves every target; if concurrent changes make a
 target invalid, the UI requires retry. A valid accept assigns missing element
 IDs and flushes one Yjs transaction.
 
-Copilot ghost text remains plugin-local. AI comments use the same relative-anchor
-REST path as user comments.
+Copilot ghost text remains plugin-local and continues in the note's language.
+Generate/comment replies follow the account locale injected by the gateway; edits
+keep the selection's language unless the instruction asks to translate. AI
+comments use the same relative-anchor REST path as user comments.
 
 ## Static rendering
 

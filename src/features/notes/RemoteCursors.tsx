@@ -12,6 +12,7 @@ import {
   type useEditorRef,
 } from 'platejs/react';
 import { useEffect, useState } from 'react';
+import { m } from '@/i18n';
 
 const REMOTE_CURSOR_KEY = 'evo_remote_cursor';
 
@@ -27,7 +28,7 @@ export const remoteCursorDecorationPlugin = createPlatePlugin({
       const name =
         typeof props.leaf.remoteCursorName === 'string'
           ? props.leaf.remoteCursorName
-          : 'Collaborator';
+          : m.editor_collaborator();
       return (
         <PlateLeaf
           {...props}

@@ -20,6 +20,7 @@ from typing import Any
 
 from ..config import cfg
 from . import models, tools
+from .locale import response_language_rule
 from .search import Passage, search
 from .tools import ToolContext
 
@@ -40,6 +41,10 @@ SYSTEM_PROMPT = (
     "- Prefer answering over searching again. You have a small, fixed number of "
     "tool calls."
 )
+
+
+def system_prompt(locale: str | None) -> str:
+    return SYSTEM_PROMPT + "\n- " + response_language_rule(locale)
 
 
 async def _prime(ctx: ToolContext, query: str) -> list[Passage]:
@@ -65,6 +70,7 @@ async def run_agent(
     ctx: ToolContext,
     history: list[dict[str, Any]] | None,
     model: str,
+    locale: str | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Drive the loop, yielding {'type': ...} events for the SSE relay.
 
@@ -73,7 +79,9 @@ async def run_agent(
     numbered = tools.remember(ctx, await _prime(ctx, query))
     yield {"type": "tool", "tool": "search_workspace", "detail": query}
 
-    messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages: list[dict[str, Any]] = [
+        {"role": "system", "content": system_prompt(locale)}
+    ]
     for turn in history or []:
         role = turn.get("role")
         if role in ("user", "assistant") and turn.get("content"):

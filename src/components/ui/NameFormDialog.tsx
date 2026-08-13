@@ -14,7 +14,7 @@ export function NameFormDialog({
   open,
   onClose,
   title,
-  fieldLabel = 'Name',
+  fieldLabel,
   defaultName = '',
   maxLength,
   minLength = 1,
@@ -74,7 +74,7 @@ export function NameFormDialog({
             type="button"
             variant="ghost-hover"
           >
-            Cancel
+            {m.action_cancel()}
           </Button>
           <Button disabled={submitDisabled} size="lg" type="submit">
             {!isSubmitting && <span>{submitLabel ?? m.action_save()}</span>}
@@ -96,7 +96,7 @@ export function NameFormDialog({
         name="name"
         render={({ field, fieldState }) => (
           <label className="flex flex-col gap-1.5">
-            <InputTitle required>{fieldLabel}</InputTitle>
+            <InputTitle required>{fieldLabel ?? m.common_name()}</InputTitle>
             <Input
               {...field}
               aria-invalid={fieldState.invalid}

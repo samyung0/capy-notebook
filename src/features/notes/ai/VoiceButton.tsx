@@ -2,7 +2,9 @@ import { Mic } from 'lucide-react';
 import { useEditorRef } from 'platejs/react';
 import { useCallback } from 'react';
 import { Spinner } from '@/components/ui/feedback';
+import { ButtonTooltip } from '@/components/ui/Tooltip';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useVoiceInput } from './useVoiceInput';
 
@@ -20,19 +22,18 @@ export function VoiceButton() {
 
   if (busy) {
     return (
-      <span
-        className="inline-flex size-8 items-center justify-center"
-        title="Saving Audio..."
-      >
-        <Spinner />
-      </span>
+      <ButtonTooltip label={m.editor_saving_audio()}>
+        <span className="inline-flex size-8 items-center justify-center">
+          <Spinner />
+        </span>
+      </ButtonTooltip>
     );
   }
   return (
     <ToolbarButton
       active={recording}
       className={cn('p-0', recording && 'animate-pulse bg-tint-accent-1/70')}
-      label={recording ? 'Stop recording' : 'Dictate'}
+      label={recording ? m.editor_stop_recording() : m.editor_dictate()}
       onClick={toggle}
     >
       <Mic />

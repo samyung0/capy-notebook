@@ -13,6 +13,7 @@ import {
   WIDGET_GROUPS,
   type WidgetGroupId,
 } from '@/features/notes/noteEditorPrefs';
+import { m } from '@/i18n';
 import { ToolbarButton } from './ToolbarButton';
 
 export function WidgetSettingsDialog() {
@@ -39,17 +40,14 @@ export function WidgetSettingsDialog() {
       open={open}
     >
       <ToolbarButton
-        label="Editor command settings"
+        label={m.editor_prefs_settings()}
         onClick={() => setOpen(true)}
       >
         <Settings2 />
       </ToolbarButton>
       <DialogContent className="max-w-2xl">
-        <DialogTitle className="pb-2">Editor commands</DialogTitle>
-        <p className="mb-2.5">
-          You can hide some of the toolbar groups in case it is getting too
-          crowded.
-        </p>
+        <DialogTitle className="pb-2">{m.editor_prefs_title()}</DialogTitle>
+        <p className="mb-2.5">{m.editor_prefs_body()}</p>
         <div className="mb-2.5 flex items-center justify-end">
           {/* <span className="font-medium text-fg text-sm">
             {count} of {WIDGET_GROUPS.length} visible
@@ -60,14 +58,14 @@ export function WidgetSettingsDialog() {
               size="sm"
               variant="ghost-hover"
             >
-              All
+              {m.action_all()}
             </Button>
             <Button
               onClick={() => setAll(false)}
               size="sm"
               variant="ghost-hover"
             >
-              None
+              {m.action_none()}
             </Button>
           </div>
         </div>
@@ -97,7 +95,7 @@ export function WidgetSettingsDialog() {
         </div>
         <DialogFooter>
           <Button onClick={() => setOpen(false)} variant="ghost-hover">
-            Cancel
+            {m.action_cancel()}
           </Button>
           <Button
             onClick={() => {
@@ -106,7 +104,7 @@ export function WidgetSettingsDialog() {
             }}
             variant="accent"
           >
-            Apply
+            {m.action_apply()}
           </Button>
         </DialogFooter>
       </DialogContent>

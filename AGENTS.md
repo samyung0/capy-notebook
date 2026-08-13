@@ -31,13 +31,16 @@ Cross-links: plate-editor defers structural ACL to authorization; authorization 
 - update `test-catalog.md`
 - Pipeline cassette tests (`pipeline/tests/` VCR YAMLs) are currently stale after the `indexed_text` / embedding-input shape change. Do not chase re-records or body-matcher fixes yet — they will be refreshed after the next RAG / LLM rollout change.
 
+### I18n
+
+paraglide is used for internationalization. use paraglide functions to support i18n when appropriate.
+
 ## Common Pitfalls
 
 ### Frontend
 
 - IMPORTANT: react-hook-forms and react-query use proxying for tracking whether state/status changes have subscribers or not, you MUST use destructuring to read the values rather than useXXX().isPending or useXXX().isError
 - DO NOT directly import from `api/gen/model`, instead re-export type in `api/types.ts`. The file allows for subtle changes such as new frontend only fields on top of the auto generated types. 
-- Use destructuring for react hook form useForm, otherwise the proxy may not register that you are reading isValid, causing submitDisabled to be true despite no errors
 - Normally we should use useFieldArray for array values, e.g. in TagSelect. However sometimes we don't want to display individual error fields for each rendered element if they are too clustered, like in tagSelect, so we use standard control and dedup and format the error correctly before passing to InputError
 - Sometimes its ok to use arbitary values instead of canonical values for tailwind, e.g. w-[200px] instead of w-50, in order to prevent element size changing when switching themes.
 - DO NOT use template strings NOR variables just to hold classNames for tailwind, use `cn()` to inject conditional themes

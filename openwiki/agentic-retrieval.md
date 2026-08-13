@@ -223,8 +223,7 @@ substitute for a knowledge-graph edge.
 
 Streaming chat (`POST /chat/stream` via the Go gateway):
 
-1. Go authenticates, relays `workspaceId`, `userId`, optional `fileIds`, history,
-   and model choice to the retrieval service.
+1. Go authenticates, reads `users.locale`, and relays `workspaceId`, `userId`, optional `fileIds`, history, model choice, and `locale` to the retrieval service. Locale is server-owned (never a browser field) so replies match Settings. Ingest/index prompts stay English.
 2. The agent **primes** with one retrieval before the model is asked anything —
    a question about the user's sources almost always needs them, and making the
    model ask wastes a round.
@@ -260,6 +259,9 @@ is fixed, and the gateway must persist a parseable artifact.
    share per file, not proportional to length).
 2. If the context fits the budget, one `produce` call. If it overflows across
    multiple files, `produce_mapped` summarizes per document then combines.
+   `produce` appends a language rule from the gateway's `locale` so quiz copy,
+   flashcard text, and diagram labels match the user's Settings language.
+   JSON keys and Mermaid syntax stay English.
 3. Kind-specific normalizers (`extract_json`, `strip_fence`,
    `normalize_questions`) coerce the model reply into the shapes the Go
    persistence layer already expects: flashcards, quiz questions, mindmap /

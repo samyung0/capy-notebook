@@ -66,6 +66,7 @@ import {
   type QuizOptionRole,
   quizOptionClassName,
 } from '@/features/quizzes/quizOptionStyles';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type {
   FlashcardElement as FlashcardNode,
@@ -242,7 +243,7 @@ function Toc(props: SlateElementProps) {
   return (
     <SlateElement {...props}>
       <div className={TOC_BOX_CLASS}>
-        <p className={TOC_TITLE_CLASS}>Table of contents</p>
+        <p className={TOC_TITLE_CLASS}>{m.toc_title()}</p>
         {headings.length ? (
           <nav className="flex flex-col">
             {headings.map((node, order) => (
@@ -258,7 +259,7 @@ function Toc(props: SlateElementProps) {
             ))}
           </nav>
         ) : (
-          <p className={TOC_EMPTY_CLASS}>No headings in this document.</p>
+          <p className={TOC_EMPTY_CLASS}>{m.toc_empty()}</p>
         )}
       </div>
       {props.children}
@@ -330,7 +331,7 @@ function YouTubeElement(props: SlateElementProps) {
           <YouTubeEmbed videoId={element.videoId} />
         ) : (
           <p className="rounded-card border border-solid-error/30 p-3 text-sm text-solid-error">
-            This YouTube embed is missing a video ID.
+            {m.youtube_missing_id()}
           </p>
         )}
       </div>

@@ -75,12 +75,12 @@ import { usePortals } from '@/stores/portals';
 
 const GENERATING_MATERIAL: Record<
   GenerateMode,
-  { type: MaterialRefType; title: string }
+  { type: MaterialRefType; title: () => string }
 > = {
-  diagram: { title: 'Generating diagram…', type: 'diagram' },
-  flashcards: { title: 'Generating flashcards…', type: 'deck' },
-  mindmap: { title: 'Generating mindmap…', type: 'mindmap' },
-  quiz: { title: 'Generating quiz…', type: 'quiz' },
+  diagram: { title: m.generating_diagram, type: 'diagram' },
+  flashcards: { title: m.generating_flashcards, type: 'deck' },
+  mindmap: { title: m.generating_mindmap, type: 'mindmap' },
+  quiz: { title: m.generating_quiz, type: 'quiz' },
 };
 
 type WorkspaceContentItem =
@@ -429,9 +429,9 @@ export default function WorkspaceOpen() {
   if (wsLoading) {
     return (
       <LoadingLarge
-        backLabel="Back to workspaces"
+        backLabel={m.workspace_back_to()}
         backTo="/workspaces"
-        title="Loading workspace…"
+        title={m.workspace_loading()}
       />
     );
   }
@@ -441,18 +441,12 @@ export default function WorkspaceOpen() {
       isApiError(wsErr) && (wsErr.status === 404 || wsErr.status === 401);
     return (
       <WorkspaceError
-        backLabel="Back to workspaces"
+        backLabel={m.workspace_back_to()}
         backTo="/workspaces"
         description={
-          denied
-            ? 'You may not have access, or the link may no longer be shared.'
-            : 'Ooops, we are not able to load the workspace. Please try again in a bit.'
+          denied ? m.error_private_body() : m.workspace_missing_body()
         }
-        title={
-          denied
-            ? 'This item is private or unavailable.'
-            : 'Unable to load workspace.'
-        }
+        title={denied ? m.error_private_title() : m.workspace_missing_title()}
       />
     );
   }
@@ -502,7 +496,7 @@ export default function WorkspaceOpen() {
                     onError: (err) => toastCloneError(err, 'workspace'),
                     onSuccess: ({ workspace }) => {
                       userToast({
-                        title: 'Workspace cloned successfully',
+                        title: m.workspace_cloned(),
                         variant: 'success',
                       });
                       navigate({
@@ -515,7 +509,9 @@ export default function WorkspaceOpen() {
                 size="md"
                 variant="surface"
               >
-                {cloneWorkspaceIsPending ? 'Cloning…' : 'Clone workspace'}
+                {cloneWorkspaceIsPending
+                  ? m.action_cloning()
+                  : m.action_clone_workspace()}
               </Button>
             ) : (
               <div
@@ -547,7 +543,7 @@ export default function WorkspaceOpen() {
                     size="md"
                     variant="surface"
                   >
-                    Share
+                    {m.action_share()}
                   </Button>
                 )}
               </div>
@@ -570,12 +566,15 @@ export default function WorkspaceOpen() {
                 <div className="flex flex-col gap-3 pt-1 pb-2">
                   <div className="flex flex-col">
                     <div className="relative mx-2 mt-3 flex items-center justify-between pb-1.5">
-                      <div className="t-label text-fg-muted">Content</div>
+                      <div className="t-label text-fg-muted">
+                        {m.common_content()}
+                      </div>
                       {!readOnly && (
                         <div className="absolute top-1/2 right-0 flex -translate-y-[calc(50%+4px)] gap-1">
                           <IconButton
                             className="rounded-md px-0.5 py-1"
                             icon="newNote"
+                            label={m.workspace_new_note()}
                             onClick={() =>
                               createNote(
                                 {},
@@ -589,11 +588,13 @@ export default function WorkspaceOpen() {
                               )
                             }
                             size={'xs'}
+                            tooltip
                             variant={'surface'}
                           />
                           <IconButton
                             className="rounded-md px-0.5 py-1"
                             icon="minimize"
+                            label={m.workspace_collapse_chapters()}
                             onClick={() =>
                               setOpenChapters({
                                 ...Object.fromEntries(
@@ -602,6 +603,7 @@ export default function WorkspaceOpen() {
                               })
                             }
                             size={'xs'}
+                            tooltip
                             variant={'surface'}
                           />
                         </div>
@@ -649,13 +651,13 @@ export default function WorkspaceOpen() {
                                   {
                                     disabled: idx === 0,
                                     icon: 'chevronUp',
-                                    label: 'Move up',
+                                    label: m.workspace_move_up(),
                                     onClick: () => moveChapter(idx, -1),
                                   },
                                   {
                                     disabled: idx === chapters.length - 1,
                                     icon: 'chevronDown',
-                                    label: 'Move down',
+                                    label: m.workspace_move_down(),
                                     onClick: () => moveChapter(idx, 1),
                                   },
                                   {
@@ -678,7 +680,7 @@ export default function WorkspaceOpen() {
                               )}
                               {contentFor(ch.id).length === 0 && (
                                 <p className="px-1.5 py-1 pl-2 font-semibold text-fg-muted text-xs">
-                                  Empty
+                                  {m.common_empty()}
                                 </p>
                               )}
                             </div>
@@ -699,7 +701,7 @@ export default function WorkspaceOpen() {
                             'border-line-strong border-b-2'
                         )}
                       >
-                        Others
+                        {m.nav_section_others()}
                       </div>
                       <div {...dropZone('unfiled-files', null)}>
                         {contentFor(null).map((item) =>
@@ -719,7 +721,7 @@ export default function WorkspaceOpen() {
                               position: Number.MAX_SAFE_INTEGER,
                               revision: 0,
                               sizeBytes: 0,
-                              title: GENERATING_MATERIAL[generating].title,
+                              title: GENERATING_MATERIAL[generating].title(),
                               type: GENERATING_MATERIAL[generating].type,
                             }}
                             generating
@@ -788,8 +790,11 @@ export default function WorkspaceOpen() {
                       className="px-3"
                       onChange={setMode}
                       tabs={[
-                        { label: 'Chat', value: 'chat' },
-                        { label: 'Generate', value: 'generate' },
+                        { label: m.workspace_tab_chat(), value: 'chat' },
+                        {
+                          label: m.workspace_tab_generate(),
+                          value: 'generate',
+                        },
                       ]}
                       value={mode}
                     />
@@ -808,10 +813,12 @@ export default function WorkspaceOpen() {
                     ) : (
                       <GeneratePanel
                         chapters={chapters ?? []}
+                        existingTitles={(materials ?? []).map((mt) => mt.title)}
                         files={files ?? []}
                         onGeneratingChange={setGenerating}
                         onOpenItem={setOpenItem}
                         workspaceId={workspaceId}
+                        workspaceName={ws?.name ?? ''}
                       />
                     )}
                   </div>
@@ -833,14 +840,13 @@ export default function WorkspaceOpen() {
           privacy={ws.privacy}
           saving={updateSharingIsPending}
           shareRole={ws.shareRole}
-          title={'Share Workspace'}
+          title={m.workspace_share_title()}
           workspaceId={ws.id}
         />
       )}
       {chapterForm && (
         <NameFormDialog
           defaultName={chapterForm.mode === 'rename' ? chapterForm.name : ''}
-          fieldLabel="Name"
           key={
             chapterForm.mode === 'rename'
               ? `rename-${chapterForm.id}`
@@ -859,7 +865,9 @@ export default function WorkspaceOpen() {
           submitLabel={
             chapterForm.mode === 'add' ? m.action_create() : m.action_save()
           }
-          title={chapterForm.mode === 'add' ? 'New chapter' : 'Rename chapter'}
+          title={
+            chapterForm.mode === 'add' ? m.chapter_new() : m.chapter_rename()
+          }
         />
       )}
     </>

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
@@ -177,6 +178,13 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "not found"})
 		return
 	}
+	if errors.Is(err, store.ErrTitleTaken) {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"code":    "title_taken",
+			"message": "a material with this name already exists in this workspace",
+		})
+		return
+	}
 	var quota *store.QuotaExceededError
 	if errors.As(err, &quota) {
 		writeJSON(w, http.StatusForbidden, map[string]any{
@@ -206,6 +214,27 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 func id(r *http.Request) string { return chi.URLParam(r, "id") }
 
 func uid(r *http.Request) string { return auth.UserID(r.Context()) }
+
+// userLocale is the authenticated user's Settings locale. The pipeline uses it
+// so chat/generate/editor AI replies in that language; ingest stays English.
+// Unknown or missing values fall back to English. Never taken from the client.
+func (a *api) userLocale(ctx context.Context, userID string) string {
+	if userID == "" {
+		return "en"
+	}
+	u, err := a.s.Me(ctx, userID)
+	if err != nil {
+		return "en"
+	}
+	return normalizeUserLocale(u.Locale)
+}
+
+func normalizeUserLocale(locale string) string {
+	if locale == "zh" {
+		return "zh"
+	}
+	return "en"
+}
 
 func randID(prefix string) string {
 	b := make([]byte, 5)
@@ -435,6 +464,7 @@ type generateOpts struct {
 	Detail       string             `json:"detail"`      // mindmap: brief|standard|detailed
 	DiagramType  string             `json:"diagramType"` // diagram: auto|flowchart|sequence|class|state|er
 	TimeLimitMin *int               `json:"timeLimitMin"`
+	Title        string             `json:"title"`
 }
 
 // cognitiveLevels resolves the requested levels, accepting the legacy
@@ -458,6 +488,19 @@ func (o generateOpts) cognitiveLevels() []string {
 		return mapped
 	}
 	return []string{"recall", "application"}
+}
+
+const generateTitleMaxRunes = 200
+
+func normalizeGenerateTitle(title string) (string, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return "", errors.New("title is required")
+	}
+	if utf8.RuneCountInString(title) > generateTitleMaxRunes {
+		return "", errors.New("title must be at most 200 characters")
+	}
+	return title, nil
 }
 
 func (a *api) generate(w http.ResponseWriter, r *http.Request) {
@@ -485,7 +528,22 @@ func (a *api) generate(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "count must be between 0 and 50"})
 		return
 	}
+	title, err := normalizeGenerateTitle(opts.Title)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
+		return
+	}
+	opts.Title = title
 	wsID := id(r)
+	taken, err := a.s.MaterialTitleTaken(r.Context(), wsID, title)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	if taken {
+		a.fail(w, store.ErrTitleTaken)
+		return
+	}
 	wsName := "Workspace"
 	if ws, err := a.s.GetWorkspaceShared(r.Context(), wsID); err == nil {
 		wsName = ws.Name
@@ -580,6 +638,7 @@ func (a *api) generateViaPipe(
 		"count": opts.Count, "style": opts.Style, "types": opts.Types, "levels": opts.cognitiveLevels(),
 		"chapters": chapterNames, "fileIds": fileIDs,
 		"detail": opts.Detail, "diagramType": opts.DiagramType, "timeLimitMin": opts.TimeLimitMin,
+		"locale": a.userLocale(ctx, userID),
 	}
 	raw, err := a.pipe.PostRaw(ctx, "/generate", body)
 	if err != nil {
@@ -600,10 +659,7 @@ func (a *api) generateViaPipe(
 			TimeLimitMin *int            `json:"timeLimitMin"`
 		}
 		_ = json.Unmarshal(raw, &qp)
-		name := qp.Name
-		if name == "" {
-			name = wsName + " quiz"
-		}
+		name := opts.Title
 		chapters := qp.Chapters
 		if chapters == nil {
 			chapters = chapterNames
@@ -628,7 +684,7 @@ func (a *api) generateViaPipe(
 		for _, c := range fp.Cards {
 			fronts = append(fronts, [2]string{c.Front, c.Back})
 		}
-		res, err := a.persistDeck(ctx, userID, wsID, wsName, fronts)
+		res, err := a.persistDeck(ctx, userID, wsID, opts.Title, fronts)
 		if err != nil {
 			return nil, false, err
 		}
@@ -639,7 +695,7 @@ func (a *api) generateViaPipe(
 			Content string `json:"content"`
 		}
 		_ = json.Unmarshal(raw, &mp)
-		res, err := a.persistMaterial(ctx, userID, wsID, wsName, store.MaterialKind(head.Kind), mp.Title, mp.Content, opts, chapterNames, fileNames)
+		res, err := a.persistMaterial(ctx, userID, wsID, wsName, store.MaterialKind(head.Kind), opts.Title, mp.Content, opts, chapterNames, fileNames)
 		if err != nil {
 			return nil, false, err
 		}
@@ -665,12 +721,12 @@ func (a *api) generateLocal(ctx context.Context, userID, wsID, wsName string, op
 		for i := 0; i < n; i++ {
 			cards = append(cards, [2]string{fmt.Sprintf("Term %d", i+1), fmt.Sprintf("Definition for term %d.", i+1)})
 		}
-		return a.persistDeck(ctx, userID, wsID, wsName, cards)
+		return a.persistDeck(ctx, userID, wsID, opts.Title, cards)
 	case "mindmap", "diagram":
-		return a.persistMaterial(ctx, userID, wsID, wsName, opts.Kind, "", localMaterialContent(wsName, opts), &opts, chapterNames, fileNames)
+		return a.persistMaterial(ctx, userID, wsID, wsName, opts.Kind, opts.Title, localMaterialContent(wsName, opts), &opts, chapterNames, fileNames)
 	default:
 		quiz, err := a.s.CreateQuiz(ctx, store.Quiz{
-			UserID: userID, Name: wsName + " quiz", WorkspaceID: wsID, WorkspaceName: wsName,
+			UserID: userID, Name: opts.Title, WorkspaceID: wsID, WorkspaceName: wsName,
 			Chapters: chapterNames, Questions: buildQuestions(opts), Privacy: "private", TimeLimitMin: opts.TimeLimitMin,
 		})
 		if err != nil {
@@ -682,9 +738,9 @@ func (a *api) generateLocal(ctx context.Context, userID, wsID, wsName string, op
 
 // persistDeck creates a real deck + cards so generated flashcards appear in the
 // library and the workspace materials list.
-func (a *api) persistDeck(ctx context.Context, userID, wsID, wsName string, cards [][2]string) (any, error) {
+func (a *api) persistDeck(ctx context.Context, userID, wsID, title string, cards [][2]string) (any, error) {
 	deck, err := a.s.CreateDeckWithCards(
-		ctx, userID, wsName+" flashcards", "green", wsID, cards,
+		ctx, userID, title, "green", wsID, cards,
 	)
 	if err != nil {
 		return nil, err
@@ -703,9 +759,6 @@ func (a *api) persistDeck(ctx context.Context, userID, wsID, wsName string, card
 // userID is the author. Without it CreateMaterial falls back to the workspace
 // owner, which records a generation an editor ran as the owner's own work.
 func (a *api) persistMaterial(ctx context.Context, userID, wsID, wsName string, kind store.MaterialKind, title, content string, opts *generateOpts, chapterNames, fileNames []string) (any, error) {
-	if title == "" {
-		title = wsName + " " + string(kind)
-	}
 	if content == "" {
 		content = localMaterialContent(wsName, *opts)
 	}

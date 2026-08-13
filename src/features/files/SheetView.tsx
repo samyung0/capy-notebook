@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Skeleton } from '@/components/ui/feedback';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
 type Cell = string | number | boolean | null;
@@ -43,10 +44,7 @@ export default function SheetView({ url }: { url: string }) {
         }));
         if (!cancelled) setSheets(parsed);
       } catch (e) {
-        if (!cancelled)
-          setError(
-            e instanceof Error ? e.message : 'failed to load spreadsheet'
-          );
+        if (!cancelled) setError(e instanceof Error ? e.message : 'error');
       }
     })();
     return () => {
@@ -57,7 +55,7 @@ export default function SheetView({ url }: { url: string }) {
   if (error) {
     return (
       <p className="py-8 text-center text-tint-error-fg">
-        Couldn't load this spreadsheet ({error}).
+        {m.files_sheet_failed()}
       </p>
     );
   }
@@ -66,9 +64,7 @@ export default function SheetView({ url }: { url: string }) {
   }
   if (sheets.length === 0) {
     return (
-      <p className="py-8 text-center text-fg-muted">
-        This spreadsheet is empty.
-      </p>
+      <p className="py-8 text-center text-fg-muted">{m.files_sheet_empty()}</p>
     );
   }
 

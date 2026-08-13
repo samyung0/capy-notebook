@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/Select';
 import { Separator } from '@/components/ui/Separator';
 import { userToast } from '@/components/ui/userToast';
+import { m } from '@/i18n';
 import { Input, InputTitle } from '../../components/ui/Input';
 import { MATERIALMODE_ICON } from '../materials/materialIconMappings';
 import { WorkspaceMemberManager } from './WorkspaceMemberManager';
@@ -24,60 +25,61 @@ type PendingDangerousChange =
   | { kind: 'privacy'; value: Privacy }
   | { kind: 'shareRole'; value: SharedRole };
 
-const PRIVACY_OPTIONS: {
+function privacyOptions(forWorkspace: boolean): {
   value: Privacy;
   label: string;
   icon: IconName;
   hint: string;
-}[] = [
-  {
-    hint: 'Only you can access.',
-    icon: 'lock',
-    label: 'Private',
-    value: 'private',
-  },
-  {
-    hint: 'Anyone with the link can see it.',
-    icon: 'link',
-    label: 'Shared link',
-    value: 'link',
-  },
-  {
-    hint: 'Open to public, your workspace can be discovered by others.',
-    icon: 'globe',
-    label: 'Public',
-    value: 'public',
-  },
-];
+}[] {
+  return [
+    {
+      hint: forWorkspace ? m.share_invite_only_hint() : m.share_private_hint(),
+      icon: 'lock',
+      label: forWorkspace ? m.share_invite_only() : m.share_private(),
+      value: 'private',
+    },
+    {
+      hint: m.share_link_hint(),
+      icon: 'link',
+      label: m.share_link(),
+      value: 'link',
+    },
+    {
+      hint: m.share_public_hint(),
+      icon: 'globe',
+      label: m.share_public(),
+      value: 'public',
+    },
+  ];
+}
 
-const SHARED_ROLE_OPTIONS: Array<{
+function sharedRoleOptions(): Array<{
   value: SharedRole;
   label: string;
   hint: string;
   icon: IconName;
-}> = [
-  {
-    hint: "Just see, can't touch.",
-    icon: MATERIALMODE_ICON['view'],
-    label: 'Can view',
-    value: 'viewer',
-  },
-  {
-    hint: 'Users can leave comments.',
-    icon: MATERIALMODE_ICON['comment'],
-    label: 'Can comment',
-    value: 'commenter',
-  },
-  {
-    hint: 'User can edit and upload the files.',
-    icon: MATERIALMODE_ICON['edit'],
-    label: 'Can edit',
-    value: 'editor',
-  },
-];
-
-const PUBLIC_EDITOR_WARNING =
-  'Public workspaces are searchable. Combined with edit access, anyone can upload and change any and all files.';
+}> {
+  return [
+    {
+      hint: m.share_can_view_hint(),
+      icon: MATERIALMODE_ICON['view'],
+      label: m.share_can_view(),
+      value: 'viewer',
+    },
+    {
+      hint: m.share_can_comment_hint(),
+      icon: MATERIALMODE_ICON['comment'],
+      label: m.share_can_comment(),
+      value: 'commenter',
+    },
+    {
+      hint: m.share_can_edit_hint(),
+      icon: MATERIALMODE_ICON['edit'],
+      label: m.share_can_edit(),
+      value: 'editor',
+    },
+  ];
+}
 
 function isPublicEditor(
   privacy: Privacy,
@@ -88,21 +90,15 @@ function isPublicEditor(
 
 function toastShareSuccess() {
   userToast({
-    title: 'Sharing updated successfully',
+    title: m.share_updated(),
     variant: 'success',
   });
 }
 
-function toastShareError(err: unknown, kind: SavingField) {
+function toastShareError(err: unknown) {
   userToast({
-    description:
-      err instanceof Error
-        ? err.message
-        : 'Something went wrong. Please try again.',
-    title:
-      kind === 'privacy'
-        ? 'Could not update visibility'
-        : 'Could not update permissions',
+    description: err instanceof Error ? err.message : m.source_try_again(),
+    title: m.error_generic_title(),
     variant: 'error',
   });
 }
@@ -140,25 +136,14 @@ export function ShareDialog({
   const [pendingDangerous, setPendingDangerous] =
     useState<PendingDangerousChange | null>(null);
   const busy = Boolean(saving) || savingField !== null;
-  const privacyOptions = workspaceId
-    ? PRIVACY_OPTIONS.map((option) =>
-        option.value === 'private'
-          ? {
-              ...option,
-              hint: 'Only you and accepted workspace members can access this.',
-              label: 'Invite only',
-            }
-          : option
-      )
-    : PRIVACY_OPTIONS;
-  const current =
-    privacyOptions.find((o) => o.value === privacy) ?? privacyOptions[0];
+  const options = privacyOptions(!!workspaceId);
+  const roleOptions = sharedRoleOptions();
+  const current = options.find((o) => o.value === privacy) ?? options[0];
   const currentRole =
-    SHARED_ROLE_OPTIONS.find((option) => option.value === shareRole) ??
-    SHARED_ROLE_OPTIONS[0];
+    roleOptions.find((option) => option.value === shareRole) ?? roleOptions[0];
   const roleHint =
     privacy === 'public' && currentRole.value === 'editor'
-      ? 'Anyone who finds this workspace can edit your files.'
+      ? m.share_public_edit_anyone()
       : currentRole.hint;
   const absoluteLink = link.startsWith('http')
     ? link
@@ -172,9 +157,9 @@ export function ShareDialog({
       setTimeout(() => setCopied(false), 2000);
     } catch {
       userToast({
-        button: { label: 'Dismiss', onClick: () => {} },
+        button: { label: m.action_dismiss(), onClick: () => {} },
         description: absoluteLink,
-        title: 'Could not copy link',
+        title: m.share_copy_failed(),
       });
     }
   }
@@ -185,7 +170,7 @@ export function ShareDialog({
       await onPrivacyChange(next);
       toastShareSuccess();
     } catch (err) {
-      toastShareError(err, 'privacy');
+      toastShareError(err);
     } finally {
       setSavingField(null);
     }
@@ -198,7 +183,7 @@ export function ShareDialog({
       await onShareRoleChange(next);
       toastShareSuccess();
     } catch (err) {
-      toastShareError(err, 'shareRole');
+      toastShareError(err);
     } finally {
       setSavingField(null);
     }
@@ -248,12 +233,12 @@ export function ShareDialog({
         if (confirmingDangerous) e.preventDefault();
       }}
       open={open}
-      title={title ?? 'Share'}
+      title={title ?? m.action_share()}
     >
       <div className="flex flex-col gap-6">
         <div className="mt-3 flex items-center justify-between gap-3">
           <div className="flex flex-col gap-1">
-            <InputTitle>Visibility</InputTitle>
+            <InputTitle>{m.share_visibility()}</InputTitle>
             <p className="t-meta text-fg-muted">{current.hint}</p>
           </div>
           <div className="min-w-45 max-w-70">
@@ -263,14 +248,14 @@ export function ShareDialog({
               value={privacy}
             >
               <SelectTrigger
-                aria-label="Visibility"
+                aria-label={m.share_visibility()}
                 loading={savingField === 'privacy'}
               >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  {privacyOptions.map((o) => (
+                  {options.map((o) => (
                     <SelectItem
                       className={
                         o.value === 'public' && shareRole === 'editor'
@@ -293,7 +278,7 @@ export function ShareDialog({
           onShareRoleChange && (
             <div className="flex items-center justify-between gap-3">
               <div className="flex flex-col gap-1">
-                <InputTitle>Anyone with access</InputTitle>
+                <InputTitle>{m.share_anyone_with_access()}</InputTitle>
                 <p className="t-meta text-fg-muted">{roleHint}</p>
               </div>
               <div className="min-w-45 max-w-70">
@@ -305,14 +290,14 @@ export function ShareDialog({
                   value={shareRole}
                 >
                   <SelectTrigger
-                    aria-label="Anyone with access"
+                    aria-label={m.share_anyone_with_access()}
                     loading={savingField === 'shareRole'}
                   >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      {SHARED_ROLE_OPTIONS.map((option) => (
+                      {roleOptions.map((option) => (
                         <SelectItem
                           className={
                             option.value === 'editor' && privacy === 'public'
@@ -331,7 +316,7 @@ export function ShareDialog({
             </div>
           )}
         {publicEditorActive && (
-          <WarningBanner message={PUBLIC_EDITOR_WARNING} />
+          <WarningBanner message={m.share_public_edit_warning()} />
         )}
         {privacy !== 'private' && (
           <div className="flex items-center gap-3.5">
@@ -347,7 +332,7 @@ export function ShareDialog({
               onClick={copy}
               variant="outline"
             >
-              {copied ? 'Copied' : 'Copy'}
+              {copied ? m.action_copied() : m.action_copy()}
             </Button>
           </div>
         )}
@@ -359,13 +344,13 @@ export function ShareDialog({
         )}
       </div>
       <ConfirmDialog
-        body={PUBLIC_EDITOR_WARNING}
-        confirmLabel="Allow public editing"
+        body={m.share_public_edit_warning()}
+        confirmLabel={m.action_confirm()}
         danger
         onClose={() => setPendingDangerous(null)}
         onConfirm={confirmDangerousChange}
         open={confirmingDangerous}
-        title="Allow public editing?"
+        title={m.share_public_edit_title()}
       />
     </SimpleDialog>
   );

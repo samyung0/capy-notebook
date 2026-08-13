@@ -9,7 +9,7 @@ import { Skeleton } from '@/components/ui/feedback';
 import { HoverActions } from '@/components/ui/HoverActions';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
-import { MONTHS, weekDays } from '@/features/schedule/dateUtils';
+import { monthName, weekDays } from '@/features/schedule/dateUtils';
 import { MiniCalendar } from '@/features/schedule/MiniCalendar';
 import { MonthView } from '@/features/schedule/MonthView';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
@@ -159,7 +159,9 @@ export default function Schedule() {
               name={labelsOpen ? 'chevronDown' : 'chevronRight'}
               size={16}
             />
-            <span className="t-card-title font-semibold">Labels</span>
+            <span className="t-card-title font-semibold">
+              {m.common_labels()}
+            </span>
           </button>
           {labelsOpen && (
             <div className="flex flex-col py-1.5 pl-4">
@@ -238,7 +240,11 @@ export default function Schedule() {
                   onClick={() => setShowAllLabels((s) => !s)}
                   type="button"
                 >
-                  {showAllLabels ? 'Show less' : `Show all (${labels?.length})`}
+                  {showAllLabels
+                    ? m.schedule_show_less()
+                    : m.schedule_show_all({
+                        count: String(labels?.length ?? 0),
+                      })}
                 </button>
               )}
             </div>
@@ -252,14 +258,14 @@ export default function Schedule() {
           actions={
             <IconButton
               icon="plus"
-              label="New event"
+              label={m.schedule_new_event()}
               onClick={() => openEventForm()}
               size="lg"
               variant="page"
             />
           }
           showTopBar
-          title={`${MONTHS[month.getMonth()]} ${month.getFullYear()}`}
+          title={`${monthName(month)} ${month.getFullYear()}`}
         />
         <div className="flex items-center gap-3 px-6 pb-3">
           {/* TODO: change */}

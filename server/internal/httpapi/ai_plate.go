@@ -166,6 +166,7 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 		"workspaceId": wsID,
 		"messages":    req.Messages,
 		"ctx":         req.Context,
+		"locale":      a.userLocale(r.Context(), uid(r)),
 	}
 	rc, err := a.pipe.PostStream(r.Context(), "/plate-ai/command", body)
 	if err != nil {

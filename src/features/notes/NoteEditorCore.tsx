@@ -25,6 +25,7 @@ import {
   parseMaterialDocument,
 } from '@/features/materials/document';
 import { NoteToolbar } from '@/features/notes/toolbar/NoteToolbar';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
 import { AiMenu } from './ai/AiMenu';
@@ -54,7 +55,6 @@ import {
   useRemoteCursorDecorations,
 } from './RemoteCursors';
 
-const NOTE_PLACEHOLDER = 'Type  /  for commands ...';
 const COLLABORATION_ROOM_ERROR = /room|schema|stale/i;
 const CHECKPOINT_DEBOUNCE_MS = 1000;
 
@@ -107,7 +107,7 @@ function DocumentStatsFooter({
   if (!(limitError || shouldShowDocumentStats(stats))) return null;
   return (
     <div
-      aria-label="Document statistics"
+      aria-label={m.editor_doc_stats()}
       className="mx-auto mb-20 flex w-full max-w-3xl gap-3 px-10 pb-4 text-fg-muted text-xs max-sm:px-5"
     >
       <span
@@ -116,8 +116,10 @@ function DocumentStatsFooter({
             'text-solid-error'
         )}
       >
-        Nodes: {stats.nodeCount.toLocaleString()}/
-        {MATERIAL_DOCUMENT_LIMITS.maxNodes.toLocaleString()}
+        {m.editor_stats_nodes({
+          current: stats.nodeCount.toLocaleString(),
+          max: MATERIAL_DOCUMENT_LIMITS.maxNodes.toLocaleString(),
+        })}
       </span>
       <span
         className={cn(
@@ -125,14 +127,18 @@ function DocumentStatsFooter({
             'text-solid-error'
         )}
       >
-        Depth: {stats.maxDepth}/{MATERIAL_DOCUMENT_LIMITS.maxDepth}
+        {m.editor_stats_depth({
+          current: String(stats.maxDepth),
+          max: String(MATERIAL_DOCUMENT_LIMITS.maxDepth),
+        })}
       </span>
       <span>
-        Size: {formatContentSize(stats.contentBytes)}/
-        {contentSizeKilobytes(
-          MATERIAL_DOCUMENT_LIMITS.maxContentBytes
-        ).toLocaleString()}{' '}
-        KB
+        {m.editor_stats_size({
+          current: formatContentSize(stats.contentBytes),
+          max: contentSizeKilobytes(
+            MATERIAL_DOCUMENT_LIMITS.maxContentBytes
+          ).toLocaleString(),
+        })}
       </span>
       {limitError && (
         <span className="font-medium text-solid-error">{limitError}</span>
@@ -231,7 +237,7 @@ const NoteEditorContent = memo(function NoteEditorContent({
         )}
         decorate={decorate}
         onKeyDown={onKeyDown}
-        placeholder={showEditorPlaceholder ? NOTE_PLACEHOLDER : undefined}
+        placeholder={showEditorPlaceholder ? m.editor_placeholder() : undefined}
         readOnly={readOnly}
       />
     </PlateContainer>
@@ -338,7 +344,7 @@ export function NoteEditorCore({
         );
         setDocumentLimitError(
           event.limitCode
-            ? `${materialLimitMessage(event.limitCode)} Only edits that remove content will be saved.`
+            ? `${materialLimitMessage(event.limitCode)} ${m.editor_limit_remove_only()}`
             : null
         );
         let acknowledged = false;
@@ -606,7 +612,7 @@ export function NoteEditorCore({
                  * collaboration service would leave a readable note hidden
                  * behind a spinner. */}
                 {saveState === 'connecting' ? (
-                  <FileLoading message="Connecting…" />
+                  <FileLoading message={m.editor_connecting()} />
                 ) : (
                   <>
                     <NoteEditorContent

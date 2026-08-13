@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/DropdownMenu';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
 export function TableMenu() {
@@ -33,9 +34,11 @@ export function TableMenu() {
   return (
     <DropdownMenu modal={false} onOpenChange={setOpen} open={open}>
       <DropdownMenuTrigger asChild>
-        <ToolbarButton active={open} label="Table controls">
-          <Table2 />
-        </ToolbarButton>
+        <span className="inline-flex">
+          <ToolbarButton active={open} label={m.editor_table_controls()}>
+            <Table2 />
+          </ToolbarButton>
+        </span>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-45">
         <TableMenuItems onClose={() => setOpen(false)} />
@@ -70,7 +73,7 @@ function TableMenuItems({ onClose }: { onClose: () => void }) {
       <DropdownMenuSub>
         <DropdownMenuSubTrigger>
           <Grid3X3 />
-          <span>Table</span>
+          <span>{m.editor_table()}</span>
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className="w-auto p-0">
           <TablePicker
@@ -87,7 +90,7 @@ function TableMenuItems({ onClose }: { onClose: () => void }) {
       <DropdownMenuSub>
         <DropdownMenuSubTrigger disabled={!tableSelected}>
           <span className="size-4" />
-          <span>Cell</span>
+          <span>{m.editor_cell()}</span>
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className="w-48">
           <DropdownMenuItem
@@ -95,14 +98,14 @@ function TableMenuItems({ onClose }: { onClose: () => void }) {
             onSelect={() => run(() => tf.table.merge())}
           >
             <Combine />
-            Merge cells
+            {m.editor_merge_cells()}
           </DropdownMenuItem>
           <DropdownMenuItem
             disabled={!canSplit}
             onSelect={() => run(() => tf.table.split())}
           >
             <Ungroup />
-            Split cell
+            {m.editor_split_cell()}
           </DropdownMenuItem>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
@@ -110,22 +113,22 @@ function TableMenuItems({ onClose }: { onClose: () => void }) {
       <DropdownMenuSub>
         <DropdownMenuSubTrigger disabled={!tableSelected}>
           <span className="size-4" />
-          <span>Row</span>
+          <span>{m.editor_row()}</span>
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className="w-48">
           <DropdownMenuItem
             onSelect={() => run(() => tf.insert.tableRow({ before: true }))}
           >
             <ArrowUp />
-            Insert row before
+            {m.editor_insert_row_before()}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => run(() => tf.insert.tableRow())}>
             <ArrowDown />
-            Insert row after
+            {m.editor_insert_row_after()}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => run(() => tf.remove.tableRow())}>
             <X />
-            Delete row
+            {m.editor_delete_row()}
           </DropdownMenuItem>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
@@ -133,22 +136,22 @@ function TableMenuItems({ onClose }: { onClose: () => void }) {
       <DropdownMenuSub>
         <DropdownMenuSubTrigger disabled={!tableSelected}>
           <span className="size-4" />
-          <span>Column</span>
+          <span>{m.editor_column()}</span>
         </DropdownMenuSubTrigger>
         <DropdownMenuSubContent className="w-52">
           <DropdownMenuItem
             onSelect={() => run(() => tf.insert.tableColumn({ before: true }))}
           >
             <ArrowLeft />
-            Insert column before
+            {m.editor_insert_col_before()}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => run(() => tf.insert.tableColumn())}>
             <ArrowRight />
-            Insert column after
+            {m.editor_insert_col_after()}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => run(() => tf.remove.tableColumn())}>
             <X />
-            Delete column
+            {m.editor_delete_col()}
           </DropdownMenuItem>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
@@ -158,7 +161,7 @@ function TableMenuItems({ onClose }: { onClose: () => void }) {
         onSelect={() => run(() => tf.remove.table())}
       >
         <Trash2 />
-        Delete table
+        {m.editor_delete_table()}
       </DropdownMenuItem>
     </DropdownMenuGroup>
   );
@@ -174,7 +177,10 @@ function TablePicker({
 
   return (
     <div
-      aria-label={`Insert ${size.rowCount} by ${size.colCount} table`}
+      aria-label={m.editor_insert_table_size({
+        cols: String(size.colCount),
+        rows: String(size.rowCount),
+      })}
       className="m-0 flex flex-col gap-1 p-1 outline-none"
       onKeyDown={(event) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -208,7 +214,10 @@ function TablePicker({
 
           return (
             <button
-              aria-label={`Insert ${row} by ${column} table`}
+              aria-label={m.editor_insert_table_size({
+                cols: String(column),
+                rows: String(row),
+              })}
               aria-selected={active}
               className={cn(
                 'size-3.5 rounded-xs border border-line bg-surface outline-none',

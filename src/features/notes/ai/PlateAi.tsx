@@ -8,6 +8,7 @@ import {
   useElement,
   usePluginOption,
 } from 'platejs/react';
+import { m } from '@/i18n';
 
 /**
  * Renders the CursorOverlayPlugin snapshot taken when the editor blurs into an
@@ -45,7 +46,7 @@ export function AiLoadingBar() {
   if (!streaming) return null;
   return (
     <div
-      aria-label="AI is writing"
+      aria-label={m.editor_ai_writing()}
       className="h-0.5 w-full overflow-hidden bg-tint-accent-1"
       role="progressbar"
     >

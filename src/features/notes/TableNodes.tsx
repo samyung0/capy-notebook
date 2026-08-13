@@ -40,6 +40,7 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from '@/components/ui/Popover';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { FloatingActionButton } from './nodeComponents';
 import {
@@ -160,7 +161,7 @@ function TableFloatingToolbarContent({ multiCell }: { multiCell: boolean }) {
     >
       {canMerge && (
         <FloatingActionButton
-          label="Merge cells"
+          label={m.editor_merge_cells()}
           onClick={() => action(() => tf.table.merge())}
         >
           <Combine />
@@ -168,7 +169,7 @@ function TableFloatingToolbarContent({ multiCell }: { multiCell: boolean }) {
       )}
       {canSplit && (
         <FloatingActionButton
-          label="Split cell"
+          label={m.editor_split_cell()}
           onClick={() => action(() => tf.table.split())}
         >
           <Ungroup />
@@ -179,26 +180,26 @@ function TableFloatingToolbarContent({ multiCell }: { multiCell: boolean }) {
         <>
           {(canMerge || canSplit) && <TableActionSeparator />}
           <FloatingActionButton
-            label="Insert row before"
+            label={m.editor_insert_row_before()}
             onClick={() => action(() => tf.insert.tableRow({ before: true }))}
           >
             <ArrowUp />
           </FloatingActionButton>
           <FloatingActionButton
-            label="Insert row after"
+            label={m.editor_insert_row_after()}
             onClick={() => action(() => tf.insert.tableRow())}
           >
             <ArrowDown />
           </FloatingActionButton>
           <FloatingActionButton
-            label="Delete row"
+            label={m.editor_delete_row()}
             onClick={() => action(() => tf.remove.tableRow())}
           >
             <X />
           </FloatingActionButton>
           <TableActionSeparator />
           <FloatingActionButton
-            label="Insert column before"
+            label={m.editor_insert_col_before()}
             onClick={() =>
               action(() => tf.insert.tableColumn({ before: true }))
             }
@@ -206,20 +207,20 @@ function TableFloatingToolbarContent({ multiCell }: { multiCell: boolean }) {
             <ArrowLeft />
           </FloatingActionButton>
           <FloatingActionButton
-            label="Insert column after"
+            label={m.editor_insert_col_after()}
             onClick={() => action(() => tf.insert.tableColumn())}
           >
             <ArrowRight />
           </FloatingActionButton>
           <FloatingActionButton
-            label="Delete column"
+            label={m.editor_delete_col()}
             onClick={() => action(() => tf.remove.tableColumn())}
           >
             <X />
           </FloatingActionButton>
           <TableActionSeparator />
           <FloatingActionButton
-            label="Delete table"
+            label={m.editor_delete_table()}
             onClick={() => action(() => tf.remove.table())}
           >
             <Trash2 />
@@ -273,13 +274,13 @@ export function TableRowElement({ children, ...props }: PlateElementProps) {
           contentEditable={false}
         >
           <button
-            aria-label="Drag table row"
+            aria-label={m.editor_drag_row()}
             className="absolute top-1/2 left-0 z-40 flex size-5 -translate-y-1/2 cursor-grab items-center justify-center rounded-button border border-line bg-surface text-fg-muted opacity-0 shadow-sm outline-none transition-opacity hover:bg-surface-hover-bg hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-focus active:cursor-grabbing group-hover/row:opacity-100"
             contentEditable={false}
             data-plate-prevent-deselect
             onClick={() => editor.tf.select(element)}
             ref={draggable.handleRef}
-            title="Drag table row"
+            title={m.editor_drag_row()}
             type="button"
           >
             <GripVertical className="size-3.5" />

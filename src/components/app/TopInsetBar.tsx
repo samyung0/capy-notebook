@@ -92,7 +92,7 @@ export function SearchDialog({
             <DialogClose asChild>
               <IconButton
                 icon="x"
-                label="Close"
+                label={m.action_close()}
                 size="sm"
                 variant="ghost-hover"
               />

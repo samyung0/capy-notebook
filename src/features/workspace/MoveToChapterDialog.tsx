@@ -1,6 +1,7 @@
 import type { Chapter, UserColor } from '@/api/types';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { userColorPair } from '@/lib/userColor';
 
@@ -13,7 +14,7 @@ export function MoveToChapterDialog({
   currentChapterId,
   onSelect,
   color,
-  title = 'Move to chapter',
+  title,
 }: {
   open: boolean;
   onClose: () => void;
@@ -37,7 +38,11 @@ export function MoveToChapterDialog({
         }
       : {};
   return (
-    <SimpleDialog onClose={onClose} open={open} title={title}>
+    <SimpleDialog
+      onClose={onClose}
+      open={open}
+      title={title ?? m.move_to_chapter()}
+    >
       <div className="flex max-h-[60vh] flex-col gap-0.5 overflow-auto">
         {chapters.length > 0 && (
           <>
@@ -57,7 +62,7 @@ export function MoveToChapterDialog({
                   currentChapterId === null && 'font-bold'
                 )}
               >
-                Remove from all chapterss
+                {m.move_remove_chapters()}
               </span>
               {currentChapterId === null && (
                 <Icon className="size-3.75 shrink-0" name="check" />
@@ -91,9 +96,7 @@ export function MoveToChapterDialog({
           </>
         )}
         {chapters.length === 0 && (
-          <div className="px-2.5 py-3">
-            No chapters yet. Create a chapter first.
-          </div>
+          <div className="px-2.5 py-3">{m.move_no_chapters()}</div>
         )}
       </div>
     </SimpleDialog>

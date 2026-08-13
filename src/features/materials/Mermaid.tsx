@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { getLocale } from '@/i18n';
+import { getLocale, m } from '@/i18n';
 import { THEMES } from '@/theme/ThemeProvider';
 
 /** Lazily-initialized mermaid singleton so the (heavy) library is only loaded
@@ -64,8 +64,7 @@ export function Mermaid({ code }: { code: string }) {
         );
         if (!cancelled) setSvg(result.svg);
       } catch (e: unknown) {
-        if (!cancelled)
-          setError(e instanceof Error ? e.message : 'Failed to render diagram');
+        if (!cancelled) setError(e instanceof Error ? e.message : '');
       } finally {
         renderHost.remove();
       }
@@ -78,14 +77,15 @@ export function Mermaid({ code }: { code: string }) {
     // getLocale is referenced so a locale change (and its theme) re-renders.
   }, [code, getLocale?.()]);
 
-  if (error) {
+  if (error != null) {
     return (
       <div
         className="my-3 rounded-card border border-solid-error/40 bg-tint-error/40 p-3"
         ref={containerRef}
       >
         <p className="mb-2 font-medium text-solid-error text-xs">
-          Diagram error: {error}
+          {m.mermaid_failed()}
+          {error ? `: ${error}` : ''}
         </p>
         <pre className="overflow-auto text-fg-muted text-xs">{code}</pre>
       </div>
@@ -97,7 +97,7 @@ export function Mermaid({ code }: { code: string }) {
         className="my-3 grid h-40 place-items-center rounded-card border border-line bg-surface text-fg-muted"
         ref={containerRef}
       >
-        <span className="text-xs">Rendering diagram…</span>
+        <span className="text-xs">{m.mermaid_rendering()}</span>
       </div>
     );
   }

@@ -3,6 +3,7 @@ import { useAcceptWorkspaceInvite } from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
+import { m } from '@/i18n';
 
 export default function WorkspaceInviteAccept() {
   const { token } = useParams({ strict: false }) as { token: string };
@@ -21,16 +22,12 @@ export default function WorkspaceInviteAccept() {
         <span className="mb-5 rounded-card bg-tint-accent-1 p-3 text-tint-accent-1-fg">
           <Icon className="size-6" name="workspaces" />
         </span>
-        <h1 className="t-large-card-title">Workspace invitation</h1>
-        <p className="mt-2 max-w-md text-fg-muted text-sm">
-          Accept this invitation to join the workspace with the role selected by
-          its owner.
-        </p>
+        <h1 className="t-large-card-title">{m.invite_title()}</h1>
+        <p className="mt-2 max-w-md text-fg-muted text-sm">{m.invite_body()}</p>
 
         {acceptIsError && (
           <p className="mt-5 text-sm text-solid-error" role="alert">
-            This invitation is invalid, expired, revoked, or belongs to another
-            account.
+            {m.invite_invalid()}
           </p>
         )}
 
@@ -45,7 +42,7 @@ export default function WorkspaceInviteAccept() {
             }
             variant="accent"
           >
-            Open workspace
+            {m.invite_open()}
           </Button>
         ) : (
           <div className="mt-6 flex gap-2">
@@ -53,14 +50,14 @@ export default function WorkspaceInviteAccept() {
               onClick={() => navigate({ to: '/workspaces' })}
               variant="ghost-hover"
             >
-              Cancel
+              {m.action_cancel()}
             </Button>
             <Button
               disabled={acceptIsPending || !token}
               onClick={() => accept(token)}
               variant="accent"
             >
-              {acceptIsPending ? 'Accepting…' : 'Accept invitation'}
+              {acceptIsPending ? m.invite_accepting() : m.invite_accept()}
             </Button>
           </div>
         )}

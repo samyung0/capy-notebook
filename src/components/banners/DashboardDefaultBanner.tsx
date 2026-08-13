@@ -1,3 +1,4 @@
+import { m } from '@/i18n';
 import { Card } from '../ui/Card';
 import { Icon } from '../ui/Icon';
 
@@ -9,10 +10,10 @@ export default function DefaultBanner() {
     >
       <div className="relative z-10 flex flex-col gap-1 xl:max-w-[80%]">
         <p className="t-subtitle font-bold text-tint-accent-1-fg">
-          Turn your sources into summaries, flashcards & quizzes
+          {m.dashboard_banner_title()}
         </p>
         <p className="mt-1 text-tint-accent-1-fg">
-          Upload a file, then chat or generate — grounded in your own materials.
+          {m.dashboard_banner_body()}
         </p>
       </div>
       <Icon

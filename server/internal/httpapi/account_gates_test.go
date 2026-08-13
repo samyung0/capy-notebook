@@ -249,7 +249,7 @@ func TestGeneratedMaterialsRecordTheActorAsAuthor(t *testing.T) {
 	for _, kind := range []string{"mindmap", "diagram", "flashcards", "quiz"} {
 		t.Run(kind, func(t *testing.T) {
 			rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
-				"u_editor", map[string]any{"kind": kind, "count": 2})
+				"u_editor", map[string]any{"kind": kind, "count": 2, "title": kind + " generated"})
 			if rec.Code != http.StatusOK {
 				t.Fatalf("editor generate %s = %d body=%s", kind, rec.Code, rec.Body.String())
 			}
@@ -279,6 +279,32 @@ func TestGeneratedMaterialsRecordTheActorAsAuthor(t *testing.T) {
 				t.Errorf("generated %s author = %s, want u_editor", kind, author)
 			}
 		})
+	}
+}
+
+func TestGenerateRequiresUniqueTitle(t *testing.T) {
+	h := openShareHTTP(t)
+	body := map[string]any{"kind": "quiz", "count": 1, "title": "Shared generate name"}
+	first := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
+		"u_editor", body)
+	if first.Code != http.StatusOK {
+		t.Fatalf("first generate = %d body=%s", first.Code, first.Body.String())
+	}
+	id := generatedMaterialID(t, first.Body.Bytes())
+	t.Cleanup(func() {
+		_ = doReq(t, h, http.MethodDelete, "/api/materials/"+id, "u_owner", nil)
+	})
+
+	dup := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
+		"u_editor", body)
+	if dup.Code != http.StatusConflict {
+		t.Fatalf("duplicate generate = %d body=%s", dup.Code, dup.Body.String())
+	}
+
+	blank := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
+		"u_editor", map[string]any{"kind": "quiz", "count": 1, "title": "  "})
+	if blank.Code != http.StatusBadRequest {
+		t.Fatalf("blank title = %d body=%s", blank.Code, blank.Body.String())
 	}
 }
 

@@ -6,6 +6,7 @@ import {
   ContentActions,
   toFileActionTarget,
 } from '@/features/workspace/ContentActions';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
 /** A file row in the workspace sidebar. Opens the file in the center pane, shows
@@ -86,14 +87,14 @@ export function FileListItem({
             onDeleted={() => onDeleted?.(file.id)}
             propertiesClassName="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2"
             propertyLabelClassName="text-fg-secondary"
-            renameTitle="Rename file"
+            renameTitle={m.files_rename()}
             workspaceId={workspaceId}
           />
         )}
       </div>
       {failed && (
         <div className="pl-2 font-medium text-solid-error text-xs">
-          Error Processing File
+          {m.files_processing_error()}
         </div>
       )}
       {processing && (

@@ -1,5 +1,6 @@
 import { MutationCache, QueryClient } from '@tanstack/react-query';
 import { userToast } from '@/components/ui/userToast';
+import { m } from '@/i18n';
 import { describeError, isAbortError, toastKeyFor } from '@/lib/errors';
 import {
   isAccountBlockingError,
@@ -21,7 +22,10 @@ declare module '@tanstack/react-query' {
 function shouldRetry(failureCount: number, error: unknown): boolean {
   if (
     isApiError(error) &&
-    (error.status === 401 || error.status === 403 || error.status === 404)
+    (error.status === 401 ||
+      error.status === 403 ||
+      error.status === 404 ||
+      error.status === 409)
   ) {
     return false;
   }
@@ -53,14 +57,14 @@ export const queryClient = new QueryClient({
       const button =
         description.action === 'subscription'
           ? {
-              label: 'Subscription',
+              label: m.account_banner_subscription(),
               onClick: () => {
                 window.location.href = '/subscription';
               },
             }
           : description.action === 'signIn'
             ? {
-                label: 'Sign in',
+                label: m.action_sign_in(),
                 onClick: () => {
                   const returnTo = `${window.location.pathname}${window.location.search}`;
                   window.location.href = `/sign-in?${new URLSearchParams({

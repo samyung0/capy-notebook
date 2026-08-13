@@ -19,6 +19,7 @@ import re
 from typing import Any
 
 from . import models, store
+from .locale import response_language_rule
 from .search import Passage
 
 log = logging.getLogger("evo.retrieval.workflows")
@@ -99,12 +100,19 @@ def strip_fence(text: str) -> str:
 
 
 async def produce(
-    *, instruction: str, context: str, scope: str, model: str, temperature: float = 0.4
+    *,
+    instruction: str,
+    context: str,
+    scope: str,
+    model: str,
+    temperature: float = 0.4,
+    locale: str | None = None,
 ) -> str:
     system = (
         "You create study materials strictly from the provided source passages. "
         "Do not invent facts that are not in them. Follow the requested output "
-        "format exactly, with no commentary around it."
+        "format exactly, with no commentary around it.\n"
+        + response_language_rule(locale)
     )
     user = instruction
     if scope:
@@ -118,7 +126,13 @@ async def produce(
 
 
 async def produce_mapped(
-    *, instruction: str, passages: list[Passage], scope: str, model: str, combine: str
+    *,
+    instruction: str,
+    passages: list[Passage],
+    scope: str,
+    model: str,
+    combine: str,
+    locale: str | None = None,
 ) -> str:
     """Map-reduce for scopes too large for one context window.
 
@@ -134,12 +148,19 @@ async def produce_mapped(
         context = "\n\n".join(p.as_context(i + 1) for i, p in enumerate(group))[:20000]
         partials.append(
             await produce(
-                instruction=instruction, context=context, scope=scope, model=model
+                instruction=instruction,
+                context=context,
+                scope=scope,
+                model=model,
+                locale=locale,
             )
         )
     return await models.complete_text(
         [
-            {"role": "system", "content": combine},
+            {
+                "role": "system",
+                "content": combine + "\n" + response_language_rule(locale),
+            },
             {"role": "user", "content": "\n\n---\n\n".join(partials)[:30000]},
         ],
         model=model,

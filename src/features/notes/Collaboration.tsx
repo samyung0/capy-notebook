@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/Popover';
 import { Textarea } from '@/components/ui/TextArea';
 import type { MaterialValue } from '@/features/materials/document';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { canReplyAtDepth } from './canReplyAtDepth';
 import { useEditorRuntime } from './EditorRuntime';
@@ -214,9 +215,11 @@ function BlockDiscussionThreads({
           sideOffset={8}
         >
           <div className="sticky top-0 z-10 flex items-center justify-between border-divider border-b bg-surface px-3 py-2">
-            <p className="font-semibold text-fg-muted text-xs">Comments</p>
+            <p className="font-semibold text-fg-muted text-xs">
+              {m.editor_comments()}
+            </p>
             <Button
-              aria-label="Close comments"
+              aria-label={m.editor_close_comments()}
               onClick={() => setOpen(false)}
               size="sm"
               variant="ghost"
@@ -238,7 +241,15 @@ function BlockDiscussionThreads({
         <div className="relative size-0 select-none">
           <PopoverTrigger asChild>
             <Button
-              aria-label={`Show ${discussions.length} comment thread${discussions.length === 1 ? '' : 's'}`}
+              aria-label={
+                discussions.length === 1
+                  ? m.editor_show_threads({
+                      count: String(discussions.length),
+                    })
+                  : m.editor_show_threads_plural({
+                      count: String(discussions.length),
+                    })
+              }
               className="mt-1 ml-1 h-7 min-w-7 gap-1 rounded-button px-1.5 py-0 text-fg-muted data-[state=open]:bg-surface-hover-bg"
               contentEditable={false}
               size="sm"
@@ -317,7 +328,7 @@ export function CollaborationProvider({
     if (!text || !selection) return;
     const yjsEditor = editor as typeof editor & YjsEditor;
     if (!yjsEditor.sharedRoot) {
-      setError('The collaborative document is not ready yet.');
+      setError(m.editor_collab_not_ready());
       return;
     }
     try {
@@ -342,7 +353,7 @@ export function CollaborationProvider({
       setDialogOpen(false);
       setComment('');
     } catch (cause) {
-      fail(cause, 'Unable to add comment');
+      fail(cause, m.editor_comment_add_failed());
     }
   }
 
@@ -366,11 +377,11 @@ export function CollaborationProvider({
       collaborationError: error,
       currentUserId,
       deleteComment: (entry) => {
-        if (!window.confirm('Delete this comment?')) return;
+        if (!window.confirm(m.editor_delete_comment_confirm())) return;
         deleteComment(entry.id);
       },
       deleteDiscussion: (discussion) => {
-        if (!window.confirm('Delete this comment thread?')) return;
+        if (!window.confirm(m.editor_delete_thread_confirm())) return;
         deleteDiscussion(discussion.id);
       },
       discussions,
@@ -430,13 +441,13 @@ export function CollaborationProvider({
               }}
               variant="ghost-hover"
             >
-              Cancel
+              {m.action_cancel()}
             </Button>
             <Button
               disabled={!comment.trim() || createDiscussionIsPending}
               onClick={() => void submitNewComment()}
             >
-              Add comment
+              {m.editor_add_comment()}
             </Button>
           </>
         }
@@ -445,10 +456,10 @@ export function CollaborationProvider({
           setDialogOpen(false);
         }}
         open={dialogOpen}
-        title="Add comment"
+        title={m.editor_add_comment()}
       >
         <label className="flex flex-col gap-1.5">
-          <InputTitle>Comment</InputTitle>
+          <InputTitle>{m.editor_comment()}</InputTitle>
           <Textarea
             onChange={(event) => setComment(event.target.value)}
             rows={4}
@@ -464,7 +475,7 @@ export function CollaborationProvider({
 // workspace stays attributed and readers without a member roster still see who
 // wrote what.
 function authorName(entry: { authorName?: string }) {
-  return entry.authorName?.trim() || 'Unknown user';
+  return entry.authorName?.trim() || m.editor_unknown_user();
 }
 
 export function DiscussionThread({
@@ -496,7 +507,7 @@ export function DiscussionThread({
             size="sm"
             variant="ghost"
           >
-            {discussion.isResolved ? 'Reopen' : 'Resolve'}
+            {discussion.isResolved ? m.editor_reopen() : m.editor_resolve()}
           </Button>
         )}
         {canDeleteThread && (
@@ -505,7 +516,7 @@ export function DiscussionThread({
             size="sm"
             variant="ghost"
           >
-            Delete thread
+            {m.editor_delete_thread()}
           </Button>
         )}
       </div>
@@ -540,10 +551,10 @@ function DiscussionComments({
       {actions?.canComment && (
         <div className="flex gap-2">
           <Textarea
-            aria-label="Add comment"
+            aria-label={m.editor_add_comment()}
             className="min-h-14 flex-1"
             onChange={(event) => setComment(event.target.value)}
-            placeholder="Add a comment…"
+            placeholder={m.editor_comment_placeholder()}
             rows={2}
             value={comment}
           />
@@ -557,7 +568,7 @@ function DiscussionComments({
             size="sm"
             variant="outline"
           >
-            Comment
+            {m.editor_comment()}
           </Button>
         </div>
       )}
@@ -599,7 +610,7 @@ function CommentEntry({
     entry.isDeleted ? '' : commentContentText(entry.contentRich)
   );
   const text = entry.isDeleted
-    ? 'Deleted comment'
+    ? m.editor_deleted_comment()
     : commentContentText(entry.contentRich);
   const own = entry.userId === actions.currentUserId;
   const canDelete = own || actions.canEdit;
@@ -627,10 +638,10 @@ function CommentEntry({
               }
               size="sm"
             >
-              Save
+              {m.action_save()}
             </Button>
             <Button onClick={() => setEditing(false)} size="sm" variant="ghost">
-              Cancel
+              {m.action_cancel()}
             </Button>
           </div>
         </div>
@@ -655,12 +666,12 @@ function CommentEntry({
               size="sm"
               variant="ghost"
             >
-              Reply
+              {m.editor_reply()}
             </Button>
           )}
           {own && (
             <Button onClick={() => setEditing(true)} size="sm" variant="ghost">
-              Edit
+              {m.action_edit()}
             </Button>
           )}
           {canDelete && (
@@ -669,7 +680,7 @@ function CommentEntry({
               size="sm"
               variant="ghost"
             >
-              Delete
+              {m.action_delete()}
             </Button>
           )}
         </div>
@@ -677,7 +688,7 @@ function CommentEntry({
       {replyTo === entry.id && depth === 0 && (
         <div className="mt-2 flex gap-2">
           <Textarea
-            aria-label="Reply"
+            aria-label={m.editor_reply()}
             className="min-h-14 flex-1"
             onChange={(event) => setReply(event.target.value)}
             rows={2}
@@ -696,7 +707,7 @@ function CommentEntry({
             size="sm"
             variant="outline"
           >
-            Reply
+            {m.editor_reply()}
           </Button>
         </div>
       )}

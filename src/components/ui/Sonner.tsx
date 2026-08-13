@@ -1,5 +1,6 @@
 import { cva, type VariantProps } from 'class-variance-authority';
 import { toast as sonnerToast } from 'sonner';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { Button } from './Button';
 import { Card } from './Card';
@@ -50,7 +51,7 @@ function Toast(props: ToastProps) {
           size="xs"
           variant="outline"
         >
-          <span className="sr-only">Close</span>
+          <span className="sr-only">{m.action_close()}</span>
         </IconButton>
       )}
       <div className="items-top flex flex-1 gap-1.5">

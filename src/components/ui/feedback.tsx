@@ -1,9 +1,10 @@
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
 export function Spinner({ className }: { className?: string }) {
   return (
     <svg
-      aria-label="Loading"
+      aria-label={m.a11y_loading()}
       className={cn('isolate size-4.5 animate-spin leading-none', className)}
       data-slot="spinner"
       fill="none"
@@ -51,7 +52,7 @@ export function SkeletonCardGrid({
 }) {
   return (
     <div
-      aria-label="Loading"
+      aria-label={m.a11y_loading()}
       className={cn(
         'grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4',
         className
@@ -82,7 +83,7 @@ export function SkeletonList({
 }) {
   return (
     <div
-      aria-label="Loading"
+      aria-label={m.a11y_loading()}
       className={cn('flex flex-col gap-2', className)}
       role="status"
     >

@@ -18,6 +18,7 @@ import {
   useEditorRef,
 } from 'platejs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { m } from '@/i18n';
 import { useOptionalNoteBlockDialogs } from './blocks/dialogContext';
 import { useCollaborationActions } from './Collaboration';
 import { useEditorRuntime } from './EditorRuntime';
@@ -100,11 +101,15 @@ export function SlashInputElement(
     const collaborationCommand: EditorCommand | null =
       canComment && collaboration
         ? {
-            description: 'Add a comment to the current selection',
+            get description() {
+              return m.editor_comment_selection();
+            },
             group: 'general',
             icon: MessageSquarePlus,
             id: 'comment',
-            label: 'Comment',
+            get label() {
+              return m.editor_comment();
+            },
             run: () => collaboration.openComment(),
             shortcut: 'Ctrl/Cmd+Shift+M',
           }
@@ -155,7 +160,7 @@ export function SlashInputElement(
           <input
             {...inputProps}
             aria-expanded={commands.length > 0}
-            aria-label="Search editor commands"
+            aria-label={m.editor_search_commands_aria()}
             className="absolute inset-0 size-full bg-transparent outline-none"
             onBlur={(event) => {
               // The selected command can replace this slash node with another
@@ -219,7 +224,7 @@ export function SlashInputElement(
               ))
             ) : (
               <span className="block px-2 py-3 text-fg-muted text-sm">
-                No commands found
+                {m.editor_commands_none()}
               </span>
             )}
           </span>

@@ -14,6 +14,7 @@ import {
   gradeQuestion,
 } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
+import { m } from '@/i18n';
 
 function scoreTone(pct: number): 'green' | 'amber' | 'coral' {
   return pct >= 70 ? 'green' : pct >= 55 ? 'amber' : 'coral';
@@ -55,10 +56,10 @@ export default function AttemptResult() {
         <ErrorState
           action={
             <Link preload="intent" to="/quizzes">
-              <Button iconLeft="chevronLeft">Back to quizzes</Button>
+              <Button iconLeft="chevronLeft">{m.quiz_back()}</Button>
             </Link>
           }
-          title="This attempt is unavailable."
+          title={m.quiz_attempt_unavailable()}
           variant="page"
         />
       </PanelWithInvertedRadius>
@@ -128,7 +129,9 @@ export default function AttemptResult() {
                         strokeWidth={2.5}
                       />
                     </span>
-                    <p className="t-meta text-fg-muted">Question {i + 1}</p>
+                    <p className="t-meta text-fg-muted">
+                      {m.quiz_question_n({ n: i + 1 })}
+                    </p>
                   </div>
                   <QuestionRunner
                     answer={a}
@@ -147,13 +150,13 @@ export default function AttemptResult() {
           </div>
         ) : (
           <p className="py-8 text-center text-fg-muted">
-            No per-question breakdown was recorded for this attempt.
+            {m.quiz_no_breakdown()}
           </p>
         )}
 
         <div className="mt-6">
           <Link preload="intent" to="/quizzes">
-            <Button iconLeft="chevronLeft">Back to quizzes</Button>
+            <Button iconLeft="chevronLeft">{m.quiz_back()}</Button>
           </Link>
         </div>
       </div>

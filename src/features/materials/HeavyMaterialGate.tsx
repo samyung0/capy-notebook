@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { formatFileSize } from '@/features/files/fileUtils';
+import { m } from '@/i18n';
 import type { HeavyMaterial, HeavyMaterialChoice } from './heavyDocument';
 
 /**
@@ -23,11 +24,13 @@ export function HeavyMaterialGate({
         <Icon className="size-6.5" name="warning" />
       </span>
       <div className="flex max-w-md flex-col gap-1.5">
-        <p className="t-card-title font-bold">This note is large</p>
+        <p className="t-card-title font-bold">{m.material_heavy_title()}</p>
         <p>
-          {title} is {formatFileSize(material.sizeBytes)} across{' '}
-          {material.nodeCount.toLocaleString()} blocks. Editing it may be slow
-          on this device.
+          {m.material_heavy_body({
+            count: String(material.nodeCount),
+            size: formatFileSize(material.sizeBytes),
+            title,
+          })}
         </p>
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2.5">
@@ -36,14 +39,14 @@ export function HeavyMaterialGate({
           onClick={() => onChoose('readOnly')}
           variant="accent"
         >
-          Open read-only
+          {m.material_open_readonly()}
         </Button>
         <Button
           data-testid="heavy-material-open"
           onClick={() => onChoose('interactive')}
           variant="outline"
         >
-          Open anyway
+          {m.material_open_anyway()}
         </Button>
       </div>
     </div>

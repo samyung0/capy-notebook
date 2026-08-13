@@ -26,6 +26,7 @@ import {
   PopoverAnchor,
   PopoverContent,
 } from '@/components/ui/Popover';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { FloatingActionButton } from './nodeComponents';
 import { COLUMN_CLASS, COLUMN_GROUP_CLASS } from './nodeStyles';
@@ -106,7 +107,7 @@ function ColumnFloatingToolbarContent() {
         );
       })}
       <div className="mx-0.5 h-4 w-px bg-divider" />
-      <FloatingActionButton label="Delete table" onClick={remove}>
+      <FloatingActionButton label={m.editor_delete_table()} onClick={remove}>
         <Trash2 />
       </FloatingActionButton>
     </PopoverContent>
@@ -138,12 +139,12 @@ export function Column(props: PlateElementProps) {
     >
       {!readOnly && (
         <button
-          aria-label="Drag to reorder column"
+          aria-label={m.editor_drag_column()}
           className="absolute bottom-full left-1/2 z-10 flex h-5 -translate-x-1/2 translate-y-1/2 cursor-grab items-center justify-center rounded-md px-1.5 text-fg-muted opacity-0 hover:bg-surface-hover-bg hover:text-fg active:cursor-grabbing group-hover/column:opacity-100"
           contentEditable={false}
           data-plate-prevent-deselect
           ref={draggable.handleRef}
-          title="Drag to reorder column"
+          title={m.editor_drag_column()}
           type="button"
         >
           <GripHorizontal className="size-4" />

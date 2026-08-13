@@ -9,6 +9,7 @@ import {
   isCompleteQuestion,
   QuizForm,
 } from '@/features/quizzes/QuizForm';
+import { m } from '@/i18n';
 import { quizFenceBody } from './shared';
 
 /** Popup to author a typed ```quiz block inline in a note. */
@@ -58,20 +59,20 @@ export function QuizDialog({
       footer={
         <>
           <Button onClick={onClose} variant="ghost">
-            Cancel
+            {m.action_cancel()}
           </Button>
           <Button disabled={!canSave} onClick={save}>
-            {initialCode ? 'Save' : 'Insert'}
+            {initialCode ? m.action_save() : m.action_insert()}
           </Button>
         </>
       }
       onClose={onClose}
       open={open}
-      title="Quiz"
+      title={m.editor_quiz()}
     >
       <div className="flex max-h-[62vh] flex-col gap-4 overflow-auto pr-1">
         <label className="flex items-center gap-2">
-          <p className="t-label text-fg-muted">Time limit (min, optional)</p>
+          <p className="t-label text-fg-muted">{m.editor_quiz_time_limit()}</p>
           <Input
             className="w-24"
             onChange={(e) => setTimeLimit(e.target.value)}
@@ -87,9 +88,7 @@ export function QuizDialog({
           showName={false}
         />
         {!canSave && (
-          <p className="t-meta text-fg-muted">
-            Complete every question and mark its correct answer before saving.
-          </p>
+          <p className="t-meta text-fg-muted">{m.editor_quiz_incomplete()}</p>
         )}
       </div>
     </SimpleDialog>

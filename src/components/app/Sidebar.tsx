@@ -163,7 +163,7 @@ export function Sidebar({
           <IconButton
             className="lg:hidden"
             icon="x"
-            label="Close"
+            label={m.action_close()}
             onClick={onNavigate}
             size="sm"
             variant="ghost"
@@ -246,7 +246,7 @@ export function MobileNavDrawer({ className }: { className?: string }) {
       <DrawerTrigger
         render={
           <IconButton
-            aria-label="Open navigation"
+            aria-label={m.a11y_open_navigation()}
             className={className}
             icon="menu"
             size="md"

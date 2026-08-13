@@ -8,6 +8,7 @@ import {
 import { userToast } from '@/components/ui/userToast';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
 import { MenuRow } from '@/features/notes/toolbar/ToolbarMenuRow';
+import { m } from '@/i18n';
 
 export type ImportKind = 'markdown' | 'docx' | 'json';
 
@@ -38,14 +39,20 @@ function validateImportFile(file: File, kind: ImportKind) {
   const name = file.name.toLowerCase();
 
   if (!option.extensions.some((extension) => name.endsWith(extension))) {
-    throw new Error(`Choose a ${option.extensions.join(' or ')} file.`);
+    throw new Error(
+      m.editor_import_wrong_type({
+        extensions: option.extensions.join(' or '),
+      })
+    );
   }
   if (file.size === 0) {
-    throw new Error('The selected file is empty.');
+    throw new Error(m.editor_import_empty());
   }
   if (file.size > option.maxBytes) {
     throw new Error(
-      `The selected file is larger than ${option.maxBytes / 1024 / 1024} MB.`
+      m.editor_import_too_large({
+        mb: String(option.maxBytes / 1024 / 1024),
+      })
     );
   }
 }
@@ -84,10 +91,8 @@ export function ImportMenu({
     } catch (cause) {
       userToast({
         description:
-          cause instanceof Error
-            ? cause.message
-            : 'The selected file could not be read.',
-        title: 'Import failed',
+          cause instanceof Error ? cause.message : m.editor_import_unreadable(),
+        title: m.editor_import_failed(),
         variant: 'error',
       });
     }
@@ -107,24 +112,29 @@ export function ImportMenu({
       ))}
       <Popover onOpenChange={setOpen} open={open}>
         <PopoverTrigger asChild>
-          <ToolbarButton className="w-fit" label="Import document">
-            <ArrowUpFromLine />
-            <ChevronDown className="size-3! text-fg-secondary" />
-          </ToolbarButton>
+          <span className="inline-flex">
+            <ToolbarButton className="w-fit" label={m.editor_import()}>
+              <ArrowUpFromLine />
+              <ChevronDown className="size-3! text-fg-secondary" />
+            </ToolbarButton>
+          </span>
         </PopoverTrigger>
         <PopoverContent
           align="start"
           className="w-52 gap-0.5 border border-line bg-surface p-1 shadow-pop"
         >
           <MenuRow
-            label="Import Markdown (.md)"
+            label={m.editor_import_md()}
             onClick={() => chooseFile('markdown')}
           />
           <MenuRow
-            label="Import Word (.docx)"
+            label={m.editor_import_docx()}
             onClick={() => chooseFile('docx')}
           />
-          <MenuRow label="Import JSON" onClick={() => chooseFile('json')} />
+          <MenuRow
+            label={m.editor_import_json()}
+            onClick={() => chooseFile('json')}
+          />
         </PopoverContent>
       </Popover>
     </>

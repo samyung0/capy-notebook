@@ -9,7 +9,7 @@ import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
-import { m } from '@/i18n';
+import { getLocale, m } from '@/i18n';
 
 export default function Thinking() {
   const { data, fetchStatus, isLoading } = useCanvases();
@@ -22,7 +22,7 @@ export default function Thinking() {
         actions={
           <IconButton
             icon="plus"
-            label="New canvas"
+            label={m.thinking_new_canvas()}
             onClick={() => setCreateOpen(true)}
             variant="dark"
           />
@@ -66,7 +66,11 @@ export default function Thinking() {
                   <div className="p-4">
                     <p className="t-subtitle truncate">{c.name}</p>
                     <p className="t-meta mt-0.5 text-fg-muted">
-                      Updated {new Date(c.updatedAt).toLocaleDateString()}
+                      {m.thinking_updated({
+                        date: new Date(c.updatedAt).toLocaleDateString(
+                          getLocale()
+                        ),
+                      })}
                     </p>
                   </div>
                 </Card>
@@ -77,13 +81,13 @@ export default function Thinking() {
       </div>
       {createOpen && (
         <NameFormDialog
-          fieldLabel="Name"
+          fieldLabel={m.common_name()}
           maxLength={createCanvasBodyNameMax}
           onClose={() => setCreateOpen(false)}
           onSubmit={(name) => createCanvas(name)}
           open
           submitLabel={m.action_create()}
-          title="New canvas"
+          title={m.thinking_new_canvas()}
         />
       )}
     </PanelWithInvertedRadius>

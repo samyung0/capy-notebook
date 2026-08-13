@@ -70,6 +70,7 @@ at the top of each section.
 | --- | --- |
 | [`src/features/quizzes/QuizForm.test.ts`](../src/features/quizzes/QuizForm.test.ts) | Quiz question validation and round-trip for every supported question type. |
 | [`src/features/workspace/access.test.ts`](../src/features/workspace/access.test.ts) | Workspace access helpers for read-only viewers, editors, and owner-only share. |
+| [`src/features/workspace/generateTitle.test.ts`](../src/features/workspace/generateTitle.test.ts) | Numbered generate-file defaults skip taken names; empty/overlong/duplicate titles are rejected. |
 | [`src/features/workspace/sourceUpload.test.ts`](../src/features/workspace/sourceUpload.test.ts) | Source-upload extension/parser policy from server limits, image-caption availability per mode, and byte-weighted progress. |
 
 ---
@@ -104,14 +105,14 @@ at the top of each section.
 
 | File | About |
 | --- | --- |
-| [`server/internal/httpapi/account_gates_test.go`](../server/internal/httpapi/account_gates_test.go) | Over-quota owner gates, storage-owner state on reads, editor deck create, generated authorship. |
+| [`server/internal/httpapi/account_gates_test.go`](../server/internal/httpapi/account_gates_test.go) | Over-quota owner gates, storage-owner state on reads, editor deck create, generated authorship, generate title uniqueness. |
 | [`server/internal/httpapi/ai_plate_test.go`](../server/internal/httpapi/ai_plate_test.go) | Plate command/copilot request validation and AI data-stream copy/malformed/done checks. |
 | [`server/internal/httpapi/editor_assets_test.go`](../server/internal/httpapi/editor_assets_test.go) | Editor asset metadata validation, signatures, and object keys not using original filenames. |
 | [`server/internal/httpapi/email_unsubscribe_test.go`](../server/internal/httpapi/email_unsubscribe_test.go) | GET unsubscribe is read-only and does not mutate preferences. |
-| [`server/internal/httpapi/helpers_test.go`](../server/internal/httpapi/helpers_test.go) | Kind/content-type helpers, random IDs, and quiz question builder defaults/types. |
+| [`server/internal/httpapi/helpers_test.go`](../server/internal/httpapi/helpers_test.go) | Kind/content-type helpers, random IDs, quiz question builder defaults/types, account-locale fallback, and generate title trimming. |
 | [`server/internal/httpapi/huma_collaboration_test.go`](../server/internal/httpapi/huma_collaboration_test.go) | OpenAPI collab contracts, material content decode on read / omit on update, invite/access metadata. |
 | [`server/internal/httpapi/huma_limits_test.go`](../server/internal/httpapi/huma_limits_test.go) | Material request body size limit enforcement. |
-| [`server/internal/httpapi/huma_validation_test.go`](../server/internal/httpapi/huma_validation_test.go) | Huma 422s for empty/overlong names, owner invite role, empty cards, and invalid attempts. |
+| [`server/internal/httpapi/huma_validation_test.go`](../server/internal/httpapi/huma_validation_test.go) | Huma 422s for empty/overlong names, >5 workspace tags, owner invite role, empty cards, and invalid attempts. |
 | [`server/internal/httpapi/share_access_test.go`](../server/internal/httpapi/share_access_test.go) | Share HTTP read/write/clone/explore/attempts and free-owner daily revision caps. |
 | [`server/internal/httpapi/sse_notifications_test.go`](../server/internal/httpapi/sse_notifications_test.go) | Notification SSE connection limits are per-user and global. |
 | [`server/internal/httpapi/webhooks_test.go`](../server/internal/httpapi/webhooks_test.go) | Clerk and Stripe webhook provisioning, signatures, idempotency, and subscription state. |
@@ -155,6 +156,7 @@ See also [`pipeline-tests.md`](pipeline-tests.md) for disposable Postgres/Redis 
 | [`pipeline/tests/test_ingest_worker.py`](../pipeline/tests/test_ingest_worker.py) | Offline: parse-mode → route selection, text sources bypassing the parser, and captions reaching the chunker. |
 | [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py) | Artifact addressing/caching per route, per-route endpoints and versions, rejection of traversal, checksum, version and source mismatches, corrupt-cache recovery. |
 | [`pipeline/tests/test_retrieval_helpers.py`](../pipeline/tests/test_retrieval_helpers.py) | Tool scope narrowing, stable citation numbering, per-file diversity cap, JSON extraction and question normalization. |
+| [`pipeline/tests/test_locale.py`](../pipeline/tests/test_locale.py) | Account locale on chat/generate/editor prompts; continue-writing does not force UI language; ingest is out of scope. |
 | [`pipeline/tests/test_store_sql.py`](../pipeline/tests/test_store_sql.py) | Docker (no model calls): hybrid search halves, CJK recall, scoping, canonical duplicate ownership/deletion, concept co-mention, narrow summary invalidation, cascades. |
 
 ---

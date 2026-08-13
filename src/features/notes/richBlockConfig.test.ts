@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { m } from '@/i18n';
 import {
   COLUMN_LAYOUTS,
   getCodeBlockLanguageLabel,
@@ -30,7 +31,7 @@ describe('rich block configuration', () => {
 
   it('labels supported code languages for the block toolbar', () => {
     expect(getCodeBlockLanguageLabel('typescript')).toBe('TypeScript');
-    expect(getCodeBlockLanguageLabel('')).toBe('Plain text');
+    expect(getCodeBlockLanguageLabel('')).toBe(m.editor_code_plain_text());
     expect(getCodeBlockLanguageLabel('custom-lang')).toBe('custom-lang');
   });
 });

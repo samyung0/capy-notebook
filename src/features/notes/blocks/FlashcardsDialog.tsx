@@ -7,6 +7,7 @@ import {
   type FlashcardContent,
   parseFlashcardsFenceBody,
 } from '@/features/materials/blocks';
+import { m } from '@/i18n';
 import { uid } from '@/lib/id';
 import { flashcardsFenceBody } from './shared';
 
@@ -53,19 +54,19 @@ export function FlashcardsDialog({
       footer={
         <>
           <Button onClick={onClose} variant="ghost">
-            Cancel
+            {m.action_cancel()}
           </Button>
           <Button
             disabled={!canSave}
             onClick={() => onSave(flashcardsFenceBody(clean))}
           >
-            Insert
+            {m.action_insert()}
           </Button>
         </>
       }
       onClose={onClose}
       open={open}
-      title="Flashcards"
+      title={m.editor_flashcards()}
       width={620}
     >
       <div className="flex max-h-[60vh] flex-col gap-3 overflow-auto pr-1">
@@ -77,18 +78,18 @@ export function FlashcardsDialog({
             <div className="grid flex-1 grid-cols-2 gap-2">
               <Input
                 onChange={(e) => update(i, { front: e.target.value })}
-                placeholder="Front"
+                placeholder={m.editor_card_front()}
                 value={c.front}
               />
               <Input
                 onChange={(e) => update(i, { back: e.target.value })}
-                placeholder="Back"
+                placeholder={m.editor_card_back()}
                 value={c.back}
               />
             </div>
             <IconButton
               icon="trash"
-              label="Remove card"
+              label={m.editor_remove_card()}
               onClick={() => remove(i)}
               size="sm"
               variant="ghost"
@@ -101,12 +102,10 @@ export function FlashcardsDialog({
           size="sm"
           variant="outline"
         >
-          Add card
+          {m.flashcards_add_card()}
         </Button>
         {!canSave && (
-          <p className="t-meta text-fg-muted">
-            Add at least one card with content.
-          </p>
+          <p className="t-meta text-fg-muted">{m.editor_flashcards_min()}</p>
         )}
       </div>
     </SimpleDialog>

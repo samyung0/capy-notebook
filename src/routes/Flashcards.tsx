@@ -32,7 +32,7 @@ export default function Flashcards() {
 
   function newDeck() {
     createDeck(
-      { color: 'purple', name: 'New deck' },
+      { color: 'purple', name: m.flashcards_new_deck() },
       {
         onSuccess: (deck) =>
           navigate({ params: { deckId: deck.id }, to: '/flashcards/$deckId' }),
@@ -86,7 +86,7 @@ export default function Flashcards() {
                       </div>
                       <p className="t-card-title mt-3 truncate">{d.name}</p>
                       <p className="t-meta mt-0.5 text-fg-muted">
-                        {d.workspaceName || 'Standalone'}
+                        {d.workspaceName || m.quiz_standalone()}
                       </p>
                       <div className="mt-4">
                         <div className="mb-1 flex justify-between text-fg-muted text-xs">
@@ -106,12 +106,12 @@ export default function Flashcards() {
                       items={[
                         {
                           icon: 'link',
-                          label: 'Share',
+                          label: m.action_share(),
                           onClick: () => setSharing(d),
                         },
                         {
                           icon: 'plus',
-                          label: 'Clone',
+                          label: m.action_clone(),
                           onClick: () => cloneDeck(d.id),
                         },
                       ]}
@@ -137,7 +137,7 @@ export default function Flashcards() {
           open
           privacy={sharing.privacy ?? 'private'}
           saving={updateDeckIsPending}
-          title={`Share ${sharing.name}`}
+          title={m.flashcards_share_title({ name: sharing.name })}
         />
       )}
     </PanelWithInvertedRadius>

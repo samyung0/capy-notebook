@@ -5,6 +5,7 @@ import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
+import { m } from '@/i18n';
 
 const CanvasEditor = lazy(() => import('@/features/thinking/CanvasEditor'));
 
@@ -25,7 +26,9 @@ export default function Canvas() {
           <Icon name="chevronLeft" size={20} />
         </Link>
         <p className="t-subtitle flex-1">{canvas?.name ?? 'Canvas'}</p>
-        {saveIsPending && <p className="t-meta text-fg-muted">Saving…</p>}
+        {saveIsPending && (
+          <p className="t-meta text-fg-muted">{m.canvas_saving()}</p>
+        )}
       </div>
       <div className="min-h-0 flex-1">
         {fetchStatus === 'paused' ? (

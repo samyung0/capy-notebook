@@ -20,23 +20,40 @@ type GenerateResultData =
   | { kind: 'quiz'; quiz?: Quiz }
   | { kind: 'mindmap' | 'diagram'; material?: Material };
 
-const TILES: [GenerateMode, IconName, string][] = [
-  ['flashcards', 'flashcards', m.generate_flashcards()],
-  ['quiz', 'quiz', m.generate_quiz()],
-  ['mindmap', 'workspaces', 'Mindmap'],
-  ['diagram', 'chart', 'Diagram'],
+const TILES: [GenerateMode, IconName][] = [
+  ['flashcards', 'flashcards'],
+  ['quiz', 'quiz'],
+  ['mindmap', 'workspaces'],
+  ['diagram', 'chart'],
 ];
+
+function tileLabel(mode: GenerateMode): string {
+  switch (mode) {
+    case 'diagram':
+      return m.generate_kind_diagram();
+    case 'flashcards':
+      return m.generate_flashcards();
+    case 'mindmap':
+      return m.generate_kind_mindmap();
+    case 'quiz':
+      return m.generate_quiz();
+  }
+}
 
 export function GeneratePanel({
   workspaceId,
+  workspaceName,
   chapters,
   files,
+  existingTitles,
   onOpenItem,
   onGeneratingChange,
 }: {
   workspaceId: string;
+  workspaceName: string;
   chapters: Chapter[];
   files: SourceFile[];
+  existingTitles: string[];
   onOpenItem?: (item: OpenItem) => void;
   onGeneratingChange?: (mode: GenerateMode | null) => void;
 }) {
@@ -69,9 +86,9 @@ export function GeneratePanel({
   return (
     <div className="flex flex-col gap-4 overflow-auto p-4">
       <div className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-4">
-        {TILES.map(([k, icon, label]) => (
+        {TILES.map(([k, icon]) => (
           <ButtonCard
-            buttonText={label}
+            buttonText={tileLabel(k)}
             disabled={generateIsPending}
             icon={icon}
             key={k}
@@ -88,6 +105,7 @@ export function GeneratePanel({
       {mode && (
         <GenerateFormDialog
           chapters={chapters}
+          existingTitles={existingTitles}
           files={files}
           key={mode}
           mode={mode}
@@ -97,6 +115,7 @@ export function GeneratePanel({
           setOpen={(o) => {
             if (!o) setMode(null);
           }}
+          workspaceName={workspaceName}
         />
       )}
     </div>
@@ -114,14 +133,26 @@ function GenerateResult({
   let open: OpenItem | null = null;
   if (result.kind === 'quiz') {
     if (result.quiz) {
-      label = `Quiz "${result.quiz.name}" ready — ${result.quiz.questions.length} questions.`;
+      label = m.generate_quiz_ready({
+        count: result.quiz.questions.length,
+        name: result.quiz.name,
+      });
       open = { id: result.quiz.id, kind: 'material' };
     }
   } else if (result.kind === 'flashcards') {
-    label = `Deck ready — ${result.cards?.length ?? 0} cards.`;
+    label = m.generate_deck_ready({
+      count: result.cards?.length ?? 0,
+      name: result.deck?.name ?? '',
+    });
     if (result.deck) open = { id: result.deck.id, kind: 'material' };
   } else if (result.material) {
-    label = `${result.kind === 'mindmap' ? 'Mindmap' : 'Diagram'} "${result.material.title}" ready.`;
+    label = m.generate_material_ready({
+      kind:
+        result.kind === 'mindmap'
+          ? m.generate_kind_mindmap()
+          : m.generate_kind_diagram(),
+      name: result.material.title,
+    });
     open = { id: result.material.id, kind: 'material' };
   }
 
@@ -135,7 +166,7 @@ function GenerateResult({
           size="sm"
           variant="accent"
         >
-          Open in view
+          {m.action_open()}
         </Button>
       )}
     </div>

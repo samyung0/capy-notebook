@@ -20,6 +20,7 @@ import {
   plateAiFetch,
 } from '@/api/plateAiTransport';
 import { userToast } from '@/components/ui/userToast';
+import { m } from '@/i18n';
 import { useEditorRuntime } from '../EditorRuntime';
 import { openAiMenu } from './aiMenuState';
 import { getAiPreview, setAiPreview } from './aiPreviewState';
@@ -232,9 +233,9 @@ function createCopilotPlugin(workspaceId: string) {
         fetch: plateAiFetch,
         onError: () => {
           userToast({
-            description: 'Inline suggestions are temporarily unavailable.',
+            description: m.editor_ai_suggestion_body(),
             id: 'plate-copilot-error',
-            title: 'Could not generate a suggestion',
+            title: m.editor_ai_suggestion_title(),
             variant: 'error',
           });
         },

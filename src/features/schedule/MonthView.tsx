@@ -1,7 +1,7 @@
 import type { CalendarEvent, Label } from '@/api/types';
 import { cn } from '@/lib/cn';
 import { userColorPair } from '@/lib/userColor';
-import { monthGrid, sameDay, WEEKDAYS } from './dateUtils';
+import { monthGrid, sameDay, weekdayName } from './dateUtils';
 
 export function MonthView({
   month,
@@ -29,9 +29,9 @@ export function MonthView({
   return (
     <div className="flex h-full flex-col">
       <div className="grid grid-cols-7 border-divider border-b">
-        {WEEKDAYS.map((w) => (
-          <div className="py-2 text-center font-semibold" key={w}>
-            {w}
+        {grid.slice(0, 7).map((d) => (
+          <div className="py-2 text-center font-semibold" key={d.toISOString()}>
+            {weekdayName(d)}
           </div>
         ))}
       </div>

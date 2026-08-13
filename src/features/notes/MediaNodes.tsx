@@ -27,6 +27,7 @@ import {
   type MediaAssetNode,
   MediaAssetView,
 } from '@/features/materials/MediaAssetView';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useEditorRuntime } from './EditorRuntime';
 import { canCreateExternalEditorAssets } from './editorMode';
@@ -43,11 +44,11 @@ type MediaType = ReturnType<typeof plateMediaType>;
 
 const PLACEHOLDER_COPY: Record<
   MediaType,
-  { label: string; icon: typeof Image }
+  { label: () => string; icon: typeof Image }
 > = {
-  audio: { icon: FileAudio, label: 'Add audio' },
-  file: { icon: FileText, label: 'Add a file' },
-  img: { icon: Image, label: 'Add an image' },
+  audio: { icon: FileAudio, label: () => m.editor_add_audio() },
+  file: { icon: FileText, label: () => m.editor_add_file() },
+  img: { icon: Image, label: () => m.editor_add_image() },
 };
 
 function purposeForMediaType(type: string) {
@@ -81,11 +82,20 @@ export const MediaPlaceholderElement = withHOC(
       async (file: File) => {
         if (!canCreateAssets) return;
         if (isVideoFile(file)) {
-          setError('Video uploads are disabled. Use YouTube embed instead.');
+          setError(m.editor_video_disabled());
           return;
         }
         if (!acceptsPurpose(file, purpose)) {
-          setError(`Choose a ${purpose} file.`);
+          setError(
+            m.editor_choose_purpose({
+              purpose:
+                purpose === 'image'
+                  ? m.editor_image()
+                  : purpose === 'audio'
+                    ? m.editor_audio()
+                    : m.editor_file(),
+            })
+          );
           return;
         }
         abortRef.current?.abort();
@@ -121,10 +131,10 @@ export const MediaPlaceholderElement = withHOC(
           if (!controller.signal.aborted) {
             setError(
               isStorageQuotaError(cause)
-                ? 'Storage limit reached. Delete content or upgrade to Pro.'
+                ? m.editor_storage_quota()
                 : cause instanceof Error
                   ? cause.message
-                  : 'Upload failed'
+                  : m.editor_upload_failed()
             );
           }
         } finally {
@@ -189,7 +199,7 @@ export const MediaPlaceholderElement = withHOC(
           )}
           <div className="min-w-0 flex-1">
             <p className="truncate font-medium text-fg text-sm">
-              {uploading?.name ?? content.label}
+              {uploading?.name ?? content.label()}
             </p>
             <p
               className={cn(
@@ -199,10 +209,12 @@ export const MediaPlaceholderElement = withHOC(
             >
               {error ??
                 (uploading
-                  ? `${progress}% uploaded`
+                  ? m.editor_percent_uploaded({
+                      percent: String(progress),
+                    })
                   : canCreateAssets
-                    ? 'Choose, paste, or drop a file'
-                    : 'Uploads are unavailable in comment mode')}
+                    ? m.editor_choose_drop()
+                    : m.editor_uploads_unavailable())}
             </p>
             {uploading && (
               <div className="mt-2 h-1 overflow-hidden rounded-full bg-divider">
@@ -215,7 +227,7 @@ export const MediaPlaceholderElement = withHOC(
           </div>
           {uploading ? (
             <button
-              aria-label="Cancel upload"
+              aria-label={m.editor_cancel_upload()}
               className="rounded-button p-1 text-fg-muted hover:bg-surface"
               onClick={(event) => {
                 event.stopPropagation();

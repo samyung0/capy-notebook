@@ -19,6 +19,7 @@ import {
 } from 'platejs/react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useWorkspaceCollaborators } from '@/api/hooks';
+import { m } from '@/i18n';
 import { useEditorRuntime } from './EditorRuntime';
 
 const onSelectMention = getMentionOnSelectItem();
@@ -144,7 +145,7 @@ export function MentionInputElement(
           <input
             {...inputProps}
             aria-expanded={matches.length > 0}
-            aria-label="Mention a workspace member"
+            aria-label={m.editor_mention_aria()}
             className="absolute inset-0 size-full bg-transparent outline-none"
             onBlur={(event) => {
               const next = event.relatedTarget as Node | null;
@@ -200,12 +201,12 @@ export function MentionInputElement(
           >
             {isPending && (
               <span className="block px-2 py-3 text-fg-muted text-sm">
-                Loading members…
+                {m.editor_mention_loading()}
               </span>
             )}
             {!isPending && isError && (
               <span className="block px-2 py-3 text-fg-muted text-sm">
-                Could not load members
+                {m.editor_mention_failed()}
               </span>
             )}
             {!isPending &&
@@ -228,7 +229,7 @@ export function MentionInputElement(
               ))}
             {!isPending && !isError && !matches.length && (
               <span className="block px-2 py-3 text-fg-muted text-sm">
-                No members found
+                {m.editor_mention_empty()}
               </span>
             )}
           </span>

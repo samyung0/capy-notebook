@@ -35,8 +35,7 @@ function StreakHeading() {
           : m.dashboard_streak_none()}
       </h2>
       <p className="t-subtitle mt-1 text-fg-muted">
-        Take a look around — your workspaces, notes and itinerary will show up
-        here.
+        {m.dashboard_empty_intro()}
       </p>
     </div>
   );
@@ -72,13 +71,13 @@ function WorkspacesSection() {
       ) : !recent || recent.length === 0 ? (
         <div className="mt-30 flex w-full items-center justify-center">
           <p>
-            No workspaces yet.{' '}
+            {m.workspaces_empty()}{' '}
             <Link
               className="underline decoration-link decoration-wavy underline-offset-2 hover:decoration-link-hover"
               preload="intent"
               to="/workspaces"
             >
-              Go create your first workspace :)
+              {m.dashboard_empty_cta()}
             </Link>
           </p>
         </div>

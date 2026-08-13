@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { m } from '@/i18n';
 
 /* ============================================================
   Per-user note-editor toolbar preferences. All parser and renderer plugins
@@ -40,50 +41,86 @@ export interface WidgetGroupMeta {
 /** Display metadata for the settings popover. Order here = order in the UI. */
 export const WIDGET_GROUPS: WidgetGroupMeta[] = [
   {
-    description: 'Undo and redo',
+    get description() {
+      return m.editor_prefs_history_desc();
+    },
     id: 'history',
-    label: 'Editor history',
+    get label() {
+      return m.editor_prefs_history();
+    },
   },
   {
-    description: 'Upload, import, export',
+    get description() {
+      return m.editor_prefs_files_desc();
+    },
     id: 'fileOperations',
-    label: 'File operations',
+    get label() {
+      return m.editor_prefs_files();
+    },
   },
   {
-    description: 'Comments, Headings, dropdown menu',
+    get description() {
+      return m.editor_prefs_general_desc();
+    },
     id: 'general',
-    label: 'General',
+    get label() {
+      return m.editor_prefs_general();
+    },
   },
   {
-    description: 'Font size and colors',
+    get description() {
+      return m.editor_prefs_font_desc();
+    },
     id: 'fontStyles',
-    label: 'Font styles',
+    get label() {
+      return m.editor_prefs_font();
+    },
   },
   {
-    description: 'Bold, italic, underline, etc.',
+    get description() {
+      return m.editor_prefs_decorations_desc();
+    },
     id: 'textDecorations',
-    label: 'Text decorations',
+    get label() {
+      return m.editor_prefs_decorations();
+    },
   },
   {
-    description: 'Inline equations, codes, links, mentions',
+    get description() {
+      return m.editor_prefs_inline_desc();
+    },
     id: 'inlineElements',
-    label: 'Inline elements',
+    get label() {
+      return m.editor_prefs_inline();
+    },
   },
   {
-    description: 'Alignment and lists',
+    get description() {
+      return m.editor_prefs_block_dec_desc();
+    },
     id: 'blockDecorations',
-    label: 'Block decorations',
+    get label() {
+      return m.editor_prefs_block_dec();
+    },
   },
   {
-    description: 'Tables, columns, callouts, etc.',
+    get description() {
+      return m.editor_prefs_block_el_desc();
+    },
     id: 'blockElements',
-    label: 'Block elements',
+    get label() {
+      return m.editor_prefs_block_el();
+    },
   },
   {
     defaultEnabled: false,
-    description: 'Indent and outdent',
+    get description() {
+      return m.editor_prefs_indent_desc();
+    },
     id: 'indentation',
-    label: 'Indentation',
+    get label() {
+      return m.editor_prefs_indent();
+    },
   },
 ];
 

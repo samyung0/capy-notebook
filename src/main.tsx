@@ -11,6 +11,7 @@ import { router } from './router';
 import { ThemeProvider } from './theme/ThemeProvider';
 import './styles/tailwind.css';
 import 'streamdown/styles.css';
+import { TooltipProvider } from './components/ui/Tooltip';
 
 // Mocks are on by default; set VITE_USE_MSW=false to hit the real Go gateway
 // (Vite proxies /api → http://localhost:8080).
@@ -37,12 +38,15 @@ enableMocks().finally(() => {
         <AppAuthProvider>
           <QueryClientProvider client={queryClient}>
             <AppErrorBoundary variant="page">
-              <RouterProvider context={{ queryClient }} router={router} />
-              {MockScenarioPanel && (
-                <Suspense fallback={null}>
-                  <MockScenarioPanel />
-                </Suspense>
-              )}
+              <TooltipProvider>
+                <RouterProvider context={{ queryClient }} router={router} />
+
+                {MockScenarioPanel && (
+                  <Suspense fallback={null}>
+                    <MockScenarioPanel />
+                  </Suspense>
+                )}
+              </TooltipProvider>
             </AppErrorBoundary>
             {/* no need for query dev tools for now */}
             {/* {import.meta.env.DEV && <ReactQueryDevtools />} */}

@@ -6,10 +6,14 @@ import { IconButton } from '@/components/ui/IconButton';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { usePortals } from '@/stores/portals';
-import { addDays, MONTHS, sameDay, startOfDay } from './dateUtils';
+import {
+  addDays,
+  monthName,
+  sameDay,
+  startOfDay,
+  weekdayName,
+} from './dateUtils';
 import { TimeGrid } from './TimeGrid';
-
-const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 /**
  * Dashboard-only calendar: a 7-day strip centred on today plus the selected
@@ -44,8 +48,8 @@ export function DashboardCalendar() {
 
   const isTodaySelected = sameDay(selected, now);
   const dayLabel = isTodaySelected
-    ? `Today, ${WEEKDAY_SHORT[(selected.getDay() + 6) % 7]}`
-    : `${WEEKDAY_SHORT[(selected.getDay() + 6) % 7]}, ${MONTHS[selected.getMonth()].slice(0, 3)} ${selected.getDate()}`;
+    ? `Today, ${weekdayName(selected)}`
+    : `${weekdayName(selected)}, ${monthName(selected, 'short')} ${selected.getDate()}`;
 
   function shiftWeek(dir: number) {
     const next = addDays(anchor, dir * 7);
@@ -58,13 +62,13 @@ export function DashboardCalendar() {
       {/* month + week navigation */}
       <div className="mb-2 flex items-center justify-between">
         <span className="t-card-title">
-          {MONTHS[anchor.getMonth()].slice(0, 3)} {anchor.getFullYear()}
+          {monthName(anchor, 'short')} {anchor.getFullYear()}
         </span>
         <div className="flex items-center gap-1">
           <IconButton
             className="text-fg-muted hover:bg-surface-hover-bg"
             icon="chevronLeft"
-            label="Previous week"
+            label={m.schedule_prev_week()}
             onClick={() => shiftWeek(-1)}
             size="sm"
             variant="ghost"
@@ -72,7 +76,7 @@ export function DashboardCalendar() {
           <IconButton
             className="text-fg-muted hover:bg-surface-hover-bg"
             icon="chevronRight"
-            label="Next week"
+            label={m.schedule_next_week()}
             onClick={() => shiftWeek(1)}
             size="sm"
             variant="ghost"
@@ -94,7 +98,7 @@ export function DashboardCalendar() {
               type="button"
             >
               <span className="font-semibold text-[0.68rem] text-fg-muted">
-                {WEEKDAY_SHORT[(day.getDay() + 6) % 7][0]}
+                {weekdayName(day)}
               </span>
               <span
                 className={cn(

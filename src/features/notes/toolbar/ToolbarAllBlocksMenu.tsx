@@ -17,8 +17,7 @@ import { WIDGET_GROUPS } from '@/features/notes/noteEditorPrefs';
 import type { AnyEditor } from '@/features/notes/toolbar/NoteToolbar';
 import { ToolbarButton } from '@/features/notes/toolbar/ToolbarButton';
 import { MenuRow } from '@/features/notes/toolbar/ToolbarMenuRow';
-
-const ALL_BLOCK_GROUPS = WIDGET_GROUPS.map(({ id, label }) => ({ id, label }));
+import { m } from '@/i18n';
 
 export function ToolbarAllBlocksMenu({
   allBlockCommands,
@@ -48,10 +47,10 @@ export function ToolbarAllBlocksMenu({
   return (
     <Popover onOpenChange={setMoreOpen} open={moreOpen}>
       <PopoverTrigger asChild>
-        <span>
+        <span className="inline-flex">
           <ToolbarButton
             className="w-fit"
-            label="All blocks"
+            label={m.editor_all_blocks()}
             onClick={() => setMoreOpen(true)}
           >
             <Plus />
@@ -64,7 +63,7 @@ export function ToolbarAllBlocksMenu({
         className="max-h-[min(80vh,38rem)] w-72 overflow-y-auto rounded-card border border-line bg-surface p-1 shadow-pop"
         data-all-blocks-menu
       >
-        {ALL_BLOCK_GROUPS.map((group) => {
+        {WIDGET_GROUPS.map((group) => {
           const commands = allBlockCommands.filter(
             (command) => command.group === group.id
           );
@@ -98,7 +97,7 @@ export function ToolbarAllBlocksMenu({
                 <MenuRow
                   className="mt-1 border-divider border-t pt-2"
                   icon={<MessageSquarePlus />}
-                  label="Comment"
+                  label={m.editor_comment()}
                   onClick={() => {
                     setMoreOpen(false);
                     collaboration.openComment();
@@ -110,9 +109,18 @@ export function ToolbarAllBlocksMenu({
           );
         })}
         <div className="mt-1 border-divider border-t pt-1">
-          <MenuRow label="Subscript" onClick={() => mark(KEYS.sub)} />
-          <MenuRow label="Superscript" onClick={() => mark(KEYS.sup)} />
-          <MenuRow label="Clear formatting" onClick={clearFormatting} />
+          <MenuRow
+            label={m.editor_subscript()}
+            onClick={() => mark(KEYS.sub)}
+          />
+          <MenuRow
+            label={m.editor_superscript()}
+            onClick={() => mark(KEYS.sup)}
+          />
+          <MenuRow
+            label={m.editor_clear_formatting()}
+            onClick={clearFormatting}
+          />
         </div>
       </PopoverContent>
     </Popover>

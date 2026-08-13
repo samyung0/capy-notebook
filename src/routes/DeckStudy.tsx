@@ -33,11 +33,11 @@ import {
   type SrsRating,
 } from '@/lib/srs';
 
-const RATING_LABEL: Record<SrsRating, string> = {
-  again: 'Again',
-  easy: 'Easy',
-  good: 'Good',
-  hard: 'Hard',
+const RATING_LABEL: Record<SrsRating, () => string> = {
+  again: m.srs_again,
+  easy: m.srs_easy,
+  good: m.srs_good,
+  hard: m.srs_hard,
 };
 const RATING_STYLE: Record<SrsRating, string> = {
   again: 'border-tint-error text-tint-error-fg hover:bg-tint-error',
@@ -117,13 +117,9 @@ export default function DeckStudy() {
         isApiError(err) && (err.status === 404 || err.status === 401);
       return (
         <WorkspaceError
-          backLabel="Back to flashcards"
+          backLabel={m.flashcards_back_to()}
           backTo="/flashcards"
-          title={
-            denied
-              ? 'This item is private or unavailable.'
-              : 'Unable to load deck.'
-          }
+          title={denied ? m.error_private_title() : m.deck_unable_load()}
         />
       );
     }
@@ -172,7 +168,7 @@ export default function DeckStudy() {
         <>
           <IconButton
             icon="link"
-            label="Share deck"
+            label={m.flashcards_share_deck()}
             onClick={() => setShareOpen(true)}
             size="sm"
             variant="outline"
@@ -201,7 +197,7 @@ export default function DeckStudy() {
           }
           size="sm"
         >
-          {cloneDeckIsPending ? 'Cloning…' : 'Clone deck'}
+          {cloneDeckIsPending ? m.action_cloning() : m.action_clone_deck()}
         </Button>
       )}
     </div>
@@ -327,7 +323,7 @@ export default function DeckStudy() {
                 onClick={() => rate(r)}
                 type="button"
               >
-                {RATING_LABEL[r]}
+                {RATING_LABEL[r]()}
                 <span className="font-normal text-[11px] tabular-nums opacity-70">
                   {previews[r]}
                 </span>
@@ -360,7 +356,7 @@ export default function DeckStudy() {
           open={shareOpen}
           privacy={deck.privacy ?? 'private'}
           saving={updateDeckIsPending}
-          title={`Share ${deck.name}`}
+          title={m.flashcards_share_title({ name: deck.name })}
         />
       )}
     </PanelWithInvertedRadius>

@@ -2,6 +2,7 @@ import { ClerkProvider, RedirectToSignIn, Show, useAuth } from '@clerk/react';
 import { useEffect, useRef, useState } from 'react';
 import { setAuthTokenGetter, USE_MSW } from '@/api/auth';
 import { queryClient } from '@/api/queryClient';
+import { m } from '@/i18n';
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
   | string
@@ -36,11 +37,11 @@ function AuthTokenBridge({ children }: { children: React.ReactNode }) {
   if (!isLoaded || readyIdentity !== identity) {
     return (
       <div
-        aria-label="Loading"
+        aria-label={m.a11y_loading()}
         className="flex h-dvh items-center justify-center"
         role="status"
       >
-        Loading…
+        {m.common_loading()}
       </div>
     );
   }

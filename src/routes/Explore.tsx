@@ -44,17 +44,14 @@ export default function Explore() {
 
   return (
     <PanelWithInvertedRadius>
-      <PageHeader
-        subtitle="Discover public study sets from the community."
-        title={m.nav_explore()}
-      />
+      <PageHeader subtitle={m.explore_subtitle()} title={m.nav_explore()} />
       <div className="px-6">
         <Tabs
           onChange={setTab}
           tabs={[
             { label: m.explore_tab_workspaces(), value: 'workspaces' },
             { label: m.explore_tab_quizzes(), value: 'quizzes' },
-            { label: 'Flashcards', value: 'decks' },
+            { label: m.explore_tab_flashcards(), value: 'decks' },
           ]}
           value={tab}
         />
@@ -97,7 +94,7 @@ export default function Explore() {
                       size="sm"
                       variant="outline"
                     >
-                      Clone workspace
+                      {m.action_clone_workspace()}
                     </Button>
                   </Card>
                 );

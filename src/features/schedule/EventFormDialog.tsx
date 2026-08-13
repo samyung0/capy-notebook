@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
 import { Input, InputError, InputTitle } from '@/components/ui/Input';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { userColorPair } from '@/lib/userColor';
 
@@ -45,21 +46,23 @@ function defaultStart() {
   return d;
 }
 
-const EventFormSchema = z
-  .object({
-    date: z.string().min(1),
-    endTime: z.string().min(1),
-    labelIds: z.array(z.string()),
-    location: z.string().max(createEventBodyLocationMax),
-    startTime: z.string().min(1),
-    title: CreateEventBody.shape.title,
-  })
-  .refine((v) => v.endTime > v.startTime, {
-    message: 'End must be after start',
+const EventFormFieldsSchema = z.object({
+  date: z.string().min(1),
+  endTime: z.string().min(1),
+  labelIds: z.array(z.string()),
+  location: z.string().max(createEventBodyLocationMax),
+  startTime: z.string().min(1),
+  title: CreateEventBody.shape.title,
+});
+
+type EventFormFields = z.infer<typeof EventFormFieldsSchema>;
+
+function eventFormSchema() {
+  return EventFormFieldsSchema.refine((v) => v.endTime > v.startTime, {
+    message: m.schedule_end_after_start(),
     path: ['endTime'],
   });
-
-type EventFormFields = z.infer<typeof EventFormSchema>;
+}
 
 export function EventFormDialog({
   open,
@@ -96,7 +99,7 @@ export function EventFormDialog({
       title: draft?.title ?? '',
     },
     mode: 'onChange',
-    resolver: zodResolver(EventFormSchema),
+    resolver: zodResolver(eventFormSchema()),
   });
 
   const labelIds = watch('labelIds');
@@ -138,10 +141,12 @@ export function EventFormDialog({
             type="button"
             variant="ghost-hover"
           >
-            Cancel
+            {m.action_cancel()}
           </Button>
           <Button disabled={submitDisabled} size="lg" type="submit">
-            {!isSubmitting && <span>{isEdit ? 'Save' : 'Create'}</span>}
+            {!isSubmitting && (
+              <span>{isEdit ? m.action_save() : m.action_create()}</span>
+            )}
             {isSubmitting && (
               <span>
                 <Spinner />
@@ -153,7 +158,7 @@ export function EventFormDialog({
       onClose={onClose}
       onSubmit={formSubmit(handleSubmit)}
       open={open}
-      title={isEdit ? 'Edit event' : 'New event'}
+      title={isEdit ? m.action_edit() : m.schedule_new_event()}
     >
       <div className="flex flex-col gap-4">
         <Controller
@@ -161,12 +166,12 @@ export function EventFormDialog({
           name="title"
           render={({ field, fieldState }) => (
             <label className="flex flex-col gap-1.5">
-              <InputTitle required>Title</InputTitle>
+              <InputTitle required>{m.common_title()}</InputTitle>
               <Input
                 {...field}
                 aria-invalid={fieldState.invalid}
                 autoFocus
-                placeholder="Event title"
+                placeholder={m.schedule_event_title()}
               />
               {fieldState.invalid && <InputError errors={[fieldState.error]} />}
             </label>
@@ -178,7 +183,7 @@ export function EventFormDialog({
           name="date"
           render={({ field, fieldState }) => (
             <label className="flex flex-col gap-1.5">
-              <InputTitle required>Date</InputTitle>
+              <InputTitle required>{m.common_date()}</InputTitle>
               <Input {...field} aria-invalid={fieldState.invalid} type="date" />
               {fieldState.invalid && <InputError errors={[fieldState.error]} />}
             </label>
@@ -191,7 +196,7 @@ export function EventFormDialog({
             name="startTime"
             render={({ field, fieldState }) => (
               <label className="flex flex-1 flex-col gap-1.5">
-                <InputTitle required>Start</InputTitle>
+                <InputTitle required>{m.common_start()}</InputTitle>
                 <Input
                   {...field}
                   aria-invalid={fieldState.invalid}
@@ -208,7 +213,7 @@ export function EventFormDialog({
             name="endTime"
             render={({ field, fieldState }) => (
               <label className="flex flex-1 flex-col gap-1.5">
-                <InputTitle required>End</InputTitle>
+                <InputTitle required>{m.common_end()}</InputTitle>
                 <Input
                   {...field}
                   aria-invalid={fieldState.invalid}
@@ -227,11 +232,11 @@ export function EventFormDialog({
           name="location"
           render={({ field, fieldState }) => (
             <label className="flex flex-col gap-1.5">
-              <InputTitle>Location</InputTitle>
+              <InputTitle>{m.common_location()}</InputTitle>
               <Input
                 {...field}
                 aria-invalid={fieldState.invalid}
-                placeholder="Optional"
+                placeholder={m.common_optional()}
               />
               {fieldState.invalid && <InputError errors={[fieldState.error]} />}
             </label>
@@ -240,7 +245,7 @@ export function EventFormDialog({
 
         {labels.length > 0 && (
           <div className="flex flex-col gap-1.5">
-            <InputTitle>Labels</InputTitle>
+            <InputTitle>{m.common_labels()}</InputTitle>
             <div className="flex flex-wrap gap-1.5">
               {labels.map((l) => {
                 const on = labelIds.includes(l.id);

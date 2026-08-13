@@ -1542,10 +1542,38 @@ export const handlers = [
         ? [...scopeChapterNames, ...scopeFileNames].join(', ')
         : 'the whole workspace';
 
+    const title = opts.title?.trim() ?? '';
+    if (!title) {
+      return HttpResponse.json(
+        { message: 'title is required' },
+        { status: 400 }
+      );
+    }
+    if (title.length > 200) {
+      return HttpResponse.json(
+        { message: 'title must be at most 200 characters' },
+        { status: 400 }
+      );
+    }
+    const titleTaken = db.materials.some(
+      (mt) =>
+        mt.workspaceId === wsId &&
+        mt.title.trim().toLowerCase() === title.toLowerCase()
+    );
+    if (titleTaken) {
+      return HttpResponse.json(
+        {
+          code: 'title_taken',
+          message: 'a material with this name already exists in this workspace',
+        },
+        { status: 409 }
+      );
+    }
+
     if (opts.kind === 'flashcards') {
       // Persist a flashcards markdown material; per-card FSRS lives in cardStats.
       const id = uid('dk');
-      const name = `${wsName} flashcards`;
+      const name = title;
       const cardContents = Array.from({ length: opts.count }, (_, i) => ({
         back: `Definition for term ${i + 1}.`,
         front: `Term ${i + 1}`,
@@ -1602,7 +1630,7 @@ export const handlers = [
         privacy: 'private',
         scopeChapters: scopeChapterNames,
         scopeFileNames,
-        title: `${wsName} ${opts.kind}`,
+        title,
         workspaceId: wsId,
         workspaceName: wsName,
       });
@@ -1687,7 +1715,7 @@ export const handlers = [
           } as Question;
       }
     });
-    const name = `${wsName} quiz`;
+    const name = title;
     const quizMat = db.makeMaterial({
       ...ownerMaterialAccess,
       chapterId: null,

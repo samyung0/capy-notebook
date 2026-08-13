@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { m } from '@/i18n';
 import {
   columnGroupFromWidths,
   EDITOR_COMMANDS,
@@ -71,7 +72,10 @@ describe('editor insertion command catalog', () => {
 
     insertInlineEquation(editor, promptForExpression);
 
-    expect(promptForExpression).toHaveBeenCalledWith('LaTeX expression', 'x^2');
+    expect(promptForExpression).toHaveBeenCalledWith(
+      m.editor_latex_prompt(),
+      'x^2'
+    );
     expect(editor.tf.insertNodes).toHaveBeenCalledWith(
       {
         children: [{ text: '' }],

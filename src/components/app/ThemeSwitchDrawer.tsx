@@ -1,6 +1,7 @@
 import { useRouterState } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { Drawer, DrawerContent, DrawerTrigger } from '@/components/ui/Drawer';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import {
   STYLES,
@@ -178,14 +179,18 @@ export function ThemeSwitchDrawer({
           <aside>
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-5">
-                <p className="t-card-title">Theme</p>
+                <p className="t-card-title">{m.settings_theme()}</p>
                 <div className="flex flex-col gap-3">
-                  <InputTitle>Style</InputTitle>
+                  <InputTitle>{m.common_style()}</InputTitle>
                   <div className="grid w-full grid-cols-3 gap-3">
                     {STYLES.map((o) => (
                       <StyleComponents
                         key={o.value}
-                        label={o.label}
+                        label={
+                          o.value === 'classroom'
+                            ? m.theme_style_classroom()
+                            : m.theme_style_notion()
+                        }
                         onClick={() => setStyle(o.value)}
                         value={o.value}
                       />
@@ -193,7 +198,7 @@ export function ThemeSwitchDrawer({
                   </div>
                 </div>
                 <div className="flex flex-col gap-3">
-                  <InputTitle>Theme</InputTitle>
+                  <InputTitle>{m.settings_theme()}</InputTitle>
                   <div className="grid w-full grid-cols-3 gap-3">
                     <ThemeChooser
                       onChange={setTheme}

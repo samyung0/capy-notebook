@@ -3,6 +3,7 @@ import { Slot } from 'radix-ui';
 import { cn } from '@/lib/cn';
 import { BASE_BUTTON_STYLE } from './Button';
 import { Icon, type IconName } from './Icon';
+import { ButtonTooltip } from './Tooltip';
 
 const iconButtonVariants = cva(BASE_BUTTON_STYLE, {
   defaultVariants: {
@@ -41,7 +42,11 @@ export interface IconButtonProps
   icon: IconName;
   iconClassName?: string;
   label?: string;
+  shortcut?: string;
   strokeWidth?: number;
+  /** When true, uses `label`. When a string, uses that text. */
+  tooltip?: boolean | string;
+  tooltipSide?: 'top' | 'bottom';
 }
 
 export function IconButton({
@@ -51,13 +56,17 @@ export function IconButton({
   dot,
   strokeWidth,
   label,
+  shortcut,
+  tooltip,
+  tooltipSide = 'top',
   children,
   className,
   iconClassName,
   ...rest
 }: IconButtonProps) {
   const Tag = rest.asChild ? Slot.Root : 'button';
-  return (
+  const tooltipLabel = tooltip === true ? label : tooltip || undefined;
+  const button = (
     <Tag
       aria-label={label ?? rest['aria-label']}
       className={cn(iconButtonVariants({ size, variant }), className)}
@@ -72,5 +81,13 @@ export function IconButton({
         <span className="absolute top-1.75 right-1.75 h-1.5 w-1.5 animate-pulse rounded-full bg-solid-error ring-1 ring-surface" />
       )}
     </Tag>
+  );
+
+  if (!tooltipLabel || rest.asChild) return button;
+
+  return (
+    <ButtonTooltip label={tooltipLabel} shortcut={shortcut} side={tooltipSide}>
+      {button}
+    </ButtonTooltip>
   );
 }

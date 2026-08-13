@@ -10,6 +10,7 @@ import {
   ContentActions,
   toMaterialActionTarget,
 } from '@/features/workspace/ContentActions';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
 const MATERIAL_ICON: Record<MaterialRefType, IconName> = {
@@ -81,7 +82,7 @@ export function MaterialListItem({
           includeDelete={!!onDelete}
           onMove={(chapterId) => onMove?.(chapterId)}
           onRequestDelete={onDelete}
-          renameTitle="Rename material"
+          renameTitle={m.material_rename()}
           workspaceId={workspaceId}
         />
       )}
