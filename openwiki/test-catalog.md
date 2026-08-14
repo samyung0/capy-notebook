@@ -17,7 +17,7 @@ at the top of each section.
 | Collaboration Vitest | `pnpm test:collaboration` |
 | Go server | `pnpm test:go` |
 | Python pipeline | `pnpm test:pipeline` / offline: `pnpm test:pipeline:offline` |
-| Playwright sharing/API e2e | `pnpm e2e` |
+| Playwright sharing/API e2e | `pnpm e2e` / serialized: `pnpm e2e:slow` |
 | Playwright editor (MSW) | `pnpm e2e:editor` |
 | Playwright editor perf | `pnpm perf` |
 
@@ -164,6 +164,13 @@ See also [`pipeline-tests.md`](pipeline-tests.md) for disposable Postgres/Redis 
 ## Playwright e2e — real stack (`e2e/errors/`, `e2e/sharing/`)
 
 Real stack via Docker (`pnpm e2e`). Editor specs are ignored by the root Playwright config.
+
+The four local workers open up to eight Chromium contexts against one Vite dev
+server and the Dockerized API. On a machine that cannot absorb that, API
+responses stretch to several seconds and the editor takes tens of seconds to
+reach `Synced`, so budgets calibrated for a healthy host expire — the collab and
+material-mode specs fail even though the flows complete. Use `pnpm e2e:slow`
+(one worker) there; it is a host-capacity workaround, not a fix for a flaky spec.
 
 | File | About |
 | --- | --- |

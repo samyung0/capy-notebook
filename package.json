@@ -123,6 +123,7 @@
     "test:pipeline:offline": "uv run --extra test pytest -q -m \"not cassette and not integration\"",
     "test:go": "cd server && go run gotest.tools/gotestsum@v1.12.3 --format=testdox -- -p 1 ./...",
     "e2e": "playwright test",
+    "e2e:slow": "playwright test --workers=1",
     "e2e:ui": "playwright test --ui",
     "e2e:editor": "playwright test --config=e2e/editor/playwright.editor.config.ts",
     "e2e:install": "playwright install chromium",

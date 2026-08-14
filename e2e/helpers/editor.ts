@@ -1,6 +1,15 @@
 import { expect, type Locator, type Page, test } from '@playwright/test';
 
 /**
+ * Inner expect budget for a lazy editor/preview mount. Must stay below the
+ * test timeout: if they are equal, Playwright closes the page first and the
+ * failure reads as "browser has been closed" instead of "never went live."
+ */
+function mountTimeout(): number {
+  return Math.floor(test.info().timeout * (2 / 3));
+}
+
+/**
  * Interactive Plate is a lazy chunk the dev server transforms on demand, so a
  * resolved navigation says nothing about whether the editor has mounted. The
  * budget covers that transform; the default expect timeout does not once
@@ -13,22 +22,21 @@ import { expect, type Locator, type Page, test } from '@playwright/test';
 export async function expectEditorLive(page: Page): Promise<void> {
   await expect(page.getByTestId('editor-save-state')).toHaveText(
     /^(Synced|Saved)$/,
-    { timeout: 60_000 }
+    { timeout: mountTimeout() }
   );
 }
 
 /**
  * Static Plate preview is a lazy chunk. Wait for the preview root to mount
  * (chunk loaded + document parsed), then assert text inside it — not "this
- * string appears somewhere within N seconds." The timeout is the test budget,
- * not a guessed transform duration.
+ * string appears somewhere within N seconds."
  */
 export async function expectStaticPreview(
   page: Page,
   text: string
 ): Promise<void> {
   const preview = page.getByTestId('material-preview');
-  await expect(preview).toBeVisible({ timeout: test.info().timeout });
+  await expect(preview).toBeVisible({ timeout: mountTimeout() });
   await expect(preview.getByText(text)).toBeVisible();
 }
 
