@@ -2,7 +2,7 @@
 
 This module translates Plate/@ai-sdk request shapes into server-owned provider
 calls.  It deliberately contains no browser-supplied provider credentials or
-model selection: both come from ``pipeline.config``.
+model selection: both come from the model registry.
 """
 
 from __future__ import annotations
@@ -20,7 +20,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from ..config import cfg
+from .. import obs, registry
+from ..retrieval import models
 from ..retrieval.locale import response_language_rule, rewrite_language_rule
 
 log = logging.getLogger("evo.retrieve.ai")
@@ -63,6 +64,8 @@ class PlateCommandReq(BaseModel):
     messages: list[UIMessage] = Field(min_length=1, max_length=20)
     ctx: PlateContext
     locale: str | None = Field(default=None, max_length=16)
+    modelKey: str | None = None
+    configVersion: int | None = None
 
 
 class PlateCopilotReq(BaseModel):
@@ -71,6 +74,8 @@ class PlateCopilotReq(BaseModel):
     prompt: str = Field(min_length=1, max_length=MAX_INSTRUCTION_CHARS)
     instructions: str | None = Field(default=None, max_length=8_000)
     system: str | None = Field(default=None, max_length=8_000)
+    modelKey: str | None = None
+    configVersion: int | None = None
 
 
 class AIAdapterError(RuntimeError):
@@ -83,17 +88,20 @@ class AIAdapterError(RuntimeError):
         self.retryable = retryable
 
 
-def _client():
-    if not cfg.llm.api_key:
+def _editor_spec(req: PlateCommandReq | PlateCopilotReq):
+    return models.resolve_query_model(
+        req.modelKey, req.configVersion, surface=registry.SURFACE_EDITOR
+    )
+
+
+def _ensure_provider(spec) -> None:
+    if not registry.provider_cfg_for(spec).api_key:
         raise AIAdapterError(
             "ai_unavailable",
             "AI provider is not configured",
             status=503,
             retryable=True,
         )
-    from openai import AsyncOpenAI
-
-    return AsyncOpenAI(api_key=cfg.llm.api_key, base_url=cfg.llm.base_url)
 
 
 def _text(message: UIMessage) -> str:
@@ -392,13 +400,19 @@ extraction, questions, and tables are generate. Output one lowercase word.
 </rules>""",
     )
     try:
-        response = await _client().chat.completions.create(
-            model=cfg.query_model,
-            messages=[{"role": "user", "content": prompt}],
+        spec = _editor_spec(req)
+        _ensure_provider(spec)
+        response = await models.complete_response(
+            [{"role": "user", "content": prompt}],
+            model=spec,
             max_tokens=8,
             temperature=0,
         )
-        choice = (response.choices[0].message.content or "").strip().lower()
+        choice = (
+            (response.choices[0].message.content or "").strip().lower()
+            if response.choices
+            else ""
+        )
     except AIAdapterError:
         raise
     except Exception as exc:
@@ -435,8 +449,19 @@ def _json_value(text: str) -> Any:
             ) from exc
 
 
-async def _wait_completion(request: Request, **kwargs: Any):
-    task = asyncio.create_task(_client().chat.completions.create(**kwargs))
+async def _wait_completion(
+    request: Request,
+    messages: list[dict[str, Any]],
+    *,
+    model: Any,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+):
+    task = asyncio.create_task(
+        models.complete_response(
+            messages, model=model, temperature=temperature, max_tokens=max_tokens
+        )
+    )
     try:
         while not task.done():
             if await request.is_disconnected():
@@ -459,10 +484,11 @@ async def _structured_events(
     prompt = (
         build_table_prompt(req, cell_ids) if is_table else build_comment_prompt(req)
     )
+    spec = _editor_spec(req)
     response = await _wait_completion(
         request,
-        model=cfg.query_model,
-        messages=[{"role": "user", "content": prompt}],
+        [{"role": "user", "content": prompt}],
+        model=spec,
         max_tokens=MAX_OUTPUT_TOKENS,
         temperature=0.2,
     )
@@ -532,29 +558,19 @@ async def _structured_events(
     )
 
 
-async def _text_events(request: Request, prompt: str) -> AsyncIterator[str]:
+async def _text_events(request: Request, prompt: str, spec: Any) -> AsyncIterator[str]:
     text_id = secrets.token_urlsafe(18)
-    stream = await _client().chat.completions.create(
-        model=cfg.query_model,
-        messages=[{"role": "user", "content": prompt}],
-        max_tokens=MAX_OUTPUT_TOKENS,
-        stream=True,
-        temperature=0.7,
-    )
     yield _sse({"type": "text-start", "id": text_id})
-    try:
-        async for chunk in stream:
-            if await request.is_disconnected():
-                return
-            delta = chunk.choices[0].delta.content if chunk.choices else ""
-            if delta:
-                yield _sse({"type": "text-delta", "id": text_id, "delta": delta})
-    finally:
-        close = getattr(stream, "close", None)
-        if close:
-            result = close()
-            if asyncio.iscoroutine(result):
-                await result
+    async for delta in models.stream_text(
+        [{"role": "user", "content": prompt}],
+        model=spec,
+        max_tokens=MAX_OUTPUT_TOKENS,
+        temperature=0.7,
+    ):
+        if await request.is_disconnected():
+            return
+        if delta:
+            yield _sse({"type": "text-delta", "id": text_id, "delta": delta})
     yield _sse({"type": "text-end", "id": text_id})
 
 
@@ -581,7 +597,7 @@ async def command_events(req: PlateCommandReq, request: Request) -> AsyncIterato
                 if tool_name == "edit"
                 else build_generate_prompt(req)
             )
-            async for event in _text_events(request, prompt):
+            async for event in _text_events(request, prompt, _editor_spec(req)):
                 yield event
         if await request.is_disconnected():
             return
@@ -608,13 +624,18 @@ async def command_events(req: PlateCommandReq, request: Request) -> AsyncIterato
         )
     finally:
         if not await request.is_disconnected():
+            usage = obs.current_usage()
+            if usage is not None and not usage.is_empty():
+                payload = usage.as_dict()
+                yield _sse({"type": "data-usage", "data": payload, "usage": payload})
             yield _sse("[DONE]")
 
 
 @router.post("/command")
 async def plate_command(req: PlateCommandReq, request: Request):
     try:
-        _client()  # fail before opening a 200 stream when unconfigured
+        spec = _editor_spec(req)
+        _ensure_provider(spec)
         _instruction(req.messages)
     except AIAdapterError as exc:
         raise HTTPException(
@@ -644,13 +665,15 @@ async def plate_copilot(req: PlateCopilotReq, request: Request):
         )
     )
     try:
+        spec = _editor_spec(req)
+        _ensure_provider(spec)
         response = await _wait_completion(
             request,
-            model=cfg.query_model,
-            messages=[
+            [
                 {"role": "system", "content": instructions},
                 {"role": "user", "content": req.prompt},
             ],
+            model=spec,
             max_tokens=50,
             temperature=0.7,
         )
@@ -679,12 +702,14 @@ async def plate_copilot(req: PlateCopilotReq, request: Request):
             },
         ) from exc
     text = response.choices[0].message.content if response.choices else ""
-    usage = getattr(response, "usage", None)
+    usage = obs.current_usage()
+    usage_dict = usage.as_dict() if usage is not None else {}
     return {
         "text": text or "",
         "finishReason": "stop",
         "usage": {
-            "promptTokens": getattr(usage, "prompt_tokens", 0) or 0,
-            "completionTokens": getattr(usage, "completion_tokens", 0) or 0,
+            "promptTokens": usage_dict.get("inputTokens", 0),
+            "completionTokens": usage_dict.get("outputTokens", 0),
+            **usage_dict,
         },
     }

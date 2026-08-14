@@ -52,6 +52,9 @@ type localeInput struct {
 type billingOutput struct {
 	Body apimodel.BillingInfo
 }
+type usageOutput struct {
+	Body apimodel.UsageReport
+}
 type billingCheckoutInput struct {
 	Body apimodel.BillingCheckoutReq
 }
@@ -99,6 +102,7 @@ func (a *api) registerExplore(api huma.API) {
 func (a *api) registerBillingIntegrations(api huma.API) {
 	const tag = "Billing & integrations"
 	reg(api, http.MethodGet, "/api/billing", "getBilling", tag, "Billing info", http.StatusOK, a.getBilling)
+	reg(api, http.MethodGet, "/api/usage", "getUsage", tag, "Current-period AI usage", http.StatusOK, a.getUsage)
 	reg(api, http.MethodPost, "/api/billing/checkout", "billingCheckout", tag, "Start checkout", http.StatusOK, a.billingCheckout)
 	reg(api, http.MethodPost, "/api/billing/portal", "billingPortal", tag, "Open billing portal", http.StatusOK, a.billingPortal)
 	reg(api, http.MethodGet, "/api/integrations", "getIntegrations", tag, "Integration status", http.StatusOK, a.getIntegrations)
@@ -223,6 +227,14 @@ func (a *api) getBilling(ctx context.Context, _ *struct{}) (*billingOutput, erro
 	return &billingOutput{Body: info}, nil
 }
 
+func (a *api) getUsage(ctx context.Context, _ *struct{}) (*usageOutput, error) {
+	report, err := a.s.UserUsageReport(ctx, userID(ctx), 0)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &usageOutput{Body: report}, nil
+}
+
 func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*urlOutput, error) {
 	uid := userID(ctx)
 	u, err := a.s.Me(ctx, uid)
@@ -246,8 +258,8 @@ func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*u
 			return nil, hErr(err)
 		}
 	}
-	successURL := a.cfg.AppURL + "/subscription?success=1"
-	cancelURL := a.cfg.AppURL + "/subscription"
+	successURL := a.cfg.AppURL + "/settings?tab=subscription"
+	cancelURL := a.cfg.AppURL + "/settings?tab=subscription"
 	url, err := billing.CreateCheckoutSession(customerID, priceID, uid, successURL, cancelURL)
 	if err != nil {
 		return nil, hErr(err)
@@ -264,7 +276,7 @@ func (a *api) billingPortal(ctx context.Context, _ *struct{}) (*urlOutput, error
 	if customerID == "" {
 		return nil, huma.Error400BadRequest("no billing account")
 	}
-	url, err := billing.CreatePortalSession(customerID, a.cfg.AppURL+"/subscription")
+	url, err := billing.CreatePortalSession(customerID, a.cfg.AppURL+"/billing")
 	if err != nil {
 		return nil, hErr(err)
 	}

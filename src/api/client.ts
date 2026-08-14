@@ -43,6 +43,10 @@ export function isStorageQuotaError(err: unknown): err is ApiError {
   return isApiError(err) && err.code === 'storage_quota_exceeded';
 }
 
+export function isCreditsExhaustedError(err: unknown): err is ApiError {
+  return isApiError(err) && err.code === 'llm_credits_exhausted';
+}
+
 /** The stored document exists but the server could not decode it. Distinct from
  * a missing material, which the UI reports as deleted. */
 export function isMaterialContentUnreadable(err: unknown): err is ApiError {
@@ -59,6 +63,7 @@ const ACCOUNT_FORBIDDEN_CODES = new Set([
 
 const CODED_ERROR_MESSAGES = new Set([
   'storage_quota_exceeded',
+  'llm_credits_exhausted',
   'material_content_unreadable',
   ...ACCOUNT_FORBIDDEN_CODES,
 ]);
@@ -305,6 +310,7 @@ export const qk = {
   me: ['me'] as const,
   messages: (convId: string) => ['conversation', convId, 'messages'] as const,
   mistakes: ['mistakes'] as const,
+  models: (surface: string) => ['models', surface] as const,
   notificationPrefs: ['notification-prefs'] as const,
   notificationStream: ['notifications', 'stream'] as const,
   notifications: ['notifications'] as const,
@@ -317,6 +323,7 @@ export const qk = {
   tags: (kind: string) => ['tags', kind] as const,
   tasks: ['tasks'] as const,
   thinking: ['thinking'] as const,
+  usage: ['usage'] as const,
   workspace: (id: string) => ['workspace', id] as const,
   workspaceCollaborators: (id: string) =>
     ['workspace', id, 'collaborators'] as const,

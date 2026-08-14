@@ -11,6 +11,10 @@ export interface BillingInfo {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   cancelAtPeriodEnd: boolean;
+  creditsLimitMicros: number;
+  creditsPeriodStart: string;
+  creditsReservedMicros: number;
+  creditsUsedMicros: number;
   planTier: PlanTier;
   renewalAt?: string;
   storageLimitBytes: number;

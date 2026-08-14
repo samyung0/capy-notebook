@@ -19,6 +19,7 @@ const (
 	classExempt class = iota
 	classDefault
 	classAI
+	classEditor
 	classUpload
 )
 
@@ -27,10 +28,13 @@ const (
 // route patterns.
 var aiSuffixes = []string{
 	"/chat/stream",
-	"/complete/stream",
 	"/ai/command",
-	"/ai/copilot",
 	"/generate",
+}
+
+var editorSuffixes = []string{
+	"/complete/stream",
+	"/ai/copilot",
 }
 
 var uploadSuffixes = []string{
@@ -63,6 +67,11 @@ func classify(path string) class {
 	}
 	if path == "/api/transcribe" {
 		return classAI
+	}
+	for _, suffix := range editorSuffixes {
+		if strings.HasSuffix(path, suffix) {
+			return classEditor
+		}
 	}
 	for _, suffix := range aiSuffixes {
 		if strings.HasSuffix(path, suffix) {
@@ -113,6 +122,15 @@ func Middleware(l *Limiter, userFunc func(*http.Request) string) func(http.Handl
 			switch routeClass {
 			case classAI:
 				if ok, retry := l.Allow(ctx, "ai:"+subject, l.cfg.AI); !ok {
+					reject(w, r, retry, "ai_rate_limited")
+					return
+				}
+				if ok, retry := l.Allow(ctx, "ai-burst:"+subject, l.cfg.AIBurst); !ok {
+					reject(w, r, retry, "ai_rate_limited")
+					return
+				}
+			case classEditor:
+				if ok, retry := l.Allow(ctx, "editor:"+subject, l.cfg.Editor); !ok {
 					reject(w, r, retry, "ai_rate_limited")
 					return
 				}

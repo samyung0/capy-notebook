@@ -205,8 +205,11 @@ Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L7
 - Shared editors who are not members cannot use workspace chat or generation.
 - Generated material storage is charged to the workspace owner. The actor is
   recorded as author but does not become storage owner.
-- Inference-credit authorization is currently a placeholder that allows the
-  request. It is intentionally separate from storage lifecycle state.
+- Inference credits are billed to the actor (`ReserveCredits` /
+  `llm_credits_exhausted`), except `summaries_rollup` which bills the workspace
+  owner because the job has no actor. Ingest claim-time checks owner
+  lifecycle/storage and actor credits as two lookups; actor lifecycle is not
+  checked, so a `deletion_pending` uploader cannot strand the owner's bytes.
 
 Sources: [chat ownership and editor guard](../server/internal/store/chat.go#L44),
 [generation editor guard](../server/internal/httpapi/server.go#L496), and

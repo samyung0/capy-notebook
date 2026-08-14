@@ -50,6 +50,7 @@ import type {
   MaterialRef,
   MaterialRevision,
   MaterialUpdateResult,
+  ModelsResponse,
   NotificationCount,
   NotificationPage,
   NotificationPrefs,
@@ -60,6 +61,7 @@ import type {
   RecentFile,
   SaveCanvasReq,
   SearchResult,
+  SetModelPrefsReq,
   SourceFile,
   SourceUploadPolicy,
   Tag,
@@ -80,6 +82,7 @@ import type {
   UpdateWorkspaceReq,
   UpdateWorkspaceSharingReq,
   URLResp,
+  UsageReport,
   User,
   WireMessage,
   Workspace,
@@ -115,6 +118,28 @@ export const meQuery = () =>
   queryOptions({ queryFn: () => api.get<User>('/me'), queryKey: qk.me });
 export const useMe = (options?: QueryUiOptions) =>
   useQuery({ ...meQuery(), meta: queryMeta(options) });
+
+export const modelsQuery = (surface: 'chat' | 'generate' | 'editor') =>
+  queryOptions({
+    queryFn: () =>
+      api.get<ModelsResponse>(`/models?surface=${encodeURIComponent(surface)}`),
+    queryKey: qk.models(surface),
+  });
+export const useModels = (
+  surface: 'chat' | 'generate' | 'editor',
+  options?: QueryUiOptions
+) => useQuery({ ...modelsQuery(surface), meta: queryMeta(options) });
+
+export function useSetModelPrefs() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: SetModelPrefsReq) => api.patch<void>('/me/models', body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: qk.me });
+      void qc.invalidateQueries({ queryKey: ['models'] });
+    },
+  });
+}
 
 export const accountStatusQuery = () =>
   queryOptions({
@@ -445,6 +470,14 @@ export const billingQuery = () =>
   });
 export const useBilling = (options?: QueryUiOptions) =>
   useQuery({ ...billingQuery(), meta: queryMeta(options) });
+
+export const usageQuery = () =>
+  queryOptions({
+    queryFn: () => api.get<UsageReport>('/usage'),
+    queryKey: qk.usage,
+  });
+export const useUsage = (options?: QueryUiOptions) =>
+  useQuery({ ...usageQuery(), meta: queryMeta(options) });
 
 export function useBillingCheckout() {
   return useMutation({

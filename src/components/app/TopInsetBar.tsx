@@ -187,19 +187,14 @@ function ProfilePillInner({ onLogout }: { onLogout?: () => void }) {
         alignWidthToTrigger
         items={[
           {
-            icon: 'profile',
-            label: m.profile_menu_profile(),
-            onClick: () => navigate({ to: '/profile' }),
-          },
-          {
-            icon: 'settings',
-            label: m.profile_menu_subscription(),
-            onClick: () => navigate({ to: '/subscription' }),
-          },
-          {
             icon: 'settings',
             label: m.profile_menu_settings(),
             onClick: () => navigate({ to: '/settings' }),
+          },
+          {
+            icon: 'chart',
+            label: m.profile_menu_billing(),
+            onClick: () => navigate({ to: '/billing' }),
           },
           {
             icon: 'palette',

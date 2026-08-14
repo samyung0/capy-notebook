@@ -170,6 +170,10 @@ export const GetAttemptResponse = zod.object({
 export const GetBillingResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "cancelAtPeriodEnd": zod.boolean(),
+  "creditsLimitMicros": zod.int(),
+  "creditsPeriodStart": zod.iso.datetime({"offset":true}),
+  "creditsReservedMicros": zod.int(),
+  "creditsUsedMicros": zod.int(),
   "planTier": zod.enum(['free', 'pro']),
   "renewalAt": zod.iso.datetime({"offset":true}).optional(),
   "storageLimitBytes": zod.int(),
@@ -1247,8 +1251,10 @@ export const ListMaterialRevisionsResponse = zod.array(ListMaterialRevisionsResp
 export const GetMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "avatarUrl": zod.string().optional(),
+  "chatModelKey": zod.string().optional(),
   "classLabel": zod.string().optional(),
   "email": zod.string(),
+  "generateModelKey": zod.string().optional(),
   "id": zod.string(),
   "locale": zod.string(),
   "name": zod.string(),
@@ -1269,6 +1275,17 @@ export const SetLocaleResponse = zod.void()
 
 
 /**
+ * @summary Set chat and generate model preferences
+ */
+export const SetModelPrefsBody = zod.object({
+  "chatModelKey": zod.string().optional(),
+  "generateModelKey": zod.string().optional()
+})
+
+export const SetModelPrefsResponse = zod.void()
+
+
+/**
  * @summary Review-mistakes quiz
  */
 export const GetMistakesResponse = zod.object({
@@ -1283,6 +1300,27 @@ export const GetMistakesResponse = zod.object({
   "timeLimitMin": zod.int().optional(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
+})
+
+
+/**
+ * @summary Enabled models for a surface
+ */
+export const listModelsQuerySurfaceDefault = `chat`;
+
+export const ListModelsQueryParams = zod.object({
+  "surface": zod.enum(['chat', 'generate', 'editor']).default(listModelsQuerySurfaceDefault)
+})
+
+export const ListModelsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "defaultKey": zod.string(),
+  "models": zod.array(zod.object({
+  "displayName": zod.string(),
+  "isDefault": zod.boolean(),
+  "key": zod.string()
+})),
+  "selectedKey": zod.string()
 })
 
 
@@ -1730,6 +1768,35 @@ export const SaveCanvasResponse = zod.object({
   "name": zod.string(),
   "scene": zod.unknown().optional(),
   "updatedAt": zod.iso.datetime({"offset":true})
+})
+
+
+/**
+ * @summary Current-period AI usage
+ */
+export const GetUsageResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "byKind": zod.array(zod.object({
+  "creditMicros": zod.int(),
+  "events": zod.int(),
+  "key": zod.string()
+})),
+  "bySurface": zod.array(zod.object({
+  "creditMicros": zod.int(),
+  "events": zod.int(),
+  "key": zod.string()
+})),
+  "recent": zod.array(zod.object({
+  "createdAt": zod.iso.datetime({"offset":true}),
+  "creditMicros": zod.int(),
+  "inputTokens": zod.int(),
+  "kind": zod.string(),
+  "modelKey": zod.string(),
+  "outputTokens": zod.int(),
+  "surface": zod.string(),
+  "unit": zod.string(),
+  "units": zod.int()
+}))
 })
 
 

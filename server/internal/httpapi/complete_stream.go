@@ -9,6 +9,9 @@ import (
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/evonotes/server/internal/models"
+	"github.com/evonotes/server/internal/store"
 )
 
 // completeReq is the browser's request to POST
@@ -45,6 +48,21 @@ func (a *api) completeStream(w http.ResponseWriter, r *http.Request) {
 		writeAIError(w, http.StatusBadRequest, "invalid_request", "completion context is too large", false)
 		return
 	}
+
+	ctx := r.Context()
+	userID := uid(r)
+	_, rates, err := a.ratesForSurface(ctx, userID, models.SurfaceEditor)
+	if err != nil {
+		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
+		return
+	}
+	charge, err := a.reserveSpend(ctx, userID, wsID, store.SurfaceEditor, store.ScaleEstimate(store.EstimateEditorMicros, rates))
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	defer charge.release(ctx)
+
 	if a.pipe == nil {
 		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
 		return
@@ -61,10 +79,9 @@ func (a *api) completeStream(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	ctx := r.Context()
 	onToken := func(t string) { send(map[string]any{"type": "token", "text": t}) }
 
-	streamErr := a.relayComplete(ctx, uid(r), wsID, req, onToken)
+	usage, streamErr := a.relayComplete(ctx, userID, wsID, req, rates, onToken)
 	if ctx.Err() != nil {
 		return
 	}
@@ -75,25 +92,29 @@ func (a *api) completeStream(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
+	charge.settle(ctx, usage.events(userID, wsID, store.SurfaceEditor, rates, store.DefaultEmbeddingRates())...)
 	send(map[string]any{"type": "done"})
 }
 
 // relayComplete streams the completion from the Python service. Provider/model
 // configuration is server-owned; browser model fields are intentionally ignored.
-func (a *api) relayComplete(ctx context.Context, userID, wsID string, req completeReq, onToken func(string)) error {
+func (a *api) relayComplete(ctx context.Context, userID, wsID string, req completeReq, rates store.TokenRates, onToken func(string)) (pipeUsage, error) {
+	var usage pipeUsage
 	if a.pipe == nil {
-		return errors.New("AI service is unavailable")
+		return usage, errors.New("AI service is unavailable")
 	}
 	body := map[string]any{
-		"workspaceId": wsID,
-		"mode":        req.Mode,
-		"prompt":      req.Prompt,
-		"context":     req.Context,
-		"locale":      a.userLocale(ctx, userID),
+		"workspaceId":   wsID,
+		"mode":          req.Mode,
+		"prompt":        req.Prompt,
+		"context":       req.Context,
+		"locale":        a.userLocale(ctx, userID),
+		"modelKey":      rates.ModelKey,
+		"configVersion": rates.ModelVersion,
 	}
 	rc, err := a.pipe.PostStream(ctx, "/complete/stream", body)
 	if err != nil {
-		return fmt.Errorf("completion service unavailable: %w", err)
+		return usage, fmt.Errorf("completion service unavailable: %w", err)
 	}
 	defer rc.Close()
 
@@ -109,8 +130,10 @@ func (a *api) relayComplete(ctx context.Context, userID, wsID string, req comple
 						switch ev.Type {
 						case "token":
 							onToken(ev.Text)
+						case "done":
+							usage = ev.Usage
 						case "error":
-							return errors.New(ev.Message)
+							return usage, errors.New(ev.Message)
 						}
 					}
 				}
@@ -118,9 +141,9 @@ func (a *api) relayComplete(ctx context.Context, userID, wsID string, req comple
 		}
 		if err != nil {
 			if err == io.EOF || ctx.Err() != nil {
-				return nil
+				return usage, nil
 			}
-			return err
+			return usage, err
 		}
 	}
 }

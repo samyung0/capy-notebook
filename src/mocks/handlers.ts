@@ -264,6 +264,36 @@ export const handlers = [
       db.user.locale = body.locale;
     return new HttpResponse(null, { status: 204 });
   }),
+  http.get('/api/models', async ({ request }) => {
+    const surface = new URL(request.url).searchParams.get('surface') ?? 'chat';
+    const selected =
+      surface === 'generate'
+        ? (db.user.generateModelKey ?? 'deepseek-flash')
+        : (db.user.chatModelKey ?? 'deepseek-flash');
+    return HttpResponse.json({
+      defaultKey: 'deepseek-flash',
+      models: [
+        {
+          displayName: 'DeepSeek Flash',
+          isDefault: true,
+          key: 'deepseek-flash',
+        },
+        { displayName: 'DeepSeek Pro', isDefault: false, key: 'deepseek-pro' },
+      ],
+      selectedKey: selected,
+    });
+  }),
+  http.patch('/api/me/models', async ({ request }) => {
+    const body = (await request.json()) as {
+      chatModelKey?: string;
+      generateModelKey?: string;
+    };
+    if (body.chatModelKey !== undefined)
+      db.user.chatModelKey = body.chatModelKey;
+    if (body.generateModelKey !== undefined)
+      db.user.generateModelKey = body.generateModelKey;
+    return new HttpResponse(null, { status: 204 });
+  }),
 
   /* ---------------- global search ---------------- */
   http.get('/api/search', async ({ request }) => {
@@ -2164,18 +2194,66 @@ export const handlers = [
   /* ---------------- billing ---------------- */
   http.get('/api/billing', async () =>
     HttpResponse.json({
+      cancelAtPeriodEnd: false,
+      creditsLimitMicros: 20_000 * 1_000_000,
+      creditsPeriodStart: new Date(
+        Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)
+      ).toISOString(),
+      creditsReservedMicros: 0,
+      creditsUsedMicros: 1250 * 1_000_000,
       planTier: db.user.planTier,
+      storageLimitBytes: db.accountStatus.storageLimitBytes,
+      storageReservedBytes: 0,
+      storageUsedBytes: db.accountStatus.storageUsedBytes,
       subscriptionStatus: db.user.subscriptionStatus,
+    })
+  ),
+  http.get('/api/usage', async () =>
+    HttpResponse.json({
+      byKind: [
+        { creditMicros: 1000 * 1_000_000, events: 12, key: 'llm' },
+        { creditMicros: 180 * 1_000_000, events: 4, key: 'embedding' },
+        { creditMicros: 70 * 1_000_000, events: 2, key: 'parse_gpu' },
+      ],
+      bySurface: [
+        { creditMicros: 820 * 1_000_000, events: 9, key: 'chat' },
+        { creditMicros: 250 * 1_000_000, events: 3, key: 'generate' },
+        { creditMicros: 180 * 1_000_000, events: 6, key: 'ingest' },
+      ],
+      recent: [
+        {
+          createdAt: new Date().toISOString(),
+          creditMicros: 120_000,
+          inputTokens: 800,
+          kind: 'llm',
+          modelKey: 'deepseek-flash',
+          outputTokens: 240,
+          surface: 'chat',
+          unit: 'tokens',
+          units: 0,
+        },
+        {
+          createdAt: new Date(Date.now() - 3_600_000).toISOString(),
+          creditMicros: 80_000,
+          inputTokens: 0,
+          kind: 'embedding',
+          modelKey: '',
+          outputTokens: 0,
+          surface: 'ingest',
+          unit: 'tokens',
+          units: 1200,
+        },
+      ],
     })
   ),
   http.post('/api/billing/checkout', async ({ request }) => {
     const body = (await request.json()) as { planTier: string };
     return HttpResponse.json({
-      url: `/subscription?mock_checkout=${body.planTier}`,
+      url: `/settings?tab=subscription&mock_checkout=${body.planTier}`,
     });
   }),
   http.post('/api/billing/portal', async () =>
-    HttpResponse.json({ url: '/subscription?mock_portal=1' })
+    HttpResponse.json({ url: '/billing?mock_portal=1' })
   ),
 
   /* ---------------- integrations ---------------- */

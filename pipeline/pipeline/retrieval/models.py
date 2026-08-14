@@ -1,11 +1,14 @@
 """Model clients. Every provider is OpenAI-compatible, so one client shape does.
 
-Routing:
-- embedding   -> OpenRouter ``qwen/qwen3-embedding-4b`` (dim pinned to the
-                 halfvec column width)
-- ingest LLM  -> DeepSeek flash (summaries, concepts, map-reduce steps)
-- query LLM   -> DeepSeek flash (the only configured query model)
-- vision      -> Gemini (DeepSeek is text-only), for figure captions
+Routing is owned by the model registry: a pinned (model_key, version) resolves
+to a provider_slug, base_url, and provider_model_id. Embedding and vision are
+frozen (job-pinned at ingest; process-start default at query time) so a poll
+cannot mix vector spaces.
+
+Every provider call in the system passes through this module. That makes it
+the only place token usage has to be captured, and the only place a missing
+capture can hide — if a new call site is added elsewhere, its spend is
+invisible and the user is silently not charged for it.
 """
 
 from __future__ import annotations
@@ -16,15 +19,11 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
-from .. import obs
+from .. import obs, registry
 from ..config import ProviderCfg, cfg
+from ..registry import ModelConfig
 
 log = logging.getLogger("evo.models")
-
-# Every provider call in the system passes through this module. That makes it
-# the only place token usage has to be captured, and the only place a missing
-# capture can hide — if a new call site is added elsewhere, its spend is
-# invisible and the user is silently not charged for it.
 
 _clients: dict[str, AsyncOpenAI] = {}
 
@@ -40,10 +39,31 @@ def client(provider: ProviderCfg) -> AsyncOpenAI:
     return existing
 
 
-def resolve_query_model(requested: str | None) -> str:
-    # Keep accepting the optional request field for API compatibility, but do
-    # not allow callers to select a second model.
-    return requested if requested in cfg.query_models else cfg.query_model
+def client_for(spec: ModelConfig) -> AsyncOpenAI:
+    return client(registry.provider_cfg_for(spec))
+
+
+def _as_spec(model: str | ModelConfig) -> ModelConfig:
+    if isinstance(model, ModelConfig):
+        return model
+    return registry.bootstrap_llm(model)
+
+
+def resolve_query_model(
+    key: str | None = None,
+    version: int | None = None,
+    *,
+    requested: str | None = None,
+    surface: str = registry.SURFACE_CHAT,
+) -> ModelConfig:
+    """Resolve the exact pinned chat/generate/editor model.
+
+    ``requested`` is accepted for API compatibility and ignored: a client-
+    supplied model string must never override the pin. ``surface`` is used
+    only when the pin is absent, to pick that surface's current default.
+    """
+    del requested
+    return registry.resolve_pinned(key, version, surface)
 
 
 async def embed(texts: list[str]) -> list[list[float]]:
@@ -51,28 +71,29 @@ async def embed(texts: list[str]) -> list[list[float]]:
 
     The dimension is part of the column type, so a provider that ignores the
     ``dimensions`` request must fail loudly here rather than write a vector
-    Postgres will reject halfway through a file.
+    Postgres will reject halfway through a file. The embedding spec comes from
+    the ingest job pin when set, otherwise the process-start frozen default.
     """
     if not texts:
         return []
+    spec = registry.embedding_spec()
     out: list[list[float]] = []
-    api = client(cfg.embedding)
+    api = client_for(spec)
+    dim = int(spec.params.get("dimensions") or cfg.embedding_dim)
     for start in range(0, len(texts), cfg.embedding_batch):
         batch = texts[start : start + cfg.embedding_batch]
         resp = await api.embeddings.create(
-            model=cfg.embedding_model, input=batch, dimensions=cfg.embedding_dim
+            model=spec.provider_model_id, input=batch, dimensions=dim
         )
-        obs.record_embedding("openrouter", cfg.embedding_model, resp)
-        # Providers are permitted to return results out of order; index is
-        # authoritative.
+        obs.record_embedding(spec.provider_slug, spec.provider_model_id, resp)
         ordered = sorted(resp.data, key=lambda d: d.index)
         for item in ordered:
             vector = list(item.embedding)
-            if len(vector) != cfg.embedding_dim:
+            if len(vector) != dim:
                 raise RuntimeError(
-                    f"embedding model {cfg.embedding_model} returned dim "
-                    f"{len(vector)} != EMBEDDING_DIM {cfg.embedding_dim}; the "
-                    "halfvec column width is fixed, so fix the env and re-ingest"
+                    f"embedding model {spec.provider_model_id} returned dim "
+                    f"{len(vector)} != {dim}; the halfvec column width is fixed, "
+                    "so fix the registry and re-ingest"
                 )
             out.append(vector)
     return out
@@ -81,51 +102,85 @@ async def embed(texts: list[str]) -> list[list[float]]:
 async def complete(
     messages: list[dict[str, Any]],
     *,
-    model: str,
-    temperature: float = 0.3,
+    model: str | ModelConfig,
+    temperature: float | None = None,
     tools: list[dict[str, Any]] | None = None,
     response_format: dict[str, Any] | None = None,
+    max_tokens: int | None = None,
 ) -> Any:
     """One chat completion, returning the raw message (may carry tool calls)."""
-    api = client(cfg.llm)
+    spec = _as_spec(model)
+    api = client_for(spec)
     kwargs: dict[str, Any] = {
-        "model": model,
+        "model": spec.provider_model_id,
         "messages": messages,
-        "temperature": temperature,
+        "temperature": spec.temperature() if temperature is None else temperature,
     }
     if tools:
         kwargs["tools"] = tools
         kwargs["tool_choice"] = "auto"
     if response_format:
         kwargs["response_format"] = response_format
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
     resp = await api.chat.completions.create(**kwargs)
-    obs.record_completion("deepseek", model, resp)
+    obs.record_completion(spec.provider_slug, spec.provider_model_id, resp)
     return resp.choices[0].message if resp.choices else None
 
 
+async def complete_response(
+    messages: list[dict[str, Any]],
+    *,
+    model: str | ModelConfig,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
+) -> Any:
+    """Like complete, but returns the full response so callers can read usage."""
+    spec = _as_spec(model)
+    api = client_for(spec)
+    kwargs: dict[str, Any] = {
+        "model": spec.provider_model_id,
+        "messages": messages,
+        "temperature": spec.temperature() if temperature is None else temperature,
+    }
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    resp = await api.chat.completions.create(**kwargs)
+    obs.record_completion(spec.provider_slug, spec.provider_model_id, resp)
+    return resp
+
+
 async def complete_text(
-    messages: list[dict[str, Any]], *, model: str, temperature: float = 0.3
+    messages: list[dict[str, Any]],
+    *,
+    model: str | ModelConfig,
+    temperature: float | None = None,
 ) -> str:
     message = await complete(messages, model=model, temperature=temperature)
     return (getattr(message, "content", "") or "").strip()
 
 
 async def stream_text(
-    messages: list[dict[str, Any]], *, model: str, temperature: float = 0.3
+    messages: list[dict[str, Any]],
+    *,
+    model: str | ModelConfig,
+    temperature: float | None = None,
+    max_tokens: int | None = None,
 ):
-    api = client(cfg.llm)
-    stream = await api.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-        stream=True,
-        # Without this the stream ends with no usage block at all, which is how
-        # the single highest-volume model path in the product ends up costing an
-        # unknown amount. The final chunk carries totals and no choices.
-        stream_options={"include_usage": True},
-    )
+    spec = _as_spec(model)
+    api = client_for(spec)
+    kwargs: dict[str, Any] = {
+        "model": spec.provider_model_id,
+        "messages": messages,
+        "temperature": spec.temperature() if temperature is None else temperature,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+    if max_tokens is not None:
+        kwargs["max_tokens"] = max_tokens
+    stream = await api.chat.completions.create(**kwargs)
     async for chunk in stream:
-        obs.record_stream_chunk("deepseek", model, chunk)
+        obs.record_stream_chunk(spec.provider_slug, spec.provider_model_id, chunk)
         delta = (chunk.choices[0].delta.content or "") if chunk.choices else ""
         if delta:
             yield delta
@@ -142,12 +197,13 @@ async def caption_image(data_url: str, prompt: str) -> str:
     condition rather than an outage, and one dropped caption is one figure
     permanently missing from the index.
     """
-    api = client(cfg.vision)
+    spec = registry.vision_spec()
+    api = client_for(spec)
     for attempt in range(_CAPTION_ATTEMPTS):
         try:
             resp = await api.chat.completions.create(
-                model=cfg.vision_model,
-                temperature=0.2,
+                model=spec.provider_model_id,
+                temperature=spec.temperature(0.2),
                 messages=[
                     {
                         "role": "user",
@@ -158,7 +214,7 @@ async def caption_image(data_url: str, prompt: str) -> str:
                     }
                 ],
             )
-            obs.record_completion("gemini", cfg.vision_model, resp)
+            obs.record_completion(spec.provider_slug, spec.provider_model_id, resp)
             return (
                 (resp.choices[0].message.content or "").strip() if resp.choices else ""
             )

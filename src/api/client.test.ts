@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { api } from './client';
+import { api, isCreditsExhaustedError } from './client';
 
 class FakeUploadXHR {
   static latest: FakeUploadXHR | undefined;
@@ -78,5 +78,34 @@ describe('multipart upload client', () => {
     controller.abort();
 
     await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+  });
+});
+
+describe('coded API errors', () => {
+  it('surfaces llm_credits_exhausted from a Huma envelope', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        json: async () => ({
+          detail: 'monthly AI credits exhausted',
+          errors: [
+            {
+              message: 'llm_credits_exhausted',
+              value: { creditsLimitMicros: 1 },
+            },
+          ],
+          status: 403,
+          title: 'Forbidden',
+        }),
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+      }))
+    );
+
+    await expect(api.get('/chat')).rejects.toSatisfy((err: unknown) => {
+      expect(isCreditsExhaustedError(err)).toBe(true);
+      return true;
+    });
   });
 });

@@ -4,16 +4,20 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+
+	"github.com/evonotes/server/internal/models"
 )
 
 // Conversation is a workspace-scoped chat thread. Grounding for its messages
 // runs against WorkspaceID's chunks in the retrieval store.
 type Conversation struct {
-	ID          string    `json:"id"`
-	WorkspaceID string    `json:"workspaceId"`
-	Title       string    `json:"title"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID           string    `json:"id"`
+	WorkspaceID  string    `json:"workspaceId"`
+	Title        string    `json:"title"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
+	ModelKey     string    `json:"-"`
+	ModelVersion int       `json:"-"`
 }
 
 // Message is one turn in a conversation. Status tracks the streaming lifecycle
@@ -88,33 +92,89 @@ func (s *Store) ListConversations(ctx context.Context, userID, wsID string) ([]C
 }
 
 // CreateConversation opens a new thread in a workspace the user can edit.
+// The resolved {modelKey, modelVersion} is snapshotted into metadata here —
+// both the REST POST and the implicit chat/stream create go through this
+// function, so pinning anywhere else would leave one path unpinned.
 func (s *Store) CreateConversation(ctx context.Context, userID, wsID, title string) (Conversation, error) {
 	if err := s.AssertWorkspaceEditor(ctx, userID, wsID); err != nil {
 		return Conversation{}, err
 	}
+	pin, err := s.resolveChatPin(ctx, userID)
+	if err != nil {
+		return Conversation{}, err
+	}
+	meta, _ := json.Marshal(map[string]any{
+		"modelKey":     pin.Key,
+		"modelVersion": pin.Version,
+	})
 	id := uid("conv")
 	var c Conversation
-	err := s.pool.QueryRow(ctx,
-		`INSERT INTO conversations (id, user_id, workspace_id, title)
-		   VALUES ($1,$2,$3,NULLIF($4,''))
-		   RETURNING id, workspace_id, COALESCE(title,''), created_at, updated_at`,
-		id, userID, wsID, title).
-		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt)
-	return c, err
+	var raw []byte
+	err = s.pool.QueryRow(ctx,
+		`INSERT INTO conversations (id, user_id, workspace_id, title, metadata)
+		   VALUES ($1,$2,$3,NULLIF($4,''),$5)
+		   RETURNING id, workspace_id, COALESCE(title,''), created_at, updated_at, metadata`,
+		id, userID, wsID, title, meta).
+		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt, &raw)
+	if err != nil {
+		return Conversation{}, err
+	}
+	applyConvPin(&c, raw)
+	return c, nil
+}
+
+func (s *Store) resolveChatPin(ctx context.Context, userID string) (models.Pin, error) {
+	if s.registry == nil {
+		return models.Pin{}, nil
+	}
+	var pref *string
+	if err := s.pool.QueryRow(ctx,
+		`SELECT chat_model_key FROM users WHERE id=$1`, userID).Scan(&pref); err != nil {
+		return models.Pin{}, err
+	}
+	key := ""
+	if pref != nil {
+		key = *pref
+	}
+	cfg, err := s.registry.ResolveUser(ctx, key, models.SurfaceChat)
+	if err != nil {
+		return models.Pin{}, err
+	}
+	return cfg.Pin(), nil
+}
+
+func applyConvPin(c *Conversation, raw []byte) {
+	if len(raw) == 0 {
+		return
+	}
+	var meta struct {
+		ModelKey     string `json:"modelKey"`
+		ModelVersion int    `json:"modelVersion"`
+	}
+	if json.Unmarshal(raw, &meta) != nil {
+		return
+	}
+	c.ModelKey = meta.ModelKey
+	c.ModelVersion = meta.ModelVersion
 }
 
 // GetConversation loads one conversation the user owns (used to authorize
 // streaming/history requests). Returns ErrNotFound when absent or not owned.
 func (s *Store) GetConversation(ctx context.Context, userID, convID string) (Conversation, error) {
 	var c Conversation
+	var raw []byte
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, workspace_id, COALESCE(title,''), created_at, updated_at
+		`SELECT id, workspace_id, COALESCE(title,''), created_at, updated_at, metadata
 		   FROM conversations WHERE id=$1 AND user_id=$2`, convID, userID).
-		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt)
+		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt, &raw)
 	if isNoRows(err) {
 		return Conversation{}, ErrNotFound
 	}
-	return c, err
+	if err != nil {
+		return Conversation{}, err
+	}
+	applyConvPin(&c, raw)
+	return c, nil
 }
 
 // DeleteConversation removes a conversation (messages cascade).

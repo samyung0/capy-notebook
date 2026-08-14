@@ -104,7 +104,7 @@ async def produce(
     instruction: str,
     context: str,
     scope: str,
-    model: str,
+    model: str | models.ModelConfig,
     temperature: float = 0.4,
     locale: str | None = None,
 ) -> str:
@@ -130,7 +130,7 @@ async def produce_mapped(
     instruction: str,
     passages: list[Passage],
     scope: str,
-    model: str,
+    model: str | models.ModelConfig,
     combine: str,
     locale: str | None = None,
 ) -> str:

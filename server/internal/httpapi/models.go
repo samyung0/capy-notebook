@@ -1,0 +1,117 @@
+package httpapi
+
+import (
+	"context"
+	"net/http"
+
+	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/evonotes/server/internal/httpapi/apimodel"
+	"github.com/evonotes/server/internal/models"
+	"github.com/evonotes/server/internal/store"
+)
+
+type modelsInput struct {
+	Surface string `query:"surface" enum:"chat,generate,editor" default:"chat"`
+}
+
+type modelsOutput struct {
+	Body apimodel.ModelsResponse
+}
+
+type setModelsInput struct {
+	Body apimodel.SetModelPrefsReq
+}
+
+func (a *api) registerModels(api huma.API) {
+	const tag = "Account"
+	reg(api, http.MethodGet, "/api/models", "listModels", tag, "Enabled models for a surface", http.StatusOK, a.listModels)
+	reg(api, http.MethodPatch, "/api/me/models", "setModelPrefs", tag, "Set chat and generate model preferences", http.StatusNoContent, a.setModelPrefs)
+}
+
+func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, error) {
+	surface := in.Surface
+	if surface == "" {
+		surface = models.SurfaceChat
+	}
+	out := apimodel.ModelsResponse{Models: []apimodel.ModelOption{}}
+	if a.modelReg == nil {
+		return &modelsOutput{Body: out}, nil
+	}
+	pref := ""
+	if me, err := a.s.Me(ctx, userID(ctx)); err == nil {
+		switch surface {
+		case models.SurfaceGenerate:
+			pref = me.GenerateModelKey
+		case models.SurfaceChat:
+			pref = me.ChatModelKey
+		}
+	}
+	def, err := a.modelReg.DefaultPin(surface)
+	if err == nil {
+		out.DefaultKey = def.Key
+	}
+	if pref != "" {
+		out.SelectedKey = pref
+	} else {
+		out.SelectedKey = out.DefaultKey
+	}
+	for _, cfg := range a.modelReg.ListEnabled(surface) {
+		out.Models = append(out.Models, apimodel.ModelOption{
+			Key:         cfg.Key,
+			DisplayName: cfg.DisplayName,
+			IsDefault:   cfg.Key == out.DefaultKey,
+		})
+	}
+	return &modelsOutput{Body: out}, nil
+}
+
+func (a *api) setModelPrefs(ctx context.Context, in *setModelsInput) (*Empty, error) {
+	if err := a.s.SetModelPrefs(ctx, userID(ctx), in.Body.ChatModelKey, in.Body.GenerateModelKey); err != nil {
+		return nil, hErr(err)
+	}
+	return &Empty{}, nil
+}
+
+func (a *api) ratesForPin(ctx context.Context, key string, version int) store.TokenRates {
+	if a.modelReg == nil || key == "" || version <= 0 {
+		return store.DefaultLLMRates()
+	}
+	cfg, err := a.modelReg.Get(ctx, key, version)
+	if err != nil {
+		return store.DefaultLLMRates()
+	}
+	return store.RatesFromConfig(cfg)
+}
+
+func (a *api) ratesForSurface(ctx context.Context, userID, surface string) (cfg models.Config, rates store.TokenRates, err error) {
+	if a.modelReg == nil {
+		return models.Config{}, store.DefaultLLMRates(), nil
+	}
+	pref := ""
+	if userID != "" && (surface == models.SurfaceChat || surface == models.SurfaceGenerate) {
+		if me, meErr := a.s.Me(ctx, userID); meErr == nil {
+			if surface == models.SurfaceGenerate {
+				pref = me.GenerateModelKey
+			} else {
+				pref = me.ChatModelKey
+			}
+		}
+	}
+	cfg, err = a.modelReg.ResolveUser(ctx, pref, surface)
+	if err != nil {
+		return models.Config{}, store.DefaultLLMRates(), err
+	}
+	return cfg, store.RatesFromConfig(cfg), nil
+}
+
+func (a *api) embeddingRates(ctx context.Context) store.TokenRates {
+	if a.modelReg == nil {
+		return store.DefaultEmbeddingRates()
+	}
+	cfg, err := a.modelReg.Default(ctx, models.SurfaceEmbedding)
+	if err != nil {
+		return store.DefaultEmbeddingRates()
+	}
+	return store.RatesFromConfig(cfg)
+}

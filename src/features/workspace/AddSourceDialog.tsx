@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { USE_MSW } from '@/api/auth';
-import { api, isStorageQuotaError } from '@/api/client';
+import {
+  api,
+  isCreditsExhaustedError,
+  isStorageQuotaError,
+} from '@/api/client';
 import {
   useChapters,
   useImportSources,
@@ -38,13 +42,18 @@ import { useProviderConnect } from '@/lib/useProviderConnect';
 import { OneDriveImportDialog } from './OneDriveImportDialog';
 import {
   aggregateUploadPct,
+  capSourceUploads,
   defaultParseMode,
   fileExt,
   getFileKind,
   isTextKind,
+  MAX_SOURCE_UPLOAD_FILES,
+  mapWithConcurrency,
   type ParseMode,
   parseModeIssues,
+  SOURCE_UPLOAD_CONCURRENCY,
   supportsFigures,
+  withUploadRetry,
 } from './sourceUpload';
 
 /** Count a PDF's pages with pdfjs (already bundled via react-pdf, loaded on
@@ -334,7 +343,16 @@ function UploadFiles({
       if (inputRef.current) inputRef.current.value = '';
       return;
     }
-    setFiles((prev) => [...prev, ...added]);
+    setFiles((prev) => {
+      const { accepted, rejected } = capSourceUploads(prev.length, added);
+      if (rejected > 0) {
+        userToast({
+          title: m.source_upload_too_many({ count: MAX_SOURCE_UPLOAD_FILES }),
+          variant: 'error',
+        });
+      }
+      return [...prev, ...accepted];
+    });
     if (inputRef.current) inputRef.current.value = '';
     // Count PDF pages in the background; if the count invalidates the row's
     // current mode, fall back to the best valid one.
@@ -390,21 +408,25 @@ function UploadFiles({
     setIsSubmitting(true);
     const batch = [...files];
     setFiles((prev) => prev.map((file) => ({ ...file, uploadPct: 0 })));
-    const results = await Promise.allSettled(
-      batch.map((f) => {
+    const results = await mapWithConcurrency(
+      batch,
+      SOURCE_UPLOAD_CONCURRENCY,
+      (f) => {
         const controller = new AbortController();
         uploadControllers.current.set(f.key, controller);
-        return uploadSource({
-          captionImages: f.captionImages,
-          chapterId: f.chapterId,
-          chapterName: f.chapterName,
-          file: f.file,
-          kind: f.kind,
-          onUploadProgress: (uploadPct) => patchFile(f.key, { uploadPct }),
-          parseMode: f.parseMode,
-          signal: controller.signal,
-        }).finally(() => uploadControllers.current.delete(f.key));
-      })
+        return withUploadRetry(() =>
+          uploadSource({
+            captionImages: f.captionImages,
+            chapterId: f.chapterId,
+            chapterName: f.chapterName,
+            file: f.file,
+            kind: f.kind,
+            onUploadProgress: (uploadPct) => patchFile(f.key, { uploadPct }),
+            parseMode: f.parseMode,
+            signal: controller.signal,
+          })
+        ).finally(() => uploadControllers.current.delete(f.key));
+      }
     );
     setIsSubmitting(false);
     if (results.every((r) => r.status === 'fulfilled')) {
@@ -422,9 +444,21 @@ function UploadFiles({
         (result) =>
           result.status === 'rejected' && isStorageQuotaError(result.reason)
       );
+      const creditsFailure = results.find(
+        (result) =>
+          result.status === 'rejected' && isCreditsExhaustedError(result.reason)
+      );
       userToast({
-        description: quotaFailure ? m.error_quota_body() : undefined,
-        title: quotaFailure ? m.error_quota_title() : m.source_upload_failed(),
+        description: creditsFailure
+          ? m.error_credits_body()
+          : quotaFailure
+            ? m.error_quota_body()
+            : undefined,
+        title: creditsFailure
+          ? m.error_credits_title()
+          : quotaFailure
+            ? m.error_quota_title()
+            : m.source_upload_failed(),
         variant: 'error',
       });
     }
@@ -682,14 +716,18 @@ function ImportFiles({
 
   function handleImportError(error: unknown) {
     userToast({
-      description: isStorageQuotaError(error)
-        ? m.error_quota_body()
-        : error instanceof Error
-          ? error.message
-          : m.source_try_again(),
-      title: isStorageQuotaError(error)
-        ? m.error_quota_title()
-        : m.source_import_failed(),
+      description: isCreditsExhaustedError(error)
+        ? m.error_credits_body()
+        : isStorageQuotaError(error)
+          ? m.error_quota_body()
+          : error instanceof Error
+            ? error.message
+            : m.source_try_again(),
+      title: isCreditsExhaustedError(error)
+        ? m.error_credits_title()
+        : isStorageQuotaError(error)
+          ? m.error_quota_title()
+          : m.source_import_failed(),
       variant: 'error',
     });
   }

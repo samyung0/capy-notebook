@@ -35,12 +35,16 @@ func (u pipeUsage) empty() bool {
 // events converts reported usage into ledger rows. Completions and embeddings
 // become separate rows so a dashboard can show which one is actually driving
 // spend, rather than one blended number that hides it.
-func (u pipeUsage) events(actorUserID, workspaceID, surface string) []store.UsageEvent {
+func (u pipeUsage) events(actorUserID, workspaceID, surface string, llm, embed store.TokenRates) []store.UsageEvent {
 	if u.empty() {
 		return nil
 	}
 	var out []store.UsageEvent
 	if u.InputTokens > 0 || u.OutputTokens > 0 {
+		rates := llm
+		if rates.MicrosPerOutputToken == 0 {
+			rates = store.DefaultLLMRates()
+		}
 		out = append(out, store.UsageEvent{
 			ActorUserID:  actorUserID,
 			WorkspaceID:  workspaceID,
@@ -48,23 +52,33 @@ func (u pipeUsage) events(actorUserID, workspaceID, surface string) []store.Usag
 			Surface:      surface,
 			Provider:     u.Provider,
 			Model:        u.Model,
+			ModelKey:     rates.ModelKey,
+			ModelVersion: rates.ModelVersion,
 			InputTokens:  u.InputTokens,
 			OutputTokens: u.OutputTokens,
 			Unit:         "tokens",
-			CreditMicros: store.CreditsForTokens(store.KindLLM, u.InputTokens, u.OutputTokens),
+			CreditMicros: store.CreditsForTokens(rates, store.KindLLM, u.InputTokens, u.OutputTokens),
+			CostMicroUSD: store.CostMicroUSD(rates, u.InputTokens, u.OutputTokens),
 			Metadata:     map[string]any{"calls": u.Calls},
 		})
 	}
 	if u.EmbedTokens > 0 {
+		rates := embed
+		if rates.MicrosPerInputToken == 0 {
+			rates = store.DefaultEmbeddingRates()
+		}
 		out = append(out, store.UsageEvent{
 			ActorUserID:  actorUserID,
 			WorkspaceID:  workspaceID,
 			Kind:         store.KindEmbedding,
 			Surface:      surface,
 			Provider:     u.Provider,
+			ModelKey:     rates.ModelKey,
+			ModelVersion: rates.ModelVersion,
 			InputTokens:  u.EmbedTokens,
 			Unit:         "tokens",
-			CreditMicros: store.CreditsForTokens(store.KindEmbedding, u.EmbedTokens, 0),
+			CreditMicros: store.CreditsForTokens(rates, store.KindEmbedding, u.EmbedTokens, 0),
+			CostMicroUSD: store.CostMicroUSD(rates, u.EmbedTokens, 0),
 		})
 	}
 	return out

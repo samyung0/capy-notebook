@@ -86,6 +86,23 @@ func hErr(err error) error {
 			}},
 		}
 	}
+	var credits *store.CreditsExhaustedError
+	if errors.As(err, &credits) {
+		return &huma.ErrorModel{
+			Status: http.StatusForbidden,
+			Title:  http.StatusText(http.StatusForbidden),
+			Detail: "monthly AI credits exhausted",
+			Errors: []*huma.ErrorDetail{{
+				Message: "llm_credits_exhausted",
+				Value: map[string]any{
+					"creditsUsedMicros":     credits.UsedMicros,
+					"creditsReservedMicros": credits.ReservedMicros,
+					"creditsLimitMicros":    credits.LimitMicros,
+					"planTier":              string(credits.PlanTier),
+				},
+			}},
+		}
+	}
 	return huma.Error500InternalServerError(err.Error())
 }
 
@@ -139,6 +156,7 @@ type Empty struct{}
 // chi (see server.go) and are intentionally absent from the spec.
 func registerRoutes(api huma.API, a *api) {
 	a.registerAccount(api)
+	a.registerModels(api)
 	a.registerAccountLifecycle(api)
 	a.registerWorkspaces(api)
 	a.registerTags(api)

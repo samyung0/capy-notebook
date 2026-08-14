@@ -16,7 +16,8 @@ const POSTHOG_KEY = import.meta.env.VITE_POSTHOG_KEY as string | undefined;
 const POSTHOG_HOST =
   (import.meta.env.VITE_POSTHOG_HOST as string | undefined) ??
   'https://eu.i.posthog.com';
-const APP_ENV = (import.meta.env.VITE_APP_ENV as string | undefined) ?? 'development';
+const APP_ENV =
+  (import.meta.env.VITE_APP_ENV as string | undefined) ?? 'development';
 const RELEASE = import.meta.env.VITE_RELEASE_SHA as string | undefined;
 
 export function initErrorReporting(): void {
@@ -24,21 +25,21 @@ export function initErrorReporting(): void {
   Sentry.init({
     dsn: SENTRY_DSN,
     environment: APP_ENV,
+    // Network failures during a stream are expected when a user navigates away
+    // mid-answer, and would otherwise dominate the error volume.
+    ignoreErrors: ['AbortError', 'Failed to fetch', 'NetworkError'],
+    integrations: [
+      Sentry.replayIntegration({ blockAllMedia: true, maskAllText: true }),
+    ],
     release: RELEASE,
+    replaysOnErrorSampleRate: 0.1,
+    // Replays are only captured for sessions that errored. Notes and chat are
+    // private content, so recording everyone by default is not acceptable.
+    replaysSessionSampleRate: 0,
     // Sampled rather than off: performance data is useful, but this app opens
     // long-lived SSE and WebSocket connections that would otherwise generate a
     // transaction per keystroke-driven save.
     tracesSampleRate: 0.1,
-    // Replays are only captured for sessions that errored. Notes and chat are
-    // private content, so recording everyone by default is not acceptable.
-    replaysSessionSampleRate: 0,
-    replaysOnErrorSampleRate: 0.1,
-    integrations: [
-      Sentry.replayIntegration({ maskAllText: true, blockAllMedia: true }),
-    ],
-    // Network failures during a stream are expected when a user navigates away
-    // mid-answer, and would otherwise dominate the error volume.
-    ignoreErrors: ['AbortError', 'Failed to fetch', 'NetworkError'],
   });
 }
 
@@ -50,7 +51,9 @@ export function identifyUser(userId: string | null, email?: string): void {
     void posthog().then((client) => client?.reset());
     return;
   }
-  void posthog().then((client) => client?.identify(userId, email ? { email } : undefined));
+  void posthog().then((client) =>
+    client?.identify(userId, email ? { email } : undefined)
+  );
 }
 
 /* ------------------------------------------------------------- analytics */
@@ -72,13 +75,13 @@ function posthog(): Promise<PostHog | null> {
         // Events are named explicitly below; autocapture produces a stream of
         // untyped click events that nobody can build a funnel from.
         autocapture: false,
-        capture_pageview: false,
         capture_pageleave: true,
-        persistence: 'localStorage',
+        capture_pageview: false,
+        mask_all_element_attributes: true,
         // Note content and chat prompts must never leave in an analytics
         // payload.
         mask_all_text: true,
-        mask_all_element_attributes: true,
+        persistence: 'localStorage',
       });
       return client;
     })
@@ -100,12 +103,27 @@ function posthog(): Promise<PostHog | null> {
  */
 export type AnalyticsEvent =
   | { name: 'workspace_created'; props: { source: 'sidebar' | 'onboarding' } }
-  | { name: 'source_uploaded'; props: { kind: string; parseMode: string; sizeBucket: string } }
-  | { name: 'source_ingest_completed'; props: { kind: string; durationBucket: string; indexed: boolean } }
-  | { name: 'chat_turn_sent'; props: { workspaceId: string; hasScope: boolean } }
-  | { name: 'chat_turn_completed'; props: { workspaceId: string; status: string; citations: number } }
+  | {
+      name: 'source_uploaded';
+      props: { kind: string; parseMode: string; sizeBucket: string };
+    }
+  | {
+      name: 'source_ingest_completed';
+      props: { kind: string; durationBucket: string; indexed: boolean };
+    }
+  | {
+      name: 'chat_turn_sent';
+      props: { workspaceId: string; hasScope: boolean };
+    }
+  | {
+      name: 'chat_turn_completed';
+      props: { workspaceId: string; status: string; citations: number };
+    }
   | { name: 'material_generated'; props: { kind: string; workspaceId: string } }
-  | { name: 'material_generate_failed'; props: { kind: string; reason: string } }
+  | {
+      name: 'material_generate_failed';
+      props: { kind: string; reason: string };
+    }
   | { name: 'editor_ai_used'; props: { mode: 'command' | 'continue' } }
   | { name: 'quiz_attempt_finished'; props: { scoreBucket: string } }
   | { name: 'share_link_created'; props: { visibility: string } }
@@ -113,12 +131,17 @@ export type AnalyticsEvent =
   | { name: 'quota_blocked'; props: { code: string; surface: string } }
   | { name: 'subscription_checkout_started'; props: { tier: string } };
 
-export function track<E extends AnalyticsEvent>(name: E['name'], props: E['props']): void {
+export function track<E extends AnalyticsEvent>(
+  name: E['name'],
+  props: E['props']
+): void {
   void posthog().then((client) => client?.capture(name, props));
 }
 
 export function trackPageView(path: string): void {
-  void posthog().then((client) => client?.capture('$pageview', { $current_url: path }));
+  void posthog().then((client) =>
+    client?.capture('$pageview', { $current_url: path })
+  );
 }
 
 /**

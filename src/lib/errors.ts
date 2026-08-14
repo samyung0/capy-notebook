@@ -1,4 +1,8 @@
-import { isApiError, isStorageQuotaError } from '@/api/client';
+import {
+  isApiError,
+  isCreditsExhaustedError,
+  isStorageQuotaError,
+} from '@/api/client';
 import { m } from '@/i18n';
 
 export type ErrorKind =
@@ -8,6 +12,7 @@ export type ErrorKind =
   | 'forbidden'
   | 'notFound'
   | 'quota'
+  | 'credits'
   | 'validation'
   | 'server'
   | 'chunkLoad'
@@ -47,6 +52,7 @@ export function errorKind(error: unknown): ErrorKind {
   if (isChunkLoadError(error)) return 'chunkLoad';
   if (browserIsOffline()) return 'offline';
   if (isStorageQuotaError(error)) return 'quota';
+  if (isCreditsExhaustedError(error)) return 'credits';
 
   if (isApiError(error)) {
     if (error.code === 'account_over_quota' || error.code === 'account_locked')
@@ -68,6 +74,7 @@ function isNetworkMessage(error: unknown): boolean {
 }
 
 export function isNonDisclosing(error: unknown): boolean {
+  if (isCreditsExhaustedError(error)) return false;
   return (
     isApiError(error) &&
     (error.status === 401 || error.status === 403 || error.status === 404)
@@ -108,6 +115,12 @@ export function describeError(error: unknown): ErrorDescription {
         action: 'subscription',
         description: m.error_quota_body(),
         title: m.error_quota_title(),
+      };
+    case 'credits':
+      return {
+        action: 'subscription',
+        description: m.error_credits_body(),
+        title: m.error_credits_title(),
       };
     case 'validation':
       return {

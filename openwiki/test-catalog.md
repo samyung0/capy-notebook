@@ -29,11 +29,11 @@ at the top of each section.
 
 | File | About |
 | --- | --- |
-| [`src/api/client.test.ts`](../src/api/client.test.ts) | Multipart upload client progress reporting and abort via `AbortSignal`. |
+| [`src/api/client.test.ts`](../src/api/client.test.ts) | Multipart upload client progress/abort, and Huma `llm_credits_exhausted` coded-error parsing. |
 | [`src/api/notifications.test.ts`](../src/api/notifications.test.ts) | Reconciles SSE notification cache for re-invites without double-counting. |
 | [`src/api/plateAiTransport.test.ts`](../src/api/plateAiTransport.test.ts) | Scopes Plate AI routes to the workspace and strips browser provider credentials. |
 | [`src/api/sse.test.ts`](../src/api/sse.test.ts) | Reassembles SSE events that arrive split across response chunks. |
-| [`src/lib/errors.test.ts`](../src/lib/errors.test.ts) | Normalizes API, network, cancellation, quota, and chunk-load failures into safe UI error kinds and actions. |
+| [`src/lib/errors.test.ts`](../src/lib/errors.test.ts) | Normalizes API, network, cancellation, quota, credits, and chunk-load failures into safe UI error kinds and actions. |
 | [`src/mocks/scenarios.test.ts`](../src/mocks/scenarios.test.ts) | Validates unique development error scenarios, runtime-handler mappings, and Huma coded error envelopes. |
 
 ### Materials
@@ -71,7 +71,9 @@ at the top of each section.
 | [`src/features/quizzes/QuizForm.test.ts`](../src/features/quizzes/QuizForm.test.ts) | Quiz question validation and round-trip for every supported question type. |
 | [`src/features/workspace/access.test.ts`](../src/features/workspace/access.test.ts) | Workspace access helpers for read-only viewers, editors, and owner-only share. |
 | [`src/features/workspace/generateTitle.test.ts`](../src/features/workspace/generateTitle.test.ts) | Numbered generate-file defaults skip taken names; empty/overlong/duplicate titles are rejected. |
-| [`src/features/workspace/sourceUpload.test.ts`](../src/features/workspace/sourceUpload.test.ts) | Source-upload extension/parser policy from server limits (10 MB mock cap), image-caption availability per mode, and byte-weighted progress. |
+| [`src/features/workspace/sourceUpload.test.ts`](../src/features/workspace/sourceUpload.test.ts) | Source-upload extension/parser policy from server limits (10 MB mock cap), image-caption availability per mode, byte-weighted progress, file-count cap, concurrency pool, and 429 backoff. |
+| [`src/features/settings/settingsSearch.test.ts`](../src/features/settings/settingsSearch.test.ts) | Settings `?tab=` keeps general/llm/subscription and defaults anything else to general. |
+| [`src/features/billing/format.test.ts`](../src/features/billing/format.test.ts) | Storage/credit formatters and reserved spend counting toward the usage meter. |
 
 ---
 
@@ -99,13 +101,16 @@ at the top of each section.
 | [`server/internal/mail/capture_test.go`](../server/internal/mail/capture_test.go) | Recording mail sender keeps bounded history and ignores failed deliveries. |
 | [`server/internal/mail/mail_test.go`](../server/internal/mail/mail_test.go) | Invite email render/localization, role labels, and unsubscribe tokens. |
 | [`server/internal/pipeline/client_test.go`](../server/internal/pipeline/client_test.go) | Pipeline HTTP client success, error status, bad JSON, and connection refused. |
+| [`server/internal/ratelimit/classify_test.go`](../server/internal/ratelimit/classify_test.go) | Route class split (AI vs editor vs upload vs exempt) and default AI/burst/editor budgets. |
 | [`server/internal/sourceupload/rules_test.go`](../server/internal/sourceupload/rules_test.go) | Source kind-from-name map, upload validation (10/30 MB plan caps), caption-flag normalization, and policy list parsing. |
+| [`server/internal/models/registry_test.go`](../server/internal/models/registry_test.go) | Load-on-miss of an unseen `(key, version)` and a miss that never degrades to the current default. |
 
 ### HTTP API
 
 | File | About |
 | --- | --- |
 | [`server/internal/httpapi/account_gates_test.go`](../server/internal/httpapi/account_gates_test.go) | Over-quota owner gates, storage-owner state on reads, editor deck create, generated authorship, generate title uniqueness. |
+| [`server/internal/httpapi/billing_gates_test.go`](../server/internal/httpapi/billing_gates_test.go) | 403 `llm_credits_exhausted` on chat/generate/editor/transcribe; client `model` ignored; upload actor-credits vs owner-storage. |
 | [`server/internal/httpapi/ai_plate_test.go`](../server/internal/httpapi/ai_plate_test.go) | Plate command/copilot request validation and AI data-stream copy/malformed/done checks. |
 | [`server/internal/httpapi/editor_assets_test.go`](../server/internal/httpapi/editor_assets_test.go) | Editor asset metadata validation, signatures, and object keys not using original filenames. |
 | [`server/internal/httpapi/email_unsubscribe_test.go`](../server/internal/httpapi/email_unsubscribe_test.go) | GET unsubscribe is read-only and does not mutate preferences. |
@@ -131,7 +136,9 @@ at the top of each section.
 | [`server/internal/store/blobs_test.go`](../server/internal/store/blobs_test.go) | Blob refcount deletion queue (source, parsed, caption paths), cancel-on-reference, clone survival, abandoned uploads. |
 | [`server/internal/store/collaboration_owner_test.go`](../server/internal/store/collaboration_owner_test.go) | Collab writes follow storage owner; active editors cannot grow over-quota materials. |
 | [`server/internal/store/contracts_test.go`](../server/internal/store/contracts_test.go) | Role/share/invite/comment/material JSON contracts and stable card-ID rewrite map. |
-| [`server/internal/store/credits_test.go`](../server/internal/store/credits_test.go) | Credit reserve/settle, settle idempotency, concurrent gate at remaining budget, sweep-then-late-settle, monthly rollover. |
+| [`server/internal/store/credits_test.go`](../server/internal/store/credits_test.go) | Credit reserve/settle, settle idempotency, concurrent gate at remaining budget, sweep-then-late-settle, monthly rollover, billing credit counters, and actor-scoped usage report grouping. |
+| [`server/internal/store/chat_pin_test.go`](../server/internal/store/chat_pin_test.go) | Conversation pin written in CreateConversation and selected by GetConversation; ingest job payload carries actor + embed/vision pins. |
+| [`server/internal/store/pricing_test.go`](../server/internal/store/pricing_test.go) | Same token counts on two models produce different credit micros; Pro reserve estimates scale. |
 | [`server/internal/store/material_revisions_test.go`](../server/internal/store/material_revisions_test.go) | Daily version overwrite, UTC rollover, tier retention, and downgrade pruning. |
 | [`server/internal/store/notifications_test.go`](../server/internal/store/notifications_test.go) | Notification recipient scoping, email outbox/leases, and category disable atomicity. |
 | [`server/internal/store/schedule_scope_test.go`](../server/internal/store/schedule_scope_test.go) | Label/task/event patches and deletes only touch the caller's own rows; label delete unlinks its events. |
@@ -155,6 +162,7 @@ See also [`pipeline-tests.md`](pipeline-tests.md) for disposable Postgres/Redis 
 | [`pipeline/tests/test_ingest_query.py`](../pipeline/tests/test_ingest_query.py) | Cassette: index → search → grounded cited answer, re-index convergence, scope confinement, cross-document concepts, cascade teardown. |
 | [`pipeline/tests/test_figures.py`](../pipeline/tests/test_figures.py) | Offline: line diagrams surviving the flatness filters, recurring page furniture dropped by perceptual hash, bbox and duplicate handling, caption cache keyed by source identity (not parse route) so `content_hash` stays stable. |
 | [`pipeline/tests/test_ingest_worker.py`](../pipeline/tests/test_ingest_worker.py) | Offline: parse-mode → route selection, txt/md/json bypassing the parser, parse zip recorded before captioning, and captions reaching the chunker. |
+| [`pipeline/tests/test_registry_billing.py`](../pipeline/tests/test_registry_billing.py) | Per-model credits, registry miss never falls back, ingest job pins stick after a default change, claim-time owner/actor matrix, ingest bills actor / rollup bills owner. |
 | [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py) | Artifact addressing/caching per route, per-route endpoints and versions, rejection of traversal, checksum, version and source mismatches, corrupt-cache recovery. |
 | [`pipeline/tests/test_retrieval_helpers.py`](../pipeline/tests/test_retrieval_helpers.py) | Tool scope narrowing, stable citation numbering, per-file diversity cap, JSON extraction and question normalization. |
 | [`pipeline/tests/test_locale.py`](../pipeline/tests/test_locale.py) | Account locale on chat/generate/editor prompts; continue-writing does not force UI language; ingest is out of scope. |

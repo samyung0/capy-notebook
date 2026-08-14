@@ -1,0 +1,96 @@
+Signup / free-trial abuse
+
+Status: not implemented. Identity is Clerk; the gateway never sees a signup.
+Request rate limits and the credits ledger both key by user id, so N fake
+Clerk accounts are N independent free allowances. That is the actual attack.
+Tightening `/chat/stream` does not touch it.
+
+Why this exists
+
+The free tier is 1,000 credits/month plus storage. Credits and GCRA bound one
+account. Farmers mint accounts. The unit of abuse is therefore a cheap
+identity, not a chatty session.
+
+What already covers a *different* attack (leave it alone):
+
+- Cloudflare IP rate limit on `api.abcd.com` (volumetric floods). Do not enable
+  Bot Fight Mode — it cannot skip `/webhooks/` and will challenge Stripe/Clerk
+  deliveries. See `openwiki/deployment-runbook.md` §2.
+- Go GCRA: per-user AI / upload / general classes, plus 3 concurrent chat
+  streams. Fail-open if Redis is down.
+- Credits reserve/settle, keyed by actor.
+- Upload class exists because ingest GPU is spent *after* the HTTP call
+  returns; the worker itself is not rate-limited.
+
+Do not invent a homemade “confidence factor” (email age, social graph, device
+hash → abuse probability) on day one. Cursor turned a similar scorer up against
+trial fraud and locked out paying users. Use vendor tools (Clerk, Cloudflare,
+Stripe Radar) until farming is observed and support can unwind false positives.
+
+
+What to do, in order of leverage
+--------------------------------
+
+1. Make identity expensive *before* handing out credits
+
+   Best: card-on-file even if never charged (Stripe Radar). The card is the
+   expensive identity; Radar clusters stolen/prepaid/reused instruments.
+
+   Next: Clerk phone verification. Blocks throwaway email. VoIP and virtual
+   numbers get filtered; real SIMs are still farmed. Conversion cost is real —
+   do not turn this on before farming is visible unless the free grant is large.
+
+   Also: Clerk “block disposable email domains”. Cheap, do it now. OAuth-only
+   (Google/GitHub) helps a little; those accounts are farmed too.
+
+2. Challenge bots on the *signup* path, not the API
+
+   Cloudflare Turnstile / Clerk Bot Protection on Clerk-hosted sign-up. Not
+   Bot Fight Mode, and not a WAF challenge on `/webhooks/` or `/api/`.
+
+3. Velocity at identity, not at chat
+
+   N signups per IP / ASN / fingerprint / phone per day. This lives in Clerk +
+   Cloudflare. The gateway cannot see signups today (`clerkWebhook` only
+   provisions a `users` row after the fact).
+
+   After signup, bind the *free grant* to a stable signal: same card, same
+   phone, same device cluster → one allowance, not N. That is the real
+   confidence factor. Stripe Radar + Clerk fraud features are that product;
+   do not store a DIY score in `users`.
+
+4. Keep request limits as a backstop, then loosen them
+
+   Once credits gate spend, the AI hourly cap can be looser (the billing
+   revamp’s 200/hr + short 15/min window). Keep upload tighter than chat —
+   one request is minutes of L4, billed after the fact. Keep 3 concurrent
+   streams. Do not flatten AI / upload / general into one bucket; request
+   cost still varies by orders of magnitude.
+
+5. Device fingerprint (web analog of Cursor’s machine id)
+
+   Cursor’s “too many free trials on this machine” is desktop-only and
+   spoofed constantly; it still raises cost. For this app the analog is
+   Cloudflare bot score + Clerk device, not a first-party fingerprint.js
+   pipeline. Cookie / localStorage checks are worthless against farmers.
+
+
+When to reach for the next rung
+-------------------------------
+
+- Disposable-email block + Turnstile on sign-up: now, low conversion cost.
+- Loosen AI request limits: with the credits/registry revamp, not before.
+- Phone or card-on-file: when you see clusters of new users burning the free
+  grant in the first session, or when the free allowance grows.
+- Custom clustering / support-driven bans: only after ops can see signup
+  velocity next to spend (the operator dashboard). False positives need a
+  human path; Cursor’s automated “create a new account” reply made this worse.
+
+
+Related
+
+- Credits and per-route GCRA: `openwiki/observability-metering.md` §§5–6
+- Edge rules and the Bot Fight Mode ban: `openwiki/deployment-runbook.md` §2
+- Clerk provisioning: `server/internal/httpapi/webhooks.go` (`clerkWebhook`)
+- Billing revamp (credits as the money bound, looser AI class): the model
+  registry plan. This file is the identity-time layer that plan does not own.

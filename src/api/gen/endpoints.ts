@@ -40,6 +40,7 @@ import type {
   GetSourceUploadPolicyParams,
   IntegrationsStatus,
   Label,
+  ListModelsParams,
   ListNotificationsParams,
   ListTagsParams,
   ListWorkspacesParams,
@@ -49,6 +50,7 @@ import type {
   MaterialRevision,
   MaterialUpdateResult,
   Message,
+  ModelsResponse,
   NotificationCountOutputBody,
   NotificationPage,
   NotificationPrefs,
@@ -64,6 +66,7 @@ import type {
   SaveCanvasReq,
   SearchParams,
   SearchResult,
+  SetModelPrefsReq,
   SourceUploadPolicy,
   Tag,
   Task,
@@ -83,6 +86,7 @@ import type {
   UpdateWorkspaceMemberReq,
   UpdateWorkspaceReq,
   UpdateWorkspaceSharingReq,
+  UsageReport,
   User,
   Workspace,
   WorkspaceCollaborator,
@@ -2836,6 +2840,56 @@ export const setLocale = async (localeInputBody: NonReadonly<LocaleInputBody>, o
 
 
 
+export type setModelPrefsResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setModelPrefsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type setModelPrefsResponseSuccess = (setModelPrefsResponse204) & {
+  headers: Headers;
+};
+export type setModelPrefsResponseError = (setModelPrefsResponseDefault) & {
+  headers: Headers;
+};
+
+export type setModelPrefsResponse = (setModelPrefsResponseSuccess | setModelPrefsResponseError)
+
+export const getSetModelPrefsUrl = () => {
+
+
+
+
+  return `/api/me/models`
+}
+
+/**
+ * @summary Set chat and generate model preferences
+ */
+export const setModelPrefs = async (setModelPrefsReq: NonReadonly<SetModelPrefsReq>, options?: RequestInit): Promise<setModelPrefsResponse> => {
+
+  const res = await fetch(getSetModelPrefsUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(setModelPrefsReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setModelPrefsResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setModelPrefsResponse
+}
+
+
+
 export type getMistakesResponse200 = {
   data: Quiz
   status: 200
@@ -2882,6 +2936,63 @@ export const getMistakes = async ( options?: RequestInit): Promise<getMistakesRe
 
   const data: getMistakesResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getMistakesResponse
+}
+
+
+
+export type listModelsResponse200 = {
+  data: ModelsResponse
+  status: 200
+}
+
+export type listModelsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listModelsResponseSuccess = (listModelsResponse200) & {
+  headers: Headers;
+};
+export type listModelsResponseError = (listModelsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listModelsResponse = (listModelsResponseSuccess | listModelsResponseError)
+
+export const getListModelsUrl = (params?: ListModelsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/models?${stringifiedParams}` : `/api/models`
+}
+
+/**
+ * @summary Enabled models for a surface
+ */
+export const listModels = async (params?: ListModelsParams, options?: RequestInit): Promise<listModelsResponse> => {
+
+  const res = await fetch(getListModelsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listModelsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listModelsResponse
 }
 
 
@@ -4064,6 +4175,56 @@ export const saveCanvas = async (id: string,
 
   const data: saveCanvasResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as saveCanvasResponse
+}
+
+
+
+export type getUsageResponse200 = {
+  data: UsageReport
+  status: 200
+}
+
+export type getUsageResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getUsageResponseSuccess = (getUsageResponse200) & {
+  headers: Headers;
+};
+export type getUsageResponseError = (getUsageResponseDefault) & {
+  headers: Headers;
+};
+
+export type getUsageResponse = (getUsageResponseSuccess | getUsageResponseError)
+
+export const getGetUsageUrl = () => {
+
+
+
+
+  return `/api/usage`
+}
+
+/**
+ * @summary Current-period AI usage
+ */
+export const getUsage = async ( options?: RequestInit): Promise<getUsageResponse> => {
+
+  const res = await fetch(getGetUsageUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getUsageResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getUsageResponse
 }
 
 

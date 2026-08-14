@@ -44,9 +44,15 @@ type Config struct {
 	Anonymous Rule
 	// Authenticated applies to ordinary API traffic, keyed by user id.
 	Authenticated Rule
-	// AI applies to the model-backed routes on top of Authenticated. These
-	// cost real money per call, so they get their own much tighter budget.
+	// AI applies to the expensive model-backed routes (chat, generate,
+	// transcribe, plate command) on top of Authenticated.
 	AI Rule
+	// AIBurst is a short-window guard so a scripted loop trips something
+	// immediately even when the hourly budget still has room.
+	AIBurst Rule
+	// Editor applies to cheap inline editor completions so typing in the
+	// note does not consume the chat allowance.
+	Editor Rule
 	// Upload applies to upload reservation and import routes, which are cheap
 	// to call but expensive downstream once ingest picks them up.
 	Upload Rule
@@ -66,7 +72,9 @@ func DefaultConfig() Config {
 	return Config{
 		Anonymous:         Rule{Limit: 60, Window: time.Minute},
 		Authenticated:     Rule{Limit: 300, Window: time.Minute},
-		AI:                Rule{Limit: 40, Window: time.Hour, Burst: 8},
+		AI:                Rule{Limit: 200, Window: time.Hour, Burst: 15},
+		AIBurst:           Rule{Limit: 15, Window: time.Minute, Burst: 15},
+		Editor:            Rule{Limit: 120, Window: time.Minute, Burst: 30},
 		Upload:            Rule{Limit: 120, Window: time.Hour, Burst: 20},
 		ConcurrentStreams: 3,
 		StreamLease:       15 * time.Minute,

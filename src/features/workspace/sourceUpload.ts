@@ -1,3 +1,4 @@
+import { isApiError } from '@/api/client';
 import type { FileKind, SourceUploadPolicy } from '@/api/types';
 
 export type ParseMode = 'accurate' | 'fast' | 'none';
@@ -107,4 +108,68 @@ export function aggregateUploadPct(
     0
   );
   return Math.round((uploadedBytes / totalBytes) * 100);
+}
+
+export const MAX_SOURCE_UPLOAD_FILES = 20;
+export const SOURCE_UPLOAD_CONCURRENCY = 3;
+
+export function capSourceUploads<T>(
+  existingCount: number,
+  incoming: T[]
+): { accepted: T[]; rejected: number } {
+  const room = Math.max(0, MAX_SOURCE_UPLOAD_FILES - existingCount);
+  return {
+    accepted: incoming.slice(0, room),
+    rejected: Math.max(0, incoming.length - room),
+  };
+}
+
+export async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  const workerCount = Math.max(1, Math.min(concurrency, items.length || 1));
+  await Promise.all(
+    Array.from({ length: items.length === 0 ? 0 : workerCount }, async () => {
+      while (true) {
+        const index = next++;
+        if (index >= items.length) return;
+        try {
+          results[index] = {
+            status: 'fulfilled',
+            value: await fn(items[index], index),
+          };
+        } catch (reason) {
+          results[index] = { reason, status: 'rejected' };
+        }
+      }
+    })
+  );
+  return results;
+}
+
+export function retryAfterMs(error: unknown): number | null {
+  if (!isApiError(error) || error.status !== 429) return null;
+  const seconds = Number(error.body?.retryAfterSeconds);
+  if (!Number.isFinite(seconds) || seconds <= 0) return 1000;
+  return Math.min(30_000, Math.ceil(seconds) * 1000);
+}
+
+export async function withUploadRetry<T>(
+  fn: () => Promise<T>,
+  wait: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms))
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      const delay = retryAfterMs(error);
+      if (delay == null || attempt >= 4) throw error;
+      await wait(delay);
+    }
+  }
 }

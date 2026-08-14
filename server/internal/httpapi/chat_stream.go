@@ -15,10 +15,12 @@ import (
 )
 
 // chatStreamReq is the browser's request to POST /api/workspaces/{id}/chat/stream.
+// There is deliberately no Model field: the pin lives on the conversation row
+// and a client-supplied model would override both the user preference and its
+// price multiplier.
 type chatStreamReq struct {
 	ConversationID string `json:"conversationId"`
 	Text           string `json:"text"`
-	Model          string `json:"model,omitempty"`
 }
 
 // pipeChatEvent is one event line emitted by the Python retrieval service's
@@ -91,21 +93,21 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	}
 	defer release()
 
-	// Reserve before the pipeline is touched. The estimate covers a full agent
-	// loop; settlement below replaces it with what the providers reported.
-	charge, err := a.reserveSpend(ctx, userID, wsID, store.SurfaceChat, store.EstimateChatMicros)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	defer charge.release(ctx)
-
-	// Resolve (or open) the conversation, enforcing ownership + workspace scope.
+	// Resolve (or open) the conversation first so the reserve estimate can
+	// scale by the pinned model. Pinning happens inside CreateConversation.
 	conv, err := a.resolveConversation(ctx, userID, wsID, req.ConversationID)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
+
+	llmRates := a.ratesForPin(ctx, conv.ModelKey, conv.ModelVersion)
+	charge, err := a.reserveSpend(ctx, userID, wsID, store.SurfaceChat, store.ScaleEstimate(store.EstimateChatMicros, llmRates))
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	defer charge.release(ctx)
 
 	// Persist the user turn, then auto-title a fresh thread from it.
 	if _, err := a.s.AddUserMessage(ctx, conv.ID, req.Text); err != nil {
@@ -148,7 +150,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		send(pipeChatEvent{Type: "token", Text: t})
 	}
 
-	streamErr := a.relayChat(ctx, userID, conv.WorkspaceID, req.Text, req.Model, conv.ID, onToken, func(ev pipeChatEvent) {
+	streamErr := a.relayChat(ctx, userID, conv, req.Text, onToken, func(ev pipeChatEvent) {
 		switch ev.Type {
 		case "citations":
 			citations = ev.Citations
@@ -180,7 +182,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		tokens = int(usage.InputTokens + usage.OutputTokens)
 	}
 	_ = a.s.FinalizeAssistantMessage(saveCtx, assistant.ID, builder.String(), status, tokens, citations, genID)
-	charge.settle(saveCtx, usage.events(userID, conv.WorkspaceID, store.SurfaceChat)...)
+	charge.settle(saveCtx, usage.events(userID, conv.WorkspaceID, store.SurfaceChat, llmRates, a.embeddingRates(saveCtx))...)
 
 	// Best-effort final event; the client may already be gone on abort.
 	if ctx.Err() == nil {
@@ -211,20 +213,21 @@ func (a *api) resolveConversation(ctx context.Context, userID, wsID, convID stri
 // invoking onToken for each text chunk and onEvent for citations/done. When the
 // pipeline is unavailable it falls back to a streamed placeholder so the UI
 // still works end-to-end.
-func (a *api) relayChat(ctx context.Context, userID, wsID, query, model, convID string, onToken func(string), onEvent func(pipeChatEvent)) error {
+func (a *api) relayChat(ctx context.Context, userID string, conv store.Conversation, query string, onToken func(string), onEvent func(pipeChatEvent)) error {
 	if a.pipe == nil {
 		a.streamFallback(ctx, query, onToken)
 		return nil
 	}
 
-	history := a.historyForPrompt(ctx, convID)
+	history := a.historyForPrompt(ctx, conv.ID)
 	// userId travels with the request so tools with side effects can name the
 	// actor when they call back into /api/internal/*; the gateway re-checks the
 	// workspace role there rather than trusting the agent.
 	body := map[string]any{
-		"query": query, "workspaceId": wsID, "userId": userID,
-		"model": model, "history": history,
-		"locale": a.userLocale(ctx, userID),
+		"query": query, "workspaceId": conv.WorkspaceID, "userId": userID,
+		"modelKey": conv.ModelKey, "configVersion": conv.ModelVersion,
+		"history": history,
+		"locale":  a.userLocale(ctx, userID),
 	}
 	rc, err := a.pipe.PostStream(ctx, "/chat/stream", body)
 	if err != nil {

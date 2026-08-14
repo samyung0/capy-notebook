@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"time"
 
@@ -176,7 +175,11 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 
 	if !ready {
 		jobID := uid("job")
-		payload, _ := json.Marshal(map[string]any{
+		actor := ""
+		if u.CreatedBy != nil {
+			actor = *u.CreatedBy
+		}
+		payload := s.ingestJobPayload(ctx, actor, map[string]any{
 			"fileId": fileID, "workspaceId": u.WorkspaceID, "blobPath": u.FinalPath,
 			"kind": u.Kind, "parser": parser, "engine": engine,
 			"parseMode": u.ParseMode, "captionImages": u.CaptionImages,

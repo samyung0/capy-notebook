@@ -11,8 +11,10 @@ export interface User {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   avatarUrl?: string;
+  chatModelKey?: string;
   classLabel?: string;
   email: string;
+  generateModelKey?: string;
   id: string;
   locale: string;
   name: string;

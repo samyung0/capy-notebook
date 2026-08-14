@@ -31,7 +31,6 @@ export interface ChatStreamHandlers {
 
 export interface ChatStreamBody {
   conversationId?: string;
-  model?: string;
   text: string;
 }
 

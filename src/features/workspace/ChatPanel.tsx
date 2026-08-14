@@ -207,7 +207,7 @@ export function ChatPanel({
             <TooltipContent>{m.chat_history()}</TooltipContent>
           </Tooltip>
           <IconButton
-            className="rounded-r-none rounded-l-none bg-(--temp-btn-bg) py-1.5 pr-2.5 text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:brightness-97 disabled:opacity-30"
+            className="rounded-l-none bg-(--temp-btn-bg) py-1.5 pr-2.5 text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:brightness-97 disabled:opacity-30"
             disabled={!conversationId}
             icon="plus"
             label={m.chat_new()}

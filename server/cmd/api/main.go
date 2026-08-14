@@ -17,6 +17,7 @@ import (
 	"github.com/evonotes/server/internal/blob"
 	"github.com/evonotes/server/internal/httpapi"
 	"github.com/evonotes/server/internal/mail"
+	"github.com/evonotes/server/internal/models"
 	"github.com/evonotes/server/internal/obs"
 	"github.com/evonotes/server/internal/pipeline"
 	"github.com/evonotes/server/internal/ratelimit"
@@ -235,6 +236,13 @@ func main() {
 		log.Println("migrations applied")
 	}
 
+	modelReg, err := models.New(ctx, st.Pool())
+	if err != nil {
+		log.Fatalf("model registry: %v", err)
+	}
+	st.SetModelRegistry(modelReg)
+	go modelReg.Poll(ctx)
+
 	emailSender, err := newEmailSender(appEnv, emailBackend, resendAPIKey, emailFrom, emailReplyTo)
 	if err != nil {
 		log.Fatalf("email sender: %v", err)
@@ -355,6 +363,7 @@ func main() {
 		PipelineSecret:         env("PIPELINE_SECRET", ""),
 		AllowedOrigins:         envList("CORS_ALLOWED_ORIGINS"),
 		RateLimit:              rateLimitConfig(appEnv),
+		ModelRegistry:          modelReg,
 	}
 	if mailRecorder != nil {
 		cfg.MailRecorder = mailRecorder

@@ -30,9 +30,10 @@ import asyncio
 import logging
 import shutil
 import tempfile
+import threading
 from pathlib import Path
 
-from .. import obs, progress, use_compatible_event_loop
+from .. import obs, progress, registry, use_compatible_event_loop
 from ..config import cfg
 from ..parse import figures, modal_parser
 from ..retrieval import indexing, store
@@ -123,10 +124,18 @@ def _read_name(file_id: str) -> str:
         return db.file_name(cur, file_id)
 
 
-def _account_allows_ingest(file_id: str) -> bool:
+def _account_allows_ingest(file_id: str, payload: dict) -> bool:
+    """Claim-time gate: owner lifecycle/storage, actor credits. Separate lookups.
+
+    Actor lifecycle is not checked. Refusing a deletion_pending uploader would
+    leave the owner holding an unindexed file whose bytes they already paid for.
+    """
     with db.connect() as conn, conn.cursor() as cur:
         owner = db.file_owner_user_id(cur, file_id)
-        return bool(owner) and db.account_allows_ingest(cur, owner)
+        if not owner or not db.account_allows_ingest(cur, owner):
+            return False
+        actor = payload.get("actorUserId") or ""
+        return (not actor) or db.actor_has_credits(cur, actor)
 
 
 def _read_text(path: str) -> str:
@@ -148,70 +157,109 @@ def _record_caption_blob(file_id: str, key: str) -> None:
         conn.commit()
 
 
-def _charge_ingest(file_id: str, workspace_id: str) -> None:
-    """Settle everything one ingest job spent: embeddings, summary and concept
-    extraction, figure captions, and Modal GPU time.
+def _charge_ingest(file_id: str, workspace_id: str, actor_user_id: str) -> None:
+    """Settle everything one ingest job spent, billed to the actor.
 
-    Billed to the file's storage owner rather than to whoever uploaded it, and
-    deliberately so: a file in a workspace belongs to that workspace's owner
-    regardless of where it came from, so the work of making it retrievable is
-    billed alongside the bytes it produces, to the same person. Splitting one
-    upload between two payers would leave an owner holding an indexed corpus
-    that someone else paid to index.
-
-    The dividing line is durability, not who typed. Ephemeral inference — chat
-    turns, editor commands — is billed to the actor instead.
+    Ingest is no longer an owner-billed exception. The payload records who
+    initiated the upload at enqueue time; that is who pays. GPU time is still
+    a flat rate because it is not a model_configs row.
     """
     usage = obs.current_usage()
     gpu_millis = obs.take_gpu_millis()
     if usage is None and not gpu_millis:
         return
+    actor = actor_user_id
+    if not actor:
+        return
     try:
+        ingest = registry.ingest_spec()
+        embed = registry.embedding_spec()
+        vision = registry.vision_spec()
         with db.connect() as conn, conn.cursor() as cur:
-            owner = db.file_owner_user_id(cur, file_id)
-            if not owner:
-                return
             trace = obs.trace_id()
             if usage is not None:
-                if usage.input_tokens or usage.output_tokens:
+                if usage.by_model:
+                    for model_id, bucket in usage.by_model.items():
+                        if model_id == embed.provider_model_id:
+                            continue
+                        spec = (
+                            vision if model_id == vision.provider_model_id else ingest
+                        )
+                        inp = int(bucket.get("input") or 0)
+                        out = int(bucket.get("output") or 0)
+                        if not (inp or out):
+                            continue
+                        db.record_usage_event(
+                            cur,
+                            actor_user_id=actor,
+                            workspace_id=workspace_id,
+                            kind="llm",
+                            surface="ingest",
+                            provider=spec.provider_slug,
+                            model=model_id,
+                            model_key=spec.model_key,
+                            model_version=spec.version,
+                            input_tokens=inp,
+                            output_tokens=out,
+                            unit="tokens",
+                            credit_micros=registry.credits_for_tokens(
+                                spec, "llm", inp, out
+                            ),
+                            cost_micro_usd=registry.cost_micro_usd(spec, inp, out),
+                            trace_id=trace,
+                            metadata={
+                                "fileId": file_id,
+                                "calls": bucket.get("calls", 0),
+                            },
+                        )
+                elif usage.input_tokens or usage.output_tokens:
                     db.record_usage_event(
                         cur,
-                        actor_user_id=owner,
+                        actor_user_id=actor,
                         workspace_id=workspace_id,
                         kind="llm",
                         surface="ingest",
-                        provider=usage.provider,
+                        provider=ingest.provider_slug,
                         model=usage.model,
+                        model_key=ingest.model_key,
+                        model_version=ingest.version,
                         input_tokens=usage.input_tokens,
                         output_tokens=usage.output_tokens,
                         unit="tokens",
-                        credit_micros=db.credits_for_tokens(
-                            "llm", usage.input_tokens, usage.output_tokens
+                        credit_micros=registry.credits_for_tokens(
+                            ingest, "llm", usage.input_tokens, usage.output_tokens
+                        ),
+                        cost_micro_usd=registry.cost_micro_usd(
+                            ingest, usage.input_tokens, usage.output_tokens
                         ),
                         trace_id=trace,
                         metadata={"fileId": file_id, "calls": usage.calls},
                     )
-                if usage.embed_tokens:
+                embed_tokens = usage.embed_tokens
+                if embed_tokens:
                     db.record_usage_event(
                         cur,
-                        actor_user_id=owner,
+                        actor_user_id=actor,
                         workspace_id=workspace_id,
                         kind="embedding",
                         surface="ingest",
-                        provider="openrouter",
-                        model=cfg.embedding_model,
-                        input_tokens=usage.embed_tokens,
+                        provider=embed.provider_slug,
+                        model=embed.provider_model_id,
+                        model_key=embed.model_key,
+                        model_version=embed.version,
+                        input_tokens=embed_tokens,
                         unit="tokens",
-                        credit_micros=db.credits_for_tokens(
-                            "embedding", usage.embed_tokens, 0
+                        credit_micros=registry.credits_for_tokens(
+                            embed, "embedding", embed_tokens, 0
                         ),
+                        cost_micro_usd=registry.cost_micro_usd(embed, embed_tokens, 0),
                         trace_id=trace,
                         metadata={"fileId": file_id},
                     )
             if gpu_millis:
                 db.record_usage_event(
                     cur,
-                    actor_user_id=owner,
+                    actor_user_id=actor,
                     workspace_id=workspace_id,
                     kind="parse_gpu",
                     surface="ingest",
@@ -223,10 +271,8 @@ def _charge_ingest(file_id: str, workspace_id: str) -> None:
                     metadata={"fileId": file_id},
                 )
             conn.commit()
-    except Exception as exc:  # noqa: BLE001 - see below
-        # Metering must never fail an ingest that already succeeded: the file is
-        # indexed and the user can see it. An unrecorded charge is recoverable
-        # by reconciliation, a failed job is not.
+    except Exception as exc:  # noqa: BLE001 - metering must not fail a successful ingest
+        # The file is already indexed. A missed charge is found by reconciliation.
         obs.capture_error(exc, stage="ingest_charge")
 
 
@@ -330,8 +376,26 @@ async def process_ingest_job(job: dict) -> None:
     if caption_images is None:
         caption_images = cfg.caption_images
 
+    registry.set_job_pins(registry.pins_from_payload(payload))
+    try:
+        await _process_ingest_job(
+            job, payload, file_id, ws, kind, parse_mode, caption_images
+        )
+    finally:
+        registry.set_job_pins(None)
+
+
+async def _process_ingest_job(
+    job: dict,
+    payload: dict,
+    file_id: str,
+    ws: str,
+    kind: str,
+    parse_mode: str,
+    caption_images: object,
+) -> None:
     name = await asyncio.to_thread(_read_name, file_id)
-    if not await asyncio.to_thread(_account_allows_ingest, file_id):
+    if not await asyncio.to_thread(_account_allows_ingest, file_id, payload):
         note = f"{name}: ingest refused because the account is locked or over quota."
         await asyncio.to_thread(_finish_fail, file_id, job["id"], note)
         progress.publish(
@@ -402,6 +466,9 @@ async def process_ingest_job(job: dict) -> None:
         progress.publish(
             ws, file_id, "done", 100, status="ready", message=note, indexed=True
         )
+        await asyncio.to_thread(
+            _charge_ingest, file_id, ws, payload.get("actorUserId") or ""
+        )
         return
 
     try:
@@ -426,7 +493,9 @@ async def process_ingest_job(job: dict) -> None:
         fingerprint,
         artifact_version,
     )
-    await asyncio.to_thread(_charge_ingest, file_id, ws)
+    await asyncio.to_thread(
+        _charge_ingest, file_id, ws, payload.get("actorUserId") or ""
+    )
     progress.publish(ws, file_id, "done", 100, status="ready", indexed=True)
     log.info("indexed %s: %s", name, result)
 
@@ -435,12 +504,57 @@ async def process_rollup_job(job: dict) -> None:
     ws = (job["payload"] or {})["workspaceId"]
     result = await indexing.rollup_summaries(ws)
     await asyncio.to_thread(_finish_job_ok, job["id"])
+    await asyncio.to_thread(_charge_rollup, ws)
     log.info("workspace %s summary rollup: %s", ws, result)
+
+
+def _charge_rollup(workspace_id: str) -> None:
+    """Bill summaries_rollup to the workspace owner. There is no actor: the
+    job is enqueued from a trigger with no user context, and pending jobs
+    fold together per workspace."""
+    usage = obs.current_usage()
+    if usage is None or usage.is_empty():
+        return
+    try:
+        ingest = registry.ingest_spec()
+        with db.connect() as conn, conn.cursor() as cur:
+            owner = db.workspace_owner_user_id(cur, workspace_id)
+            if not owner:
+                return
+            db.record_usage_event(
+                cur,
+                actor_user_id=owner,
+                workspace_id=workspace_id,
+                kind="llm",
+                surface="ingest",
+                provider=ingest.provider_slug,
+                model=usage.model or ingest.provider_model_id,
+                model_key=ingest.model_key,
+                model_version=ingest.version,
+                input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens,
+                unit="tokens",
+                credit_micros=registry.credits_for_tokens(
+                    ingest, "llm", usage.input_tokens, usage.output_tokens
+                ),
+                cost_micro_usd=registry.cost_micro_usd(
+                    ingest, usage.input_tokens, usage.output_tokens
+                ),
+                trace_id=obs.trace_id(),
+                metadata={"kind": "summaries_rollup"},
+            )
+            conn.commit()
+    except Exception as exc:  # noqa: BLE001
+        obs.capture_error(exc, stage="rollup_charge")
 
 
 async def main_async() -> None:
     obs.init_logging("worker")
     obs.init_sentry("worker")
+    registry.registry.start()
+    threading.Thread(
+        target=registry.poll_forever, name="model-registry", daemon=True
+    ).start()
     log.info(
         "worker up — ingest_model=%s embedding=%s accurate=%s fast=%s",
         cfg.ingest_model,

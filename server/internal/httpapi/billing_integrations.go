@@ -78,6 +78,12 @@ func (a *api) importSources(w http.ResponseWriter, r *http.Request) {
 			a.fail(w, fmt.Errorf("blob store not configured"))
 			return
 		}
+		if sourceupload.NeedsIngestJob(kind, mode) {
+			if err := a.s.AssertCreditsAvailable(r.Context(), userID); err != nil {
+				a.fail(w, err)
+				return
+			}
+		}
 		blobPath, _, err := a.blob.Put(sourceObjectKey(randID("blob")), bytes.NewReader(data))
 		if err != nil {
 			a.fail(w, err)

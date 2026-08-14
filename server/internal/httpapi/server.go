@@ -23,6 +23,7 @@ import (
 	"github.com/evonotes/server/internal/billing"
 	"github.com/evonotes/server/internal/blob"
 	"github.com/evonotes/server/internal/mail"
+	"github.com/evonotes/server/internal/models"
 	"github.com/evonotes/server/internal/obs"
 	"github.com/evonotes/server/internal/pipeline"
 	"github.com/evonotes/server/internal/ratelimit"
@@ -66,6 +67,9 @@ type Config struct {
 	// RateLimit governs per-user and per-IP request limits. The zero value
 	// disables limiting entirely.
 	RateLimit ratelimit.Config
+	// ModelRegistry is the process-wide model config cache. Nil disables
+	// per-model pricing and pinning (tests).
+	ModelRegistry *models.Registry
 	// PipelineSecret authenticates the retrieval service's callbacks into
 	// /api/internal/*. Empty disables those routes entirely.
 	PipelineSecret string
@@ -85,6 +89,7 @@ type api struct {
 	cfg          Config
 	mailRecorder mail.Recorder
 	limiter      *ratelimit.Limiter
+	modelReg     *models.Registry
 	notifMu      sync.Mutex
 	notifByUser  map[string]int
 	notifTotal   int
@@ -108,6 +113,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		cfg:          cfg,
 		mailRecorder: cfg.MailRecorder,
 		limiter:      ratelimit.New(rdb, cfg.RateLimit),
+		modelReg:     cfg.ModelRegistry,
 		notifByUser:  make(map[string]int),
 	}
 	r := chi.NewRouter()
@@ -442,6 +448,13 @@ func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
 	}
 	captionImages := sourceupload.NormalizeCaptionImages(kind, parseMode, r.FormValue("captionImages") == "true")
 
+	if sourceupload.NeedsIngestJob(kind, parseMode) {
+		if err := a.s.AssertCreditsAvailable(r.Context(), uid(r)); err != nil {
+			a.fail(w, err)
+			return
+		}
+	}
+
 	blobPath, size, err := a.blob.Put(sourceObjectKey(randID("blob")), file)
 	if err != nil {
 		a.fail(w, err)
@@ -574,9 +587,16 @@ func (a *api) generate(w http.ResponseWriter, r *http.Request) {
 	if !a.assertWS(w, r, id(r)) {
 		return
 	}
+	userID := uid(r)
+	wsID := id(r)
+	_, llmRates, err := a.ratesForSurface(r.Context(), userID, models.SurfaceGenerate)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
 	// Model spend is the actor's; the material it produces is the workspace
 	// owner's and is gated by gateStorageTx further down.
-	charge, err := a.reserveSpend(r.Context(), uid(r), id(r), store.SurfaceGenerate, store.EstimateGenerateMicros)
+	charge, err := a.reserveSpend(r.Context(), userID, wsID, store.SurfaceGenerate, store.ScaleEstimate(store.EstimateGenerateMicros, llmRates))
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -606,7 +626,6 @@ func (a *api) generate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	opts.Title = title
-	wsID := id(r)
 	taken, err := a.s.MaterialTitleTaken(r.Context(), wsID, title)
 	if err != nil {
 		a.fail(w, err)
@@ -621,15 +640,14 @@ func (a *api) generate(w http.ResponseWriter, r *http.Request) {
 		wsName = ws.Name
 	}
 
-	userID := uid(r)
 	if a.pipe != nil {
-		payload, usage, ok, err := a.generateViaPipe(r.Context(), userID, wsID, wsName, &opts)
+		payload, usage, ok, err := a.generateViaPipe(r.Context(), userID, wsID, wsName, &opts, llmRates)
 		if err != nil {
 			a.fail(w, err)
 			return
 		}
 		if ok {
-			charge.settle(r.Context(), usage.events(userID, wsID, store.SurfaceGenerate)...)
+			charge.settle(r.Context(), usage.events(userID, wsID, store.SurfaceGenerate, llmRates, a.embeddingRates(r.Context()))...)
 			writeJSON(w, 200, payload)
 			return
 		}
@@ -707,6 +725,7 @@ func (a *api) generateViaPipe(
 	ctx context.Context,
 	userID, wsID, wsName string,
 	opts *generateOpts,
+	rates store.TokenRates,
 ) (any, pipeUsage, bool, error) {
 	fileIDs, fileNames, chapterNames := a.resolveScope(ctx, wsID, opts)
 	body := map[string]any{
@@ -714,7 +733,8 @@ func (a *api) generateViaPipe(
 		"count": opts.Count, "style": opts.Style, "types": opts.Types, "levels": opts.cognitiveLevels(),
 		"chapters": chapterNames, "fileIds": fileIDs,
 		"detail": opts.Detail, "diagramType": opts.DiagramType, "timeLimitMin": opts.TimeLimitMin,
-		"locale": a.userLocale(ctx, userID),
+		"locale":   a.userLocale(ctx, userID),
+		"modelKey": rates.ModelKey, "configVersion": rates.ModelVersion,
 	}
 	var usage pipeUsage
 	raw, err := a.pipe.PostRaw(ctx, "/generate", body)

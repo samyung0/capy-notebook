@@ -229,6 +229,18 @@ components:
           type: string
         cancelAtPeriodEnd:
           type: boolean
+        creditsLimitMicros:
+          format: int64
+          type: integer
+        creditsPeriodStart:
+          format: date-time
+          type: string
+        creditsReservedMicros:
+          format: int64
+          type: integer
+        creditsUsedMicros:
+          format: int64
+          type: integer
         planTier:
           $ref: "#/components/schemas/PlanTier"
         renewalAt:
@@ -252,6 +264,10 @@ components:
         - storageUsedBytes
         - storageReservedBytes
         - storageLimitBytes
+        - creditsUsedMicros
+        - creditsReservedMicros
+        - creditsLimitMicros
+        - creditsPeriodStart
       type: object
     Canvas:
       additionalProperties: false
@@ -1407,6 +1423,42 @@ components:
         - status
         - createdAt
       type: object
+    ModelOption:
+      additionalProperties: false
+      properties:
+        displayName:
+          type: string
+        isDefault:
+          type: boolean
+        key:
+          type: string
+      required:
+        - key
+        - displayName
+        - isDefault
+      type: object
+    ModelsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ModelsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        defaultKey:
+          type: string
+        models:
+          items:
+            $ref: "#/components/schemas/ModelOption"
+          type: array
+        selectedKey:
+          type: string
+      required:
+        - models
+        - selectedKey
+        - defaultKey
+      type: object
     Notification:
       additionalProperties: false
       properties:
@@ -1852,6 +1904,20 @@ components:
         - kind
         - title
         - href
+      type: object
+    SetModelPrefsReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SetModelPrefsReq.json
+          format: uri
+          readOnly: true
+          type: string
+        chatModelKey:
+          type: string
+        generateModelKey:
+          type: string
       type: object
     ShareRole:
       enum:
@@ -2360,6 +2426,85 @@ components:
         shareRole:
           $ref: "#/components/schemas/ShareRole"
       type: object
+    UsageBucket:
+      additionalProperties: false
+      properties:
+        creditMicros:
+          format: int64
+          type: integer
+        events:
+          format: int64
+          type: integer
+        key:
+          type: string
+      required:
+        - key
+        - events
+        - creditMicros
+      type: object
+    UsageEventView:
+      additionalProperties: false
+      properties:
+        createdAt:
+          format: date-time
+          type: string
+        creditMicros:
+          format: int64
+          type: integer
+        inputTokens:
+          format: int64
+          type: integer
+        kind:
+          type: string
+        modelKey:
+          type: string
+        outputTokens:
+          format: int64
+          type: integer
+        surface:
+          type: string
+        unit:
+          type: string
+        units:
+          format: int64
+          type: integer
+      required:
+        - createdAt
+        - kind
+        - surface
+        - modelKey
+        - inputTokens
+        - outputTokens
+        - units
+        - unit
+        - creditMicros
+      type: object
+    UsageReport:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UsageReport.json
+          format: uri
+          readOnly: true
+          type: string
+        byKind:
+          items:
+            $ref: "#/components/schemas/UsageBucket"
+          type: array
+        bySurface:
+          items:
+            $ref: "#/components/schemas/UsageBucket"
+          type: array
+        recent:
+          items:
+            $ref: "#/components/schemas/UsageEventView"
+          type: array
+      required:
+        - byKind
+        - bySurface
+        - recent
+      type: object
     User:
       additionalProperties: false
       properties:
@@ -2371,9 +2516,13 @@ components:
           type: string
         avatarUrl:
           type: string
+        chatModelKey:
+          type: string
         classLabel:
           type: string
         email:
+          type: string
+        generateModelKey:
           type: string
         id:
           type: string
@@ -3847,6 +3996,27 @@ paths:
       summary: Set account locale
       tags:
         - Account
+  /api/me/models:
+    patch:
+      operationId: setModelPrefs
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetModelPrefsReq"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Set chat and generate model preferences
+      tags:
+        - Account
   /api/mistakes:
     get:
       operationId: getMistakes
@@ -3866,6 +4036,36 @@ paths:
       summary: Review-mistakes quiz
       tags:
         - Quizzes
+  /api/models:
+    get:
+      operationId: listModels
+      parameters:
+        - explode: false
+          in: query
+          name: surface
+          schema:
+            default: chat
+            enum:
+              - chat
+              - generate
+              - editor
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Enabled models for a surface
+      tags:
+        - Account
   /api/notification-prefs:
     get:
       operationId: getNotificationPrefs
@@ -4428,6 +4628,25 @@ paths:
       summary: Save a canvas
       tags:
         - Thinking
+  /api/usage:
+    get:
+      operationId: getUsage
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UsageReport"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Current-period AI usage
+      tags:
+        - Billing & integrations
   /api/workspace-invites/{token}/accept:
     post:
       operationId: acceptWorkspaceInvite

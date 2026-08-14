@@ -19,6 +19,12 @@ type BillingInfo struct {
 	StorageUsedBytes     int64 `json:"storageUsedBytes"`
 	StorageReservedBytes int64 `json:"storageReservedBytes"`
 	StorageLimitBytes    int64 `json:"storageLimitBytes"`
+	// Monthly AI allowance. Distinct from storage: the actor spends credits,
+	// the workspace owner spends bytes.
+	CreditsUsedMicros     int64     `json:"creditsUsedMicros"`
+	CreditsReservedMicros int64     `json:"creditsReservedMicros"`
+	CreditsLimitMicros    int64     `json:"creditsLimitMicros"`
+	CreditsPeriodStart    time.Time `json:"creditsPeriodStart"`
 }
 
 // IntegrationsStatus reflects Clerk external-account links (not local rows).
@@ -32,10 +38,12 @@ type IntegrationsStatus struct {
 func (s *Store) Me(ctx context.Context, userID string) (User, error) {
 	var u User
 	row := s.pool.QueryRow(ctx, `SELECT id, name, COALESCE(email,''), COALESCE(avatar_url,''),
-		COALESCE(class_label,''), streak, locale, plan_tier, subscription_status
+		COALESCE(class_label,''), streak, locale,
+		COALESCE(chat_model_key,''), COALESCE(generate_model_key,''),
+		plan_tier, subscription_status
 		FROM users WHERE id=$1`, userID)
 	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.AvatarURL, &u.ClassLabel, &u.Streak,
-		&u.Locale, &u.PlanTier, &u.SubscriptionStatus)
+		&u.Locale, &u.ChatModelKey, &u.GenerateModelKey, &u.PlanTier, &u.SubscriptionStatus)
 	if isNoRows(err) {
 		return u, ErrNotFound
 	}
@@ -48,6 +56,53 @@ func (s *Store) SetLocale(ctx context.Context, userID, locale string) error {
 	}
 	_, err := s.pool.Exec(ctx, `UPDATE users SET locale=$2, updated_at=now() WHERE id=$1`, userID, locale)
 	return err
+}
+
+// SetModelPrefs stores the user's chat/generate preference. Omitted fields are
+// left unchanged so a picker on one surface cannot wipe the other. An empty
+// string means "use the registry default". The key is validated against
+// enabled configs that advertise the surface; an unknown key is rejected
+// rather than stored and silently falling back later.
+func (s *Store) SetModelPrefs(ctx context.Context, userID string, chatKey, generateKey *string) error {
+	if chatKey != nil && *chatKey != "" {
+		if err := s.assertModelKey(ctx, *chatKey, "chat"); err != nil {
+			return err
+		}
+	}
+	if generateKey != nil && *generateKey != "" {
+		if err := s.assertModelKey(ctx, *generateKey, "generate"); err != nil {
+			return err
+		}
+	}
+	chatVal, genVal := "", ""
+	if chatKey != nil {
+		chatVal = *chatKey
+	}
+	if generateKey != nil {
+		genVal = *generateKey
+	}
+	_, err := s.pool.Exec(ctx, `UPDATE users SET
+		chat_model_key = CASE WHEN $2 THEN NULLIF($3,'') ELSE chat_model_key END,
+		generate_model_key = CASE WHEN $4 THEN NULLIF($5,'') ELSE generate_model_key END,
+		updated_at = now()
+		WHERE id=$1`, userID, chatKey != nil, chatVal, generateKey != nil, genVal)
+	return err
+}
+
+func (s *Store) assertModelKey(ctx context.Context, key, surface string) error {
+	var ok bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM model_configs
+			 WHERE model_key=$1 AND enabled AND $2 = ANY(surfaces)
+		)`, key, surface).Scan(&ok)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // UpsertUserFromClerk inserts or updates a user. The returned bool is true only
@@ -189,6 +244,14 @@ func (s *Store) GetBilling(ctx context.Context, userID string) (BillingInfo, err
 	b.StorageUsedBytes = usage.UsedBytes
 	b.StorageReservedBytes = usage.ReservedBytes
 	b.StorageLimitBytes = usage.LimitBytes
+	credits, err := s.CreditBalance(ctx, userID)
+	if err != nil {
+		return b, err
+	}
+	b.CreditsUsedMicros = credits.UsedMicros
+	b.CreditsReservedMicros = credits.ReservedMicros
+	b.CreditsLimitMicros = credits.LimitMicros
+	b.CreditsPeriodStart = credits.PeriodStart
 	return b, nil
 }
 

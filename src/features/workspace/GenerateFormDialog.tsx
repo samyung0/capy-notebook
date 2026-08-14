@@ -24,7 +24,6 @@ import {
   nextGenerateTitle,
   validateGenerateTitle,
 } from './generateTitle';
-
 export type GenerateMode = 'flashcards' | 'quiz' | 'mindmap' | 'diagram';
 
 const Q_TYPES: QuestionType[] = [

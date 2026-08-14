@@ -136,7 +136,7 @@ Postgres, written in the same transaction as the counter it feeds.
 
 | | Storage | Inference / GPU / mail |
 | --- | --- | --- |
-| Paid by | workspace **owner** | the **actor**, except ingest (see below) |
+| Paid by | workspace **owner** | the **actor**, except `summaries_rollup` (see below) |
 | Why | the bytes sit in their account | the cost is the request itself, and it is gone whether or not anything was kept |
 | Enforced by | `gateStorageTx` | `ReserveCredits` |
 | Error | `storage_quota_exceeded` | `llm_credits_exhausted` |
@@ -145,8 +145,31 @@ An editor generating into someone else's workspace spends **their own** credits
 and the **owner's** disk. The two errors are deliberately distinct: only one of
 them is actionable by the person reading it.
 
-The exception is ingest, which follows the file rather than the uploader —
-see "Ingest is billed to the workspace owner" below.
+Ingest follows the same split: the uploader (the actor on the job payload) pays
+for parse/caption/embed, and the workspace owner pays for the stored bytes. The
+sole inference exception is `summaries_rollup`, which has no actor.
+
+### Model registry and pinning
+
+`model_configs` rows are immutable and versioned. Both the gateway
+(`server/internal/models`) and the pipeline (`pipeline/pipeline/registry.py`)
+cache `(model_key, version)` forever and poll `model_registry_state` every 30s
+for the current defaults. A pinned pair that is not in cache is a point read of
+the table. A cache miss **never** falls back to the current default — that would
+quietly reprice an in-flight conversation. `modelctl` disables rows rather than
+deleting them for that reason.
+
+Conversations snapshot `{modelKey, modelVersion}` into `conversations.metadata`
+inside `store.CreateConversation` (both the REST POST and implicit `chat/stream`
+create). The browser cannot choose a model per message. Generate resolves the
+user's preference per request. Embedding and vision are **not** hot-reloadable:
+ingest jobs pin those versions at enqueue, and query-time embed uses the
+process-start snapshot, because a same-dimension model swap would mix vector
+spaces with no error.
+
+Per-model credit multipliers live on the config row. The 1x reference is DeepSeek
+Flash (250 / 1000 micros per input/output token). USD columns are
+reconciliation-only.
 
 ### Tables
 
@@ -160,6 +183,14 @@ see "Ingest is billed to the workspace owner" below.
 
 Shape mirrors `backend-storage-quota.md` on purpose: hot-path ledger, counter
 row for the gate to lock, reconcile pass for drift.
+
+The signed-in billing page reads this ledger directly. `GET /api/billing` now
+includes the current credit counter (`creditsUsedMicros` / reserved / limit /
+period start) next to storage. `GET /api/usage` groups this actor's current
+month by `kind` and `surface` and returns recent `usage_events` rows. It does
+**not** query `usage_daily` — that table is the operator dashboard and lags the
+ledger by up to a minute. USD is omitted: `cost_micro_usd` is reconciliation
+only.
 
 ### Reserve → settle
 
@@ -195,27 +226,44 @@ it an OpenAI-compatible stream reports no usage at all**, which is how the
 single highest-volume path in the product ends up costing an unknown amount.
 
 Usage reaches the gateway as a `usage` envelope: on the SSE `done` event for
-chat, and in the JSON body for `/generate`.
+chat and `/complete/stream`, as `data-usage` (stripped before the browser) for
+Plate command streams, and in the JSON body for `/generate` and `/plate-ai/copilot`.
 
-### Ingest is billed to the workspace owner, and charged after the fact
+### Ingest is billed to the actor; summaries_rollup to the owner
 
-Ingest is the deliberate exception to "inference is billed to the actor". A file
-in a workspace belongs to that workspace's owner regardless of who put it there,
-so the work of making it retrievable — parsing, captioning, embedding — is
-billed alongside the bytes it produces, to the same person. Splitting one
-upload's cost between two payers would mean an owner could be left with an
-indexed corpus whose indexing someone else paid for.
+Inference is billed to whoever initiated it. `_charge_ingest` reads
+`actorUserId` from the job payload (written at enqueue in `jobs.go`) and records
+the ledger against that user. The workspace owner still pays for the file's
+bytes via `gateStorageTx`.
 
-The rule is therefore about *durability*, not about who typed: work that leaves
-a permanent artifact in a workspace is the owner's, and ephemeral inference
-(chat turns, editor commands) is the actor's. Generate sits on the actor side
-because the actor chose to spend on producing it; the material's *bytes* are
-still billed to the owner by `gateStorageTx`.
+`summaries_rollup` is the one owner-billed inference path, and deliberately so:
+the job is enqueued from a plpgsql trigger that has no user context, and
+`jobs_pending_rollup_idx` folds every subsequent dirty into that one row, so
+even "whoever dirtied the tree" is undefined. The worker bills
+`workspaces.user_id`. Chapter and workspace summaries are durable workspace
+state that the owner benefits from; the debounce bounds the spend to roughly
+one rollup per rollup-duration.
+
+Claim-time gating is two lookups, not one widened check:
+
+| Subject | Checked for | On failure |
+| --- | --- | --- |
+| Owner (`files.user_id`) | lifecycle state, storage | refuse the job |
+| Actor (payload `actorUserId`) | credits only | refuse the job |
+| Actor | lifecycle | **not checked** |
+
+Actor lifecycle does not gate ingest. A `deletion_pending` uploader must not
+leave the owner holding an unindexed file whose bytes they already paid for.
+Credits are the actor's money; lifecycle is the owner's workspace's business.
+A job already running finishes and bills after the fact.
+
+Upload reservation (`createSourceUpload`) checks the same two budgets up front,
+with the same distinct errors.
 
 Charging happens after the fact because nothing is waiting on an ingest job, the
 file was already accepted, and refusing halfway leaves a half-indexed document.
-`_charge_ingest` in the worker can therefore push a user past their limit; the
-next interactive request is what refuses.
+`_charge_ingest` can therefore push a user past their limit; the next
+interactive request is what refuses.
 
 GPU time comes from Modal's `_server_parse_s`, which measures wall time inside
 the container and **excludes queue wait and cold start**. It is the attributable
@@ -223,9 +271,9 @@ share, not the invoice.
 
 ### Pricing is policy
 
-`server/internal/store/pricing.go`, mirrored in `pipeline/store/db.py` for the
-worker. **These two must stay in step**, or the same work costs different
-amounts depending on which process did it.
+`server/internal/store/pricing.go` prices from the resolved `model_configs` row.
+The pipeline uses the same rows via `pipeline/pipeline/registry.py`. There is no
+mirrored rate table in `db.py`.
 
 Rates are deliberately not derived from provider invoices. Provider prices move
 and are quoted in units not visible at the call site (cached input, reasoning
@@ -260,9 +308,13 @@ worked with one.
 
 **Route classes** (`middleware.go`): request cost across this API varies by four
 orders of magnitude. Listing workspaces touches one index; a chat turn runs an
-agent loop of up to four model calls. AI and upload routes carry a tighter
-budget *on top of* the general one, so a caller cannot spend their whole general
-allowance on model calls.
+agent loop of up to four model calls. AI routes (`/chat/stream`, `/generate`,
+`/ai/command`, `/transcribe`) are 200/hour with burst 15, plus a 15/minute
+short-window guard so a scripted loop trips immediately. Cheap editor routes
+(`/complete/stream`, `/ai/copilot`) have their own 120/minute class so typing
+in the note does not consume the chat allowance. Upload routes carry a tighter
+budget *on top of* the general one. Credits remain the money bound; these
+limits only stop abuse patterns.
 
 **Never limited:** `/webhooks/*`. Stripe and Clerk deliver subscription and
 identity changes there, and a 429 becomes billing state that silently drifts.

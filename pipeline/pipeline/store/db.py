@@ -138,28 +138,30 @@ def file_owner_user_id(cur, file_id: str) -> str | None:
     return row[0] if row else None
 
 
-# Credit pricing, mirrored from server/internal/store/pricing.go. Ingest runs
-# unattended in this process, so it settles its own spend rather than reporting
-# back to the gateway; the rates must stay in step with the Go constants or the
-# same work costs different amounts depending on which process did it.
+def workspace_owner_user_id(cur, workspace_id: str) -> str | None:
+    cur.execute("SELECT user_id FROM workspaces WHERE id=%s", (workspace_id,))
+    row = cur.fetchone()
+    return row[0] if row else None
+
+
+# Credit pricing for non-token resources. Token rates live on model_configs
+# and are applied via pipeline.registry.credits_for_tokens; they must not be
+# duplicated here or the same work costs different amounts depending on which
+# process did it.
 MICROS_PER_CREDIT = 1_000_000
-_MICROS_PER_INPUT_TOKEN = 250
-_MICROS_PER_OUTPUT_TOKEN = 1_000
-_MICROS_PER_EMBEDDING_TOKEN = 50
 _MICROS_PER_GPU_SECOND = 500_000
-
-
-def credits_for_tokens(kind: str, input_tokens: int, output_tokens: int) -> int:
-    if kind == "embedding":
-        return (input_tokens + output_tokens) * _MICROS_PER_EMBEDDING_TOKEN
-    return (
-        input_tokens * _MICROS_PER_INPUT_TOKEN
-        + output_tokens * _MICROS_PER_OUTPUT_TOKEN
-    )
+_FREE_CREDITS_PER_MONTH = 1_000
+_PRO_CREDITS_PER_MONTH = 20_000
 
 
 def credits_for_gpu(gpu_millis: int) -> int:
     return gpu_millis * _MICROS_PER_GPU_SECOND // 1000
+
+
+def credit_limit_micros(plan_tier: str) -> int:
+    if plan_tier == "pro":
+        return _PRO_CREDITS_PER_MONTH * MICROS_PER_CREDIT
+    return _FREE_CREDITS_PER_MONTH * MICROS_PER_CREDIT
 
 
 def record_usage_event(
@@ -171,6 +173,9 @@ def record_usage_event(
     surface: str,
     provider: str = "",
     model: str = "",
+    model_key: str = "",
+    model_version: int = 0,
+    cost_micro_usd: int = 0,
     input_tokens: int = 0,
     output_tokens: int = 0,
     units: int = 0,
@@ -192,8 +197,9 @@ def record_usage_event(
         """
         INSERT INTO usage_events
             (trace_id, actor_user_id, workspace_id, kind, surface, provider, model,
+             model_key, model_version, cost_micro_usd,
              input_tokens, output_tokens, units, unit, credit_micros, metadata)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """,
         (
             trace_id or None,
@@ -203,6 +209,9 @@ def record_usage_event(
             surface,
             provider,
             model,
+            model_key,
+            model_version,
+            cost_micro_usd,
             input_tokens,
             output_tokens,
             units,
@@ -274,3 +283,36 @@ def account_allows_ingest(cur, user_id: str) -> bool:
             if effective_used > free_limit:
                 return False
     return True
+
+
+def actor_has_credits(cur, user_id: str) -> bool:
+    """Unlocked credits remaining check for ingest claim time.
+
+    Lifecycle is deliberately not consulted: a deletion_pending uploader must
+    not strand the owner with bytes they already paid for. Credits are the
+    actor's money; the owner's workspace is the owner's business.
+    """
+    if not user_id:
+        return False
+    cur.execute(
+        """
+        SELECT u.plan_tier,
+               COALESCE(c.used_micros, 0),
+               COALESCE(c.reserved_micros, 0),
+               c.period_start
+          FROM users u
+          LEFT JOIN user_credits c ON c.user_id = u.id
+         WHERE u.id = %s
+        """,
+        (user_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return False
+    plan_tier, used, reserved, period_start = row
+    from datetime import datetime, timezone
+
+    today = datetime.now(timezone.utc).date()
+    if period_start is not None and period_start < today.replace(day=1):
+        used = 0
+    return (used + reserved) < credit_limit_micros(plan_tier)

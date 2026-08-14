@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/evonotes/server/internal/models"
 	"github.com/evonotes/server/internal/store"
 )
 
@@ -140,10 +141,6 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 	if !a.assertPlateEditor(w, r, wsID) {
 		return
 	}
-	if a.pipe == nil {
-		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
-		return
-	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeAIError(w, http.StatusInternalServerError, "streaming_unsupported", "streaming is unsupported", false)
@@ -160,15 +157,34 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Intentionally construct a new body instead of forwarding the browser JSON:
+	ctx := r.Context()
+	userID := uid(r)
+	_, rates, err := a.ratesForSurface(ctx, userID, models.SurfaceEditor)
+	if err != nil {
+		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
+		return
+	}
+	charge, err := a.reserveSpend(ctx, userID, wsID, store.SurfaceEditor, store.ScaleEstimate(store.EstimateEditorMicros, rates))
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	defer charge.release(ctx)
+
+	if a.pipe == nil {
+		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
+		return
+	}
 	// apiKey/model/provider fields are never accepted across this trust boundary.
 	body := map[string]any{
-		"workspaceId": wsID,
-		"messages":    req.Messages,
-		"ctx":         req.Context,
-		"locale":      a.userLocale(r.Context(), uid(r)),
+		"workspaceId":   wsID,
+		"messages":      req.Messages,
+		"ctx":           req.Context,
+		"locale":        a.userLocale(ctx, userID),
+		"modelKey":      rates.ModelKey,
+		"configVersion": rates.ModelVersion,
 	}
-	rc, err := a.pipe.PostStream(r.Context(), "/plate-ai/command", body)
+	rc, err := a.pipe.PostStream(ctx, "/plate-ai/command", body)
 	if err != nil {
 		writeAIError(w, http.StatusBadGateway, "ai_unavailable", "AI service is unavailable", true)
 		return
@@ -185,7 +201,8 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
 		flusher.Flush()
 	}
-	if err := copyAIDataStream(r.Context(), rc, send); err != nil && r.Context().Err() == nil {
+	usage, copyErr := copyAIDataStream(ctx, rc, send)
+	if copyErr != nil && ctx.Err() == nil {
 		event, _ := json.Marshal(map[string]any{
 			"type":      "error",
 			"errorText": "AI stream failed",
@@ -196,19 +213,22 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 		})
 		send(event)
 		send([]byte("[DONE]"))
+		return
 	}
+	charge.settle(ctx, usage.events(userID, wsID, store.SurfaceEditor, rates, store.DefaultEmbeddingRates())...)
 }
 
 // copyAIDataStream copies only valid data-stream payloads. It drops comments
 // and unknown SSE fields, and rejects oversized/malformed events so an internal
 // upstream cannot inject arbitrary response framing.
-func copyAIDataStream(ctx context.Context, src io.Reader, send func([]byte)) error {
+func copyAIDataStream(ctx context.Context, src io.Reader, send func([]byte)) (pipeUsage, error) {
+	var usage pipeUsage
 	scanner := bufio.NewScanner(src)
 	scanner.Buffer(make([]byte, 16<<10), maxAIStreamEvent)
 	sawDone := false
 	for scanner.Scan() {
 		if ctx.Err() != nil {
-			return ctx.Err()
+			return usage, ctx.Err()
 		}
 		line := bytes.TrimSpace(scanner.Bytes())
 		if len(line) == 0 || line[0] == ':' || !bytes.HasPrefix(line, []byte("data:")) {
@@ -221,17 +241,30 @@ func copyAIDataStream(ctx context.Context, src io.Reader, send func([]byte)) err
 			continue
 		}
 		if len(payload) == 0 || !json.Valid(payload) {
-			return errors.New("invalid AI stream event")
+			return usage, errors.New("invalid AI stream event")
+		}
+		var ev struct {
+			Type  string    `json:"type"`
+			Usage pipeUsage `json:"usage"`
+			Data  pipeUsage `json:"data"`
+		}
+		if json.Unmarshal(payload, &ev) == nil && (ev.Type == "data-usage" || ev.Type == "usage") {
+			if !ev.Usage.empty() {
+				usage = ev.Usage
+			} else if !ev.Data.empty() {
+				usage = ev.Data
+			}
+			continue
 		}
 		send(bytes.Clone(payload))
 	}
 	if err := scanner.Err(); err != nil {
-		return err
+		return usage, err
 	}
 	if ctx.Err() == nil && !sawDone {
-		return io.ErrUnexpectedEOF
+		return usage, io.ErrUnexpectedEOF
 	}
-	return ctx.Err()
+	return usage, ctx.Err()
 }
 
 type plateCopilotReq struct {
@@ -260,10 +293,6 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 	if !a.assertPlateEditor(w, r, wsID) {
 		return
 	}
-	if a.pipe == nil {
-		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
-		return
-	}
 	var req plateCopilotReq
 	if err := decodeBoundedJSON(w, r, &req); err != nil {
 		writeAIError(w, http.StatusBadRequest, "invalid_request", "invalid AI request", false)
@@ -273,14 +302,34 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 		writeAIError(w, http.StatusBadRequest, "invalid_request", err.Error(), false)
 		return
 	}
-	raw, err := a.pipe.PostRaw(r.Context(), "/plate-ai/copilot", map[string]any{
-		"workspaceId":  wsID,
-		"prompt":       req.Prompt,
-		"instructions": req.Instructions,
-		"system":       req.System,
+	ctx := r.Context()
+	userID := uid(r)
+	_, rates, err := a.ratesForSurface(ctx, userID, models.SurfaceEditor)
+	if err != nil {
+		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
+		return
+	}
+	charge, err := a.reserveSpend(ctx, userID, wsID, store.SurfaceEditor, store.ScaleEstimate(store.EstimateEditorMicros, rates))
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	defer charge.release(ctx)
+
+	if a.pipe == nil {
+		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
+		return
+	}
+	raw, err := a.pipe.PostRaw(ctx, "/plate-ai/copilot", map[string]any{
+		"workspaceId":   wsID,
+		"prompt":        req.Prompt,
+		"instructions":  req.Instructions,
+		"system":        req.System,
+		"modelKey":      rates.ModelKey,
+		"configVersion": rates.ModelVersion,
 	})
 	if err != nil {
-		if r.Context().Err() != nil {
+		if ctx.Err() != nil {
 			return
 		}
 		writeAIError(w, http.StatusBadGateway, "ai_unavailable", "AI service is unavailable", true)
@@ -290,6 +339,7 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 		writeAIError(w, http.StatusBadGateway, "invalid_upstream_response", "AI service returned invalid JSON", true)
 		return
 	}
+	charge.settle(ctx, usageFrom(raw).events(userID, wsID, store.SurfaceEditor, rates, store.DefaultEmbeddingRates())...)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(raw)
 }

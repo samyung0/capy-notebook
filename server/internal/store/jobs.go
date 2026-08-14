@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+
+	"github.com/evonotes/server/internal/obs"
 )
 
 // CreateSourceWithJob inserts an uploaded file as 'processing' and enqueues an
@@ -42,7 +44,7 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 	}
 
 	jobID := uid("job")
-	payload, _ := json.Marshal(map[string]any{
+	payload := s.ingestJobPayload(ctx, createdBy, map[string]any{
 		"fileId": fileID, "workspaceId": wsID, "blobPath": blobPath, "kind": kind,
 		"parser": parser, "engine": engine, "parseMode": parseMode,
 		"captionImages": captionImages,
@@ -106,4 +108,29 @@ func (s *Store) FileBlob(ctx context.Context, id string) (blobPath string, kind 
 		blobPath = *bp
 	}
 	return blobPath, kind, content, url, err
+}
+
+// ingestJobPayload is the enqueue-time snapshot for an ingest job: the actor
+// who initiated the upload, plus the embedding/vision/ingest pins resolved
+// now. The worker bills the actor and uses exactly those model versions even
+// if modelctl moves the default mid-flight.
+func (s *Store) ingestJobPayload(ctx context.Context, actorUserID string, base map[string]any) []byte {
+	if actorUserID != "" {
+		base["actorUserId"] = actorUserID
+	}
+	if s.registry != nil {
+		ingest, embed, vision, err := s.registry.SnapshotIngest(ctx)
+		if err != nil {
+			obs.CaptureErr(ctx, err, map[string]string{"stage": "ingest_model_pin"})
+		} else {
+			base["ingestModelKey"] = ingest.Key
+			base["ingestModelVersion"] = ingest.Version
+			base["embeddingModelKey"] = embed.Key
+			base["embeddingModelVersion"] = embed.Version
+			base["visionModelKey"] = vision.Key
+			base["visionModelVersion"] = vision.Version
+		}
+	}
+	raw, _ := json.Marshal(base)
+	return raw
 }

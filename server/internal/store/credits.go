@@ -68,6 +68,35 @@ type CreditUsage struct {
 	PeriodStart    time.Time `json:"periodStart"`
 }
 
+// UsageBucket is one grouping on the user-facing usage page. Cost-USD is
+// omitted on purpose: that column is reconciliation-only.
+type UsageBucket struct {
+	Key          string `json:"key"`
+	Events       int64  `json:"events"`
+	CreditMicros int64  `json:"creditMicros"`
+}
+
+// UsageEventView is one ledger row as shown to the actor who spent it.
+type UsageEventView struct {
+	CreatedAt    time.Time `json:"createdAt"`
+	Kind         string    `json:"kind"`
+	Surface      string    `json:"surface"`
+	ModelKey     string    `json:"modelKey"`
+	InputTokens  int64     `json:"inputTokens"`
+	OutputTokens int64     `json:"outputTokens"`
+	Units        int64     `json:"units"`
+	Unit         string    `json:"unit"`
+	CreditMicros int64     `json:"creditMicros"`
+}
+
+// UsageReport is the actor's current-period spend plus a recent event list.
+// It reads usage_events for this user, not usage_daily (operator rollup).
+type UsageReport struct {
+	ByKind    []UsageBucket    `json:"byKind" nullable:"false"`
+	BySurface []UsageBucket    `json:"bySurface" nullable:"false"`
+	Recent    []UsageEventView `json:"recent" nullable:"false"`
+}
+
 // UsageEvent is one metered consumption. Token fields are provider-reported;
 // Units carries everything that is not a token (GPU milliseconds, bytes, mail
 // count) so a single ledger covers every resource.
@@ -84,6 +113,9 @@ type UsageEvent struct {
 	Units         int64
 	Unit          string
 	CreditMicros  int64
+	CostMicroUSD  int64
+	ModelKey      string
+	ModelVersion  int
 	ReservationID string
 	Metadata      map[string]any
 }
@@ -491,6 +523,90 @@ func (s *Store) RecordUsage(ctx context.Context, events ...UsageEvent) error {
 	return tx.Commit(ctx)
 }
 
+const defaultUsageRecentLimit = 50
+
+// UserUsageReport is the product usage page: this actor's current month,
+// grouped, plus the most recent ledger rows. It does not scan usage_daily —
+// that table is the operator dashboard and lags the ledger by up to a minute.
+func (s *Store) UserUsageReport(ctx context.Context, userID string, recentLimit int) (UsageReport, error) {
+	out := UsageReport{
+		ByKind:    []UsageBucket{},
+		BySurface: []UsageBucket{},
+		Recent:    []UsageEventView{},
+	}
+	if userID == "" {
+		return out, ErrNotFound
+	}
+	if recentLimit <= 0 || recentLimit > 100 {
+		recentLimit = defaultUsageRecentLimit
+	}
+	period := monthStart()
+
+	kindRows, err := s.pool.Query(ctx, `
+		SELECT kind, count(*), COALESCE(sum(credit_micros), 0)
+		FROM usage_events
+		WHERE actor_user_id = $1 AND created_at >= $2
+		GROUP BY kind
+		ORDER BY sum(credit_micros) DESC, kind`, userID, period)
+	if err != nil {
+		return out, err
+	}
+	out.ByKind, err = scanUsageBuckets(kindRows)
+	if err != nil {
+		return out, err
+	}
+
+	surfaceRows, err := s.pool.Query(ctx, `
+		SELECT surface, count(*), COALESCE(sum(credit_micros), 0)
+		FROM usage_events
+		WHERE actor_user_id = $1 AND created_at >= $2
+		GROUP BY surface
+		ORDER BY sum(credit_micros) DESC, surface`, userID, period)
+	if err != nil {
+		return out, err
+	}
+	out.BySurface, err = scanUsageBuckets(surfaceRows)
+	if err != nil {
+		return out, err
+	}
+
+	recentRows, err := s.pool.Query(ctx, `
+		SELECT created_at, kind, surface, model_key,
+		       input_tokens, output_tokens, units, unit, credit_micros
+		FROM usage_events
+		WHERE actor_user_id = $1
+		ORDER BY created_at DESC, id DESC
+		LIMIT $2`, userID, recentLimit)
+	if err != nil {
+		return out, err
+	}
+	defer recentRows.Close()
+	for recentRows.Next() {
+		var ev UsageEventView
+		if err := recentRows.Scan(
+			&ev.CreatedAt, &ev.Kind, &ev.Surface, &ev.ModelKey,
+			&ev.InputTokens, &ev.OutputTokens, &ev.Units, &ev.Unit, &ev.CreditMicros,
+		); err != nil {
+			return out, err
+		}
+		out.Recent = append(out.Recent, ev)
+	}
+	return out, recentRows.Err()
+}
+
+func scanUsageBuckets(rows pgx.Rows) ([]UsageBucket, error) {
+	defer rows.Close()
+	out := []UsageBucket{}
+	for rows.Next() {
+		var b UsageBucket
+		if err := rows.Scan(&b.Key, &b.Events, &b.CreditMicros); err != nil {
+			return nil, err
+		}
+		out = append(out, b)
+	}
+	return out, rows.Err()
+}
+
 func insertUsageEventTx(ctx context.Context, tx pgx.Tx, ev UsageEvent) error {
 	if ev.ActorUserID == "" {
 		return nil
@@ -511,10 +627,12 @@ func insertUsageEventTx(ctx context.Context, tx pgx.Tx, ev UsageEvent) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO usage_events
 			(trace_id, actor_user_id, workspace_id, kind, surface, provider, model,
+			 model_key, model_version, cost_micro_usd,
 			 input_tokens, output_tokens, units, unit, credit_micros, reservation_id, metadata)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
 		nullString(ev.TraceID), ev.ActorUserID, wsID, ev.Kind, ev.Surface,
-		ev.Provider, ev.Model, ev.InputTokens, ev.OutputTokens, ev.Units, ev.Unit,
+		ev.Provider, ev.Model, ev.ModelKey, ev.ModelVersion, ev.CostMicroUSD,
+		ev.InputTokens, ev.OutputTokens, ev.Units, ev.Unit,
 		ev.CreditMicros, nullString(ev.ReservationID), ev.Metadata,
 	)
 	return err

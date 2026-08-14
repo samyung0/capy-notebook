@@ -30,6 +30,23 @@ describe('frontend error normalization', () => {
     expect(describeError(error).action).toBe('subscription');
   });
 
+  it('classifies exhausted AI credits distinctly from storage quota', () => {
+    const error = new ApiError(403, 'Forbidden', undefined, {
+      code: 'llm_credits_exhausted',
+    });
+
+    expect(errorKind(error)).toBe('credits');
+    expect(describeError(error).title).not.toBe(
+      describeError(
+        new ApiError(403, 'Forbidden', undefined, {
+          code: 'storage_quota_exceeded',
+        })
+      ).title
+    );
+    expect(isNonDisclosing(error)).toBe(false);
+    expect(describeError(error).action).toBe('subscription');
+  });
+
   it('recognizes dynamic import failures', () => {
     const error = new TypeError(
       'Failed to fetch dynamically imported module: /assets/page.js'

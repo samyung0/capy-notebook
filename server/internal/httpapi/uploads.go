@@ -92,6 +92,12 @@ func (a *api) createSourceUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.CaptionImages = sourceupload.NormalizeCaptionImages(in.Kind, in.ParseMode, in.CaptionImages)
+	if sourceupload.NeedsIngestJob(in.Kind, in.ParseMode) {
+		if err := a.s.AssertCreditsAvailable(r.Context(), uid(r)); err != nil {
+			a.fail(w, err)
+			return
+		}
+	}
 	if in.ChapterID != nil {
 		chapterWorkspace, err := a.s.ChapterWorkspaceID(r.Context(), *in.ChapterID)
 		if err != nil || chapterWorkspace != wsID {

@@ -40,7 +40,7 @@ func TestCopyAIDataStream(t *testing.T) {
 			"data: [DONE]\n\n",
 	)
 	var got []string
-	err := copyAIDataStream(context.Background(), input, func(payload []byte) {
+	_, err := copyAIDataStream(context.Background(), input, func(payload []byte) {
 		got = append(got, string(payload))
 	})
 	if err != nil {
@@ -57,7 +57,7 @@ func TestCopyAIDataStream(t *testing.T) {
 }
 
 func TestCopyAIDataStreamRejectsMalformedEvent(t *testing.T) {
-	err := copyAIDataStream(
+	_, err := copyAIDataStream(
 		context.Background(),
 		strings.NewReader("data: not-json\n\n"),
 		func([]byte) {},
@@ -68,7 +68,7 @@ func TestCopyAIDataStreamRejectsMalformedEvent(t *testing.T) {
 }
 
 func TestCopyAIDataStreamRejectsMissingDone(t *testing.T) {
-	err := copyAIDataStream(
+	_, err := copyAIDataStream(
 		context.Background(),
 		strings.NewReader("data: {\"type\":\"start\"}\n\n"),
 		func([]byte) {},

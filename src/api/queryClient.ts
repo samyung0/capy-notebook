@@ -59,7 +59,7 @@ export const queryClient = new QueryClient({
           ? {
               label: m.account_banner_subscription(),
               onClick: () => {
-                window.location.href = '/subscription';
+                window.location.href = '/settings?tab=subscription';
               },
             }
           : description.action === 'signIn'

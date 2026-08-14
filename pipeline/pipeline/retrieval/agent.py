@@ -70,7 +70,7 @@ async def run_agent(
     query: str,
     ctx: ToolContext,
     history: list[dict[str, Any]] | None,
-    model: str,
+    model: str | models.ModelConfig,
     locale: str | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """Drive the loop, yielding {'type': ...} events for the SSE relay.

@@ -21,11 +21,11 @@ export function initErrorReporting(): void {
     dsn: DSN,
     environment: APP_ENV,
     release: process.env.RELEASE_SHA || undefined,
+    sendDefaultPii: false,
     // Tracing is off here rather than sampled: every connection is a
     // long-lived WebSocket, so transactions would measure session length
     // rather than anything actionable.
     tracesSampleRate: 0,
-    sendDefaultPii: false,
   });
   log('info', 'sentry enabled', { environment: APP_ENV });
 }
@@ -45,17 +45,19 @@ export function log(
   fields: Record<string, unknown> = {}
 ): void {
   if (LOG_FORMAT === 'text') {
-    const suffix = Object.keys(fields).length ? ` ${JSON.stringify(fields)}` : '';
+    const suffix = Object.keys(fields).length
+      ? ` ${JSON.stringify(fields)}`
+      : '';
     console[level === 'debug' ? 'log' : level](`${level} ${msg}${suffix}`);
     return;
   }
   console.log(
     JSON.stringify({
-      time: new Date().toISOString(),
-      level,
-      service: 'collaboration',
       env: APP_ENV,
+      level,
       msg,
+      service: 'collaboration',
+      time: new Date().toISOString(),
       ...fields,
     })
   );

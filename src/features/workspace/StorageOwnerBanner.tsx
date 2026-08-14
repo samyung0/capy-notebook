@@ -53,7 +53,9 @@ export function StorageOwnerBanner({
       </div>
       {workspace.isOwner && (
         <Button asChild size="sm" variant="outline">
-          <Link to="/subscription">{m.account_banner_subscription()}</Link>
+          <Link search={{ tab: 'subscription' }} to="/settings">
+            {m.account_banner_subscription()}
+          </Link>
         </Button>
       )}
     </div>

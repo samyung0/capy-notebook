@@ -14,7 +14,7 @@ import re
 import secrets
 from typing import Any
 
-from ..config import cfg
+from ..registry import ingest_spec
 from . import models, store
 from .chunking import Chunk, outline_from_chunks, tokenize_for_search
 
@@ -150,7 +150,7 @@ async def summarize_file(file_name: str, chunks: list[Chunk]) -> str:
                 {"role": "system", "content": _SUMMARY_SYSTEM},
                 {"role": "user", "content": prompt},
             ],
-            model=cfg.ingest_model,
+            model=ingest_spec(),
         )
     except Exception:
         log.warning("file summary failed for %s", file_name, exc_info=True)
@@ -195,7 +195,7 @@ async def extract_concepts(
                     {"role": "system", "content": _CONCEPT_SYSTEM},
                     {"role": "user", "content": f"Source: {file_name}\n\n{text}"},
                 ],
-                model=cfg.ingest_model,
+                model=ingest_spec(),
                 temperature=0.0,
             )
         except Exception:
@@ -277,7 +277,7 @@ async def rollup_summaries(workspace_id: str) -> dict[str, int]:
                             "content": f"Chapter: {chapter['name']}\n\n{body}",
                         },
                     ],
-                    model=cfg.ingest_model,
+                    model=ingest_spec(),
                 )
             except Exception:
                 log.warning("chapter rollup failed", exc_info=True)
@@ -300,7 +300,7 @@ async def rollup_summaries(workspace_id: str) -> dict[str, int]:
                     {"role": "system", "content": _WORKSPACE_SYSTEM},
                     {"role": "user", "content": "\n\n".join(parts)[:16000]},
                 ],
-                model=cfg.ingest_model,
+                model=ingest_spec(),
             )
         except Exception:
             log.warning("workspace rollup failed", exc_info=True)

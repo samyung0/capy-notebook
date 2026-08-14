@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+import threading
 from contextlib import asynccontextmanager
 from typing import Annotated, Any
 
@@ -18,7 +19,7 @@ from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from .. import obs, use_compatible_event_loop
+from .. import obs, registry, use_compatible_event_loop
 from ..config import cfg
 from ..retrieval import models, store, workflows
 from ..retrieval.agent import run_agent
@@ -38,6 +39,10 @@ use_compatible_event_loop()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    registry.registry.start()
+    threading.Thread(
+        target=registry.poll_forever, name="model-registry", daemon=True
+    ).start()
     await store.pool()
     log.info(
         "retrieval up — query_model=%s embedding=%s tools=%s",
@@ -82,7 +87,9 @@ class ChatStreamReq(BaseModel):
     workspaceId: str
     userId: str | None = None
     fileIds: list[str] | None = None
-    model: str | None = None
+    model: str | None = None  # ignored; pin is modelKey + configVersion
+    modelKey: str | None = None
+    configVersion: int | None = None
     # Prior turns as OpenAI-style role/content pairs, sent to the LLM only.
     history: list[dict] | None = None
     # Account locale from the gateway (users.locale). Do not trust a browser field.
@@ -105,6 +112,8 @@ class GenerateReq(BaseModel):
     diagramType: str | None = None  # diagram: auto|flowchart|sequence|class|state|er
     timeLimitMin: int | None = None
     locale: str | None = None
+    modelKey: str | None = None
+    configVersion: int | None = None
 
 
 # Legacy easy/medium/hard -> cognitive level, so old callers keep working.
@@ -172,7 +181,7 @@ async def _chat_events(req: ChatStreamReq, request: Request):
             query=req.query,
             ctx=ctx,
             history=req.history,
-            model=models.resolve_query_model(req.model),
+            model=models.resolve_query_model(req.modelKey, req.configVersion),
             locale=req.locale,
         ):
             if await request.is_disconnected():
@@ -203,7 +212,9 @@ class CompleteReq(BaseModel):
     mode: str = "command"  # command | continue
     prompt: str | None = None
     context: str | None = None
-    model: str | None = None
+    model: str | None = None  # ignored; pin is modelKey + configVersion
+    modelKey: str | None = None
+    configVersion: int | None = None
     locale: str | None = None
 
 
@@ -241,7 +252,9 @@ def _complete_messages(req: CompleteReq) -> list[dict]:
 
 
 async def _complete_stream(req: CompleteReq, request: Request):
-    model = models.resolve_query_model(req.model)
+    model = models.resolve_query_model(
+        req.modelKey, req.configVersion, surface=registry.SURFACE_EDITOR
+    )
     try:
         async for token in models.stream_text(
             _complete_messages(req), model=model, temperature=0.7
@@ -249,7 +262,11 @@ async def _complete_stream(req: CompleteReq, request: Request):
             if await request.is_disconnected():
                 break
             yield _sse({"type": "token", "text": token})
-        yield _sse({"type": "done"})
+        done: dict[str, Any] = {"type": "done"}
+        usage = obs.current_usage()
+        if usage is not None and not usage.is_empty():
+            done["usage"] = usage.as_dict()
+        yield _sse(done)
     except Exception as e:
         log.exception("complete stream failed")
         yield _sse({"type": "error", "message": str(e)})
@@ -270,7 +287,9 @@ async def ai_command(req: CompleteReq):
     try:
         text = await models.complete_text(
             _complete_messages(req),
-            model=models.resolve_query_model(req.model),
+            model=models.resolve_query_model(
+                req.modelKey, req.configVersion, surface=registry.SURFACE_EDITOR
+            ),
             temperature=0.7,
         )
         return {"text": text}
@@ -285,17 +304,34 @@ async def ai_command(req: CompleteReq):
 @app.post("/transcribe")
 async def transcribe(file: Annotated[UploadFile, File()]):
     """Transcribe an uploaded audio blob via a Whisper-compatible STT provider."""
+    spec = registry.resolve_pinned(None, None, registry.SURFACE_STT)
     try:
-        client = models.client(cfg.stt)
+        client = models.client_for(spec)
         data = await file.read()
-        resp = await client.audio.transcriptions.create(
-            model=cfg.stt_model,
-            file=(file.filename or "audio.webm", data),
-        )
-        return {"text": getattr(resp, "text", "") or ""}
+        text = ""
+        duration_ms = 0
+        try:
+            resp = await client.audio.transcriptions.create(
+                model=spec.provider_model_id,
+                file=(file.filename or "audio.webm", data),
+                response_format="verbose_json",
+            )
+            text = getattr(resp, "text", "") or ""
+            duration_s = float(getattr(resp, "duration", 0) or 0)
+            duration_ms = int(duration_s * 1000)
+        except Exception:  # noqa: BLE001 - verbose_json is not universal
+            resp = await client.audio.transcriptions.create(
+                model=spec.provider_model_id,
+                file=(file.filename or "audio.webm", data),
+            )
+            text = getattr(resp, "text", "") or ""
+        if duration_ms <= 0 and data:
+            # ~32 kbit/s floor so a provider that omits duration still bills.
+            duration_ms = max(1000, (len(data) * 8) // 32)
+        return {"text": text, "durationMillis": duration_ms}
     except Exception as e:
         log.exception("transcription failed")
-        return {"text": "", "error": str(e)}
+        return {"text": "", "durationMillis": 0, "error": str(e)}
 
 
 # ------------------------------------------------------------------- generate
@@ -326,6 +362,9 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
 
 
 async def _generate(req: GenerateReq) -> dict[str, Any]:
+    model = models.resolve_query_model(
+        req.modelKey, req.configVersion, surface=registry.SURFACE_GENERATE
+    )
     chapters = req.chapters or []
     file_ids = req.fileIds or []
     context, passages = await workflows.gather_context(
@@ -344,7 +383,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
                 instruction=instruction,
                 passages=passages,
                 scope=scope,
-                model=cfg.query_model,
+                model=model,
                 combine=(
                     "Merge these per-document summaries into one bullet list, "
                     "removing duplicates and keeping the source distinctions clear."
@@ -356,7 +395,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
                 instruction=instruction,
                 context=context,
                 scope=scope,
-                model=cfg.query_model,
+                model=model,
                 locale=req.locale,
             )
         return {"kind": "summary", "title": "Workspace summary", "body": body}
@@ -371,7 +410,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
             ),
             context=context,
             scope=scope,
-            model=cfg.query_model,
+            model=model,
             locale=req.locale,
         )
         data = workflows.extract_json(raw) or []
@@ -400,7 +439,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
             ),
             context=context,
             scope=scope,
-            model=cfg.query_model,
+            model=model,
             locale=req.locale,
         )
         code = workflows.strip_fence(raw) or "mindmap\n  root((Topic))"
@@ -426,7 +465,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
             ),
             context=context,
             scope=scope,
-            model=cfg.query_model,
+            model=model,
             locale=req.locale,
         )
         code = workflows.strip_fence(raw) or "flowchart LR\n  A --> B"
@@ -459,7 +498,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         ),
         context=context,
         scope=scope,
-        model=cfg.query_model,
+        model=model,
         locale=req.locale,
     )
     questions = workflows.normalize_questions(

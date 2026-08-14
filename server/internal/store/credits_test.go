@@ -237,3 +237,89 @@ func TestStalePeriodDoesNotBlockTheNewMonth(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestGetBillingIncludesCreditCounters(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+
+	info, err := s.GetBilling(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.CreditsLimitMicros != CreditLimitMicros(PlanFree) {
+		t.Fatalf("limit=%d, want free allowance", info.CreditsLimitMicros)
+	}
+	if info.CreditsUsedMicros != 0 || info.CreditsReservedMicros != 0 {
+		t.Fatalf("fresh user used=%d reserved=%d", info.CreditsUsedMicros, info.CreditsReservedMicros)
+	}
+	if info.CreditsPeriodStart.IsZero() {
+		t.Fatal("creditsPeriodStart should be set")
+	}
+
+	if err := s.RecordUsage(ctx, UsageEvent{
+		ActorUserID:  userID,
+		Kind:         KindLLM,
+		Surface:      SurfaceChat,
+		CreditMicros: 2_500_000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	info, err = s.GetBilling(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.CreditsUsedMicros != 2_500_000 {
+		t.Fatalf("used=%d after record", info.CreditsUsedMicros)
+	}
+}
+
+func TestUserUsageReportScopesToActorAndGroupsCurrentPeriod(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	other := newCreditsTestUser(t, s)
+
+	if err := s.RecordUsage(ctx,
+		UsageEvent{ActorUserID: userID, Kind: KindLLM, Surface: SurfaceChat, ModelKey: "deepseek-flash", CreditMicros: 1_000_000, InputTokens: 10, OutputTokens: 4},
+		UsageEvent{ActorUserID: userID, Kind: KindEmbedding, Surface: SurfaceIngest, CreditMicros: 200_000},
+		UsageEvent{ActorUserID: other, Kind: KindLLM, Surface: SurfaceChat, CreditMicros: 9_000_000},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := s.UserUsageReport(ctx, userID, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Recent) != 2 {
+		t.Fatalf("recent=%d, want 2 (other actor excluded)", len(report.Recent))
+	}
+	var llm, embed int64
+	for _, b := range report.ByKind {
+		switch b.Key {
+		case KindLLM:
+			llm = b.CreditMicros
+		case KindEmbedding:
+			embed = b.CreditMicros
+		}
+	}
+	if llm != 1_000_000 || embed != 200_000 {
+		t.Fatalf("byKind llm=%d embed=%d", llm, embed)
+	}
+	var chat, ingest int64
+	for _, b := range report.BySurface {
+		switch b.Key {
+		case SurfaceChat:
+			chat = b.CreditMicros
+		case SurfaceIngest:
+			ingest = b.CreditMicros
+		}
+	}
+	if chat != 1_000_000 || ingest != 200_000 {
+		t.Fatalf("bySurface chat=%d ingest=%d", chat, ingest)
+	}
+	if report.Recent[0].CreditMicros == 0 && report.Recent[1].CreditMicros == 0 {
+		t.Fatal("recent rows should include credit micros, not USD")
+	}
+}

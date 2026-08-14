@@ -16,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/evonotes/server/internal/models"
 	"github.com/evonotes/server/migrations"
 )
 
@@ -45,10 +46,20 @@ var ErrAuthorityUnavailable = errors.New("collaboration authority unavailable")
 
 type Store struct {
 	pool                *pgxpool.Pool
+	registry            *models.Registry
 	collaborationURL    string
 	collaborationSecret string
 	collaborationHTTP   *http.Client
 }
+
+// Pool exposes the connection pool so the model registry can share it.
+func (s *Store) Pool() *pgxpool.Pool { return s.pool }
+
+// SetModelRegistry attaches the process-wide registry so CreateConversation
+// and ingest enqueue can pin the resolved (model_key, version).
+func (s *Store) SetModelRegistry(r *models.Registry) { s.registry = r }
+
+func (s *Store) ModelRegistry() *models.Registry { return s.registry }
 
 func New(ctx context.Context, dsn string) (*Store, error) {
 	pool, err := pgxpool.New(ctx, dsn)

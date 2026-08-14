@@ -60,7 +60,7 @@ export function useChatStream(workspaceId: string) {
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
   const send = useCallback(
-    async (text: string, model?: string) => {
+    async (text: string) => {
       const trimmed = text.trim();
       if (!trimmed || streaming) return;
 
@@ -103,7 +103,7 @@ export function useChatStream(workspaceId: string) {
       try {
         await streamChat(
           workspaceId,
-          { conversationId: conversationId ?? undefined, model, text: trimmed },
+          { conversationId: conversationId ?? undefined, text: trimmed },
           {
             onCitations: (c) => patch(currentId, { citations: c }),
             onDone: ({ status }) => {

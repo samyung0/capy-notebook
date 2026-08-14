@@ -75,6 +75,7 @@ type (
 	SearchResult       = store.SearchResult
 	WorkspaceStats     = store.WorkspaceStats
 	BillingInfo        = store.BillingInfo
+	UsageReport        = store.UsageReport
 	IntegrationsStatus = store.IntegrationsStatus
 	Conversation       = store.Conversation
 	Message            = store.Message
@@ -82,6 +83,23 @@ type (
 	Region             = store.Region
 	MaterialRef        = store.MaterialRef
 )
+
+type ModelOption struct {
+	Key         string `json:"key"`
+	DisplayName string `json:"displayName"`
+	IsDefault   bool   `json:"isDefault"`
+}
+
+type ModelsResponse struct {
+	Models      []ModelOption `json:"models" nullable:"false"`
+	SelectedKey string        `json:"selectedKey"`
+	DefaultKey  string        `json:"defaultKey"`
+}
+
+type SetModelPrefsReq struct {
+	ChatModelKey     *string `json:"chatModelKey,omitempty"`
+	GenerateModelKey *string `json:"generateModelKey,omitempty"`
+}
 
 // SourceUploadPolicy describes the server-owned file allowlist and parser
 // limits consumed by the upload dialog.

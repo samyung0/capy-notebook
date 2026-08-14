@@ -5,6 +5,7 @@ import {
   createRouter,
   lazyRouteComponent,
   Outlet,
+  redirect,
 } from '@tanstack/react-router';
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
 import { USE_MSW } from '@/api/auth';
@@ -12,6 +13,7 @@ import {
   allFilesQuery,
   attemptQuery,
   attemptsQuery,
+  billingQuery,
   canvasesQuery,
   canvasQuery,
   cardsQuery,
@@ -27,9 +29,11 @@ import {
   labelsQuery,
   materialsQuery,
   meQuery,
+  modelsQuery,
   quizQuery,
   quizzesQuery,
   tasksQuery,
+  usageQuery,
   workspaceQuery,
   workspacesQuery,
 } from '@/api/hooks';
@@ -42,6 +46,7 @@ import {
 import { AppShell } from '@/components/app/AppShell';
 import { AuthGate } from '@/components/app/AuthProvider';
 import { parseWorkspaceOpenSearch } from '@/features/materials/openItem';
+import { parseSettingsSearch } from '@/features/settings/settingsSearch';
 import { features } from '@/lib/features';
 
 interface RouterContext {
@@ -266,12 +271,41 @@ const appRoutes = [
       ]
     : []),
   page('/support', () => import('@/routes/Support')),
-  page('/settings', () => import('@/routes/Settings')),
-  page('/profile', () => import('@/routes/Profile')),
+  createRoute({
+    component: lazyRouteComponent(() => import('@/routes/Settings')),
+    getParentRoute: () => authShellRoute,
+    loader: ({ context: { queryClient: qc } }) => {
+      qc.prefetchQuery(meQuery());
+      qc.prefetchQuery(modelsQuery('chat'));
+      qc.prefetchQuery(modelsQuery('generate'));
+      qc.prefetchQuery(billingQuery());
+    },
+    path: '/settings',
+    validateSearch: parseSettingsSearch,
+  }),
+  createRoute({
+    beforeLoad: () => {
+      throw redirect({ search: { tab: 'general' }, to: '/settings' });
+    },
+    component: () => null,
+    getParentRoute: () => authShellRoute,
+    path: '/profile',
+  }),
+  createRoute({
+    beforeLoad: () => {
+      throw redirect({ search: { tab: 'subscription' }, to: '/settings' });
+    },
+    component: () => null,
+    getParentRoute: () => authShellRoute,
+    path: '/subscription',
+  }),
   page(
-    '/subscription',
-    () => import('@/routes/Subscription'),
-    ({ context: { queryClient: qc } }) => qc.prefetchQuery(meQuery())
+    '/billing',
+    () => import('@/routes/Billing'),
+    ({ context: { queryClient: qc } }) => {
+      qc.prefetchQuery(billingQuery());
+      qc.prefetchQuery(usageQuery());
+    }
   ),
 ];
 

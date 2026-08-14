@@ -111,6 +111,12 @@ CREATE TABLE IF NOT EXISTS users (
   plan_tier             text NOT NULL DEFAULT 'free'
     CHECK (plan_tier IN ('free', 'pro')),
   locale                text NOT NULL DEFAULT 'en',
+  -- Per-surface chat/generate preference. NULL means "use the registry default
+  -- for that surface". Ingest, embedding, and vision are operator-only and
+  -- are never stored here. The value is a model_key, not a version: the
+  -- version is pinned onto the conversation or job at creation time.
+  chat_model_key        text,
+  generate_model_key    text,
   -- Account lifecycle. deletion_requested_at starts the reactivation window;
   -- purge_after is when the purge job runs; deleted_at is set by the purge
   -- itself, after which the row is a scrubbed tombstone.
@@ -1200,6 +1206,101 @@ $$;
 -- whether or not anything was kept. An editor generating into someone else's
 -- workspace spends their own credits and the owner's disk.
 --
+-- The one owner-billed inference exception is summaries_rollup: the job is
+-- enqueued from a plpgsql trigger with no user context, and the pending-job
+-- unique index folds later dirties into one row, so there is no actor to
+-- charge. Chapter/workspace summaries are durable workspace state.
+
+-- ============================================================================
+-- Model registry
+--
+-- Immutable versioned rows so a pinned conversation or ingest job can always
+-- resolve the exact config it started with. API keys stay in env, looked up
+-- by provider_slug; nothing secret enters this table.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS model_configs (
+  model_key                    text NOT NULL,
+  version                      int  NOT NULL,
+  display_name                 text NOT NULL,
+  provider_slug                text NOT NULL,
+  base_url                     text NOT NULL DEFAULT '',
+  provider_model_id            text NOT NULL,
+  params                       jsonb NOT NULL DEFAULT '{}'::jsonb,
+  surfaces                     text[] NOT NULL,
+  -- Credit multipliers, in millionths of a credit per token. 1000 output
+  -- micros is the 1x reference (one credit per 1k output tokens of Flash).
+  micros_per_input_token       bigint NOT NULL,
+  micros_per_output_token      bigint NOT NULL,
+  -- Reconciliation only, never charged from. Unit is micro-USD per million
+  -- tokens, so $0.14/MTok is stored as 140000.
+  usd_micros_per_input_token   bigint NOT NULL DEFAULT 0,
+  usd_micros_per_output_token  bigint NOT NULL DEFAULT 0,
+  enabled                      boolean NOT NULL DEFAULT true,
+  is_default_for               text[] NOT NULL DEFAULT '{}',
+  created_at                   timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (model_key, version),
+  CONSTRAINT model_configs_surfaces_check CHECK (
+    surfaces <@ ARRAY['chat','generate','editor','ingest','embedding','vision','stt']::text[]
+    AND surfaces <> '{}'
+  ),
+  CONSTRAINT model_configs_default_for_check CHECK (
+    is_default_for <@ ARRAY['chat','generate','editor','ingest','embedding','vision','stt']::text[]
+  )
+);
+CREATE INDEX IF NOT EXISTS model_configs_enabled_idx
+  ON model_configs (model_key, version DESC) WHERE enabled;
+
+CREATE TABLE IF NOT EXISTS model_registry_state (
+  id         boolean PRIMARY KEY DEFAULT true CHECK (id),
+  version    bigint NOT NULL DEFAULT 0,
+  updated_at timestamptz
+);
+INSERT INTO model_registry_state (id, version) VALUES (true, 1)
+  ON CONFLICT (id) DO NOTHING;
+
+-- Bootstrap the models the product ships with. modelctl add writes new
+-- versions; these rows are the 1x Flash reference and the frozen embedding
+-- / vision / STT defaults. Changing embedding or vision is not a hot-reload:
+-- it requires a process restart and a reindex, and is not a normal operation.
+INSERT INTO model_configs (
+  model_key, version, display_name, provider_slug, base_url, provider_model_id,
+  params, surfaces, micros_per_input_token, micros_per_output_token,
+  usd_micros_per_input_token, usd_micros_per_output_token, enabled, is_default_for
+) VALUES
+  ('deepseek-flash', 1, 'DeepSeek Flash', 'deepseek',
+   'https://api.deepseek.com', 'deepseek-v4-flash',
+   '{"temperature": 0.3}'::jsonb,
+   ARRAY['chat','generate','editor','ingest'],
+   250, 1000, 140000, 280000, true,
+   ARRAY['chat','generate','editor','ingest']),
+  ('deepseek-pro', 1, 'DeepSeek Pro', 'deepseek',
+   'https://api.deepseek.com', 'deepseek-v4-pro',
+   '{"temperature": 0.3}'::jsonb,
+   ARRAY['chat','generate'],
+   775, 3100, 434000, 868000, true,
+   ARRAY[]::text[]),
+  ('qwen-embed', 1, 'Qwen3 Embedding 4B', 'openrouter',
+   'https://openrouter.ai/api/v1', 'qwen/qwen3-embedding-4b',
+   '{"dimensions": 2560}'::jsonb,
+   ARRAY['embedding'],
+   50, 50, 20000, 20000, true,
+   ARRAY['embedding']),
+  ('gemini-flash-lite', 1, 'Gemini Flash Lite', 'google',
+   'https://generativelanguage.googleapis.com/v1beta/openai/',
+   'gemini-3.1-flash-lite-preview',
+   '{"temperature": 0.2}'::jsonb,
+   ARRAY['vision'],
+   250, 1000, 100000, 400000, true,
+   ARRAY['vision']),
+  ('whisper', 1, 'Whisper', 'openai',
+   'https://api.openai.com/v1', 'whisper-1',
+   '{}'::jsonb,
+   ARRAY['stt'],
+   0, 0, 0, 0, true,
+   ARRAY['stt'])
+ON CONFLICT (model_key, version) DO NOTHING;
+--
 -- Shape mirrors storage accounting on purpose: an append-only ledger for the
 -- hot path, a counter row for the gate to lock, and a reconcile pass to repair
 -- drift. Analytics (PostHog) never feeds these tables — it is sampled, ad
@@ -1225,6 +1326,13 @@ CREATE TABLE IF NOT EXISTS usage_events (
   surface        text NOT NULL DEFAULT 'system',
   provider       text NOT NULL DEFAULT '',
   model          text NOT NULL DEFAULT '',
+  -- Registry identity of the config that priced this row. Distinct from
+  -- `model`, which is the provider's model id. A miss here is an error at
+  -- request time, never a silent fall back to the current default.
+  model_key      text NOT NULL DEFAULT '',
+  model_version  int  NOT NULL DEFAULT 0,
+  -- Reconciliation only (micro-USD). Never the charge.
+  cost_micro_usd bigint NOT NULL DEFAULT 0,
   input_tokens   bigint NOT NULL DEFAULT 0,
   output_tokens  bigint NOT NULL DEFAULT 0,
   -- Non-token resources: GPU milliseconds, bytes, message counts.

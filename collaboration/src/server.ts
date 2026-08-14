@@ -290,7 +290,7 @@ function rejectRoom(
     })().catch((evictionError) => {
       rejectedRooms.delete(room);
       storeFailures += 1;
-      captureError(evictionError, { stage: 'rejection_eviction', room });
+      captureError(evictionError, { room, stage: 'rejection_eviction' });
       console.warn(
         'collaboration rejection eviction failed:',
         evictionError instanceof Error
@@ -658,7 +658,7 @@ async function handleEvictionRequest(raw: string) {
     await evictLocalRoom(event.room, true);
   } catch (error) {
     ok = false;
-    captureError(error, { stage: 'eviction', room: event.room });
+    captureError(error, { room: event.room, stage: 'eviction' });
   }
   await redis.publish(
     EVICTION_ACK_CHANNEL,
@@ -767,7 +767,7 @@ subscriber.on('message', (channel: string, raw: string) => {
       server.hocuspocus.documents.get(room)?.broadcastStateless(raw);
       void evictLocalRoom(room).catch((error) => {
         storeFailures += 1;
-        captureError(error, { stage: 'event_eviction', room });
+        captureError(error, { room, stage: 'event_eviction' });
       });
       return;
     }
