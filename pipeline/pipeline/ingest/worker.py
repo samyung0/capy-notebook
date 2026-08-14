@@ -32,7 +32,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from .. import progress, use_compatible_event_loop
+from .. import obs, progress, use_compatible_event_loop
 from ..config import cfg
 from ..parse import figures, modal_parser
 from ..retrieval import indexing, store
@@ -146,6 +146,88 @@ def _record_caption_blob(file_id: str, key: str) -> None:
     with db.connect() as conn, conn.cursor() as cur:
         db.set_file_caption_blob(cur, file_id, key)
         conn.commit()
+
+
+def _charge_ingest(file_id: str, workspace_id: str) -> None:
+    """Settle everything one ingest job spent: embeddings, summary and concept
+    extraction, figure captions, and Modal GPU time.
+
+    Billed to the file's storage owner rather than to whoever uploaded it, and
+    deliberately so: a file in a workspace belongs to that workspace's owner
+    regardless of where it came from, so the work of making it retrievable is
+    billed alongside the bytes it produces, to the same person. Splitting one
+    upload between two payers would leave an owner holding an indexed corpus
+    that someone else paid to index.
+
+    The dividing line is durability, not who typed. Ephemeral inference — chat
+    turns, editor commands — is billed to the actor instead.
+    """
+    usage = obs.current_usage()
+    gpu_millis = obs.take_gpu_millis()
+    if usage is None and not gpu_millis:
+        return
+    try:
+        with db.connect() as conn, conn.cursor() as cur:
+            owner = db.file_owner_user_id(cur, file_id)
+            if not owner:
+                return
+            trace = obs.trace_id()
+            if usage is not None:
+                if usage.input_tokens or usage.output_tokens:
+                    db.record_usage_event(
+                        cur,
+                        actor_user_id=owner,
+                        workspace_id=workspace_id,
+                        kind="llm",
+                        surface="ingest",
+                        provider=usage.provider,
+                        model=usage.model,
+                        input_tokens=usage.input_tokens,
+                        output_tokens=usage.output_tokens,
+                        unit="tokens",
+                        credit_micros=db.credits_for_tokens(
+                            "llm", usage.input_tokens, usage.output_tokens
+                        ),
+                        trace_id=trace,
+                        metadata={"fileId": file_id, "calls": usage.calls},
+                    )
+                if usage.embed_tokens:
+                    db.record_usage_event(
+                        cur,
+                        actor_user_id=owner,
+                        workspace_id=workspace_id,
+                        kind="embedding",
+                        surface="ingest",
+                        provider="openrouter",
+                        model=cfg.embedding_model,
+                        input_tokens=usage.embed_tokens,
+                        unit="tokens",
+                        credit_micros=db.credits_for_tokens(
+                            "embedding", usage.embed_tokens, 0
+                        ),
+                        trace_id=trace,
+                        metadata={"fileId": file_id},
+                    )
+            if gpu_millis:
+                db.record_usage_event(
+                    cur,
+                    actor_user_id=owner,
+                    workspace_id=workspace_id,
+                    kind="parse_gpu",
+                    surface="ingest",
+                    provider="modal",
+                    units=gpu_millis,
+                    unit="ms",
+                    credit_micros=db.credits_for_gpu(gpu_millis),
+                    trace_id=trace,
+                    metadata={"fileId": file_id},
+                )
+            conn.commit()
+    except Exception as exc:  # noqa: BLE001 - see below
+        # Metering must never fail an ingest that already succeeded: the file is
+        # indexed and the user can see it. An unrecorded charge is recoverable
+        # by reconciliation, a failed job is not.
+        obs.capture_error(exc, stage="ingest_charge")
 
 
 # ------------------------------------------------------------------ parsing
@@ -344,6 +426,7 @@ async def process_ingest_job(job: dict) -> None:
         fingerprint,
         artifact_version,
     )
+    await asyncio.to_thread(_charge_ingest, file_id, ws)
     progress.publish(ws, file_id, "done", 100, status="ready", indexed=True)
     log.info("indexed %s: %s", name, result)
 
@@ -356,9 +439,8 @@ async def process_rollup_job(job: dict) -> None:
 
 
 async def main_async() -> None:
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
-    )
+    obs.init_logging("worker")
+    obs.init_sentry("worker")
     log.info(
         "worker up — ingest_model=%s embedding=%s accurate=%s fast=%s",
         cfg.ingest_model,
@@ -380,7 +462,19 @@ async def main_async() -> None:
                 await asyncio.sleep(cfg.poll_interval)
                 continue
 
-            log.info("claimed %s job %s", job.get("type"), job["id"])
+            # One trace and one usage accumulator per job. Ingest has no
+            # inbound request to continue a trace from, so it starts its own;
+            # the job id is what links it back to the upload that queued it.
+            obs.set_trace(obs.new_trace_id())
+            obs.start_usage()
+            obs.bind_error_context()
+
+            log.info(
+                "claimed %s job %s",
+                job.get("type"),
+                job["id"],
+                extra={"job_id": job["id"]},
+            )
             payload = job.get("payload") or {}
             try:
                 if job.get("type") == "summaries_rollup":

@@ -16,9 +16,15 @@ from typing import Any
 
 from openai import AsyncOpenAI
 
+from .. import obs
 from ..config import ProviderCfg, cfg
 
 log = logging.getLogger("evo.models")
+
+# Every provider call in the system passes through this module. That makes it
+# the only place token usage has to be captured, and the only place a missing
+# capture can hide — if a new call site is added elsewhere, its spend is
+# invisible and the user is silently not charged for it.
 
 _clients: dict[str, AsyncOpenAI] = {}
 
@@ -56,6 +62,7 @@ async def embed(texts: list[str]) -> list[list[float]]:
         resp = await api.embeddings.create(
             model=cfg.embedding_model, input=batch, dimensions=cfg.embedding_dim
         )
+        obs.record_embedding("openrouter", cfg.embedding_model, resp)
         # Providers are permitted to return results out of order; index is
         # authoritative.
         ordered = sorted(resp.data, key=lambda d: d.index)
@@ -92,6 +99,7 @@ async def complete(
     if response_format:
         kwargs["response_format"] = response_format
     resp = await api.chat.completions.create(**kwargs)
+    obs.record_completion("deepseek", model, resp)
     return resp.choices[0].message if resp.choices else None
 
 
@@ -107,9 +115,17 @@ async def stream_text(
 ):
     api = client(cfg.llm)
     stream = await api.chat.completions.create(
-        model=model, messages=messages, temperature=temperature, stream=True
+        model=model,
+        messages=messages,
+        temperature=temperature,
+        stream=True,
+        # Without this the stream ends with no usage block at all, which is how
+        # the single highest-volume model path in the product ends up costing an
+        # unknown amount. The final chunk carries totals and no choices.
+        stream_options={"include_usage": True},
     )
     async for chunk in stream:
+        obs.record_stream_chunk("deepseek", model, chunk)
         delta = (chunk.choices[0].delta.content or "") if chunk.choices else ""
         if delta:
             yield delta
@@ -142,6 +158,7 @@ async def caption_image(data_url: str, prompt: str) -> str:
                     }
                 ],
             )
+            obs.record_completion("gemini", cfg.vision_model, resp)
             return (
                 (resp.choices[0].message.content or "").strip() if resp.choices else ""
             )

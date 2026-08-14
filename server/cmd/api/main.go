@@ -17,7 +17,9 @@ import (
 	"github.com/evonotes/server/internal/blob"
 	"github.com/evonotes/server/internal/httpapi"
 	"github.com/evonotes/server/internal/mail"
+	"github.com/evonotes/server/internal/obs"
 	"github.com/evonotes/server/internal/pipeline"
+	"github.com/evonotes/server/internal/ratelimit"
 	"github.com/evonotes/server/internal/store"
 )
 
@@ -30,6 +32,40 @@ func env(key, def string) string {
 
 func envBool(key string) bool {
 	return os.Getenv(key) == "true"
+}
+
+// envList splits a comma-separated env var, dropping blanks. Empty yields nil
+// so callers can distinguish "unset" from "set to nothing".
+func envList(key string) []string {
+	raw := strings.Split(os.Getenv(key), ",")
+	out := make([]string, 0, len(raw))
+	for _, v := range raw {
+		if v = strings.TrimSpace(v); v != "" {
+			out = append(out, v)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// rateLimitConfig disables limiting under e2e, where Playwright drives hundreds
+// of requests per second through a handful of fixed users and would otherwise
+// trip every budget.
+func rateLimitConfig(appEnv string) ratelimit.Config {
+	cfg := ratelimit.DefaultConfig()
+	if appEnv == "e2e" || envBool("RATE_LIMIT_DISABLED") {
+		cfg.Disabled = true
+		return cfg
+	}
+	if n := envInt("RATE_LIMIT_AI_PER_HOUR", 0); n > 0 {
+		cfg.AI.Limit = n
+	}
+	if n := envInt("RATE_LIMIT_CONCURRENT_STREAMS", 0); n > 0 {
+		cfg.ConcurrentStreams = n
+	}
+	return cfg
 }
 
 func envInt(key string, def int) int {
@@ -116,6 +152,19 @@ func main() {
 	engine := env("EVO_ENGINE", "evo")
 	appURL := env("APP_URL", "http://localhost:5173")
 	appEnv := env("APP_ENV", "development")
+
+	// Before anything else logs: this redirects the stdlib logger used
+	// throughout the process into structured output.
+	obs.Init("gateway", appEnv)
+	shutdownSentry := obs.InitSentry(obs.SentryConfig{
+		DSN:         env("SENTRY_DSN", ""),
+		Environment: appEnv,
+		Release:     env("RELEASE_SHA", ""),
+		SampleRate:  env("SENTRY_TRACES_SAMPLE_RATE", "0.1"),
+		Service:     "gateway",
+	})
+	defer shutdownSentry()
+
 	emailBackend := env("EMAIL_BACKEND", "")
 	resendAPIKey := env("RESEND_API_KEY", "")
 	emailFrom := env("EMAIL_FROM", "")
@@ -286,6 +335,7 @@ func main() {
 	go runBlobSweep(ctx, st, blobStore)
 	go runAccountPurgeWorker(ctx, st, env("CLERK_SECRET_KEY", "") != "")
 	go runOverQuotaNoticeWorker(ctx, st)
+	runUsageWorkers(ctx, st)
 
 	cfg := httpapi.Config{
 		ClerkSecretKey:         env("CLERK_SECRET_KEY", ""),
@@ -303,6 +353,8 @@ func main() {
 		CollaborationSecret:    env("COLLABORATION_SECRET", "dev-collaboration-secret"),
 		CollaborationURL:       env("COLLABORATION_URL", "ws://localhost:1234"),
 		PipelineSecret:         env("PIPELINE_SECRET", ""),
+		AllowedOrigins:         envList("CORS_ALLOWED_ORIGINS"),
+		RateLimit:              rateLimitConfig(appEnv),
 	}
 	if mailRecorder != nil {
 		cfg.MailRecorder = mailRecorder

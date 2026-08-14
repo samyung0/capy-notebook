@@ -7,11 +7,15 @@ import { Toaster } from 'sonner';
 import { queryClient } from './api/queryClient';
 import { AppErrorBoundary } from './components/app/AppErrorBoundary';
 import { AppAuthProvider } from './components/app/AuthProvider';
+import { initErrorReporting } from './lib/observability';
 import { router } from './router';
 import { ThemeProvider } from './theme/ThemeProvider';
 import './styles/tailwind.css';
 import 'streamdown/styles.css';
 import { TooltipProvider } from './components/ui/Tooltip';
+
+// Before the first render, so a crash during mount is still reported.
+initErrorReporting();
 
 // Mocks are on by default; set VITE_USE_MSW=false to hit the real Go gateway
 // (Vite proxies /api → http://localhost:8080).

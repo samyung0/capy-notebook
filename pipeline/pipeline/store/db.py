@@ -138,6 +138,94 @@ def file_owner_user_id(cur, file_id: str) -> str | None:
     return row[0] if row else None
 
 
+# Credit pricing, mirrored from server/internal/store/pricing.go. Ingest runs
+# unattended in this process, so it settles its own spend rather than reporting
+# back to the gateway; the rates must stay in step with the Go constants or the
+# same work costs different amounts depending on which process did it.
+MICROS_PER_CREDIT = 1_000_000
+_MICROS_PER_INPUT_TOKEN = 250
+_MICROS_PER_OUTPUT_TOKEN = 1_000
+_MICROS_PER_EMBEDDING_TOKEN = 50
+_MICROS_PER_GPU_SECOND = 500_000
+
+
+def credits_for_tokens(kind: str, input_tokens: int, output_tokens: int) -> int:
+    if kind == "embedding":
+        return (input_tokens + output_tokens) * _MICROS_PER_EMBEDDING_TOKEN
+    return (
+        input_tokens * _MICROS_PER_INPUT_TOKEN
+        + output_tokens * _MICROS_PER_OUTPUT_TOKEN
+    )
+
+
+def credits_for_gpu(gpu_millis: int) -> int:
+    return gpu_millis * _MICROS_PER_GPU_SECOND // 1000
+
+
+def record_usage_event(
+    cur,
+    *,
+    actor_user_id: str,
+    workspace_id: str | None,
+    kind: str,
+    surface: str,
+    provider: str = "",
+    model: str = "",
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    units: int = 0,
+    unit: str = "",
+    credit_micros: int = 0,
+    trace_id: str | None = None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    """Append one metered consumption and charge it to the actor's counter.
+
+    Ingest spend cannot be reserved in advance: nothing is waiting on it, the
+    file was already accepted, and refusing halfway leaves a half-indexed
+    document. It is therefore recorded after the fact, which can push a user
+    past their limit — the next interactive request is what refuses, not this.
+    """
+    if not actor_user_id or credit_micros < 0:
+        return
+    cur.execute(
+        """
+        INSERT INTO usage_events
+            (trace_id, actor_user_id, workspace_id, kind, surface, provider, model,
+             input_tokens, output_tokens, units, unit, credit_micros, metadata)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        """,
+        (
+            trace_id or None,
+            actor_user_id,
+            workspace_id or None,
+            kind,
+            surface,
+            provider,
+            model,
+            input_tokens,
+            output_tokens,
+            units,
+            unit,
+            credit_micros,
+            Jsonb(metadata or {}),
+        ),
+    )
+    if credit_micros:
+        cur.execute(
+            "INSERT INTO user_credits (user_id) VALUES (%s) ON CONFLICT DO NOTHING",
+            (actor_user_id,),
+        )
+        cur.execute(
+            """
+            UPDATE user_credits
+            SET used_micros = used_micros + %s, updated_at = now()
+            WHERE user_id = %s
+            """,
+            (credit_micros, actor_user_id),
+        )
+
+
 def account_allows_ingest(cur, user_id: str) -> bool:
     """Mirror store.AccountStatus.CanCreate for the ingest worker.
 

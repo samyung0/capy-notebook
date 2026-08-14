@@ -37,6 +37,11 @@ type pipeChatEvent struct {
 	TokenCount   int              `json:"tokenCount,omitempty"`
 	GenerationID string           `json:"generationId,omitempty"`
 	Message      string           `json:"message,omitempty"`
+	// Usage arrives on the done event, aggregated across every provider call
+	// the turn made. A stream that is aborted mid-answer never reaches done, so
+	// its reservation settles at zero and expires — undercharging a user whose
+	// answer they never saw is the right side to err on.
+	Usage pipeUsage `json:"usage,omitempty"`
 }
 
 // chatStream is the main streaming chat endpoint. It persists the user turn,
@@ -71,6 +76,29 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	userID := uid(r)
+
+	// Concurrency, not rate, is what bounds a chat abuser: one stream can run
+	// for minutes and drive an agent loop the whole time, so a request-per-hour
+	// budget alone still allows arbitrary parallel spend.
+	slot, release := a.limiter.AcquireStream(ctx, userID)
+	if !slot {
+		w.Header().Set("Retry-After", "10")
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{
+			"code":    "too_many_streams",
+			"message": "too many chat streams open",
+		})
+		return
+	}
+	defer release()
+
+	// Reserve before the pipeline is touched. The estimate covers a full agent
+	// loop; settlement below replaces it with what the providers reported.
+	charge, err := a.reserveSpend(ctx, userID, wsID, store.SurfaceChat, store.EstimateChatMicros)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	defer charge.release(ctx)
 
 	// Resolve (or open) the conversation, enforcing ownership + workspace scope.
 	conv, err := a.resolveConversation(ctx, userID, wsID, req.ConversationID)
@@ -113,6 +141,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		citations []store.Citation
 		genID     string
 		tokens    int
+		usage     pipeUsage
 	)
 	onToken := func(t string) {
 		builder.WriteString(t)
@@ -131,6 +160,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 				tokens = ev.TokenCount
 			}
 			genID = ev.GenerationID
+			usage = ev.Usage
 		}
 	})
 
@@ -146,7 +176,11 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	case streamErr != nil:
 		status = "error"
 	}
+	if tokens == 0 {
+		tokens = int(usage.InputTokens + usage.OutputTokens)
+	}
 	_ = a.s.FinalizeAssistantMessage(saveCtx, assistant.ID, builder.String(), status, tokens, citations, genID)
+	charge.settle(saveCtx, usage.events(userID, conv.WorkspaceID, store.SurfaceChat)...)
 
 	// Best-effort final event; the client may already be gone on abort.
 	if ctx.Err() == nil {

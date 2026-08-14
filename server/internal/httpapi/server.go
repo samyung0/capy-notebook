@@ -23,10 +23,23 @@ import (
 	"github.com/evonotes/server/internal/billing"
 	"github.com/evonotes/server/internal/blob"
 	"github.com/evonotes/server/internal/mail"
+	"github.com/evonotes/server/internal/obs"
 	"github.com/evonotes/server/internal/pipeline"
+	"github.com/evonotes/server/internal/ratelimit"
 	"github.com/evonotes/server/internal/sourceupload"
 	"github.com/evonotes/server/internal/store"
 )
+
+// corsOrigins falls back to "*" when no allowlist is configured. Bearer tokens
+// are sent explicitly rather than as cookies and AllowCredentials is false, so
+// the wildcard is not a session-theft vector; it is still narrowed in
+// production so a hostile page cannot drive the API from a user's browser.
+func corsOrigins(configured []string) []string {
+	if len(configured) == 0 {
+		return []string{"*"}
+	}
+	return configured
+}
 
 // Config holds gateway settings for auth and billing. Provider OAuth
 // (Google/Microsoft/Notion) is managed entirely by Clerk.
@@ -46,6 +59,13 @@ type Config struct {
 	EmailUnsubscribeSecret string
 	CollaborationSecret    string
 	CollaborationURL       string
+	// AllowedOrigins is the CORS allowlist. Empty means "*", which is what dev
+	// and e2e run with; production sets it once the SPA and API live on
+	// different hostnames.
+	AllowedOrigins []string
+	// RateLimit governs per-user and per-IP request limits. The zero value
+	// disables limiting entirely.
+	RateLimit ratelimit.Config
 	// PipelineSecret authenticates the retrieval service's callbacks into
 	// /api/internal/*. Empty disables those routes entirely.
 	PipelineSecret string
@@ -64,6 +84,7 @@ type api struct {
 	engine       string
 	cfg          Config
 	mailRecorder mail.Recorder
+	limiter      *ratelimit.Limiter
 	notifMu      sync.Mutex
 	notifByUser  map[string]int
 	notifTotal   int
@@ -86,18 +107,26 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		engine:       engine,
 		cfg:          cfg,
 		mailRecorder: cfg.MailRecorder,
+		limiter:      ratelimit.New(rdb, cfg.RateLimit),
 		notifByUser:  make(map[string]int),
 	}
 	r := chi.NewRouter()
+	// Trace first so the recovery handler and every log line below it can name
+	// the request; access logging second so it records panics as 500s.
+	r.Use(obs.Middleware)
+	r.Use(obs.AccessLog)
+	r.Use(obs.SentryMiddleware)
 	r.Use(middleware.Recoverer)
 	r.Use(cors.Handler(cors.Options{
-		AllowedOrigins: []string{"*"},
+		AllowedOrigins: corsOrigins(cfg.AllowedOrigins),
 		AllowedMethods: []string{"GET", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders: []string{
-			"Content-Type", "Authorization",
+			"Content-Type", "Authorization", obs.HeaderTraceparent,
 			auth.HeaderE2EUserID, auth.HeaderE2ESecret,
 		},
+		ExposedHeaders:   []string{obs.HeaderRequestID},
 		AllowCredentials: false,
+		MaxAge:           600,
 	}))
 	r.Use(auth.Middleware(auth.Config{
 		SecretKey:  cfg.ClerkSecretKey,
@@ -123,6 +152,9 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 			"/api/explore/",
 		},
 	}))
+	// After auth: limits are per user wherever there is one, and only fall back
+	// to the client IP for anonymous public reads.
+	r.Use(ratelimit.Middleware(a.limiter, uid))
 
 	// Mount huma on the chi router. Doc/spec routes register at construction, so
 	// this must come after all r.Use(...) calls.
@@ -195,6 +227,22 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 			"storageRequestedBytes": quota.RequestedBytes,
 			"storageLimitBytes":     quota.LimitBytes,
 			"ownerUserId":           quota.UserID,
+		})
+		return
+	}
+	// Distinct from storage_quota_exceeded on purpose: this one is about the
+	// caller's own inference budget, the other is about the workspace owner's
+	// disk. They render as completely different messages and only one of them
+	// is actionable by the person reading it.
+	var credits *store.CreditsExhaustedError
+	if errors.As(err, &credits) {
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"code":                  "llm_credits_exhausted",
+			"message":               "monthly AI credits exhausted",
+			"creditsUsedMicros":     credits.UsedMicros,
+			"creditsReservedMicros": credits.ReservedMicros,
+			"creditsLimitMicros":    credits.LimitMicros,
+			"planTier":              string(credits.PlanTier),
 		})
 		return
 	}
@@ -528,10 +576,15 @@ func (a *api) generate(w http.ResponseWriter, r *http.Request) {
 	}
 	// Model spend is the actor's; the material it produces is the workspace
 	// owner's and is gated by gateStorageTx further down.
-	if err := a.generationCreditsAllowed(r.Context(), uid(r)); err != nil {
+	charge, err := a.reserveSpend(r.Context(), uid(r), id(r), store.SurfaceGenerate, store.EstimateGenerateMicros)
+	if err != nil {
 		a.fail(w, err)
 		return
 	}
+	// Every path below either settles with measured usage or falls through to
+	// this release, so a rejected request never keeps budget held.
+	defer charge.release(r.Context())
+
 	var opts generateOpts
 	if err := decode(r, &opts); err != nil {
 		a.fail(w, err)
@@ -570,14 +623,18 @@ func (a *api) generate(w http.ResponseWriter, r *http.Request) {
 
 	userID := uid(r)
 	if a.pipe != nil {
-		if payload, ok, err := a.generateViaPipe(r.Context(), userID, wsID, wsName, &opts); err != nil {
+		payload, usage, ok, err := a.generateViaPipe(r.Context(), userID, wsID, wsName, &opts)
+		if err != nil {
 			a.fail(w, err)
 			return
-		} else if ok {
+		}
+		if ok {
+			charge.settle(r.Context(), usage.events(userID, wsID, store.SurfaceGenerate)...)
 			writeJSON(w, 200, payload)
 			return
 		}
 	}
+	// The local fallback runs no model at all, so there is nothing to charge.
 	payload, err := a.generateLocal(r.Context(), userID, wsID, wsName, opts)
 	if err != nil {
 		a.fail(w, err)
@@ -650,7 +707,7 @@ func (a *api) generateViaPipe(
 	ctx context.Context,
 	userID, wsID, wsName string,
 	opts *generateOpts,
-) (any, bool, error) {
+) (any, pipeUsage, bool, error) {
 	fileIDs, fileNames, chapterNames := a.resolveScope(ctx, wsID, opts)
 	body := map[string]any{
 		"workspaceId": wsID, "kind": opts.Kind, "length": opts.Length, "format": opts.Format,
@@ -659,15 +716,17 @@ func (a *api) generateViaPipe(
 		"detail": opts.Detail, "diagramType": opts.DiagramType, "timeLimitMin": opts.TimeLimitMin,
 		"locale": a.userLocale(ctx, userID),
 	}
+	var usage pipeUsage
 	raw, err := a.pipe.PostRaw(ctx, "/generate", body)
 	if err != nil {
-		return nil, false, nil
+		return nil, usage, false, nil
 	}
+	usage = usageFrom(raw)
 	var head struct {
 		Kind string `json:"kind"`
 	}
 	if json.Unmarshal(raw, &head) != nil {
-		return nil, false, nil
+		return nil, usage, false, nil
 	}
 	switch head.Kind {
 	case "quiz":
@@ -688,9 +747,9 @@ func (a *api) generateViaPipe(
 			Questions: qp.Questions, Privacy: "private", TimeLimitMin: qp.TimeLimitMin,
 		})
 		if err != nil {
-			return nil, false, err
+			return nil, usage, false, err
 		}
-		return map[string]any{"kind": "quiz", "quiz": quiz}, true, nil
+		return map[string]any{"kind": "quiz", "quiz": quiz}, usage, true, nil
 	case "flashcards":
 		var fp struct {
 			Cards []struct {
@@ -705,9 +764,9 @@ func (a *api) generateViaPipe(
 		}
 		res, err := a.persistDeck(ctx, userID, wsID, opts.Title, fronts)
 		if err != nil {
-			return nil, false, err
+			return nil, usage, false, err
 		}
-		return res, true, nil
+		return res, usage, true, nil
 	case "mindmap", "diagram":
 		var mp struct {
 			Title   string `json:"title"`
@@ -716,15 +775,15 @@ func (a *api) generateViaPipe(
 		_ = json.Unmarshal(raw, &mp)
 		res, err := a.persistMaterial(ctx, userID, wsID, wsName, store.MaterialKind(head.Kind), opts.Title, mp.Content, opts, chapterNames, fileNames)
 		if err != nil {
-			return nil, false, err
+			return nil, usage, false, err
 		}
-		return res, true, nil
+		return res, usage, true, nil
 	}
 	var m map[string]any
 	if json.Unmarshal(raw, &m) != nil {
-		return nil, false, nil
+		return nil, usage, false, nil
 	}
-	return m, true, nil
+	return m, usage, true, nil
 }
 
 // generateLocal is the offline fallback (and the mock-parity generator).

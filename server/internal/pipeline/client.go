@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/evonotes/server/internal/obs"
 )
 
 type Client struct {
@@ -40,6 +42,7 @@ func (c *Client) PostStream(ctx context.Context, path string, body any) (io.Read
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
+	obs.Inject(ctx, req)
 	res, err := c.streamHC().Do(req)
 	if err != nil {
 		return nil, err
@@ -76,6 +79,7 @@ func (c *Client) PostMultipart(ctx context.Context, path, filename string, r io.
 		return nil, err
 	}
 	req.Header.Set("Content-Type", mw.FormDataContentType())
+	obs.Inject(ctx, req)
 	res, err := c.hc.Do(req)
 	if err != nil {
 		return nil, err
@@ -102,6 +106,7 @@ func (c *Client) PostRaw(ctx context.Context, path string, body any) (json.RawMe
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	obs.Inject(ctx, req)
 	res, err := c.hc.Do(req)
 	if err != nil {
 		return nil, err

@@ -20,6 +20,9 @@ dependencies = [
   "uvicorn[standard]>=0.29",
   "pydantic>=2",
   "python-dotenv>=1.0",
+  # Error reporting. Optional at runtime — pipeline/obs.py degrades to logging
+  # when SENTRY_DSN is unset, which is the normal state in dev and e2e.
+  "sentry-sdk[fastapi]>=2.0",
 ]
 
 [project.optional-dependencies]

@@ -10,11 +10,13 @@ Read these only when the task touches that domain. Prefer the listed file over g
 | Ingest → index → hybrid search → chat agent / generate workflows, citations, clone/teardown                                                               | `[agentic-retrieval.md](openwiki/agentic-retrieval.md)`                                       |
 | Plate/Yjs editor, collab tokens/modes (`view`/`comment`/`edit`), checkpoints, projections, comment anchors, AI previews                                   | `[frontend/plate-editor.md](openwiki/frontend/plate-editor.md)`                               |
 | Frontend error surfaces, query/mutation defaults, boundaries, offline/streaming behavior, and error test tooling                                          | `[frontend/error-handling.md](openwiki/frontend/error-handling.md)`                           |
+| Trace ids, structured logging, Sentry/PostHog wiring, LLM + GPU metering (`usage_events`, credits reserve/settle), rate limiting, operator access         | `[observability-metering.md](openwiki/observability-metering.md)`                             |
+| Manual setup outside this repo: DNS, Cloudflare rules, origin lockdown, B2 bucket/CORS/lifecycle, Sentry, PostHog, Modal, operator grants                 | `[deployment-runbook.md](openwiki/deployment-runbook.md)`                                     |
 | How to run pipeline cassette tests and their disposable Postgres/Redis setup                                                                              | `[pipeline-tests.md](openwiki/pipeline-tests.md)`                                             |
 | Inventory of Vitest / Go / Python / Playwright / Cloudflare tests with one-line descriptions                                                              | `[test-catalog.md](openwiki/test-catalog.md)`                                                 |
 
 
-Cross-links: plate-editor defers structural ACL to authorization; authorization defers accounting internals to storage-quota; agentic-retrieval defers material quota/authz to authorization and test infra to pipeline-tests.
+Cross-links: plate-editor defers structural ACL to authorization; authorization defers accounting internals to storage-quota; agentic-retrieval defers material quota/authz to authorization and test infra to pipeline-tests; observability-metering owns the second budget (inference/GPU) and defers byte accounting to storage-quota.
 
 ## Getting Started
 

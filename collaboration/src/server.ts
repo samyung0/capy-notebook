@@ -20,8 +20,13 @@ import {
   MATERIAL_DOCUMENT_LIMITS,
   MaterialDocumentLimitError,
 } from './limits.js';
+import { captureError, initErrorReporting, log } from './observability.js';
 import { materialIdFromRoom, YjsDocumentStore } from './persistence.js';
 import { ProjectionService } from './projection.js';
+
+// Before any connection is accepted, so a failure during startup is reported
+// rather than only appearing in container logs nobody is watching.
+initErrorReporting();
 
 const config = loadConfig();
 const pool = new Pool({
@@ -285,6 +290,7 @@ function rejectRoom(
     })().catch((evictionError) => {
       rejectedRooms.delete(room);
       storeFailures += 1;
+      captureError(evictionError, { stage: 'rejection_eviction', room });
       console.warn(
         'collaboration rejection eviction failed:',
         evictionError instanceof Error
@@ -392,10 +398,11 @@ const server = new Server<CollaborationContext>({
       return claimsContext(claims);
     } catch (error) {
       authenticationFailures += 1;
-      console.warn(
-        'collaboration authentication rejected:',
-        error instanceof Error ? error.message : String(error)
-      );
+      // Expected and high volume (expired tokens, stale tabs); logged, not
+      // reported, or the error stream is nothing but this.
+      log('warn', 'authentication rejected', {
+        error: error instanceof Error ? error.message : String(error),
+      });
       throw error;
     }
   },
@@ -651,10 +658,7 @@ async function handleEvictionRequest(raw: string) {
     await evictLocalRoom(event.room, true);
   } catch (error) {
     ok = false;
-    console.warn(
-      'collaboration eviction failed:',
-      error instanceof Error ? error.message : String(error)
-    );
+    captureError(error, { stage: 'eviction', room: event.room });
   }
   await redis.publish(
     EVICTION_ACK_CHANNEL,
@@ -720,10 +724,7 @@ async function compactIdleDocuments() {
 const compactionTimer = setInterval(() => {
   void compactIdleDocuments().catch((error) => {
     storeFailures += 1;
-    console.warn(
-      'collaboration compaction failed:',
-      error instanceof Error ? error.message : String(error)
-    );
+    captureError(error, { stage: 'compaction' });
   });
 }, config.compactionIntervalMs);
 compactionTimer.unref();
@@ -766,10 +767,7 @@ subscriber.on('message', (channel: string, raw: string) => {
       server.hocuspocus.documents.get(room)?.broadcastStateless(raw);
       void evictLocalRoom(room).catch((error) => {
         storeFailures += 1;
-        console.warn(
-          'collaboration event eviction failed:',
-          error instanceof Error ? error.message : String(error)
-        );
+        captureError(error, { stage: 'event_eviction', room });
       });
       return;
     }
@@ -786,10 +784,9 @@ subscriber.on('message', (channel: string, raw: string) => {
 void heartbeat();
 const heartbeatTimer = setInterval(() => {
   void heartbeat().catch((error) => {
-    console.warn(
-      'collaboration instance heartbeat failed:',
-      error instanceof Error ? error.message : String(error)
-    );
+    log('warn', 'instance heartbeat failed', {
+      error: error instanceof Error ? error.message : String(error),
+    });
   });
 }, INSTANCE_TTL_MS / 2);
 heartbeatTimer.unref();

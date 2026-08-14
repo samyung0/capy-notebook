@@ -18,6 +18,7 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any
 
+from .. import obs
 from ..config import cfg
 from . import models, tools
 from .locale import response_language_rule
@@ -156,7 +157,17 @@ async def run_agent(
     )
     async for token in models.stream_text(messages, model=model, temperature=0.4):
         yield {"type": "token", "text": token}
-    yield {"type": "done"}
+
+    # done carries the whole turn's spend: the prime search embedding, every
+    # tool-loop completion, and the streamed answer. The gateway settles the
+    # reservation it opened against this one number, so a turn abandoned before
+    # this event settles at zero rather than being estimated.
+    done: dict[str, Any] = {"type": "done"}
+    usage = obs.current_usage()
+    if usage is not None and not usage.is_empty():
+        done["usage"] = usage.as_dict()
+        done["tokenCount"] = usage.input_tokens + usage.output_tokens
+    yield done
 
 
 def _parse_args(raw: str | None) -> dict[str, Any]:

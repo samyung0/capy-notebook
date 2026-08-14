@@ -1,0 +1,84 @@
+/**
+ * Error reporting and structured logging for the collaboration server.
+ *
+ * This process is the one place where a silent failure is invisible to the
+ * user until their work is gone: a document store that fails writes a warning
+ * to stdout and keeps accepting edits. Everything in here exists so that
+ * failure surfaces somewhere a human looks.
+ */
+
+import * as Sentry from '@sentry/node';
+
+const DSN = process.env.SENTRY_DSN ?? '';
+const APP_ENV = process.env.APP_ENV ?? 'development';
+
+export function initErrorReporting(): void {
+  if (!DSN) {
+    log('info', 'sentry disabled (no SENTRY_DSN)');
+    return;
+  }
+  Sentry.init({
+    dsn: DSN,
+    environment: APP_ENV,
+    release: process.env.RELEASE_SHA || undefined,
+    // Tracing is off here rather than sampled: every connection is a
+    // long-lived WebSocket, so transactions would measure session length
+    // rather than anything actionable.
+    tracesSampleRate: 0,
+    sendDefaultPii: false,
+  });
+  log('info', 'sentry enabled', { environment: APP_ENV });
+}
+
+type Level = 'debug' | 'info' | 'warn' | 'error';
+
+const LOG_FORMAT =
+  process.env.LOG_FORMAT ?? (APP_ENV === 'development' ? 'text' : 'json');
+
+/**
+ * One structured line per event, matching the gateway's field names so a
+ * `trace_id` or `user_id` grep spans both services.
+ */
+export function log(
+  level: Level,
+  msg: string,
+  fields: Record<string, unknown> = {}
+): void {
+  if (LOG_FORMAT === 'text') {
+    const suffix = Object.keys(fields).length ? ` ${JSON.stringify(fields)}` : '';
+    console[level === 'debug' ? 'log' : level](`${level} ${msg}${suffix}`);
+    return;
+  }
+  console.log(
+    JSON.stringify({
+      time: new Date().toISOString(),
+      level,
+      service: 'collaboration',
+      env: APP_ENV,
+      msg,
+      ...fields,
+    })
+  );
+}
+
+/**
+ * Report a failure that the connected client will not see. Persistence errors
+ * are the important case: the editor stays live and the user keeps typing into
+ * a document that is no longer being saved.
+ */
+export function captureError(
+  error: unknown,
+  tags: Record<string, string> = {}
+): void {
+  log('error', 'captured error', {
+    ...tags,
+    error: error instanceof Error ? error.message : String(error),
+  });
+  if (!DSN) return;
+  Sentry.withScope((scope) => {
+    for (const [key, value] of Object.entries(tags)) scope.setTag(key, value);
+    Sentry.captureException(error);
+  });
+}
+
+export { Sentry };

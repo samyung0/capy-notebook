@@ -60,7 +60,10 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	if err := a.generationCreditsAllowed(ctx, req.UserID); err != nil {
+	// The chat turn that invoked this tool already reserved the actor's spend,
+	// so this only confirms the budget has not been exhausted since — charging
+	// again here would count the same turn twice.
+	if err := a.s.AssertCreditsAvailable(ctx, req.UserID); err != nil {
 		a.fail(w, err)
 		return
 	}

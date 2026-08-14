@@ -35,6 +35,7 @@ from typing import Any
 
 import requests
 
+from .. import obs
 from ..config import cfg
 from ..store import blobstore
 
@@ -132,6 +133,9 @@ def _request_artifact(
         }
 
     headers = {"Content-Type": "application/json"}
+    # Forward the trace so Modal's function logs, which are exported separately
+    # from ours, can be lined up with the ingest job that invoked them.
+    headers.update(obs.outbound_headers())
     if cfg.modal_parse_token:
         headers["Authorization"] = f"Bearer {cfg.modal_parse_token}"
     resp = requests.post(
@@ -156,12 +160,19 @@ def _request_artifact(
     if artifact.get("key") != artifact_key:
         raise ModalParseError("modal returned an unexpected artifact key")
     artifact["fingerprint"] = fingerprint
+    # _server_parse_s measures GPU wall time inside the container. It excludes
+    # queue wait and cold start, which are only visible from Modal's own
+    # metrics, so this undercounts what Modal actually bills — it is the
+    # attributable share, not the invoice.
+    parse_seconds = payload.get("_server_parse_s")
+    if isinstance(parse_seconds, (int, float)) and parse_seconds > 0:
+        obs.record_gpu_millis(int(parse_seconds * 1000))
     log.info(
         "modal published %s parse artifact key=%s bytes=%s parse_s=%s",
         route,
         artifact_key,
         artifact.get("size"),
-        payload.get("_server_parse_s"),
+        parse_seconds,
     )
     return artifact
 

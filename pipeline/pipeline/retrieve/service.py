@@ -18,13 +18,16 @@ from fastapi import FastAPI, File, Request, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from .. import use_compatible_event_loop
+from .. import obs, use_compatible_event_loop
 from ..config import cfg
 from ..retrieval import models, store, workflows
 from ..retrieval.agent import run_agent
 from ..retrieval.locale import response_language_rule, rewrite_language_rule
 from ..retrieval.tools import ToolContext
 from .ai_adapter import router as plate_ai_router
+
+obs.init_logging("retrieval")
+obs.init_sentry("retrieval")
 
 log = logging.getLogger("evo.retrieve")
 
@@ -49,6 +52,24 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Evo Notes retrieval", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def request_context(request: Request, call_next):
+    """Continue the gateway's trace and open a usage accumulator per request.
+
+    A contextvar accumulator is what lets ``models.py`` capture tokens without
+    every call site threading a ledger object through. Requests that never call
+    a model simply finish with an empty one.
+    """
+    obs.set_trace(obs.parse_traceparent(request.headers.get(obs.TRACEPARENT_HEADER)))
+    obs.start_usage()
+    obs.bind_error_context()
+    response = await call_next(request)
+    response.headers["X-Request-Id"] = obs.trace_id()
+    return response
+
+
 app.include_router(plate_ai_router)
 
 
@@ -290,6 +311,21 @@ _DIAGRAM_HEADER = {
 
 @app.post("/generate")
 async def generate(req: GenerateReq) -> dict[str, Any]:
+    """Produce a material and report what it cost.
+
+    The usage envelope is attached here rather than inside each workflow so
+    every generate kind reports it the same way, including the ones that
+    map-reduce across files and therefore make many more model calls than the
+    single-shot kinds.
+    """
+    payload = await _generate(req)
+    usage = obs.current_usage()
+    if usage is not None and not usage.is_empty():
+        payload["usage"] = usage.as_dict()
+    return payload
+
+
+async def _generate(req: GenerateReq) -> dict[str, Any]:
     chapters = req.chapters or []
     file_ids = req.fileIds or []
     context, passages = await workflows.gather_context(

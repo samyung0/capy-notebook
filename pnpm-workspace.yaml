@@ -6,6 +6,9 @@ injectWorkspacePackages: true
 
 allowBuilds:
   canvas: true
+  # Pulled in by posthog-js. Its postinstall only prints a funding notice, so
+  # there is nothing to run.
+  core-js: false
   esbuild: true
   msw: true
   sharp: true

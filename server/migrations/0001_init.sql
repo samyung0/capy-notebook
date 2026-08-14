@@ -1190,6 +1190,135 @@ BEGIN
 END;
 $$;
 
+-- ============================================================================
+-- Resource metering (inference, GPU, egress, mail)
+-- ============================================================================
+--
+-- The second budget. Storage above is billed to the workspace owner because
+-- the bytes sit in their account; everything here is billed to the *actor* who
+-- asked for the work, because the cost is the request itself and it is gone
+-- whether or not anything was kept. An editor generating into someone else's
+-- workspace spends their own credits and the owner's disk.
+--
+-- Shape mirrors storage accounting on purpose: an append-only ledger for the
+-- hot path, a counter row for the gate to lock, and a reconcile pass to repair
+-- drift. Analytics (PostHog) never feeds these tables — it is sampled, ad
+-- blockable, and asynchronous, none of which is acceptable for something a
+-- user is charged for.
+
+-- usage_events is the source of truth for what was consumed. Append-only:
+-- corrections are new rows, never updates, so a replay always reproduces the
+-- same balance.
+CREATE TABLE IF NOT EXISTS usage_events (
+  id             bigserial PRIMARY KEY,
+  -- The W3C trace id of the request that caused this. One chat turn produces
+  -- several rows (embedding, agent steps, final answer) that share a trace,
+  -- which is the only way to answer "what did that one question cost".
+  trace_id       text,
+  actor_user_id  text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id   text REFERENCES workspaces(id) ON DELETE SET NULL,
+  -- What was consumed: llm | embedding | caption | transcribe | parse_gpu |
+  -- email | egress.
+  kind           text NOT NULL,
+  -- Where the user was: chat | generate | editor | ingest | transcribe |
+  -- system. Same kind, different product surface.
+  surface        text NOT NULL DEFAULT 'system',
+  provider       text NOT NULL DEFAULT '',
+  model          text NOT NULL DEFAULT '',
+  input_tokens   bigint NOT NULL DEFAULT 0,
+  output_tokens  bigint NOT NULL DEFAULT 0,
+  -- Non-token resources: GPU milliseconds, bytes, message counts.
+  units          bigint NOT NULL DEFAULT 0,
+  unit           text NOT NULL DEFAULT '',
+  -- Internal credits, in millionths, so tier allowances stay integers.
+  credit_micros  bigint NOT NULL DEFAULT 0,
+  -- Reservation this settles, when the spend was gated in advance.
+  reservation_id text,
+  metadata       jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at     timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS usage_events_actor_idx
+  ON usage_events(actor_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS usage_events_trace_idx
+  ON usage_events(trace_id) WHERE trace_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS usage_events_rollup_idx
+  ON usage_events(created_at, kind);
+
+-- The counter the spend gate locks. period_start makes the monthly allowance
+-- reset lazily on first read of a new month rather than needing a cron that
+-- must not be missed.
+CREATE TABLE IF NOT EXISTS user_credits (
+  user_id         text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  period_start    date NOT NULL DEFAULT date_trunc('month', now())::date,
+  used_micros     bigint NOT NULL DEFAULT 0,
+  reserved_micros bigint NOT NULL DEFAULT 0,
+  updated_at      timestamptz NOT NULL DEFAULT now()
+);
+
+-- Reservations exist because a post-hoc ledger lets two concurrent requests
+-- both pass a gate that neither would pass alone. Reserve an estimate, settle
+-- the measured cost, and sweep whatever leaked — the same lifecycle as
+-- upload_sessions.
+CREATE TABLE IF NOT EXISTS credit_reservations (
+  id             text PRIMARY KEY,
+  actor_user_id  text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  workspace_id   text REFERENCES workspaces(id) ON DELETE SET NULL,
+  trace_id       text,
+  surface        text NOT NULL DEFAULT 'system',
+  amount_micros  bigint NOT NULL,
+  status         text NOT NULL DEFAULT 'open'
+    CHECK (status IN ('open', 'settled', 'released')),
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  expires_at     timestamptz NOT NULL,
+  settled_at     timestamptz
+);
+CREATE INDEX IF NOT EXISTS credit_reservations_open_idx
+  ON credit_reservations(expires_at) WHERE status = 'open';
+CREATE INDEX IF NOT EXISTS credit_reservations_actor_idx
+  ON credit_reservations(actor_user_id, created_at DESC);
+
+-- Pre-aggregated for the operator dashboard. Dashboard queries must never scan
+-- the raw ledger: it is the same database serving chat requests.
+CREATE TABLE IF NOT EXISTS usage_daily (
+  day           date NOT NULL,
+  actor_user_id text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind          text NOT NULL,
+  surface       text NOT NULL DEFAULT '',
+  provider      text NOT NULL DEFAULT '',
+  model         text NOT NULL DEFAULT '',
+  events        bigint NOT NULL DEFAULT 0,
+  input_tokens  bigint NOT NULL DEFAULT 0,
+  output_tokens bigint NOT NULL DEFAULT 0,
+  units         bigint NOT NULL DEFAULT 0,
+  credit_micros bigint NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, actor_user_id, kind, surface, provider, model)
+);
+CREATE INDEX IF NOT EXISTS usage_daily_day_idx ON usage_daily(day DESC);
+
+-- Watermark for the rollup job, so a restart resumes instead of recomputing.
+CREATE TABLE IF NOT EXISTS usage_rollup_state (
+  id                  boolean PRIMARY KEY DEFAULT true CHECK (id),
+  last_event_id       bigint NOT NULL DEFAULT 0,
+  last_run_at         timestamptz
+);
+INSERT INTO usage_rollup_state (id) VALUES (true) ON CONFLICT (id) DO NOTHING;
+
+-- ============================================================================
+-- Operator access (internal ops dashboard)
+-- ============================================================================
+--
+-- Membership is the entire authorization model, and there is deliberately no
+-- API that grants it: a row is inserted by hand against the database. An
+-- escalation path reachable from the product would make every bug in the
+-- product a path to everyone's data.
+CREATE TABLE IF NOT EXISTS operators (
+  user_id      text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  role         text NOT NULL DEFAULT 'viewer' CHECK (role IN ('viewer', 'admin')),
+  note         text NOT NULL DEFAULT '',
+  created_at   timestamptz NOT NULL DEFAULT now(),
+  last_seen_at timestamptz
+);
+
 CREATE OR REPLACE FUNCTION set_file_storage_owner()
 RETURNS trigger
 LANGUAGE plpgsql
