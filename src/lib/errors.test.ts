@@ -30,6 +30,17 @@ describe('frontend error normalization', () => {
     expect(describeError(error).action).toBe('subscription');
   });
 
+  it('classifies an unavailable LLM model distinctly from validation', () => {
+    const error = new ApiError(422, 'Unprocessable Entity', undefined, {
+      code: 'model_unavailable',
+    });
+
+    expect(errorKind(error)).toBe('model');
+    expect(describeError(error).title).not.toBe(
+      describeError(new ApiError(422, 'Unprocessable Entity')).title
+    );
+  });
+
   it('classifies exhausted AI credits distinctly from storage quota', () => {
     const error = new ApiError(403, 'Forbidden', undefined, {
       code: 'llm_credits_exhausted',

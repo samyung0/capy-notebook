@@ -88,7 +88,17 @@ export function NotificationsBell() {
                   if (!n.readAt) markNotificationRead(n.id);
                   if (!n.href) return;
                   setOpen(false);
-                  navigate({ to: n.href });
+                  const q = n.href.indexOf('?');
+                  if (q === -1) {
+                    navigate({ to: n.href });
+                    return;
+                  }
+                  navigate({
+                    search: Object.fromEntries(
+                      new URLSearchParams(n.href.slice(q + 1))
+                    ),
+                    to: n.href.slice(0, q),
+                  });
                 }}
                 type="button"
                 variant="ghost"

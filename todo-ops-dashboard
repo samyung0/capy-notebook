@@ -18,12 +18,15 @@ This app is the least-hardened thing that will ever touch production data, and
 it can read every user's workspace names, file names, and chat volume. Design
 accordingly:
 
-- **Read-only database role.** Not the gateway's credentials. The `evo_ops`
-  role in the runbook grants `SELECT` on eight tables and nothing else. If the
-  app is compromised, the blast radius is disclosure, not destruction.
-- **No mutation endpoints in v1.** Not even "resend this email" or "reset this
-  user's quota". Every one of those is a reason for the app to hold write
-  credentials. Do them by hand in `psql` until the pain justifies the risk.
+- **Read-only database role for v1 charts.** Not the gateway's credentials. The
+  `evo_ops` role in the runbook grants `SELECT` on eight tables and nothing
+  else. If the app is compromised, the blast radius is disclosure, not
+  destruction.
+- **The one exception is the model-registry grid (§6).** That screen is why
+  `operators.role = 'admin'` exists. It needs a *second* DB role with a
+  tight write grant (not the gateway role, not `evo_ops`). Viewer sessions
+  must not even be issued that credential. Until §6 ships, there are still
+  **no mutation endpoints**.
 - **No customer content.** Show workspace *names* and file *names* if needed for
   support, never material bodies, chat messages, or note content. If a support
   workflow needs that, it needs consent, not a dashboard.
@@ -48,8 +51,8 @@ CREATE TABLE operators (
 path reachable from the product turns every product bug into a path to
 everyone's data.
 
-`role` is not used yet; it exists so `admin` can gate future mutations without a
-migration. v1 treats `viewer` and `admin` identically.
+`role` gates the model-registry write screen (`admin` only). `viewer` stays
+read-only everywhere else. Membership is still granted only by hand.
 
 ### Recommended: Cloudflare Access in front, Clerk inside
 
@@ -168,20 +171,165 @@ Reached by searching email or user id. For support tickets.
 
 ## 4. Explicitly out of scope for v1
 
-- Editing anything. See §0.
+- Editing anything **except** the model-registry grid in §6 (admin only).
+  Quota resets, resend-email, impersonation still stay in `psql`.
 - Impersonating a user.
 - Reading note, chat, or material content.
 - Real-time / websocket updates. A 30-second poll is fine; nobody watches this
   screen continuously, and it shares a database with live traffic.
 - Alerting. Sentry covers errors; spend alerts belong in the provider consoles
   (Modal, B2, Sentry) where they can act on their own billing.
+- A `modelctl` CLI. Deleted. Do not add it back; the grid is the write path.
 
 
 ## 5. Deployment
 
 - Own container in `deploy/docker-compose.yml`, behind `ops.abcd.com`.
 - `DATABASE_URL` uses the `evo_ops` read-only role.
+- Registry writes (§6) use a separate `DATABASE_URL` / role, only loaded for
+  `admin` sessions. Grant `INSERT`/`UPDATE` on `model_configs`,
+  `model_registry_state`, plus the remap/notify tables listed in §6. No
+  `DELETE` on `model_configs`.
 - Cloudflare: proxied, cache bypassed, Access policy applied.
 - No public assets, no SEO, `noindex`.
 - `SENTRY_DSN` optional — if added, use a fifth Sentry project so ops noise does
   not mix with product errors.
+
+
+## 6. Model registry grid (replaces `modelctl`) — not built yet
+
+The product gateway has **no HTTP write path** for the registry on purpose.
+`server/cmd/modelctl` is gone. Operators edit the mapping here, then press
+**Save** once. Until this ships, the seeded `model_configs` rows are the
+registry; changing them is `psql`.
+
+### 6.1 What the operator sees
+
+A matrix:
+
+| | chat | generate | editor | ingest | embedding | vision | stt |
+|---|---|---|---|---|---|---|---|
+| `deepseek-flash` | `(deepseek-flash, v1)` | … | … | … | empty | empty | empty |
+| `deepseek-pro` | `(deepseek-pro, v1)` | … | empty | empty | empty | empty | empty |
+| `qwen-embed` | empty | empty | empty | empty | `(qwen-embed, v1)` | empty | empty |
+| … | | | | | | | |
+
+- **Row** = user-facing key. This is the slug in Settings and in
+  `users.chat_model_key` / `generate_model_key`. Operator-only keys
+  (embedding / vision / stt) still get a row; they just never appear in
+  Settings.
+- **Column** = surface. Same enum as `model_configs.surfaces`.
+- **Cell** = an llm config pin `{model_key, version}`, or empty. Empty means
+  this user-facing key does not serve that surface. The pin's `model_key`
+  is usually the row key; allowing a different key is an alias (row slug
+  stays stable, config behind it can move). Decide at implement time
+  whether aliases are allowed — if not, the cell key is always the row key
+  and the operator only picks a version / a catalog row of that key.
+- One cell per column is the **surface default** (`is_default_for`). Mark
+  it on the grid. New accounts snapshot that key. Editor / ingest /
+  embedding / vision / stt are not user-selectable; their default cell is
+  the live default the gateway/pipeline poll.
+
+Clicking a filled cell opens the config: `display_name`, `provider_slug`,
+`base_url`, `provider_model_id`, `params`, credit micros, USD micros,
+`enabled`, `surfaces`, created_at. Show the provider credential as a
+**masked env lookup** (`provider_slug` → process env). API keys are not
+stored on `model_configs` and must not be pasted into the dashboard.
+
+From that drawer the operator can **change** the cell (pick another catalog
+config, or add a new immutable version) or **clear** it (this key no longer
+serves this surface). Edits stay local until Save.
+
+A catalog of all `model_configs` rows (including disabled) sits behind the
+grid so a pin can still be inspected after it was retired. Disabled rows
+are how in-flight assistant / ingest pins keep resolving — **never DELETE**.
+
+### 6.2 Today's schema (the grid is a pivot)
+
+There is no assignment table. Each `model_configs` row is immutable
+`(model_key, version)` with a `surfaces[]` and optional `is_default_for[]`.
+User prefs store a **key only**; resolve is "latest enabled version of that
+key that lists this surface".
+
+So the live grid is derived:
+
+```
+for each distinct model_key:
+  for each surface:
+    cell = latest enabled row of that key with surface ∈ surfaces
+           else empty
+```
+
+Save compiles the dirty grid back into row operations, in **one
+transaction**, then `UPDATE model_registry_state SET version = version + 1`.
+Do not mutate an existing version in place (rates, url, provider id,
+surfaces). That would reprice pins already stamped on messages/jobs.
+Instead: `INSERT` a new version, disable versions no remaining cell
+points at.
+
+Embedding / vision defaults are frozen in running gateway/pipeline
+processes. A Save that retargets those columns does not take effect until
+restart (+ reindex if the embedding dim changes). Surface that in the UI.
+
+### 6.3 What Save must refuse
+
+Same invariants `modelctl` used to enforce, now checked against the whole
+draft so a batch cannot leave the registry empty:
+
+- Every surface that currently has a default still has a default cell after
+  Save. Retargeting a default is "clear this cell + mark another", not
+  "leave the column with no default".
+- Clearing the last chat/generate cell of a user-facing key is
+  **deprecate**, not a quiet empty. Operator must name a fallback key that
+  still has that surface in the *saved* grid. Then, in the same
+  transaction: remap `users.chat_model_key` / `generate_model_key`, disable
+  every enabled version of the retired key, notify (below).
+- A cell cannot point at a missing / disabled catalog row.
+- Do not disable a version that is still the default for a surface; move
+  the default first (or as an earlier step in the same batch).
+- Two admins saving at once: lock `model_configs` (and remapped users)
+  in the transaction; bump is the cache invalidation.
+
+Draft validation in the UI should catch most of this before the request
+leaves the browser. The transaction is the source of truth.
+
+### 6.4 Notifications already exist — reuse them
+
+Do not invent a second mail path. Deprecate already has:
+
+- in-app `kind: system`, `data.code = model_deprecated`,
+  `fromKey` / `fromName` / `toKey` / `toName`, `href: /settings?tab=llm`
+- email template `model-deprecated`, category `billing` (muteable),
+  idempotency `model-deprecated:{fromKey}:{toKey}:{userId}`
+- copy in `messages/*.json`, `emails/model-deprecated.tsx`, dispatcher
+  in `server/cmd/api/email.go`
+
+Call `store.NotifyTx` from the Save transaction for remapped users.
+Sequential notify is fine at current user counts.
+
+There is still **no request-time fallback**. A pref that names a key with
+no enabled chat/generate row fails `model_unavailable`. Save must remap
+before disable so that window does not exist.
+
+### 6.5 Product API stays read-only
+
+`GET /api/models` and `PATCH /api/me/models` are the user picker. Do not
+add registry writes to the gateway. Ops is a separate app, admin-only,
+own write role. A compromised session on `app.abcd.com` must not be able
+to retarget everyone's default model.
+
+### 6.6 Implementation notes (when building)
+
+- Gate the screen on `operators.role = 'admin'`. Viewers can see the
+  matrix read-only (from `evo_ops` SELECT, already granted on
+  `model_configs` / `model_registry_state`).
+- Local dirty state; Save is one POST of the full grid (or a list of cell
+  ops). Partial autosave will race and skip deprecate.
+- Adding a **new row** (new user-facing key) is "add catalog config + fill
+  cells", not a separate CLI.
+- `server/internal/models` and `pipeline/pipeline/registry.py` already
+  poll `model_registry_state` every 30s. Save only needs to bump.
+- Tests belong next to the ops write handler, not a resurrected CLI.
+  Cover: version bump (disable old, insert new, prefs unchanged), last
+  chat cell of a key requires fallback + remap + mail, refuse Save that
+  drops a surface default, never DELETE `model_configs`.

@@ -113,7 +113,7 @@ func (s *Store) FileBlob(ctx context.Context, id string) (blobPath string, kind 
 // ingestJobPayload is the enqueue-time snapshot for an ingest job: the actor
 // who initiated the upload, plus the embedding/vision/ingest pins resolved
 // now. The worker bills the actor and uses exactly those model versions even
-// if modelctl moves the default mid-flight.
+// if the live default is retargeted mid-flight.
 func (s *Store) ingestJobPayload(ctx context.Context, actorUserID string, base map[string]any) []byte {
 	if actorUserID != "" {
 		base["actorUserId"] = actorUserID

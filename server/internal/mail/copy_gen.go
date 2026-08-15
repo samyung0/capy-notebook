@@ -10,6 +10,8 @@ var subjectTemplates = map[string]string{
 	"account-deletion-cancelled.zh": "你的 Evo Notes 账户删除已取消",
 	"account-deletion-requested.en": "Your Evo Notes account deletion is scheduled",
 	"account-deletion-requested.zh": "你的 Evo Notes 账户删除已安排",
+	"model-deprecated.en":           "{{.FromName}} is no longer available on Evo Notes",
+	"model-deprecated.zh":           "{{.FromName}} 已从 Evo Notes 下线",
 	"subscription-frozen.en":        "Your Evo Notes account is frozen",
 	"subscription-frozen.zh":        "你的 Evo Notes 账户已被冻结",
 	"subscription-over-quota.en":    "Your Evo Notes storage is over the free limit",

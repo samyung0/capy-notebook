@@ -18,6 +18,9 @@ export function toChatMessage(m: WireMessage): ChatMessage {
     conversationId: m.conversationId,
     createdAt: m.createdAt,
     id: m.id,
+    modelDisplayName: m.modelDisplayName ?? undefined,
+    modelKey: m.modelKey ?? undefined,
+    modelVersion: m.modelVersion ?? undefined,
     role: m.role as ChatRole,
     status: m.status as ChatStatus,
   };
@@ -93,9 +96,7 @@ export function useChatStream(workspaceId: string) {
         terminal = true;
         setMessages((prev) =>
           prev.map((m) =>
-            m.id === currentId
-              ? { ...m, content: m.content || message, status: 'error' }
-              : m
+            m.id === currentId ? { ...m, error: message, status: 'error' } : m
           )
         );
       };
@@ -112,13 +113,26 @@ export function useChatStream(workspaceId: string) {
               patch(currentId, { status });
             },
             onError: fail,
-            onStart: ({ messageId, conversationId: cid }) => {
+            onStart: ({
+              messageId,
+              conversationId: cid,
+              modelDisplayName,
+              modelKey,
+              modelVersion,
+            }) => {
               currentId = messageId;
               setConversationId(cid);
               setMessages((prev) =>
                 prev.map((m) =>
                   m.id === placeholderId
-                    ? { ...m, conversationId: cid, id: messageId }
+                    ? {
+                        ...m,
+                        conversationId: cid,
+                        id: messageId,
+                        modelDisplayName,
+                        modelKey,
+                        modelVersion,
+                      }
                     : m
                 )
               );

@@ -82,7 +82,9 @@ the related `reconnecting` status.
 
 Chat SSE failures stay on the assistant turn. An explicit `error` frame and a
 stream that closes before a terminal `done` frame both mark that turn as errored;
-they do not crash a page boundary or emit the default mutation toast. Ingest and
+they do not crash a page boundary or emit the default mutation toast. A
+`model_unavailable` (422) response before the stream opens is the same surface,
+with copy that sends the user to Settings → LLM. Ingest and
 notification streams update cached connection status, reconnect with backoff,
 and use the status banner when disconnected. An ingest `failed` event updates
 the affected file state and triggers a refetch. A file that finished without

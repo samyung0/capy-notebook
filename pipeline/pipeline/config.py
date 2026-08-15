@@ -86,7 +86,9 @@ class Config:
         api_key=_env("DEEPSEEK_API_KEY"),
         base_url=_env("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
     )
-    # Summaries, queries, generation, and editor AI use the flash model.
+    # Provider model ids used only to bootstrap ingest/embed/vision/stt when
+    # the registry has no row yet. Chat and generate never read these: the
+    # gateway always sends an exact (modelKey, configVersion) pin.
     ingest_model: str = _env("EVO_MODEL_EXTRACTION", "deepseek-v4-flash")
     query_model: str = _env("EVO_QUERY_MODEL", "deepseek-v4-flash")
 

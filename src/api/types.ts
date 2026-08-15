@@ -233,7 +233,11 @@ export interface ChatMessage {
   content: string;
   conversationId?: string;
   createdAt?: string;
+  error?: string;
   id: string;
+  modelDisplayName?: string;
+  modelKey?: string;
+  modelVersion?: number;
   role: ChatRole;
   status: ChatStatus;
 }

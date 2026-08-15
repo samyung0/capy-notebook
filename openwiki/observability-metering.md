@@ -156,16 +156,29 @@ sole inference exception is `summaries_rollup`, which has no actor.
 cache `(model_key, version)` forever and poll `model_registry_state` every 30s
 for the current defaults. A pinned pair that is not in cache is a point read of
 the table. A cache miss **never** falls back to the current default — that would
-quietly reprice an in-flight conversation. `modelctl` disables rows rather than
-deleting them for that reason.
+quietly reprice an in-flight pin. Operators disable rows rather than
+deleting them for that reason (ops dashboard registry grid). In-flight
+assistant pins keep resolving via `Get` of the disabled row. Retiring the
+last chat/generate version of a user-facing key remaps prefs and notifies
+(`model_deprecated`). There is no request-time fallback — a pref that
+still names a disabled key fails `model_unavailable`.
 
-Conversations snapshot `{modelKey, modelVersion}` into `conversations.metadata`
-inside `store.CreateConversation` (both the REST POST and implicit `chat/stream`
-create). The browser cannot choose a model per message. Generate resolves the
-user's preference per request. Embedding and vision are **not** hot-reloadable:
-ingest jobs pin those versions at enqueue, and query-time embed uses the
-process-start snapshot, because a same-dimension model swap would mix vector
-spaces with no error.
+Conversations do not snapshot a model. Each chat turn calls
+`ratesForSurface`, which reads `users.chat_model_key` (always set; populated
+from the registry surface default at account creation) and resolves the latest
+enabled version of that key. The `{modelKey, modelVersion, displayName}` pair
+is written onto the **assistant message**. Settings changes apply to the next
+message in an existing thread. Generate resolves `users.generate_model_key`
+the same way per request. The browser cannot choose a model per message.
+Chat and generate preferences are edited in **Settings → LLM**
+(`GET /api/models`, `PATCH /api/me/models`). Empty preference writes are
+rejected. Editor AI (`/ai/command`, `/ai/copilot`, `/complete/stream`) uses
+the registry's editor default and is not user-selectable. Embedding and vision
+are **not** hot-reloadable: ingest jobs are *supposed* to pin those versions at
+enqueue (`ingestJobPayload`), and query-time embed uses the process-start
+snapshot, because a same-dimension model swap would mix vector spaces with no
+error. A pin or preference that cannot be loaded fails the request
+(`model_unavailable`); there is no Flash fallback.
 
 Per-model credit multipliers live on the config row. The 1x reference is DeepSeek
 Flash (250 / 1000 micros per input/output token). USD columns are
@@ -301,8 +314,8 @@ Three layers, each doing what the ones below it cannot:
 | Go middleware | Clerk identity, plan, route class | per-user semantic limits |
 | Credits ledger | measured cost | spend, in money rather than requests |
 
-The edge cannot express "twenty chat streams an hour for a free account" because
-it never sees the Clerk identity. `server/internal/ratelimit` uses Redis GCRA so
+The edge cannot express "200 AI requests an hour for this Clerk user" because
+it never sees the identity. `server/internal/ratelimit` uses Redis GCRA so
 limits hold across replicas — the in-process counters it replaces only ever
 worked with one.
 
@@ -358,6 +371,19 @@ Worth knowing before trusting a dashboard:
   never sees the transfer. Only B2's own reporting has it.
 - **Aborted streams.** Settle at zero (see above), so real spend slightly exceeds
   the ledger.
+- **Ingest enqueue without pins (`ingestJobPayload`).** Two independent
+  holes, both fail-open. (1) `SnapshotIngest` errors (or `s.registry == nil`)
+  are `CaptureErr`'d / skipped and the job is still inserted with no
+  `ingestModelKey` / embedding / vision fields. The worker's
+  `pins_from_payload` then yields empty `JobPins`, so `ingest_spec` /
+  `embedding_spec` / `vision_spec` `resolve_pinned(None)` — current default or
+  `config.py` bootstrap. A mid-flight default swap, or a worker that
+  bootstraps a different embedding id than the gateway intended, writes into
+  the live `halfvec` column with no type error if the dimension matches.
+  (2) A missing `actorUserId` (empty `createdBy`) is treated as "no actor" by
+  `_account_allows_ingest` (`(not actor) or actor_has_credits`) **and** by
+  `_charge_ingest` (early return). Parse still runs; nobody is billed. Fail
+  the upload when snapshot or actor is missing rather than shipping the job.
 - **The gateway's in-process SSE notification cap** (100 global / 6 per user) is
   still per-replica and unrelated to the Redis limiter.
 
@@ -376,5 +402,7 @@ Worth knowing before trusting a dashboard:
 | `LOG_LEVEL` | all | default `info` |
 | `CORS_ALLOWED_ORIGINS` | gateway | comma separated; empty means `*` |
 | `RATE_LIMIT_DISABLED` | gateway | forced true under `APP_ENV=e2e` |
-| `RATE_LIMIT_AI_PER_HOUR` | gateway | overrides the default 40 |
+| `RATE_LIMIT_AI_PER_HOUR` | gateway | overrides the default 200; 15/min burst and editor 120/min are code-only |
 | `RATE_LIMIT_CONCURRENT_STREAMS` | gateway | overrides the default 3 |
+| `WHISPER_API_KEY` / `OPENAI_API_KEY` | retrieval | STT; unset → empty transcripts |
+| `SENTRY_DSN_GATEWAY` / `_RETRIEVAL` / `_WORKER` / `_COLLABORATION` | compose | mapped onto each process's `SENTRY_DSN` |

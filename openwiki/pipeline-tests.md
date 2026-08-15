@@ -12,13 +12,13 @@ uv run --extra test pytest pipeline/tests/ -q
 ```
 
 Tests marked `integration` or `cassette` start fresh `pgvector/pgvector:pg16`
-and `redis:7-alpine` containers on dynamically mapped ports, then apply
-`server/migrations/0001_init.sql` to the database. That file is the gateway's
-own baseline schema and it owns the retrieval index (`rag_chunks`,
-`rag_*_summaries`, `rag_concepts`, `rag_concept_mentions`) — the pipeline
-creates no tables of its own, so a schema change surfaces in these tests rather
-than at runtime. There is no custom image to build; Apache AGE went with
-LightRAG.
+and `redis:7-alpine` containers on dynamically mapped ports, then apply every
+`server/migrations/*.sql` file in name order (the same way the gateway's
+`Store.Migrate` does). Those files are the gateway's own baseline schema and
+they own the retrieval index (`rag_chunks`, `rag_*_summaries`, `rag_concepts`,
+`rag_concept_mentions`) — the pipeline creates no tables of its own, so a
+schema change surfaces in these tests rather than at runtime. There is no
+custom image to build; Apache AGE went with LightRAG.
 
 The fixture updates both the process environment and the already-imported
 `pipeline.config.cfg`, and removes the containers when the pytest session ends.

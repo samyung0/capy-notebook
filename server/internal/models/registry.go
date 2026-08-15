@@ -6,9 +6,8 @@
 // never seen is a point read of the table, cached forever afterwards.
 //
 // A cache miss is never allowed to fall back to the current default: that would
-// quietly reprice and un-cache an in-flight conversation. A miss the database
-// also cannot satisfy is an error. modelctl disables rows rather than deleting
-// them for that reason.
+// quietly reprice an in-flight pin. A miss the database also cannot satisfy is
+// an error. Rows are disabled rather than deleted for that reason.
 //
 // Embedding and vision defaults are frozen at process start. A 30s poll that
 // swapped them would mix vector spaces (or caption caches) in one corpus.
@@ -257,7 +256,7 @@ func scanConfig(row rowScanner) (Config, error) {
 
 // Get returns the exact (key, version). Load-on-miss from the table; never
 // falls back to the current default. Disabled rows still resolve: a pinned
-// conversation must keep working after modelctl disable.
+// conversation must keep working after that version is disabled.
 func (r *Registry) Get(ctx context.Context, key string, version int) (Config, error) {
 	if key == "" || version <= 0 {
 		return Config{}, ErrNotFound
@@ -318,17 +317,15 @@ func (r *Registry) Default(ctx context.Context, surface string) (Config, error) 
 	return r.Get(ctx, pin.Key, pin.Version)
 }
 
-// ResolveUser returns the user's preferred model for a surface, or the
-// registry default. A disabled or unknown preference falls back to the
-// default rather than failing the request.
+// ResolveUser returns the latest enabled config for the user's preferred key
+// on this surface. The preference must be a non-empty key that still resolves;
+// there is no fallback to the surface default. Account creation snapshots the
+// default onto the user row so a live request always has a concrete key.
 func (r *Registry) ResolveUser(ctx context.Context, prefKey, surface string) (Config, error) {
-	if prefKey != "" {
-		cfg, err := r.latestEnabled(ctx, prefKey, surface)
-		if err == nil {
-			return cfg, nil
-		}
+	if prefKey == "" {
+		return Config{}, fmt.Errorf("%w: empty preference for %s", ErrNotFound, surface)
 	}
-	return r.Default(ctx, surface)
+	return r.latestEnabled(ctx, prefKey, surface)
 }
 
 func (r *Registry) latestEnabled(ctx context.Context, key, surface string) (Config, error) {

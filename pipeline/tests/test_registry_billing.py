@@ -6,12 +6,14 @@ import pytest
 
 from pipeline.ingest import worker
 from pipeline.registry import (
+    SURFACE_CHAT,
     JobPins,
     ModelConfig,
     RegistryError,
     credits_for_tokens,
     embedding_spec,
     registry,
+    resolve_pinned,
     set_job_pins,
 )
 from pipeline.store import db
@@ -55,6 +57,15 @@ def test_get_never_falls_back_to_default(monkeypatch):
         registry._by_pin.clear()
     with pytest.raises(RegistryError, match="missing"):
         registry.get("deepseek-flash", 99)
+
+
+def test_chat_pin_does_not_fall_back(monkeypatch):
+    monkeypatch.setattr(
+        "pipeline.registry.registry.default",
+        lambda _surface: (_ for _ in ()).throw(AssertionError("default used")),
+    )
+    with pytest.raises(RegistryError, match="missing pin"):
+        resolve_pinned(None, None, SURFACE_CHAT)
 
 
 def test_job_pins_keep_embedding_after_default_would_move():

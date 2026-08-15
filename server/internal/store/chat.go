@@ -11,26 +11,27 @@ import (
 // Conversation is a workspace-scoped chat thread. Grounding for its messages
 // runs against WorkspaceID's chunks in the retrieval store.
 type Conversation struct {
-	ID           string    `json:"id"`
-	WorkspaceID  string    `json:"workspaceId"`
-	Title        string    `json:"title"`
-	CreatedAt    time.Time `json:"createdAt"`
-	UpdatedAt    time.Time `json:"updatedAt"`
-	ModelKey     string    `json:"-"`
-	ModelVersion int       `json:"-"`
+	ID          string    `json:"id"`
+	WorkspaceID string    `json:"workspaceId"`
+	Title       string    `json:"title"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 // Message is one turn in a conversation. Status tracks the streaming lifecycle
 // (streaming -> complete | aborted | error). Citations are the RAG sources the
 // assistant grounded its answer on (persisted in the metadata jsonb column).
 type Message struct {
-	ID             string     `json:"id"`
-	ConversationID string     `json:"conversationId"`
-	Role           string     `json:"role"`
-	Content        string     `json:"content"`
-	Status         string     `json:"status"`
-	Citations      []Citation `json:"citations,omitempty"`
-	CreatedAt      time.Time  `json:"createdAt"`
+	ID               string     `json:"id"`
+	ConversationID   string     `json:"conversationId"`
+	Role             string     `json:"role"`
+	Content          string     `json:"content"`
+	Status           string     `json:"status"`
+	Citations        []Citation `json:"citations,omitempty"`
+	CreatedAt        time.Time  `json:"createdAt"`
+	ModelKey         string     `json:"modelKey,omitempty"`
+	ModelVersion     int        `json:"modelVersion,omitempty"`
+	ModelDisplayName string     `json:"modelDisplayName,omitempty"`
 }
 
 // Citation is one retrieved source behind an assistant message. FileID is a
@@ -60,8 +61,11 @@ type Region struct {
 
 // msgMetadata is the on-disk (jsonb) shape of a message's metadata column.
 type msgMetadata struct {
-	Citations    []Citation `json:"citations,omitempty"`
-	GenerationID string     `json:"generationId,omitempty"`
+	Citations        []Citation `json:"citations,omitempty"`
+	GenerationID     string     `json:"generationId,omitempty"`
+	ModelKey         string     `json:"modelKey,omitempty"`
+	ModelVersion     int        `json:"modelVersion,omitempty"`
+	ModelDisplayName string     `json:"modelDisplayName,omitempty"`
 }
 
 /* --------------------------------------------------------- conversations */
@@ -92,88 +96,40 @@ func (s *Store) ListConversations(ctx context.Context, userID, wsID string) ([]C
 }
 
 // CreateConversation opens a new thread in a workspace the user can edit.
-// The resolved {modelKey, modelVersion} is snapshotted into metadata here —
-// both the REST POST and the implicit chat/stream create go through this
-// function, so pinning anywhere else would leave one path unpinned.
+// The model is resolved per assistant turn, not snapshotted here: Settings
+// changes apply to the next message in an existing thread.
 func (s *Store) CreateConversation(ctx context.Context, userID, wsID, title string) (Conversation, error) {
 	if err := s.AssertWorkspaceEditor(ctx, userID, wsID); err != nil {
 		return Conversation{}, err
 	}
-	pin, err := s.resolveChatPin(ctx, userID)
-	if err != nil {
-		return Conversation{}, err
-	}
-	meta, _ := json.Marshal(map[string]any{
-		"modelKey":     pin.Key,
-		"modelVersion": pin.Version,
-	})
 	id := uid("conv")
 	var c Conversation
-	var raw []byte
-	err = s.pool.QueryRow(ctx,
-		`INSERT INTO conversations (id, user_id, workspace_id, title, metadata)
-		   VALUES ($1,$2,$3,NULLIF($4,''),$5)
-		   RETURNING id, workspace_id, COALESCE(title,''), created_at, updated_at, metadata`,
-		id, userID, wsID, title, meta).
-		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt, &raw)
+	err := s.pool.QueryRow(ctx,
+		`INSERT INTO conversations (id, user_id, workspace_id, title)
+		   VALUES ($1,$2,$3,NULLIF($4,''))
+		   RETURNING id, workspace_id, COALESCE(title,''), created_at, updated_at`,
+		id, userID, wsID, title).
+		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		return Conversation{}, err
 	}
-	applyConvPin(&c, raw)
 	return c, nil
-}
-
-func (s *Store) resolveChatPin(ctx context.Context, userID string) (models.Pin, error) {
-	if s.registry == nil {
-		return models.Pin{}, nil
-	}
-	var pref *string
-	if err := s.pool.QueryRow(ctx,
-		`SELECT chat_model_key FROM users WHERE id=$1`, userID).Scan(&pref); err != nil {
-		return models.Pin{}, err
-	}
-	key := ""
-	if pref != nil {
-		key = *pref
-	}
-	cfg, err := s.registry.ResolveUser(ctx, key, models.SurfaceChat)
-	if err != nil {
-		return models.Pin{}, err
-	}
-	return cfg.Pin(), nil
-}
-
-func applyConvPin(c *Conversation, raw []byte) {
-	if len(raw) == 0 {
-		return
-	}
-	var meta struct {
-		ModelKey     string `json:"modelKey"`
-		ModelVersion int    `json:"modelVersion"`
-	}
-	if json.Unmarshal(raw, &meta) != nil {
-		return
-	}
-	c.ModelKey = meta.ModelKey
-	c.ModelVersion = meta.ModelVersion
 }
 
 // GetConversation loads one conversation the user owns (used to authorize
 // streaming/history requests). Returns ErrNotFound when absent or not owned.
 func (s *Store) GetConversation(ctx context.Context, userID, convID string) (Conversation, error) {
 	var c Conversation
-	var raw []byte
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, workspace_id, COALESCE(title,''), created_at, updated_at, metadata
+		`SELECT id, workspace_id, COALESCE(title,''), created_at, updated_at
 		   FROM conversations WHERE id=$1 AND user_id=$2`, convID, userID).
-		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt, &raw)
+		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt)
 	if isNoRows(err) {
 		return Conversation{}, ErrNotFound
 	}
 	if err != nil {
 		return Conversation{}, err
 	}
-	applyConvPin(&c, raw)
 	return c, nil
 }
 
@@ -235,6 +191,9 @@ func (s *Store) ListMessages(ctx context.Context, userID, convID string) ([]Mess
 		var meta msgMetadata
 		_ = json.Unmarshal(raw, &meta)
 		m.Citations = meta.Citations
+		m.ModelKey = meta.ModelKey
+		m.ModelVersion = meta.ModelVersion
+		m.ModelDisplayName = meta.ModelDisplayName
 		out = append(out, m)
 	}
 	return out, rows.Err()
@@ -260,17 +219,29 @@ func (s *Store) AddUserMessage(ctx context.Context, convID, content string) (Mes
 
 // StartAssistantMessage reserves an assistant row up front (status='streaming')
 // so an aborted or crashed stream is always tracked and the id is stable for the
-// SSE 'start' event.
-func (s *Store) StartAssistantMessage(ctx context.Context, convID string) (Message, error) {
+// SSE 'start' event. The resolved config is written now so the UI can name the
+// model even if the stream never reaches done.
+func (s *Store) StartAssistantMessage(ctx context.Context, convID string, cfg models.Config) (Message, error) {
 	id := uid("m")
+	meta, _ := json.Marshal(msgMetadata{
+		ModelKey:         cfg.Key,
+		ModelVersion:     cfg.Version,
+		ModelDisplayName: cfg.DisplayName,
+	})
 	var m Message
 	err := s.pool.QueryRow(ctx,
-		`INSERT INTO messages (id, conversation_id, role, content, status)
-		   VALUES ($1,$2,'assistant','','streaming')
+		`INSERT INTO messages (id, conversation_id, role, content, status, metadata)
+		   VALUES ($1,$2,'assistant','','streaming',$3)
 		   RETURNING id, conversation_id, role, content, status, created_at`,
-		id, convID).
+		id, convID, meta).
 		Scan(&m.ID, &m.ConversationID, &m.Role, &m.Content, &m.Status, &m.CreatedAt)
-	return m, err
+	if err != nil {
+		return Message{}, err
+	}
+	m.ModelKey = cfg.Key
+	m.ModelVersion = cfg.Version
+	m.ModelDisplayName = cfg.DisplayName
+	return m, nil
 }
 
 // FinalizeAssistantMessage writes the accumulated content, terminal status
@@ -284,7 +255,9 @@ func (s *Store) FinalizeAssistantMessage(ctx context.Context, msgID, content, st
 		tc = &tokenCount
 	}
 	_, err := s.pool.Exec(ctx,
-		`UPDATE messages SET content=$2, status=$3, token_count=$4, metadata=$5 WHERE id=$1`,
+		`UPDATE messages SET content=$2, status=$3, token_count=$4,
+		        metadata = COALESCE(metadata, '{}'::jsonb) || $5::jsonb
+		  WHERE id=$1`,
 		msgID, content, status, tc, meta)
 	return err
 }

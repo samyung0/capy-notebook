@@ -15,6 +15,7 @@ import (
 	"github.com/evonotes/server/internal/auth"
 	"github.com/evonotes/server/internal/blob"
 	"github.com/evonotes/server/internal/httpapi"
+	"github.com/evonotes/server/internal/models"
 	"github.com/evonotes/server/internal/store"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -25,16 +26,23 @@ func openShareHTTP(t *testing.T) http.Handler {
 	if dsn == "" {
 		t.Skip("TEST_DATABASE_URL not set")
 	}
-	st, err := store.New(context.Background(), dsn)
+	ctx := context.Background()
+	st, err := store.New(ctx, dsn)
 	if err != nil {
 		t.Fatalf("db: %v", err)
 	}
 	t.Cleanup(st.Close)
+	reg, err := models.New(ctx, st.Pool())
+	if err != nil {
+		t.Fatalf("registry: %v", err)
+	}
+	st.SetModelRegistry(reg)
 	return httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "evo", httpapi.Config{
-		AuthDisabled: true,
-		E2EAuth:      true,
-		E2ESecret:    "e2e-test-secret",
-		E2EUserIDs:   []string{"u_owner", "u_editor", "u_commenter", "u_viewer", "u_other"},
+		AuthDisabled:  true,
+		E2EAuth:       true,
+		E2ESecret:     "e2e-test-secret",
+		E2EUserIDs:    []string{"u_owner", "u_editor", "u_commenter", "u_viewer", "u_other"},
+		ModelRegistry: reg,
 	})
 }
 

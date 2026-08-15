@@ -20,8 +20,8 @@ type User struct {
 	ClassLabel         string             `json:"classLabel,omitempty"`
 	Streak             int                `json:"streak"`
 	Locale             string             `json:"locale"`
-	ChatModelKey       string             `json:"chatModelKey,omitempty"`
-	GenerateModelKey   string             `json:"generateModelKey,omitempty"`
+	ChatModelKey       string             `json:"chatModelKey"`
+	GenerateModelKey   string             `json:"generateModelKey"`
 	PlanTier           PlanTier           `json:"planTier"`
 	SubscriptionStatus SubscriptionStatus `json:"subscriptionStatus"`
 }

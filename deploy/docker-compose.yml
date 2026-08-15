@@ -12,8 +12,19 @@
 # - retrieval : Python FastAPI chat/generate over the in-house retrieval index.
 #
 # Worker downloads B2 objects before parsing. Real ingest needs B2 credentials,
-# API keys (DeepSeek/OpenRouter/Google), and a deployed Modal parse URL.
+# API keys (DeepSeek/OpenRouter/Google/Whisper), and a deployed Modal parse URL.
 # Set them in deploy/.env (see .env.example) or the shell environment.
+#
+# Only `server` (:8080) and `collaboration` (:1234) should be public. Retrieval
+# (:8001), the worker, Postgres and Redis stay on the private network.
+
+# Shared by every process that reports errors. LOG_FORMAT / LOG_LEVEL are
+# omitted on purpose: an empty string from compose interpolation would override
+# the code defaults (text in development, json otherwise).
+x-observability: &observability
+  APP_ENV: ${APP_ENV:-development}
+  RELEASE_SHA: ${RELEASE_SHA:-}
+  SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
 
 services:
   db:
@@ -51,12 +62,14 @@ services:
       context: ..
       dockerfile: collaboration/Dockerfile
     environment:
+      <<: *observability
       API_URL: http://server:8080
-      COLLABORATION_ALLOWED_ORIGINS: ${APP_URL:-http://localhost:5173}
+      COLLABORATION_ALLOWED_ORIGINS: ${COLLABORATION_ALLOWED_ORIGINS:-${APP_URL:-http://localhost:5173}}
       COLLABORATION_SECRET: ${COLLABORATION_SECRET:-dev-collaboration-secret}
       DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
       REDIS_URL: redis://redis:6379/0
       PORT: "1234"
+      SENTRY_DSN: ${SENTRY_DSN_COLLABORATION:-}
     ports:
       - "1234:1234"
     healthcheck:
@@ -76,10 +89,11 @@ services:
     build:
       context: ../server
     environment:
+      <<: *observability
       DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
       ADDR: ":8080"
       MIGRATE: "true"
-      APP_ENV: ${APP_ENV:-development}
+      SENTRY_DSN: ${SENTRY_DSN_GATEWAY:-}
       # Backblaze B2 source-object storage.
       B2_ENDPOINT: ${B2_ENDPOINT:-}
       B2_REGION: ${B2_REGION:-}
@@ -99,6 +113,7 @@ services:
       PIPELINE_URL: http://retrieval:8001
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
       APP_URL: ${APP_URL:-http://localhost:5173}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       EMAIL_BACKEND: ${EMAIL_BACKEND:-}
       RESEND_API_KEY: ${RESEND_API_KEY:-}
       EMAIL_FROM: ${EMAIL_FROM:-}
@@ -107,10 +122,14 @@ services:
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
       CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:-}
       AUTH_DISABLED: ${AUTH_DISABLED:-true}
+      DEV_USER_ID: ${DEV_USER_ID:-u_1}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       STRIPE_PRICE_PRO: ${STRIPE_PRICE_PRO:-}
       STRIPE_PRICE_TEAM: ${STRIPE_PRICE_TEAM:-}
+      RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-}
+      RATE_LIMIT_AI_PER_HOUR: ${RATE_LIMIT_AI_PER_HOUR:-}
+      RATE_LIMIT_CONCURRENT_STREAMS: ${RATE_LIMIT_CONCURRENT_STREAMS:-}
     ports:
       - "8080:8080"
     healthcheck:
@@ -128,7 +147,9 @@ services:
     build:
       context: ../pipeline
     environment:
+      <<: *observability
       DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
+      SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
       # Backblaze B2 source-object storage.
       B2_ENDPOINT: ${B2_ENDPOINT:-}
       B2_REGION: ${B2_REGION:-}
@@ -172,7 +193,9 @@ services:
     build:
       context: ../pipeline
     environment:
+      <<: *observability
       DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
+      SENTRY_DSN: ${SENTRY_DSN_RETRIEVAL:-}
       # Tools with side effects call back into the gateway rather than writing
       # materials directly, so the agent inherits Go's authz and quota checks.
       GATEWAY_URL: http://server:8080
@@ -187,8 +210,14 @@ services:
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
       EVO_MODEL_IMAGE_CAPTION: ${EVO_MODEL_IMAGE_CAPTION:-gemini-3.1-flash-lite-preview}
+      WHISPER_API_KEY: ${WHISPER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      WHISPER_BASE_URL: ${WHISPER_BASE_URL:-}
+      EVO_MODEL_STT: ${EVO_MODEL_STT:-}
     ports:
-      - "8001:8001"
+      # Bound to localhost: this is a debug port. Do not publish :8001 on a
+      # public interface — the gateway reaches retrieval over the docker network.
+      - "127.0.0.1:8001:8001"
     command:
       [
         "uvicorn",

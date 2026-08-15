@@ -97,3 +97,23 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 		t.Fatalf("v1 changed after v2 landed: %q vs %q", old.ProviderModelID, flash.ProviderModelID)
 	}
 }
+
+func TestResolveUserRequiresAnEnabledPreference(t *testing.T) {
+	_, reg := openRegistry(t)
+	ctx := context.Background()
+	_, err := reg.ResolveUser(ctx, "", SurfaceChat)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("empty pref: %v", err)
+	}
+	_, err = reg.ResolveUser(ctx, "not-a-model", SurfaceChat)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown pref: %v", err)
+	}
+	got, err := reg.ResolveUser(ctx, "deepseek-flash", SurfaceChat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Key != "deepseek-flash" {
+		t.Fatalf("got %#v", got)
+	}
+}

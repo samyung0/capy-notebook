@@ -197,12 +197,9 @@ class Registry:
         return self.get(key, version)
 
     def resolve_user(self, pref_key: str | None, surface: str) -> ModelConfig:
-        if pref_key:
-            try:
-                return self._latest_enabled(pref_key, surface)
-            except RegistryError:
-                pass
-        return self.default(surface)
+        if not pref_key:
+            raise RegistryError(f"empty preference for {surface}")
+        return self._latest_enabled(pref_key, surface)
 
     def _latest_enabled(self, key: str, surface: str) -> ModelConfig:
         with self._lock:
@@ -327,10 +324,18 @@ def bootstrap_stt() -> ModelConfig:
 
 
 def resolve_pinned(key: str | None, version: int | None, surface: str) -> ModelConfig:
-    """Load an exact pin. Missing pin falls back to the surface default, never
-    to a *different* version of a supplied key."""
+    """Load an exact pin.
+
+    Chat, generate, and editor must be given a (key, version). Missing or
+    unresolvable pins are errors: the gateway prices from the same pair, and
+    falling back to the live default would run a different model than the one
+    reserved. Ingest/embed/vision/stt may still resolve a surface default when
+    a job was enqueued without pins.
+    """
     if key and version:
         return registry.get(key, int(version))
+    if surface in (SURFACE_CHAT, SURFACE_GENERATE, SURFACE_EDITOR):
+        raise RegistryError(f"missing pin for {surface}")
     try:
         return registry.default(surface)
     except RegistryError:

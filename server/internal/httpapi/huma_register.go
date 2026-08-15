@@ -44,6 +44,19 @@ func hErr(err error) error {
 	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrForbidden) {
 		return huma.Error404NotFound("not found")
 	}
+	if errors.Is(err, store.ErrModelKeyRequired) {
+		return huma.Error400BadRequest("a model preference is required")
+	}
+	if errors.Is(err, store.ErrModelUnavailable) {
+		return &huma.ErrorModel{
+			Status: http.StatusUnprocessableEntity,
+			Title:  http.StatusText(http.StatusUnprocessableEntity),
+			Detail: "LLM model not available",
+			Errors: []*huma.ErrorDetail{{
+				Message: "model_unavailable",
+			}},
+		}
+	}
 	if errors.Is(err, store.ErrTitleTaken) {
 		return huma.Error409Conflict("a material with this name already exists in this workspace")
 	}

@@ -27,6 +27,32 @@ func TestRenderWorkspaceInvite(t *testing.T) {
 	}
 }
 
+func TestRenderModelDeprecated(t *testing.T) {
+	subject, html, text, err := Render("model-deprecated", "en", map[string]string{
+		"FromName":       "DeepSeek Pro",
+		"ToName":         "DeepSeek Flash",
+		"OpenURL":        "https://example.test/settings?tab=llm",
+		"UnsubscribeURL": "https://example.test/unsubscribe",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(subject, "DeepSeek Pro") {
+		t.Fatalf("subject = %q", subject)
+	}
+	for _, content := range []string{html, text} {
+		if strings.Contains(content, "{{.") {
+			t.Fatalf("unrendered placeholder in %q", content)
+		}
+		if !strings.Contains(content, "DeepSeek Pro") || !strings.Contains(content, "DeepSeek Flash") {
+			t.Fatalf("model names missing from %q", content)
+		}
+	}
+	if !strings.Contains(html, "https://example.test/settings?tab=llm") {
+		t.Fatalf("settings URL missing from HTML")
+	}
+}
+
 func TestRenderUsesLocalizedCopy(t *testing.T) {
 	subject, html, _, err := Render("workspace-invite", "zh", map[string]string{
 		"InviteURL":      "https://example.test/invite",

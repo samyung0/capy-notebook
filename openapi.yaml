@@ -1411,6 +1411,13 @@ components:
           type: string
         id:
           type: string
+        modelDisplayName:
+          type: string
+        modelKey:
+          type: string
+        modelVersion:
+          format: int64
+          type: integer
         role:
           type: string
         status:
@@ -2543,6 +2550,8 @@ components:
         - email
         - streak
         - locale
+        - chatModelKey
+        - generateModelKey
         - planTier
         - subscriptionStatus
       type: object

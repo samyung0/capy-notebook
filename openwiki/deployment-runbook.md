@@ -12,32 +12,129 @@ Code-side configuration lives in `observability-metering.md` §9.
 
 ## 1. DNS & hostnames
 
-Decide the topology first; several later steps hard-code it.
+The SPA is static. The Go gateway, the Hocuspocus sidecar, the Python
+retrieval service, and the ingest worker are **not** one process. Only two of
+them should have public DNS.
 
-| Hostname | Serves | Proxied through Cloudflare |
-| --- | --- | --- |
-| `abcd.com` | SPA (static) | yes |
-| `www.abcd.com` | redirect to apex | yes |
-| `api.abcd.com` | Go gateway | yes |
-| `collab.abcd.com` | Hocuspocus WebSocket | yes |
-| `ops.abcd.com` | internal operator dashboard | yes |
+| Hostname | Serves | Public DNS | Proxied |
+| --- | --- | --- | --- |
+| `abcd.com` | SPA (Cloudflare Pages / static) | yes | yes |
+| `www.abcd.com` | redirect to apex | yes | yes |
+| `api.abcd.com` | Go gateway (`server`, :8080) | yes | yes |
+| `collab.abcd.com` | Hocuspocus WebSocket (`collaboration`, :1234) | yes | yes |
+| `ops.abcd.com` | operator dashboard, later | yes, later | yes |
+| retrieval :8001 | Python chat/generate/transcribe | **no** | — |
+| ingest worker | Modal parse + embed | **no** | — |
+| Postgres / Redis | — | **no** | — |
 
-Actions:
+The browser talks to the gateway at same-origin `/api` (`src/api/client.ts`
+hard-codes `API_BASE = '/api'`; `VITE_API_URL` is only the Vite **dev** proxy).
+So the apex must reverse-proxy `/api/*` to the Go process, **and**
+`api.abcd.com` must still exist as its own hostname for Clerk/Stripe webhooks
+(`POST /webhooks/clerk`, `POST /webhooks/stripe`). Retrieval is reached only
+from the gateway over the docker network (`PIPELINE_URL=http://retrieval:8001`).
 
-1. Move the domain's nameservers to Cloudflare (registrar side). Propagation is
-   up to 24 h; do this first.
-2. Create `A`/`AAAA` records for each hostname above, **orange cloud on**.
-3. Set SSL/TLS mode to **Full (strict)**. "Flexible" terminates TLS at
-   Cloudflare and speaks plain HTTP to the origin — anyone between them reads
-   every bearer token.
-4. Enable **Always Use HTTPS** and **HSTS** (start with a short max-age).
+If the domain is **already** on Cloudflare, skip nameserver migration.
+
+1. **SPA.** Cloudflare Pages custom domain on `abcd.com` and `www.abcd.com`,
+   or CNAME those names to whatever static host you use. Orange cloud on.
+   Coolify does not serve the SPA in the topology below.
+2. **API + collab.** Pick one of §1.1 Coolify (typical), §1.2 bare compose, or
+   §1.3 public A records. Retrieval, worker, Postgres, and Redis stay off
+   public DNS in every option.
+3. **Apex `/api` rewrite.** Worker or origin rule on `abcd.com`:
+
+   ```
+   If  http.host eq "abcd.com"
+   and starts_with(http.request.uri.path, "/api")
+   Then reverse-proxy to https://api.abcd.com  (same path, Host: api.abcd.com)
+   ```
+
+   A 302 redirect is not enough — `fetch('/api/...')` would leave the SPA
+   origin. Do **not** proxy `/webhooks/` via the apex; those URLs are configured
+   in Clerk/Stripe as `https://api.abcd.com/webhooks/...`.
+4. **Always Use HTTPS** and **HSTS** (start with a short max-age). SSL/TLS mode
+   depends on how the origin is reached — see the option you picked.
 
 > **Both the SPA and the API must be proxied.** Proxying only the SPA leaves
 > `api.abcd.com` publicly resolvable, which is where the rate limiting, the WAF,
 > and the origin's anonymity actually matter.
 
-Set `CORS_ALLOWED_ORIGINS=https://abcd.com,https://www.abcd.com` on the gateway
-once the SPA is on its own hostname. Leaving it unset falls back to `*`.
+### 1.1 Coolify + Cloudflare Tunnel (recommended for this stack)
+
+Do **not** point the tunnel at `:8080` / `:1234`. Coolify already runs Traefik
+or Caddy on the host; the tunnel should hit that proxy and let it route by
+`Host`. Follow [Coolify: access all resources via tunnels](https://coolify.io/docs/integrations/cloudflare/tunnels/all-resource), with these bindings:
+
+| Hostname | Tunnel service | Coolify domain field |
+| --- | --- | --- |
+| `api.abcd.com` | `http://localhost:80` (or `http://coolify-proxy:80` if `cloudflared` is a container on the `coolify` network) | `http://api.abcd.com` on the **server** service |
+| `collab.abcd.com` | same `:80` | `http://collab.abcd.com` on **collaboration** |
+| retrieval, worker, db, redis | none | no domain |
+
+Details that are easy to get wrong:
+
+- Run `cloudflared` as a **Coolify service** (or systemd on the host), not as a
+  service in `deploy/docker-compose.yml`. A compose restart must not drop every
+  hostname on the server.
+- Enter Coolify domains as **`http://`**. Cloudflare terminates TLS. `https://`
+  here makes Traefik request Let's Encrypt and usually 301-loops.
+- App env vars still use `https://` / `wss://` — those are what browsers, Clerk,
+  and Stripe see (see the block below).
+- Cloudflare SSL/TLS **Full** is enough: the tunnel is already encrypted, and
+  the last hop is HTTP to the proxy. **Full (strict)** needs origin certs —
+  Coolify's [full TLS guide](https://coolify.io/docs/integrations/cloudflare/tunnels/full-tls).
+- Do not publish `8080` / `1234` / `8001` on the host. Traefik + the tunnel is
+  the public path. `:8001` must stay private.
+- Chat SSE and collab WebSockets both pass through Traefik. If streams die at
+  ~60–100s, raise the proxy read timeout on `api.abcd.com`. Cloudflare Tunnel
+  itself is not subject to the 100s orange-cloud proxy timeout; Traefik still
+  is.
+
+### 1.2 Bare docker compose + Tunnel
+
+On a host running `deploy/docker-compose.yml` without Coolify's proxy,
+`cloudflared` publishes the app ports directly. Cloudflare creates the DNS
+records; do **not** also point A records at the VPS IP.
+
+```
+api.abcd.com    →  http://localhost:8080     (the `server` container)
+collab.abcd.com →  http://localhost:1234     (the `collaboration` container)
+```
+
+SSL/TLS **Full (strict)** is appropriate here if the origin speaks TLS.
+Leave :8001, Postgres and Redis unpublished. This is the origin lockdown in §3.
+
+### 1.3 A/AAAA instead of a tunnel
+
+`A`/`AAAA` for `api.abcd.com` and `collab.abcd.com` to the VPS, **orange cloud
+on**, then firewall :80/:443 to Cloudflare IPs and enable Authenticated Origin
+Pulls. Grey-cloud (DNS only) publishes the origin and makes `CF-Connecting-IP`
+forgeable. SSL/TLS **Full (strict)**. "Flexible" terminates TLS at Cloudflare
+and speaks plain HTTP to the origin — anyone between them reads every bearer
+token.
+
+### 1.4 App URLs and env (all of the above)
+
+Same values whether Coolify, bare compose, or A records. Coolify domain fields
+are `http://`; these vars stay `https://` / `wss://`. Copy the rest from
+`deploy/.env.example` (Clerk, Stripe, four Sentry DSNs, provider keys,
+`WHISPER_API_KEY` for billed transcribe). `RATE_LIMIT_AI_PER_HOUR` defaults to
+200; the 15/minute AI burst and 120/minute editor class are not env-overridable.
+
+Gateway env once those hostnames exist:
+
+```
+APP_URL=https://abcd.com
+CORS_ALLOWED_ORIGINS=https://abcd.com,https://www.abcd.com
+COLLABORATION_URL=wss://collab.abcd.com
+COLLABORATION_ALLOWED_ORIGINS=https://abcd.com
+```
+
+Clerk: allowed origins + redirect URLs = `https://abcd.com` (and `www` if you
+use it); webhook `https://api.abcd.com/webhooks/clerk`. Stripe webhook
+`https://api.abcd.com/webhooks/stripe`. B2 CORS `allowedOrigins` is the SPA
+origin, not `api.`.
 
 ---
 
@@ -47,7 +144,11 @@ once the SPA is on its own hostname. Leaving it unset falls back to `*`.
 layer only handles volumetric floods — semantic limits are in the gateway.
 
 ```
-Rule:  (http.host eq "api.abcd.com" and not starts_with(http.request.uri.path, "/webhooks/"))
+Rule:  (
+         (http.host eq "api.abcd.com")
+         or (http.host eq "abcd.com" and starts_with(http.request.uri.path, "/api"))
+       )
+       and not starts_with(http.request.uri.path, "/webhooks/")
 Rate:  100 requests per 10 seconds per IP
 Action: Block, 60s timeout
 ```
@@ -74,9 +175,10 @@ challenges webhook deliveries, which cannot solve a JavaScript challenge.
 A cached SSE or WebSocket response breaks streaming in ways that look like an
 application bug.
 
-**Timeouts:** the default 100 s proxy read timeout will cut long chat streams
-and Modal parse waits. Either keep individual responses under it or move those
-hostnames to a Cloudflare Tunnel, which is not subject to it.
+**Timeouts:** the default 100 s orange-cloud proxy read timeout will cut long
+chat streams and Modal parse waits. A Cloudflare Tunnel is not subject to it.
+Coolify's Traefik/Caddy in front of the tunnel still has its own read timeout —
+raise that on `api.abcd.com` if streams die around a minute.
 
 ---
 
@@ -87,8 +189,9 @@ limit — edge and application — can be bypassed by hitting the origin directl
 
 Pick one:
 
-- **Cloudflare Tunnel (recommended).** Run `cloudflared` next to the gateway;
-  the origin needs no inbound ports at all and its IP is never published.
+- **Cloudflare Tunnel (recommended).** Coolify: §1.1, tunnel → proxy `:80`.
+  Bare compose: §1.2, tunnel → `:8080` / `:1234`. The origin needs no inbound
+  ports and its IP is never published.
 - **Firewall allowlist.** Restrict :80/:443 to Cloudflare's published IP ranges
   and enable **Authenticated Origin Pulls**. Requires re-checking the ranges
   periodically.
@@ -186,8 +289,9 @@ Pick one:
    CREATE ROLE evo_ops LOGIN PASSWORD '...';
    GRANT CONNECT ON DATABASE evo TO evo_ops;
    GRANT USAGE ON SCHEMA public TO evo_ops;
-   GRANT SELECT ON usage_daily, usage_events, user_credits, user_storage,
-                   users, workspaces, operators TO evo_ops;
+   GRANT SELECT ON usage_daily, usage_events, user_credits, credit_reservations,
+                   user_storage, users, workspaces, operators,
+                   model_configs, model_registry_state TO evo_ops;
    ```
 
    The dashboard is the least-hardened thing that will ever touch this
@@ -204,9 +308,10 @@ Pick one:
 | Same `trace_id` searched in Sentry and in gateway logs | both return the request |
 | `SELECT * FROM credit_reservations WHERE status='open' AND expires_at < now()` | empty after a minute (sweeper is running) |
 | `SELECT * FROM usage_daily` | populated within 5 minutes (rollup is running) |
-| Fire >40 AI requests in an hour | `429` with `code: "ai_rate_limited"` |
+| Fire >200 AI requests in an hour, or 16 in a minute | `429` with `code: "ai_rate_limited"` |
 | Open 4 chat streams at once | 4th returns `429 too_many_streams` |
 | Hit the origin IP directly | connection refused |
+| Coolify: `ss`/`docker ps` shows `:8080`/`:1234` bound on `0.0.0.0` | wrong — only Traefik `:80` (tunnel target) should be public |
 
 If `usage_events` stays empty while chat works, the usual cause is a streamed
 completion without `stream_options={"include_usage": True}` — the request

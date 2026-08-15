@@ -288,10 +288,22 @@ export const handlers = [
       chatModelKey?: string;
       generateModelKey?: string;
     };
-    if (body.chatModelKey !== undefined)
+    if (body.chatModelKey !== undefined) {
+      if (!body.chatModelKey)
+        return HttpResponse.json(
+          { message: 'a model preference is required' },
+          { status: 400 }
+        );
       db.user.chatModelKey = body.chatModelKey;
-    if (body.generateModelKey !== undefined)
+    }
+    if (body.generateModelKey !== undefined) {
+      if (!body.generateModelKey)
+        return HttpResponse.json(
+          { message: 'a model preference is required' },
+          { status: 400 }
+        );
       db.user.generateModelKey = body.generateModelKey;
+    }
     return new HttpResponse(null, { status: 204 });
   }),
 
@@ -1374,6 +1386,9 @@ export const handlers = [
         send({
           conversationId: convId,
           messageId: assistantId,
+          modelDisplayName: 'DeepSeek Flash',
+          modelKey: 'deepseek-flash',
+          modelVersion: 1,
           type: 'start',
         });
         await delay(120);
@@ -1392,6 +1407,9 @@ export const handlers = [
           conversationId: convId,
           createdAt: new Date().toISOString(),
           id: assistantId,
+          modelDisplayName: 'DeepSeek Flash',
+          modelKey: 'deepseek-flash',
+          modelVersion: 1,
           role: 'assistant',
           status: aborted ? 'aborted' : 'complete',
         });

@@ -1,6 +1,7 @@
 import {
   isApiError,
   isCreditsExhaustedError,
+  isModelUnavailableError,
   isStorageQuotaError,
 } from '@/api/client';
 import { m } from '@/i18n';
@@ -13,6 +14,7 @@ export type ErrorKind =
   | 'notFound'
   | 'quota'
   | 'credits'
+  | 'model'
   | 'validation'
   | 'server'
   | 'chunkLoad'
@@ -53,6 +55,7 @@ export function errorKind(error: unknown): ErrorKind {
   if (browserIsOffline()) return 'offline';
   if (isStorageQuotaError(error)) return 'quota';
   if (isCreditsExhaustedError(error)) return 'credits';
+  if (isModelUnavailableError(error)) return 'model';
 
   if (isApiError(error)) {
     if (error.code === 'account_over_quota' || error.code === 'account_locked')
@@ -121,6 +124,11 @@ export function describeError(error: unknown): ErrorDescription {
         action: 'subscription',
         description: m.error_credits_body(),
         title: m.error_credits_title(),
+      };
+    case 'model':
+      return {
+        description: m.error_model_unavailable_body(),
+        title: m.error_model_unavailable_title(),
       };
     case 'validation':
       return {

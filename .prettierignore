@@ -1,0 +1,4 @@
+# Generated or replay fixtures — formatting them breaks tools or cassette matching.
+pnpm-lock.yaml
+openapi.yaml
+pipeline/tests/cassettes/

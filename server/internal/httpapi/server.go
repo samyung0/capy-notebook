@@ -216,6 +216,20 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "not found"})
 		return
 	}
+	if errors.Is(err, store.ErrModelKeyRequired) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"code":    "model_key_required",
+			"message": "a model preference is required",
+		})
+		return
+	}
+	if errors.Is(err, store.ErrModelUnavailable) {
+		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
+			"code":    "model_unavailable",
+			"message": "LLM model not available",
+		})
+		return
+	}
 	if errors.Is(err, store.ErrTitleTaken) {
 		writeJSON(w, http.StatusConflict, map[string]string{
 			"code":    "title_taken",

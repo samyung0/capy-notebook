@@ -59,8 +59,8 @@ def resolve_query_model(
     """Resolve the exact pinned chat/generate/editor model.
 
     ``requested`` is accepted for API compatibility and ignored: a client-
-    supplied model string must never override the pin. ``surface`` is used
-    only when the pin is absent, to pick that surface's current default.
+    supplied model string must never override the pin. An empty pin is an
+    error for these surfaces, not a cue to use the live default.
     """
     del requested
     return registry.resolve_pinned(key, version, surface)

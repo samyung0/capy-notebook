@@ -93,6 +93,13 @@ the pipeline at write time.
 The rollup job is debounced with a unique pending index so reorganization does
 not enqueue a storm.
 
+Enqueue snapshots `{actorUserId, ingestModelKey, embeddingModelKey,
+visionModelKey}` (and versions) onto the job. The worker bills that actor and
+must embed with those pins even if the live default is retargeted mid-flight.
+If the snapshot is missing the worker falls back to the live default — that is
+a billing/index hole, not the intended contract; see
+[observability-metering.md](observability-metering.md) §8.
+
 ### Parse routes
 
 Controlled by `parseMode` on the job payload:
@@ -241,7 +248,13 @@ substitute for a knowledge-graph edge.
 
 Streaming chat (`POST /chat/stream` via the Go gateway):
 
-1. Go authenticates, reads `users.locale`, and relays `workspaceId`, `userId`, optional `fileIds`, history, model choice, and `locale` to the retrieval service. Locale is server-owned (never a browser field) so replies match Settings. Ingest/index prompts stay English.
+1. Go authenticates, reads `users.locale` and `users.chat_model_key`, resolves
+   that key to a `model_configs` row (`ratesForSurface`), reserves credits from
+   those rates, stamps `{modelKey, modelVersion}` on the assistant message, and
+   relays that exact pair to the retrieval service with history and locale.
+   Locale and model are server-owned (never browser fields). Settings changes
+   apply to the next message. A missing preference or unresolvable pin fails
+   the turn as `model_unavailable`. Ingest/index prompts stay English.
 2. The agent **primes** with one retrieval before the model is asked anything —
    a question about the user's sources almost always needs them, and making the
    model ask wastes a round.
@@ -274,7 +287,10 @@ passage whether it came from search or from reading a document.
 is fixed, and the gateway must persist a parseable artifact.
 
 1. `gather_context` samples chunks evenly across every document in scope (equal
-   share per file, not proportional to length).
+   share per file, not proportional to length). The gateway resolves the user's
+   **Settings → LLM** generate preference (`ratesForSurface`) and forwards that
+   exact pin; the browser `model` field is ignored. An unresolvable preference
+   fails as `model_unavailable`.
 2. If the context fits the budget, one `produce` call. If it overflows across
    multiple files, `produce_mapped` summarizes per document then combines.
    `produce` appends a language rule from the gateway's `locale` so quiz copy,
@@ -329,8 +345,8 @@ job and pipeline `/workspace/delete` endpoint are gone.
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material` |
 | Parse routes | `MODAL_PARSE_URL`, `MODAL_FAST_PARSE_URL` | One per mode; both from one Modal deploy |
 | Chunk size | `EVO_CHUNK_*` | Character budgets, not tokens |
-| Embedding | `EVO_MODEL_EMBEDDING`, `EMBEDDING_DIM` | Dim must match `halfvec(N)` |
-| Ingest / query models | `EVO_MODEL_EXTRACTION`, `EVO_QUERY_MODEL` | Flash for ingest and chat |
+| Embedding | `EVO_MODEL_EMBEDDING`, `EMBEDDING_DIM` | Bootstrap / dim check; live default is `model_configs`. Dim must match `halfvec(N)` |
+| Ingest / query models | `EVO_MODEL_EXTRACTION`, `EVO_QUERY_MODEL` | Bootstrap only when the registry has no row. Chat/generate pins come from Settings → LLM via the gateway |
 | Search | `EVO_SEARCH_CANDIDATES`, `EVO_SEARCH_TOP_K`, `EVO_SEARCH_PER_FILE_CAP` | |
 | Agent | `EVO_AGENT_MAX_STEPS` | Cap is the design, not a safety valve |
 | Captions | `EVO_CAPTION_IMAGES`, `EVO_CAPTION_CONCURRENCY`, `EVO_CAPTION_MAX_EDGE`, `EVO_CAPTION_VERSION` | Per file at upload; the env flag is only a fallback |

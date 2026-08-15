@@ -71,7 +71,7 @@ function AssistantBubble({
     <div className="mr-auto max-w-[92%] px-3.5 py-2.5">
       {empty && streaming && msg.status === 'streaming' ? (
         <Spinner />
-      ) : (
+      ) : msg.content ? (
         <div className="streamdown-body max-w-none [&_p]:my-1.5 [&_pre]:my-2">
           <Streamdown
             className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
@@ -91,7 +91,7 @@ function AssistantBubble({
             {msg.content}
           </Streamdown>
         </div>
-      )}
+      ) : null}
       {msg.status === 'aborted' && (
         <p className="mt-1 py-1 text-fg-muted italic">{m.chat_stopped()}</p>
       )}
@@ -101,9 +101,14 @@ function AssistantBubble({
           role="alert"
         >
           <p className="font-medium">{m.chat_interrupted()}</p>
-          <p>{m.chat_retry_connection()}</p>
+          <p>{msg.error || m.chat_retry_connection()}</p>
         </div>
       )}
+      {msg.modelDisplayName || msg.modelKey ? (
+        <p className="mt-1.5 text-[11px] text-fg-muted">
+          {msg.modelDisplayName || msg.modelKey}
+        </p>
+      ) : null}
       <Citations msg={msg} onOpen={onOpenCitation} />
     </div>
   );

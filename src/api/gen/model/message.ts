@@ -13,6 +13,9 @@ export interface Message {
   conversationId: string;
   createdAt: string;
   id: string;
+  modelDisplayName?: string;
+  modelKey?: string;
+  modelVersion?: number;
   role: string;
   status: string;
 }

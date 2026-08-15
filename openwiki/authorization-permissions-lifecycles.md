@@ -201,7 +201,10 @@ Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L7
 
 - Persisted streaming chat, chat history, editor completion, and generation
   require owner or explicit editor membership. Conversations are private to the
-  user who created them, even inside the same workspace.
+  user who created them, even inside the same workspace. Chat and generate
+  model choice is an account preference (**Settings → LLM**), snapshotted onto
+  new conversations; the browser cannot pick a model per request. Editor AI
+  uses the registry editor default and is not user-selectable.
 - Shared editors who are not members cannot use workspace chat or generation.
 - Generated material storage is charged to the workspace owner. The actor is
   recorded as author but does not become storage owner.

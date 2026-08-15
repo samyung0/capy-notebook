@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -73,34 +74,32 @@ func (a *api) setModelPrefs(ctx context.Context, in *setModelsInput) (*Empty, er
 	return &Empty{}, nil
 }
 
-func (a *api) ratesForPin(ctx context.Context, key string, version int) store.TokenRates {
-	if a.modelReg == nil || key == "" || version <= 0 {
-		return store.DefaultLLMRates()
-	}
-	cfg, err := a.modelReg.Get(ctx, key, version)
-	if err != nil {
-		return store.DefaultLLMRates()
-	}
-	return store.RatesFromConfig(cfg)
-}
-
 func (a *api) ratesForSurface(ctx context.Context, userID, surface string) (cfg models.Config, rates store.TokenRates, err error) {
 	if a.modelReg == nil {
-		return models.Config{}, store.DefaultLLMRates(), nil
+		return models.Config{}, store.TokenRates{}, fmt.Errorf("%w: registry not configured", store.ErrModelUnavailable)
 	}
-	pref := ""
-	if userID != "" && (surface == models.SurfaceChat || surface == models.SurfaceGenerate) {
-		if me, meErr := a.s.Me(ctx, userID); meErr == nil {
-			if surface == models.SurfaceGenerate {
-				pref = me.GenerateModelKey
-			} else {
-				pref = me.ChatModelKey
-			}
+	switch surface {
+	case models.SurfaceChat, models.SurfaceGenerate:
+		if userID == "" {
+			return models.Config{}, store.TokenRates{}, fmt.Errorf("%w: missing user for %s", store.ErrModelUnavailable, surface)
 		}
+		me, meErr := a.s.Me(ctx, userID)
+		if meErr != nil {
+			return models.Config{}, store.TokenRates{}, meErr
+		}
+		pref := me.ChatModelKey
+		if surface == models.SurfaceGenerate {
+			pref = me.GenerateModelKey
+		}
+		if pref == "" {
+			return models.Config{}, store.TokenRates{}, fmt.Errorf("%w: empty %s preference", store.ErrModelUnavailable, surface)
+		}
+		cfg, err = a.modelReg.ResolveUser(ctx, pref, surface)
+	default:
+		cfg, err = a.modelReg.Default(ctx, surface)
 	}
-	cfg, err = a.modelReg.ResolveUser(ctx, pref, surface)
 	if err != nil {
-		return models.Config{}, store.DefaultLLMRates(), err
+		return models.Config{}, store.TokenRates{}, fmt.Errorf("%w: %v", store.ErrModelUnavailable, err)
 	}
 	return cfg, store.RatesFromConfig(cfg), nil
 }

@@ -31,8 +31,9 @@ function modelDescription(key: string): string {
   }
 }
 
-/** Preference picker for chat / generate. Changing it does not rewrite an
- * already-pinned conversation; the next new thread picks up the new key. */
+/** Preference picker for chat / generate. Changing it applies to the next
+ * chat message or generate request; existing assistant turns keep the model
+ * they ran with. */
 export function ModelPicker({
   className,
   surface,

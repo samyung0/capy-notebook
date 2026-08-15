@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS schema_baseline (
 
 DO $$
 DECLARE
-  target_version constant int := 8;
+  target_version constant int := 9;
   recorded_version int;
 BEGIN
   -- Serialize concurrent migrators. The runner sends this file as one statement
@@ -111,12 +111,13 @@ CREATE TABLE IF NOT EXISTS users (
   plan_tier             text NOT NULL DEFAULT 'free'
     CHECK (plan_tier IN ('free', 'pro')),
   locale                text NOT NULL DEFAULT 'en',
-  -- Per-surface chat/generate preference. NULL means "use the registry default
-  -- for that surface". Ingest, embedding, and vision are operator-only and
-  -- are never stored here. The value is a model_key, not a version: the
-  -- version is pinned onto the conversation or job at creation time.
-  chat_model_key        text,
-  generate_model_key    text,
+  -- Per-surface chat/generate preference. Always a model_key, never NULL or
+  -- empty: populated from the registry surface default at account creation.
+  -- Ingest, embedding, and vision are operator-only and are never stored here.
+  -- The value is a model_key, not a version: the version is resolved per
+  -- request onto the assistant message (chat) or generate call.
+  chat_model_key        text NOT NULL DEFAULT 'deepseek-flash',
+  generate_model_key    text NOT NULL DEFAULT 'deepseek-flash',
   -- Account lifecycle. deletion_requested_at starts the reactivation window;
   -- purge_after is when the purge job runs; deleted_at is set by the purge
   -- itself, after which the row is a scrubbed tombstone.
@@ -129,6 +130,8 @@ CREATE TABLE IF NOT EXISTS users (
   suspended_reason      text,
   created_at            timestamptz NOT NULL DEFAULT now(),
   updated_at            timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT users_chat_model_key_nonempty CHECK (chat_model_key <> ''),
+  CONSTRAINT users_generate_model_key_nonempty CHECK (generate_model_key <> ''),
   CONSTRAINT users_purge_window_check
     CHECK (purge_after IS NULL OR deletion_requested_at IS NOT NULL),
   CONSTRAINT users_deleted_requires_request_check
@@ -1259,10 +1262,11 @@ CREATE TABLE IF NOT EXISTS model_registry_state (
 INSERT INTO model_registry_state (id, version) VALUES (true, 1)
   ON CONFLICT (id) DO NOTHING;
 
--- Bootstrap the models the product ships with. modelctl add writes new
--- versions; these rows are the 1x Flash reference and the frozen embedding
--- / vision / STT defaults. Changing embedding or vision is not a hot-reload:
--- it requires a process restart and a reindex, and is not a normal operation.
+-- Bootstrap the models the product ships with. New versions are written
+-- from the ops dashboard registry grid; these rows are the 1x Flash
+-- reference and the frozen embedding / vision / STT defaults. Changing
+-- embedding or vision is not a hot-reload: it requires a process restart
+-- and a reindex, and is not a normal operation.
 INSERT INTO model_configs (
   model_key, version, display_name, provider_slug, base_url, provider_model_id,
   params, surfaces, micros_per_input_token, micros_per_output_token,

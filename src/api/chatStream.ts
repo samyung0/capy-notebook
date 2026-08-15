@@ -7,6 +7,7 @@
  * AbortController — the abort propagates all the way to the LLM provider.
  */
 
+import { m } from '@/i18n';
 import { authHeaders } from './auth';
 import { API_BASE } from './client';
 import { consumeSSE } from './sse';
@@ -15,6 +16,9 @@ import type { ChatStatus, Citation } from './types';
 export interface StreamStart {
   conversationId: string;
   messageId: string;
+  modelDisplayName?: string;
+  modelKey?: string;
+  modelVersion?: number;
 }
 export interface StreamDone {
   generationId?: string;
@@ -37,10 +41,12 @@ export interface ChatStreamBody {
 function errorMessage(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== 'object') return fallback;
   const body = payload as {
+    code?: unknown;
     detail?: unknown;
     error?: { message?: unknown };
     message?: unknown;
   };
+  if (body.code === 'model_unavailable') return m.chat_model_unavailable();
   if (typeof body.error?.message === 'string') return body.error.message;
   if (typeof body.message === 'string') return body.message;
   if (typeof body.detail === 'string') return body.detail;
@@ -107,6 +113,9 @@ export async function streamChat(
       tokenCount?: number;
       generationId?: string;
       message?: string;
+      modelKey?: string;
+      modelVersion?: number;
+      modelDisplayName?: string;
     };
     try {
       ev = JSON.parse(data);
@@ -118,6 +127,9 @@ export async function streamChat(
         handlers.onStart?.({
           conversationId: ev.conversationId!,
           messageId: ev.messageId!,
+          modelDisplayName: ev.modelDisplayName,
+          modelKey: ev.modelKey,
+          modelVersion: ev.modelVersion,
         });
         break;
       case 'token':

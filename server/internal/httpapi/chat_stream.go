@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/evonotes/server/internal/models"
 	"github.com/evonotes/server/internal/store"
 )
 
@@ -93,15 +94,18 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	}
 	defer release()
 
-	// Resolve (or open) the conversation first so the reserve estimate can
-	// scale by the pinned model. Pinning happens inside CreateConversation.
+	cfg, llmRates, err := a.ratesForSurface(ctx, userID, models.SurfaceChat)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+
 	conv, err := a.resolveConversation(ctx, userID, wsID, req.ConversationID)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
 
-	llmRates := a.ratesForPin(ctx, conv.ModelKey, conv.ModelVersion)
 	charge, err := a.reserveSpend(ctx, userID, wsID, store.SurfaceChat, store.ScaleEstimate(store.EstimateChatMicros, llmRates))
 	if err != nil {
 		a.fail(w, err)
@@ -119,7 +123,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Reserve the assistant row so an aborted stream is always tracked.
-	assistant, err := a.s.StartAssistantMessage(ctx, conv.ID)
+	assistant, err := a.s.StartAssistantMessage(ctx, conv.ID, cfg)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -136,7 +140,14 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		flusher.Flush()
 	}
 
-	send(map[string]any{"type": "start", "messageId": assistant.ID, "conversationId": conv.ID})
+	send(map[string]any{
+		"type":             "start",
+		"messageId":        assistant.ID,
+		"conversationId":   conv.ID,
+		"modelKey":         cfg.Key,
+		"modelVersion":     cfg.Version,
+		"modelDisplayName": cfg.DisplayName,
+	})
 
 	var (
 		builder   strings.Builder
@@ -150,7 +161,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		send(pipeChatEvent{Type: "token", Text: t})
 	}
 
-	streamErr := a.relayChat(ctx, userID, conv, req.Text, onToken, func(ev pipeChatEvent) {
+	streamErr := a.relayChat(ctx, userID, conv, cfg, req.Text, onToken, func(ev pipeChatEvent) {
 		switch ev.Type {
 		case "citations":
 			citations = ev.Citations
@@ -213,7 +224,7 @@ func (a *api) resolveConversation(ctx context.Context, userID, wsID, convID stri
 // invoking onToken for each text chunk and onEvent for citations/done. When the
 // pipeline is unavailable it falls back to a streamed placeholder so the UI
 // still works end-to-end.
-func (a *api) relayChat(ctx context.Context, userID string, conv store.Conversation, query string, onToken func(string), onEvent func(pipeChatEvent)) error {
+func (a *api) relayChat(ctx context.Context, userID string, conv store.Conversation, cfg models.Config, query string, onToken func(string), onEvent func(pipeChatEvent)) error {
 	if a.pipe == nil {
 		a.streamFallback(ctx, query, onToken)
 		return nil
@@ -225,7 +236,7 @@ func (a *api) relayChat(ctx context.Context, userID string, conv store.Conversat
 	// workspace role there rather than trusting the agent.
 	body := map[string]any{
 		"query": query, "workspaceId": conv.WorkspaceID, "userId": userID,
-		"modelKey": conv.ModelKey, "configVersion": conv.ModelVersion,
+		"modelKey": cfg.Key, "configVersion": cfg.Version,
 		"history": history,
 		"locale":  a.userLocale(ctx, userID),
 	}

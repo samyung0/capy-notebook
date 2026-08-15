@@ -379,6 +379,9 @@ export const ListMessagesResponseItem = zod.object({
   "conversationId": zod.string(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
+  "modelDisplayName": zod.string().optional(),
+  "modelKey": zod.string().optional(),
+  "modelVersion": zod.int().optional(),
   "role": zod.string(),
   "status": zod.string()
 })
@@ -1251,10 +1254,10 @@ export const ListMaterialRevisionsResponse = zod.array(ListMaterialRevisionsResp
 export const GetMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "avatarUrl": zod.string().optional(),
-  "chatModelKey": zod.string().optional(),
+  "chatModelKey": zod.string(),
   "classLabel": zod.string().optional(),
   "email": zod.string(),
-  "generateModelKey": zod.string().optional(),
+  "generateModelKey": zod.string(),
   "id": zod.string(),
   "locale": zod.string(),
   "name": zod.string(),

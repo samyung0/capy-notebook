@@ -172,19 +172,13 @@ func TestCreditsExhaustedOnChatGenerateEditorTranscribe(t *testing.T) {
 	}
 }
 
-func TestChatStreamIgnoresClientModelAndPinsConversation(t *testing.T) {
+func TestChatStreamIgnoresClientModelAndStampsTheAssistantMessage(t *testing.T) {
 	fx := openBilling(t)
 	rest := doReq(t, fx.handler, http.MethodPost,
 		"/api/workspaces/"+fx.workspaceID+"/conversations", fx.actorID,
 		map[string]any{"title": "Pinned"})
 	if rest.Code != http.StatusCreated {
 		t.Fatalf("REST create: %d %s", rest.Code, rest.Body.String())
-	}
-	var created struct {
-		ID string `json:"id"`
-	}
-	if err := json.Unmarshal(rest.Body.Bytes(), &created); err != nil {
-		t.Fatal(err)
 	}
 
 	stream := doReq(t, fx.handler, http.MethodPost,
@@ -195,33 +189,22 @@ func TestChatStreamIgnoresClientModelAndPinsConversation(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	rows, err := fx.pool.Query(ctx,
-		`SELECT metadata->>'modelKey', metadata->>'modelVersion' FROM conversations WHERE workspace_id=$1`,
-		fx.workspaceID)
+	var key string
+	var version int
+	err := fx.pool.QueryRow(ctx, `
+		SELECT metadata->>'modelKey', (metadata->>'modelVersion')::int
+		  FROM messages
+		 WHERE role = 'assistant'
+		 ORDER BY created_at DESC LIMIT 1`).Scan(&key, &version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rows.Close()
-	var keys []string
-	var versions []string
-	for rows.Next() {
-		var key, ver string
-		if err := rows.Scan(&key, &ver); err != nil {
-			t.Fatal(err)
-		}
-		keys = append(keys, key)
-		versions = append(versions, ver)
+	if key == "" || version <= 0 {
+		t.Fatalf("assistant unpinned: %s v%d", key, version)
 	}
-	if len(keys) < 2 {
-		t.Fatalf("expected two conversations, got %v", keys)
-	}
-	if keys[0] != keys[1] || versions[0] != versions[1] {
-		t.Fatalf("pins diverged: %v %v", keys, versions)
-	}
-	if keys[0] == "deepseek-pro" {
+	if key == "deepseek-pro" {
 		t.Fatal("client-supplied model overrode the pin")
 	}
-	_ = created
 }
 
 func TestUploadRefusesActorCreditsAndOwnerStorageSeparately(t *testing.T) {

@@ -76,6 +76,15 @@ function notificationCopy(notification: AppNotification) {
           title: m.notification_system_welcome_title(),
         };
       }
+      if (code === 'model_deprecated') {
+        return {
+          body: m.notification_system_model_deprecated_body({
+            fromName: dataString(notification.data, 'fromName'),
+            toName: dataString(notification.data, 'toName'),
+          }),
+          title: m.notification_system_model_deprecated_title(),
+        };
+      }
       break;
     case 'workspace_invite':
       return {

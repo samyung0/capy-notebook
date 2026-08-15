@@ -29,6 +29,14 @@ type rowQueryer interface {
 
 var ErrNotFound = errors.New("not found")
 
+// ErrModelUnavailable means the request named a model that cannot be priced or
+// run: empty preference, unknown/disabled key, or a pin whose config row is
+// gone. Callers must fail the request rather than substituting Flash.
+var ErrModelUnavailable = errors.New("model unavailable")
+
+// ErrModelKeyRequired is a Settings write that tried to clear a preference.
+var ErrModelKeyRequired = errors.New("model key required")
+
 // ErrConflict reports a failed optimistic revision comparison.
 var ErrConflict = errors.New("revision conflict")
 
@@ -55,8 +63,9 @@ type Store struct {
 // Pool exposes the connection pool so the model registry can share it.
 func (s *Store) Pool() *pgxpool.Pool { return s.pool }
 
-// SetModelRegistry attaches the process-wide registry so CreateConversation
-// and ingest enqueue can pin the resolved (model_key, version).
+// SetModelRegistry attaches the process-wide registry so account creation
+// can snapshot surface defaults onto the user row, chat/generate can resolve
+// the preference per request, and ingest enqueue can pin embedding/vision.
 func (s *Store) SetModelRegistry(r *models.Registry) { s.registry = r }
 
 func (s *Store) ModelRegistry() *models.Registry { return s.registry }

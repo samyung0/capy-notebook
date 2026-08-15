@@ -99,18 +99,18 @@ at the top of each section.
 | [`server/internal/auth/middleware_test.go`](../server/internal/auth/middleware_test.go) | Public-read bypass, disabled-auth dev user, and E2E header auth allow/deny. |
 | [`server/internal/blob/blob_test.go`](../server/internal/blob/blob_test.go) | B2 client construction/validation and non-positive read-prefix rejection. |
 | [`server/internal/mail/capture_test.go`](../server/internal/mail/capture_test.go) | Recording mail sender keeps bounded history and ignores failed deliveries. |
-| [`server/internal/mail/mail_test.go`](../server/internal/mail/mail_test.go) | Invite email render/localization, role labels, and unsubscribe tokens. |
+| [`server/internal/mail/mail_test.go`](../server/internal/mail/mail_test.go) | Invite and model-deprecated email render/localization, role labels, and unsubscribe tokens. |
 | [`server/internal/pipeline/client_test.go`](../server/internal/pipeline/client_test.go) | Pipeline HTTP client success, error status, bad JSON, and connection refused. |
 | [`server/internal/ratelimit/classify_test.go`](../server/internal/ratelimit/classify_test.go) | Route class split (AI vs editor vs upload vs exempt) and default AI/burst/editor budgets. |
 | [`server/internal/sourceupload/rules_test.go`](../server/internal/sourceupload/rules_test.go) | Source kind-from-name map, upload validation (10/30 MB plan caps), caption-flag normalization, and policy list parsing. |
-| [`server/internal/models/registry_test.go`](../server/internal/models/registry_test.go) | Load-on-miss of an unseen `(key, version)` and a miss that never degrades to the current default. |
+| [`server/internal/models/registry_test.go`](../server/internal/models/registry_test.go) | Load-on-miss of an unseen `(key, version)`, a miss that never degrades to the current default, and ResolveUser requiring a non-empty enabled preference. |
 
 ### HTTP API
 
 | File | About |
 | --- | --- |
 | [`server/internal/httpapi/account_gates_test.go`](../server/internal/httpapi/account_gates_test.go) | Over-quota owner gates, storage-owner state on reads, editor deck create, generated authorship, generate title uniqueness. |
-| [`server/internal/httpapi/billing_gates_test.go`](../server/internal/httpapi/billing_gates_test.go) | 403 `llm_credits_exhausted` on chat/generate/editor/transcribe; client `model` ignored; upload actor-credits vs owner-storage. |
+| [`server/internal/httpapi/billing_gates_test.go`](../server/internal/httpapi/billing_gates_test.go) | 403 `llm_credits_exhausted` on chat/generate/editor/transcribe; client `model` ignored and the assistant message is stamped; upload actor-credits vs owner-storage. |
 | [`server/internal/httpapi/ai_plate_test.go`](../server/internal/httpapi/ai_plate_test.go) | Plate command/copilot request validation and AI data-stream copy/malformed/done checks. |
 | [`server/internal/httpapi/editor_assets_test.go`](../server/internal/httpapi/editor_assets_test.go) | Editor asset metadata validation, signatures, and object keys not using original filenames. |
 | [`server/internal/httpapi/email_unsubscribe_test.go`](../server/internal/httpapi/email_unsubscribe_test.go) | GET unsubscribe is read-only and does not mutate preferences. |
@@ -137,7 +137,7 @@ at the top of each section.
 | [`server/internal/store/collaboration_owner_test.go`](../server/internal/store/collaboration_owner_test.go) | Collab writes follow storage owner; active editors cannot grow over-quota materials. |
 | [`server/internal/store/contracts_test.go`](../server/internal/store/contracts_test.go) | Role/share/invite/comment/material JSON contracts and stable card-ID rewrite map. |
 | [`server/internal/store/credits_test.go`](../server/internal/store/credits_test.go) | Credit reserve/settle, settle idempotency, concurrent gate at remaining budget, sweep-then-late-settle, monthly rollover, billing credit counters, and actor-scoped usage report grouping. |
-| [`server/internal/store/chat_pin_test.go`](../server/internal/store/chat_pin_test.go) | Conversation pin written in CreateConversation and selected by GetConversation; ingest job payload carries actor + embed/vision pins. |
+| [`server/internal/store/chat_pin_test.go`](../server/internal/store/chat_pin_test.go) | Assistant message pin survives finalize; ingest job payload carries actor + embed/vision pins; empty model prefs rejected; new users get registry defaults. |
 | [`server/internal/store/pricing_test.go`](../server/internal/store/pricing_test.go) | Same token counts on two models produce different credit micros; Pro reserve estimates scale. |
 | [`server/internal/store/material_revisions_test.go`](../server/internal/store/material_revisions_test.go) | Daily version overwrite, UTC rollover, tier retention, and downgrade pruning. |
 | [`server/internal/store/notifications_test.go`](../server/internal/store/notifications_test.go) | Notification recipient scoping, email outbox/leases, and category disable atomicity. |
@@ -162,7 +162,7 @@ See also [`pipeline-tests.md`](pipeline-tests.md) for disposable Postgres/Redis 
 | [`pipeline/tests/test_ingest_query.py`](../pipeline/tests/test_ingest_query.py) | Cassette: index → search → grounded cited answer, re-index convergence, scope confinement, cross-document concepts, cascade teardown. |
 | [`pipeline/tests/test_figures.py`](../pipeline/tests/test_figures.py) | Offline: line diagrams surviving the flatness filters, recurring page furniture dropped by perceptual hash, bbox and duplicate handling, caption cache keyed by source identity (not parse route) so `content_hash` stays stable. |
 | [`pipeline/tests/test_ingest_worker.py`](../pipeline/tests/test_ingest_worker.py) | Offline: parse-mode → route selection, txt/md/json bypassing the parser, parse zip recorded before captioning, and captions reaching the chunker. |
-| [`pipeline/tests/test_registry_billing.py`](../pipeline/tests/test_registry_billing.py) | Per-model credits, registry miss never falls back, ingest job pins stick after a default change, claim-time owner/actor matrix, ingest bills actor / rollup bills owner. |
+| [`pipeline/tests/test_registry_billing.py`](../pipeline/tests/test_registry_billing.py) | Per-model credits, registry miss never falls back, chat/generate pins do not fall back to the live default, ingest job pins stick after a default change, claim-time owner/actor matrix, ingest bills actor / rollup bills owner. |
 | [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py) | Artifact addressing/caching per route, per-route endpoints and versions, rejection of traversal, checksum, version and source mismatches, corrupt-cache recovery. |
 | [`pipeline/tests/test_retrieval_helpers.py`](../pipeline/tests/test_retrieval_helpers.py) | Tool scope narrowing, stable citation numbering, per-file diversity cap, JSON extraction and question normalization. |
 | [`pipeline/tests/test_locale.py`](../pipeline/tests/test_locale.py) | Account locale on chat/generate/editor prompts; continue-writing does not force UI language; ingest is out of scope. |

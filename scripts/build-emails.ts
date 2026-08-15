@@ -30,6 +30,9 @@ const { default: AccountDeletionCancelledEmail } = await import(
 const { default: AccountDeletionRequestedEmail } = await import(
   '../emails/account-deletion-requested'
 );
+const { default: ModelDeprecatedEmail } = await import(
+  '../emails/model-deprecated'
+);
 const { default: SubscriptionFrozenEmail } = await import(
   '../emails/subscription-frozen'
 );
@@ -49,8 +52,10 @@ const { default: WorkspaceRoleChangedEmail } = await import(
 type Locale = 'en' | 'zh';
 
 const placeholder = (name: string) => `{{.${name}}}`;
+const fromName = placeholder('FromName');
 const graceDays = placeholder('GraceDays');
 const openUrl = placeholder('OpenURL');
+const toName = placeholder('ToName');
 const workspaceName = placeholder('WorkspaceName');
 const unsubscribeUrl = placeholder('UnsubscribeURL');
 
@@ -135,6 +140,19 @@ const templates: Array<{
         unsubscribeUrl,
       }),
     subject: (locale) => m.email_frozen_subject({}, { locale }),
+  },
+  {
+    name: 'model-deprecated',
+    render: (locale) =>
+      createElement(ModelDeprecatedEmail, {
+        fromName,
+        locale,
+        openUrl,
+        toName,
+        unsubscribeUrl,
+      }),
+    subject: (locale) =>
+      m.email_model_deprecated_subject({ fromName }, { locale }),
   },
 ];
 

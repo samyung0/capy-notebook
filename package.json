@@ -100,8 +100,11 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^4.3.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^17.3.0",
     "msw": "^2.4.0",
     "orval": "^8.22.0",
+    "prettier": "^3.9.6",
     "react-email": "^6.9.1",
     "tailwindcss": "^4.0.0",
     "tsx": "^4.23.1",
@@ -143,7 +146,20 @@
     "gen:api:clean": "node scripts/clean-api-gen.mjs",
     "gen:api:msw": "pnpm gen:openapi && pnpm gen:api",
     "gen:api:watch": "pnpm gen:api:clean && orval --watch",
-    "fix": "ultracite fix"
+    "fix": "ultracite fix",
+    "prepare": "husky"
+  },
+  "lint-staged": {
+    "*.{js,jsx,ts,tsx,mjs,cjs,json,jsonc,css,scss,md,mdx}": [
+      "biome format --write --no-errors-on-unmatched --files-ignore-unknown=true",
+      "ultracite fix"
+    ],
+    "*.go": "gofmt -w",
+    "*.py": [
+      "uv --native-tls run --with ruff ruff format",
+      "uv --native-tls run --with ruff ruff check --fix"
+    ],
+    "*.{yml,yaml}": "prettier --write"
   },
   "type": "module",
   "version": "0.1.0",

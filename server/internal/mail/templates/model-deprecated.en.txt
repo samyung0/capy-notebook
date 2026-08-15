@@ -1,0 +1,16 @@
+Evo Notes
+
+
+YOUR CHAT MODEL CHANGED
+
+Hello,
+
+{{.FromName}} was retired. Your next chat message and generate request will use {{.ToName}}. You can pick a different model in Settings.
+
+Open LLM settings {{.OpenURL}}
+
+----------------------------------------
+
+You received this message because an Evo Notes model you selected was retired.
+
+Manage product email preferences {{.UnsubscribeURL}}

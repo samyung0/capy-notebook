@@ -16,8 +16,9 @@ Two modes (see ``tests/README.md``):
 
 Both modes need Docker. The retrieval index is owned by the Go schema now, so
 the container is the stock ``pgvector/pgvector:pg16`` image and the fixture
-applies ``server/migrations/0001_init.sql`` to it — the same file the gateway
-applies at boot. Nothing in the pipeline creates tables.
+applies every ``server/migrations/*.sql`` file in name order — the same way
+the gateway's ``Store.Migrate`` does at boot. Nothing in the pipeline creates
+tables.
 """
 
 from __future__ import annotations
@@ -81,7 +82,7 @@ from pipeline import use_compatible_event_loop
 
 use_compatible_event_loop()
 
-MIGRATION = REPO_ROOT / "server" / "migrations" / "0001_init.sql"
+MIGRATIONS = sorted((REPO_ROOT / "server" / "migrations").glob("*.sql"))
 
 
 def pytest_runtest_setup(item):
@@ -153,12 +154,12 @@ def _apply_migration(dsn: str) -> None:
     """Apply the gateway's baseline schema, which owns the retrieval index."""
     import psycopg
 
-    sql = MIGRATION.read_text(encoding="utf-8")
-    # No parameters, so psycopg uses the simple query protocol and the whole
-    # file (DO blocks included) goes over as one statement batch — the same way
+    # No parameters, so psycopg uses the simple query protocol and each file
+    # (DO blocks included) goes over as one statement batch — the same way
     # internal/store.Migrate sends it.
     with psycopg.connect(dsn, autocommit=True) as conn:
-        conn.execute(sql)
+        for path in MIGRATIONS:
+            conn.execute(path.read_text(encoding="utf-8"))
 
 
 @pytest.fixture(scope="session")

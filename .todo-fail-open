@@ -1,0 +1,3 @@
+fail-open billing (fail the request / upload instead of shipping underpriced work)
+
+1. ingestJobPayload — two independent holes. SnapshotIngest error (or registry nil) is CaptureErr'd and the job is still inserted with no ingest/embed/vision pins; worker pins_from_payload is empty, specs resolve_pinned(None) to live default or config.py bootstrap (can mix embedding models into halfvec if dim matches). Empty createdBy omits actorUserId; _account_allows_ingest treats (not actor) as pass and _charge_ingest returns without billing. Fail the upload when snapshot or actor is missing rather than enqueueing.
