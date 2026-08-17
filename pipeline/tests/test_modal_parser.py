@@ -26,13 +26,15 @@ FAST_VERSION = modal_parser.PARSER_VERSIONS[modal_parser.ROUTE_FAST]
 def _descriptor(**overrides) -> dict:
     base = {
         "blob_path": "sources/blob_1.pdf",
-        "file_id": "f_1",
-        "source_etag": "etag-1",
-        "source_size": 123,
+        "source_sha256": "aa" * 32,
         "route": modal_parser.ROUTE_ACCURATE,
     }
     base.update(overrides)
-    return modal_parser.source_descriptor(**base)
+    return modal_parser.source_descriptor(
+        blob_path=base["blob_path"],
+        source_sha256=base["source_sha256"],
+        route=base["route"],
+    )
 
 
 def _artifact_zip(
@@ -77,17 +79,18 @@ def test_artifact_key_is_stable_and_versioned():
     key2, fingerprint2 = modal_parser.artifact_identity(descriptor)
 
     assert (key1, fingerprint1) == (key2, fingerprint2)
-    assert key1 == f"parsed/f_1/{ACCURATE_VERSION}/{fingerprint1}.zip"
+    assert (
+        key1
+        == f"parsed/{descriptor['source_sha256']}/{ACCURATE_VERSION}/{fingerprint1}.zip"
+    )
 
 
 def test_a_changed_source_addresses_a_different_artifact():
-    """The etag is what stops a re-upload under the same key replaying a stale
-    parse."""
+    """The source hash is what stops a different document replaying a stale parse."""
     _, original = modal_parser.artifact_identity(_descriptor())
-    _, reuploaded = modal_parser.artifact_identity(_descriptor(source_etag="etag-2"))
-    _, resized = modal_parser.artifact_identity(_descriptor(source_size=999))
+    _, reuploaded = modal_parser.artifact_identity(_descriptor(source_sha256="bb" * 32))
 
-    assert len({original, reuploaded, resized}) == 3
+    assert original != reuploaded
 
 
 def test_parse_method_participates_in_the_fingerprint(monkeypatch):

@@ -103,7 +103,7 @@ at the top of each section.
 | [`server/internal/pipeline/client_test.go`](../server/internal/pipeline/client_test.go) | Pipeline HTTP client success, error status, bad JSON, and connection refused. |
 | [`server/internal/ratelimit/classify_test.go`](../server/internal/ratelimit/classify_test.go) | Route class split (AI vs editor vs upload vs exempt) and default AI/burst/editor budgets. |
 | [`server/internal/sourceupload/rules_test.go`](../server/internal/sourceupload/rules_test.go) | Source kind-from-name map, upload validation (10/30 MB plan caps), caption-flag normalization, and policy list parsing. |
-| [`server/internal/models/registry_test.go`](../server/internal/models/registry_test.go) | Load-on-miss of an unseen `(key, version)`, a miss that never degrades to the current default, and ResolveUser requiring a non-empty enabled preference. |
+| [`server/internal/models/registry_test.go`](../server/internal/models/registry_test.go) | Load-on-miss of an unseen `(key, version)`, a miss that never degrades to the current default, ResolveUser requiring a non-empty enabled preference, and `EmbeddingDim` rejecting a config that declares no width. |
 
 ### HTTP API
 
@@ -133,11 +133,11 @@ at the top of each section.
 | File | About |
 | --- | --- |
 | [`server/internal/store/account_cascade_test.go`](../server/internal/store/account_cascade_test.go) | User delete splits ownership from authorship; chapter refs cannot cross workspaces. |
-| [`server/internal/store/blobs_test.go`](../server/internal/store/blobs_test.go) | Blob refcount deletion queue (source, parsed, caption paths), cancel-on-reference, clone survival, abandoned uploads. |
+| [`server/internal/store/blobs_test.go`](../server/internal/store/blobs_test.go) | Blob refcount deletion queue (source paths), caption cache surviving file delete, cancel-on-reference, clone survival, abandoned uploads. |
 | [`server/internal/store/collaboration_owner_test.go`](../server/internal/store/collaboration_owner_test.go) | Collab writes follow storage owner; active editors cannot grow over-quota materials. |
 | [`server/internal/store/contracts_test.go`](../server/internal/store/contracts_test.go) | Role/share/invite/comment/material JSON contracts and stable card-ID rewrite map. |
 | [`server/internal/store/credits_test.go`](../server/internal/store/credits_test.go) | Credit reserve/settle, settle idempotency, concurrent gate at remaining budget, sweep-then-late-settle, monthly rollover, billing credit counters, and actor-scoped usage report grouping. |
-| [`server/internal/store/chat_pin_test.go`](../server/internal/store/chat_pin_test.go) | Assistant message pin survives finalize; ingest job payload carries actor + embed/vision pins; empty model prefs rejected; new users get registry defaults. |
+| [`server/internal/store/chat_pin_test.go`](../server/internal/store/chat_pin_test.go) | Assistant message pin survives finalize; ingest job payload carries actor + ingest/vision pins and refuses to build without either an actor or a registry; a clone inherits the source workspace's embedding pin; empty chat/generate/editor prefs rejected; new users get registry defaults. |
 | [`server/internal/store/pricing_test.go`](../server/internal/store/pricing_test.go) | Same token counts on two models produce different credit micros; Pro reserve estimates scale. |
 | [`server/internal/store/material_revisions_test.go`](../server/internal/store/material_revisions_test.go) | Daily version overwrite, UTC rollover, tier retention, and downgrade pruning. |
 | [`server/internal/store/notifications_test.go`](../server/internal/store/notifications_test.go) | Notification recipient scoping, email outbox/leases, and category disable atomicity. |
@@ -160,13 +160,14 @@ See also [`pipeline-tests.md`](pipeline-tests.md) for disposable Postgres/Redis 
 | [`pipeline/tests/test_chunking.py`](../pipeline/tests/test_chunking.py) | Heading breadcrumbs, page/bbox regions, table/equation/figure handling, oversized-block splitting, CJK bigram tokenizer. |
 | [`pipeline/tests/test_generate.py`](../pipeline/tests/test_generate.py) | Cassette: even scope coverage, file filtering, and flashcard/quiz JSON surviving into the runner shape. |
 | [`pipeline/tests/test_ingest_query.py`](../pipeline/tests/test_ingest_query.py) | Cassette: index → search → grounded cited answer, re-index convergence, scope confinement, cross-document concepts, cascade teardown. |
-| [`pipeline/tests/test_figures.py`](../pipeline/tests/test_figures.py) | Offline: line diagrams surviving the flatness filters, recurring page furniture dropped by perceptual hash, bbox and duplicate handling, caption cache keyed by source identity (not parse route) so `content_hash` stays stable. |
-| [`pipeline/tests/test_ingest_worker.py`](../pipeline/tests/test_ingest_worker.py) | Offline: parse-mode → route selection, txt/md/json bypassing the parser, parse zip recorded before captioning, and captions reaching the chunker. |
-| [`pipeline/tests/test_registry_billing.py`](../pipeline/tests/test_registry_billing.py) | Per-model credits, registry miss never falls back, chat/generate pins do not fall back to the live default, ingest job pins stick after a default change, claim-time owner/actor matrix, ingest bills actor / rollup bills owner. |
-| [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py) | Artifact addressing/caching per route, per-route endpoints and versions, rejection of traversal, checksum, version and source mismatches, corrupt-cache recovery. |
-| [`pipeline/tests/test_retrieval_helpers.py`](../pipeline/tests/test_retrieval_helpers.py) | Tool scope narrowing, stable citation numbering, per-file diversity cap, JSON extraction and question normalization. |
+| [`pipeline/tests/test_figures.py`](../pipeline/tests/test_figures.py) | Offline: line diagrams surviving the flatness filters, recurring page furniture dropped by perceptual hash, bbox and duplicate handling, caption cache keyed by `source_sha256` (not parse route or blob path), prompt carrying the page but not the uploader's file name. |
+| [`pipeline/tests/test_ingest_worker.py`](../pipeline/tests/test_ingest_worker.py) | Offline: parse-mode → route selection, txt/md/json bypassing the parser, parse zip recorded before captioning, captions reaching the chunker, and the source hash coming from the bytes rather than the uploader-settable checksum header. |
+| [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py) | Artifact addressing/caching per route keyed by source sha256, per-route endpoints and versions, rejection of traversal, checksum, version and source mismatches, corrupt-cache recovery. |
+| [`pipeline/tests/test_registry_billing.py`](../pipeline/tests/test_registry_billing.py) | Per-model credits, registry miss never falls back, no surface (chat, generate, editor, ingest, embedding, vision, STT) resolves its own default in place of a pin, ingest job pins stick after a default change, claim-time owner/actor matrix including a job with no actor, ingest bills actor / rollup bills owner. |
+| [`pipeline/tests/test_retrieval_helpers.py`](../pipeline/tests/test_retrieval_helpers.py) | Tool scope narrowing, stable citation numbering, per-file diversity cap, JSON extraction and question normalization, file summaries retrying instead of storing a permanent blank and excluding the uploader's file name. |
 | [`pipeline/tests/test_locale.py`](../pipeline/tests/test_locale.py) | Account locale on chat/generate/editor prompts; continue-writing does not force UI language; ingest is out of scope. |
-| [`pipeline/tests/test_store_sql.py`](../pipeline/tests/test_store_sql.py) | Docker (no model calls): hybrid search halves, CJK recall, scoping, canonical duplicate ownership/deletion, concept co-mention, narrow summary invalidation, cascades. |
+| [`pipeline/tests/test_jobs.py`](../pipeline/tests/test_jobs.py) | Retryable vs terminal errors, backoff, and per-type attempt budget. |
+| [`pipeline/tests/test_store_sql.py`](../pipeline/tests/test_store_sql.py) | Docker (no model calls): hybrid search halves, CJK recall, scoping, canonical duplicate ownership/deletion, concept co-mention, narrow summary invalidation, cascades, job `not_before`/requeue/lease reclaim/rollup supersede, rollup requeue folding a unique-index collision instead of raising, only the claiming attempt writing its outcome, content-claim ownership (a waiter cannot refresh or drop the creator's claim, and never returns a claim it does not own), failed chapter rollup leaves dirty, donor copy across workspaces, donor copy without vectors when pins differ, artifact GC skips in-flight jobs. |
 
 ---
 

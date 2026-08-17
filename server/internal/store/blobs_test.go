@@ -63,8 +63,6 @@ func TestBlobRefcountQueuesOnlyUnreferencedObjects(t *testing.T) {
 	}
 	sharedPath := "sources/" + uid("blob")
 	soloPath := "sources/" + uid("blob")
-	parsedPath := "parsed/" + uid("blob")
-	captionPath := "captions/" + uid("blob")
 
 	// Two files naming the same source object, as a workspace clone produces.
 	first, err := s.CreateSourceReady(ctx, ws.ID, ownerID, "first.pdf", "pdf",
@@ -82,22 +80,16 @@ func TestBlobRefcountQueuesOnlyUnreferencedObjects(t *testing.T) {
 	}
 
 	if _, err := s.pool.Exec(ctx, `UPDATE files
-		SET blob_path=$2, parsed_blob_path=$3, caption_blob_path=$4 WHERE id=$1`,
-		second.ID, soloPath, parsedPath, captionPath); err != nil {
+		SET blob_path=$2 WHERE id=$1`,
+		second.ID, soloPath); err != nil {
 		t.Fatal(err)
 	}
-	// Repointing a file dereferences the old path and references both new ones.
+	// Repointing a file dereferences the old path and references the new one.
 	if got := blobRefCount(t, s, sharedPath); got != 1 {
 		t.Errorf("shared path refs after repoint = %d, want 1", got)
 	}
 	if got := blobRefCount(t, s, soloPath); got != 1 {
 		t.Errorf("solo path refs = %d, want 1", got)
-	}
-	if got := blobRefCount(t, s, parsedPath); got != 1 {
-		t.Errorf("parsed path refs = %d, want 1", got)
-	}
-	if got := blobRefCount(t, s, captionPath); got != 1 {
-		t.Errorf("caption path refs = %d, want 1", got)
 	}
 	if blobQueued(t, s, sharedPath) {
 		t.Error("shared path was queued while another file still references it")
@@ -119,13 +111,65 @@ func TestBlobRefcountQueuesOnlyUnreferencedObjects(t *testing.T) {
 	if err := s.DeleteWorkspace(ctx, ownerID, ws.ID); err != nil {
 		t.Fatal(err)
 	}
-	for _, path := range []string{soloPath, parsedPath, captionPath} {
+	for _, path := range []string{soloPath} {
 		if got := blobRefCount(t, s, path); got != 0 {
 			t.Errorf("%s refs after workspace delete = %d, want 0", path, got)
 		}
 		if !blobQueued(t, s, path) {
 			t.Errorf("%s was not queued by the workspace cascade", path)
 		}
+	}
+}
+
+func TestArtifactCacheRefsSurviveFileDelete(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_art")
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Cache workspace", ColorGreen, []TagRef{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sourcePath := "sources/" + uid("blob")
+	captionPath := "captions/" + uid("blob")
+	file, err := s.CreateSourceReady(ctx, ws.ID, ownerID, "doc.pdf", "pdf",
+		nil, "", 100, sourcePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO artifact_cache
+		(object_path, kind, source_sha256) VALUES ($1, 'captions', $2)`,
+		captionPath, "abc"); err != nil {
+		t.Fatal(err)
+	}
+	if got := blobRefCount(t, s, captionPath); got != 1 {
+		t.Fatalf("caption refs = %d, want 1", got)
+	}
+	if err := s.DeleteFile(ctx, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	if got := blobRefCount(t, s, captionPath); got != 1 {
+		t.Errorf("caption refs after file delete = %d, want 1", got)
+	}
+	if blobQueued(t, s, captionPath) {
+		t.Error("caption cache was queued when its file was deleted")
+	}
+	n, err := s.SweepArtifactCache(ctx, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = n
+	// TTL of 0 is clamped to defaults; force expiry by backdating.
+	if _, err := s.pool.Exec(ctx, `UPDATE artifact_cache SET last_used_at = now() - interval '200 days'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SweepArtifactCache(ctx, 90, 6); err != nil {
+		t.Fatal(err)
+	}
+	if got := blobRefCount(t, s, captionPath); got != 0 {
+		t.Errorf("caption refs after GC = %d, want 0", got)
+	}
+	if !blobQueued(t, s, captionPath) {
+		t.Error("caption cache was not queued by GC")
 	}
 }
 

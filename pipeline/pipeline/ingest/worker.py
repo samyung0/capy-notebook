@@ -35,9 +35,24 @@ from pathlib import Path
 
 from .. import obs, progress, registry, use_compatible_event_loop
 from ..config import cfg
+from ..jobs import (
+    CONTENT_CLAIM_STALE_S,
+    CONTENT_CLAIM_WAIT_S,
+    POLICIES,
+    RetryableError,
+    TerminalError,
+    backoff_s,
+    is_retryable,
+    policy_for,
+)
 from ..parse import figures, modal_parser
 from ..retrieval import indexing, store
-from ..retrieval.chunking import Chunk, chunk_content_list, chunk_markdown
+from ..retrieval.chunking import (
+    CHUNKER_VERSION,
+    Chunk,
+    chunk_content_list,
+    chunk_markdown,
+)
 from ..store import blobstore, db
 
 log = logging.getLogger("evo.worker")
@@ -56,11 +71,73 @@ _PARSE_ROUTES = {
 
 
 def _claim_one() -> dict | None:
+    leases = {name: p.lease_s for name, p in POLICIES.items()}
+    max_attempts = {name: p.max_attempts for name, p in POLICIES.items()}
+    backoff_base = {name: p.backoff_base_s for name, p in POLICIES.items()}
     with db.connect() as conn:
         with conn.cursor() as cur:
-            job = db.claim_job(cur)
+            reclaimed = db.reclaim_expired_leases(
+                cur, max_attempts=max_attempts, backoff_base_s=backoff_base
+            )
+            job = db.claim_job(cur, leases)
         conn.commit()
-        return job
+    for row in reclaimed:
+        log.warning(
+            "reclaimed stale %s job %s (%s)",
+            row["type"],
+            row["id"],
+            row["outcome"],
+        )
+        payload = row["payload"] or {}
+        # The reclaim is already committed and `job` is already claimed, so a
+        # failure here must not propagate: it would discard a job that is
+        # marked running and leave it to expire, burning an attempt on work
+        # nothing ever started.
+        try:
+            if row["outcome"] == "failed" and payload.get("fileId"):
+                _notify_ingest_terminal(
+                    payload.get("fileId"),
+                    payload.get("workspaceId"),
+                    row["id"],
+                    "ingest timed out after the worker died",
+                )
+            elif row["outcome"] == "failed" and row["type"] == "summaries_rollup":
+                ws = payload.get("workspaceId")
+                if ws:
+                    _notify_rollup_terminal(
+                        ws, "summary refresh timed out after the worker died"
+                    )
+        except Exception:
+            log.exception("could not announce reclaimed job %s", row["id"])
+    return job
+
+
+def _heartbeat_loop(
+    job_id: str, lease_s: int, attempt: int, stop: threading.Event
+) -> None:
+    while not stop.wait(min(30, max(lease_s // 3, 5))):
+        try:
+            with db.connect() as conn, conn.cursor() as cur:
+                db.heartbeat_job(cur, job_id, lease_s, attempt)
+                conn.commit()
+        except Exception:
+            log.warning("job heartbeat failed", exc_info=True)
+
+
+def _lost_claim(cur, job_id: str, attempt: int | None) -> bool:
+    """True when another worker has taken over, so this run must not write.
+
+    ``attempt`` is None for the lease reaper, which is acting on a row it has
+    already transitioned and therefore owns.
+    """
+    if attempt is None:
+        return False
+    if db.claim_is_current(cur, job_id, attempt):
+        return False
+    log.warning(
+        "job %s lost its claim (attempt %s); discarding outcome", job_id, attempt
+    )
+    return True
 
 
 def _finish_ok(
@@ -73,10 +150,13 @@ def _finish_ok(
     artifact_version: str | None = None,
     notification_code: str = "source_ready",
     indexed: bool = True,
+    attempt: int | None = None,
 ) -> None:
     notification = None
     with db.connect() as conn:
         with conn.cursor() as cur:
+            if _lost_claim(cur, job_id, attempt):
+                return
             db.set_file_status(cur, file_id, "ready")
             db.set_file_indexed(cur, file_id, indexed)
             if content_hash is not None:
@@ -102,9 +182,13 @@ def _finish_ok(
         progress.publish_notification(user_id, notification)
 
 
-def _finish_fail(file_id: str | None, job_id: str, error: str) -> None:
+def _finish_fail(
+    file_id: str | None, job_id: str, error: str, attempt: int | None = None
+) -> None:
     with db.connect() as conn:
         with conn.cursor() as cur:
+            if _lost_claim(cur, job_id, attempt):
+                return
             if file_id:
                 db.set_file_status(cur, file_id, "failed")
                 db.set_file_indexed(cur, file_id, False)
@@ -112,11 +196,83 @@ def _finish_fail(file_id: str | None, job_id: str, error: str) -> None:
         conn.commit()
 
 
-def _finish_job_ok(job_id: str) -> None:
+def _finish_job_ok(job_id: str, attempt: int | None = None) -> None:
     with db.connect() as conn:
         with conn.cursor() as cur:
+            if _lost_claim(cur, job_id, attempt):
+                return
             db.set_job(cur, job_id, "done")
         conn.commit()
+
+
+def _requeue(job: dict, error: str) -> str:
+    policy = policy_for(job.get("type") or "ingest")
+    payload = job.get("payload") or {}
+    attempt = int(job.get("attempts") or 1)
+    with db.connect() as conn, conn.cursor() as cur:
+        if _lost_claim(cur, job["id"], attempt):
+            return "stale"
+        outcome = db.requeue_job(
+            cur,
+            job_id=job["id"],
+            job_type=job.get("type") or "ingest",
+            workspace_id=payload.get("workspaceId"),
+            error=error,
+            backoff_s=backoff_s(policy, attempt),
+        )
+        conn.commit()
+    return outcome
+
+
+def _notify_ingest_terminal(
+    file_id: str | None,
+    ws: str | None,
+    job_id: str,
+    error: str,
+    attempt: int | None = None,
+) -> None:
+    if not file_id:
+        with db.connect() as conn, conn.cursor() as cur:
+            if _lost_claim(cur, job_id, attempt):
+                return
+            db.set_job(cur, job_id, "failed", error[:500])
+            conn.commit()
+        return
+    name = _read_name(file_id)
+    _finish_fail(file_id, job_id, error, attempt)
+    if ws:
+        progress.publish(
+            ws,
+            file_id,
+            "failed",
+            100,
+            status="failed",
+            message=error[:200],
+            indexed=False,
+        )
+    log.info("ingest %s failed terminally: %s", name, error)
+
+
+def _notify_rollup_terminal(workspace_id: str, error: str) -> None:
+    obs.capture_error(RuntimeError(error), stage="rollup_terminal")
+    notification = None
+    with db.connect() as conn, conn.cursor() as cur:
+        owner = db.workspace_owner_user_id(cur, workspace_id)
+        if owner:
+            notification = db.add_workspace_notification(
+                cur,
+                user_id=owner,
+                workspace_id=workspace_id,
+                kind="system",
+                data={
+                    "code": "summaries_rollup_failed",
+                    "message": "Workspace overview couldn't be refreshed; it will retry on the next change.",
+                },
+            )
+        conn.commit()
+    if notification is not None:
+        user_id = str(notification.pop("userId"))
+        progress.publish_notification(user_id, notification)
 
 
 def _read_name(file_id: str) -> str:
@@ -129,13 +285,21 @@ def _account_allows_ingest(file_id: str, payload: dict) -> bool:
 
     Actor lifecycle is not checked. Refusing a deletion_pending uploader would
     leave the owner holding an unindexed file whose bytes they already paid for.
+
+    A missing actor is refused rather than waved through. It used to mean "no
+    actor, nothing to check", which let a job parse, caption and embed on GPU
+    and against three providers while billing nobody. The gateway will not
+    enqueue without one, so reaching here without an actor means the row was
+    written around it.
     """
+    actor = payload.get("actorUserId") or ""
+    if not actor:
+        return False
     with db.connect() as conn, conn.cursor() as cur:
         owner = db.file_owner_user_id(cur, file_id)
         if not owner or not db.account_allows_ingest(cur, owner):
             return False
-        actor = payload.get("actorUserId") or ""
-        return (not actor) or db.actor_has_credits(cur, actor)
+        return db.actor_has_credits(cur, actor)
 
 
 def _read_text(path: str) -> str:
@@ -155,6 +319,54 @@ def _record_caption_blob(file_id: str, key: str) -> None:
     with db.connect() as conn, conn.cursor() as cur:
         db.set_file_caption_blob(cur, file_id, key)
         conn.commit()
+
+
+def _record_source_sha(file_id: str, source_sha256: str) -> None:
+    with db.connect() as conn, conn.cursor() as cur:
+        db.set_file_source_sha256(cur, file_id, source_sha256)
+        conn.commit()
+
+
+def _touch_or_upsert_artifact(
+    *,
+    object_path: str,
+    kind: str,
+    source_sha256: str,
+    size_bytes: int = 0,
+) -> None:
+    with db.connect() as conn, conn.cursor() as cur:
+        db.upsert_artifact_cache(
+            cur,
+            object_path=object_path,
+            kind=kind,
+            source_sha256=source_sha256,
+            size_bytes=size_bytes,
+        )
+        conn.commit()
+
+
+def _drop_parse_zip(object_path: str | None) -> None:
+    if not object_path:
+        return
+    with db.connect() as conn, conn.cursor() as cur:
+        db.drop_artifact_cache(cur, object_path)
+        conn.commit()
+
+
+def _file_exists(file_id: str) -> bool:
+    with db.connect() as conn, conn.cursor() as cur:
+        return db.file_exists(cur, file_id)
+
+
+def _pipeline_identity(*, kind: str, parse_mode: str, caption_images: bool) -> str:
+    if kind in _TEXT_KINDS:
+        return f"{cfg.parse_method}:direct:none:none:{CHUNKER_VERSION}"
+    route = _PARSE_ROUTES.get(parse_mode, modal_parser.ROUTE_ACCURATE)
+    cap = cfg.caption_version if caption_images else "none"
+    return (
+        f"{cfg.parse_method}:{route}:{modal_parser.parser_version(route)}"
+        f":{cap}:{CHUNKER_VERSION}"
+    )
 
 
 def _charge_ingest(file_id: str, workspace_id: str, actor_user_id: str) -> None:
@@ -288,6 +500,7 @@ async def _chunks_for(
     caption_images: bool,
     ws: str,
     file_id: str,
+    source_sha256: str,
 ) -> tuple[list[Chunk], str | None, str | None, str | None]:
     """Parse one source into chunks, plus its parse-artifact identity if any."""
     blob_path = payload.get("blobPath")
@@ -304,12 +517,10 @@ async def _chunks_for(
     route = _PARSE_ROUTES.get(parse_mode, modal_parser.ROUTE_ACCURATE)
     info = await asyncio.to_thread(blobstore.object_info, blob_path)
     if info is None:
-        raise RuntimeError("source blob is missing")
+        raise TerminalError("source blob is missing")
     descriptor = modal_parser.source_descriptor(
         blob_path=blob_path,
-        file_id=file_id,
-        source_etag=str(payload.get("sourceETag") or info["etag"]),
-        source_size=int(info["size"]),
+        source_sha256=source_sha256,
         route=route,
     )
     progress.publish(ws, file_id, "parsing", 15)
@@ -318,10 +529,16 @@ async def _chunks_for(
         content_list, artifact_key, fingerprint = await asyncio.to_thread(
             modal_parser.parse_to_bundle, descriptor, name, raw_dir
         )
-        source_etag = str(payload.get("sourceETag") or info["etag"])
         if artifact_key:
             # Record before captioning: a later vision failure must not leave
             # the zip untracked for the blob reaper.
+            await asyncio.to_thread(
+                _touch_or_upsert_artifact,
+                object_path=artifact_key,
+                kind="parse_zip",
+                source_sha256=source_sha256,
+                size_bytes=int(info.get("size") or 0),
+            )
             await asyncio.to_thread(
                 _record_parse_artifact,
                 file_id,
@@ -340,11 +557,16 @@ async def _chunks_for(
                 content_list=content_list,
                 raw_dir=raw_dir,
                 file_name=name,
-                blob_path=str(blob_path or ""),
-                source_etag=source_etag,
+                source_sha256=source_sha256,
             )
             log.info("captioned figures for %s: %s", name, counts)
             if counts.get("key"):
+                await asyncio.to_thread(
+                    _touch_or_upsert_artifact,
+                    object_path=str(counts["key"]),
+                    kind="captions",
+                    source_sha256=source_sha256,
+                )
                 await asyncio.to_thread(
                     _record_caption_blob, file_id, str(counts["key"])
                 )
@@ -376,13 +598,201 @@ async def process_ingest_job(job: dict) -> None:
     if caption_images is None:
         caption_images = cfg.caption_images
 
-    registry.set_job_pins(registry.pins_from_payload(payload))
+    try:
+        pins = registry.pins_from_payload(
+            payload, embedding=await _workspace_embedding_spec(ws)
+        )
+    except Exception as exc:  # noqa: BLE001 - refuse the job, do not guess
+        # Fail closed. Without pins this job would run on whatever this worker's
+        # surface defaults happen to be right now and settle at those rates, and
+        # the vectors would land in whichever space the default names — neither
+        # of which is what the upload was priced or scoped for. A failed file the
+        # user can retry is recoverable; silently underpriced work in the wrong
+        # vector space is not.
+        obs.capture_error(exc, stage="ingest_job_pins")
+        name = await asyncio.to_thread(_read_name, file_id)
+        note = f"{name}: ingest refused because its model pins could not be resolved."
+        await asyncio.to_thread(
+            _finish_fail,
+            file_id,
+            job["id"],
+            f"{note} {exc}",
+            int(job.get("attempts") or 1),
+        )
+        progress.publish(
+            ws, file_id, "failed", 100, status="failed", message=note, indexed=False
+        )
+        return
+
+    registry.set_job_pins(pins)
     try:
         await _process_ingest_job(
             job, payload, file_id, ws, kind, parse_mode, caption_images
         )
     finally:
         registry.set_job_pins(None)
+
+
+async def _workspace_embedding_spec(workspace_id: str) -> registry.ModelConfig:
+    """The embedding model this workspace was created with.
+
+    Read from the workspace rather than taken from the payload or the registry
+    default: the workspace's existing chunks are in this space, and there is no
+    reindex job that could move them into another one.
+    """
+    pin = await store.workspace_embedding_pin(workspace_id)
+    return registry.resolve_pinned(
+        pin["embedding_model_key"],
+        pin["embedding_model_version"],
+        registry.SURFACE_EMBEDDING,
+    )
+
+
+async def _wait_for_content(
+    association: dict,
+    *,
+    workspace_id: str,
+    file_id: str,
+    content_hash: str,
+    claim_job_id: str,
+    source_sha256: str | None = None,
+    pipeline_identity: str | None = None,
+) -> dict:
+    """Wait for another worker's claim, stealing it if that worker looks dead.
+
+    Returns only once this job owns the claim (``created``) or the content is
+    ``ready``; the caller indexes into the row afterwards, so returning on a
+    claim someone else holds would mean two workers writing the same content.
+    The job wall-clock timeout is the hard bound — raising after a short wait
+    would burn the waiter's attempt budget while a live creator is still
+    indexing.
+    """
+    loop = asyncio.get_running_loop()
+    steal_after = loop.time() + CONTENT_CLAIM_WAIT_S
+    while not association["created"] and not association["ready"]:
+        await asyncio.sleep(cfg.poll_interval)
+        status = await store.content_status(association["content_id"])
+        if status == "ready":
+            association["ready"] = True
+            break
+        if status is not None and loop.time() < steal_after:
+            continue
+        # The claim is either gone (the creator abandoned it) or stale enough
+        # that its owner looks dead. Either way, try to take it over; losing the
+        # race just means waiting on whoever won it.
+        await store.steal_stale_content(
+            workspace_id=workspace_id,
+            content_hash=content_hash,
+            stale_s=CONTENT_CLAIM_STALE_S,
+        )
+        association = await store.attach_file_content(
+            workspace_id=workspace_id,
+            file_id=file_id,
+            content_hash=content_hash,
+            source_sha256=source_sha256,
+            pipeline_identity=pipeline_identity,
+            claim_job_id=claim_job_id,
+        )
+    return association
+
+
+async def _reuse_donor(
+    *,
+    job: dict,
+    payload: dict,
+    file_id: str,
+    ws: str,
+    name: str,
+    donor: dict,
+    identity: str,
+    source_sha256: str,
+) -> bool:
+    """Copy a ready donor into this workspace. Returns False on a vanished donor."""
+    pin = await store.workspace_embedding_pin(ws)
+    copy_vectors = (
+        donor.get("embedding_model_key") == pin["embedding_model_key"]
+        and donor.get("embedding_model_version") == pin["embedding_model_version"]
+        and donor.get("embedding_dim") == pin["embedding_dim"]
+    )
+    attempt = int(job.get("attempts") or 1)
+    association = await store.attach_file_content(
+        workspace_id=ws,
+        file_id=file_id,
+        content_hash=donor["content_hash"],
+        source_sha256=source_sha256,
+        pipeline_identity=identity,
+        claim_job_id=job["id"],
+    )
+    association = await _wait_for_content(
+        association,
+        workspace_id=ws,
+        file_id=file_id,
+        content_hash=donor["content_hash"],
+        claim_job_id=job["id"],
+        source_sha256=source_sha256,
+        pipeline_identity=identity,
+    )
+    if association["ready"]:
+        note = f"{name}: identical content already indexed; reusing its index."
+        await store.mark_workspace_dirty(ws, file_id)
+        await asyncio.to_thread(
+            _finish_ok,
+            file_id,
+            name,
+            job["id"],
+            donor["content_hash"],
+            None,
+            None,
+            None,
+            "source_duplicate",
+            attempt=attempt,
+        )
+        progress.publish(
+            ws, file_id, "done", 100, status="ready", message=note, indexed=True
+        )
+        await asyncio.to_thread(
+            _charge_ingest, file_id, ws, payload.get("actorUserId") or ""
+        )
+        return True
+    copied = await store.copy_content_from_donor(
+        donor_id=donor["id"],
+        dest_content_id=association["content_id"],
+        dest_workspace_id=ws,
+        copy_vectors=copy_vectors,
+    )
+    if not copied:
+        await store.abandon_content(association["content_id"])
+        return False
+    try:
+        if copy_vectors:
+            await store.mark_content_ready(association["content_id"])
+            result = {"chunks": "copied", "donor": donor["id"]}
+        else:
+            result = await indexing.embed_copied_chunks(
+                workspace_id=ws, content_id=association["content_id"]
+            )
+        await store.mark_workspace_dirty(ws, file_id)
+    except BaseException:
+        await store.abandon_content(association["content_id"])
+        raise
+    await asyncio.to_thread(
+        _finish_ok,
+        file_id,
+        name,
+        job["id"],
+        donor["content_hash"],
+        None,
+        None,
+        None,
+        "source_duplicate",
+        attempt=attempt,
+    )
+    await asyncio.to_thread(
+        _charge_ingest, file_id, ws, payload.get("actorUserId") or ""
+    )
+    progress.publish(ws, file_id, "done", 100, status="ready", indexed=True)
+    log.info("indexed %s from donor: %s", name, result)
+    return True
 
 
 async def _process_ingest_job(
@@ -394,10 +804,13 @@ async def _process_ingest_job(
     parse_mode: str,
     caption_images: object,
 ) -> None:
+    attempt = int(job.get("attempts") or 1)
+    if not await asyncio.to_thread(_file_exists, file_id):
+        raise TerminalError("file no longer exists")
     name = await asyncio.to_thread(_read_name, file_id)
     if not await asyncio.to_thread(_account_allows_ingest, file_id, payload):
         note = f"{name}: ingest refused because the account is locked or over quota."
-        await asyncio.to_thread(_finish_fail, file_id, job["id"], note)
+        await asyncio.to_thread(_finish_fail, file_id, job["id"], note, attempt)
         progress.publish(
             ws, file_id, "failed", 100, status="failed", message=note, indexed=False
         )
@@ -405,8 +818,6 @@ async def _process_ingest_job(
     progress.publish(ws, file_id, "queued", 5)
 
     if parse_mode == "none" and kind not in _TEXT_KINDS:
-        # Safety net: the gateway skips job creation for parseMode=none, but a
-        # stray job must not fall through to a parser that cannot handle it.
         note = f"{name}: stored without parsing (not indexed for retrieval)."
         await asyncio.to_thread(
             _finish_ok,
@@ -415,11 +826,40 @@ async def _process_ingest_job(
             job["id"],
             notification_code="source_stored",
             indexed=False,
+            attempt=attempt,
         )
         progress.publish(
             ws, file_id, "done", 100, status="ready", message=note, indexed=False
         )
         return
+
+    blob_path = payload.get("blobPath")
+    if not blob_path:
+        raise TerminalError("source blob is missing")
+    try:
+        source_sha256 = await asyncio.to_thread(blobstore.sha256_object, blob_path)
+    except FileNotFoundError as exc:
+        raise TerminalError("source blob is missing") from exc
+    await asyncio.to_thread(_record_source_sha, file_id, source_sha256)
+    identity = _pipeline_identity(
+        kind=kind, parse_mode=parse_mode, caption_images=bool(caption_images)
+    )
+    donor = await store.find_ready_donor(
+        source_sha256=source_sha256, pipeline_identity=identity
+    )
+    if donor:
+        reused = await _reuse_donor(
+            job=job,
+            payload=payload,
+            file_id=file_id,
+            ws=ws,
+            name=name,
+            donor=donor,
+            identity=identity,
+            source_sha256=source_sha256,
+        )
+        if reused:
+            return
 
     chunks, artifact_key, fingerprint, artifact_version = await _chunks_for(
         payload=payload,
@@ -429,25 +869,29 @@ async def _process_ingest_job(
         caption_images=bool(caption_images),
         ws=ws,
         file_id=file_id,
+        source_sha256=source_sha256,
     )
     if not chunks:
-        raise RuntimeError("parse produced no indexable content")
+        raise RetryableError("parse produced no indexable content")
 
     digest = indexing.content_hash(chunks)
     association = await store.attach_file_content(
-        workspace_id=ws, file_id=file_id, content_hash=digest
+        workspace_id=ws,
+        file_id=file_id,
+        content_hash=digest,
+        source_sha256=source_sha256,
+        pipeline_identity=identity,
+        claim_job_id=job["id"],
     )
-    while not association["created"] and not association["ready"]:
-        # Another worker owns this content. Wait for its atomic ready marker;
-        # if it fails, its cleanup removes the row and this upload can claim it.
-        await asyncio.sleep(cfg.poll_interval)
-        status = await store.content_status(association["content_id"])
-        if status == "ready":
-            association["ready"] = True
-        elif status is None:
-            association = await store.attach_file_content(
-                workspace_id=ws, file_id=file_id, content_hash=digest
-            )
+    association = await _wait_for_content(
+        association,
+        workspace_id=ws,
+        file_id=file_id,
+        content_hash=digest,
+        claim_job_id=job["id"],
+        source_sha256=source_sha256,
+        pipeline_identity=identity,
+    )
 
     if association["ready"]:
         note = f"{name}: identical content already indexed; reusing its index."
@@ -462,6 +906,7 @@ async def _process_ingest_job(
             fingerprint,
             artifact_version,
             "source_duplicate",
+            attempt=attempt,
         )
         progress.publish(
             ws, file_id, "done", 100, status="ready", message=note, indexed=True
@@ -469,6 +914,7 @@ async def _process_ingest_job(
         await asyncio.to_thread(
             _charge_ingest, file_id, ws, payload.get("actorUserId") or ""
         )
+        await asyncio.to_thread(_drop_parse_zip, artifact_key)
         return
 
     try:
@@ -492,19 +938,38 @@ async def _process_ingest_job(
         artifact_key,
         fingerprint,
         artifact_version,
+        attempt=attempt,
     )
     await asyncio.to_thread(
         _charge_ingest, file_id, ws, payload.get("actorUserId") or ""
     )
+    await asyncio.to_thread(_drop_parse_zip, artifact_key)
     progress.publish(ws, file_id, "done", 100, status="ready", indexed=True)
     log.info("indexed %s: %s", name, result)
 
 
 async def process_rollup_job(job: dict) -> None:
     ws = (job["payload"] or {})["workspaceId"]
-    result = await indexing.rollup_summaries(ws)
-    await asyncio.to_thread(_finish_job_ok, job["id"])
-    await asyncio.to_thread(_charge_rollup, ws)
+    # A rollup carries no enqueue-time snapshot to inherit: it is queued by a
+    # database trigger with no user context, and every subsequent dirty folds
+    # into the one pending row. The worker is therefore the only thing that can
+    # choose a model here, so it resolves the ingest default once, explicitly,
+    # and both summarizing and settling read that same pin. Embedding is not
+    # needed — a rollup only rewrites prose.
+    pins = registry.JobPins(
+        ingest=await asyncio.to_thread(
+            registry.registry.default, registry.SURFACE_INGEST
+        )
+    )
+    registry.set_job_pins(pins)
+    try:
+        result = await indexing.rollup_summaries(ws)
+        await asyncio.to_thread(
+            _finish_job_ok, job["id"], int(job.get("attempts") or 1)
+        )
+        await asyncio.to_thread(_charge_rollup, ws)
+    finally:
+        registry.set_job_pins(None)
     log.info("workspace %s summary rollup: %s", ws, result)
 
 
@@ -555,10 +1020,11 @@ async def main_async() -> None:
     threading.Thread(
         target=registry.poll_forever, name="model-registry", daemon=True
     ).start()
+    # No models are reported: ingest and vision come from each job's payload and
+    # embedding from its workspace, so this process has no single answer for any
+    # of them.
     log.info(
-        "worker up — ingest_model=%s embedding=%s accurate=%s fast=%s",
-        cfg.ingest_model,
-        cfg.embedding_model,
+        "worker up — accurate=%s fast=%s",
         cfg.modal_parse_url or "(unset)",
         cfg.modal_fast_parse_url or "(unset)",
     )
@@ -573,6 +1039,16 @@ async def main_async() -> None:
                 continue
 
             if not job:
+                try:
+                    with db.connect() as conn, conn.cursor() as cur:
+                        db.sweep_artifact_cache(
+                            cur,
+                            caption_ttl_days=cfg.caption_cache_ttl_days,
+                            parse_zip_ttl_hours=cfg.parse_zip_ttl_hours,
+                        )
+                        conn.commit()
+                except Exception:
+                    log.warning("artifact cache sweep failed", exc_info=True)
                 await asyncio.sleep(cfg.poll_interval)
                 continue
 
@@ -589,33 +1065,72 @@ async def main_async() -> None:
                 job["id"],
                 extra={"job_id": job["id"]},
             )
-            payload = job.get("payload") or {}
+            policy = policy_for(job.get("type") or "ingest")
+            stop = threading.Event()
+            heartbeat = threading.Thread(
+                target=_heartbeat_loop,
+                args=(job["id"], policy.lease_s, int(job.get("attempts") or 1), stop),
+                name=f"job-lease-{job['id']}",
+                daemon=True,
+            )
+            heartbeat.start()
             try:
-                if job.get("type") == "summaries_rollup":
-                    await process_rollup_job(job)
-                else:
-                    await process_ingest_job(job)
+                async with asyncio.timeout(policy.timeout_s):
+                    if job.get("type") == "summaries_rollup":
+                        await process_rollup_job(job)
+                    else:
+                        await process_ingest_job(job)
                 log.info("job %s done", job["id"])
-            except Exception as exc:
-                log.exception("%s job %s failed", job.get("type"), job["id"])
-                fid = payload.get("fileId")
-                ws = payload.get("workspaceId")
+            except Exception as exc:  # noqa: BLE001 - retry vs terminal is decided below
                 try:
-                    await asyncio.to_thread(_finish_fail, fid, job["id"], str(exc))
+                    await _handle_job_failure(job, exc)
                 except Exception:
-                    log.exception("failed to record job failure")
-                if ws and fid:
-                    progress.publish(
-                        ws,
-                        fid,
-                        "failed",
-                        100,
-                        status="failed",
-                        message=str(exc)[:200],
-                        indexed=False,
-                    )
+                    # Bookkeeping for one failed job must not take the worker
+                    # down; the lease reaper is the backstop for this row.
+                    log.exception("could not record failure of job %s", job["id"])
+            finally:
+                stop.set()
     finally:
         await store.close_pool()
+
+
+async def _handle_job_failure(job: dict, exc: BaseException) -> None:
+    payload = job.get("payload") or {}
+    fid = payload.get("fileId")
+    ws = payload.get("workspaceId")
+    job_type = job.get("type") or "ingest"
+    policy = policy_for(job_type)
+    attempts = int(job.get("attempts") or 1)
+    if isinstance(exc, TimeoutError):
+        exc = RetryableError("job exceeded its wall-clock timeout")
+    log.exception("%s job %s failed", job_type, job["id"])
+    retry = is_retryable(exc) and attempts < policy.max_attempts
+    if retry:
+        outcome = await asyncio.to_thread(_requeue, job, str(exc))
+        log.info("job %s requeued (%s)", job["id"], outcome)
+        return
+    obs.capture_error(exc, stage=f"{job_type}_terminal")
+    try:
+        if job_type == "summaries_rollup":
+            await asyncio.to_thread(
+                _finish_job_fail_only, job["id"], str(exc), attempts
+            )
+            if ws:
+                await asyncio.to_thread(_notify_rollup_terminal, ws, str(exc))
+        else:
+            await asyncio.to_thread(
+                _notify_ingest_terminal, fid, ws, job["id"], str(exc), attempts
+            )
+    except Exception:
+        log.exception("failed to record job failure")
+
+
+def _finish_job_fail_only(job_id: str, error: str, attempt: int | None = None) -> None:
+    with db.connect() as conn, conn.cursor() as cur:
+        if _lost_claim(cur, job_id, attempt):
+            return
+        db.set_job(cur, job_id, "failed", error[:500])
+        conn.commit()
 
 
 def main() -> None:

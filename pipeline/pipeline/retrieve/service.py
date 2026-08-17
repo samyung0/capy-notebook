@@ -44,10 +44,11 @@ async def lifespan(app: FastAPI):
         target=registry.poll_forever, name="model-registry", daemon=True
     ).start()
     await store.pool()
+    # Embedding is deliberately absent: it is a per-workspace pin now, not a
+    # process-wide choice, so there is no single value to report here.
     log.info(
-        "retrieval up — query_model=%s embedding=%s tools=%s",
+        "retrieval up — query_model=%s tools=%s",
         cfg.query_model,
-        cfg.embedding_model,
         "on" if cfg.gateway_url else "read-only",
     )
     try:
@@ -163,11 +164,7 @@ def _sse(payload: dict) -> str:
 
 @app.get("/healthz")
 def healthz():
-    return {
-        "ok": True,
-        "query_model": cfg.query_model,
-        "embedding": cfg.embedding_model,
-    }
+    return {"ok": True, "query_model": cfg.query_model}
 
 
 async def _chat_events(req: ChatStreamReq, request: Request):
@@ -303,8 +300,14 @@ async def ai_command(req: CompleteReq):
 
 @app.post("/transcribe")
 async def transcribe(file: Annotated[UploadFile, File()]):
-    """Transcribe an uploaded audio blob via a Whisper-compatible STT provider."""
-    spec = registry.resolve_pinned(None, None, registry.SURFACE_STT)
+    """Transcribe an uploaded audio blob via a Whisper-compatible STT provider.
+
+    The one surface that still chooses its own model instead of being handed a
+    pin. It is safe only because transcription is billed on audio duration, so
+    the model does not affect the charge; both of those change together when STT
+    becomes user-selectable (see `.todo-stt-pin`).
+    """
+    spec = registry.registry.default(registry.SURFACE_STT)
     try:
         client = models.client_for(spec)
         data = await file.read()

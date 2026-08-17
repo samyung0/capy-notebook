@@ -22,6 +22,7 @@ type User struct {
 	Locale             string             `json:"locale"`
 	ChatModelKey       string             `json:"chatModelKey"`
 	GenerateModelKey   string             `json:"generateModelKey"`
+	EditorModelKey     string             `json:"editorModelKey"`
 	PlanTier           PlanTier           `json:"planTier"`
 	SubscriptionStatus SubscriptionStatus `json:"subscriptionStatus"`
 }

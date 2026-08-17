@@ -45,11 +45,11 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # (see match_on below) but DOES compare the request PATH and JSON body — so the
 # model names and each provider's base-URL *path* must be stable. These are also
 # the real endpoints, so recording reaches the live services.
+# The model ids themselves now come from model_configs rows (seeded by the
+# migration), not from env, so only the dimension and the provider base URLs are
+# pinned here.
 os.environ["EMBEDDING_DIM"] = os.environ.get("EMBEDDING_DIM", "2560")
-os.environ["EVO_MODEL_EMBEDDING"] = "qwen/qwen3-embedding-4b"
-os.environ["EVO_MODEL_EXTRACTION"] = "deepseek-v4-flash"
 os.environ["EVO_QUERY_MODEL"] = "deepseek-v4-flash"
-os.environ["EVO_MODEL_IMAGE_CAPTION"] = "gemini-3.1-flash-lite-preview"
 os.environ["OPENROUTER_BASE_URL"] = "https://openrouter.ai/api/v1"
 os.environ["DEEPSEEK_BASE_URL"] = "https://api.deepseek.com"
 os.environ["GEMINI_BASE_URL"] = (
@@ -330,8 +330,22 @@ class Workspace:
 
 @pytest.fixture
 def workspace(_test_infra) -> Workspace:
+    """A throwaway workspace, with the job pins a worker would be holding.
+
+    The embedding columns are left to their defaults, which the migration keeps
+    equal to the seeded embedding row — so the workspace is pinned to a real
+    model without the fixture having to resolve a registry.
+
+    Installing pins is not incidental setup: no surface resolves its own default
+    any more, so ``index_file`` and ``search`` raise without them. The tests call
+    those functions directly instead of going through ``process_ingest_job``, so
+    the fixture has to stand in for the part of the worker that reads the
+    workspace's embedding pin and snapshots the ingest and vision defaults.
+    """
     dsn = _test_infra
     import psycopg
+
+    from pipeline import registry
 
     workspace_id = f"ws_{secrets.token_hex(6)}"
     with psycopg.connect(dsn, autocommit=True) as conn:
@@ -339,9 +353,28 @@ def workspace(_test_infra) -> Workspace:
             "INSERT INTO workspaces (id, user_id, name, color) VALUES (%s, %s, %s, 'green')",
             (workspace_id, _SEED_USER, "Cassette workspace"),
         )
-    yield Workspace(dsn, workspace_id)
-    with psycopg.connect(dsn, autocommit=True) as conn:
-        conn.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
+        row = conn.execute(
+            "SELECT embedding_model_key, embedding_model_version FROM workspaces "
+            "WHERE id = %s",
+            (workspace_id,),
+        ).fetchone()
+
+    registry.registry.refresh()
+    registry.set_job_pins(
+        registry.JobPins(
+            ingest=registry.registry.default(registry.SURFACE_INGEST),
+            embedding=registry.resolve_pinned(
+                row[0], row[1], registry.SURFACE_EMBEDDING
+            ),
+            vision=registry.registry.default(registry.SURFACE_VISION),
+        )
+    )
+    try:
+        yield Workspace(dsn, workspace_id)
+    finally:
+        registry.set_job_pins(None)
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            conn.execute("DELETE FROM workspaces WHERE id = %s", (workspace_id,))
 
 
 @pytest.fixture

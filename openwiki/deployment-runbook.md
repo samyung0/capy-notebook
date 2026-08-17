@@ -227,6 +227,17 @@ Pick one:
    versioning on, the blob reaper's deletes only hide objects and storage grows
    without bound.
 
+Do **not** put a B2 lifecycle rule on `parsed/` or `captions/`. Those prefixes
+are owned by `artifact_cache` and the blob reaper: a lifecycle rule would
+delete objects the `blobs` table still believes are live. Caption entries
+expire by TTL-since-last-use (default 90 days); parse zips are dropped on
+successful ingest, with the same sweeper as an orphan reaper.
+
+Both TTLs come from `EVO_CAPTION_CACHE_TTL_DAYS` and `EVO_PARSE_ZIP_TTL_HOURS`.
+The gateway and the ingest worker each run the same sweep, so give both services
+the same values — whichever process sweeps first applies its own, and a
+disagreement means the configured TTL is not the one in effect.
+
 > B2 egress is **not** in `usage_events` — the browser fetches presigned URLs
 > directly and the gateway never sees the transfer. B2's own reporting is the
 > only source. Set a spend alert.
@@ -299,7 +310,55 @@ Pick one:
 
 ---
 
-## 9. Post-deploy verification
+## 9. Changing models in the registry
+
+Most surfaces are safe to retarget from the ops dashboard: chat, generate,
+editor, ingest and vision all resolve a pin per request or per job, so a new
+default applies to the next one and everything in flight keeps what it had.
+
+Embedding is not one of those, and neither is deleting any row.
+
+### Retargeting the embedding default
+
+Every workspace pins an embedding model at creation and keeps it for life, so
+a new default reaches **only workspaces created after the change**. Existing
+workspaces keep using their own. Nothing breaks and nothing is migrated. Before
+changing it, be sure you accept:
+
+- **The two populations diverge permanently.** There is no reindex job (see
+  [agentic-retrieval.md](agentic-retrieval.md)), so retrieval quality is now a
+  function of when a workspace was created. Anything you conclude from search
+  quality afterwards has to account for that.
+- **The old model must keep working forever.** Every existing workspace still
+  resolves it on every search and every upload. Its `model_configs` row must
+  never be deleted, and its provider must stay reachable — including its exact
+  `provider_model_id`. Deprecating an embedding *model* is fine only if you can
+  serve the same one elsewhere.
+- **Deprecating a dimension is not possible.** Widths are a schema commitment:
+  `rag_chunk_vectors_<dim>` and the check constraints on
+  `workspaces.embedding_dim` and `model_configs`. **Every width any workspace
+  points at must always have at least one enabled, reachable embedding model
+  behind it.** If a provider drops a model, replace it with another model of
+  the same width (self-hosted counts) rather than retiring the width.
+- **A new width is a migration, not a config change.** Add the
+  `rag_chunk_vectors_<dim>` table and its HNSW index, extend both check
+  constraints, and add the width to the allowlists in
+  `pipeline/pipeline/retrieval/store.py` and `server/internal/store/queries.go`.
+  Without the table, the check constraint rejects the model row — which is the
+  intended failure, since discovering a missing width at ingest time would mean
+  a workspace whose vectors have nowhere to go.
+
+### Disabling or deleting rows
+
+`enabled = false` is the safe control for chat/generate/editor: users holding
+that preference fail with `model_unavailable` rather than being silently
+downgraded, which is the intended behaviour. Rows are never deleted, because a
+pinned `(key, version)` is resolved forever — by assistant messages, by queued
+jobs, and by workspaces.
+
+---
+
+## 10. Post-deploy verification
 
 | Check | Expected |
 | --- | --- |

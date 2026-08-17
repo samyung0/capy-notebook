@@ -28,29 +28,219 @@ def uid(prefix: str) -> str:
 # ---------------------------------------------------------------- job queue
 
 
-def claim_job(cur) -> dict[str, Any] | None:
-    """Claim one pending ingest job atomically (FOR UPDATE SKIP LOCKED)."""
+def claim_job(cur, leases: dict[str, int]) -> dict[str, Any] | None:
+    """Claim one due pending job atomically (FOR UPDATE SKIP LOCKED)."""
+    ingest_lease = int(leases.get("ingest") or 180)
+    rollup_lease = int(leases.get("summaries_rollup") or 60)
     cur.execute(
         """
-        UPDATE jobs SET status='running', locked_at=now(), updated_at=now(), attempts=attempts+1
+        UPDATE jobs SET
+            status='running',
+            locked_at=now(),
+            updated_at=now(),
+            attempts=attempts+1,
+            lease_expires_at = now() + make_interval(secs =>
+                CASE type
+                    WHEN 'summaries_rollup' THEN %s
+                    ELSE %s
+                END)
         WHERE id = (
-            SELECT id FROM jobs WHERE status='pending'
+            SELECT id FROM jobs
+            WHERE status='pending'
+              AND (not_before IS NULL OR not_before <= now())
             ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
         )
-        RETURNING id, type, payload
-        """
+        RETURNING id, type, payload, attempts
+        """,
+        (rollup_lease, ingest_lease),
     )
     row = cur.fetchone()
     if not row:
         return None
-    return {"id": row[0], "type": row[1], "payload": row[2]}
+    return {"id": row[0], "type": row[1], "payload": row[2], "attempts": row[3]}
 
 
 def set_job(cur, job_id: str, status: str, error: str | None = None) -> None:
     cur.execute(
-        "UPDATE jobs SET status=%s, error=%s, updated_at=now() WHERE id=%s",
+        "UPDATE jobs SET status=%s, error=%s, updated_at=now(), lease_expires_at=NULL WHERE id=%s",
         (status, error, job_id),
     )
+
+
+def claim_is_current(cur, job_id: str, attempt: int) -> bool:
+    """True while the caller still holds the claim it took.
+
+    ``asyncio.wait_for`` is cooperative and a heartbeat can fail on a database
+    blip, so a worker whose lease expired may still be running: the reaper has
+    already re-pended the row and another worker may hold it. Writing the
+    outcome of an abandoned run would then overwrite the successor's state.
+
+    ``attempts`` is the fencing token because ``claim_job`` is the only writer
+    of it — neither ``requeue_job`` nor the reaper touches it — so the value
+    returned by a claim names that attempt for as long as it is live. The row
+    is locked so the reaper (``FOR UPDATE SKIP LOCKED``) leaves it alone while
+    the caller finishes writing.
+    """
+    cur.execute(
+        """
+        SELECT 1 FROM jobs
+        WHERE id=%s AND status='running' AND attempts=%s
+        FOR UPDATE
+        """,
+        (job_id, attempt),
+    )
+    return cur.fetchone() is not None
+
+
+def heartbeat_job(cur, job_id: str, lease_s: int, attempt: int) -> None:
+    cur.execute(
+        """
+        UPDATE jobs
+        SET locked_at=now(),
+            lease_expires_at=now() + make_interval(secs => %s),
+            updated_at=now()
+        WHERE id=%s AND status='running' AND attempts=%s
+        """,
+        (lease_s, job_id, attempt),
+    )
+    # Keep this job's own processing claim fresh so a waiter does not steal a
+    # live ingest. Only the creator may refresh it: a waiter attaches its file
+    # to the creator's content row, so refreshing by file would let a waiter
+    # keep a dead creator's claim alive and defeat the steal below.
+    cur.execute(
+        """
+        UPDATE rag_contents
+        SET updated_at = now()
+        WHERE claim_job_id = %s AND status = 'processing'
+        """,
+        (job_id,),
+    )
+
+
+def requeue_job(
+    cur,
+    *,
+    job_id: str,
+    job_type: str,
+    workspace_id: str | None,
+    error: str,
+    backoff_s: int,
+) -> str:
+    """Return 'pending', 'superseded', or 'failed' after a retryable error.
+
+    Rollup's unique pending index allows one pending job per workspace. If a
+    sibling is already pending, this row is marked done (superseded) and the
+    sibling rebuilds the dirty set.
+    """
+    if job_type == "summaries_rollup" and workspace_id:
+        row = None
+        try:
+            # The NOT EXISTS below reads a READ COMMITTED snapshot, so a sibling
+            # the rollup trigger commits between that read and this write is
+            # invisible and the index rejects the row instead. Same outcome
+            # either way, so the savepoint turns the violation into a fold.
+            with cur.connection.transaction():
+                cur.execute(
+                    """
+                    UPDATE jobs SET
+                        status='pending',
+                        error=%s,
+                        not_before=now() + make_interval(secs => %s),
+                        lease_expires_at=NULL,
+                        updated_at=now()
+                    WHERE id=%s
+                      AND NOT EXISTS (
+                          SELECT 1 FROM jobs sibling
+                          WHERE sibling.type = 'summaries_rollup'
+                            AND sibling.status = 'pending'
+                            AND sibling.id <> %s
+                            AND sibling.payload->>'workspaceId' = %s
+                      )
+                    RETURNING id
+                    """,
+                    (error[:500], backoff_s, job_id, job_id, workspace_id),
+                )
+                row = cur.fetchone()
+        except psycopg.errors.UniqueViolation:
+            row = None
+        if row is None:
+            set_job(cur, job_id, "done", "superseded: pending rollup already exists")
+            return "superseded"
+        return "pending"
+    cur.execute(
+        """
+        UPDATE jobs SET
+            status='pending',
+            error=%s,
+            not_before=now() + make_interval(secs => %s),
+            lease_expires_at=NULL,
+            updated_at=now()
+        WHERE id=%s
+        """,
+        (error[:500], backoff_s, job_id),
+    )
+    return "pending"
+
+
+def reclaim_expired_leases(
+    cur, *, max_attempts: dict[str, int], backoff_base_s: dict[str, int]
+) -> list[dict[str, Any]]:
+    """Turn stale running rows back into pending (or failed) jobs.
+
+    A dead worker never finishes; lease_expires_at is the only signal.
+    """
+    cur.execute(
+        """
+        SELECT id, type, payload, attempts, error
+        FROM jobs
+        WHERE status='running' AND lease_expires_at IS NOT NULL
+          AND lease_expires_at < now()
+        FOR UPDATE SKIP LOCKED
+        """
+    )
+    rows = cur.fetchall()
+    reclaimed: list[dict[str, Any]] = []
+    for job_id, job_type, payload, attempts, error in rows:
+        payload = payload or {}
+        if job_type == "ingest":
+            # The dead worker never ran abandon_content. Drop the claim it
+            # created so a waiter (or this job's retry) can recreate it. Keyed
+            # on the owning job, not on the file: a dead waiter's file points at
+            # the creator's row, and deleting that would cascade a live ingest's
+            # chunks away while it is still writing them.
+            cur.execute(
+                "DELETE FROM rag_contents WHERE claim_job_id = %s AND status = 'processing'",
+                (job_id,),
+            )
+        cap = int(max_attempts.get(job_type) or max_attempts.get("ingest") or 3)
+        note = (error or "lease expired").strip() or "lease expired"
+        if "lease expired" not in note:
+            note = f"{note}; lease expired"
+        outcome = "failed"
+        if attempts >= cap:
+            set_job(cur, job_id, "failed", note[:500])
+        else:
+            base = int(
+                backoff_base_s.get(job_type) or backoff_base_s.get("ingest") or 30
+            )
+            outcome = requeue_job(
+                cur,
+                job_id=job_id,
+                job_type=job_type,
+                workspace_id=payload.get("workspaceId"),
+                error=note,
+                backoff_s=base * (2 ** max(int(attempts) - 1, 0)),
+            )
+        reclaimed.append(
+            {
+                "id": job_id,
+                "type": job_type,
+                "payload": payload,
+                "attempts": attempts,
+                "outcome": outcome,
+            }
+        )
+    return reclaimed
 
 
 def set_file_status(cur, file_id: str, status: str) -> None:
@@ -126,10 +316,124 @@ def add_notification(
     }
 
 
+def add_workspace_notification(
+    cur,
+    *,
+    user_id: str,
+    workspace_id: str,
+    kind: str,
+    data: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Notify a user about workspace-level work (rollup has no file)."""
+    if not user_id:
+        return None
+    notification_id = uid("nt")
+    href = f"/workspaces/{workspace_id}"
+    cur.execute(
+        """INSERT INTO notifications
+            (id, user_id, kind, data, href, workspace_id)
+        VALUES (%s,%s,%s,%s,%s,%s)
+        RETURNING id, at""",
+        (notification_id, user_id, kind, Jsonb(data), href, workspace_id),
+    )
+    row = cur.fetchone()
+    return {
+        "at": row[1].isoformat(),
+        "data": data,
+        "href": href,
+        "id": row[0],
+        "kind": kind,
+        "userId": user_id,
+    }
+
+
+def upsert_artifact_cache(
+    cur,
+    *,
+    object_path: str,
+    kind: str,
+    source_sha256: str,
+    size_bytes: int = 0,
+) -> None:
+    if not object_path or not source_sha256:
+        return
+    cur.execute(
+        """
+        INSERT INTO artifact_cache
+            (object_path, kind, source_sha256, size_bytes, created_at, last_used_at)
+        VALUES (%s, %s, %s, %s, now(), now())
+        ON CONFLICT (object_path) DO UPDATE SET
+            kind = EXCLUDED.kind,
+            source_sha256 = EXCLUDED.source_sha256,
+            size_bytes = CASE
+                WHEN EXCLUDED.size_bytes > 0 THEN EXCLUDED.size_bytes
+                ELSE artifact_cache.size_bytes
+            END,
+            last_used_at = now()
+        """,
+        (object_path, kind, source_sha256, size_bytes),
+    )
+
+
+def touch_artifact_cache(cur, object_path: str) -> None:
+    if not object_path:
+        return
+    cur.execute(
+        "UPDATE artifact_cache SET last_used_at=now() WHERE object_path=%s",
+        (object_path,),
+    )
+
+
+def drop_artifact_cache(cur, object_path: str) -> None:
+    if not object_path:
+        return
+    cur.execute("DELETE FROM artifact_cache WHERE object_path=%s", (object_path,))
+
+
+def sweep_artifact_cache(
+    cur, *, caption_ttl_days: int, parse_zip_ttl_hours: int
+) -> int:
+    """Delete cold cache rows that no in-flight ingest still needs.
+
+    Routed through the artifact_cache trigger into pending_blob_deletions.
+    """
+    cur.execute(
+        """
+        DELETE FROM artifact_cache a
+        WHERE (
+                (a.kind = 'captions'
+                 AND a.last_used_at < now() - make_interval(days => %s))
+             OR (a.kind = 'parse_zip'
+                 AND a.last_used_at < now() - make_interval(hours => %s))
+            )
+          AND NOT EXISTS (
+              SELECT 1
+              FROM jobs j
+              JOIN files f ON f.id = j.payload->>'fileId'
+              WHERE j.status IN ('pending', 'running')
+                AND f.source_sha256 = a.source_sha256
+          )
+        """,
+        (caption_ttl_days, parse_zip_ttl_hours),
+    )
+    return cur.rowcount or 0
+
+
 def file_name(cur, file_id: str) -> str:
     cur.execute("SELECT name FROM files WHERE id=%s", (file_id,))
     row = cur.fetchone()
     return row[0] if row else file_id
+
+
+def file_exists(cur, file_id: str) -> bool:
+    cur.execute("SELECT 1 FROM files WHERE id=%s", (file_id,))
+    return cur.fetchone() is not None
+
+
+def set_file_source_sha256(cur, file_id: str, source_sha256: str) -> None:
+    cur.execute(
+        "UPDATE files SET source_sha256=%s WHERE id=%s", (source_sha256, file_id)
+    )
 
 
 def file_owner_user_id(cur, file_id: str) -> str | None:

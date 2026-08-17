@@ -141,6 +141,7 @@ function dateAt(dayOffset: number, hour: number, minute = 0): string {
 export const user: User = {
   chatModelKey: 'deepseek-flash',
   classLabel: 'Grade 11 · Science',
+  editorModelKey: 'deepseek-flash',
   email: 'kate@evonotes.app',
   generateModelKey: 'deepseek-flash',
   id: 'u_1',

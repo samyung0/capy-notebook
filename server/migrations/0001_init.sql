@@ -111,13 +111,18 @@ CREATE TABLE IF NOT EXISTS users (
   plan_tier             text NOT NULL DEFAULT 'free'
     CHECK (plan_tier IN ('free', 'pro')),
   locale                text NOT NULL DEFAULT 'en',
-  -- Per-surface chat/generate preference. Always a model_key, never NULL or
-  -- empty: populated from the registry surface default at account creation.
-  -- Ingest, embedding, and vision are operator-only and are never stored here.
+  -- Per-surface user model preference. Always a model_key, never NULL or empty:
+  -- populated from the registry surface default at account creation. Ingest,
+  -- embedding, vision and STT are operator-only and are never stored here.
   -- The value is a model_key, not a version: the version is resolved per
   -- request onto the assistant message (chat) or generate call.
   chat_model_key        text NOT NULL DEFAULT 'deepseek-flash',
   generate_model_key    text NOT NULL DEFAULT 'deepseek-flash',
+  -- Inline editor assistance (continue-writing, rewrite, the /complete
+  -- copilot). Far higher call volume per user than chat, and each call is short,
+  -- so this is the surface where an expensive choice costs the most relative to
+  -- the value delivered — worth watching if credit burn looks wrong.
+  editor_model_key      text NOT NULL DEFAULT 'deepseek-flash',
   -- Account lifecycle. deletion_requested_at starts the reactivation window;
   -- purge_after is when the purge job runs; deleted_at is set by the purge
   -- itself, after which the row is a scrubbed tombstone.
@@ -132,6 +137,7 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at            timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT users_chat_model_key_nonempty CHECK (chat_model_key <> ''),
   CONSTRAINT users_generate_model_key_nonempty CHECK (generate_model_key <> ''),
+  CONSTRAINT users_editor_model_key_nonempty CHECK (editor_model_key <> ''),
   CONSTRAINT users_purge_window_check
     CHECK (purge_after IS NULL OR deletion_requested_at IS NOT NULL),
   CONSTRAINT users_deleted_requires_request_check
@@ -171,10 +177,37 @@ CREATE TABLE IF NOT EXISTS workspaces (
   -- Role granted to link/public visitors who are not explicit members.
   share_role       text NOT NULL DEFAULT 'viewer',
   clone_count      int  NOT NULL DEFAULT 0,
+  -- The vector space this workspace's index lives in. Pinned once at creation
+  -- from the registry embedding default and never changed afterwards: there is
+  -- no reindex job, so ingest and query must keep resolving this exact pin for
+  -- the lifetime of the workspace. Both sides read it from here rather than
+  -- from a per-process default, which is what stops a redeploy or an operator
+  -- retarget from embedding a query in a different space than the chunks it is
+  -- compared against. Changing the registry default only affects workspaces
+  -- created afterwards.
+  --
+  -- A clone inherits the source workspace's pin instead of taking the current
+  -- default, because cloneRetrievalIndex copies vectors verbatim.
+  --
+  -- The default matches the seeded embedding row so fixtures and tests can
+  -- insert a workspace without wiring a registry. It is a self-consistent
+  -- choice, not a fallback: whatever value lands here is what ingest embeds
+  -- with, so a stale default yields an older space, never a mixed one.
+  embedding_model_key     text NOT NULL DEFAULT 'qwen-embed',
+  embedding_model_version int  NOT NULL DEFAULT 1,
+  -- Denormalized from the pinned config so both processes can pick the
+  -- rag_chunk_vectors_<dim> table without resolving the registry first, and so
+  -- the width is still readable if that config row is ever unreachable.
+  embedding_dim           int  NOT NULL DEFAULT 2560,
   created_at       timestamptz NOT NULL DEFAULT now(),
   last_accessed_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT workspaces_share_role_check
-    CHECK (share_role IN ('viewer', 'commenter', 'editor'))
+    CHECK (share_role IN ('viewer', 'commenter', 'editor')),
+  CONSTRAINT workspaces_embedding_pin_check
+    CHECK (embedding_model_key <> '' AND embedding_model_version > 0),
+  -- Every value here must have a rag_chunk_vectors_<dim> table below.
+  CONSTRAINT workspaces_embedding_dim_check
+    CHECK (embedding_dim IN (2560))
 );
 CREATE INDEX IF NOT EXISTS workspaces_user_idx ON workspaces(user_id);
 CREATE INDEX IF NOT EXISTS workspaces_privacy_idx ON workspaces(privacy) WHERE privacy = 'public';
@@ -218,14 +251,19 @@ CREATE TABLE IF NOT EXISTS files (
   blob_path             text,
   url                   text,
   content               text,
-  -- Durable parser artifacts (direct-to-B2 upload pipeline).
+  -- Parse-zip / caption object keys are owned by artifact_cache, not these
+  -- columns: a file delete must not reap a caption another upload can reuse.
+  -- Kept as identity/debug only; the blob-refcount trigger ignores them.
   parsed_blob_path      text,
   parsed_fingerprint    text,
   parsed_parser_version text,
-  -- Caption cache object; refcounted separately from the parse zip so a
-  -- re-parse can drop parsed_blob_path without recaptioning.
   caption_blob_path     text,
   source_etag           text,
+  -- sha256 of the uploaded bytes, written by the ingest worker before parse.
+  -- A ready rag_contents row with the same hash is a donor: copy its index
+  -- instead of paying for GPU again. Computed server-side from the object;
+  -- a client-asserted hash would let anyone claim a document they do not have.
+  source_sha256         text,
   -- sha256 of the parsed text, written by the ingest worker. Two uploads of the
   -- same document into one workspace are stored twice (they are two files the
   -- user can see and delete) but indexed once.
@@ -242,6 +280,7 @@ CREATE INDEX IF NOT EXISTS files_chapter_position_idx
   ON files(workspace_id, chapter_id, position);
 CREATE INDEX IF NOT EXISTS files_user_idx ON files(user_id);
 CREATE INDEX IF NOT EXISTS files_content_hash_idx ON files(workspace_id, content_hash);
+CREATE INDEX IF NOT EXISTS files_source_sha256_idx ON files(source_sha256);
 
 -- ============================================================================
 -- Materials — the universal Plate-document envelope for study artifacts
@@ -753,10 +792,24 @@ CREATE TABLE IF NOT EXISTS jobs (
   attempts   int NOT NULL DEFAULT 0,
   error      text,
   locked_at  timestamptz,
+  -- Claimable only once this instant has passed. Backoff after a retryable
+  -- failure lives here rather than as a sleep in the worker, so a restart
+  -- does not retry immediately.
+  not_before timestamptz,
+  -- Heartbeat deadline. A worker that dies mid-job leaves this in the past;
+  -- the reaper turns the row pending (or failed, once the attempt budget is
+  -- spent) instead of leaving it running forever.
+  lease_expires_at timestamptz,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status, created_at);
+CREATE INDEX IF NOT EXISTS jobs_claim_idx
+  ON jobs(status, created_at)
+  WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS jobs_lease_idx
+  ON jobs(lease_expires_at)
+  WHERE status = 'running';
 
 -- Summary rollups are debounced rather than queued per edit: moving ten files
 -- between chapters should rebuild the tree once. One pending job per workspace
@@ -781,9 +834,37 @@ CREATE TABLE IF NOT EXISTS rag_contents (
   workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   content_hash text NOT NULL,
   status       text NOT NULL DEFAULT 'processing' CHECK (status IN ('processing','ready')),
+  -- Which model actually produced the vectors under this content, as opposed to
+  -- workspaces.embedding_* which is the space the workspace is supposed to be
+  -- in. They agree by construction today; recording both is what makes a
+  -- disagreement detectable instead of showing up as bad search results. Null
+  -- until chunks are written (status='processing', or content with no
+  -- indexable passages).
+  embedding_model_key     text,
+  embedding_model_version int,
+  embedding_dim           int,
+  -- Pre-parse identity of the source bytes, plus the pipeline that turned
+  -- those bytes into chunk text. A later ingest of the same pair copies this
+  -- row's descendants into its own workspace instead of re-parsing.
+  source_sha256      text,
+  pipeline_identity  text,
+  -- The ingest job holding a status='processing' claim, null once ready. Other
+  -- files in the workspace with the same content_hash attach to this row and
+  -- wait on it, so the claim needs an owner: only the owner may keep it alive
+  -- (heartbeat) and only the owner's death may drop it (lease reaper).
+  claim_job_id       text,
+  updated_at         timestamptz NOT NULL DEFAULT now(),
   UNIQUE (workspace_id, content_hash),
   UNIQUE (id, workspace_id)
 );
+CREATE INDEX IF NOT EXISTS rag_contents_donor_idx
+  ON rag_contents (source_sha256, pipeline_identity)
+  WHERE status = 'ready';
+-- Drives the heartbeat refresh and the reaper's claim drop, both of which run
+-- on every worker poll.
+CREATE INDEX IF NOT EXISTS rag_contents_claim_idx
+  ON rag_contents (claim_job_id)
+  WHERE status = 'processing';
 
 CREATE TABLE IF NOT EXISTS rag_file_contents (
   file_id      text PRIMARY KEY,
@@ -821,17 +902,41 @@ CREATE TABLE IF NOT EXISTS rag_chunks (
   -- one column serves mixed-language corpora, which no built-in text search
   -- configuration can do.
   search       tsvector,
-  -- halfvec because 2560 dims (Qwen3-Embedding-4B) exceeds pgvector's 2000-dim
-  -- ceiling for plain vector HNSW. Changing EMBEDDING_DIM means changing this
-  -- and re-ingesting; the pipeline hard-fails on a mismatch rather than drift.
-  embedding    halfvec(2560),
   UNIQUE (content_id, chunk_idx)
 );
 CREATE INDEX IF NOT EXISTS rag_chunks_ws_idx ON rag_chunks(workspace_id);
 CREATE INDEX IF NOT EXISTS rag_chunks_content_idx ON rag_chunks(content_id);
 CREATE INDEX IF NOT EXISTS rag_chunks_search_idx ON rag_chunks USING gin(search);
-CREATE INDEX IF NOT EXISTS rag_chunks_embedding_idx
-  ON rag_chunks USING hnsw (embedding halfvec_cosine_ops);
+
+-- Vectors live beside the passage, one table per embedding width, because the
+-- width is part of the column type and pgvector cannot index a column whose
+-- dimension varies. Splitting only the vector keeps the lexical half of hybrid
+-- search (text, indexed_text, search, regions, pages) in one place — none of it
+-- depends on the embedding model.
+--
+-- The split isolates *dimensions*, not vector spaces: two different 2560-dim
+-- models share this table and its index. What guarantees a query is only ever
+-- compared against its own space is workspaces.embedding_model_key, which is
+-- fixed for the life of the workspace.
+--
+-- Adding a width means adding a table here, adding the value to the
+-- workspaces.embedding_dim and model_configs checks, and nothing else: existing
+-- workspaces keep pointing at their own table. Removing one is not supported —
+-- there is no reindex job (see openwiki/agentic-retrieval.md).
+CREATE TABLE IF NOT EXISTS rag_chunk_vectors_2560 (
+  chunk_id     text PRIMARY KEY REFERENCES rag_chunks(id) ON DELETE CASCADE,
+  -- Denormalized from the chunk so the vector scan can filter by workspace
+  -- without joining, which is what the hybrid search CTE does.
+  workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  -- halfvec because 2560 dims (Qwen3-Embedding-4B) exceeds pgvector's 2000-dim
+  -- ceiling for plain vector HNSW. The pipeline hard-fails on a dimension
+  -- mismatch rather than letting a short vector reach Postgres.
+  embedding    halfvec(2560) NOT NULL
+);
+CREATE INDEX IF NOT EXISTS rag_chunk_vectors_2560_ws_idx
+  ON rag_chunk_vectors_2560(workspace_id);
+CREATE INDEX IF NOT EXISTS rag_chunk_vectors_2560_embedding_idx
+  ON rag_chunk_vectors_2560 USING hnsw (embedding halfvec_cosine_ops);
 
 -- Summary + outline belong to canonical content, so duplicate logical files
 -- share the model output while retaining independent file lifecycles.
@@ -996,6 +1101,22 @@ CREATE TABLE IF NOT EXISTS blobs (
   ref_count   int NOT NULL CHECK (ref_count > 0),
   created_at  timestamptz NOT NULL DEFAULT now()
 );
+
+-- Platform-owned parse/caption objects, keyed by source identity rather than
+-- by a file row. File-row refcounting would reap a caption when the user
+-- deleted the file, which is exactly when a re-upload wants it.
+CREATE TABLE IF NOT EXISTS artifact_cache (
+  object_path    text PRIMARY KEY,
+  kind           text NOT NULL CHECK (kind IN ('parse_zip', 'captions')),
+  source_sha256  text NOT NULL,
+  size_bytes     bigint NOT NULL DEFAULT 0 CHECK (size_bytes >= 0),
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  last_used_at   timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS artifact_cache_source_idx
+  ON artifact_cache(source_sha256);
+CREATE INDEX IF NOT EXISTS artifact_cache_gc_idx
+  ON artifact_cache(kind, last_used_at);
 
 -- Objects whose last database reference is gone, waiting for the reaper to
 -- delete them from B2. Durable, so a failed or crashed delete is retried
@@ -1249,6 +1370,14 @@ CREATE TABLE IF NOT EXISTS model_configs (
   ),
   CONSTRAINT model_configs_default_for_check CHECK (
     is_default_for <@ ARRAY['chat','generate','editor','ingest','embedding','vision','stt']::text[]
+  ),
+  -- An embedding row must declare the width it emits, and that width must
+  -- already have a rag_chunk_vectors_<dim> table. Discovering a new width at
+  -- ingest time would mean a workspace whose vectors have nowhere to go, found
+  -- only once a user has uploaded into it.
+  CONSTRAINT model_configs_embedding_dim_check CHECK (
+    NOT ('embedding' = ANY(surfaces))
+    OR params->>'dimensions' IN ('2560')
   )
 );
 CREATE INDEX IF NOT EXISTS model_configs_enabled_idx
@@ -1264,9 +1393,15 @@ INSERT INTO model_registry_state (id, version) VALUES (true, 1)
 
 -- Bootstrap the models the product ships with. New versions are written
 -- from the ops dashboard registry grid; these rows are the 1x Flash
--- reference and the frozen embedding / vision / STT defaults. Changing
--- embedding or vision is not a hot-reload: it requires a process restart
--- and a reindex, and is not a normal operation.
+-- reference and the embedding / vision / STT defaults.
+--
+-- Retargeting the embedding default is not a hot reload and not a migration:
+-- each workspace pins its own embedding model at creation and keeps it, so a
+-- new default applies only to workspaces created afterwards. Existing
+-- workspaces keep resolving the row they were pinned to, which is why an
+-- embedding row that any workspace still points at must never be deleted and
+-- its provider must stay reachable. See the operator checklist in
+-- openwiki/deployment-runbook.md.
 INSERT INTO model_configs (
   model_key, version, display_name, provider_slug, base_url, provider_model_id,
   params, surfaces, micros_per_input_token, micros_per_output_token,
@@ -1571,8 +1706,10 @@ END;
 $$;
 
 -- One function for every table that names blob paths. The columns arrive as
--- trigger arguments and are read through to_jsonb, so files (two blob columns)
--- and editor_assets (one) share it. Row-level AFTER triggers fire on FK
+-- trigger arguments and are read through to_jsonb, so files (source blob) and
+-- editor_assets (one) share it. Parse zips and captions are owned by
+-- artifact_cache instead, so a file delete cannot reap a caption another
+-- upload of the same bytes still wants. Row-level AFTER triggers fire on FK
 -- cascades, which is the entire point: a workspace or user delete never runs
 -- handler code, and this is what keeps the bucket in step with it.
 CREATE OR REPLACE FUNCTION account_blob_refs()
@@ -1737,8 +1874,31 @@ AFTER INSERT OR UPDATE OR DELETE ON files
 FOR EACH ROW EXECUTE FUNCTION account_file_storage();
 DROP TRIGGER IF EXISTS files_blob_refs_after ON files;
 CREATE TRIGGER files_blob_refs_after
-AFTER INSERT OR UPDATE OF blob_path, parsed_blob_path OR DELETE ON files
-FOR EACH ROW EXECUTE FUNCTION account_blob_refs('blob_path', 'parsed_blob_path', 'caption_blob_path');
+AFTER INSERT OR UPDATE OF blob_path OR DELETE ON files
+FOR EACH ROW EXECUTE FUNCTION account_blob_refs('blob_path');
+
+-- Parse zips are dropped on success while a concurrent worker may still be
+-- downloading the same object, so unref waits 15 minutes. Caption GC can
+-- tolerate the same delay.
+CREATE OR REPLACE FUNCTION account_artifact_cache_refs()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  old_path text := CASE WHEN TG_OP = 'INSERT' THEN NULL ELSE OLD.object_path END;
+  new_path text := CASE WHEN TG_OP = 'DELETE' THEN NULL ELSE NEW.object_path END;
+BEGIN
+  IF old_path IS DISTINCT FROM new_path THEN
+    PERFORM blob_ref(new_path);
+    PERFORM blob_unref(old_path, interval '15 minutes');
+  END IF;
+  RETURN NULL;
+END;
+$$;
+DROP TRIGGER IF EXISTS artifact_cache_blob_refs_after ON artifact_cache;
+CREATE TRIGGER artifact_cache_blob_refs_after
+AFTER INSERT OR UPDATE OF object_path OR DELETE ON artifact_cache
+FOR EACH ROW EXECUTE FUNCTION account_artifact_cache_refs();
 
 DROP TRIGGER IF EXISTS upload_sessions_storage_owner_before ON upload_sessions;
 CREATE TRIGGER upload_sessions_storage_owner_before

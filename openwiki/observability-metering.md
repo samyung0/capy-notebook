@@ -170,15 +170,29 @@ enabled version of that key. The `{modelKey, modelVersion, displayName}` pair
 is written onto the **assistant message**. Settings changes apply to the next
 message in an existing thread. Generate resolves `users.generate_model_key`
 the same way per request. The browser cannot choose a model per message.
-Chat and generate preferences are edited in **Settings → LLM**
+Chat, generate and editor preferences are edited in **Settings → LLM**
 (`GET /api/models`, `PATCH /api/me/models`). Empty preference writes are
-rejected. Editor AI (`/ai/command`, `/ai/copilot`, `/complete/stream`) uses
-the registry's editor default and is not user-selectable. Embedding and vision
-are **not** hot-reloadable: ingest jobs are *supposed* to pin those versions at
-enqueue (`ingestJobPayload`), and query-time embed uses the process-start
-snapshot, because a same-dimension model swap would mix vector spaces with no
-error. A pin or preference that cannot be loaded fails the request
-(`model_unavailable`); there is no Flash fallback.
+rejected, and a `PATCH` only touches the surfaces it names. Editor AI
+(`/ai/command`, `/ai/copilot`, `/complete/stream`) resolves
+`users.editor_model_key` the same way chat does. It is the highest-call-volume
+surface per user, so it is the one where an expensive choice shows up first in
+credit burn.
+
+Ingest and vision are pinned onto the job at enqueue (`ingestJobPayload`),
+because their defaults are hot-reloadable and a queued job may outlive one.
+Embedding is not on the job: it belongs to the workspace
+(`workspaces.embedding_model_key`) for that workspace's lifetime, and both
+ingest and query read it from there. See
+[agentic-retrieval.md](agentic-retrieval.md) for why that is not a normal
+preference.
+
+Nothing resolves a surface default on the way to a provider call. `resolve_pinned`
+in the pipeline requires an exact `(key, version)` for every surface, and a pin
+or preference that cannot be loaded fails the request (`model_unavailable`) or
+the job. There is no Flash fallback. The one remaining exception is `/transcribe`,
+which still picks the STT default itself; it is safe only because transcription
+is priced per second of audio rather than per token, and both change together
+(`.todo-stt-pin`).
 
 Per-model credit multipliers live on the config row. The 1x reference is DeepSeek
 Flash (250 / 1000 micros per input/output token). USD columns are
@@ -371,21 +385,31 @@ Worth knowing before trusting a dashboard:
   never sees the transfer. Only B2's own reporting has it.
 - **Aborted streams.** Settle at zero (see above), so real spend slightly exceeds
   the ledger.
-- **Ingest enqueue without pins (`ingestJobPayload`).** Two independent
-  holes, both fail-open. (1) `SnapshotIngest` errors (or `s.registry == nil`)
-  are `CaptureErr`'d / skipped and the job is still inserted with no
-  `ingestModelKey` / embedding / vision fields. The worker's
-  `pins_from_payload` then yields empty `JobPins`, so `ingest_spec` /
-  `embedding_spec` / `vision_spec` `resolve_pinned(None)` — current default or
-  `config.py` bootstrap. A mid-flight default swap, or a worker that
-  bootstraps a different embedding id than the gateway intended, writes into
-  the live `halfvec` column with no type error if the dimension matches.
-  (2) A missing `actorUserId` (empty `createdBy`) is treated as "no actor" by
-  `_account_allows_ingest` (`(not actor) or actor_has_credits`) **and** by
-  `_charge_ingest` (early return). Parse still runs; nobody is billed. Fail
-  the upload when snapshot or actor is missing rather than shipping the job.
 - **The gateway's in-process SSE notification cap** (100 global / 6 per user) is
   still per-replica and unrelated to the Redis limiter.
+- **Reindexing a workspace into a different embedding model.** Not implemented,
+  deliberately: see [agentic-retrieval.md](agentic-retrieval.md).
+- **Ingest/rollup retries.** A retried ingest that hits the parse-zip or caption
+  cache is not billed for GPU/vision a second time; a retry that re-embeds is.
+  A stream of lease-reclaimed jobs after a worker crash can still over-count
+  if the original process was alive and writing. Heartbeat + a lease well
+  above typical duration is the mitigation.
+
+Ingest enqueue used to be listed here as two fail-open billing holes and now
+fails closed instead, which is worth knowing because the failure is visible to
+users. `ingestJobPayload` returns an error — and `CreateSourceWithJob` /
+`completeSourceUpload` roll back their transaction — when there is no
+`actorUserId`, no registry, or no resolvable ingest/vision default. The worker
+does the same at claim time: `_account_allows_ingest` refuses a job with no
+actor, and a job whose pins do not resolve is failed with
+`stage=ingest_job_pins` rather than run. So an upload can now fail where it
+previously succeeded, and the cause is registry state, not the file.
+
+The reasoning: the alternative was the most expensive path in the product (GPU
+parse, captions, embeddings, three summarization passes) running against
+whichever defaults the worker happened to hold, settling at those rates or at
+nothing. An upload the user can retry is recoverable; unpriced work is not, and
+the likelihood grew every time the registry was reconfigured.
 
 ---
 

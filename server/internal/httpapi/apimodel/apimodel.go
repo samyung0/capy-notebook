@@ -96,9 +96,12 @@ type ModelsResponse struct {
 	DefaultKey  string        `json:"defaultKey"`
 }
 
+// SetModelPrefsReq patches one or more surface preferences. Omitted fields are
+// left as they are, so a picker on one surface cannot reset another.
 type SetModelPrefsReq struct {
 	ChatModelKey     *string `json:"chatModelKey,omitempty"`
 	GenerateModelKey *string `json:"generateModelKey,omitempty"`
+	EditorModelKey   *string `json:"editorModelKey,omitempty"`
 }
 
 // SourceUploadPolicy describes the server-owned file allowlist and parser

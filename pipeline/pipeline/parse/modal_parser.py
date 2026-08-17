@@ -76,14 +76,12 @@ def _endpoint(route: str) -> str:
 
 
 def source_descriptor(
-    *, blob_path: str, file_id: str, source_etag: str, source_size: int, route: str
+    *, blob_path: str, source_sha256: str, route: str
 ) -> dict[str, Any]:
     return {
         "schema": SOURCE_DESCRIPTOR_SCHEMA,
         "blob_path": blob_path,
-        "file_id": file_id,
-        "source_etag": source_etag,
-        "source_size": source_size,
+        "source_sha256": source_sha256,
         "route": route,
     }
 
@@ -91,19 +89,10 @@ def source_descriptor(
 def artifact_identity(descriptor: Mapping[str, Any]) -> tuple[str, str]:
     route = str(descriptor.get("route") or ROUTE_ACCURATE)
     version = parser_version(route)
-    identity = ":".join(
-        [
-            str(descriptor.get("blob_path") or ""),
-            str(descriptor.get("source_etag") or ""),
-            str(descriptor.get("source_size") or ""),
-            cfg.parse_method,
-            route,
-            version,
-        ]
-    )
+    source_sha256 = str(descriptor.get("source_sha256") or "")
+    identity = f"{source_sha256}:{cfg.parse_method}:{route}:{version}"
     fingerprint = hashlib.sha256(identity.encode()).hexdigest()
-    file_id = str(descriptor.get("file_id") or "unknown")
-    return f"parsed/{file_id}/{version}/{fingerprint}.zip", fingerprint
+    return f"parsed/{source_sha256}/{version}/{fingerprint}.zip", fingerprint
 
 
 def _request_artifact(

@@ -50,6 +50,7 @@ import type {
   MaterialRef,
   MaterialRevision,
   MaterialUpdateResult,
+  ModelSurface,
   ModelsResponse,
   NotificationCount,
   NotificationPage,
@@ -119,16 +120,14 @@ export const meQuery = () =>
 export const useMe = (options?: QueryUiOptions) =>
   useQuery({ ...meQuery(), meta: queryMeta(options) });
 
-export const modelsQuery = (surface: 'chat' | 'generate' | 'editor') =>
+export const modelsQuery = (surface: ModelSurface) =>
   queryOptions({
     queryFn: () =>
       api.get<ModelsResponse>(`/models?surface=${encodeURIComponent(surface)}`),
     queryKey: qk.models(surface),
   });
-export const useModels = (
-  surface: 'chat' | 'generate' | 'editor',
-  options?: QueryUiOptions
-) => useQuery({ ...modelsQuery(surface), meta: queryMeta(options) });
+export const useModels = (surface: ModelSurface, options?: QueryUiOptions) =>
+  useQuery({ ...modelsQuery(surface), meta: queryMeta(options) });
 
 export function useSetModelPrefs() {
   const qc = useQueryClient();

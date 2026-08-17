@@ -1,0 +1,23 @@
+stt: user preference + pinning (deferred, low urgency)
+
+/transcribe is the one surface that still resolves its own default at call time
+(`registry.registry.default(SURFACE_STT)` in retrieval/service.py). Every other
+surface either carries a pin from the gateway (chat/generate/editor), from the
+job payload (ingest, vision), or from the workspace (embedding).
+
+Why it is not a billing hole today: CreditsForTranscribe prices per second of
+audio, not per token, and it does not read the model at all. So a default that
+moves mid-request changes which model runs but not what the user is charged, and
+the charge stays correct either way. That stops being true the moment STT rates
+become per-model — the price and the pin have to land in the same change.
+
+To do, when STT becomes user-selectable:
+
+1. users.stt_model_key (+ default, + check), like editor_model_key.
+2. Gateway resolves it and hands the pin to /transcribe, the way chat does.
+3. resolve_pinned on the pipeline side (it is already strict; just stop calling
+   .default()).
+4. Price per model in CreditsForTranscribe, keeping duration as the unit.
+5. Settings → LLM picker + ModelPicker surface, messages/{en,zh}.json.
+6. Ops dashboard: STT joins the user-facing keys that a deprecation must remap
+   (see todo-ops-dashboard §6.3).

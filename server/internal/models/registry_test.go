@@ -98,6 +98,34 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 	}
 }
 
+// EmbeddingDim picks which rag_chunk_vectors_<dim> table a workspace's vectors
+// go in, so a config that cannot answer has to error rather than return zero.
+// Guessing a width would put vectors of one size in another size's table, or
+// give a new workspace a pin it can never search with.
+func TestEmbeddingDimRequiresADeclaredWidth(t *testing.T) {
+	_, reg := openRegistry(t)
+	ctx := context.Background()
+	embed, err := reg.Default(ctx, SurfaceEmbedding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dim, err := embed.EmbeddingDim()
+	if err != nil {
+		t.Fatalf("seeded embedding default declares no dimensions: %v", err)
+	}
+	if dim != 2560 {
+		t.Fatalf("dim %d has no vector table", dim)
+	}
+
+	chat, err := reg.Default(ctx, SurfaceChat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := chat.EmbeddingDim(); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("a non-embedding config must not report a width, got %v", err)
+	}
+}
+
 func TestResolveUserRequiresAnEnabledPreference(t *testing.T) {
 	_, reg := openRegistry(t)
 	ctx := context.Background()

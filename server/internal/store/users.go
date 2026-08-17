@@ -41,11 +41,12 @@ func (s *Store) Me(ctx context.Context, userID string) (User, error) {
 	var u User
 	row := s.pool.QueryRow(ctx, `SELECT id, name, COALESCE(email,''), COALESCE(avatar_url,''),
 		COALESCE(class_label,''), streak, locale,
-		chat_model_key, generate_model_key,
+		chat_model_key, generate_model_key, editor_model_key,
 		plan_tier, subscription_status
 		FROM users WHERE id=$1`, userID)
 	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.AvatarURL, &u.ClassLabel, &u.Streak,
-		&u.Locale, &u.ChatModelKey, &u.GenerateModelKey, &u.PlanTier, &u.SubscriptionStatus)
+		&u.Locale, &u.ChatModelKey, &u.GenerateModelKey, &u.EditorModelKey,
+		&u.PlanTier, &u.SubscriptionStatus)
 	if isNoRows(err) {
 		return u, ErrNotFound
 	}
@@ -60,41 +61,46 @@ func (s *Store) SetLocale(ctx context.Context, userID, locale string) error {
 	return err
 }
 
-// SetModelPrefs stores the user's chat/generate preference. Omitted fields are
-// left unchanged so a picker on one surface cannot wipe the other. Empty
-// strings are rejected: every account always has a concrete key, populated
-// from the registry default at insert. The key is validated against enabled
-// configs that advertise the surface; an unknown key is rejected rather than
+// SetModelPrefs stores the user's chat/generate/editor preference. Omitted
+// fields are left unchanged so a picker on one surface cannot wipe another.
+// Empty strings are rejected: every account always has a concrete key, populated
+// from the registry default at insert. Each key is validated against enabled
+// configs that advertise its surface; an unknown key is rejected rather than
 // stored and silently falling back later.
-func (s *Store) SetModelPrefs(ctx context.Context, userID string, chatKey, generateKey *string) error {
-	if chatKey != nil {
-		if *chatKey == "" {
+func (s *Store) SetModelPrefs(ctx context.Context, userID string, chatKey, generateKey, editorKey *string) error {
+	for _, pref := range []struct {
+		key     *string
+		surface string
+	}{
+		{chatKey, SurfaceChat},
+		{generateKey, SurfaceGenerate},
+		{editorKey, SurfaceEditor},
+	} {
+		if pref.key == nil {
+			continue
+		}
+		if *pref.key == "" {
 			return ErrModelKeyRequired
 		}
-		if err := s.assertModelKey(ctx, *chatKey, "chat"); err != nil {
+		if err := s.assertModelKey(ctx, *pref.key, pref.surface); err != nil {
 			return err
 		}
 	}
-	if generateKey != nil {
-		if *generateKey == "" {
-			return ErrModelKeyRequired
+	deref := func(p *string) string {
+		if p == nil {
+			return ""
 		}
-		if err := s.assertModelKey(ctx, *generateKey, "generate"); err != nil {
-			return err
-		}
-	}
-	chatVal, genVal := "", ""
-	if chatKey != nil {
-		chatVal = *chatKey
-	}
-	if generateKey != nil {
-		genVal = *generateKey
+		return *p
 	}
 	_, err := s.pool.Exec(ctx, `UPDATE users SET
 		chat_model_key = CASE WHEN $2 THEN $3 ELSE chat_model_key END,
 		generate_model_key = CASE WHEN $4 THEN $5 ELSE generate_model_key END,
+		editor_model_key = CASE WHEN $6 THEN $7 ELSE editor_model_key END,
 		updated_at = now()
-		WHERE id=$1`, userID, chatKey != nil, chatVal, generateKey != nil, genVal)
+		WHERE id=$1`, userID,
+		chatKey != nil, deref(chatKey),
+		generateKey != nil, deref(generateKey),
+		editorKey != nil, deref(editorKey))
 	return err
 }
 
@@ -114,27 +120,27 @@ func (s *Store) assertModelKey(ctx context.Context, key, surface string) error {
 	return nil
 }
 
-// accountModelPrefs is the pair written onto a brand-new user row. The
-// registry surface default is the source of truth (ops registry grid);
-// deepseek-flash is only the last resort when this process has no registry
-// (tests that insert users without wiring one).
-func (s *Store) accountModelPrefs(ctx context.Context) (chat, generate string, err error) {
+// accountModelPrefs is the set written onto a brand-new user row. The registry
+// surface default is the source of truth (ops registry grid); deepseek-flash is
+// only the last resort when this process has no registry (tests that insert
+// users without wiring one).
+func (s *Store) accountModelPrefs(ctx context.Context) (chat, generate, editor string, err error) {
 	const fallback = "deepseek-flash"
 	if s.registry == nil {
-		return fallback, fallback, nil
+		return fallback, fallback, fallback, nil
 	}
-	chatPin, err := s.registry.DefaultPin(models.SurfaceChat)
-	if err != nil {
-		return "", "", err
+	keys := make([]string, 0, 3)
+	for _, surface := range []string{models.SurfaceChat, models.SurfaceGenerate, models.SurfaceEditor} {
+		pin, err := s.registry.DefaultPin(surface)
+		if err != nil {
+			return "", "", "", err
+		}
+		if pin.Key == "" {
+			return "", "", "", ErrModelUnavailable
+		}
+		keys = append(keys, pin.Key)
 	}
-	genPin, err := s.registry.DefaultPin(models.SurfaceGenerate)
-	if err != nil {
-		return "", "", err
-	}
-	if chatPin.Key == "" || genPin.Key == "" {
-		return "", "", ErrModelUnavailable
-	}
-	return chatPin.Key, genPin.Key, nil
+	return keys[0], keys[1], keys[2], nil
 }
 
 // UpsertUserFromClerk inserts or updates a user. The returned bool is true only
@@ -154,12 +160,13 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 		name = "User"
 	}
 	var created bool
-	chatKey, genKey, err := s.accountModelPrefs(ctx)
+	chatKey, genKey, editorKey, err := s.accountModelPrefs(ctx)
 	if err != nil {
 		return false, err
 	}
-	err = s.pool.QueryRow(ctx, `INSERT INTO users (id, name, email, avatar_url, chat_model_key, generate_model_key)
-		VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6)
+	err = s.pool.QueryRow(ctx, `INSERT INTO users
+			(id, name, email, avatar_url, chat_model_key, generate_model_key, editor_model_key)
+		VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7)
 		ON CONFLICT (id) DO UPDATE SET
 			name=EXCLUDED.name,
 			email=EXCLUDED.email,
@@ -167,7 +174,7 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 			updated_at=now()
 		WHERE users.deleted_at IS NULL
 		RETURNING (xmax = 0)`,
-		id, name, email, avatarURL, chatKey, genKey).Scan(&created)
+		id, name, email, avatarURL, chatKey, genKey, editorKey).Scan(&created)
 	// The WHERE clause suppresses the RETURNING row for a tombstone, which is
 	// not an error: the account exists and stays scrubbed.
 	if isNoRows(err) {

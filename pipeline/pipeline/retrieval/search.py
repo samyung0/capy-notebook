@@ -13,6 +13,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from .. import registry
 from ..config import cfg
 from . import models, store
 from .chunking import search_query_terms
@@ -91,7 +92,17 @@ async def search(
     expand: bool = True,
 ) -> list[Passage]:
     top_k = top_k or cfg.search_top_k
-    vectors = await models.embed([query])
+    # The query has to be embedded by the same model as the chunks it will be
+    # compared against, and that is a property of the workspace rather than of
+    # this process. Reading it per search costs one indexed primary-key lookup
+    # and removes the possibility of a redeploy silently changing vector spaces.
+    pin = await store.workspace_embedding_pin(workspace_id)
+    spec = registry.resolve_pinned(
+        pin["embedding_model_key"],
+        pin["embedding_model_version"],
+        registry.SURFACE_EMBEDDING,
+    )
+    vectors = await models.embed([query], spec=spec)
     if not vectors:
         return []
     rows = await store.hybrid_search(
@@ -100,6 +111,7 @@ async def search(
         terms=search_query_terms(query),
         file_ids=file_ids,
         candidates=cfg.search_candidates,
+        embedding_dim=pin["embedding_dim"],
     )
     passages = [Passage.from_row(row) for row in rows]
     passages = await _rerank(query, passages)

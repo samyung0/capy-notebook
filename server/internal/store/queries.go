@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/evonotes/server/internal/materialdoc"
+	"github.com/evonotes/server/internal/models"
 )
 
 /* ------------------------------------------------------------------ patches */
@@ -258,6 +259,55 @@ func (s *Store) WorkspaceStats(ctx context.Context, userID, id string) (Workspac
 	return st, err
 }
 
+// workspaceEmbedding is the vector space a workspace is bound to for its
+// lifetime, stored on the row so ingest and query never have to agree by
+// coincidence.
+type workspaceEmbedding struct {
+	Pin models.Pin
+	Dim int
+}
+
+// vectorTables mirrors _VECTOR_TABLES in pipeline/pipeline/retrieval/store.py.
+// Vectors are stored one table per width because the width is part of the
+// halfvec column type; a new width means a new table in the migration and a new
+// entry in both maps.
+var vectorTables = map[int]string{2560: "rag_chunk_vectors_2560"}
+
+// vectorTable is looked up rather than formatted, because the result is
+// interpolated into SQL: only widths the schema actually has can reach a query.
+func vectorTable(dim int) (string, error) {
+	table, ok := vectorTables[dim]
+	if !ok {
+		return "", fmt.Errorf("no vector table for embedding dimension %d", dim)
+	}
+	return table, nil
+}
+
+// newWorkspaceEmbedding resolves the embedding model a new workspace will keep
+// forever. Resolved once, here, rather than per ingest or per search: every
+// chunk in the workspace ends up in this model's space and there is no reindex
+// job that could move them, so a later disagreement is unrecoverable.
+//
+// A hard error when the registry cannot answer, because a workspace whose
+// embedding model is unknown can be uploaded to but never searched. The
+// hardcoded pair mirrors accountModelPrefs: it is the last resort for a process
+// with no registry at all (tests that insert rows without wiring one), and it
+// matches the seeded row and the column defaults in the migration.
+func (s *Store) newWorkspaceEmbedding(ctx context.Context) (workspaceEmbedding, error) {
+	if s.registry == nil {
+		return workspaceEmbedding{Pin: models.Pin{Key: "qwen-embed", Version: 1}, Dim: 2560}, nil
+	}
+	cfg, err := s.registry.Default(ctx, models.SurfaceEmbedding)
+	if err != nil {
+		return workspaceEmbedding{}, err
+	}
+	dim, err := cfg.EmbeddingDim()
+	if err != nil {
+		return workspaceEmbedding{}, err
+	}
+	return workspaceEmbedding{Pin: cfg.Pin(), Dim: dim}, nil
+}
+
 func (s *Store) CreateWorkspace(ctx context.Context, userID, name string, color UserColor, tags []TagRef) (Workspace, error) {
 	id := uid("ws")
 	tx, err := s.pool.Begin(ctx)
@@ -276,8 +326,16 @@ func (s *Store) CreateWorkspace(ctx context.Context, userID, name string, color 
 		return Workspace{}, err
 	}
 
-	if _, err := tx.Exec(ctx, `INSERT INTO workspaces (id, user_id, name, color, privacy, share_role) VALUES ($1,$2,$3,$4,$5,$6)`,
-		id, userID, name, color, PrivacyPrivate, ShareViewer); err != nil {
+	embed, err := s.newWorkspaceEmbedding(ctx)
+	if err != nil {
+		return Workspace{}, err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO workspaces
+			(id, user_id, name, color, privacy, share_role,
+			 embedding_model_key, embedding_model_version, embedding_dim)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+		id, userID, name, color, PrivacyPrivate, ShareViewer,
+		embed.Pin.Key, embed.Pin.Version, embed.Dim); err != nil {
 		return Workspace{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'owner')`,

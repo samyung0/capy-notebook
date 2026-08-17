@@ -1,9 +1,8 @@
 """Model clients. Every provider is OpenAI-compatible, so one client shape does.
 
 Routing is owned by the model registry: a pinned (model_key, version) resolves
-to a provider_slug, base_url, and provider_model_id. Embedding and vision are
-frozen (job-pinned at ingest; process-start default at query time) so a poll
-cannot mix vector spaces.
+to a provider_slug, base_url, and provider_model_id. Nothing here resolves a
+surface default — every entry point takes the pin its caller was priced for.
 
 Every provider call in the system passes through this module. That makes it
 the only place token usage has to be captured, and the only place a missing
@@ -33,7 +32,9 @@ def client(provider: ProviderCfg) -> AsyncOpenAI:
     existing = _clients.get(key)
     if existing is None:
         existing = AsyncOpenAI(
-            api_key=provider.api_key or "missing", base_url=provider.base_url or None
+            api_key=provider.api_key or "missing",
+            base_url=provider.base_url or None,
+            timeout=cfg.provider_timeout_s,
         )
         _clients[key] = existing
     return existing
@@ -66,20 +67,24 @@ def resolve_query_model(
     return registry.resolve_pinned(key, version, surface)
 
 
-async def embed(texts: list[str]) -> list[list[float]]:
+async def embed(texts: list[str], *, spec: ModelConfig) -> list[list[float]]:
     """Embed texts in provider-sized batches, preserving input order.
+
+    ``spec`` is explicit because the two callers get it from different places
+    and neither may guess: indexing uses the workspace pin installed on the job,
+    and query embedding reads the same pin off the workspace row. Comparing a
+    query against chunks embedded by a different model returns ranked nonsense
+    with no error, so there is no default to fall back to.
 
     The dimension is part of the column type, so a provider that ignores the
     ``dimensions`` request must fail loudly here rather than write a vector
-    Postgres will reject halfway through a file. The embedding spec comes from
-    the ingest job pin when set, otherwise the process-start frozen default.
+    Postgres will reject halfway through a file.
     """
     if not texts:
         return []
-    spec = registry.embedding_spec()
     out: list[list[float]] = []
     api = client_for(spec)
-    dim = int(spec.params.get("dimensions") or cfg.embedding_dim)
+    dim = spec.embedding_dim
     for start in range(0, len(texts), cfg.embedding_batch):
         batch = texts[start : start + cfg.embedding_batch]
         resp = await api.embeddings.create(

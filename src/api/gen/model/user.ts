@@ -13,6 +13,7 @@ export interface User {
   avatarUrl?: string;
   chatModelKey: string;
   classLabel?: string;
+  editorModelKey: string;
   email: string;
   generateModelKey: string;
   id: string;

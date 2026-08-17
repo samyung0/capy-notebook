@@ -23,15 +23,24 @@ const (
 	blobReapInterval = time.Minute
 )
 
+// artifactTTL is how long an unused cache entry survives. Both values are read
+// from the same environment variables the ingest worker reads, because both
+// processes run the identical sweep and a disagreement would mean the TTL you
+// configured is not the TTL that applies.
+type artifactTTL struct {
+	CaptionDays   int
+	ParseZipHours int
+}
+
 // runBlobReaper drains the deletion outbox until the ticker stops.
-func runBlobReaper(ctx context.Context, st *store.Store, bs blob.Store) {
-	reapBlobs(ctx, st, bs)
+func runBlobReaper(ctx context.Context, st *store.Store, bs blob.Store, ttl artifactTTL) {
+	reapBlobs(ctx, st, bs, ttl)
 	ticker := time.NewTicker(blobReapInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ticker.C:
-			reapBlobs(ctx, st, bs)
+			reapBlobs(ctx, st, bs, ttl)
 		case <-ctx.Done():
 			return
 		}
@@ -39,7 +48,14 @@ func runBlobReaper(ctx context.Context, st *store.Store, bs blob.Store) {
 }
 
 // reapBlobs deletes every due batch, stopping at the first short or failed one.
-func reapBlobs(ctx context.Context, st *store.Store, bs blob.Store) {
+func reapBlobs(ctx context.Context, st *store.Store, bs blob.Store, ttl artifactTTL) {
+	if n, err := st.SweepArtifactCache(ctx, ttl.CaptionDays, ttl.ParseZipHours); err != nil {
+		if ctx.Err() == nil {
+			log.Printf("sweep artifact cache: %v", err)
+		}
+	} else if n > 0 {
+		log.Printf("swept %d artifact cache row(s)", n)
+	}
 	for {
 		paths, err := st.ClaimBlobDeletions(ctx, blobReapBatch)
 		if err != nil {

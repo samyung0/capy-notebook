@@ -11,10 +11,9 @@ Two entry points, one output shape:
 
 Both split on structure first and only fall back to length, so a chunk is a
 section or a run of consecutive blocks rather than an arbitrary window. Chunks
-carry two strings: ``text`` is what a citation shows and what the model reads,
-``indexed_text`` prepends the file name and heading breadcrumb before embedding
-and tokenizing. That prefix is what makes an isolated passage retrievable by a
-query phrased in the document's terms rather than the paragraph's.
+carry two strings: ``text`` is what a citation shows and what the model reads;
+``indexed_text`` prepends the heading breadcrumb, never a logical file name
+(renaming a file must not fork canonical content).
 """
 
 from __future__ import annotations
@@ -24,6 +23,11 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..config import cfg
+
+# Bumped when packing, overlap, or indexed_text shape change. Part of
+# rag_contents.pipeline_identity, so a bump invalidates every donor and
+# re-parses rather than copying stale chunks.
+CHUNKER_VERSION = "v1"
 
 # MinerU normalizes bbox coordinates to a 0..1000 box with the origin at the
 # top-left of the page. Recorded per region so a renderer never has to infer it.

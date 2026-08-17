@@ -27,7 +27,7 @@ type setModelsInput struct {
 func (a *api) registerModels(api huma.API) {
 	const tag = "Account"
 	reg(api, http.MethodGet, "/api/models", "listModels", tag, "Enabled models for a surface", http.StatusOK, a.listModels)
-	reg(api, http.MethodPatch, "/api/me/models", "setModelPrefs", tag, "Set chat and generate model preferences", http.StatusNoContent, a.setModelPrefs)
+	reg(api, http.MethodPatch, "/api/me/models", "setModelPrefs", tag, "Set chat, generate and editor model preferences", http.StatusNoContent, a.setModelPrefs)
 }
 
 func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, error) {
@@ -41,12 +41,7 @@ func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, e
 	}
 	pref := ""
 	if me, err := a.s.Me(ctx, userID(ctx)); err == nil {
-		switch surface {
-		case models.SurfaceGenerate:
-			pref = me.GenerateModelKey
-		case models.SurfaceChat:
-			pref = me.ChatModelKey
-		}
+		pref = userModelPref(me, surface)
 	}
 	def, err := a.modelReg.DefaultPin(surface)
 	if err == nil {
@@ -68,10 +63,25 @@ func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, e
 }
 
 func (a *api) setModelPrefs(ctx context.Context, in *setModelsInput) (*Empty, error) {
-	if err := a.s.SetModelPrefs(ctx, userID(ctx), in.Body.ChatModelKey, in.Body.GenerateModelKey); err != nil {
+	if err := a.s.SetModelPrefs(ctx, userID(ctx),
+		in.Body.ChatModelKey, in.Body.GenerateModelKey, in.Body.EditorModelKey); err != nil {
 		return nil, hErr(err)
 	}
 	return &Empty{}, nil
+}
+
+// userModelPref is the stored preference for a user-selectable surface, or ""
+// for the surfaces only an operator chooses (ingest, embedding, vision, stt).
+func userModelPref(me store.User, surface string) string {
+	switch surface {
+	case models.SurfaceChat:
+		return me.ChatModelKey
+	case models.SurfaceGenerate:
+		return me.GenerateModelKey
+	case models.SurfaceEditor:
+		return me.EditorModelKey
+	}
+	return ""
 }
 
 func (a *api) ratesForSurface(ctx context.Context, userID, surface string) (cfg models.Config, rates store.TokenRates, err error) {
@@ -79,7 +89,7 @@ func (a *api) ratesForSurface(ctx context.Context, userID, surface string) (cfg 
 		return models.Config{}, store.TokenRates{}, fmt.Errorf("%w: registry not configured", store.ErrModelUnavailable)
 	}
 	switch surface {
-	case models.SurfaceChat, models.SurfaceGenerate:
+	case models.SurfaceChat, models.SurfaceGenerate, models.SurfaceEditor:
 		if userID == "" {
 			return models.Config{}, store.TokenRates{}, fmt.Errorf("%w: missing user for %s", store.ErrModelUnavailable, surface)
 		}
@@ -87,10 +97,7 @@ func (a *api) ratesForSurface(ctx context.Context, userID, surface string) (cfg 
 		if meErr != nil {
 			return models.Config{}, store.TokenRates{}, meErr
 		}
-		pref := me.ChatModelKey
-		if surface == models.SurfaceGenerate {
-			pref = me.GenerateModelKey
-		}
+		pref := userModelPref(me, surface)
 		if pref == "" {
 			return models.Config{}, store.TokenRates{}, fmt.Errorf("%w: empty %s preference", store.ErrModelUnavailable, surface)
 		}

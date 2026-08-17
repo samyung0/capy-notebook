@@ -89,11 +89,51 @@ def object_info(blob_path: str) -> dict | None:
         if code in {"404", "NoSuchKey", "NotFound"}:
             return None
         raise
+    return _object_info_from_head(out)
+
+
+def _object_info_from_head(out: dict) -> dict:
     return {
         "size": int(out.get("ContentLength") or 0),
         "etag": str(out.get("ETag") or "").strip('"'),
         "content_type": str(out.get("ContentType") or ""),
     }
+
+
+def sha256_object(blob_path: str) -> str:
+    """sha256 of the object bytes, read from the bytes themselves.
+
+    Deliberately *not* taken from the object's stored ``x-amz-checksum-sha256``.
+    The browser uploads through a presigned PUT that signs only host and
+    content-type, so a client can attach any checksum header it likes, and
+    whether the bucket validates that header against the body is the bucket's
+    behaviour rather than something this code can assert. Since this hash is the
+    global cache key, a value the uploader can choose would let anyone claim the
+    hash of a document they do not have and be handed its chunk text, summary
+    and concepts from another user's ingest.
+
+    One GET per ingest is the price, which is far below a GPU parse and is what
+    the reuse design already budgets for.
+    """
+    import hashlib
+
+    digest = hashlib.sha256()
+    try:
+        body = _s3_client().get_object(Bucket=cfg.b2_bucket, Key=blob_path)["Body"]
+    except Exception as exc:
+        from botocore.exceptions import ClientError
+
+        if isinstance(exc, ClientError):
+            code = str(exc.response.get("Error", {}).get("Code", ""))
+            if code in {"404", "NoSuchKey", "NotFound"}:
+                raise FileNotFoundError(blob_path) from exc
+        raise
+    while True:
+        chunk = body.read(1024 * 1024)
+        if not chunk:
+            break
+        digest.update(chunk)
+    return digest.hexdigest()
 
 
 def download_to(blob_path: str, destination: Path) -> None:

@@ -33,16 +33,12 @@ costs one call and is the deliberate trade for never dropping a diagram.
 ## Caching
 
 Captions are cached in B2 under a source-identity key
-(``captions/{sha256(blob_path + NUL + source_etag)}/{caption version}.json``),
-keyed by image content hash. The parse fingerprint is deliberately not part of
-this path: a re-parse (different MinerU route or parser version) must not
-recaption figures that have not changed. This is not only about money.
-``files.content_hash`` is a digest of chunk text, and chunk text contains these
-captions, so without a cache the same PDF uploaded twice would produce two
-different digests and defeat the canonical content de-duplication that
-``rag_contents`` is built on. The cache makes a re-ingest byte-identical, and
-makes a retry free. The object path is stored on ``files.caption_blob_path`` so
-the blob reaper owns it; a failed ingest keeps the captions.
+(``captions/{source_sha256}/{caption version}.json``), keyed by image content
+hash. The parse fingerprint is deliberately not part of this path: a re-parse
+(different MinerU route or parser version) must not recaption figures that
+have not changed. The key also survives file deletion and re-upload, because
+it no longer includes ``blob_path``. Ownership lives on ``artifact_cache``,
+not ``files.caption_blob_path``.
 """
 
 from __future__ import annotations
@@ -332,14 +328,11 @@ def select_figures(content_list: list[dict[str, Any]], raw_dir: Path) -> list[Fi
 # ------------------------------------------------------------------- caching
 
 
-def cache_key(blob_path: str, source_etag: str) -> str:
-    """Stable caption-cache object for one source blob, independent of parse route."""
-    if not blob_path or not source_etag:
+def cache_key(source_sha256: str) -> str:
+    """Stable caption-cache object for one source, independent of parse route."""
+    if not source_sha256:
         return ""
-    digest = hashlib.sha256(
-        blob_path.encode("utf-8") + b"\0" + source_etag.encode("utf-8")
-    ).hexdigest()
-    return f"captions/{digest}/{cfg.caption_version}.json"
+    return f"captions/{source_sha256}/{cfg.caption_version}.json"
 
 
 def _load_cache(key: str) -> dict[str, str]:
@@ -413,8 +406,16 @@ def _encode(path: Path) -> str | None:
     return f"data:image/jpeg;base64,{encoded}"
 
 
-def _prompt(file_name: str, figure: Figure) -> str:
-    parts = [_CAPTION_PROMPT, f"\nSource document: {file_name}"]
+def _prompt(figure: Figure) -> str:
+    """Caption prompt built only from the document's own bytes.
+
+    The uploader's file name is deliberately absent. Captions are cached under
+    ``(source_sha256, caption version)`` and served to every later upload of the
+    same bytes, so anything outside that key must not reach the model: it would
+    make the cached text depend on an input the key does not cover, and one
+    uploader's file name would surface in another workspace's figure captions.
+    """
+    parts = [_CAPTION_PROMPT]
     if figure.page is not None:
         parts.append(f"Page: {figure.page + 1}")
     if figure.context:
@@ -427,12 +428,11 @@ async def caption_figures(
     content_list: list[dict[str, Any]],
     raw_dir: Path,
     file_name: str,
-    blob_path: str,
-    source_etag: str,
+    source_sha256: str,
 ) -> dict[str, Any]:
     """Describe every figure worth describing, in place on ``content_list``."""
     figures = select_figures(content_list, raw_dir)
-    key = cache_key(blob_path, source_etag)
+    key = cache_key(source_sha256)
     empty = {"selected": 0, "cached": 0, "captioned": 0, "applied": 0, "key": ""}
     if not figures:
         return empty
@@ -454,9 +454,7 @@ async def caption_figures(
             data_url = await asyncio.to_thread(_encode, figure.path)
             if data_url is None:
                 return figure.digest, ""
-            return figure.digest, await models.caption_image(
-                data_url, _prompt(file_name, figure)
-            )
+            return figure.digest, await models.caption_image(data_url, _prompt(figure))
 
     fresh = await asyncio.gather(*(describe(figure) for figure in pending))
     written = {digest: text for digest, text in fresh if text}

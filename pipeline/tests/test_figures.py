@@ -24,8 +24,11 @@ _SOURCE_BLOB = "sources/lecture.pdf"
 _SOURCE_ETAG = "etag-1"
 
 
+_SOURCE_SHA = "ab" * 32
+
+
 def _caption_key() -> str:
-    return figures.cache_key(_SOURCE_BLOB, _SOURCE_ETAG)
+    return figures.cache_key(_SOURCE_SHA)
 
 
 def _write(path: Path, image: Image.Image) -> Path:
@@ -232,8 +235,7 @@ async def _caption_all(tmp_path: Path, content_list: list[dict[str, Any]]) -> di
         content_list=content_list,
         raw_dir=tmp_path,
         file_name="lecture.pdf",
-        blob_path=_SOURCE_BLOB,
-        source_etag=_SOURCE_ETAG,
+        source_sha256=_SOURCE_SHA,
     )
 
 
@@ -297,13 +299,22 @@ async def test_a_bumped_caption_version_invalidates_the_cache(
     }
 
 
-async def test_the_prompt_names_the_document_and_page(tmp_path: Path, captioning):
+async def test_the_prompt_carries_the_page_but_not_the_file_name(
+    tmp_path: Path, captioning
+):
+    """Everything in the prompt has to be inside the cache key.
+
+    Captions are stored under ``(source_sha256, caption version)`` and reused by
+    every later upload of the same bytes, so the uploader's file name must not
+    reach the model: it would leak into another workspace's captions and make
+    identical bytes caption differently depending on who ingested them first.
+    """
     _write(tmp_path / "images" / "a.png", _diagram(seed=1))
 
     await _caption_all(tmp_path, [_image_block("images/a.png", 3)])
 
     prompt = captioning["calls"][0]
-    assert "lecture.pdf" in prompt
+    assert "lecture.pdf" not in prompt
     assert "Page: 4" in prompt
 
 
@@ -350,8 +361,7 @@ async def test_the_caption_cache_follows_the_source_blob_not_the_parse_route(
         content_list=second,
         raw_dir=tmp_path,
         file_name="lecture.pdf",
-        blob_path=_SOURCE_BLOB,
-        source_etag=_SOURCE_ETAG,
+        source_sha256=_SOURCE_SHA,
     )
 
     assert len(captioning["calls"]) == 1
@@ -363,8 +373,7 @@ async def test_the_caption_cache_follows_the_source_blob_not_the_parse_route(
         content_list=third,
         raw_dir=tmp_path,
         file_name="lecture.pdf",
-        blob_path=_SOURCE_BLOB,
-        source_etag="other-etag",
+        source_sha256="cd" * 32,
     )
     assert len(captioning["calls"]) == 2
 

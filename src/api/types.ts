@@ -50,6 +50,9 @@ import type {
    them bind to the wire contract instead of restating it. Contracts whose UI
    shape is richer than the wire (rich text, the Question union,
    non-transferable roles) are overridden further down. */
+/** The surfaces a user may pick a model for. Ingest, embedding, vision and STT
+ * are operator-only: they are chosen from the registry and never stored per
+ * user, so they are absent from the query enum the server accepts. */
 export type {
   AccessCapabilities,
   AccountStatus,
@@ -73,6 +76,7 @@ export type {
   Flashcard,
   IntegrationsStatus,
   Label,
+  ListModelsSurface as ModelSurface,
   LocaleInputBody,
   MaterialRef,
   MaterialUpdateResult,
@@ -116,7 +120,6 @@ export type {
   WorkspaceMember,
   WorkspaceStats,
 } from './gen/model';
-
 /* ---------------- enums & scalars (straight from the generated spec) ---------------- */
 export {
   AccountState,

@@ -514,9 +514,9 @@ type workspaceCloneFile struct {
 	id, name, kind, status              string
 	chapterID, parser, engine, blobPath *string
 	url, content                        *string
-	parsedBlobPath, parsedFingerprint   *string
+	parsedFingerprint                   *string
 	parsedParserVersion, sourceETag     *string
-	captionBlobPath, contentHash        *string
+	contentHash, sourceSHA256           *string
 	sizeBytes                           int64
 	position                            int64
 	indexed                             bool
@@ -634,8 +634,8 @@ func (s *Store) snapshotWorkspaceForClone(
 	rows, err = tx.Query(ctx,
 		`SELECT id, chapter_id, position, name, kind, size_bytes, status, indexed,
 			parser, engine, blob_path, url, content,
-			parsed_blob_path, parsed_fingerprint, parsed_parser_version, source_etag,
-			caption_blob_path, content_hash
+			parsed_fingerprint, parsed_parser_version, source_etag,
+			content_hash, source_sha256
 		 FROM files WHERE workspace_id=$1 ORDER BY added_at`,
 		workspaceID,
 	)
@@ -658,12 +658,11 @@ func (s *Store) snapshotWorkspaceForClone(
 			&file.blobPath,
 			&file.url,
 			&file.content,
-			&file.parsedBlobPath,
 			&file.parsedFingerprint,
 			&file.parsedParserVersion,
 			&file.sourceETag,
-			&file.captionBlobPath,
 			&file.contentHash,
+			&file.sourceSHA256,
 		); err != nil {
 			rows.Close()
 			return workspaceCloneSnapshot{}, err
@@ -788,8 +787,25 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 	if isOwner {
 		name += " (copy)"
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO workspaces (id, user_id, name, color, privacy) VALUES ($1,$2,$3,$4,'private')`,
-		newID, userID, name, src.Color); err != nil {
+	// The clone inherits the source's embedding pin instead of taking the current
+	// default. cloneRetrievalIndex copies vectors verbatim rather than
+	// re-embedding, so the copy is already in the source's space; giving the new
+	// workspace a different pin would mean every future upload landed in one
+	// space and every query was embedded in the other, with no error and no way
+	// back short of a reindex.
+	var srcEmbed workspaceEmbedding
+	if err := tx.QueryRow(ctx,
+		`SELECT embedding_model_key, embedding_model_version, embedding_dim
+		   FROM workspaces WHERE id = $1`, srcID,
+	).Scan(&srcEmbed.Pin.Key, &srcEmbed.Pin.Version, &srcEmbed.Dim); err != nil {
+		return Workspace{}, err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO workspaces
+			(id, user_id, name, color, privacy,
+			 embedding_model_key, embedding_model_version, embedding_dim)
+		VALUES ($1,$2,$3,$4,'private',$5,$6,$7)`,
+		newID, userID, name, src.Color,
+		srcEmbed.Pin.Key, srcEmbed.Pin.Version, srcEmbed.Dim); err != nil {
 		return Workspace{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'owner')`,
@@ -817,9 +833,10 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 		}
 	}
 
-	// Files. The parse artifact pointers ride along so a clone that later
-	// re-ingests (parse mode change, retry) reuses the cached MinerU output
-	// instead of paying for the GPU parse again.
+	// Files. Parse-zip and caption object keys are owned by artifact_cache,
+	// not copied: clone copies the rag_* rows in-transaction and never reads
+	// those objects. source_sha256 rides along so a later ingest can find a
+	// donor instead of re-parsing.
 	fileMap := map[string]string{}
 	{
 		for _, f := range snapshot.files {
@@ -838,16 +855,16 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO files
 				(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, engine, blob_path, url, content,
-				 parsed_blob_path, parsed_fingerprint, parsed_parser_version, source_etag, caption_blob_path, content_hash)
-				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+				 parsed_fingerprint, parsed_parser_version, source_etag, content_hash, source_sha256)
+				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
 				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.indexed, f.parser, f.engine, f.blobPath, url, f.content,
-				f.parsedBlobPath, f.parsedFingerprint, f.parsedParserVersion, f.sourceETag, f.captionBlobPath, f.contentHash); err != nil {
+				f.parsedFingerprint, f.parsedParserVersion, f.sourceETag, f.contentHash, f.sourceSHA256); err != nil {
 				return Workspace{}, err
 			}
 		}
 	}
 
-	if err := cloneRetrievalIndex(ctx, tx, srcID, newID, fileMap, chapterMap); err != nil {
+	if err := cloneRetrievalIndex(ctx, tx, srcID, newID, srcEmbed.Dim, fileMap, chapterMap); err != nil {
 		return Workspace{}, err
 	}
 
@@ -919,12 +936,19 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 
 // cloneRetrievalIndex copies a workspace's chunks, summary tree and concept
 // index into the clone, inside the same transaction as the content it
-// describes. Chunks carry embeddings, so copying them is pure SQL where
-// re-ingesting would mean paying for the parse and the embeddings again.
+// describes. Copying the vectors is pure SQL where re-ingesting would mean
+// paying for the parse and the embeddings again.
+//
+// embeddingDim is the source workspace's width, which the clone inherited, and
+// therefore names the vector table on both sides of the copy.
 //
 // Canonical content receives fresh ids because it is workspace-scoped, while
 // duplicate logical files in the clone keep sharing one copied index.
-func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, fileMap, chapterMap map[string]string) error {
+func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, embeddingDim int, fileMap, chapterMap map[string]string) error {
+	vectors, err := vectorTable(embeddingDim)
+	if err != nil {
+		return err
+	}
 	oldFiles, newFiles := unzipIDs(fileMap)
 	if len(oldFiles) > 0 {
 		contentMap := map[string]string{}
@@ -952,8 +976,12 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, fi
 		if len(oldContents) > 0 {
 			if _, err := tx.Exec(ctx, `
 				WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
-				INSERT INTO rag_contents (id, workspace_id, content_hash, status)
-				SELECT c.new_id, $3, rc.content_hash, rc.status
+				INSERT INTO rag_contents (id, workspace_id, content_hash, status,
+					embedding_model_key, embedding_model_version, embedding_dim,
+					source_sha256, pipeline_identity)
+				SELECT c.new_id, $3, rc.content_hash, rc.status,
+				       rc.embedding_model_key, rc.embedding_model_version, rc.embedding_dim,
+				       rc.source_sha256, rc.pipeline_identity
 				FROM rag_contents rc JOIN cmap c ON c.old_id = rc.id`,
 				oldContents, newContents, newID); err != nil {
 				return err
@@ -970,15 +998,31 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, fi
 				return err
 			}
 		}
+		// Mirrors copy_content_from_donor in pipeline/pipeline/retrieval/store.py:
+		// dest chunk ids are derived from dest workspace id + donor chunk id so
+		// the vector copy can recompute them and pair each embedding with its
+		// passage. newID is freshly minted, so the derivation is still unique
+		// across clones of the same source.
+		const newChunkID = `'rc_' || substr(md5($3 || c.id), 1, 12)`
 		if _, err := tx.Exec(ctx, `
 			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 			INSERT INTO rag_chunks
 				(id, workspace_id, content_id, chunk_idx, section_path, text, indexed_text,
-				 token_count, page_start, page_end, regions, search, embedding)
-			SELECT 'rc_' || substr(md5(random()::text || clock_timestamp()::text || c.id), 1, 12),
+				 token_count, page_start, page_end, regions, search)
+			SELECT `+newChunkID+`,
 			       $3, m.new_id, c.chunk_idx, c.section_path, c.text, c.indexed_text,
-			       c.token_count, c.page_start, c.page_end, c.regions, c.search, c.embedding
+			       c.token_count, c.page_start, c.page_end, c.regions, c.search
 			FROM rag_chunks c JOIN cmap m ON m.old_id = c.content_id`,
+			oldContents, newContents, newID); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(ctx, `
+			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
+			INSERT INTO `+vectors+` (chunk_id, workspace_id, embedding)
+			SELECT `+newChunkID+`, $3, v.embedding
+			FROM rag_chunks c
+			JOIN cmap m ON m.old_id = c.content_id
+			JOIN `+vectors+` v ON v.chunk_id = c.id`,
 			oldContents, newContents, newID); err != nil {
 			return err
 		}

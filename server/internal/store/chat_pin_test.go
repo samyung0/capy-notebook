@@ -56,7 +56,7 @@ func TestAssistantMessagePinsTheResolvedChatModel(t *testing.T) {
 	}
 }
 
-func TestIngestJobPayloadPinsActorAndFrozenModels(t *testing.T) {
+func TestIngestJobPayloadPinsActorAndModels(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	reg, err := models.New(ctx, s.Pool())
@@ -65,9 +65,12 @@ func TestIngestJobPayloadPinsActorAndFrozenModels(t *testing.T) {
 	}
 	s.SetModelRegistry(reg)
 
-	raw := s.ingestJobPayload(ctx, "u_actor", map[string]any{
+	raw, err := s.ingestJobPayload(ctx, "u_actor", map[string]any{
 		"fileId": "f_1", "workspaceId": "ws_1",
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	var payload map[string]any
 	if err := json.Unmarshal(raw, &payload); err != nil {
 		t.Fatal(err)
@@ -77,12 +80,86 @@ func TestIngestJobPayloadPinsActorAndFrozenModels(t *testing.T) {
 	}
 	for _, key := range []string{
 		"ingestModelKey", "ingestModelVersion",
-		"embeddingModelKey", "embeddingModelVersion",
 		"visionModelKey", "visionModelVersion",
 	} {
 		if payload[key] == nil || payload[key] == "" || payload[key] == 0.0 {
 			t.Fatalf("pin %s missing: %v", key, payload)
 		}
+	}
+	// Embedding is the workspace's, not the job's. A per-job copy could only
+	// duplicate the workspace row or contradict it.
+	if _, ok := payload["embeddingModelKey"]; ok {
+		t.Fatalf("embedding pin does not belong on an ingest job: %v", payload)
+	}
+}
+
+// The upload must fail rather than enqueue work nobody can be charged for: the
+// worker settles against actorUserId, so a job without one runs a GPU parse,
+// captions and embeddings for free.
+func TestIngestJobPayloadRefusesWithoutActor(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+
+	if _, err := s.ingestJobPayload(ctx, "", map[string]any{
+		"fileId": "f_1", "workspaceId": "ws_1",
+	}); !errors.Is(err, ErrIngestUnpinnable) {
+		t.Fatalf("expected ErrIngestUnpinnable, got %v", err)
+	}
+}
+
+// Same reasoning for the models: without pins the worker would run on whatever
+// its own current defaults are and settle at those rates.
+func TestIngestJobPayloadRefusesWithoutRegistry(t *testing.T) {
+	s := openAccessTestStore(t)
+	if _, err := s.ingestJobPayload(context.Background(), "u_actor", map[string]any{
+		"fileId": "f_1", "workspaceId": "ws_1",
+	}); !errors.Is(err, ErrIngestUnpinnable) {
+		t.Fatalf("expected ErrIngestUnpinnable, got %v", err)
+	}
+}
+
+// A workspace is bound to one vector space for life, and cloning copies vectors
+// verbatim, so the clone has to inherit the source's pin instead of picking up
+// whatever the registry default has moved to.
+func TestCloneInheritsSourceEmbeddingPin(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	userID := newCreditsTestUser(t, s)
+	src, err := s.CreateWorkspace(ctx, userID, "Source", ColorGreen, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx,
+		`UPDATE workspaces SET embedding_model_key='qwen-embed', embedding_model_version=7
+		   WHERE id=$1`, src.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	clone, err := s.CloneWorkspace(ctx, userID, src.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var key string
+	var version int
+	if err := s.pool.QueryRow(ctx,
+		`SELECT embedding_model_key, embedding_model_version FROM workspaces WHERE id=$1`,
+		clone.ID,
+	).Scan(&key, &version); err != nil {
+		t.Fatal(err)
+	}
+	if key != "qwen-embed" || version != 7 {
+		t.Fatalf("clone did not inherit the source pin: %s v%d", key, version)
 	}
 }
 
@@ -91,8 +168,19 @@ func TestSetModelPrefsRejectsEmpty(t *testing.T) {
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
 	empty := ""
-	if err := s.SetModelPrefs(ctx, userID, &empty, nil); !errors.Is(err, ErrModelKeyRequired) {
-		t.Fatalf("got %v", err)
+	for _, surface := range []string{"chat", "generate", "editor"} {
+		var chat, generate, editor *string
+		switch surface {
+		case "chat":
+			chat = &empty
+		case "generate":
+			generate = &empty
+		case "editor":
+			editor = &empty
+		}
+		if err := s.SetModelPrefs(ctx, userID, chat, generate, editor); !errors.Is(err, ErrModelKeyRequired) {
+			t.Fatalf("%s: got %v", surface, err)
+		}
 	}
 }
 
@@ -119,7 +207,7 @@ func TestUpsertUserPopulatesRegistryDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if me.ChatModelKey == "" || me.GenerateModelKey == "" {
+	if me.ChatModelKey == "" || me.GenerateModelKey == "" || me.EditorModelKey == "" {
 		t.Fatalf("prefs empty: %#v", me)
 	}
 }

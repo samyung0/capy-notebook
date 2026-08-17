@@ -266,10 +266,12 @@ export const handlers = [
   }),
   http.get('/api/models', async ({ request }) => {
     const surface = new URL(request.url).searchParams.get('surface') ?? 'chat';
-    const selected =
-      surface === 'generate'
-        ? (db.user.generateModelKey ?? 'deepseek-flash')
-        : (db.user.chatModelKey ?? 'deepseek-flash');
+    const prefs: Record<string, string | undefined> = {
+      chat: db.user.chatModelKey,
+      editor: db.user.editorModelKey,
+      generate: db.user.generateModelKey,
+    };
+    const selected = prefs[surface] ?? 'deepseek-flash';
     return HttpResponse.json({
       defaultKey: 'deepseek-flash',
       models: [
@@ -286,23 +288,23 @@ export const handlers = [
   http.patch('/api/me/models', async ({ request }) => {
     const body = (await request.json()) as {
       chatModelKey?: string;
+      editorModelKey?: string;
       generateModelKey?: string;
     };
-    if (body.chatModelKey !== undefined) {
-      if (!body.chatModelKey)
+    const fields = [
+      'chatModelKey',
+      'editorModelKey',
+      'generateModelKey',
+    ] as const;
+    for (const field of fields) {
+      const value = body[field];
+      if (value === undefined) continue;
+      if (!value)
         return HttpResponse.json(
           { message: 'a model preference is required' },
           { status: 400 }
         );
-      db.user.chatModelKey = body.chatModelKey;
-    }
-    if (body.generateModelKey !== undefined) {
-      if (!body.generateModelKey)
-        return HttpResponse.json(
-          { message: 'a model preference is required' },
-          { status: 400 }
-        );
-      db.user.generateModelKey = body.generateModelKey;
+      db.user[field] = value;
     }
     return new HttpResponse(null, { status: 204 });
   }),

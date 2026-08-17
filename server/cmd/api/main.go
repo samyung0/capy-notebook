@@ -339,7 +339,10 @@ func main() {
 		}
 	}()
 
-	go runBlobReaper(ctx, st, blobStore)
+	go runBlobReaper(ctx, st, blobStore, artifactTTL{
+		CaptionDays:   envInt("EVO_CAPTION_CACHE_TTL_DAYS", 90),
+		ParseZipHours: envInt("EVO_PARSE_ZIP_TTL_HOURS", 6),
+	})
 	go runBlobSweep(ctx, st, blobStore)
 	go runAccountPurgeWorker(ctx, st, env("CLERK_SECRET_KEY", "") != "")
 	go runOverQuotaNoticeWorker(ctx, st)

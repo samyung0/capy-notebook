@@ -49,24 +49,88 @@ def vector_literal(values: list[float]) -> str:
     return "[" + ",".join(f"{v:.6g}" for v in values) + "]"
 
 
+# Vectors are stored one table per width, because the width is part of the
+# halfvec column type and pgvector cannot index a column whose dimension varies.
+# Adding a width means a new table in the migration and a new entry here.
+_VECTOR_TABLES = {2560: "rag_chunk_vectors_2560"}
+
+
+def vector_table(dim: int) -> str:
+    """The vector table for an embedding width.
+
+    Interpolated into SQL, so it is looked up rather than formatted: only widths
+    that exist in the schema can ever reach a statement.
+    """
+    table = _VECTOR_TABLES.get(int(dim))
+    if table is None:
+        raise RuntimeError(
+            f"no vector table for embedding dimension {dim}; add one to "
+            "0001_init.sql and _VECTOR_TABLES together"
+        )
+    return table
+
+
+async def workspace_embedding_pin(workspace_id: str) -> dict[str, Any]:
+    """The embedding model this workspace's index lives in.
+
+    Fixed at workspace creation and never updated, so ingest and query resolve
+    the same space no matter when either process last restarted or what the
+    registry default has moved to since. There is no reindex job, so this is the
+    only answer either side is allowed to use.
+    """
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT embedding_model_key, embedding_model_version, embedding_dim
+            FROM workspaces WHERE id = %s
+            """,
+            (workspace_id,),
+        )
+        row = await cur.fetchone()
+    if row is None:
+        raise RuntimeError(f"workspace {workspace_id} has no embedding pin")
+    return dict(row)
+
+
 # --------------------------------------------------------------- chunk writes
 
 
 async def attach_file_content(
-    *, workspace_id: str, file_id: str, content_hash: str
+    *,
+    workspace_id: str,
+    file_id: str,
+    content_hash: str,
+    source_sha256: str | None = None,
+    pipeline_identity: str | None = None,
+    claim_job_id: str | None = None,
 ) -> dict[str, Any]:
-    """Attach a logical file to canonical workspace content."""
+    """Attach a logical file to canonical workspace content.
+
+    ``claim_job_id`` records who owns the claim when this call creates it. On
+    conflict the existing owner is left alone: the caller is a waiter, and
+    ``created=False`` is what tells it so.
+    """
     content_id = f"rgc_{secrets.token_hex(8)}"
     db = await pool()
     async with db.connection() as conn, conn.transaction():
         cur = await conn.execute(
             """
-            INSERT INTO rag_contents (id, workspace_id, content_hash, status)
-            VALUES (%s, %s, %s, 'processing')
+            INSERT INTO rag_contents
+                (id, workspace_id, content_hash, status, source_sha256,
+                 pipeline_identity, claim_job_id, updated_at)
+            VALUES (%s, %s, %s, 'processing', %s, %s, %s, now())
             ON CONFLICT (workspace_id, content_hash) DO NOTHING
             RETURNING id, status
             """,
-            (content_id, workspace_id, content_hash),
+            (
+                content_id,
+                workspace_id,
+                content_hash,
+                source_sha256,
+                pipeline_identity,
+                claim_job_id,
+            ),
         )
         row = await cur.fetchone()
         created = row is not None
@@ -99,11 +163,59 @@ async def attach_file_content(
         }
 
 
+async def steal_stale_content(
+    *, workspace_id: str, content_hash: str, stale_s: int
+) -> bool:
+    """Drop a processing claim whose creator looks dead so a waiter can take it."""
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            DELETE FROM rag_contents
+            WHERE workspace_id = %s AND content_hash = %s
+              AND status = 'processing'
+              AND updated_at < now() - make_interval(secs => %s)
+            """,
+            (workspace_id, content_hash, stale_s),
+        )
+        return bool(cur.rowcount)
+
+
+async def find_ready_donor(
+    *, source_sha256: str, pipeline_identity: str
+) -> dict[str, Any] | None:
+    """A ready index of the same source bytes produced by the same pipeline."""
+    if not source_sha256 or not pipeline_identity:
+        return None
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT id, workspace_id, content_hash,
+                   embedding_model_key, embedding_model_version, embedding_dim
+            FROM rag_contents
+            WHERE source_sha256 = %s
+              AND pipeline_identity = %s
+              AND status = 'ready'
+            ORDER BY updated_at DESC
+            LIMIT 1
+            """,
+            (source_sha256, pipeline_identity),
+        )
+        row = await cur.fetchone()
+    return dict(row) if row else None
+
+
 async def mark_content_ready(content_id: str) -> None:
     db = await pool()
     async with db.connection() as conn:
         await conn.execute(
-            "UPDATE rag_contents SET status = 'ready' WHERE id = %s", (content_id,)
+            """
+            UPDATE rag_contents
+            SET status = 'ready', claim_job_id = NULL, updated_at = now()
+            WHERE id = %s
+            """,
+            (content_id,),
         )
 
 
@@ -127,6 +239,163 @@ async def abandon_content(content_id: str) -> None:
         )
 
 
+# Dest chunk ids are `'rc_' || substr(md5(dest_workspace_id || donor_chunk_id), 1, 12)`,
+# matching CloneWorkspace in server/internal/store/share.go so the vector copy
+# can recompute them and pair each embedding with its passage.
+_NEW_CHUNK_ID_SQL = "'rc_' || substr(md5(%s || c.id), 1, 12)"
+
+
+async def copy_content_from_donor(
+    *,
+    donor_id: str,
+    dest_content_id: str,
+    dest_workspace_id: str,
+    copy_vectors: bool,
+) -> bool:
+    """Copy a ready donor's index into this workspace's content row.
+
+    Mirrors CloneWorkspace. Returns False if the donor vanished under FOR SHARE
+    (workspace delete) so the caller can fall through to parsing.
+    """
+    db = await pool()
+    async with db.connection() as conn, conn.transaction():
+        cur = await conn.execute(
+            """
+            SELECT id, workspace_id, content_hash, source_sha256, pipeline_identity,
+                   embedding_model_key, embedding_model_version, embedding_dim
+            FROM rag_contents
+            WHERE id = %s AND status = 'ready'
+            FOR SHARE
+            """,
+            (donor_id,),
+        )
+        donor = await cur.fetchone()
+        if donor is None:
+            return False
+        pin = donor
+        table = None
+        if copy_vectors:
+            table = vector_table(int(pin["embedding_dim"] or 0))
+
+        # INSERT..SELECT keeps tsvector/jsonb typed and derives dest chunk ids
+        # in SQL, the same shape as cloneRetrievalIndex.
+        await conn.execute(
+            "DELETE FROM rag_chunks WHERE content_id = %s", (dest_content_id,)
+        )
+        await conn.execute(
+            f"""
+            INSERT INTO rag_chunks (
+                id, workspace_id, content_id, chunk_idx, section_path, text,
+                indexed_text, token_count, page_start, page_end, regions, search
+            )
+            SELECT {_NEW_CHUNK_ID_SQL},
+                   %s, %s, c.chunk_idx, c.section_path, c.text, c.indexed_text,
+                   c.token_count, c.page_start, c.page_end, c.regions, c.search
+            FROM rag_chunks c
+            WHERE c.content_id = %s
+            """,
+            (dest_workspace_id, dest_workspace_id, dest_content_id, donor_id),
+        )
+        if copy_vectors and table:
+            await conn.execute(
+                f"""
+                INSERT INTO {table} (chunk_id, workspace_id, embedding)
+                SELECT {_NEW_CHUNK_ID_SQL}, %s, v.embedding
+                FROM rag_chunks c
+                JOIN {table} v ON v.chunk_id = c.id
+                WHERE c.content_id = %s
+                """,
+                (dest_workspace_id, dest_workspace_id, donor_id),
+            )
+
+        await conn.execute(
+            """
+            INSERT INTO rag_content_summaries
+                (content_id, workspace_id, fingerprint, summary, outline, updated_at)
+            SELECT %s, %s, s.fingerprint, s.summary, s.outline, s.updated_at
+            FROM rag_content_summaries s
+            WHERE s.content_id = %s
+            ON CONFLICT (content_id) DO UPDATE SET
+                fingerprint = EXCLUDED.fingerprint,
+                summary = EXCLUDED.summary,
+                outline = EXCLUDED.outline,
+                updated_at = EXCLUDED.updated_at
+            """,
+            (dest_content_id, dest_workspace_id, donor_id),
+        )
+
+        await conn.execute(
+            """
+            INSERT INTO rag_concepts (id, workspace_id, name, norm)
+            SELECT 'rcp_' || substr(md5(random()::text || clock_timestamp()::text || k.id), 1, 12),
+                   %s, k.name, k.norm
+            FROM rag_concepts k
+            WHERE k.workspace_id = %s
+              AND EXISTS (
+                  SELECT 1
+                  FROM rag_concept_mentions m
+                  JOIN rag_chunks c ON c.id = m.chunk_id
+                  WHERE m.concept_id = k.id AND c.content_id = %s
+              )
+            ON CONFLICT (workspace_id, norm) DO NOTHING
+            """,
+            (dest_workspace_id, pin["workspace_id"], donor_id),
+        )
+        await conn.execute(
+            """
+            INSERT INTO rag_concept_mentions (concept_id, chunk_id)
+            SELECT nk.id, nc.id
+            FROM rag_concept_mentions m
+            JOIN rag_concepts ok ON ok.id = m.concept_id AND ok.workspace_id = %s
+            JOIN rag_chunks oc ON oc.id = m.chunk_id AND oc.content_id = %s
+            JOIN rag_chunks nc ON nc.content_id = %s AND nc.chunk_idx = oc.chunk_idx
+            JOIN rag_concepts nk ON nk.workspace_id = %s AND nk.norm = ok.norm
+            ON CONFLICT DO NOTHING
+            """,
+            (pin["workspace_id"], donor_id, dest_content_id, dest_workspace_id),
+        )
+
+        await conn.execute(
+            """
+            UPDATE rag_contents SET
+                source_sha256 = %s,
+                pipeline_identity = %s,
+                embedding_model_key = CASE WHEN %s THEN %s ELSE embedding_model_key END,
+                embedding_model_version = CASE WHEN %s THEN %s ELSE embedding_model_version END,
+                embedding_dim = CASE WHEN %s THEN %s ELSE embedding_dim END,
+                updated_at = now()
+            WHERE id = %s
+            """,
+            (
+                pin["source_sha256"],
+                pin["pipeline_identity"],
+                copy_vectors,
+                pin["embedding_model_key"],
+                copy_vectors,
+                pin["embedding_model_version"],
+                copy_vectors,
+                pin["embedding_dim"],
+                dest_content_id,
+            ),
+        )
+    return True
+
+
+async def load_content_chunks(content_id: str) -> list[dict[str, Any]]:
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT id, chunk_idx, section_path, text, indexed_text, token_count,
+                   page_start, page_end, regions
+            FROM rag_chunks WHERE content_id = %s
+            ORDER BY chunk_idx
+            """,
+            (content_id,),
+        )
+        return [dict(row) for row in await cur.fetchall()]
+
+
 async def replace_content_chunks(
     *, workspace_id: str, content_id: str, rows: list[dict[str, Any]]
 ) -> None:
@@ -136,7 +405,13 @@ async def replace_content_chunks(
     fewer chunks must not leave the tail of the previous run behind, and the
     concept mentions that reference those chunks have to go with them (they
     cascade).
+
+    The vector table and the provenance written onto the content row both come
+    from the workspace's own pin, read here rather than passed in, so a caller
+    that embedded with the wrong model cannot also record the wrong model.
     """
+    pin = await workspace_embedding_pin(workspace_id)
+    table = vector_table(pin["embedding_dim"])
     db = await pool()
     async with db.connection() as conn, conn.transaction():
         await conn.execute(
@@ -148,12 +423,12 @@ async def replace_content_chunks(
                     INSERT INTO rag_chunks (
                         id, workspace_id, content_id, chunk_idx, section_path, text,
                         indexed_text, token_count, page_start, page_end, regions,
-                        search, embedding
+                        search
                     ) VALUES (
                         %(id)s, %(workspace_id)s, %(content_id)s, %(chunk_idx)s,
                         %(section_path)s, %(text)s, %(indexed_text)s, %(token_count)s,
                         %(page_start)s, %(page_end)s, %(regions)s,
-                        to_tsvector('simple', %(search_text)s), %(embedding)s::halfvec
+                        to_tsvector('simple', %(search_text)s)
                     )
                     """,
                 {
@@ -163,6 +438,36 @@ async def replace_content_chunks(
                     "regions": Jsonb(row["regions"]),
                 },
             )
+            # A vector of the wrong width is rejected by the column type, which
+            # is the point of splitting these tables: a same-width model from a
+            # different space is not detectable here, and is prevented instead by
+            # the workspace pin being immutable.
+            await conn.execute(
+                f"""
+                    INSERT INTO {table} (chunk_id, workspace_id, embedding)
+                    VALUES (%(id)s, %(workspace_id)s, %(embedding)s::halfvec)
+                    """,
+                {
+                    "id": row["id"],
+                    "workspace_id": workspace_id,
+                    "embedding": row["embedding"],
+                },
+            )
+        await conn.execute(
+            """
+            UPDATE rag_contents SET
+                embedding_model_key = %s,
+                embedding_model_version = %s,
+                embedding_dim = %s
+            WHERE id = %s
+            """,
+            (
+                pin["embedding_model_key"] if rows else None,
+                pin["embedding_model_version"] if rows else None,
+                pin["embedding_dim"] if rows else None,
+                content_id,
+            ),
+        )
 
 
 async def upsert_content_summary(
@@ -259,7 +564,7 @@ async def replace_content_concepts(
 
 _RRF_K = 60
 
-_SEARCH_SQL = """
+_SEARCH_SQL_TEMPLATE = """
 WITH scoped_files AS (
         SELECT DISTINCT ON (fc.content_id)
                      fc.content_id, f.id AS file_id, f.name AS file_name
@@ -271,10 +576,12 @@ WITH scoped_files AS (
         ORDER BY fc.content_id, f.added_at, f.id
 ),
 vec AS (
-    SELECT id, row_number() OVER (ORDER BY embedding <=> %(vector)s::halfvec) AS rank
-        FROM rag_chunks c JOIN scoped_files sf ON sf.content_id = c.content_id
-        WHERE c.workspace_id = %(ws)s AND embedding IS NOT NULL
-    ORDER BY embedding <=> %(vector)s::halfvec
+    SELECT c.id, row_number() OVER (ORDER BY v.embedding <=> %(vector)s::halfvec) AS rank
+        FROM {vector_table} v
+        JOIN rag_chunks c ON c.id = v.chunk_id
+        JOIN scoped_files sf ON sf.content_id = c.content_id
+        WHERE v.workspace_id = %(ws)s
+    ORDER BY v.embedding <=> %(vector)s::halfvec
     LIMIT %(candidates)s
 ),
 lex AS (
@@ -312,6 +619,7 @@ async def hybrid_search(
     terms: str,
     file_ids: list[str] | None,
     candidates: int,
+    embedding_dim: int,
 ) -> list[dict[str, Any]]:
     """Vector + lexical search fused with reciprocal rank fusion.
 
@@ -319,11 +627,16 @@ async def hybrid_search(
     comparable and never will be: cosine distance and ts_rank_cd have no shared
     unit, so any weight would be a tuning constant that drifts with the corpus.
     Ranks are unitless.
+
+    ``embedding_dim`` selects the vector table, and must be the workspace's own
+    width — the same one ``vector`` was produced at. The lexical half is
+    dimension-independent and always reads rag_chunks.
     """
     db = await pool()
+    sql = _SEARCH_SQL_TEMPLATE.format(vector_table=vector_table(embedding_dim))
     async with db.connection() as conn:
         cur = await conn.execute(
-            _SEARCH_SQL,
+            sql,
             {
                 "ws": workspace_id,
                 "vector": vector_literal(vector),

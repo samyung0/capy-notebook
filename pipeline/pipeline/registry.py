@@ -4,8 +4,15 @@ Rows are immutable and versioned. The cache never evicts a (model_key, version)
 pair. Polling ``model_registry_state`` only teaches this process the current
 defaults; a pinned pair it has never seen is a point read of the table.
 
-A cache miss never falls back to the current default. Embedding and vision
-defaults are frozen at process start so a poll cannot mix vector spaces.
+Two rules keep a resolved model from drifting away from the one that was priced:
+
+* A cache miss never falls back to the current default.
+* :func:`resolve_pinned` requires an exact pin for **every** surface. Nothing
+  that can bill, and nothing that writes a vector, is allowed to pick a model
+  for itself; the caller that reserved the spend, enqueued the job or created
+  the workspace already chose one. ``registry.default`` remains for the two
+  callers whose job it is to choose (ingest enqueue in the gateway, and
+  ``/transcribe`` until STT is pinned too).
 """
 
 from __future__ import annotations
@@ -32,8 +39,6 @@ SURFACE_EMBEDDING = "embedding"
 SURFACE_VISION = "vision"
 SURFACE_STT = "stt"
 
-_FROZEN_SURFACES = {SURFACE_EMBEDDING, SURFACE_VISION}
-
 
 @dataclass(frozen=True)
 class ModelConfig:
@@ -58,6 +63,21 @@ class ModelConfig:
 
     def allows(self, surface: str) -> bool:
         return surface in self.surfaces
+
+    @property
+    def embedding_dim(self) -> int:
+        """Width this model emits, which selects the vector table it writes to.
+
+        Required on every embedding row by a check constraint in the migration,
+        so a missing value means the row was written around the schema.
+        """
+        raw = self.params.get("dimensions")
+        if raw is None:
+            raise RegistryError(
+                f"embedding model {self.model_key} v{self.version} declares no "
+                "dimensions"
+            )
+        return int(raw)
 
     def temperature(self, fallback: float = 0.3) -> float:
         raw = self.params.get("temperature", fallback)
@@ -94,17 +114,18 @@ class Registry:
         self._lock = threading.Lock()
         self._by_pin: dict[tuple[str, int], ModelConfig] = {}
         self._current: dict[str, tuple[str, int]] = {}
-        self._frozen: dict[str, tuple[str, int]] = {}
         self._rev: int = -1
         self._started = False
 
     def start(self) -> None:
+        # There is deliberately no process-start snapshot of the embedding or
+        # vision default any more. Freezing them was how this process used to
+        # avoid mixing vector spaces, which made the model a query embedded with
+        # a function of when the container last booted. Embedding now comes from
+        # workspaces.embedding_model_key and vision from the job pin, so there
+        # is nothing left for a poll to corrupt.
         self.refresh()
         with self._lock:
-            for surface in _FROZEN_SURFACES:
-                pin = self._current.get(surface)
-                if pin:
-                    self._frozen[surface] = pin
             self._started = True
 
     def refresh(self) -> None:
@@ -146,10 +167,7 @@ class Registry:
 
         with self._lock:
             self._by_pin.update(by_pin)
-            for surface, pin in current.items():
-                if surface in _FROZEN_SURFACES and surface in self._frozen:
-                    continue
-                self._current[surface] = pin
+            self._current.update(current)
             self._rev = rev
 
     def get(self, key: str, version: int) -> ModelConfig:
@@ -185,8 +203,6 @@ class Registry:
 
     def default_pin(self, surface: str) -> tuple[str, int]:
         with self._lock:
-            if surface in _FROZEN_SURFACES and surface in self._frozen:
-                return self._frozen[surface]
             pin = self._current.get(surface)
         if not pin:
             raise RegistryError(f"no default for {surface}")
@@ -279,94 +295,48 @@ def bootstrap_llm(provider_model_id: str) -> ModelConfig:
     )
 
 
-def bootstrap_embedding() -> ModelConfig:
-    return ModelConfig(
-        model_key="bootstrap-embed",
-        version=0,
-        display_name="bootstrap",
-        provider_slug="openrouter",
-        base_url=cfg.embedding.base_url,
-        provider_model_id=cfg.embedding_model,
-        params={"dimensions": cfg.embedding_dim},
-        surfaces=(SURFACE_EMBEDDING,),
-        micros_per_input_token=50,
-        micros_per_output_token=50,
-    )
-
-
-def bootstrap_vision() -> ModelConfig:
-    return ModelConfig(
-        model_key="bootstrap-vision",
-        version=0,
-        display_name="bootstrap",
-        provider_slug="google",
-        base_url=cfg.vision.base_url,
-        provider_model_id=cfg.vision_model,
-        params={"temperature": 0.2},
-        surfaces=(SURFACE_VISION,),
-        micros_per_input_token=250,
-        micros_per_output_token=1000,
-    )
-
-
-def bootstrap_stt() -> ModelConfig:
-    return ModelConfig(
-        model_key="bootstrap-stt",
-        version=0,
-        display_name="bootstrap",
-        provider_slug="openai",
-        base_url=cfg.stt.base_url,
-        provider_model_id=cfg.stt_model,
-        surfaces=(SURFACE_STT,),
-        micros_per_input_token=0,
-        micros_per_output_token=0,
-    )
-
-
 def resolve_pinned(key: str | None, version: int | None, surface: str) -> ModelConfig:
-    """Load an exact pin.
+    """Load an exact pin, for every surface without exception.
 
-    Chat, generate, and editor must be given a (key, version). Missing or
-    unresolvable pins are errors: the gateway prices from the same pair, and
-    falling back to the live default would run a different model than the one
-    reserved. Ingest/embed/vision/stt may still resolve a surface default when
-    a job was enqueued without pins.
+    A missing or unresolvable pin is an error, never the live default. Whoever
+    is downstream of this call is about to spend money against a price somebody
+    else already quoted (the gateway's reservation, the job payload) or to write
+    a vector into a space somebody else already chose (the workspace). Resolving
+    a default here would run a different model than the one that was priced, and
+    nothing would say so.
     """
-    if key and version:
-        return registry.get(key, int(version))
-    if surface in (SURFACE_CHAT, SURFACE_GENERATE, SURFACE_EDITOR):
+    if not key or not version:
         raise RegistryError(f"missing pin for {surface}")
-    try:
-        return registry.default(surface)
-    except RegistryError:
-        if surface == SURFACE_EMBEDDING:
-            return bootstrap_embedding()
-        if surface == SURFACE_VISION:
-            return bootstrap_vision()
-        if surface == SURFACE_STT:
-            return bootstrap_stt()
-        return bootstrap_llm(cfg.query_model)
+    return registry.get(key, int(version))
 
 
 def ingest_spec() -> ModelConfig:
+    """The ingest LLM this job was enqueued with."""
     pins = current_job_pins()
-    if pins and pins.ingest is not None:
-        return pins.ingest
-    return resolve_pinned(None, None, SURFACE_INGEST)
+    if pins is None or pins.ingest is None:
+        raise RegistryError("no ingest pin on this job")
+    return pins.ingest
 
 
 def embedding_spec() -> ModelConfig:
+    """The embedding model of the workspace this job belongs to.
+
+    Installed by the worker from ``workspaces.embedding_model_key`` before any
+    indexing runs. Query-time embedding has no job and therefore does not come
+    through here — see ``retrieval.search``.
+    """
     pins = current_job_pins()
-    if pins and pins.embedding is not None:
-        return pins.embedding
-    return resolve_pinned(None, None, SURFACE_EMBEDDING)
+    if pins is None or pins.embedding is None:
+        raise RegistryError("no embedding pin on this job")
+    return pins.embedding
 
 
 def vision_spec() -> ModelConfig:
+    """The vision model this job was enqueued with."""
     pins = current_job_pins()
-    if pins and pins.vision is not None:
-        return pins.vision
-    return resolve_pinned(None, None, SURFACE_VISION)
+    if pins is None or pins.vision is None:
+        raise RegistryError("no vision pin on this job")
+    return pins.vision
 
 
 def provider_cfg_for(spec: ModelConfig) -> ProviderCfg:
@@ -411,16 +381,24 @@ def poll_forever() -> None:
             log.exception("model registry poll failed")
 
 
-def pins_from_payload(payload: dict[str, Any]) -> JobPins:
-    def load(key_field: str, ver_field: str) -> ModelConfig | None:
-        key = payload.get(key_field)
-        version = payload.get(ver_field)
-        if not key or not version:
-            return None
-        return registry.get(str(key), int(version))
+def pins_from_payload(payload: dict[str, Any], *, embedding: ModelConfig) -> JobPins:
+    """Resolve the models one ingest job is allowed to use.
+
+    The ingest LLM and the vision model are snapshotted onto the payload at
+    enqueue, because their surface defaults are hot-reloadable and the job may
+    run long after the upload returned. ``embedding`` is not on the payload: it
+    belongs to the workspace for the lifetime of that workspace, so the worker
+    passes in the pin it read from the workspace row.
+
+    Raises rather than returning a partial set. A job that cannot say which
+    model it was priced for must not run.
+    """
+
+    def load(key_field: str, ver_field: str, surface: str) -> ModelConfig:
+        return resolve_pinned(payload.get(key_field), payload.get(ver_field), surface)
 
     return JobPins(
-        ingest=load("ingestModelKey", "ingestModelVersion"),
-        embedding=load("embeddingModelKey", "embeddingModelVersion"),
-        vision=load("visionModelKey", "visionModelVersion"),
+        ingest=load("ingestModelKey", "ingestModelVersion", SURFACE_INGEST),
+        embedding=embedding,
+        vision=load("visionModelKey", "visionModelVersion", SURFACE_VISION),
     )

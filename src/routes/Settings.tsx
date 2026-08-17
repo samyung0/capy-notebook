@@ -374,6 +374,13 @@ function LlmTab() {
         <p className="t-subtitle">{m.settings_llm_generate()}</p>
         <ModelPicker className="mt-3" surface="generate" />
       </div>
+      <div className="mt-4 rounded-card border border-line bg-surface px-5 py-4">
+        <p className="t-subtitle">{m.settings_llm_editor()}</p>
+        <p className="mt-1 text-fg-secondary text-sm">
+          {m.settings_llm_editor_hint()}
+        </p>
+        <ModelPicker className="mt-3" surface="editor" />
+      </div>
     </>
   );
 }

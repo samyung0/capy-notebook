@@ -130,6 +130,10 @@ services:
       RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-}
       RATE_LIMIT_AI_PER_HOUR: ${RATE_LIMIT_AI_PER_HOUR:-}
       RATE_LIMIT_CONCURRENT_STREAMS: ${RATE_LIMIT_CONCURRENT_STREAMS:-}
+      # Parse/caption cache TTLs. The worker sweeps on the same values; both
+      # services run the identical statement, so they must agree.
+      EVO_CAPTION_CACHE_TTL_DAYS: ${EVO_CAPTION_CACHE_TTL_DAYS:-90}
+      EVO_PARSE_ZIP_TTL_HOURS: ${EVO_PARSE_ZIP_TTL_HOURS:-6}
     ports:
       - "8080:8080"
     healthcheck:
@@ -165,23 +169,24 @@ services:
       MODAL_B2_ARTIFACTS: ${MODAL_B2_ARTIFACTS:-true}
       EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-auto}
       MAX_PARALLEL_PARSE_MODAL: ${MAX_PARALLEL_PARSE_MODAL:-2}
-      # Embeddings (OpenRouter) — EMBEDDING_DIM is permanent for the vector store.
+      # Embeddings (OpenRouter): credentials only. The model is pinned per
+      # workspace from model_configs; EMBEDDING_DIM is the shipped width.
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-      EVO_MODEL_EMBEDDING: ${EVO_MODEL_EMBEDDING:-qwen/qwen3-embedding-4b}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
-      # Text LLM (DeepSeek): flash for ingest extraction.
+      # Text LLM (DeepSeek). The ingest model comes from each job's pin.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
-      EVO_MODEL_EXTRACTION: ${EVO_MODEL_EXTRACTION:-deepseek-v4-flash}
       # Figure captions (Gemini, OpenAI-compatible endpoint). Whether a file is
       # captioned at all is chosen per upload and carried on the job.
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
-      EVO_MODEL_IMAGE_CAPTION: ${EVO_MODEL_IMAGE_CAPTION:-gemini-3.1-flash-lite-preview}
       EVO_CAPTION_CONCURRENCY: ${EVO_CAPTION_CONCURRENCY:-8}
       EVO_CAPTION_MAX_EDGE: ${EVO_CAPTION_MAX_EDGE:-1280}
       EVO_CAPTION_VERSION: ${EVO_CAPTION_VERSION:-v1}
+      # Must match the gateway: whichever process sweeps first applies its own.
+      EVO_CAPTION_CACHE_TTL_DAYS: ${EVO_CAPTION_CACHE_TTL_DAYS:-90}
+      EVO_PARSE_ZIP_TTL_HOURS: ${EVO_PARSE_ZIP_TTL_HOURS:-6}
     command: ["python", "-m", "pipeline.ingest.worker"]
     depends_on:
       db:
@@ -202,18 +207,15 @@ services:
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-      EVO_MODEL_EMBEDDING: ${EVO_MODEL_EMBEDDING:-qwen/qwen3-embedding-4b}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
       EVO_QUERY_MODEL: ${EVO_QUERY_MODEL:-deepseek-v4-flash}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
-      EVO_MODEL_IMAGE_CAPTION: ${EVO_MODEL_IMAGE_CAPTION:-gemini-3.1-flash-lite-preview}
       WHISPER_API_KEY: ${WHISPER_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       WHISPER_BASE_URL: ${WHISPER_BASE_URL:-}
-      EVO_MODEL_STT: ${EVO_MODEL_STT:-}
     ports:
       # Bound to localhost: this is a debug port. Do not publish :8001 on a
       # public interface — the gateway reaches retrieval over the docker network.

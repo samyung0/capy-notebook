@@ -1923,6 +1923,8 @@ components:
           type: string
         chatModelKey:
           type: string
+        editorModelKey:
+          type: string
         generateModelKey:
           type: string
       type: object
@@ -2527,6 +2529,8 @@ components:
           type: string
         classLabel:
           type: string
+        editorModelKey:
+          type: string
         email:
           type: string
         generateModelKey:
@@ -2552,6 +2556,7 @@ components:
         - locale
         - chatModelKey
         - generateModelKey
+        - editorModelKey
         - planTier
         - subscriptionStatus
       type: object
@@ -4023,7 +4028,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Set chat and generate model preferences
+      summary: Set chat, generate and editor model preferences
       tags:
         - Account
   /api/mistakes:

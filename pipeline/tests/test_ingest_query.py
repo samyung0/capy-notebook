@@ -52,15 +52,31 @@ async def test_index_file_writes_chunks_summary_and_concepts(
         >= 1
     )
     # Every chunk must carry both retrieval representations, or one half of the
-    # hybrid search silently returns nothing for this file.
+    # hybrid search silently returns nothing for this file. The vector lives in
+    # the per-width side table, so a missing one is an absent row rather than a
+    # NULL column.
     assert (
         workspace.scalar(
-            "SELECT count(*) FROM rag_chunks "
-            "WHERE content_id = (SELECT content_id FROM rag_file_contents "
-            "WHERE file_id = %s) AND (embedding IS NULL OR search IS NULL)",
+            "SELECT count(*) FROM rag_chunks c "
+            "LEFT JOIN rag_chunk_vectors_2560 v ON v.chunk_id = c.id "
+            "WHERE c.content_id = (SELECT content_id FROM rag_file_contents "
+            "WHERE file_id = %s) AND (v.chunk_id IS NULL OR c.search IS NULL)",
             (file_id,),
         )
         == 0
+    )
+    # The content records which model actually produced those vectors, and it
+    # must agree with the space the workspace is pinned to.
+    assert (
+        workspace.scalar(
+            "SELECT count(*) FROM rag_contents rc JOIN workspaces w ON w.id = rc.workspace_id "
+            "JOIN rag_file_contents fc ON fc.content_id = rc.id WHERE fc.file_id = %s "
+            "AND rc.embedding_model_key = w.embedding_model_key "
+            "AND rc.embedding_model_version = w.embedding_model_version "
+            "AND rc.embedding_dim = w.embedding_dim",
+            (file_id,),
+        )
+        == 1
     )
     summary = workspace.scalar(
         "SELECT s.summary FROM rag_content_summaries s JOIN rag_file_contents fc "

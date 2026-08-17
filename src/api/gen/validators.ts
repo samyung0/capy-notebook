@@ -1256,6 +1256,7 @@ export const GetMeResponse = zod.object({
   "avatarUrl": zod.string().optional(),
   "chatModelKey": zod.string(),
   "classLabel": zod.string().optional(),
+  "editorModelKey": zod.string(),
   "email": zod.string(),
   "generateModelKey": zod.string(),
   "id": zod.string(),
@@ -1278,10 +1279,11 @@ export const SetLocaleResponse = zod.void()
 
 
 /**
- * @summary Set chat and generate model preferences
+ * @summary Set chat, generate and editor model preferences
  */
 export const SetModelPrefsBody = zod.object({
   "chatModelKey": zod.string().optional(),
+  "editorModelKey": zod.string().optional(),
   "generateModelKey": zod.string().optional()
 })
 

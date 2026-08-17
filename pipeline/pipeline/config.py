@@ -48,6 +48,14 @@ class Config:
 
     # ---- worker -----------------------------------------------------------
     poll_interval: float = float(_env("EVO_POLL_INTERVAL", "2.0"))
+    # Caption cache entries unused for this long are swept. Parse zips are
+    # dropped on success; the same sweeper is the orphan reaper for a zip
+    # whose drop never ran.
+    caption_cache_ttl_days: int = int(_env("EVO_CAPTION_CACHE_TTL_DAYS", "90"))
+    parse_zip_ttl_hours: int = int(_env("EVO_PARSE_ZIP_TTL_HOURS", "6"))
+    # Per-call bound for chat/embed/vision. A hung provider otherwise holds
+    # the worker (and its job lease) until the process is killed.
+    provider_timeout_s: float = float(_env("EVO_PROVIDER_TIMEOUT_S", "120"))
 
     # ---- Modal MinerU parse service --------------------------------------
     # Both parse routes are Modal GPU endpoints and return the same bundle
@@ -71,13 +79,18 @@ class Config:
     chunk_min_chars: int = int(_env("EVO_CHUNK_MIN_CHARS", "160"))
 
     # ---- embeddings (OpenRouter, OpenAI-compatible) -----------------------
+    # Credentials only. Which embedding model runs is never configured here: it
+    # is pinned per workspace (`workspaces.embedding_model_key`) and resolved
+    # from `model_configs`, because every chunk already in that workspace lives
+    # in that model's vector space and there is no reindex job to move them.
     embedding = ProviderCfg(
         api_key=_env("OPENROUTER_API_KEY"),
         base_url=_env("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
     )
-    embedding_model: str = _env("EVO_MODEL_EMBEDDING", "qwen/qwen3-embedding-4b")
-    # Must match halfvec(N) in server/migrations/0001_init.sql. Writes assert on
-    # it rather than letting a mismatched vector reach Postgres.
+    # The width the schema ships with, matching halfvec(N) in
+    # server/migrations/0001_init.sql. Vectors are stored one table per width, so
+    # a new width is a schema change (see rag_chunk_vectors_2560) rather than an
+    # env edit; this stays as the declared default for fixtures and assertions.
     embedding_dim: int = int(_env("EMBEDDING_DIM", "2560"))
     embedding_batch: int = int(_env("EVO_EMBEDDING_BATCH", "64"))
 
@@ -86,10 +99,10 @@ class Config:
         api_key=_env("DEEPSEEK_API_KEY"),
         base_url=_env("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
     )
-    # Provider model ids used only to bootstrap ingest/embed/vision/stt when
-    # the registry has no row yet. Chat and generate never read these: the
-    # gateway always sends an exact (modelKey, configVersion) pin.
-    ingest_model: str = _env("EVO_MODEL_EXTRACTION", "deepseek-v4-flash")
+    # Last-resort provider model id for an LLM call that was handed a bare model
+    # string rather than a registry pin. Ingest, embedding and vision no longer
+    # have an equivalent: each is resolved from an exact pin and fails loudly
+    # instead of running an unpriced model.
     query_model: str = _env("EVO_QUERY_MODEL", "deepseek-v4-flash")
 
     # ---- retrieval --------------------------------------------------------
@@ -112,7 +125,6 @@ class Config:
             "https://generativelanguage.googleapis.com/v1beta/openai/",
         ),
     )
-    vision_model: str = _env("EVO_MODEL_IMAGE_CAPTION", "gemini-3.1-flash-lite-preview")
     # Default for uploads that do not carry an explicit captionImages choice.
     # The real switch is per file, set at upload time and carried on the job.
     caption_images: bool = _env("EVO_CAPTION_IMAGES", "false").lower() == "true"
@@ -138,7 +150,6 @@ class Config:
         api_key=_env("WHISPER_API_KEY", _env("OPENAI_API_KEY")),
         base_url=_env("WHISPER_BASE_URL", "https://api.openai.com/v1"),
     )
-    stt_model: str = _env("EVO_MODEL_STT", "whisper-1")
 
     @property
     def query_models(self) -> set[str]:

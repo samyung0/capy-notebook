@@ -37,7 +37,7 @@ def parse_stub(monkeypatch):
         raw_dir.mkdir(parents=True, exist_ok=True)
         return content_list, "parsed/f_1/x.zip", "fp-1"
 
-    async def _caption(*, content_list, raw_dir, file_name, blob_path, source_etag):
+    async def _caption(*, content_list, raw_dir, file_name, source_sha256):
         state["captioned"] += 1
         content_list[1]["description"] = "A labelled chloroplast."
         return {
@@ -60,6 +60,7 @@ def parse_stub(monkeypatch):
     monkeypatch.setattr(worker, "chunk_content_list", _chunk)
     monkeypatch.setattr(worker, "_record_parse_artifact", lambda *a, **k: None)
     monkeypatch.setattr(worker, "_record_caption_blob", lambda *a, **k: None)
+    monkeypatch.setattr(worker, "_touch_or_upsert_artifact", lambda **k: None)
     monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
     return state
 
@@ -73,6 +74,7 @@ async def _run(parse_mode: str, *, caption_images: bool = False):
         caption_images=caption_images,
         ws="ws_1",
         file_id="f_1",
+        source_sha256="aa" * 32,
     )
 
 
@@ -108,6 +110,7 @@ async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatc
         caption_images=True,
         ws="ws_1",
         file_id="f_1",
+        source_sha256="aa" * 32,
     )
 
     assert chunks == ["# Notes"]
@@ -131,6 +134,7 @@ async def test_json_sources_are_ingested_as_text(parse_stub, monkeypatch):
         caption_images=True,
         ws="ws_1",
         file_id="f_1",
+        source_sha256="aa" * 32,
     )
 
     assert chunks == ['{"topic": "osmosis"}']
@@ -179,9 +183,56 @@ async def test_a_successful_parse_is_recorded_before_captioning(
 async def test_a_missing_source_blob_fails_before_paying_for_a_parse(
     parse_stub, monkeypatch
 ):
+    from pipeline.jobs import TerminalError
+
     monkeypatch.setattr(worker.blobstore, "object_info", lambda _p: None)
 
-    with pytest.raises(RuntimeError, match="source blob is missing"):
+    with pytest.raises(TerminalError, match="source blob is missing"):
         await _run("accurate")
 
     assert parse_stub["descriptor"] is None
+
+
+def test_the_source_hash_comes_from_the_bytes_not_the_stored_checksum(monkeypatch):
+    """The uploader controls the checksum header, so it cannot be the cache key.
+
+    Browsers PUT through a presigned URL that signs host and content-type only,
+    leaving ``x-amz-checksum-sha256`` free for the client to set. Trusting it
+    would let anyone claim the hash of a document they do not have and be handed
+    that document's chunks, summary and concepts by the donor lookup.
+    """
+    import hashlib
+    import io
+
+    from pipeline.store import blobstore
+
+    body = b"the real bytes"
+    forged = hashlib.sha256(b"someone else's document").hexdigest()
+
+    class FakeS3:
+        def head_object(self, **_kwargs):
+            return {"ContentLength": len(body), "ChecksumSHA256": forged}
+
+        def get_object(self, **_kwargs):
+            return {"Body": io.BytesIO(body)}
+
+    monkeypatch.setattr(blobstore, "_s3_client", FakeS3)
+
+    assert (
+        blobstore.sha256_object("sources/f_1.pdf") == hashlib.sha256(body).hexdigest()
+    )
+
+
+def test_a_vanished_source_reads_as_missing_rather_than_an_s3_error(monkeypatch):
+    from botocore.exceptions import ClientError
+
+    from pipeline.store import blobstore
+
+    class FakeS3:
+        def get_object(self, **_kwargs):
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+
+    monkeypatch.setattr(blobstore, "_s3_client", FakeS3)
+
+    with pytest.raises(FileNotFoundError):
+        blobstore.sha256_object("sources/gone.pdf")

@@ -190,3 +190,46 @@ def test_overflow_only_triggers_with_more_than_one_document():
     assert workflows.overflows(big, one_file) is False
     assert workflows.overflows(big, two_files) is True
     assert workflows.overflows("short", two_files) is False
+
+
+# ------------------------------------------------------------ file summaries
+
+
+async def test_a_failed_file_summary_retries_instead_of_storing_a_blank(monkeypatch):
+    """A blank summary is permanent: nothing refills it and donors copy it."""
+    import pytest
+
+    from pipeline.jobs import RetryableError
+    from pipeline.retrieval import indexing
+    from pipeline.retrieval.chunking import Chunk
+
+    async def _explode(*_a, **_k):
+        raise RuntimeError("provider is down")
+
+    monkeypatch.setattr(indexing, "ingest_spec", lambda: object())
+    monkeypatch.setattr(indexing.models, "complete_text", _explode)
+
+    with pytest.raises(RetryableError):
+        await indexing.summarize_file("bio.pdf", [Chunk(text="Chlorophyll absorbs")])
+
+
+async def test_the_summary_prompt_excludes_the_uploaders_file_name(monkeypatch):
+    """Summaries are copied verbatim to every workspace with the same bytes."""
+    from pipeline.retrieval import indexing
+    from pipeline.retrieval.chunking import Chunk
+
+    seen: list[str] = []
+
+    async def _capture(messages, **_k):
+        seen.append(messages[-1]["content"])
+        return "a summary"
+
+    monkeypatch.setattr(indexing, "ingest_spec", lambda: object())
+    monkeypatch.setattr(indexing.models, "complete_text", _capture)
+
+    await indexing.summarize_file(
+        "Divorce settlement draft.pdf", [Chunk(text="Chlorophyll absorbs")]
+    )
+
+    assert "Divorce settlement draft.pdf" not in seen[0]
+    assert "Chlorophyll absorbs" in seen[0]

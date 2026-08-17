@@ -179,12 +179,15 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 		if u.CreatedBy != nil {
 			actor = *u.CreatedBy
 		}
-		payload := s.ingestJobPayload(ctx, actor, map[string]any{
+		payload, err := s.ingestJobPayload(ctx, actor, map[string]any{
 			"fileId": fileID, "workspaceId": u.WorkspaceID, "blobPath": u.FinalPath,
 			"kind": u.Kind, "parser": parser, "engine": engine,
 			"parseMode": u.ParseMode, "captionImages": u.CaptionImages,
 			"sourceETag": sourceETag,
 		})
+		if err != nil {
+			return File{}, err
+		}
 		if _, err := tx.Exec(ctx,
 			`INSERT INTO jobs (id, type, payload) VALUES ($1,'ingest',$2)`,
 			jobID, payload); err != nil {

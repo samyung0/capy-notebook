@@ -9,9 +9,13 @@
 // quietly reprice an in-flight pin. A miss the database also cannot satisfy is
 // an error. Rows are disabled rather than deleted for that reason.
 //
-// Embedding and vision defaults are frozen at process start. A 30s poll that
-// swapped them would mix vector spaces (or caption caches) in one corpus.
-// Ingest jobs pin the versions they were enqueued with.
+// Nothing here is frozen at process start. Embedding and vision defaults used
+// to be, so that a 30s poll could not mix vector spaces within one corpus, but
+// that made the model a query was embedded with depend on when the container
+// last booted and left two replicas legitimately disagreeing. The guarantee now
+// comes from pins instead: embedding belongs to the workspace for its lifetime
+// (workspaces.embedding_model_key), and vision is snapshotted onto each ingest
+// job at enqueue.
 package models
 
 import (
@@ -120,9 +124,8 @@ type Registry struct {
 
 	mu      sync.RWMutex
 	byPin   map[cacheKey]Config
-	current map[string]Pin // surface -> default pin; embedding/vision frozen
+	current map[string]Pin // surface -> default pin
 	rev     int64
-	frozen  map[string]Pin // embedding, vision — never updated by poll
 }
 
 func New(ctx context.Context, pool *pgxpool.Pool) (*Registry, error) {
@@ -130,22 +133,19 @@ func New(ctx context.Context, pool *pgxpool.Pool) (*Registry, error) {
 		pool:    pool,
 		byPin:   map[cacheKey]Config{},
 		current: map[string]Pin{},
-		frozen:  map[string]Pin{},
 	}
 	if err := r.refresh(ctx); err != nil {
 		return nil, err
 	}
-	r.mu.Lock()
-	r.frozen[SurfaceEmbedding] = r.current[SurfaceEmbedding]
-	r.frozen[SurfaceVision] = r.current[SurfaceVision]
-	r.mu.Unlock()
 	return r, nil
 }
 
 func (r *Registry) Pool() *pgxpool.Pool { return r.pool }
 
 // Poll watches model_registry_state.version and reloads defaults when it
-// changes. Embedding and vision pins stay at the process-start snapshot.
+// changes. Retargeting a default only affects work that has not been pinned
+// yet: an in-flight job, an existing conversation and an existing workspace all
+// keep resolving the pair they were given.
 func (r *Registry) Poll(ctx context.Context) {
 	ticker := time.NewTicker(PollInterval)
 	defer ticker.Stop()
@@ -213,11 +213,6 @@ func (r *Registry) refresh(ctx context.Context) error {
 		r.byPin[k] = cfg
 	}
 	for surface, pin := range current {
-		if surface == SurfaceEmbedding || surface == SurfaceVision {
-			if _, frozen := r.frozen[surface]; frozen {
-				continue
-			}
-		}
 		r.current[surface] = pin
 	}
 	r.rev = rev
@@ -292,16 +287,12 @@ func (r *Registry) load(ctx context.Context, key string, version int) (Config, e
 	return cfg, err
 }
 
-// DefaultPin is the current default for a hot-reloadable surface, or the
-// process-start snapshot for embedding/vision.
+// DefaultPin is the current default for a surface. Callers that are choosing on
+// somebody's behalf (enqueue, account creation, workspace creation) resolve it
+// once and store the result; nothing downstream is allowed to call this again.
 func (r *Registry) DefaultPin(surface string) (Pin, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	if surface == SurfaceEmbedding || surface == SurfaceVision {
-		if pin, ok := r.frozen[surface]; ok && !pin.Zero() {
-			return pin, nil
-		}
-	}
 	pin, ok := r.current[surface]
 	if !ok || pin.Zero() {
 		return Pin{}, fmt.Errorf("%w: no default for %s", ErrNotFound, surface)
@@ -364,20 +355,32 @@ func (r *Registry) latestEnabled(ctx context.Context, key, surface string) (Conf
 	return cfg, nil
 }
 
-// SnapshotIngest returns the pins written onto an ingest job at enqueue.
-// Embedding and vision come from the frozen snapshot; ingest LLM from the
-// current (pollable) default.
-func (r *Registry) SnapshotIngest(ctx context.Context) (ingest, embedding, vision Config, err error) {
+// SnapshotIngest returns the pins written onto an ingest job at enqueue: the
+// two surfaces whose defaults are hot-reloadable and whose job may still be
+// queued when one moves.
+//
+// Embedding is deliberately absent. It comes from the workspace row instead,
+// because a workspace's vector space outlives any single job and must not be
+// re-decided per upload.
+func (r *Registry) SnapshotIngest(ctx context.Context) (ingest, vision Config, err error) {
 	ingest, err = r.Default(ctx, SurfaceIngest)
-	if err != nil {
-		return
-	}
-	embedding, err = r.Default(ctx, SurfaceEmbedding)
 	if err != nil {
 		return
 	}
 	vision, err = r.Default(ctx, SurfaceVision)
 	return
+}
+
+// EmbeddingDim is the vector width a config emits, which selects the
+// rag_chunk_vectors_<dim> table its vectors belong in. A check constraint in the
+// migration requires the value on every embedding row, so a zero here means the
+// row was written around the schema.
+func (c Config) EmbeddingDim() (int, error) {
+	dim := int(c.ParamFloat("dimensions", 0))
+	if dim <= 0 {
+		return 0, fmt.Errorf("%w: %s v%d declares no dimensions", ErrNotFound, c.Key, c.Version)
+	}
+	return dim, nil
 }
 
 // ListEnabled returns enabled configs that advertise surface, newest version

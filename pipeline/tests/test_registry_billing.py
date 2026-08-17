@@ -7,6 +7,10 @@ import pytest
 from pipeline.ingest import worker
 from pipeline.registry import (
     SURFACE_CHAT,
+    SURFACE_EMBEDDING,
+    SURFACE_INGEST,
+    SURFACE_STT,
+    SURFACE_VISION,
     JobPins,
     ModelConfig,
     RegistryError,
@@ -66,6 +70,22 @@ def test_chat_pin_does_not_fall_back(monkeypatch):
     )
     with pytest.raises(RegistryError, match="missing pin"):
         resolve_pinned(None, None, SURFACE_CHAT)
+
+
+@pytest.mark.parametrize(
+    "surface", [SURFACE_INGEST, SURFACE_EMBEDDING, SURFACE_VISION, SURFACE_STT]
+)
+def test_no_surface_resolves_its_own_default(monkeypatch, surface):
+    """Ingest, embedding, vision and STT used to fall back to the live default
+    when handed no pin, which is how an ingest job could run on a model nobody
+    had priced and write vectors into a space nobody had chosen. Strictness here
+    is what forces the choice back onto the caller that pays for it."""
+    monkeypatch.setattr(
+        "pipeline.registry.registry.default",
+        lambda _surface: (_ for _ in ()).throw(AssertionError("default used")),
+    )
+    with pytest.raises(RegistryError, match="missing pin"):
+        resolve_pinned(None, None, surface)
 
 
 def test_job_pins_keep_embedding_after_default_would_move():

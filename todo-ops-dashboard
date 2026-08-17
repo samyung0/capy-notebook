@@ -267,9 +267,36 @@ surfaces). That would reprice pins already stamped on messages/jobs.
 Instead: `INSERT` a new version, disable versions no remaining cell
 points at.
 
-Embedding / vision defaults are frozen in running gateway/pipeline
-processes. A Save that retargets those columns does not take effect until
-restart (+ reindex if the embedding dim changes). Surface that in the UI.
+Vision is a normal hot-reloadable column: retargeting it applies to jobs
+enqueued after the poll picks it up, and queued jobs keep their pin.
+
+**Embedding needs an explicit acknowledgement step in the UI**, because
+retargeting it is neither a hot reload nor a migration. Every workspace pins
+an embedding model at creation and keeps it for life
+(`workspaces.embedding_model_key`), so a new default reaches only workspaces
+created afterwards, and there is no reindex job. Save must make the operator
+confirm, in these words or close to them:
+
+- existing workspaces will keep using their current embedding model, forever;
+- the retired model's row can never be deleted and its provider must stay
+  reachable, because those workspaces resolve it on every search and upload;
+- retrieval quality now differs by workspace creation date.
+
+Two hard refusals belong here, not just a warning:
+
+- **Never leave a dimension without a model.** Every distinct
+  `workspaces.embedding_dim` in use must still have at least one enabled,
+  reachable embedding row of that width after Save. Disabling the last model
+  behind a width in use breaks search for every workspace on it. Compute the
+  in-use set from `SELECT DISTINCT embedding_dim FROM workspaces`.
+- **A new width is a schema change, not a Save.** An embedding row whose
+  `params.dimensions` has no `rag_chunk_vectors_<dim>` table is already
+  rejected by a check constraint; the UI should say so rather than surfacing a
+  constraint violation.
+
+Worth showing on this screen: per-dimension and per-model workspace counts
+(`GROUP BY embedding_dim, embedding_model_key`), so "which models can I never
+turn off" is answerable without writing SQL.
 
 ### 6.3 What Save must refuse
 
@@ -279,11 +306,14 @@ draft so a batch cannot leave the registry empty:
 - Every surface that currently has a default still has a default cell after
   Save. Retargeting a default is "clear this cell + mark another", not
   "leave the column with no default".
-- Clearing the last chat/generate cell of a user-facing key is
+- Clearing the last chat/generate/editor cell of a user-facing key is
   **deprecate**, not a quiet empty. Operator must name a fallback key that
   still has that surface in the *saved* grid. Then, in the same
-  transaction: remap `users.chat_model_key` / `generate_model_key`, disable
-  every enabled version of the retired key, notify (below).
+  transaction: remap `users.chat_model_key` / `generate_model_key` /
+  `editor_model_key`, disable every enabled version of the retired key,
+  notify (below). Editor is a user preference too as of the editor picker in
+  Settings → LLM; a remap that forgets it leaves those users failing with
+  `model_unavailable` on every keystroke that triggers the copilot.
 - A cell cannot point at a missing / disabled catalog row.
 - Do not disable a version that is still the default for a surface; move
   the default first (or as an earlier step in the same batch).

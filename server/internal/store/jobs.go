@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"time"
 
 	"github.com/evonotes/server/internal/obs"
@@ -44,11 +46,14 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 	}
 
 	jobID := uid("job")
-	payload := s.ingestJobPayload(ctx, createdBy, map[string]any{
+	payload, err := s.ingestJobPayload(ctx, createdBy, map[string]any{
 		"fileId": fileID, "workspaceId": wsID, "blobPath": blobPath, "kind": kind,
 		"parser": parser, "engine": engine, "parseMode": parseMode,
 		"captionImages": captionImages,
 	})
+	if err != nil {
+		return File{}, "", err
+	}
 	if _, err := tx.Exec(ctx, `INSERT INTO jobs (id, type, payload) VALUES ($1,'ingest',$2)`, jobID, payload); err != nil {
 		return File{}, "", err
 	}
@@ -110,27 +115,43 @@ func (s *Store) FileBlob(ctx context.Context, id string) (blobPath string, kind 
 	return blobPath, kind, content, url, err
 }
 
+// ErrIngestUnpinnable means an ingest job could not be given the identity it
+// needs to be billed and priced, so the upload it belongs to must be refused.
+var ErrIngestUnpinnable = errors.New("ingest cannot be enqueued without an actor and model pins")
+
 // ingestJobPayload is the enqueue-time snapshot for an ingest job: the actor
-// who initiated the upload, plus the embedding/vision/ingest pins resolved
-// now. The worker bills the actor and uses exactly those model versions even
-// if the live default is retargeted mid-flight.
-func (s *Store) ingestJobPayload(ctx context.Context, actorUserID string, base map[string]any) []byte {
-	if actorUserID != "" {
-		base["actorUserId"] = actorUserID
+// who will be billed, plus the ingest and vision pins resolved now. The worker
+// uses exactly those versions even if the live default is retargeted while the
+// job sits in the queue.
+//
+// It returns an error rather than a best-effort payload, and every caller aborts
+// its transaction on one. Both fields it guards are the difference between paid
+// and free work: without actorUserId the worker has nobody to charge and settles
+// nothing, and without the pins it would run on its own current defaults and
+// settle at those rates. Enqueueing anyway meant the most expensive path in the
+// product — GPU parse, captions, embeddings, summaries — could run for free, and
+// the more the registry was reconfigured the likelier that became. Refusing the
+// upload is visible, retryable, and cheap by comparison.
+//
+// The embedding model is not snapshotted here: it belongs to the workspace
+// (workspaces.embedding_model_key), which the worker reads directly. A per-job
+// copy could only ever agree with it or corrupt the workspace's vector space.
+func (s *Store) ingestJobPayload(ctx context.Context, actorUserID string, base map[string]any) ([]byte, error) {
+	if actorUserID == "" {
+		return nil, fmt.Errorf("%w: no actor", ErrIngestUnpinnable)
 	}
-	if s.registry != nil {
-		ingest, embed, vision, err := s.registry.SnapshotIngest(ctx)
-		if err != nil {
-			obs.CaptureErr(ctx, err, map[string]string{"stage": "ingest_model_pin"})
-		} else {
-			base["ingestModelKey"] = ingest.Key
-			base["ingestModelVersion"] = ingest.Version
-			base["embeddingModelKey"] = embed.Key
-			base["embeddingModelVersion"] = embed.Version
-			base["visionModelKey"] = vision.Key
-			base["visionModelVersion"] = vision.Version
-		}
+	base["actorUserId"] = actorUserID
+	if s.registry == nil {
+		return nil, fmt.Errorf("%w: no model registry", ErrIngestUnpinnable)
 	}
-	raw, _ := json.Marshal(base)
-	return raw
+	ingest, vision, err := s.registry.SnapshotIngest(ctx)
+	if err != nil {
+		obs.CaptureErr(ctx, err, map[string]string{"stage": "ingest_model_pin"})
+		return nil, fmt.Errorf("%w: %v", ErrIngestUnpinnable, err)
+	}
+	base["ingestModelKey"] = ingest.Key
+	base["ingestModelVersion"] = ingest.Version
+	base["visionModelKey"] = vision.Key
+	base["visionModelVersion"] = vision.Version
+	return json.Marshal(base)
 }
