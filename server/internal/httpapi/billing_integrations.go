@@ -34,6 +34,10 @@ func (a *api) importSources(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, map[string]string{"message": "provider and fileIds required"})
 		return
 	}
+	if err := a.s.AssertWorkspaceFileRoom(r.Context(), wsID, len(body.FileIds)); err != nil {
+		a.fail(w, err)
+		return
+	}
 
 	tok, err := integrations.ClerkAccessToken(r.Context(), userID, body.Provider)
 	if errors.Is(err, integrations.ErrNotConnected) {

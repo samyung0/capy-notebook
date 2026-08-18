@@ -91,6 +91,46 @@ def _is_cjk(ch: str) -> bool:
     return any(lo <= code <= hi for lo, hi in _CJK_RANGES)
 
 
+def estimate_tokens(text: str) -> int:
+    """Cheap token estimate that treats CJK as ~1 token per character.
+
+    Latin tokenizers pack ~4 characters per token. CJK tokenizers pack ~1.
+    ``len // 4`` therefore under-counts Chinese/Japanese/Korean by 3-4x and
+    would let a 50k-token budget admit ~200k real tokens of CJK.
+    """
+    if not text:
+        return 0
+    cjk = 0
+    other = 0
+    for ch in text:
+        if _is_cjk(ch):
+            cjk += 1
+        else:
+            other += 1
+    return cjk + (other + 3) // 4
+
+
+def clip_to_tokens(text: str, budget: int) -> str:
+    """Prefix of ``text`` whose estimated tokens fit in ``budget``."""
+    if estimate_tokens(text) <= budget:
+        return text
+    used = 0
+    latin_run = 0
+    out: list[str] = []
+    for ch in text:
+        if _is_cjk(ch):
+            cost = 1
+            latin_run = 0
+        else:
+            latin_run += 1
+            cost = 1 if latin_run % 4 == 1 else 0
+        if used + cost > budget:
+            break
+        used += cost
+        out.append(ch)
+    return "".join(out)
+
+
 def tokenize_for_search(text: str) -> str:
     """Rewrite text so `to_tsvector('simple', ...)` indexes CJK usefully.
 
@@ -215,13 +255,23 @@ def _split_long(text: str) -> list[str]:
     return pieces
 
 
+def _bbox_coords(bbox: object) -> list[float]:
+    try:
+        coords = [float(x) for x in bbox]  # type: ignore[union-attr]
+    except (TypeError, ValueError):
+        return []
+    return coords if len(coords) == 4 else []
+
+
 def _build(blocks: list[_Block], section_path: str) -> Chunk:
     pages = [b.page for b in blocks if b.page is not None]
-    regions = [
-        Region(page=b.page, bbox=[float(x) for x in b.bbox])
-        for b in blocks
-        if b.page is not None and b.bbox and len(b.bbox) == 4
-    ]
+    regions: list[Region] = []
+    for b in blocks:
+        if b.page is None or not b.bbox:
+            continue
+        coords = _bbox_coords(b.bbox)
+        if coords:
+            regions.append(Region(page=b.page, bbox=coords))
     return Chunk(
         text="\n\n".join(b.text.strip() for b in blocks if b.text.strip()),
         section_path=section_path,

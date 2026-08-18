@@ -183,7 +183,9 @@ def test_scope_label_names_both_axes():
 
 
 def test_overflow_only_triggers_with_more_than_one_document():
-    big = "x" * 30000
+    from pipeline.config import cfg
+
+    big = "x" * (cfg.llm_input_budget_tokens * 4)
     one_file = [_passage("c1", file_id="f_1")]
     two_files = one_file + [_passage("c2", file_id="f_2")]
 
@@ -222,14 +224,42 @@ async def test_the_summary_prompt_excludes_the_uploaders_file_name(monkeypatch):
 
     async def _capture(messages, **_k):
         seen.append(messages[-1]["content"])
-        return "a summary"
+        return '{"descriptor": "Chlorophyll absorbs light.", "summary": "A summary"}'
 
     monkeypatch.setattr(indexing, "ingest_spec", lambda: object())
     monkeypatch.setattr(indexing.models, "complete_text", _capture)
 
-    await indexing.summarize_file(
+    descriptor, summary = await indexing.summarize_file(
         "Divorce settlement draft.pdf", [Chunk(text="Chlorophyll absorbs")]
     )
 
     assert "Divorce settlement draft.pdf" not in seen[0]
     assert "Chlorophyll absorbs" in seen[0]
+    assert "Chlorophyll" in descriptor
+    assert summary
+
+
+async def test_the_concept_prompt_excludes_the_uploaders_file_name(monkeypatch):
+    """Concepts are copied to every workspace that uploads the same bytes."""
+    from pipeline.retrieval import indexing
+    from pipeline.retrieval.chunking import Chunk
+
+    seen: list[str] = []
+
+    async def _capture(messages, **_k):
+        seen.extend(m["content"] for m in messages)
+        return '["chlorophyll"]'
+
+    monkeypatch.setattr(indexing, "ingest_spec", lambda: object())
+    monkeypatch.setattr(indexing.models, "complete_text", _capture)
+
+    concepts = await indexing.extract_concepts(
+        "Divorce settlement draft.pdf",
+        [Chunk(text="Chlorophyll absorbs red and blue light.")],
+        [{"id": "chk_1"}],
+    )
+
+    blob = "\n".join(seen)
+    assert "Divorce settlement draft.pdf" not in blob
+    assert "Chlorophyll absorbs red and blue light." in blob
+    assert concepts and concepts[0]["name"] == "chlorophyll"

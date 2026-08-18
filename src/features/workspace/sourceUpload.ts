@@ -111,16 +111,21 @@ export function aggregateUploadPct(
 }
 
 export const MAX_SOURCE_UPLOAD_FILES = 20;
+export const MAX_FILES_PER_WORKSPACE = 100;
 export const SOURCE_UPLOAD_CONCURRENCY = 3;
 
 export function capSourceUploads<T>(
   existingCount: number,
-  incoming: T[]
+  incoming: T[],
+  workspaceRoom: number = MAX_SOURCE_UPLOAD_FILES
 ): { accepted: T[]; rejected: number } {
-  const room = Math.max(0, MAX_SOURCE_UPLOAD_FILES - existingCount);
+  const cap = Math.max(
+    0,
+    Math.min(MAX_SOURCE_UPLOAD_FILES, workspaceRoom) - existingCount
+  );
   return {
-    accepted: incoming.slice(0, room),
-    rejected: Math.max(0, incoming.length - room),
+    accepted: incoming.slice(0, cap),
+    rejected: Math.max(0, incoming.length - cap),
   };
 }
 

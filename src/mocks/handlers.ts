@@ -498,6 +498,7 @@ export const handlers = [
       color: (body.color as UserColor) ?? 'green',
       createdAt: new Date().toISOString(),
       fileCount: 0,
+      filesLimit: 100,
       id: uid('ws'),
       isOwner: true,
       lastAccessedAt: new Date().toISOString(),

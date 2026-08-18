@@ -9,16 +9,48 @@ are called via ``asyncio.to_thread``.
 from __future__ import annotations
 
 import secrets
+import threading
 from typing import Any
 
-import psycopg
 from psycopg.types.json import Jsonb
+from psycopg_pool import ConnectionPool
 
 from ..config import cfg
 
+_pool: ConnectionPool | None = None
+_pool_lock = threading.Lock()
 
-def connect(autocommit: bool = False) -> psycopg.Connection:
-    return psycopg.connect(cfg.dsn, autocommit=autocommit)
+
+def pool() -> ConnectionPool:
+    """Lazy singleton so tests can rewrite ``cfg.dsn`` before the first borrow."""
+    global _pool
+    if _pool is None:
+        with _pool_lock:
+            if _pool is None:
+                _pool = ConnectionPool(
+                    cfg.dsn,
+                    min_size=1,
+                    max_size=4,
+                    kwargs={
+                        "connect_timeout": 5,
+                        "options": "-c statement_timeout=30000",
+                    },
+                )
+    return _pool
+
+
+def connect():
+    """Borrow a pooled connection. Always use as ``with db.connect() as conn``."""
+    return pool().connection()
+
+
+def close_pool() -> None:
+    global _pool
+    with _pool_lock:
+        pool = _pool
+        _pool = None
+    if pool is not None:
+        pool.close()
 
 
 def uid(prefix: str) -> str:
@@ -31,7 +63,6 @@ def uid(prefix: str) -> str:
 def claim_job(cur, leases: dict[str, int]) -> dict[str, Any] | None:
     """Claim one due pending job atomically (FOR UPDATE SKIP LOCKED)."""
     ingest_lease = int(leases.get("ingest") or 180)
-    rollup_lease = int(leases.get("summaries_rollup") or 60)
     cur.execute(
         """
         UPDATE jobs SET
@@ -39,11 +70,7 @@ def claim_job(cur, leases: dict[str, int]) -> dict[str, Any] | None:
             locked_at=now(),
             updated_at=now(),
             attempts=attempts+1,
-            lease_expires_at = now() + make_interval(secs =>
-                CASE type
-                    WHEN 'summaries_rollup' THEN %s
-                    ELSE %s
-                END)
+            lease_expires_at = now() + make_interval(secs => %s)
         WHERE id = (
             SELECT id FROM jobs
             WHERE status='pending'
@@ -52,7 +79,7 @@ def claim_job(cur, leases: dict[str, int]) -> dict[str, Any] | None:
         )
         RETURNING id, type, payload, attempts
         """,
-        (rollup_lease, ingest_lease),
+        (ingest_lease,),
     )
     row = cur.fetchone()
     if not row:
@@ -126,47 +153,9 @@ def requeue_job(
     error: str,
     backoff_s: int,
 ) -> str:
-    """Return 'pending', 'superseded', or 'failed' after a retryable error.
-
-    Rollup's unique pending index allows one pending job per workspace. If a
-    sibling is already pending, this row is marked done (superseded) and the
-    sibling rebuilds the dirty set.
-    """
-    if job_type == "summaries_rollup" and workspace_id:
-        row = None
-        try:
-            # The NOT EXISTS below reads a READ COMMITTED snapshot, so a sibling
-            # the rollup trigger commits between that read and this write is
-            # invisible and the index rejects the row instead. Same outcome
-            # either way, so the savepoint turns the violation into a fold.
-            with cur.connection.transaction():
-                cur.execute(
-                    """
-                    UPDATE jobs SET
-                        status='pending',
-                        error=%s,
-                        not_before=now() + make_interval(secs => %s),
-                        lease_expires_at=NULL,
-                        updated_at=now()
-                    WHERE id=%s
-                      AND NOT EXISTS (
-                          SELECT 1 FROM jobs sibling
-                          WHERE sibling.type = 'summaries_rollup'
-                            AND sibling.status = 'pending'
-                            AND sibling.id <> %s
-                            AND sibling.payload->>'workspaceId' = %s
-                      )
-                    RETURNING id
-                    """,
-                    (error[:500], backoff_s, job_id, job_id, workspace_id),
-                )
-                row = cur.fetchone()
-        except psycopg.errors.UniqueViolation:
-            row = None
-        if row is None:
-            set_job(cur, job_id, "done", "superseded: pending rollup already exists")
-            return "superseded"
-        return "pending"
+    """Return 'pending' after a retryable error. ``job_type`` and
+    ``workspace_id`` are kept so callers do not have to special-case ingest."""
+    del job_type, workspace_id
     cur.execute(
         """
         UPDATE jobs SET
@@ -271,6 +260,15 @@ def set_file_parse_artifact(
     )
 
 
+def clear_file_parse_artifact(cur, file_id: str) -> None:
+    cur.execute(
+        """UPDATE files
+        SET parsed_blob_path=NULL, parsed_fingerprint=NULL, parsed_parser_version=NULL
+        WHERE id=%s""",
+        (file_id,),
+    )
+
+
 def set_file_caption_blob(cur, file_id: str, blob_path: str) -> None:
     cur.execute(
         "UPDATE files SET caption_blob_path=%s WHERE id=%s",
@@ -283,11 +281,11 @@ def add_notification(
     file_id: str,
     kind: str,
     data: dict[str, Any],
-) -> dict[str, Any]:
+) -> dict[str, Any] | None:
     cur.execute("SELECT user_id, workspace_id FROM files WHERE id=%s", (file_id,))
     owner = cur.fetchone()
     if not owner:
-        raise ValueError(f"cannot notify for missing file {file_id}")
+        return None
     user_id, workspace_id = owner
     notification_id = uid("nt")
     href = f"/workspaces/{workspace_id}?file={file_id}"
@@ -324,7 +322,7 @@ def add_workspace_notification(
     kind: str,
     data: dict[str, Any],
 ) -> dict[str, Any] | None:
-    """Notify a user about workspace-level work (rollup has no file)."""
+    """Notify a user about workspace-level work that is not tied to a file."""
     if not user_id:
         return None
     notification_id = uid("nt")

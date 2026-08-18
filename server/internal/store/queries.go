@@ -162,6 +162,7 @@ const wsCols = `w.id, w.name, w.color, w.privacy, w.share_role,
 func scanWorkspace(row pgx.Row) (Workspace, error) {
 	var w Workspace
 	err := row.Scan(&w.ID, &w.Name, &w.Color, &w.Privacy, &w.ShareRole, &w.Tags, &w.OwnerUserID, &w.OwnerName, &w.ChapterCount, &w.FileCount, &w.CreatedAt, &w.LastAccessedAt)
+	w.FilesLimit = MaxFilesPerWorkspace
 	return w, err
 }
 
@@ -763,6 +764,9 @@ func (s *Store) AddSource(ctx context.Context, wsID, name, kind string, chapterI
 		return File{}, err
 	}
 	if err := s.gateStorageTx(ctx, tx, ownerID, sizeBytes); err != nil {
+		return File{}, err
+	}
+	if err := s.gateWorkspaceFilesTx(ctx, tx, wsID, 1); err != nil {
 		return File{}, err
 	}
 	// Phase 1: no pipeline yet, so sources land 'ready'. Phase 2 sets

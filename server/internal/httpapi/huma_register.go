@@ -84,6 +84,24 @@ func hErr(err error) error {
 			}},
 		}
 	}
+	var fileLimit *store.FileLimitExceededError
+	if errors.As(err, &fileLimit) {
+		return &huma.ErrorModel{
+			Status: http.StatusForbidden,
+			Title:  http.StatusText(http.StatusForbidden),
+			Detail: "workspace file limit exceeded",
+			Errors: []*huma.ErrorDetail{{
+				Message: fileLimit.Code(),
+				Value: map[string]any{
+					"filesUsed":      fileLimit.Used,
+					"filesReserved":  fileLimit.Reserved,
+					"filesRequested": fileLimit.Requested,
+					"filesLimit":     fileLimit.Limit,
+					"workspaceId":    fileLimit.WorkspaceID,
+				},
+			}},
+		}
+	}
 	var locked *store.AccountLockedError
 	if errors.As(err, &locked) {
 		return &huma.ErrorModel{

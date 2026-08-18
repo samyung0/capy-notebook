@@ -1,0 +1,585 @@
+# Ingest workflow audit — issues and fixes
+
+Status: review pending. Generated from a full trace of the ingest path (Go enqueue →
+`jobs` queue → Python worker → parse/caption/chunk → index → settle) against
+`openwiki/agentic-retrieval.md`. Nothing has been changed yet.
+
+## Summary
+
+| ID | Severity | Issue | Fix size |
+| --- | --- | --- | --- |
+| H1 | High | Pin-resolution failures are terminal even for transient DB errors | Small (exception classification) |
+| H2 | High | Job-lease reaper runs inside the worker process (dead worker ⇒ stuck jobs) | Medium (separate reaper) |
+| H3 | High | `add_notification` raises on a file deleted mid-ingest ⇒ spurious retry + error noise | Small |
+| M1 | Medium | Claim-stealing can yank a live creator ⇒ FK errors + double GPU spend | Small (steal keyed on owner lease) |
+| M2 | Medium | `files.parsed_blob_path` dangles after the parse zip is dropped (duplicate path) | Small |
+| M3 | Medium | `parseMode=none` on text kinds still indexes the file (contract contradiction) | Small (Go + worker) |
+| M4 | Medium | Rollup: runtime default resolution has no fast-fail; running rollup defeats the debounce | Small |
+| M5 | Medium | `_handle_job_failure`/`_requeue` have no timeout; a DB outage stalls the single worker loop | Small |
+| L1 | Low | `content_hash` excludes heading breadcrumbs ⇒ heading leakage across canonical rows | Small |
+| L2 | Low | `chunking._build` does unguarded `float(x)` on bbox ⇒ job crash on malformed parse output | Trivial |
+| L3 | Low | Unknown/missing `parseMode` silently defaults to the expensive `accurate` route | Trivial |
+| L4 | Low | `vector_literal` rounds vectors to 6 significant digits | Trivial (maybe skip) |
+| L5 | Low | `_charge_ingest` per-model attribution can price a shared provider-model-id at the wrong surface rate | Medium (skip for now) |
+| L6 | Low | Progress percentages skip 40 → 70 for text kinds (cosmetic) | Trivial |
+| L7 | Low | `_reuse_donor` failure leaves the file unattached to any content row until re-attach | Small |
+
+---
+
+## H1 — Pin-resolution failures are terminal with no retry
+
+- **Status:** not started
+- **Where:** `pipeline/pipeline/ingest/worker.py:601-625` (the `except Exception` around
+  `pins_from_payload`), `pipeline/pipeline/retrieval/store.py:73-93`
+  (`workspace_embedding_pin`), `pipeline/pipeline/registry.py:298-310` (`resolve_pinned`)
+
+### Problem
+
+```python
+try:
+    pins = registry.pins_from_payload(
+        payload, embedding=await _workspace_embedding_spec(ws)
+    )
+except Exception as exc:  # noqa: BLE001
+    obs.capture_error(exc, stage="ingest_job_pins")
+    ...
+    _finish_fail(file_id, job["id"], f"{note} {exc}", attempts)  # job 'failed', file 'failed'
+    return
+```
+
+One blanket `except Exception` treats two different failure classes identically:
+
+1. **Deterministic, permanent** — `RegistryError` (pinned `model_configs` row missing/
+   invalid), `RuntimeError` ("workspace … has no embedding pin"). Retrying will never help;
+   terminal is correct. **Keep this behavior.**
+2. **Transient, retryable** — `psycopg.OperationalError` / `InterfaceError` / pool timeout
+   while reading `workspaces.embedding_model_key` or during the `model_configs` point-read.
+   These resolve seconds later, but the job and file are failed permanently instead.
+
+The fail-closed principle (never run a job that cannot say what it was priced for; never
+fall back to worker-side defaults) is right and must stay. The flaw is only the
+classification, and it produces a **nondeterministic outcome for the same fault**: every
+other DB touch in the worker (`_file_exists`, `_account_allows_ingest`, indexing writes)
+goes through the retry path, and even this handler retries if `_read_name` inside the
+`except` also fails. Whether a DB blip kills the file depends on which connection fails,
+not on what is wrong.
+
+### Why it matters
+
+- No re-ingest/retry endpoint exists anywhere (Go or frontend); a terminally failed file's
+  only recovery is a manual re-upload.
+- A Postgres restart / connection-pool wait / failover window that happens to strike at
+  pin-resolution time permanently fails every job claimed in that window, and the user
+  sees "ingest refused because its model pins could not be resolved" for a fault that was
+  gone in seconds.
+- The enqueue side already refuses to enqueue without actor + pins
+  (`server/internal/store/jobs.go:139-156`), so a job that reaches the worker with
+  unresolvable pins is either an operator-deleted row (permanent) or a transient read
+  failure (retryable). Nothing about fixing this reopens the "runs unpinned" hole: the job
+  still fails closed on every attempt until pins resolve.
+
+### Fix
+
+Narrow the handler to the deterministic classes; let everything else propagate to
+`_handle_job_failure` (retryable with the normal 3-attempt backoff):
+
+```python
+except RegistryError as exc:       # pin genuinely missing/invalid → fail closed, as today
+    ...
+except RuntimeError as exc:        # workspace row missing / pin columns null → fail closed
+    ...
+# psycopg errors and anything else: propagate → _handle_job_failure → requeue with backoff
+```
+
+- **Files to touch:** `pipeline/pipeline/ingest/worker.py` only. Consider making
+  `_workspace_embedding_spec` raise a dedicated `RegistryError` subclass instead of
+  `RuntimeError` so the classification is explicit.
+- **Cost of the fix:** a genuinely-deleted pinned row now burns the attempt budget before
+  terminal (~90s of backoff). Acceptable; it is the same cost every other failure pays.
+- **Verify:** unit-test both classes — (a) delete a pinned `model_configs` row → job fails
+  immediately, terminal; (b) make `workspace_embedding_pin` raise a psycopg error once →
+  job requeues, succeeds on attempt 2; (c) regression: missing `actorUserId` payload still
+  terminal.
+
+---
+
+## H2 — The job-lease reaper lives inside the worker process
+
+- **Status:** not started
+- **Where:** `pipeline/pipeline/ingest/worker.py:73-112` (`_claim_one` runs
+  `reclaim_expired_leases`), `pipeline/pipeline/store/db.py:185-243`
+  (`reclaim_expired_leases`), `pipeline/pipeline/ingest/worker.py:1032-1053` (only caller)
+
+### Problem
+
+`reclaim_expired_leases` — the only code that turns stale `running` jobs back into
+`pending` (or `failed` once the attempt budget is spent) and that drops orphaned
+`rag_contents` claims — is invoked from inside `_claim_one`, i.e. **only while the worker
+process is alive**. The Go gateway does not reclaim jobs; its reaper only drains
+`pending_blob_deletions` and sweeps `artifact_cache` (`server/cmd/api/blob_workers.go`).
+
+### Why it matters
+
+- If the worker crashes, OOMs, or crash-loops, every in-flight `running` job and its
+  `processing` `rag_contents` claim stays stuck until the process restarts. With a
+  single-worker deployment (the default shape here), that is the whole queue.
+- Waiters can still steal claims (`_wait_for_content`), but the creator's job is wedged
+  and the file stays `processing` indefinitely.
+
+### Fix
+
+Move the reaper out of the claim loop:
+
+- **Preferred:** a separate lightweight process `python -m pipeline.ingest.reaper` that
+  polls `reclaim_expired_leases` (+ the artifact sweep + reclaim notifications) on its own
+  interval. Policy stays in `pipeline/jobs.py`, so nothing is duplicated.
+- **Alternative:** add a `Store.ReclaimJobs(ctx, limit)` method in Go and call it from the
+  existing `runBlobReaper` ticker; the retry policy (leases/attempts/backoff) would have
+  to be mirrored into Go or read from env — prefer the Python process.
+- Keep `_claim_one` calling the reaper too (harmless, removes the reclaim→claim latency
+  in the common case), but do not depend on it.
+- Move the reclaim-time notifications (`_notify_ingest_terminal` /
+  `_notify_rollup_terminal` for reclaimed rows) into the reaper so a worker death does not
+  silence them.
+- **Verify:** kill -9 the worker mid-job → within one reaper interval the job is pending
+  again (or failed at budget), the claim row is gone, and a fresh worker picks it up.
+  No double-processing: the fencing (`claim_is_current`, `attempts`) already protects the
+  successor's writes.
+
+---
+
+## H3 — `add_notification` raises when a file is deleted mid-ingest
+
+- **Status:** not started
+- **Where:** `pipeline/pipeline/ingest/worker.py:143-182` (`_finish_ok`),
+  `pipeline/pipeline/store/db.py:281-316` (`add_notification` raises `ValueError` at line
+  290 when the `files` row is gone)
+
+### Problem
+
+`_process_ingest_job` checks `_file_exists` only at the start (line 808). The user can
+delete the file while parse/indexing runs. `_finish_ok` then:
+
+1. `set_file_status` / `set_file_indexed` / artifact writes — all no-ops on a missing row,
+   no error;
+2. `db.add_notification` → `SELECT user_id, workspace_id FROM files` → no row →
+   `raise ValueError("cannot notify for missing file ...")` → **the whole transaction
+   rolls back**, including the job's `done` status.
+
+The exception bubbles up → `_handle_job_failure` → `is_retryable(ValueError)` is True →
+job requeued → attempt 2 → `_file_exists` → `TerminalError("file no longer exists")` →
+terminal. Net effect per deleted-mid-ingest file: one wasted attempt, a Sentry capture
+`stage=ingest_terminal`, and a misleading "failed" progress event for a file the UI has
+already removed.
+
+### Fix
+
+Make the notification best-effort and separate from the state commit:
+
+- **Option A (preferred):** in `_finish_ok`, commit file+job state first, then open a
+  second transaction for `add_notification` wrapped in `try/except` (log + continue).
+- **Option B:** inside the existing transaction, guard with
+  `SELECT 1 FROM files WHERE id = %s` before `add_notification`; skip the notification
+  when missing.
+
+Same pattern applies to `_finish_fail` → `add_notification` paths
+(`_notify_ingest_terminal`, `worker.py:227-253`).
+
+- **Files to touch:** `pipeline/pipeline/store/db.py` (helper or guard),
+  `pipeline/pipeline/ingest/worker.py` (call sites).
+- **Verify:** start an ingest, delete the file mid-parse (test hook or manual timing) →
+  job completes `done` without retry, no Sentry error, no "failed" SSE event.
+
+---
+
+## M1 — Claim-stealing can yank a live creator (FK errors + double GPU spend)
+
+- **Status:** not started
+- **Where:** `pipeline/pipeline/ingest/worker.py:651-696` (`_wait_for_content`),
+  `pipeline/pipeline/retrieval/store.py:166-181` (`steal_stale_content`),
+  `pipeline/pipeline/store/db.py:110-117` (heartbeat refresh of `rag_contents.updated_at`)
+
+### Problem
+
+A waiter steals a `processing` `rag_contents` claim when
+`updated_at < now() - CONTENT_CLAIM_STALE_S` (90s). The claim's `updated_at` is refreshed
+only by the **creator's** heartbeat thread writing to the DB (every 30s). During a DB
+blip >90s:
+
+1. A waiter (or the same job's retry) deletes the creator's claim row;
+2. the `rag_file_contents` FK cascade removes the creator's own file attachment;
+3. the creator's in-flight `replace_content_chunks` hits an FK violation (content row
+   gone) → its job fails → requeues → re-parses and re-embeds the whole file.
+
+It converges (fencing + retry), but a transient DB hiccup can double the most expensive
+steps of ingest (Modal GPU parse + embedding), and it can happen repeatedly if the blip
+recurs.
+
+### Fix
+
+Key the steal on the **owner's job lease**, which is the true "creator dead" signal, not
+on `updated_at` (which only proves the heartbeat's *last write* failed):
+
+```sql
+-- steal_stale_content: only when the owning job is no longer alive
+DELETE FROM rag_contents rc
+WHERE rc.workspace_id = %s AND rc.content_hash = %s
+  AND rc.status = 'processing'
+  AND rc.updated_at < now() - make_interval(secs => %s)
+  AND NOT EXISTS (
+      SELECT 1 FROM jobs j
+      WHERE j.id = rc.claim_job_id
+        AND j.status = 'running'
+        AND j.lease_expires_at > now()
+  )
+```
+
+This also aligns the steal with the reaper, which already treats an expired lease as the
+death signal and drops the claim. Keep `CONTENT_CLAIM_STALE_S` as the floor so a worker
+whose heartbeat just started is not stolen on a race.
+
+- **Files to touch:** `pipeline/pipeline/retrieval/store.py` (SQL),
+  `pipeline/pipeline/jobs.py` (comment update).
+- **Verify:** two-worker test — creator with heartbeat paused (simulate), waiter steals
+  only after the creator's lease expires; creator with live lease + stale `updated_at`
+  (simulate a failed heartbeat) is **not** stolen.
+
+---
+
+## M2 — `files.parsed_blob_path` dangles after the parse zip is dropped
+
+- **Status:** not started
+- **Where:** `pipeline/pipeline/ingest/worker.py:896-918` (duplicate path: `_finish_ok`
+  with `artifact_key` then `_drop_parse_zip` at line 917), also the normal success path
+  (lines 932-946); trigger `server/migrations/0001_init.sql:1883-1901` (artifact unref →
+  B2 deletion after 15 min); column `files.parsed_blob_path` at `0001_init.sql:257`
+
+### Problem
+
+On the `association["ready"]` (source_duplicate) path the worker:
+
+1. records `parsed_blob_path = <this job's parse zip key>` via `_finish_ok`;
+2. immediately `_drop_parse_zip(artifact_key)` → `artifact_cache` row deleted → trigger
+   schedules the B2 object for deletion in 15 minutes.
+
+Artifact keys are content-addressed (`source_sha256 + parse_method + route + version`), so
+the same key is very likely still referenced by the *other* file whose ready row was
+reused — and even on the ordinary success path the zip is dropped while
+`parsed_blob_path` still names it. Today nothing reads `parsed_blob_path` (grep finds only
+the migration), so this is latent — but any future re-parse/caption/citation reader gets a
+404, and the field is meant to be load-bearing ("a later vision failure must not leave the
+zip untracked for the blob reaper").
+
+### Fix
+
+Make the recorded pointer honest:
+
+- On the duplicate path, pass `None` for the artifact args to `_finish_ok` (the content
+  belongs to another file; this file does not need its own artifact pointer), or
+- add a `clear_file_parse_artifact` helper that NULLs `parsed_blob_path` /
+  `parsed_fingerprint` / `parsed_parser_version` when the zip is dropped, and call it in
+  both drop sites.
+
+- **Files to touch:** `pipeline/pipeline/ingest/worker.py`,
+  `pipeline/pipeline/store/db.py`.
+- **Verify:** ingest a duplicate file → `files.parsed_blob_path` is NULL (or matches a
+  live object); the surviving file's pointer still resolves.
+
+---
+
+## M3 — `parseMode=none` on text kinds still indexes the file
+
+- **Status:** not started — needs a product decision first
+- **Where:** `server/internal/sourceupload/rules.go:364-386` (`DefaultParseMode` returns
+  `ParseModeNone` for text; `NeedsIngestJob` returns **true** for text regardless of
+  mode), `pipeline/pipeline/ingest/worker.py:820-834` (stored-only branch explicitly
+  excludes `_TEXT_KINDS`)
+
+### Problem
+
+The contract says `parseMode=none` ⇒ "stored without parsing (not indexed for
+retrieval)", and the worker's own docstring promises `indexed=false` for such jobs. But
+for txt/md/json, `NeedsIngestJob` is always true and the worker's stored-only branch skips
+text kinds — so a user who picks "store only" on a `.txt` gets it chunked, embedded and
+searchable (`indexed=true`), while the same choice on a PDF stores it unindexed. The
+worker's `_chunks_for` text branch then runs with `parse_mode=none`, contradicting the
+payload the UI believes it sent.
+
+### Fix (once the product decision is made)
+
+- **If "none" must mean stored-only for everything:** change `DefaultParseMode` for text
+  kinds to return `ParseModeFast` (a text job always has a real mode), change
+  `NeedsIngestJob` to `mode != ParseModeNone`, and change the worker branch to
+  `if parse_mode == "none":` for all kinds. The worker's text branch already ignores the
+  mode, so text with `fast` still indexes exactly as today.
+- **If text must always be indexed:** keep the code, but stop offering "none" for text
+  kinds in the API/UI and update the worker docstring + this audit note so the payload
+  never lies.
+
+- **Files to touch:** `server/internal/sourceupload/rules.go` (+ its tests),
+  `pipeline/pipeline/ingest/worker.py`, frontend upload dialog if the option is shown for
+  text.
+- **Verify:** upload `.txt` with mode none under each decision; assert
+  `files.indexed`/`status` and that chat/generate cannot find it (or can, per decision).
+
+---
+
+## M4 — Rollup: runtime default resolution has no fast-fail; running rollup defeats the debounce
+
+- **Status:** not started
+- **Where:** `pipeline/pipeline/ingest/worker.py:951-973` (`process_rollup_job`),
+  `pipeline/pipeline/registry.py:204-213` (`default_pin`), unique index
+  `server/migrations/0001_init.sql:817-819` (`jobs_pending_rollup_idx`)
+
+### Problem
+
+(a) A rollup job carries no payload pins (it is enqueued by a DB trigger), so the worker
+resolves the ingest default at runtime. If the registry's poll never populated defaults
+(worker booted during a DB outage, `model_registry_state` missing/empty), every rollup
+fails → 3 retries → terminal → owner notification ("summary refresh couldn't be
+refreshed"). `RegistryError` is technically retryable so it burns the budget before
+failing, but there is no fast, clear error and no waiting for the registry to warm up.
+
+(b) The debounce only covers `status='pending'`. If a rollup is **running** while ingest
+marks the workspace dirty, a second rollup row is inserted; when the running one
+completes, the sibling runs and repeats the workspace LLM call even if nothing else
+changed in between (the running rollup already rebuilt everything the sibling would).
+
+### Fix
+
+- (a) In `process_rollup_job`, retry the default resolution with a short bounded wait
+  (e.g. call `registry.registry.refresh()` + re-resolve for ~60s) before failing; raise
+  `RetryableError` with a message naming the missing default so the attempt budget is used
+  meaningfully.
+- (b) At rollup start, self-supersede when a pending sibling already exists for the same
+  workspace (mirror of `db.requeue_job`'s rollup branch): `SELECT 1 FROM jobs WHERE
+  type='summaries_rollup' AND status='pending' AND payload->>'workspaceId'=%s AND id<>%s`
+  → mark self `done` and return.
+
+- **Files to touch:** `pipeline/pipeline/ingest/worker.py`,
+  `pipeline/pipeline/store/db.py`.
+- **Verify:** (a) start the worker with an empty `model_registry_state` → rollup waits,
+  succeeds once seeded; (b) trigger two rolls in quick succession (ingest mid-rollup) →
+  exactly one workspace-summary LLM call.
+
+---
+
+## M5 — Failure bookkeeping has no timeout; DB outage stalls the single worker loop
+
+- **Status:** not started
+- **Where:** `pipeline/pipeline/ingest/worker.py:1084-1091` (`_handle_job_failure` awaited
+  outside any timeout), `pipeline/pipeline/store/db.py:20-21` (`psycopg.connect` with no
+  connect timeout)
+
+### Problem
+
+`_handle_job_failure` (→ `_requeue` / `_finish_fail` / `_notify_ingest_terminal`) runs
+without a timeout and each call opens fresh connections. `psycopg.connect` has no
+connect/statement timeout configured, so during a DB outage the worker can block minutes
+per failed job — while holding the claim of a job the reaper (same process, H2) cannot
+reclaim. Separately, `_claim_one`'s `except Exception` logs at ERROR every 2s during an
+outage (log spam + connection churn).
+
+### Fix
+
+- Add `connect_timeout` (and ideally `options=-c statement_timeout=...`) to
+  `psycopg.connect` in `db.py`, or wrap `_handle_job_failure` in
+  `asyncio.timeout(30)`.
+- Downgrade the claim-error log to WARNING (it is an expected condition, not an
+  exception), and log retryable job failures at WARNING instead of `log.exception` (line
+  1106) — the traceback belongs in Sentry via `obs.capture_error`, not in the log at
+  ERROR for every transient provider 503.
+
+- **Files to touch:** `pipeline/pipeline/store/db.py`, `pipeline/pipeline/ingest/worker.py`.
+- **Verify:** stop Postgres → worker keeps polling without long stalls, logs at WARNING;
+  restart Postgres → queued jobs resume.
+
+---
+
+## L1 — `content_hash` excludes heading breadcrumbs
+
+- **Status:** not started
+- **Where:** `pipeline/pipeline/retrieval/indexing.py:29-34` (`content_hash` hashes only
+  `chunk.text`), `pipeline/pipeline/retrieval/chunking.py:56-59` (`indexed_text` prepends
+  `section_path`)
+
+### Problem
+
+`rag_contents (workspace_id, content_hash)` dedupes by body text only. Two parses with
+identical body text but different heading structure collapse into one canonical row, so
+the second file's citations/`indexed_text` show the first file's section headings. The
+doc claims `pipeline_identity` covers "anything that feeds chunk text" — but the *content
+dedup key* does not. In practice this needs cross-document body-text collisions or
+nondeterministic parses, so impact is low — but the heading leak is exactly the class of
+cross-file contamination the code elsewhere works hard to prevent.
+
+### Fix
+
+Hash `chunk.indexed_text()` (or include `section_path` in the digest input). Note: this
+changes `content_hash` values for every file (and the summary `fingerprint`, which is
+derived from it), so it should land together with a note in `agentic-retrieval.md`; it
+does not invalidate stored rows — the hash is computed fresh per ingest. Donor reuse is
+unaffected (keyed on `source_sha256 + pipeline_identity`).
+
+- **Files to touch:** `pipeline/pipeline/retrieval/indexing.py` (+ tests),
+  `openwiki/agentic-retrieval.md`.
+- **Verify:** two files with same body, different headings → two `rag_contents` rows,
+  each file's citations show its own headings.
+
+---
+
+## L2 — Unguarded `float(x)` on bbox coordinates
+
+- **Status:** not started
+- **Where:** `pipeline/pipeline/retrieval/chunking.py:218-231` (`_build`, `float(x)` at
+  line 221)
+
+### Problem
+
+`Region(... bbox=[float(x) for x in b.bbox])` raises `ValueError` on a malformed
+`content_list.json` (e.g. string coordinates). MinerU is trusted today, but a corrupt or
+future-schema artifact crashes the whole job → 3 retries → terminal, where skipping the
+region would be strictly better.
+
+### Fix
+
+```python
+try:
+    coords = [float(x) for x in b.bbox]
+except (TypeError, ValueError):
+    coords = []
+regions = [...]  # only when coords and len(coords) == 4
+```
+
+- **Files to touch:** `pipeline/pipeline/retrieval/chunking.py`.
+- **Verify:** unit test with a string-coordinate block → chunk built without that region,
+  no exception.
+
+---
+
+## L3 — Unknown/missing `parseMode` silently defaults to the expensive `accurate` route
+
+- **Status:** not started
+- **Where:** `pipeline/pipeline/ingest/worker.py:63-66` (`_PARSE_ROUTES`), line 517
+  (`_PARSE_ROUTES.get(parse_mode, modal_parser.ROUTE_ACCURATE)`)
+
+### Problem
+
+The documented default is `fast`; the worker's fallback is `accurate` (the hybrid VLM —
+more GPU seconds per page). A stale/corrupt job payload with an unknown mode silently
+pays the most expensive parse and gets a different `pipeline_identity` (donor misses).
+The gateway validates modes, so this only fires on legacy/corrupt rows — but it is the
+wrong direction to fail.
+
+### Fix
+
+```python
+route = _PARSE_ROUTES.get(parse_mode)
+if route is None:
+    raise TerminalError(f"unknown parse mode {parse_mode!r}")
+```
+
+(or default to `fast` if silent downgrade is preferred — recommend the explicit error).
+
+- **Files to touch:** `pipeline/pipeline/ingest/worker.py`.
+- **Verify:** job with `parseMode: "bogus"` → terminal with a clear message, no Modal
+  call.
+
+---
+
+## L4 — `vector_literal` rounds vectors to 6 significant digits
+
+- **Status:** skip unless measurements say otherwise
+- **Where:** `pipeline/pipeline/retrieval/store.py:47-49`
+
+`f"{v:.6g}"` truncates embeddings to ~6 significant digits before pgvector parses them.
+This is below the provider's own output precision and slightly degrades recall
+(cosine distance on rounded halfvec). If ever touched, use a higher precision (e.g.
+`.8g` or full `repr`) — but there is no evidence yet this matters for halfvec(2560)
+HNSW recall. Document the rounding budget in the docstring either way.
+
+---
+
+## L5 — `_charge_ingest` per-model attribution can price a shared provider id at the wrong surface rate
+
+- **Status:** not started — low priority
+- **Where:** `pipeline/pipeline/ingest/worker.py:393-426` (`spec = vision if
+  model_id == vision.provider_model_id else ingest`)
+
+### Problem
+
+Token attribution picks the rate card by comparing `provider_model_id` strings. If the
+ingest and vision pins ever resolve to the same provider model id, all its tokens are
+priced at the vision surface's rate. Today the two surfaces use distinct models, so this
+is latent; fixing it properly means threading the surface through
+`obs.record_completion` (which currently records only provider+model), i.e. touching
+every model call site. Recommend deferring until surfaces can actually share a model.
+
+---
+
+## L6 — Progress percentages skip 40 → 70 for text kinds
+
+- **Status:** not started — cosmetic
+- **Where:** `pipeline/pipeline/ingest/worker.py:514` (text path publishes 40, then
+  `index_file`'s `on_progress` emits 70/85/95)
+
+Text ingests jump from 40% to 70% with no intermediate events (no "parsing" stage
+exists for them). Publish a 55 after chunking, or accept the jump. No code change needed
+if the UI treats stages as advisory.
+
+---
+
+## L7 — `_reuse_donor` failure leaves the file unattached until re-attach
+
+- **Status:** not started
+- **Where:** `pipeline/pipeline/ingest/worker.py:757-765`
+
+### Problem
+
+When `copy_content_from_donor` returns False (donor vanished under `FOR SHARE`, e.g. its
+workspace was deleted), the code `abandon_content`s the processing claim — which
+cascade-deletes the file's `rag_file_contents` row — then returns False and the caller
+falls through to a full re-parse. Between the abandon and the later `attach_file_content`,
+the file has no content attachment and is invisible to search (`scoped_files` joins
+`rag_file_contents`). Converges correctly, but the window is avoidable.
+
+### Fix
+
+Re-attach immediately after the abandon (a fresh claim row) before returning False, or
+raise `RetryableError("donor vanished")` and let the retry re-run the donor lookup (the
+retry re-hashes the source but skips the GPU parse when another donor exists). Note:
+raising keeps the old claim row around until lease expiry — prefer the re-attach.
+
+- **Files to touch:** `pipeline/pipeline/ingest/worker.py`.
+- **Verify:** delete the donor's workspace between `find_ready_donor` and
+  `copy_content_from_donor` (test hook) → file re-parses and lands indexed; no window
+  where `rag_file_contents` is empty.
+
+---
+
+## Appendix — checked and deliberately left alone
+
+These were verified during the audit and should **not** be "fixed" without a new reason:
+
+- **Fail-closed enqueue** — `ingestJobPayload` refuses to enqueue without actor + pins;
+  upload transaction rolls back. Correct.
+- **Fencing** — `attempts` written only by `claim_job`; `claim_is_current` gates every
+  heartbeat, requeue and terminal transition. A run whose claim moved on discards its
+  outcome instead of overwriting its successor's row. Correct.
+- **Heartbeat refreshes the claim, not by-file** (`db.py:110-117`) — prevents a live
+  waiter masking a dead creator. Correct.
+- **Embedding pin per workspace, never on the payload** — no vector-space drift possible;
+  `replace_content_chunks` re-reads the pin and would reject a wrong-width vector by
+  column type. Correct.
+- **`sha256` computed from object bytes**, not the uploader-attested checksum header —
+  closes the global cache-poisoning hole. Correct.
+- **Zip drop with 15-minute unref grace** via `account_artifact_cache_refs` trigger —
+  concurrent downloads finish before B2 deletion. Correct.
+- **Rollup requeue fold** (`db.py:135-169`) — savepoint turns the unique-pending-index
+  race into a supersede. Correct.
+- **Caption cache keyed on `(source_sha256, caption_version)` only; prompts exclude file
+  names** — no cross-uploader contamination. Correct.
+- **`abandon_content` on `index_file` failure** — releases the claim so a waiter/retry
+  can take over; rag_file_contents is re-created by the next attach. Correct.
+- **`replace_content_chunks` delete-then-insert in one transaction** — a shorter
+  re-ingest cannot leave a stale tail; FK cascade clears mentions/vectors. Correct.

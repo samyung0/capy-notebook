@@ -16,7 +16,7 @@ in production.
 
 The SQL tier writes synthetic one-hot embeddings, so it exercises every
 statement in `retrieval/store.py` (hybrid search, scoping, the concept
-self-join, the summary-dirty trigger, cascade deletes) without a single model
+self-join, two-tier content summaries, cascade deletes) without a single model
 call. The cassette tier drives the real chunk → embed → summarize → extract →
 search → answer path with model traffic replayed from
 [VCR](https://vcrpy.readthedocs.io) cassettes in `cassettes/`. Postgres and

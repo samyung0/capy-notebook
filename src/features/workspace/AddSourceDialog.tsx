@@ -3,6 +3,7 @@ import { USE_MSW } from '@/api/auth';
 import {
   api,
   isCreditsExhaustedError,
+  isFileLimitError,
   isStorageQuotaError,
 } from '@/api/client';
 import {
@@ -11,6 +12,7 @@ import {
   useIntegrations,
   useSourceUploadPolicy,
   useUploadSource,
+  useWorkspace,
 } from '@/api/hooks';
 import type { Chapter, SourceFile, SourceUploadPolicy } from '@/api/types';
 import { Button } from '@/components/ui/Button';
@@ -47,6 +49,7 @@ import {
   fileExt,
   getFileKind,
   isTextKind,
+  MAX_FILES_PER_WORKSPACE,
   MAX_SOURCE_UPLOAD_FILES,
   mapWithConcurrency,
   type ParseMode,
@@ -78,6 +81,43 @@ async function pdfPageCount(file: File): Promise<number | null> {
 function formatSize(bytes: number) {
   if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+}
+
+function workspaceFileRoom(
+  workspace:
+    | {
+        fileCount: number;
+        filesLimit: number;
+      }
+    | undefined
+) {
+  const filesUsed = workspace?.fileCount ?? 0;
+  const filesLimit = workspace?.filesLimit ?? MAX_FILES_PER_WORKSPACE;
+  return {
+    filesLimit,
+    filesUsed,
+    workspaceRoom: Math.max(0, filesLimit - filesUsed),
+  };
+}
+
+function fileLimitToast(
+  error: unknown
+): { description: string; title: string } | null {
+  if (!isFileLimitError(error)) return null;
+  const limit =
+    typeof error.body?.filesLimit === 'number'
+      ? error.body.filesLimit
+      : MAX_FILES_PER_WORKSPACE;
+  if (error.code === 'files_batch_exceeded') {
+    return {
+      description: m.error_files_batch_body({ limit }),
+      title: m.error_files_batch_title(),
+    };
+  }
+  return {
+    description: m.error_files_limit_body({ limit }),
+    title: m.error_files_limit_title(),
+  };
 }
 
 interface GooglePickerBuilder {
@@ -277,10 +317,14 @@ function CaptionImagesToggle({
 
 function UploadFiles({
   workspaceId,
+  workspaceRoom,
+  filesLimit,
   onClose,
   className,
 }: {
   workspaceId: string;
+  workspaceRoom: number;
+  filesLimit: number;
   onClose?: () => void;
   className?: string;
 }) {
@@ -344,10 +388,19 @@ function UploadFiles({
       return;
     }
     setFiles((prev) => {
-      const { accepted, rejected } = capSourceUploads(prev.length, added);
+      const { accepted, rejected } = capSourceUploads(
+        prev.length,
+        added,
+        workspaceRoom
+      );
       if (rejected > 0) {
         userToast({
-          title: m.source_upload_too_many({ count: MAX_SOURCE_UPLOAD_FILES }),
+          title:
+            workspaceRoom <= 0
+              ? m.source_workspace_file_full({ limit: filesLimit })
+              : m.source_upload_too_many({
+                  count: Math.min(MAX_SOURCE_UPLOAD_FILES, workspaceRoom),
+                }),
           variant: 'error',
         });
       }
@@ -448,17 +501,25 @@ function UploadFiles({
         (result) =>
           result.status === 'rejected' && isCreditsExhaustedError(result.reason)
       );
+      const fileLimitFailure = results.find(
+        (result) =>
+          result.status === 'rejected' && isFileLimitError(result.reason)
+      );
+      const fileToast =
+        fileLimitFailure && fileLimitFailure.status === 'rejected'
+          ? fileLimitToast(fileLimitFailure.reason)
+          : null;
       userToast({
         description: creditsFailure
           ? m.error_credits_body()
           : quotaFailure
             ? m.error_quota_body()
-            : undefined,
+            : fileToast?.description,
         title: creditsFailure
           ? m.error_credits_title()
           : quotaFailure
             ? m.error_quota_title()
-            : m.source_upload_failed(),
+            : (fileToast?.title ?? m.source_upload_failed()),
         variant: 'error',
       });
     }
@@ -489,7 +550,7 @@ function UploadFiles({
             'flex flex-col items-center gap-2 rounded-card border-2 border-line border-dashed px-6 py-8 transition-colors hover:bg-surface-hover-bg',
             files.length > 0 && 'py-4'
           )}
-          disabled={!uploadPolicy}
+          disabled={!uploadPolicy || workspaceRoom <= 0}
           onClick={() => inputRef.current?.click()}
           type="button"
         >
@@ -641,6 +702,11 @@ function UploadFiles({
         <p className="t-meta pt-3 text-fg-muted">
           {m.source_parse_hint({ mb: parseMaxMb })}
         </p>
+        {workspaceRoom <= 0 && (
+          <p className="t-meta text-fg-muted">
+            {m.source_workspace_file_full({ limit: filesLimit })}
+          </p>
+        )}
       </div>
       <ConfirmDialog
         body={m.source_confirm_body({
@@ -698,10 +764,14 @@ function UploadFiles({
 
 function ImportFiles({
   workspaceId,
+  workspaceRoom,
+  filesLimit,
   onClose,
   className,
 }: {
   workspaceId: string;
+  workspaceRoom: number;
+  filesLimit: number;
   onClose: () => void;
   className?: string;
 }) {
@@ -715,19 +785,24 @@ function ImportFiles({
   const connectProvider = useProviderConnect();
 
   function handleImportError(error: unknown) {
+    const fileToast = fileLimitToast(error);
     userToast({
       description: isCreditsExhaustedError(error)
         ? m.error_credits_body()
         : isStorageQuotaError(error)
           ? m.error_quota_body()
-          : error instanceof Error
-            ? error.message
-            : m.source_try_again(),
+          : fileToast
+            ? fileToast.description
+            : error instanceof Error
+              ? error.message
+              : m.source_try_again(),
       title: isCreditsExhaustedError(error)
         ? m.error_credits_title()
         : isStorageQuotaError(error)
           ? m.error_quota_title()
-          : m.source_import_failed(),
+          : fileToast
+            ? fileToast.title
+            : m.source_import_failed(),
       variant: 'error',
     });
   }
@@ -785,10 +860,28 @@ function ImportFiles({
         .setOAuthToken(accessToken)
         .setCallback((data: { action: string; docs?: { id: string }[] }) => {
           if (data.action === 'picked' && data.docs?.length) {
+            const ids = data.docs.map((d: { id: string }) => d.id);
+            const { accepted, rejected } = capSourceUploads(
+              0,
+              ids,
+              workspaceRoom
+            );
+            if (rejected > 0) {
+              userToast({
+                title:
+                  workspaceRoom <= 0
+                    ? m.source_workspace_file_full({ limit: filesLimit })
+                    : m.source_upload_too_many({
+                        count: Math.min(MAX_SOURCE_UPLOAD_FILES, workspaceRoom),
+                      }),
+                variant: 'error',
+              });
+            }
+            if (!accepted.length) return;
             importSources(
               {
                 chapterId: null,
-                fileIds: data.docs.map((d: { id: string }) => d.id),
+                fileIds: accepted,
                 provider: 'google',
               },
               { onError: handleImportError }
@@ -823,7 +916,7 @@ function ImportFiles({
       <div className={cn(className)}>
         <div className="grid grid-cols-2 gap-3">
           <Button
-            disabled={importSourcesIsPending}
+            disabled={importSourcesIsPending || workspaceRoom <= 0}
             iconLeft="files"
             onClick={onGoogleClick}
             variant="outline"
@@ -831,7 +924,7 @@ function ImportFiles({
             Google Drive
           </Button>
           <Button
-            disabled={importSourcesIsPending}
+            disabled={importSourcesIsPending || workspaceRoom <= 0}
             iconLeft="files"
             onClick={onMicrosoftClick}
             variant="outline"
@@ -870,6 +963,10 @@ export function AddSourceDialog({
   workspaceId: string;
 }) {
   const [mode, setMode] = useState('upload');
+  const { data: workspace } = useWorkspace(workspaceId, {
+    errorBoundary: false,
+  });
+  const { filesLimit, filesUsed, workspaceRoom } = workspaceFileRoom(workspace);
   return (
     <SimpleDialog
       className="min-h-150 max-w-3xl"
@@ -887,16 +984,26 @@ export function AddSourceDialog({
           ]}
           value={mode}
         />
+        <p className="t-meta text-fg-muted">
+          {m.source_workspace_file_capacity({
+            limit: filesLimit,
+            used: filesUsed,
+          })}
+        </p>
         <div className="h-full flex-1 overflow-hidden">
           <UploadFiles
             className={cn({ hidden: mode !== 'upload' })}
+            filesLimit={filesLimit}
             onClose={onClose}
             workspaceId={workspaceId}
+            workspaceRoom={workspaceRoom}
           />
           <ImportFiles
             className={cn({ hidden: mode !== 'import' })}
+            filesLimit={filesLimit}
             onClose={onClose}
             workspaceId={workspaceId}
+            workspaceRoom={workspaceRoom}
           />
           <CreateFile className={cn({ hidden: mode !== 'create' })} />
         </div>

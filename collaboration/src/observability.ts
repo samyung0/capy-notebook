@@ -48,10 +48,17 @@ export function log(
     const suffix = Object.keys(fields).length
       ? ` ${JSON.stringify(fields)}`
       : '';
-    console[level === 'debug' ? 'log' : level](`${level} ${msg}${suffix}`);
+    const line = `${level} ${msg}${suffix}`;
+    if (level === 'error') {
+      console.error(line);
+    } else if (level === 'warn') {
+      console.warn(line);
+    } else {
+      console.info(line);
+    }
     return;
   }
-  console.log(
+  console.info(
     JSON.stringify({
       env: APP_ENV,
       level,
@@ -82,5 +89,3 @@ export function captureError(
     Sentry.captureException(error);
   });
 }
-
-export { Sentry };

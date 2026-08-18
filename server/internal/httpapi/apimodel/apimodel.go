@@ -234,6 +234,7 @@ type Workspace struct {
 	Tags           []Tag                    `json:"tags" nullable:"false"`
 	ChapterCount   int                      `json:"chapterCount"`
 	FileCount      int                      `json:"fileCount"`
+	FilesLimit     int                      `json:"filesLimit"`
 	CreatedAt      time.Time                `json:"createdAt"`
 	LastAccessedAt time.Time                `json:"lastAccessedAt"`
 	IsOwner        bool                     `json:"isOwner"`
@@ -263,7 +264,8 @@ func FromWorkspace(w store.Workspace, ownerState store.AccountState) Workspace {
 	out := Workspace{
 		ID: w.ID, Name: w.Name, Color: w.Color, Privacy: w.Privacy, ShareRole: w.ShareRole,
 		Tags: WrapTags(w.Tags), ChapterCount: w.ChapterCount, FileCount: w.FileCount,
-		CreatedAt: w.CreatedAt, LastAccessedAt: w.LastAccessedAt, IsOwner: true,
+		FilesLimit: store.MaxFilesPerWorkspace,
+		CreatedAt:  w.CreatedAt, LastAccessedAt: w.LastAccessedAt, IsOwner: true,
 		Role: &role, Capabilities: store.CapabilitiesForRole(role, true),
 		StorageOwnerName: w.OwnerName,
 	}

@@ -35,9 +35,6 @@ class JobPolicy:
 # in flight — the B2 zip is only recorded after MinerU returns.
 POLICIES: dict[str, JobPolicy] = {
     "ingest": JobPolicy(max_attempts=3, backoff_base_s=30, timeout_s=1800, lease_s=180),
-    "summaries_rollup": JobPolicy(
-        max_attempts=3, backoff_base_s=15, timeout_s=300, lease_s=60
-    ),
 }
 
 DEFAULT_POLICY = POLICIES["ingest"]
@@ -46,7 +43,11 @@ DEFAULT_POLICY = POLICIES["ingest"]
 # claim. The job wall-clock timeout is the hard bound; this is only the
 # steal-attempt threshold. A SIGKILLed creator never runs abandon_content.
 CONTENT_CLAIM_WAIT_S = 120
-# Must exceed the heartbeat interval so a live creator is not stolen.
+# Floor on steal, not the death signal. Steal also requires the owning job to
+# no longer be running with a live lease — otherwise a missed heartbeat write
+# would yank a creator that is still embedding. Must exceed the heartbeat
+# interval so a live creator whose lease is about to be renewed is not stolen
+# on a race with the first poll.
 CONTENT_CLAIM_STALE_S = 90
 
 

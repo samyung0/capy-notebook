@@ -137,9 +137,11 @@ func ScaleEstimate(baseMicros int64, rates TokenRates) int64 {
 // job is to stop unbounded concurrent requests from each reading an empty
 // ledger. Callers scale them with ScaleEstimate when the pinned model is not 1x.
 const (
-	// A chat turn runs an agent loop of up to EVO_AGENT_MAX_STEPS model calls
-	// plus embeddings, so it is estimated well above a single completion.
-	EstimateChatMicros = 6 * MicrosPerCredit
+	// A chat turn runs an agent loop of up to EVO_AGENT_MAX_STEPS (12) model
+	// calls plus embeddings. Each round re-sends the transcript, so a 12-step
+	// turn is ~8x a 4-step one; under-reserving lets concurrent turns each
+	// read a ledger missing the spend they are about to incur.
+	EstimateChatMicros = 48 * MicrosPerCredit
 	// Generate produces a whole material and may map-reduce across files.
 	EstimateGenerateMicros = 12 * MicrosPerCredit
 	// Editor commands are single short completions.

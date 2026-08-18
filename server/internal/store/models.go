@@ -43,6 +43,7 @@ type Workspace struct {
 	OwnerName      string    `json:"ownerName"`
 	ChapterCount   int       `json:"chapterCount"`
 	FileCount      int       `json:"fileCount"`
+	FilesLimit     int       `json:"filesLimit"`
 	CreatedAt      time.Time `json:"createdAt"`
 	LastAccessedAt time.Time `json:"lastAccessedAt"`
 }

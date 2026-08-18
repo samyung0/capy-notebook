@@ -35,6 +35,9 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 	if err := s.gateStorageTx(ctx, tx, ownerID, sizeBytes); err != nil {
 		return File{}, "", err
 	}
+	if err := s.gateWorkspaceFilesTx(ctx, tx, wsID, 1); err != nil {
+		return File{}, "", err
+	}
 	fileID := uid("f")
 	url := "/api/files/" + fileID + "/raw"
 	now := time.Now().UTC()
@@ -85,6 +88,9 @@ func (s *Store) CreateSourceReady(ctx context.Context, wsID, createdBy, name, ki
 		return File{}, err
 	}
 	if err := s.gateStorageTx(ctx, tx, ownerID, sizeBytes); err != nil {
+		return File{}, err
+	}
+	if err := s.gateWorkspaceFilesTx(ctx, tx, wsID, 1); err != nil {
 		return File{}, err
 	}
 	fileID := uid("f")

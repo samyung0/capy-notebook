@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS schema_baseline (
 
 DO $$
 DECLARE
-  target_version constant int := 9;
+  target_version constant int := 10;
   recorded_version int;
 BEGIN
   -- Serialize concurrent migrators. The runner sends this file as one statement
@@ -61,9 +61,12 @@ BEGIN
       material_yjs_documents, materials, messages, mistakes,
       notification_prefs, notifications, oauth_connections,
       pending_blob_deletions,
-      rag_chapter_summaries, rag_chunks, rag_concept_mentions, rag_concepts,
+      rag_chunks, rag_concept_mentions, rag_concepts,
       rag_content_summaries, rag_file_contents, rag_contents,
-      rag_file_summaries, rag_workspace_summaries,
+      -- Retired summary-tree tables (chapter/workspace rollups and the
+      -- pre-canonical rag_file_summaries). Stay listed so a database from
+      -- before this baseline is cleaned up rather than keeping stale rows.
+      rag_chapter_summaries, rag_file_summaries, rag_workspace_summaries,
       tags, tasks, upload_sessions, user_storage,
       user_storage_deltas, user_subscriptions, users, webhook_events,
       workspace_invites, workspace_members, workspaces,
@@ -76,6 +79,7 @@ BEGIN
     -- Apache AGE is gone with LightRAG; dropping the extension takes every
     -- per-workspace graph schema with it. Tolerated failure: the library is no
     -- longer preloaded on databases that still carry the extension record.
+    DROP FUNCTION IF EXISTS mark_summaries_dirty();
     BEGIN
       DROP EXTENSION IF EXISTS age CASCADE;
     EXCEPTION WHEN OTHERS THEN
@@ -811,15 +815,8 @@ CREATE INDEX IF NOT EXISTS jobs_lease_idx
   ON jobs(lease_expires_at)
   WHERE status = 'running';
 
--- Summary rollups are debounced rather than queued per edit: moving ten files
--- between chapters should rebuild the tree once. One pending job per workspace
--- is all that can exist, and the trigger below inserts ON CONFLICT DO NOTHING.
-CREATE UNIQUE INDEX IF NOT EXISTS jobs_pending_rollup_idx
-  ON jobs ((payload->>'workspaceId'))
-  WHERE type = 'summaries_rollup' AND status = 'pending';
-
 -- ============================================================================
--- Retrieval store — chunks, the summary tree and the concept index
+-- Retrieval store — chunks, per-file summaries and the concept index
 --
 -- Owned by this schema (the Python pipeline writes the rows but no longer owns
 -- the DDL), which is what makes deletion automatic: every table cascades from
@@ -938,40 +935,21 @@ CREATE INDEX IF NOT EXISTS rag_chunk_vectors_2560_ws_idx
 CREATE INDEX IF NOT EXISTS rag_chunk_vectors_2560_embedding_idx
   ON rag_chunk_vectors_2560 USING hnsw (embedding halfvec_cosine_ops);
 
--- Summary + outline belong to canonical content, so duplicate logical files
--- share the model output while retaining independent file lifecycles.
+-- Descriptor + detailed summary belong to canonical content, so duplicate
+-- logical files share the model output while retaining independent file
+-- lifecycles. summary_version is not part of pipeline_identity: a prompt
+-- change must not invalidate a parse, but donors copy the version so a later
+-- backfill can tell old prose from new.
 CREATE TABLE IF NOT EXISTS rag_content_summaries (
-  content_id   text PRIMARY KEY REFERENCES rag_contents(id) ON DELETE CASCADE,
-  workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  fingerprint  text NOT NULL DEFAULT '',
-  summary      text NOT NULL DEFAULT '',
-  -- [{title, pageStart}] section headings, the agent's table of contents.
-  outline      jsonb NOT NULL DEFAULT '[]'::jsonb,
-  updated_at   timestamptz NOT NULL DEFAULT now()
+  content_id      text PRIMARY KEY REFERENCES rag_contents(id) ON DELETE CASCADE,
+  workspace_id    text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+  fingerprint     text NOT NULL DEFAULT '',
+  descriptor      text NOT NULL DEFAULT '',
+  summary         text NOT NULL DEFAULT '',
+  summary_version int  NOT NULL DEFAULT 1,
+  updated_at      timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS rag_content_summaries_ws_idx ON rag_content_summaries(workspace_id);
-
--- Rolled up from the file summaries below them, never from raw content, which
--- is what keeps invalidation local: a moved file rebuilds two rows from a few
--- KB of existing prose.
-CREATE TABLE IF NOT EXISTS rag_chapter_summaries (
-  chapter_id   text PRIMARY KEY REFERENCES chapters(id) ON DELETE CASCADE,
-  workspace_id text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-  summary      text NOT NULL DEFAULT '',
-  dirty        boolean NOT NULL DEFAULT true,
-  updated_at   timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS rag_chapter_summaries_dirty_idx
-  ON rag_chapter_summaries(workspace_id) WHERE dirty;
-
--- Files with no chapter roll up here directly, so 'uncategorized' needs no
--- placeholder chapter.
-CREATE TABLE IF NOT EXISTS rag_workspace_summaries (
-  workspace_id text PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
-  summary      text NOT NULL DEFAULT '',
-  dirty        boolean NOT NULL DEFAULT true,
-  updated_at   timestamptz NOT NULL DEFAULT now()
-);
 
 -- Concept index: the relation-free half of a knowledge graph. Mentions are
 -- per-chunk, so unlike an aggregated entity description they filter cleanly by
@@ -1025,57 +1003,6 @@ DROP TRIGGER IF EXISTS rag_file_contents_delete_orphan ON rag_file_contents;
 CREATE TRIGGER rag_file_contents_delete_orphan
   AFTER DELETE OR UPDATE OF content_id ON rag_file_contents
   FOR EACH ROW EXECUTE FUNCTION delete_unreferenced_rag_content();
-
--- Reorganizing files invalidates summaries, and the paths that reorganize them
--- are many (move, delete, chapter delete's SET NULL, clone, account purge).
--- A trigger cannot be forgotten by a new writer the way a handler call can.
-CREATE OR REPLACE FUNCTION mark_summaries_dirty() RETURNS trigger AS $$
-DECLARE
-  ws     text;
-  ch     text;
-  before text;
-  after  text;
-BEGIN
-  IF TG_OP = 'DELETE' THEN
-    ws := OLD.workspace_id; before := OLD.chapter_id;
-  ELSIF TG_OP = 'INSERT' THEN
-    ws := NEW.workspace_id; after := NEW.chapter_id;
-  ELSE
-    ws := NEW.workspace_id; before := OLD.chapter_id; after := NEW.chapter_id;
-  END IF;
-
-  -- The parent is deleted before its cascade reaches this table, so a workspace
-  -- (or account) delete arrives here with nothing left to summarize. Marking it
-  -- would fail the foreign key and take the delete down with it.
-  IF NOT EXISTS (SELECT 1 FROM workspaces WHERE id = ws) THEN
-    RETURN NULL;
-  END IF;
-
-  FOREACH ch IN ARRAY ARRAY[before, after] LOOP
-    CONTINUE WHEN ch IS NULL;
-    -- Selected rather than valued for the same reason: deleting a chapter nulls
-    -- files.chapter_id through RI, and OLD then names a chapter that is gone.
-    INSERT INTO rag_chapter_summaries (chapter_id, workspace_id, dirty)
-    SELECT c.id, c.workspace_id, true FROM chapters c WHERE c.id = ch
-    ON CONFLICT (chapter_id) DO UPDATE SET dirty = true;
-  END LOOP;
-
-  INSERT INTO rag_workspace_summaries (workspace_id, dirty) VALUES (ws, true)
-  ON CONFLICT (workspace_id) DO UPDATE SET dirty = true;
-
-  INSERT INTO jobs (id, type, payload)
-  VALUES ('job_' || substr(md5(random()::text || clock_timestamp()::text), 1, 10),
-          'summaries_rollup', jsonb_build_object('workspaceId', ws))
-  ON CONFLICT DO NOTHING;
-  RETURN NULL;
-END $$ LANGUAGE plpgsql;
-
--- Only chapter membership matters here; content changes mark themselves dirty
--- from the ingest worker, which knows whether the text actually changed.
-DROP TRIGGER IF EXISTS files_mark_summaries_dirty ON files;
-CREATE TRIGGER files_mark_summaries_dirty
-  AFTER INSERT OR DELETE OR UPDATE OF chapter_id ON files
-  FOR EACH ROW EXECUTE FUNCTION mark_summaries_dirty();
 
 -- ============================================================================
 -- Blob layer: refcounts and the deletion outbox
@@ -1328,12 +1255,8 @@ $$;
 -- the bytes sit in their account; everything here is billed to the *actor* who
 -- asked for the work, because the cost is the request itself and it is gone
 -- whether or not anything was kept. An editor generating into someone else's
--- workspace spends their own credits and the owner's disk.
---
--- The one owner-billed inference exception is summaries_rollup: the job is
--- enqueued from a plpgsql trigger with no user context, and the pending-job
--- unique index folds later dirties into one row, so there is no actor to
--- charge. Chapter/workspace summaries are durable workspace state.
+-- workspace spends their own credits and the owner's disk. Every inference
+-- surface is actor-billed.
 
 -- ============================================================================
 -- Model registry

@@ -71,6 +71,9 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 	if err := s.reserveStorageTx(ctx, tx, ownerID, in.DeclaredSize); err != nil {
 		return UploadSession{}, err
 	}
+	if err := s.gateWorkspaceFilesTx(ctx, tx, in.WorkspaceID, 1); err != nil {
+		return UploadSession{}, err
+	}
 	_, err = tx.Exec(ctx, `INSERT INTO upload_sessions
 		(id, target, workspace_id, user_id, created_by, chapter_id, chapter_name,
 		 object_path, final_path, name, kind, content_type, declared_size, parse_mode,

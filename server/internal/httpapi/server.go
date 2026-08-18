@@ -250,6 +250,19 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		})
 		return
 	}
+	var fileLimit *store.FileLimitExceededError
+	if errors.As(err, &fileLimit) {
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"code":           fileLimit.Code(),
+			"message":        "workspace file limit exceeded",
+			"filesUsed":      fileLimit.Used,
+			"filesReserved":  fileLimit.Reserved,
+			"filesRequested": fileLimit.Requested,
+			"filesLimit":     fileLimit.Limit,
+			"workspaceId":    fileLimit.WorkspaceID,
+		})
+		return
+	}
 	// Distinct from storage_quota_exceeded on purpose: this one is about the
 	// caller's own inference budget, the other is about the workspace owner's
 	// disk. They render as completely different messages and only one of them

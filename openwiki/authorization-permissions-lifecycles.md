@@ -209,8 +209,7 @@ Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L7
 - Generated material storage is charged to the workspace owner. The actor is
   recorded as author but does not become storage owner.
 - Inference credits are billed to the actor (`ReserveCredits` /
-  `llm_credits_exhausted`), except `summaries_rollup` which bills the workspace
-  owner because the job has no actor. Ingest claim-time checks owner
+  `llm_credits_exhausted`). Ingest claim-time checks owner
   lifecycle/storage and actor credits as two lookups; actor lifecycle is not
   checked, so a `deletion_pending` uploader cannot strand the owner's bytes.
 

@@ -168,7 +168,6 @@ services:
       MODAL_PARSE_TIMEOUT: ${MODAL_PARSE_TIMEOUT:-900}
       MODAL_B2_ARTIFACTS: ${MODAL_B2_ARTIFACTS:-true}
       EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-auto}
-      MAX_PARALLEL_PARSE_MODAL: ${MAX_PARALLEL_PARSE_MODAL:-2}
       # Embeddings (OpenRouter): credentials only. The model is pinned per
       # workspace from model_configs; EMBEDDING_DIM is the shipped width.
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
@@ -188,6 +187,8 @@ services:
       EVO_CAPTION_CACHE_TTL_DAYS: ${EVO_CAPTION_CACHE_TTL_DAYS:-90}
       EVO_PARSE_ZIP_TTL_HOURS: ${EVO_PARSE_ZIP_TTL_HOURS:-6}
     command: ["python", "-m", "pipeline.ingest.worker"]
+    deploy:
+      replicas: ${WORKER_REPLICAS:-1}
     depends_on:
       db:
         condition: service_healthy

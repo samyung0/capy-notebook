@@ -18,19 +18,17 @@ import logging
 import re
 from typing import Any
 
+from ..config import cfg
 from . import models, store
+from .chunking import clip_to_tokens, estimate_tokens
 from .locale import response_language_rule
 from .search import Passage
 
 log = logging.getLogger("evo.retrieval.workflows")
 
-# Roughly a 30k-character context. Well inside every model we dispatch to, and
-# large enough that a chapter's worth of material fits without map-reduce.
-_CONTEXT_BUDGET = 30000
-
 
 async def gather_context(
-    *, workspace_id: str, file_ids: list[str] | None, budget: int = _CONTEXT_BUDGET
+    *, workspace_id: str, file_ids: list[str] | None, budget: int | None = None
 ) -> tuple[str, list[Passage]]:
     """Even coverage of the scope, as numbered passages.
 
@@ -38,6 +36,8 @@ async def gather_context(
     to their length: ten pages of lecture notes are as likely to be examinable
     as three hundred pages of reference text, and length is not importance.
     """
+    if budget is None:
+        budget = cfg.llm_input_budget_tokens
     outline = await store.workspace_outline(workspace_id)
     files = [
         f
@@ -46,7 +46,8 @@ async def gather_context(
     ]
     if not files:
         return "", []
-    per_file = max(1, budget // (len(files) * 1200))
+    # ~400 tokens per packed chunk (EVO_CHUNK_CHARS is 1600 latin chars).
+    per_file = max(1, budget // (len(files) * 400))
     passages: list[Passage] = []
     for file in files:
         rows = await store.read_file_range(
@@ -57,10 +58,11 @@ async def gather_context(
     used = 0
     for index, passage in enumerate(passages, start=1):
         piece = passage.as_context(index)
-        if used + len(piece) > budget:
+        cost = estimate_tokens(piece)
+        if used + cost > budget:
             break
         body.append(piece)
-        used += len(piece)
+        used += cost
     return "\n\n".join(body), passages[: len(body)]
 
 
@@ -145,7 +147,10 @@ async def produce_mapped(
         by_file.setdefault(passage.file_id, []).append(passage)
     partials: list[str] = []
     for group in by_file.values():
-        context = "\n\n".join(p.as_context(i + 1) for i, p in enumerate(group))[:20000]
+        context = clip_to_tokens(
+            "\n\n".join(p.as_context(i + 1) for i, p in enumerate(group)),
+            cfg.llm_input_budget_tokens,
+        )
         partials.append(
             await produce(
                 instruction=instruction,
@@ -161,7 +166,12 @@ async def produce_mapped(
                 "role": "system",
                 "content": combine + "\n" + response_language_rule(locale),
             },
-            {"role": "user", "content": "\n\n---\n\n".join(partials)[:30000]},
+            {
+                "role": "user",
+                "content": clip_to_tokens(
+                    "\n\n---\n\n".join(partials), cfg.llm_input_budget_tokens
+                ),
+            },
         ],
         model=model,
         temperature=0.3,
@@ -194,4 +204,7 @@ def normalize_questions(
 
 
 def overflows(context: str, passages: list[Passage]) -> bool:
-    return len(context) >= _CONTEXT_BUDGET and len({p.file_id for p in passages}) > 1
+    return (
+        estimate_tokens(context) >= cfg.llm_input_budget_tokens
+        and len({p.file_id for p in passages}) > 1
+    )

@@ -192,16 +192,19 @@ def _test_infra():
 
 @pytest.fixture(autouse=True)
 async def _close_pool():
-    """Drop the async pool between tests.
+    """Drop both pools between tests.
 
-    pytest-asyncio gives each test its own event loop, and a psycopg pool is
-    bound to the loop that opened it. Reusing one across tests fails in ways
-    that look like unrelated connection errors.
+    pytest-asyncio gives each test its own event loop, and a psycopg async pool
+    is bound to the loop that opened it. The sync pool is keyed on ``cfg.dsn``,
+    which the infra fixture can rewrite; closing it here is what lets the next
+    test open against the live URL rather than a stale one.
     """
     yield
     from pipeline.retrieval import store
+    from pipeline.store import db
 
     await store.close_pool()
+    db.close_pool()
 
 
 # --------------------------------------------------------------------------

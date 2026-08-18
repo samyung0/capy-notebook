@@ -10,6 +10,8 @@ from pipeline.retrieval.chunking import (
     BBOX_SPACE,
     chunk_content_list,
     chunk_markdown,
+    clip_to_tokens,
+    estimate_tokens,
     outline_from_chunks,
     search_query_terms,
     tokenize_for_search,
@@ -46,6 +48,19 @@ def test_content_list_keeps_heading_breadcrumb_and_pages():
         "bbox": [1.0, 2.0, 3.0, 4.0],
         "space": BBOX_SPACE,
     }
+
+
+def test_a_malformed_bbox_is_dropped_rather_than_crashing_the_job():
+    chunks = chunk_content_list(
+        [
+            _block("Photosynthesis", 0, level=1),
+            _block("Bad coords " * 20, 0, bbox=["x", "y", "w", "h"]),
+            _block("Good coords " * 20, 0, bbox=[1, 2, 3, 4]),
+        ]
+    )
+
+    assert len(chunks) == 1
+    assert [r.bbox for r in chunks[0].regions] == [[1.0, 2.0, 3.0, 4.0]]
 
 
 def test_heading_change_starts_a_new_chunk():
@@ -152,3 +167,12 @@ def test_query_terms_are_or_joined_for_websearch_tsquery():
     assert terms == "光合 or 合作 or 作用"
     # Same tokenizer on both sides, or the index and the query never meet.
     assert set(terms.split(" or ")) == set(tokenize_for_search("光合作用").split())
+
+
+def test_estimate_tokens_counts_cjk_per_character():
+    assert estimate_tokens("abcd") == 1
+    assert estimate_tokens("光合作用") == 4
+    assert estimate_tokens("ATP 合成") == estimate_tokens("ATP ") + estimate_tokens(
+        "合成"
+    )
+    assert clip_to_tokens("光合作用ATP", 4) == "光合作用"

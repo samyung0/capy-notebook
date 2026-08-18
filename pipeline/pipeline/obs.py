@@ -197,6 +197,7 @@ def init_sentry(service: str) -> None:
         return
     try:
         import sentry_sdk
+        from sentry_sdk.integrations.logging import LoggingIntegration
     except ImportError:
         log.warning("SENTRY_DSN set but sentry-sdk is not installed")
         return
@@ -206,6 +207,10 @@ def init_sentry(service: str) -> None:
         environment=os.getenv("APP_ENV", "development"),
         release=os.getenv("RELEASE_SHA") or None,
         traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.1")),
+        # Logs stay as breadcrumbs. capture_error is the only event path, so a
+        # retryable provider 503 does not open a Sentry issue on its way to
+        # being requeued.
+        integrations=[LoggingIntegration(event_level=None)],
         # Prompts and note content flow through this service.
         send_default_pii=False,
     )

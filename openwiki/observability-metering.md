@@ -93,6 +93,12 @@ reporting, because nothing else will ever surface them:
 
 Use `obs.CaptureErr` (Go), `obs.capture_error` (Python), `captureError` (Node).
 
+Python `log.exception` / `log.error` do **not** create Sentry events. The worker
+and retrieval service initialize Sentry with `LoggingIntegration(event_level=None)`,
+so logs are breadcrumbs and `capture_error` is the only reporting path. That is
+what stops a retryable provider 503 from opening an issue on its way to being
+requeued.
+
 Not reported: authentication rejections (expired tokens and stale tabs, high
 volume, expected) and client-side `AbortError` / network failures during
 streams, which happen every time a user navigates away mid-answer.
@@ -136,7 +142,7 @@ Postgres, written in the same transaction as the counter it feeds.
 
 | | Storage | Inference / GPU / mail |
 | --- | --- | --- |
-| Paid by | workspace **owner** | the **actor**, except `summaries_rollup` (see below) |
+| Paid by | workspace **owner** | the **actor** |
 | Why | the bytes sit in their account | the cost is the request itself, and it is gone whether or not anything was kept |
 | Enforced by | `gateStorageTx` | `ReserveCredits` |
 | Error | `storage_quota_exceeded` | `llm_credits_exhausted` |
@@ -146,8 +152,8 @@ and the **owner's** disk. The two errors are deliberately distinct: only one of
 them is actionable by the person reading it.
 
 Ingest follows the same split: the uploader (the actor on the job payload) pays
-for parse/caption/embed, and the workspace owner pays for the stored bytes. The
-sole inference exception is `summaries_rollup`, which has no actor.
+for parse/caption/embed, and the workspace owner pays for the stored bytes.
+Every inference path is actor-billed.
 
 ### Model registry and pinning
 
@@ -256,20 +262,12 @@ Usage reaches the gateway as a `usage` envelope: on the SSE `done` event for
 chat and `/complete/stream`, as `data-usage` (stripped before the browser) for
 Plate command streams, and in the JSON body for `/generate` and `/plate-ai/copilot`.
 
-### Ingest is billed to the actor; summaries_rollup to the owner
+### Ingest is billed to the actor
 
 Inference is billed to whoever initiated it. `_charge_ingest` reads
 `actorUserId` from the job payload (written at enqueue in `jobs.go`) and records
 the ledger against that user. The workspace owner still pays for the file's
 bytes via `gateStorageTx`.
-
-`summaries_rollup` is the one owner-billed inference path, and deliberately so:
-the job is enqueued from a plpgsql trigger that has no user context, and
-`jobs_pending_rollup_idx` folds every subsequent dirty into that one row, so
-even "whoever dirtied the tree" is undefined. The worker bills
-`workspaces.user_id`. Chapter and workspace summaries are durable workspace
-state that the owner benefits from; the debounce bounds the spend to roughly
-one rollup per rollup-duration.
 
 Claim-time gating is two lookups, not one widened check:
 
@@ -389,7 +387,7 @@ Worth knowing before trusting a dashboard:
   still per-replica and unrelated to the Redis limiter.
 - **Reindexing a workspace into a different embedding model.** Not implemented,
   deliberately: see [agentic-retrieval.md](agentic-retrieval.md).
-- **Ingest/rollup retries.** A retried ingest that hits the parse-zip or caption
+- **Ingest retries.** A retried ingest that hits the parse-zip or caption
   cache is not billed for GPU/vision a second time; a retry that re-embeds is.
   A stream of lease-reclaimed jobs after a worker crash can still over-count
   if the original process was alive and writing. Heartbeat + a lease well

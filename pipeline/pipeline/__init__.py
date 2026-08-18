@@ -2,8 +2,7 @@
 
 Two runtime roles share this package (compose picks the command):
 - ``pipeline.ingest.worker``    — claims jobs, parses on Modal or MinerU lite,
-  chunks and embeds into the retrieval index, rolls up summaries, publishes
-  progress to Redis.
+  chunks and embeds into the retrieval index, publishes progress to Redis.
 - ``pipeline.retrieve.service`` — FastAPI chat/generate over that index.
 
 Supporting packages: ``parse`` (document parsers), ``retrieval`` (chunking,

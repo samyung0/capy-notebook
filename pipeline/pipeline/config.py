@@ -112,10 +112,14 @@ class Config:
     # every page mentions the query term would otherwise crowd out the four
     # other sources that answer it.
     search_per_file_cap: int = int(_env("EVO_SEARCH_PER_FILE_CAP", "3"))
-    # Tool calls per chat turn. The loop is capped rather than open-ended: the
-    # cost of a wrong plan is bounded, and past ~4 rounds a cheap model tends to
-    # re-search rather than answer.
-    agent_max_steps: int = int(_env("EVO_AGENT_MAX_STEPS", "4"))
+    # Tool-calling rounds per chat turn. The loop is capped rather than
+    # open-ended: the cost of a wrong plan is bounded. Each round re-sends the
+    # whole transcript, so this is the main lever on chat spend.
+    agent_max_steps: int = int(_env("EVO_AGENT_MAX_STEPS", "12"))
+    # Floor every LLM we dispatch to is assumed to support. File summaries,
+    # generate context, and map-reduce splits all read this rather than a
+    # per-call character constant.
+    llm_input_budget_tokens: int = int(_env("EVO_LLM_INPUT_BUDGET_TOKENS", "50000"))
 
     # ---- vision / image caption (Gemini via its OpenAI-compatible API) ----
     vision = ProviderCfg(

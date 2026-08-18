@@ -79,11 +79,34 @@ SCHEMAS: list[dict[str, Any]] = [
         "function": {
             "name": "list_sources",
             "description": (
-                "List the chapters, documents and their summaries in this "
-                "workspace. Use this first when the question is about what the "
-                "workspace contains, or to decide which documents to search."
+                "List the chapters and documents in this workspace with a short "
+                "descriptor of each file. Use this first when the question is "
+                "about what the workspace contains, or to decide which documents "
+                "to search or describe."
             ),
             "parameters": {"type": "object", "properties": {}},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "describe_documents",
+            "description": (
+                "Return the detailed summaries of up to eight documents. Call "
+                "after list_sources when the short descriptors are not enough "
+                "to decide, or when the question is about what a document covers "
+                "as a whole."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "file_ids": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                        "description": "Documents to describe. Omit to describe the current scope.",
+                    },
+                },
+            },
         },
     },
     {
@@ -210,8 +233,6 @@ async def _list_sources(_args: dict[str, Any], ctx: ToolContext) -> str:
     outline = await store.workspace_outline(ctx.workspace_id)
     allowed = set(ctx.file_ids or [])
     lines: list[str] = []
-    if outline["summary"]:
-        lines.append(f"Workspace: {outline['summary']}")
     by_chapter: dict[str | None, list[dict[str, Any]]] = {}
     for file in outline["files"]:
         if allowed and file["id"] not in allowed:
@@ -222,8 +243,6 @@ async def _list_sources(_args: dict[str, Any], ctx: ToolContext) -> str:
         if not files:
             continue
         lines.append(f"\n## {chapter['name']}")
-        if chapter.get("summary"):
-            lines.append(chapter["summary"])
         lines.extend(_file_line(f) for f in files)
     unfiled = [f for files in by_chapter.values() for f in files]
     if unfiled:
@@ -232,12 +251,39 @@ async def _list_sources(_args: dict[str, Any], ctx: ToolContext) -> str:
     return "\n".join(lines) if lines else "This workspace has no indexed documents."
 
 
+_DESCRIBE_CAP = 8
+
+
+async def _describe_documents(args: dict[str, Any], ctx: ToolContext) -> str:
+    requested = args.get("file_ids")
+    if not isinstance(requested, list):
+        requested = []
+    requested = [str(fid) for fid in requested if fid]
+    scoped = _scoped(ctx, requested or None)
+    if not scoped:
+        return "No documents in the current scope."
+    ids = scoped[:_DESCRIBE_CAP]
+    rows = await store.file_summaries(ids)
+    if not rows:
+        return "No summaries for those documents."
+    lines: list[str] = []
+    for file in rows:
+        head = f"### {file['name']} (file_id={file['id']})"
+        body = file.get("summary") or file.get("descriptor") or "(no summary yet)"
+        lines.append(f"{head}\n{body}")
+    if len(scoped) > _DESCRIBE_CAP:
+        lines.append(
+            f"(showing {_DESCRIBE_CAP} of {len(scoped)}; call again for the rest.)"
+        )
+    return "\n\n".join(lines)
+
+
 def _file_line(file: dict[str, Any]) -> str:
     head = f"- {file['name']} (file_id={file['id']}, {file['chunks']} passages)"
     if file.get("status") != "ready":
         head += f" [{file['status']}]"
-    if file.get("summary"):
-        head += f"\n  {file['summary']}"
+    if file.get("descriptor"):
+        head += f"\n  {file['descriptor']}"
     return head
 
 
@@ -335,6 +381,7 @@ def remember(ctx: ToolContext, passages: list[Passage]) -> list[tuple[int, Passa
 _HANDLERS = {
     "search_workspace": _search_workspace,
     "list_sources": _list_sources,
+    "describe_documents": _describe_documents,
     "read_document": _read_document,
     "related_concepts": _related_concepts,
     "generate_material": _generate_material,

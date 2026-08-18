@@ -25,5 +25,5 @@ def test_backoff_grows_with_attempts():
     assert backoff_s(policy, 3) == policy.backoff_base_s * 4
 
 
-def test_rollup_budget_is_three_attempts():
-    assert policy_for("summaries_rollup").max_attempts == 3
+def test_unknown_job_types_use_the_ingest_policy():
+    assert policy_for("no_such_job").max_attempts == policy_for("ingest").max_attempts

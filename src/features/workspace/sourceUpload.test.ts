@@ -91,6 +91,16 @@ describe('upload batch limits', () => {
     expect(MAX_SOURCE_UPLOAD_FILES).toBe(20);
   });
 
+  it('caps the picker at remaining workspace room', () => {
+    const { accepted, rejected } = capSourceUploads(0, [1, 2, 3, 4, 5], 3);
+    expect(accepted).toEqual([1, 2, 3]);
+    expect(rejected).toBe(2);
+    expect(capSourceUploads(0, [1, 2], 0)).toEqual({
+      accepted: [],
+      rejected: 2,
+    });
+  });
+
   it('runs a bounded worker pool in original order', async () => {
     let inflight = 0;
     let peak = 0;

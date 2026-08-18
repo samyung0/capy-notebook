@@ -95,6 +95,84 @@ async def test_the_parse_mode_selects_the_route(parse_stub, parse_mode, route):
     assert version == modal_parser.PARSER_VERSIONS[route]
 
 
+async def test_an_unknown_parse_mode_fails_before_paying_for_a_parse(parse_stub):
+    from pipeline.jobs import TerminalError
+
+    with pytest.raises(TerminalError, match="unknown parse mode"):
+        await _run("bogus")
+
+    assert parse_stub["descriptor"] is None
+
+
+async def test_a_missing_model_config_fails_the_job_without_retry(monkeypatch):
+    from pipeline import registry
+    from pipeline.jobs import TerminalError
+
+    async def _pin(_ws):
+        raise registry.RegistryError("model config not found: x v1")
+
+    monkeypatch.setattr(worker, "_workspace_embedding_spec", _pin)
+
+    with pytest.raises(TerminalError, match="model pins could not be resolved"):
+        await worker.process_ingest_job(
+            {
+                "id": "job_1",
+                "attempts": 1,
+                "payload": {"fileId": "f_1", "workspaceId": "ws_1"},
+            }
+        )
+
+
+async def test_a_database_blip_while_reading_pins_is_not_terminal(monkeypatch):
+    import psycopg
+
+    from pipeline.jobs import is_retryable
+
+    async def _pin(_ws):
+        raise psycopg.OperationalError("connection timed out")
+
+    monkeypatch.setattr(worker, "_workspace_embedding_spec", _pin)
+
+    with pytest.raises(psycopg.OperationalError, match="connection timed out"):
+        await worker.process_ingest_job(
+            {
+                "id": "job_1",
+                "attempts": 1,
+                "payload": {"fileId": "f_1", "workspaceId": "ws_1"},
+            }
+        )
+    assert is_retryable(psycopg.OperationalError("connection timed out"))
+
+
+async def test_a_missing_actor_fails_the_file_without_retry(monkeypatch):
+    """A job with no actorUserId must fail closed, not raise into the retry path."""
+    failed: list[tuple] = []
+
+    async def _pin(_ws):
+        return object()
+
+    monkeypatch.setattr(worker, "_workspace_embedding_spec", _pin)
+    monkeypatch.setattr(
+        worker.registry, "pins_from_payload", lambda *_a, **_k: object()
+    )
+    monkeypatch.setattr(worker.registry, "set_job_pins", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker, "_file_exists", lambda *_a, **_k: True)
+    monkeypatch.setattr(worker, "_read_name", lambda *_a, **_k: "notes.pdf")
+    monkeypatch.setattr(worker, "_finish_fail", lambda *a, **k: failed.append((a, k)))
+    monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
+
+    await worker.process_ingest_job(
+        {
+            "id": "job_1",
+            "attempts": 1,
+            "payload": {"fileId": "f_1", "workspaceId": "ws_1"},
+        }
+    )
+
+    assert failed
+    assert failed[0][0][0] == "f_1"
+
+
 async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatch):
     monkeypatch.setattr(
         worker.blobstore, "fetch_local", lambda _p: ("/tmp/notes.md", lambda: None)

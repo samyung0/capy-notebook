@@ -388,6 +388,7 @@ func (s *Store) ListPublicWorkspaces(ctx context.Context) ([]PublicWorkspace, er
 		if err := rows.Scan(&w.ID, &w.Name, &w.Color, &w.Privacy, &w.ShareRole, &w.Tags, &w.OwnerUserID, &w.OwnerName, &w.ChapterCount, &w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.Author, &w.Clones); err != nil {
 			return nil, err
 		}
+		w.FilesLimit = MaxFilesPerWorkspace
 		out = append(out, w)
 	}
 	return out, rows.Err()
@@ -934,7 +935,7 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 	return s.GetWorkspace(ctx, userID, newID, false)
 }
 
-// cloneRetrievalIndex copies a workspace's chunks, summary tree and concept
+// cloneRetrievalIndex copies a workspace's chunks, file summaries and concept
 // index into the clone, inside the same transaction as the content it
 // describes. Copying the vectors is pure SQL where re-ingesting would mean
 // paying for the parse and the embeddings again.
@@ -1029,8 +1030,8 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, em
 		if _, err := tx.Exec(ctx, `
 			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 			INSERT INTO rag_content_summaries
-				(content_id, workspace_id, fingerprint, summary, outline, updated_at)
-			SELECT c.new_id, $3, s.fingerprint, s.summary, s.outline, s.updated_at
+				(content_id, workspace_id, fingerprint, descriptor, summary, summary_version, updated_at)
+			SELECT c.new_id, $3, s.fingerprint, s.descriptor, s.summary, s.summary_version, s.updated_at
 			FROM rag_content_summaries s JOIN cmap c ON c.old_id = s.content_id`,
 			oldContents, newContents, newID); err != nil {
 			return err
@@ -1058,30 +1059,6 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, em
 		}
 	}
 
-	// The file inserts above already tripped the dirty trigger for every chapter
-	// in the clone, so these land on existing rows.
-	oldChapters, newChapters := unzipIDs(chapterMap)
-	if len(oldChapters) > 0 {
-		if _, err := tx.Exec(ctx, `
-			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
-			INSERT INTO rag_chapter_summaries (chapter_id, workspace_id, summary, dirty, updated_at)
-			SELECT c.new_id, $3, s.summary, s.dirty, s.updated_at
-			FROM rag_chapter_summaries s JOIN cmap c ON c.old_id = s.chapter_id
-			ON CONFLICT (chapter_id) DO UPDATE
-			  SET summary = EXCLUDED.summary, dirty = EXCLUDED.dirty, updated_at = EXCLUDED.updated_at`,
-			oldChapters, newChapters, newID); err != nil {
-			return err
-		}
-	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO rag_workspace_summaries (workspace_id, summary, dirty, updated_at)
-		SELECT $1, s.summary, s.dirty, s.updated_at
-		FROM rag_workspace_summaries s WHERE s.workspace_id = $2
-		ON CONFLICT (workspace_id) DO UPDATE
-		  SET summary = EXCLUDED.summary, dirty = EXCLUDED.dirty, updated_at = EXCLUDED.updated_at`,
-		newID, srcID); err != nil {
-		return err
-	}
 	return nil
 }
 

@@ -267,8 +267,8 @@ async def test_workspace_outline_groups_files_under_chapters(workspace):
         workspace_id=workspace.id,
         content_id=content_id,
         fingerprint="fp",
+        descriptor="A short descriptor.",
         summary="A summary.",
-        outline=[{"title": "Ch 1", "pageStart": 1}],
     )
 
     outline = await store.workspace_outline(workspace.id)
@@ -276,52 +276,14 @@ async def test_workspace_outline_groups_files_under_chapters(workspace):
     assert [c["name"] for c in outline["chapters"]] == ["Biology"]
     by_id = {f["id"]: f for f in outline["files"]}
     assert by_id[filed]["chapter_id"] == chapter and by_id[filed]["chunks"] == 1
+    assert by_id[filed]["descriptor"] == "A short descriptor."
     assert by_id[filed]["summary"] == "A summary."
     assert by_id[unfiled]["chapter_id"] is None and by_id[unfiled]["chunks"] == 0
 
 
-async def test_moving_a_file_between_chapters_marks_both_dirty(workspace):
-    """Reorganization invalidates summaries through a trigger rather than a
-    handler, because the paths that reorganize files are many."""
-    source = workspace.add_chapter("From")
-    target = workspace.add_chapter("To")
-    file_id = workspace.add_file("a.txt", source)
-    await store.set_chapter_summary(source, "clean")
-    await store.set_chapter_summary(target, "clean")
-
-    workspace.scalar(
-        "UPDATE files SET chapter_id = %s WHERE id = %s RETURNING id", (target, file_id)
-    )
-
-    dirty = {row["chapter_id"] for row in await store.dirty_chapters(workspace.id)}
-    assert dirty == {source, target}
-    assert (
-        workspace.scalar(
-            "SELECT count(*) FROM jobs WHERE type = 'summaries_rollup' "
-            "AND payload->>'workspaceId' = %s",
-            (workspace.id,),
-        )
-        >= 1
-    )
-
-
-async def test_content_ingest_marks_only_its_chapter_dirty(workspace):
-    changed = workspace.add_chapter("Changed")
-    untouched = workspace.add_chapter("Untouched")
-    file_id = workspace.add_file("a.txt", changed)
-    workspace.add_file("b.txt", untouched)
-    await store.set_chapter_summary(changed, "clean")
-    await store.set_chapter_summary(untouched, "clean")
-
-    await store.mark_workspace_dirty(workspace.id, file_id)
-
-    dirty = {row["chapter_id"] for row in await store.dirty_chapters(workspace.id)}
-    assert dirty == {changed}
-
-
 async def test_deleting_a_chapter_does_not_break_its_files(workspace):
-    """The chapter FK is ON DELETE SET NULL, so the trigger fires for a chapter
-    that no longer exists — it must not try to mark it dirty."""
+    """The chapter FK is ON DELETE SET NULL, so deleting a chapter unfiles its
+    files rather than deleting them."""
     chapter = workspace.add_chapter("Doomed")
     file_id = workspace.add_file("a.txt", chapter)
 
@@ -442,7 +404,7 @@ def test_claim_honours_not_before(workspace):
     with workspace._connect() as conn:
         cur = conn.cursor()
         _isolate_job(cur, job_id)
-        claimed = db.claim_job(cur, {"ingest": 180, "summaries_rollup": 60})
+        claimed = db.claim_job(cur, {"ingest": 180})
         conn.commit()
     assert claimed is None
     assert (
@@ -477,7 +439,7 @@ def test_requeue_then_claim(workspace):
             == "pending"
         )
         _isolate_job(cur, job_id)
-        claimed = db.claim_job(cur, {"ingest": 180, "summaries_rollup": 60})
+        claimed = db.claim_job(cur, {"ingest": 180})
         conn.commit()
     assert claimed is not None
     assert claimed["id"] == job_id
@@ -508,78 +470,6 @@ def test_lease_reclaim_fails_after_budget(workspace):
     )
 
 
-def test_rollup_requeue_supersedes_when_pending_sibling_exists(workspace):
-    import json
-
-    from pipeline.store import db
-
-    running = f"job_run_{workspace.id[-6:]}"
-    pending = f"job_pend_{workspace.id[-6:]}"
-    payload = json.dumps({"workspaceId": workspace.id})
-    workspace.scalar(
-        """
-        INSERT INTO jobs (id, type, payload, status, attempts)
-        VALUES (%s, 'summaries_rollup', %s::jsonb, 'running', 1)
-        RETURNING id
-        """,
-        (running, payload),
-    )
-    workspace.scalar(
-        """
-        INSERT INTO jobs (id, type, payload, status)
-        VALUES (%s, 'summaries_rollup', %s::jsonb, 'pending')
-        RETURNING id
-        """,
-        (pending, payload),
-    )
-    with workspace._connect() as conn:
-        cur = conn.cursor()
-        outcome = db.requeue_job(
-            cur,
-            job_id=running,
-            job_type="summaries_rollup",
-            workspace_id=workspace.id,
-            error="chapter failed",
-            backoff_s=0,
-        )
-        conn.commit()
-    assert outcome == "superseded"
-    assert (
-        workspace.scalar("SELECT status FROM jobs WHERE id = %s", (running,)) == "done"
-    )
-
-
-async def test_failed_chapter_rollup_leaves_the_chapter_dirty(workspace, monkeypatch):
-    from pipeline.jobs import RetryableError
-    from pipeline.retrieval import indexing
-
-    chapter = workspace.add_chapter("Cells")
-    file_id = workspace.add_file("a.txt", chapter)
-    await _write(workspace, file_id, ["mitochondria"])
-    content_id = workspace.scalar(
-        "SELECT content_id FROM rag_file_contents WHERE file_id = %s", (file_id,)
-    )
-    await store.upsert_content_summary(
-        workspace_id=workspace.id,
-        content_id=content_id,
-        fingerprint="fp",
-        summary="Mitochondria make ATP.",
-        outline=[],
-    )
-    await store.mark_workspace_dirty(workspace.id, file_id)
-
-    async def boom(*_a, **_k):
-        raise RuntimeError("provider down")
-
-    monkeypatch.setattr(indexing.models, "complete_text", boom)
-    with pytest.raises(RetryableError, match="chapter rollup failed"):
-        await indexing.rollup_summaries(workspace.id)
-
-    assert workspace.scalar(
-        "SELECT dirty FROM rag_chapter_summaries WHERE chapter_id = %s", (chapter,)
-    )
-
-
 async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
     import secrets
 
@@ -605,8 +495,8 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
         workspace_id=workspace.id,
         content_id=donor_id,
         fingerprint="fp",
+        descriptor="Osmosis in brief.",
         summary="Osmosis.",
-        outline=[],
     )
 
     other_id = f"ws_{secrets.token_hex(6)}"
@@ -751,7 +641,7 @@ def test_only_the_claiming_attempt_may_write_its_outcome(workspace):
             (job_id,),
         )
         _isolate_job(cur, job_id)
-        successor = db.claim_job(cur, {"ingest": 180, "summaries_rollup": 60})
+        successor = db.claim_job(cur, {"ingest": 180})
         # The reclaimed worker still believes it holds attempt 1.
         stale = db.claim_is_current(cur, job_id, 1)
         current = db.claim_is_current(cur, job_id, successor["attempts"])
@@ -962,83 +852,6 @@ async def test_waiting_never_returns_a_claim_another_job_holds(workspace, monkey
     )
 
 
-def test_rollup_requeue_folds_when_the_index_rejects_the_row(workspace):
-    """A sibling committed mid-statement is invisible to the NOT EXISTS guard.
-
-    READ COMMITTED takes the snapshot at statement start, so the unique pending
-    index is the thing that catches this. The requeue has to treat that as the
-    fold it is, not raise out of the worker's failure handler.
-    """
-    import json
-    import threading
-    import time
-
-    import psycopg
-
-    from pipeline.store import db
-
-    running = f"job_run_{workspace.id[-6:]}"
-    sibling = f"job_sib_{workspace.id[-6:]}"
-    payload = json.dumps({"workspaceId": workspace.id})
-    workspace.scalar(
-        """
-        INSERT INTO jobs (id, type, payload, status, attempts)
-        VALUES (%s, 'summaries_rollup', %s::jsonb, 'running', 1)
-        RETURNING id
-        """,
-        (running, payload),
-    )
-
-    # Hold an uncommitted pending sibling: invisible to the guard's snapshot,
-    # but the index entry the requeue collides with.
-    blocker = psycopg.connect(workspace.dsn)
-    blocker.execute(
-        "INSERT INTO jobs (id, type, payload, status) VALUES (%s,'summaries_rollup',%s::jsonb,'pending')",
-        (sibling, payload),
-    )
-    outcome: dict[str, object] = {}
-
-    def requeue() -> None:
-        started = time.monotonic()
-        with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
-            outcome["result"] = db.requeue_job(
-                cur,
-                job_id=running,
-                job_type="summaries_rollup",
-                workspace_id=workspace.id,
-                error="chapter failed",
-                backoff_s=0,
-            )
-            conn.commit()
-        outcome["elapsed"] = time.monotonic() - started
-
-    worker_thread = threading.Thread(target=requeue)
-    worker_thread.start()
-    try:
-        # The requeue is now blocked on the sibling's index entry; committing it
-        # is what turns that wait into the violation.
-        time.sleep(0.5)
-        blocker.commit()
-        worker_thread.join(timeout=15)
-    finally:
-        blocker.close()
-
-    assert worker_thread.is_alive() is False
-    assert outcome["result"] == "superseded"
-    # Waiting on the sibling's index entry is what proves the violation path ran
-    # rather than the NOT EXISTS guard seeing a committed sibling.
-    assert float(outcome["elapsed"]) > 0.25
-    assert workspace.scalar("SELECT status FROM jobs WHERE id=%s", (running,)) == "done"
-    assert (
-        workspace.scalar(
-            "SELECT count(*) FROM jobs WHERE type='summaries_rollup' "
-            "AND status='pending' AND payload->>'workspaceId'=%s",
-            (workspace.id,),
-        )
-        == 1
-    )
-
-
 async def test_artifact_gc_skips_in_flight_jobs(workspace):
     import json
 
@@ -1075,4 +888,125 @@ async def test_artifact_gc_skips_in_flight_jobs(workspace):
     assert deleted == 0
     assert workspace.scalar(
         "SELECT count(*) FROM artifact_cache WHERE source_sha256 = %s", (sha,)
+    )
+
+
+async def test_steal_refuses_a_creator_whose_lease_is_still_live(workspace):
+    import json
+
+    creator_job, _waiter = _claim_ids(workspace)
+    file_id = workspace.add_file("leased.txt")
+    content_hash = hashlib.sha256(b"leased bytes").hexdigest()
+    created = await store.attach_file_content(
+        workspace_id=workspace.id,
+        file_id=file_id,
+        content_hash=content_hash,
+        claim_job_id=creator_job,
+    )
+    workspace.scalar(
+        """
+        INSERT INTO jobs (id, type, payload, status, attempts, lease_expires_at)
+        VALUES (%s, 'ingest', %s::jsonb, 'running', 1, now() + interval '3 minutes')
+        RETURNING id
+        """,
+        (creator_job, json.dumps({"fileId": file_id, "workspaceId": workspace.id})),
+    )
+    workspace.scalar(
+        "UPDATE rag_contents SET updated_at = now() - interval '1 hour' "
+        "WHERE id = %s RETURNING id",
+        (created["content_id"],),
+    )
+    assert not await store.steal_stale_content(
+        workspace_id=workspace.id, content_hash=content_hash, stale_s=60
+    )
+
+    workspace.scalar(
+        "UPDATE jobs SET lease_expires_at = now() - interval '1 minute' "
+        "WHERE id = %s RETURNING id",
+        (creator_job,),
+    )
+    assert await store.steal_stale_content(
+        workspace_id=workspace.id, content_hash=content_hash, stale_s=60
+    )
+
+
+async def test_steal_succeeds_once_the_owner_job_is_done(workspace):
+    import json
+
+    creator_job, _waiter = _claim_ids(workspace)
+    file_id = workspace.add_file("done.txt")
+    content_hash = hashlib.sha256(b"done bytes").hexdigest()
+    created = await store.attach_file_content(
+        workspace_id=workspace.id,
+        file_id=file_id,
+        content_hash=content_hash,
+        claim_job_id=creator_job,
+    )
+    workspace.scalar(
+        """
+        INSERT INTO jobs (id, type, payload, status, attempts, lease_expires_at)
+        VALUES (%s, 'ingest', %s::jsonb, 'done', 1, NULL)
+        RETURNING id
+        """,
+        (creator_job, json.dumps({"fileId": file_id, "workspaceId": workspace.id})),
+    )
+    workspace.scalar(
+        "UPDATE rag_contents SET updated_at = now() - interval '1 hour' "
+        "WHERE id = %s RETURNING id",
+        (created["content_id"],),
+    )
+    assert await store.steal_stale_content(
+        workspace_id=workspace.id, content_hash=content_hash, stale_s=60
+    )
+
+
+async def test_replace_content_chunks_refuses_a_taken_over_claim(workspace):
+    from pipeline.jobs import RetryableError
+
+    creator_job, waiter_job = _claim_ids(workspace)
+    file_id = workspace.add_file("notes.txt")
+    content_hash = hashlib.sha256(b"fenced bytes").hexdigest()
+    created = await store.attach_file_content(
+        workspace_id=workspace.id,
+        file_id=file_id,
+        content_hash=content_hash,
+        claim_job_id=creator_job,
+    )
+    workspace.scalar(
+        "UPDATE rag_contents SET claim_job_id = %s WHERE id = %s RETURNING id",
+        (waiter_job, created["content_id"]),
+    )
+    with pytest.raises(RetryableError, match="content claim taken over"):
+        await store.replace_content_chunks(
+            workspace_id=workspace.id,
+            content_id=created["content_id"],
+            rows=[],
+            claim_job_id=creator_job,
+        )
+
+
+def test_finishing_a_deleted_file_still_marks_the_job_done(workspace):
+    import json
+
+    from pipeline.ingest import worker
+
+    file_id = workspace.add_file("gone.txt")
+    job_id = f"job_fin_{workspace.id[-6:]}"
+    workspace.scalar(
+        """
+        INSERT INTO jobs (id, type, payload, status, attempts)
+        VALUES (%s, 'ingest', %s::jsonb, 'running', 1)
+        RETURNING id
+        """,
+        (job_id, json.dumps({"fileId": file_id, "workspaceId": workspace.id})),
+    )
+    workspace.scalar("DELETE FROM files WHERE id = %s RETURNING id", (file_id,))
+    worker._finish_ok(file_id, "gone.txt", job_id, attempt=1)
+    assert workspace.scalar("SELECT status FROM jobs WHERE id=%s", (job_id,)) == "done"
+    assert (
+        workspace.scalar(
+            "SELECT count(*) FROM notifications WHERE workspace_id=%s",
+            (workspace.id,),
+        )
+        == 0
     )

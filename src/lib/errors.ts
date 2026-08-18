@@ -1,6 +1,7 @@
 import {
   isApiError,
   isCreditsExhaustedError,
+  isFileLimitError,
   isModelUnavailableError,
   isStorageQuotaError,
 } from '@/api/client';
@@ -13,6 +14,7 @@ export type ErrorKind =
   | 'forbidden'
   | 'notFound'
   | 'quota'
+  | 'files'
   | 'credits'
   | 'model'
   | 'validation'
@@ -54,6 +56,7 @@ export function errorKind(error: unknown): ErrorKind {
   if (isChunkLoadError(error)) return 'chunkLoad';
   if (browserIsOffline()) return 'offline';
   if (isStorageQuotaError(error)) return 'quota';
+  if (isFileLimitError(error)) return 'files';
   if (isCreditsExhaustedError(error)) return 'credits';
   if (isModelUnavailableError(error)) return 'model';
 
@@ -119,6 +122,22 @@ export function describeError(error: unknown): ErrorDescription {
         description: m.error_quota_body(),
         title: m.error_quota_title(),
       };
+    case 'files': {
+      const limit =
+        isFileLimitError(error) && typeof error.body?.filesLimit === 'number'
+          ? error.body.filesLimit
+          : 100;
+      if (isApiError(error) && error.code === 'files_batch_exceeded') {
+        return {
+          description: m.error_files_batch_body({ limit }),
+          title: m.error_files_batch_title(),
+        };
+      }
+      return {
+        description: m.error_files_limit_body({ limit }),
+        title: m.error_files_limit_title(),
+      };
+    }
     case 'credits':
       return {
         action: 'subscription',

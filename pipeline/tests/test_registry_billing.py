@@ -135,6 +135,7 @@ def test_claim_gating_matrix(monkeypatch):
 
     payload = {"actorUserId": "u_actor"}
     assert worker._account_allows_ingest("f_1", payload) is True
+    assert worker._account_allows_ingest("f_1", {}) is False
 
     state["owner_ok"] = False
     assert worker._account_allows_ingest("f_1", payload) is False
@@ -148,7 +149,7 @@ def test_claim_gating_matrix(monkeypatch):
     assert worker._account_allows_ingest("f_1", payload) is True
 
 
-def test_ingest_bills_actor_rollup_bills_owner(monkeypatch):
+def test_ingest_bills_the_actor(monkeypatch):
     billed = []
 
     def record(_cur, **kwargs):
@@ -188,8 +189,3 @@ def test_ingest_bills_actor_rollup_bills_owner(monkeypatch):
 
     worker._charge_ingest("f_1", "ws_1", "u_actor")
     assert billed and billed[0]["actor_user_id"] == "u_actor"
-
-    billed.clear()
-    worker._charge_rollup("ws_1")
-    assert billed and billed[0]["actor_user_id"] == "u_owner"
-    assert billed[0]["metadata"]["kind"] == "summaries_rollup"

@@ -39,8 +39,8 @@ SYSTEM_PROMPT = (
     "labelling it as outside the sources.\n"
     "- For questions that span documents, retrieve from each relevant document "
     "before comparing them, and attribute each side of the comparison.\n"
-    "- Prefer answering over searching again. You have a small, fixed number of "
-    "tool calls."
+    "- Prefer listing sources, then describing or searching the few documents "
+    "that matter, over searching the whole workspace blindly."
 )
 
 
@@ -183,6 +183,11 @@ def _parse_args(raw: str | None) -> dict[str, Any]:
 def _describe(name: str, args: dict[str, Any]) -> str:
     if name == "search_workspace":
         return str(args.get("query") or "")
+    if name == "list_sources":
+        return "listing sources"
+    if name == "describe_documents":
+        ids = args.get("file_ids") or []
+        return ", ".join(str(i) for i in ids[:8])
     if name == "read_document":
         return str(args.get("file_id") or "")
     if name == "related_concepts":

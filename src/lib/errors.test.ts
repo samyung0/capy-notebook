@@ -30,6 +30,23 @@ describe('frontend error normalization', () => {
     expect(describeError(error).action).toBe('subscription');
   });
 
+  it('classifies workspace file-cap failures distinctly from storage quota', () => {
+    const error = new ApiError(403, 'Forbidden', undefined, {
+      code: 'files_limit_exceeded',
+      filesLimit: 100,
+    });
+
+    expect(errorKind(error)).toBe('files');
+    expect(describeError(error).action).toBeUndefined();
+    expect(describeError(error).title).not.toBe(
+      describeError(
+        new ApiError(403, 'Forbidden', undefined, {
+          code: 'storage_quota_exceeded',
+        })
+      ).title
+    );
+  });
+
   it('classifies an unavailable LLM model distinctly from validation', () => {
     const error = new ApiError(422, 'Unprocessable Entity', undefined, {
       code: 'model_unavailable',

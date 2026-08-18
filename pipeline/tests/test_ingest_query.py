@@ -13,9 +13,11 @@ from __future__ import annotations
 
 import pytest
 
-from pipeline.retrieval import indexing, store
+from pipeline.retrieval import indexing, models, store, tools
+from pipeline.retrieval.agent import _priming_message, system_prompt
 from pipeline.retrieval.chunking import chunk_markdown
 from pipeline.retrieval.search import search
+from pipeline.retrieval.tools import ToolContext
 
 pytestmark = pytest.mark.cassette
 
@@ -84,17 +86,19 @@ async def test_index_file_writes_chunks_summary_and_concepts(
         (file_id,),
     )
     assert summary and len(summary) > 40
+    descriptor = workspace.scalar(
+        "SELECT s.descriptor FROM rag_content_summaries s JOIN rag_file_contents fc "
+        "ON fc.content_id = s.content_id WHERE fc.file_id = %s",
+        (file_id,),
+    )
+    assert descriptor
+    # Two-tier JSON, not the prose fallback that copies the same blob into both.
+    assert descriptor != summary
     assert (
         workspace.scalar(
             "SELECT count(*) FROM rag_concepts WHERE workspace_id = %s", (workspace.id,)
         )
         >= 1
-    )
-    # Content changed, so the summary tree above this file is stale and a
-    # rollup is queued for the worker.
-    assert workspace.scalar(
-        "SELECT dirty FROM rag_workspace_summaries WHERE workspace_id = %s",
-        (workspace.id,),
     )
 
 
@@ -142,6 +146,33 @@ async def test_hybrid_search_returns_a_citable_passage(cassette, workspace, samp
     citation = top.as_citation()
     assert citation["fileId"] == file_id
     assert "pageStart" not in citation
+
+
+async def test_answer_is_grounded_and_cited(cassette, workspace, sample_txt):
+    """Prime + one completion, not the tool loop: lock that retrieved passages
+    are what the model is asked to answer from, and that the reply cites them.
+
+    ``run_agent`` is covered offline — its extra round trips are not
+    deterministic enough to record.
+    """
+    await _index(workspace, "photosynthesis.txt", sample_txt)
+    query = "What does chlorophyll absorb?"
+    ctx = ToolContext(workspace_id=workspace.id)
+    numbered = tools.remember(ctx, await search(workspace_id=workspace.id, query=query))
+    assert numbered, "prime search must retrieve the photosynthesis passage"
+
+    raw = await models.complete_text(
+        [
+            {"role": "system", "content": system_prompt(None)},
+            {"role": "user", "content": query},
+            {"role": "user", "content": _priming_message(numbered)},
+        ],
+        model="deepseek-v4-flash",
+        temperature=0.0,
+    )
+
+    assert "chlorophyll" in raw.lower()
+    assert "[1]" in raw
 
 
 async def test_search_is_confined_to_the_requested_files(
@@ -195,6 +226,7 @@ async def test_workspace_outline_reports_the_tree(cassette, workspace, sample_tx
     entry = next(f for f in outline["files"] if f["id"] == file_id)
     assert entry["chapter_id"] == chapter_id
     assert entry["chunks"] >= 1
+    assert entry["descriptor"]
     assert entry["summary"]
 
 

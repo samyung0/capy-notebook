@@ -47,6 +47,13 @@ export function isCreditsExhaustedError(err: unknown): err is ApiError {
   return isApiError(err) && err.code === 'llm_credits_exhausted';
 }
 
+export function isFileLimitError(err: unknown): err is ApiError {
+  return (
+    isApiError(err) &&
+    (err.code === 'files_limit_exceeded' || err.code === 'files_batch_exceeded')
+  );
+}
+
 export function isModelUnavailableError(err: unknown): err is ApiError {
   return isApiError(err) && err.code === 'model_unavailable';
 }
@@ -67,6 +74,8 @@ const ACCOUNT_FORBIDDEN_CODES = new Set([
 
 const CODED_ERROR_MESSAGES = new Set([
   'storage_quota_exceeded',
+  'files_limit_exceeded',
+  'files_batch_exceeded',
   'llm_credits_exhausted',
   'model_unavailable',
   'material_content_unreadable',

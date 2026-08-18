@@ -17,6 +17,7 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
 from ..config import cfg
+from ..jobs import RetryableError, TerminalError
 
 log = logging.getLogger("evo.retrieval.store")
 
@@ -31,7 +32,11 @@ async def pool() -> AsyncConnectionPool:
             min_size=1,
             max_size=8,
             open=False,
-            kwargs={"row_factory": dict_row},
+            kwargs={
+                "row_factory": dict_row,
+                "connect_timeout": 5,
+                "options": "-c statement_timeout=60000",
+            },
         )
         await _pool.open()
     return _pool
@@ -89,7 +94,7 @@ async def workspace_embedding_pin(workspace_id: str) -> dict[str, Any]:
         )
         row = await cur.fetchone()
     if row is None:
-        raise RuntimeError(f"workspace {workspace_id} has no embedding pin")
+        raise TerminalError(f"workspace {workspace_id} has no embedding pin")
     return dict(row)
 
 
@@ -121,7 +126,7 @@ async def attach_file_content(
                  pipeline_identity, claim_job_id, updated_at)
             VALUES (%s, %s, %s, 'processing', %s, %s, %s, now())
             ON CONFLICT (workspace_id, content_hash) DO NOTHING
-            RETURNING id, status
+            RETURNING id, status, claim_job_id
             """,
             (
                 content_id,
@@ -137,7 +142,7 @@ async def attach_file_content(
         if row is None:
             cur = await conn.execute(
                 """
-                SELECT id, status FROM rag_contents
+                SELECT id, status, claim_job_id FROM rag_contents
                 WHERE workspace_id = %s AND content_hash = %s
                 FOR UPDATE
                 """,
@@ -146,6 +151,13 @@ async def attach_file_content(
             row = await cur.fetchone()
         if row is None:
             raise RuntimeError("canonical retrieval content disappeared")
+        if (
+            not created
+            and row["status"] != "ready"
+            and claim_job_id
+            and row["claim_job_id"] == claim_job_id
+        ):
+            created = True
         await conn.execute(
             """
             INSERT INTO rag_file_contents (file_id, workspace_id, content_id)
@@ -166,15 +178,27 @@ async def attach_file_content(
 async def steal_stale_content(
     *, workspace_id: str, content_hash: str, stale_s: int
 ) -> bool:
-    """Drop a processing claim whose creator looks dead so a waiter can take it."""
+    """Drop a processing claim whose owning job is no longer alive.
+
+    ``updated_at`` is only the floor so a heartbeat that just started is not
+    stolen on a race. The death signal is the owner's job lease: a running job
+    with ``lease_expires_at > now()`` still owns the row.
+    """
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
             """
-            DELETE FROM rag_contents
-            WHERE workspace_id = %s AND content_hash = %s
-              AND status = 'processing'
-              AND updated_at < now() - make_interval(secs => %s)
+            DELETE FROM rag_contents rc
+            WHERE rc.workspace_id = %s AND rc.content_hash = %s
+              AND rc.status = 'processing'
+              AND rc.updated_at < now() - make_interval(secs => %s)
+              AND NOT EXISTS (
+                  SELECT 1 FROM jobs j
+                  WHERE j.id = rc.claim_job_id
+                    AND j.status = 'running'
+                    AND j.lease_expires_at IS NOT NULL
+                    AND j.lease_expires_at > now()
+              )
             """,
             (workspace_id, content_hash, stale_s),
         )
@@ -206,17 +230,31 @@ async def find_ready_donor(
     return dict(row) if row else None
 
 
-async def mark_content_ready(content_id: str) -> None:
+async def mark_content_ready(
+    content_id: str, *, claim_job_id: str | None = None
+) -> None:
     db = await pool()
     async with db.connection() as conn:
-        await conn.execute(
+        if claim_job_id is None:
+            await conn.execute(
+                """
+                UPDATE rag_contents
+                SET status = 'ready', claim_job_id = NULL, updated_at = now()
+                WHERE id = %s
+                """,
+                (content_id,),
+            )
+            return
+        cur = await conn.execute(
             """
             UPDATE rag_contents
             SET status = 'ready', claim_job_id = NULL, updated_at = now()
-            WHERE id = %s
+            WHERE id = %s AND claim_job_id = %s
             """,
-            (content_id,),
+            (content_id, claim_job_id),
         )
+        if not cur.rowcount:
+            raise RetryableError("content claim taken over")
 
 
 async def content_status(content_id: str) -> str | None:
@@ -311,14 +349,17 @@ async def copy_content_from_donor(
         await conn.execute(
             """
             INSERT INTO rag_content_summaries
-                (content_id, workspace_id, fingerprint, summary, outline, updated_at)
-            SELECT %s, %s, s.fingerprint, s.summary, s.outline, s.updated_at
+                (content_id, workspace_id, fingerprint, descriptor, summary,
+                 summary_version, updated_at)
+            SELECT %s, %s, s.fingerprint, s.descriptor, s.summary,
+                   s.summary_version, s.updated_at
             FROM rag_content_summaries s
             WHERE s.content_id = %s
             ON CONFLICT (content_id) DO UPDATE SET
                 fingerprint = EXCLUDED.fingerprint,
+                descriptor = EXCLUDED.descriptor,
                 summary = EXCLUDED.summary,
-                outline = EXCLUDED.outline,
+                summary_version = EXCLUDED.summary_version,
                 updated_at = EXCLUDED.updated_at
             """,
             (dest_content_id, dest_workspace_id, donor_id),
@@ -397,7 +438,11 @@ async def load_content_chunks(content_id: str) -> list[dict[str, Any]]:
 
 
 async def replace_content_chunks(
-    *, workspace_id: str, content_id: str, rows: list[dict[str, Any]]
+    *,
+    workspace_id: str,
+    content_id: str,
+    rows: list[dict[str, Any]],
+    claim_job_id: str | None = None,
 ) -> None:
     """Swap in canonical content chunks atomically.
 
@@ -409,11 +454,26 @@ async def replace_content_chunks(
     The vector table and the provenance written onto the content row both come
     from the workspace's own pin, read here rather than passed in, so a caller
     that embedded with the wrong model cannot also record the wrong model.
+
+    ``claim_job_id`` is the fencing token. Holding the content row FOR UPDATE
+    for the insert loop is what stops a waiter from deleting it mid-write.
     """
     pin = await workspace_embedding_pin(workspace_id)
     table = vector_table(pin["embedding_dim"])
     db = await pool()
     async with db.connection() as conn, conn.transaction():
+        if claim_job_id is not None:
+            cur = await conn.execute(
+                """
+                SELECT claim_job_id FROM rag_contents
+                WHERE id = %s
+                FOR UPDATE
+                """,
+                (content_id,),
+            )
+            owned = await cur.fetchone()
+            if owned is None or owned["claim_job_id"] != claim_job_id:
+                raise RetryableError("content claim taken over")
         await conn.execute(
             "DELETE FROM rag_chunks WHERE content_id = %s", (content_id,)
         )
@@ -475,24 +535,34 @@ async def upsert_content_summary(
     workspace_id: str,
     content_id: str,
     fingerprint: str,
+    descriptor: str,
     summary: str,
-    outline: list[dict[str, Any]],
+    summary_version: int = 1,
 ) -> None:
     db = await pool()
     async with db.connection() as conn:
         await conn.execute(
             """
             INSERT INTO rag_content_summaries
-                (content_id, workspace_id, fingerprint, summary, outline, updated_at)
-            VALUES (%s, %s, %s, %s, %s, now())
+                (content_id, workspace_id, fingerprint, descriptor, summary,
+                 summary_version, updated_at)
+            VALUES (%s, %s, %s, %s, %s, %s, now())
             ON CONFLICT (content_id) DO UPDATE SET
-                workspace_id = EXCLUDED.workspace_id,
-                fingerprint  = EXCLUDED.fingerprint,
-                summary      = EXCLUDED.summary,
-                outline      = EXCLUDED.outline,
-                updated_at   = now()
+                workspace_id    = EXCLUDED.workspace_id,
+                fingerprint     = EXCLUDED.fingerprint,
+                descriptor      = EXCLUDED.descriptor,
+                summary         = EXCLUDED.summary,
+                summary_version = EXCLUDED.summary_version,
+                updated_at      = now()
             """,
-            (content_id, workspace_id, fingerprint, summary, Jsonb(outline)),
+            (
+                content_id,
+                workspace_id,
+                fingerprint,
+                descriptor,
+                summary,
+                summary_version,
+            ),
         )
 
 
@@ -724,14 +794,13 @@ def normalize_concept(name: str) -> str:
 
 
 async def workspace_outline(workspace_id: str) -> dict[str, Any]:
-    """Chapters, their files, and every summary the tree currently holds."""
+    """Chapters, their files, and the per-file descriptor the listing tool prints."""
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT ch.id, ch.name, cs.summary
+            SELECT ch.id, ch.name
             FROM chapters ch
-            LEFT JOIN rag_chapter_summaries cs ON cs.chapter_id = ch.id
             WHERE ch.workspace_id = %s
             ORDER BY ch.position, ch.id
             """,
@@ -741,8 +810,9 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
 
         cur = await conn.execute(
             """
-                 SELECT f.id, f.name, f.chapter_id, f.status, cs.summary,
-                     coalesce(cs.outline, '[]'::jsonb) AS outline,
+                 SELECT f.id, f.name, f.chapter_id, f.status,
+                     coalesce(cs.descriptor, '') AS descriptor,
+                     coalesce(cs.summary, '') AS summary,
                      (SELECT count(*) FROM rag_chunks c
                       JOIN rag_file_contents rfc ON rfc.content_id = c.content_id
                       WHERE rfc.file_id = f.id) AS chunks
@@ -756,17 +826,28 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
         )
         files = [dict(row) for row in await cur.fetchall()]
 
-        cur = await conn.execute(
-            "SELECT summary FROM rag_workspace_summaries WHERE workspace_id = %s",
-            (workspace_id,),
-        )
-        row = await cur.fetchone()
+    return {"chapters": chapters, "files": files}
 
-    return {
-        "chapters": chapters,
-        "files": files,
-        "summary": (row or {}).get("summary") or "",
-    }
+
+async def file_summaries(file_ids: list[str]) -> list[dict[str, Any]]:
+    if not file_ids:
+        return []
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT f.id, f.name, coalesce(cs.descriptor, '') AS descriptor,
+                   coalesce(cs.summary, '') AS summary
+            FROM files f
+            LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
+            LEFT JOIN rag_content_summaries cs ON cs.content_id = fc.content_id
+            WHERE f.id = ANY(%s)
+            """,
+            (file_ids,),
+        )
+        rows = [dict(row) for row in await cur.fetchall()]
+    by_id = {row["id"]: row for row in rows}
+    return [by_id[fid] for fid in file_ids if fid in by_id]
 
 
 async def file_ids_for_names(workspace_id: str, names: list[str]) -> list[str]:
@@ -800,97 +881,6 @@ async def read_file_range(
             (file_id, start, count),
         )
         return [dict(row) for row in await cur.fetchall()]
-
-
-async def chapter_file_summaries(chapter_id: str) -> list[dict[str, Any]]:
-    db = await pool()
-    async with db.connection() as conn:
-        cur = await conn.execute(
-            """
-            SELECT f.name, coalesce(cs.summary, '') AS summary
-            FROM files f
-            LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
-            LEFT JOIN rag_content_summaries cs ON cs.content_id = fc.content_id
-            WHERE f.chapter_id = %s
-            ORDER BY f.position, f.added_at
-            """,
-            (chapter_id,),
-        )
-        return [dict(row) for row in await cur.fetchall()]
-
-
-async def dirty_chapters(workspace_id: str) -> list[dict[str, Any]]:
-    db = await pool()
-    async with db.connection() as conn:
-        cur = await conn.execute(
-            """
-            SELECT cs.chapter_id, ch.name
-            FROM rag_chapter_summaries cs JOIN chapters ch ON ch.id = cs.chapter_id
-            WHERE cs.workspace_id = %s AND cs.dirty
-            """,
-            (workspace_id,),
-        )
-        return [dict(row) for row in await cur.fetchall()]
-
-
-async def set_chapter_summary(chapter_id: str, summary: str) -> None:
-    db = await pool()
-    async with db.connection() as conn:
-        await conn.execute(
-            """
-            UPDATE rag_chapter_summaries
-            SET summary = %s, dirty = false, updated_at = now()
-            WHERE chapter_id = %s
-            """,
-            (summary, chapter_id),
-        )
-
-
-async def set_workspace_summary(workspace_id: str, summary: str) -> None:
-    db = await pool()
-    async with db.connection() as conn:
-        await conn.execute(
-            """
-            INSERT INTO rag_workspace_summaries (workspace_id, summary, dirty, updated_at)
-            VALUES (%s, %s, false, now())
-            ON CONFLICT (workspace_id) DO UPDATE
-            SET summary = EXCLUDED.summary, dirty = false, updated_at = now()
-            """,
-            (workspace_id, summary),
-        )
-
-
-async def mark_workspace_dirty(workspace_id: str, file_id: str) -> None:
-    """Content changed (as opposed to organization, which the trigger covers)."""
-    db = await pool()
-    async with db.connection() as conn, conn.transaction():
-        await conn.execute(
-            """
-            INSERT INTO rag_workspace_summaries (workspace_id, dirty)
-            VALUES (%s, true)
-            ON CONFLICT (workspace_id) DO UPDATE SET dirty = true
-            """,
-            (workspace_id,),
-        )
-        await conn.execute(
-            """
-            INSERT INTO rag_chapter_summaries (chapter_id, workspace_id, dirty)
-            SELECT f.chapter_id, f.workspace_id, true
-            FROM files f
-            WHERE f.id = %s AND f.workspace_id = %s AND f.chapter_id IS NOT NULL
-            ON CONFLICT (chapter_id) DO UPDATE SET dirty = true
-            """,
-            (file_id, workspace_id),
-        )
-        await conn.execute(
-            """
-            INSERT INTO jobs (id, type, payload)
-            VALUES ('job_' || substr(md5(random()::text || clock_timestamp()::text), 1, 10),
-                    'summaries_rollup', jsonb_build_object('workspaceId', %s::text))
-            ON CONFLICT DO NOTHING
-            """,
-            (workspace_id,),
-        )
 
 
 def decode_regions(value: Any) -> list[dict[str, Any]]:

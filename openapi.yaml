@@ -1694,6 +1694,9 @@ components:
         fileCount:
           format: int64
           type: integer
+        filesLimit:
+          format: int64
+          type: integer
         id:
           type: string
         isOwner:
@@ -1728,6 +1731,7 @@ components:
         - tags
         - chapterCount
         - fileCount
+        - filesLimit
         - createdAt
         - lastAccessedAt
         - isOwner
@@ -2592,6 +2596,9 @@ components:
         fileCount:
           format: int64
           type: integer
+        filesLimit:
+          format: int64
+          type: integer
         id:
           type: string
         isOwner:
@@ -2624,6 +2631,7 @@ components:
         - tags
         - chapterCount
         - fileCount
+        - filesLimit
         - createdAt
         - lastAccessedAt
         - isOwner

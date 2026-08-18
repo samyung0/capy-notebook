@@ -236,7 +236,30 @@ successful ingest, with the same sweeper as an orphan reaper.
 Both TTLs come from `EVO_CAPTION_CACHE_TTL_DAYS` and `EVO_PARSE_ZIP_TTL_HOURS`.
 The gateway and the ingest worker each run the same sweep, so give both services
 the same values — whichever process sweeps first applies its own, and a
-disagreement means the configured TTL is not the one in effect.
+disagreement means the configured TTL is not the one in effect. The worker
+sweeps on a 5-minute timer while the queue is idle, not on every 2-second poll.
+
+### Ingest worker replicas
+
+`WORKER_REPLICAS` in `deploy/docker-compose.yml` (default 1) is the number of
+ingest worker containers. `claim_job` uses `FOR UPDATE SKIP LOCKED`, so replicas
+share the queue without extra coordination. Each replica runs one job at a time,
+so this is also the number of concurrent Modal parses.
+
+Connection budget after the worker's sync pool (`max_size=4`) plus the async
+retrieval pool (`max_size=8`): **12 connections per replica**. Against default
+Postgres `max_connections=100`, and alongside the gateway, retrieval service,
+and collaboration:
+
+- 3 replicas (36 worker connections) is comfortable.
+- Beyond ~5 replicas, raise `max_connections` or put pgbouncer in front.
+
+Provider rate limits scale with replica count. `EVO_CAPTION_CONCURRENCY` is 8
+*per job*, so N replicas means up to 8N concurrent vision calls.
+
+Do not scale above 1 until the worker running in production includes
+lease-keyed content-claim steal. A waiter on a second replica can otherwise
+delete a live creator's `rag_contents` row.
 
 > B2 egress is **not** in `usage_events` — the browser fetches presigned URLs
 > directly and the gateway never sees the transfer. B2's own reporting is the

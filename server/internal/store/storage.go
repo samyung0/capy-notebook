@@ -11,6 +11,8 @@ import (
 const (
 	FreeStorageLimitBytes = int64(100 * 1024 * 1024)
 	ProStorageLimitBytes  = int64(1024 * 1024 * 1024)
+	MaxFilesPerWorkspace  = 100
+	MaxFilesPerUpload     = 20
 )
 
 var ErrStorageQuotaExceeded = errors.New("storage quota exceeded")
@@ -39,6 +41,41 @@ func (e *QuotaExceededError) Error() string {
 }
 
 func (e *QuotaExceededError) Unwrap() error { return ErrStorageQuotaExceeded }
+
+var ErrFileLimitExceeded = errors.New("workspace file limit exceeded")
+
+// FileLimitExceededError is the counterpart of QuotaExceededError for the
+// per-workspace file count (LLM context bound) and the per-request batch cap.
+// Kind is "workspace" or "batch".
+type FileLimitExceededError struct {
+	WorkspaceID string
+	Used        int
+	Reserved    int
+	Requested   int
+	Limit       int
+	Kind        string
+}
+
+func (e *FileLimitExceededError) Error() string {
+	return fmt.Sprintf(
+		"%s: kind=%s used=%d reserved=%d requested=%d limit=%d",
+		ErrFileLimitExceeded,
+		e.Kind,
+		e.Used,
+		e.Reserved,
+		e.Requested,
+		e.Limit,
+	)
+}
+
+func (e *FileLimitExceededError) Unwrap() error { return ErrFileLimitExceeded }
+
+func (e *FileLimitExceededError) Code() string {
+	if e.Kind == "batch" {
+		return "files_batch_exceeded"
+	}
+	return "files_limit_exceeded"
+}
 
 type StorageUsage struct {
 	UserID        string   `json:"userId"`
@@ -226,6 +263,77 @@ func (s *Store) reserveStorageTx(ctx context.Context, tx pgx.Tx, userID string, 
 		SET reserved_bytes=reserved_bytes+$2, updated_at=now()
 		WHERE user_id=$1`, userID, requested)
 	return err
+}
+
+func (s *Store) lockWorkspaceTx(ctx context.Context, tx pgx.Tx, workspaceID string) error {
+	var id string
+	err := tx.QueryRow(ctx, `SELECT id FROM workspaces WHERE id=$1 FOR UPDATE`, workspaceID).Scan(&id)
+	if isNoRows(err) {
+		return ErrNotFound
+	}
+	return err
+}
+
+func (s *Store) workspaceFileUsageTx(ctx context.Context, tx pgx.Tx, workspaceID string) (files, reserved int, err error) {
+	err = tx.QueryRow(ctx, `SELECT count(*) FROM files WHERE workspace_id=$1`, workspaceID).Scan(&files)
+	if err != nil {
+		return
+	}
+	err = tx.QueryRow(ctx, `
+		SELECT count(*) FROM upload_sessions
+		WHERE workspace_id=$1 AND target='source' AND status='pending' AND expires_at > now()`,
+		workspaceID).Scan(&reserved)
+	return
+}
+
+// gateWorkspaceFilesTx enforces the per-workspace file cap and the per-request
+// batch cap. requested is the number of files this write wants to add. Open
+// unexpired source upload sessions count as reserved slots so concurrent
+// session creates cannot all pass a check against 99.
+func (s *Store) gateWorkspaceFilesTx(ctx context.Context, tx pgx.Tx, workspaceID string, requested int) error {
+	if requested < 0 {
+		return fmt.Errorf("negative file request: %d", requested)
+	}
+	if err := s.lockWorkspaceTx(ctx, tx, workspaceID); err != nil {
+		return err
+	}
+	files, reserved, err := s.workspaceFileUsageTx(ctx, tx, workspaceID)
+	if err != nil {
+		return err
+	}
+	if requested > MaxFilesPerUpload {
+		return &FileLimitExceededError{
+			WorkspaceID: workspaceID,
+			Used:        files,
+			Reserved:    reserved,
+			Requested:   requested,
+			Limit:       MaxFilesPerUpload,
+			Kind:        "batch",
+		}
+	}
+	if files+reserved+requested > MaxFilesPerWorkspace {
+		return &FileLimitExceededError{
+			WorkspaceID: workspaceID,
+			Used:        files,
+			Reserved:    reserved,
+			Requested:   requested,
+			Limit:       MaxFilesPerWorkspace,
+			Kind:        "workspace",
+		}
+	}
+	return nil
+}
+
+// AssertWorkspaceFileRoom is the non-insert preflight for a batch (cloud
+// import). It locks the workspace, checks room, and rolls back — the inserts
+// still go through gateWorkspaceFilesTx.
+func (s *Store) AssertWorkspaceFileRoom(ctx context.Context, workspaceID string, requested int) error {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	return s.gateWorkspaceFilesTx(ctx, tx, workspaceID, requested)
 }
 
 func (s *Store) releaseStorageReservationTx(ctx context.Context, tx pgx.Tx, userID string, bytes int64) error {

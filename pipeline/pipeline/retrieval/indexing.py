@@ -14,10 +14,12 @@ import re
 import secrets
 from typing import Any
 
+from ..config import cfg
 from ..jobs import RetryableError
 from ..registry import embedding_spec, ingest_spec
 from . import models, store
-from .chunking import Chunk, outline_from_chunks, tokenize_for_search
+from .chunking import Chunk, _is_cjk, estimate_tokens, tokenize_for_search
+from .workflows import extract_json
 
 log = logging.getLogger("evo.retrieval.indexing")
 
@@ -42,11 +44,15 @@ async def index_file(
     file_name: str,
     chunks: list[Chunk],
     on_progress=None,
+    claim_job_id: str | None = None,
 ) -> dict[str, Any]:
     """Write chunks, summary and concepts for canonical parsed content."""
     if not chunks:
         await store.replace_content_chunks(
-            workspace_id=workspace_id, content_id=content_id, rows=[]
+            workspace_id=workspace_id,
+            content_id=content_id,
+            rows=[],
+            claim_job_id=claim_job_id,
         )
         return {"chunks": 0, "concepts": 0}
 
@@ -68,11 +74,9 @@ async def index_file(
                 "section_path": chunk.section_path,
                 "text": chunk.text,
                 "indexed_text": text,
-                # Characters/4 is the usual English approximation and roughly
-                # doubles the true count for CJK. It drives display and context
-                # budgeting only, so a cheap estimate beats a tokenizer
-                # dependency that has to match whichever model reads it.
-                "token_count": max(1, len(text) // 4),
+                # CJK is ~1 token per character; Latin is ~4 characters per
+                # token. The naive chars/4 heuristic under-counts CJK by 3-4x.
+                "token_count": max(1, estimate_tokens(text)),
                 "page_start": chunk.page_start,
                 "page_end": chunk.page_end,
                 "regions": [region.as_dict() for region in chunk.regions],
@@ -81,36 +85,44 @@ async def index_file(
             }
         )
     await store.replace_content_chunks(
-        workspace_id=workspace_id, content_id=content_id, rows=rows
+        workspace_id=workspace_id,
+        content_id=content_id,
+        rows=rows,
+        claim_job_id=claim_job_id,
     )
     if on_progress:
         on_progress(85)
 
-    summary = await summarize_file(file_name, chunks)
+    descriptor, summary = await summarize_file(file_name, chunks)
     await store.upsert_content_summary(
         workspace_id=workspace_id,
         content_id=content_id,
         fingerprint=fingerprint,
+        descriptor=descriptor,
         summary=summary,
-        outline=outline_from_chunks(chunks),
+        summary_version=SUMMARY_VERSION,
     )
 
     concepts = await extract_concepts(file_name, chunks, rows)
     await store.replace_content_concepts(
         workspace_id=workspace_id, content_id=content_id, concepts=concepts
     )
-    await store.mark_content_ready(content_id)
-    await store.mark_workspace_dirty(workspace_id, file_id)
+    await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
     if on_progress:
         on_progress(95)
     return {"chunks": len(rows), "concepts": len(concepts), "fingerprint": fingerprint}
 
 
-async def embed_copied_chunks(*, workspace_id: str, content_id: str) -> dict[str, Any]:
+async def embed_copied_chunks(
+    *,
+    workspace_id: str,
+    content_id: str,
+    claim_job_id: str | None = None,
+) -> dict[str, Any]:
     """Re-embed chunk text copied from a donor in a different vector space."""
     chunks = await store.load_content_chunks(content_id)
     if not chunks:
-        await store.mark_content_ready(content_id)
+        await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
         return {"chunks": 0, "reembedded": True}
     texts = [str(row["indexed_text"] or row["text"]) for row in chunks]
     vectors = await models.embed(texts, spec=embedding_spec())
@@ -134,45 +146,172 @@ async def embed_copied_chunks(*, workspace_id: str, content_id: str) -> dict[str
             }
         )
     await store.replace_content_chunks(
-        workspace_id=workspace_id, content_id=content_id, rows=rows
+        workspace_id=workspace_id,
+        content_id=content_id,
+        rows=rows,
+        claim_job_id=claim_job_id,
     )
-    await store.mark_content_ready(content_id)
+    await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
     return {"chunks": len(rows), "reembedded": True}
 
 
 # ------------------------------------------------------------------ summaries
 
+# Bumped when the prompt or length policy changes. Not part of pipeline_identity:
+# a prose change must not invalidate a parse. Donors copy the version so a later
+# backfill can tell old summaries from new.
+SUMMARY_VERSION = 1
+_DESCRIPTOR_WORDS = 50
+_PROMPT_RESERVE_TOKENS = 2000
+
 _SUMMARY_SYSTEM = (
-    "You summarize study material. Write a dense factual summary that another "
-    "assistant will use to decide whether this document is worth reading in full. "
-    "Name the specific topics, terms and results covered. No preamble, no "
-    "meta-commentary about the document being a document."
+    "You summarize study material for another assistant. Return ONLY JSON: "
+    '{"descriptor": "...", "summary": "..."}. descriptor is one dense sentence '
+    "of about 50 words naming the topics covered. summary is a factual overview "
+    "of the requested length. Name specific topics, terms and results. No "
+    "preamble, no meta-commentary about the document being a document."
+)
+
+_PARTIAL_SYSTEM = (
+    "You summarize one section of a longer study document. Write a dense "
+    "factual overview of the requested length covering the specific topics, "
+    "terms and results in this section. No preamble."
 )
 
 
-def _sample(chunks: list[Chunk], budget: int = 12000) -> str:
-    """Head, middle and tail of the document, within a fixed character budget.
+def _summary_word_target(char_count: int) -> int:
+    if char_count < 20_000:
+        return 150
+    if char_count < 100_000:
+        return 300
+    return 500
 
-    Summaries only need coverage, and the first N characters of a textbook are a
-    title page. Sampling across the document costs the same and describes it.
-    """
-    if not chunks:
-        return ""
-    texts = [chunk.text for chunk in chunks]
-    joined = "\n\n".join(texts)
-    if len(joined) <= budget:
-        return joined
-    slice_size = budget // 3
-    return "\n\n[…]\n\n".join(
+
+def _words(text: str) -> list[str]:
+    """Split so CJK characters count as one word each and Latin runs split on space."""
+    words: list[str] = []
+    buf: list[str] = []
+
+    def flush() -> None:
+        if buf:
+            words.append("".join(buf))
+            buf.clear()
+
+    for ch in text.strip():
+        if _is_cjk(ch):
+            flush()
+            words.append(ch)
+        elif ch.isspace():
+            flush()
+        else:
+            buf.append(ch)
+    flush()
+    return words
+
+
+_SENTENCE_END = re.compile(r"[.!?。！？][\"')\]]*$")
+
+
+def _truncate_words(text: str, limit: int) -> str:
+    words = _words(text)
+    if len(words) <= limit:
+        return text.strip()
+    for end in range(min(limit, len(words)), 0, -1):
+        piece = _join_words(words[:end])
+        if _SENTENCE_END.search(piece):
+            return piece
+    return _join_words(words[:limit])
+
+
+def _join_words(words: list[str]) -> str:
+    out: list[str] = []
+    for word in words:
+        if not out:
+            out.append(word)
+            continue
+        if _is_cjk(word[0]) and _is_cjk(out[-1][-1]):
+            out.append(word)
+        else:
+            out.append(" " + word)
+    return "".join(out).strip()
+
+
+def _parse_summary_payload(raw: str) -> tuple[str, str]:
+    parsed = extract_json(raw)
+    if isinstance(parsed, dict):
+        descriptor = str(parsed.get("descriptor") or "").strip()
+        summary = str(parsed.get("summary") or "").strip()
+        if summary:
+            return descriptor or summary, summary
+        if descriptor:
+            return descriptor, descriptor
+    text = (raw or "").strip()
+    return text, text
+
+
+def _input_budget() -> int:
+    return max(1000, cfg.llm_input_budget_tokens - _PROMPT_RESERVE_TOKENS)
+
+
+def _chunk_groups(chunks: list[Chunk], budget: int) -> list[list[Chunk]]:
+    groups: list[list[Chunk]] = []
+    current: list[Chunk] = []
+    used = 0
+    for chunk in chunks:
+        cost = estimate_tokens(chunk.text)
+        if current and used + cost > budget:
+            groups.append(current)
+            current = [chunk]
+            used = cost
+        else:
+            current.append(chunk)
+            used += cost
+    if current:
+        groups.append(current)
+    return groups
+
+
+async def _summarize_once(body: str, word_target: int) -> tuple[str, str]:
+    raw = await models.complete_text(
         [
-            joined[:slice_size],
-            joined[len(joined) // 2 : len(joined) // 2 + slice_size],
-            joined[-slice_size:],
-        ]
+            {"role": "system", "content": _SUMMARY_SYSTEM},
+            {
+                "role": "user",
+                "content": (
+                    f"Write a descriptor of about {_DESCRIPTOR_WORDS} words and "
+                    f"a summary of about {word_target} words.\n\nContent:\n{body}"
+                ),
+            },
+        ],
+        model=ingest_spec(),
     )
+    return _parse_summary_payload(raw)
 
 
-async def summarize_file(file_name: str, chunks: list[Chunk]) -> str:
+async def _summarize_mapped(chunks: list[Chunk], word_target: int) -> tuple[str, str]:
+    """Summarize chunk groups, then combine. Used when the document exceeds the budget."""
+    groups = _chunk_groups(chunks, _input_budget())
+    partials: list[str] = []
+    per_group = max(80, word_target // max(len(groups), 1))
+    for group in groups:
+        body = "\n\n".join(chunk.text for chunk in group)
+        raw = await models.complete_text(
+            [
+                {"role": "system", "content": _PARTIAL_SYSTEM},
+                {
+                    "role": "user",
+                    "content": f"Write about {per_group} words.\n\nContent:\n{body}",
+                },
+            ],
+            model=ingest_spec(),
+        )
+        if raw and raw.strip():
+            partials.append(raw.strip())
+    combined = "\n\n---\n\n".join(partials)
+    return await _summarize_once(combined, word_target)
+
+
+async def summarize_file(file_name: str, chunks: list[Chunk]) -> tuple[str, str]:
     """Summarize canonical content. ``file_name`` is log context, not prompt input.
 
     The summary belongs to the content, not to the file: it is stored on
@@ -183,29 +322,23 @@ async def summarize_file(file_name: str, chunks: list[Chunk]) -> str:
 
     A failure raises rather than returning a blank. An empty summary is written
     as if it were real, marked ready, and then copied to future donors, and no
-    later pass ever refills it — the file silently drops out of chapter and
-    workspace rollups and out of the agent's overview. Retrying the job (and
-    failing it after the budget) is recoverable; a permanent blank is not.
+    later pass ever refills it. Retrying the job (and failing it after the
+    budget) is recoverable; a permanent blank is not.
     """
-    outline = [c.section_path for c in chunks if c.section_path]
-    unique_outline = list(dict.fromkeys(outline))[:40]
-    prompt = (
-        (f"Sections: {'; '.join(unique_outline)}\n" if unique_outline else "")
-        + "\nContent:\n"
-        + _sample(chunks)
-        + "\n\nWrite 4-8 sentences."
-    )
+    body = "\n\n".join(chunk.text for chunk in chunks)
+    word_target = _summary_word_target(len(body))
     try:
-        return await models.complete_text(
-            [
-                {"role": "system", "content": _SUMMARY_SYSTEM},
-                {"role": "user", "content": prompt},
-            ],
-            model=ingest_spec(),
-        )
+        if estimate_tokens(body) <= _input_budget():
+            descriptor, summary = await _summarize_once(body, word_target)
+        else:
+            descriptor, summary = await _summarize_mapped(chunks, word_target)
     except Exception as exc:
         log.warning("file summary failed for %s", file_name, exc_info=True)
         raise RetryableError(f"file summary failed: {exc}") from exc
+    return (
+        _truncate_words(descriptor, _DESCRIPTOR_WORDS),
+        _truncate_words(summary, word_target),
+    )
 
 
 # ------------------------------------------------------------------- concepts
@@ -213,14 +346,16 @@ async def summarize_file(file_name: str, chunks: list[Chunk]) -> str:
 _CONCEPT_SYSTEM = (
     "Extract the named concepts a student would look up: theories, methods, "
     "terms of art, named entities, formulas, events. Return ONLY a JSON array of "
-    "strings. No relations, no descriptions, no duplicates, at most 12 items. "
+    "strings. No relations, no descriptions, no duplicates, at most 24 items. "
     "Skip generic words that carry no meaning outside their sentence."
 )
 
 # Extraction runs per passage group rather than per chunk: one call for every
 # chunk of a 400-page book is the cost profile that made graph extraction
-# unaffordable in the first place.
-_CONCEPT_GROUP = 6
+# unaffordable in the first place. The group size is a mention-granularity
+# knob, not a context budget — mentions attach to every chunk in the group.
+_CONCEPT_GROUP = 12
+_CONCEPT_CHARS = 20000
 
 
 async def extract_concepts(
@@ -240,7 +375,7 @@ async def extract_concepts(
     for start in range(0, len(chunks), _CONCEPT_GROUP):
         group = chunks[start : start + _CONCEPT_GROUP]
         group_rows = rows[start : start + _CONCEPT_GROUP]
-        text = "\n\n".join(chunk.text for chunk in group)[:8000]
+        text = "\n\n".join(chunk.text for chunk in group)[:_CONCEPT_CHARS]
         if not text.strip():
             continue
         try:
@@ -287,87 +422,3 @@ def _parse_concepts(raw: str) -> list[str]:
     except json.JSONDecodeError:
         return []
     return [str(item) for item in parsed if isinstance(item, (str, int, float))]
-
-
-# -------------------------------------------------------------- summary rollup
-
-_CHAPTER_SYSTEM = (
-    "You are building a table of contents for a study workspace. Given the "
-    "per-document summaries below, write 3-5 sentences describing what this "
-    "chapter covers as a whole and what distinguishes its documents from each "
-    "other. Name specifics."
-)
-
-_WORKSPACE_SYSTEM = (
-    "Given the chapter and document summaries below, write 4-6 sentences "
-    "describing what this workspace is about and where each major topic lives. "
-    "This is read by an assistant deciding which documents to search."
-)
-
-
-async def rollup_summaries(workspace_id: str) -> dict[str, int]:
-    """Rebuild the dirty parts of the summary tree from the level below.
-
-    Chapter and workspace summaries derive from file summaries, never from raw
-    content, which is what bounds the cost of reorganization: moving a file
-    between chapters rewrites two short paragraphs from prose that already
-    exists. It is the same reason a wiki's folder READMEs stay cheap to maintain
-    while the pages under them do not.
-    """
-    rebuilt = 0
-    failed = 0
-    for chapter in await store.dirty_chapters(workspace_id):
-        files = await store.chapter_file_summaries(chapter["chapter_id"])
-        body = "\n\n".join(
-            f"{f['name']}: {f['summary']}" for f in files if f.get("summary")
-        )
-        if not body:
-            await store.set_chapter_summary(chapter["chapter_id"], "")
-            rebuilt += 1
-            continue
-        try:
-            summary = await models.complete_text(
-                [
-                    {"role": "system", "content": _CHAPTER_SYSTEM},
-                    {
-                        "role": "user",
-                        "content": f"Chapter: {chapter['name']}\n\n{body}",
-                    },
-                ],
-                model=ingest_spec(),
-            )
-        except Exception:
-            log.warning("chapter rollup failed", exc_info=True)
-            failed += 1
-            continue
-        await store.set_chapter_summary(chapter["chapter_id"], summary)
-        rebuilt += 1
-
-    if failed:
-        raise RetryableError(
-            f"chapter rollup failed for {failed} chapter(s); left dirty"
-        )
-
-    outline = await store.workspace_outline(workspace_id)
-    parts: list[str] = []
-    for chapter in outline["chapters"]:
-        if chapter.get("summary"):
-            parts.append(f"Chapter {chapter['name']}: {chapter['summary']}")
-    for file in outline["files"]:
-        if file.get("summary") and not file.get("chapter_id"):
-            parts.append(f"Unfiled document {file['name']}: {file['summary']}")
-    summary = ""
-    if parts:
-        try:
-            summary = await models.complete_text(
-                [
-                    {"role": "system", "content": _WORKSPACE_SYSTEM},
-                    {"role": "user", "content": "\n\n".join(parts)[:16000]},
-                ],
-                model=ingest_spec(),
-            )
-        except Exception as exc:
-            log.warning("workspace rollup failed", exc_info=True)
-            raise RetryableError("workspace rollup failed") from exc
-    await store.set_workspace_summary(workspace_id, summary)
-    return {"chapters": rebuilt}

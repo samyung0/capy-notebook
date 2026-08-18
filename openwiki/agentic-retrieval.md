@@ -23,7 +23,7 @@ Two Python processes share one Postgres schema owned by Go migrations
 
 | Process | Entry | Role |
 | --- | --- | --- |
-| Ingest worker | `python -m pipeline.ingest.worker` | Claims jobs, parses, chunks, embeds, summarizes, extracts concepts, rolls up summaries |
+| Ingest worker | `python -m pipeline.ingest.worker` | Claims jobs, parses, chunks, embeds, writes a two-tier file summary, extracts concepts. Horizontally scalable (`WORKER_REPLICAS`); each replica runs one job at a time |
 | Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate` over the same index |
 
 The Go gateway is the public face: it authenticates the user, proxies chat and
@@ -58,9 +58,7 @@ The retrieval index is application schema, not pipeline-owned:
 | `rag_contents` | Canonical parsed content per workspace, unique by parsed-text hash |
 | `rag_file_contents` | Logical file → canonical content aliases |
 | `rag_chunks` | Canonical passages: text, heading path, pages/regions, `tsvector`, `halfvec(2560)` |
-| `rag_content_summaries` | Summary + outline shared by files with identical content |
-| `rag_chapter_summaries` | Rolled up from file summaries; `dirty` flag |
-| `rag_workspace_summaries` | Workspace overview; `dirty` flag |
+| `rag_content_summaries` | Two-tier prose (`descriptor` + `summary`) plus `summary_version`; shared by files with identical content |
 | `rag_concepts` | Normalized concept names per workspace |
 | `rag_concept_mentions` | Concept → chunk (and file) links |
 
@@ -151,10 +149,9 @@ unbounded by anything the user just did. Until it exists:
 
 | Type | Enqueued by | Does |
 | --- | --- | --- |
-| Ingest (default) | Upload / re-parse paths in Go | Hash source → reuse a donor index if one exists, else parse → chunk → embed → file summary → concepts → mark dirty |
-| `summaries_rollup` | DB trigger on file chapter moves, and ingest after content change | Rebuild dirty chapter summaries, then workspace summary |
+| Ingest (default) | Upload / re-parse paths in Go | Hash source → reuse a donor index if one exists, else parse → chunk → embed → two-tier file summary → concepts |
 
-Both types retry: 3 attempts with exponential backoff (`not_before`), a
+Ingest retries: 3 attempts with exponential backoff (`not_before`), a
 per-type wall-clock timeout, and a heartbeat lease so a dead worker does not
 leave the row `running` forever. Unknown errors retry; `TerminalError`
 (missing file, unresolvable pins, locked account) does not. Policy lives in
@@ -166,10 +163,6 @@ written only by a claim — and every heartbeat, requeue and terminal transition
 requires the attempt it claimed (`db.claim_is_current`). A run whose claim moved
 on logs and discards its outcome rather than overwriting its successor's row.
 
-The rollup job is debounced with a unique pending index so reorganization does
-not enqueue a storm. A failed rollup that finds a pending sibling marks itself
-superseded rather than violating that index.
-
 Enqueue snapshots `{actorUserId, ingestModelKey, visionModelKey}` (and versions)
 onto the job: the actor who will be billed, and the two model surfaces whose
 defaults are hot-reloadable and could move while the job is queued. Embedding is
@@ -178,7 +171,9 @@ not among them — the worker reads it from the workspace, as above.
 Both sides fail closed. `ingestJobPayload` returns an error and its caller rolls
 back the upload if the actor or either pin is missing, and a job that reaches the
 worker without resolvable pins is failed rather than run on the worker's own
-defaults. See [observability-metering.md](observability-metering.md) §8.
+defaults. A transient database error while *reading* those pins retries with the
+normal attempt budget; only a missing or invalid pin is terminal. See
+[observability-metering.md](observability-metering.md) §8.
 
 ### Parse routes
 
@@ -322,17 +317,22 @@ donor row left. That is the accepted trade for dropping parse zips on success.
   use heading breadcrumbs but not a mutable logical file name.
 3. Replace that content's `rag_chunks` (delete-then-insert so a shorter
   re-ingest does not leave a stale tail).
-4. One cheap-model call → content summary; upsert `rag_content_summaries`. A
-  provider failure here retries the job rather than storing a blank: an empty
-  summary would be marked ready, copied to future donors, and never refilled,
-  silently dropping the file out of every rollup above it. Concept extraction
-  stays best-effort per group, since a partial miss degrades recall instead of
-  removing the file from the summary tree.
+4. One cheap-model call → two-tier content summary (`descriptor` ~50 words plus
+  a size-tiered `summary` of ~150/300/500 words); upsert `rag_content_summaries`.
+  Documents larger than `EVO_LLM_INPUT_BUDGET_TOKENS` are map-reduced in chunk
+  groups rather than sampled. A provider failure here retries the job rather
+  than storing a blank: an empty summary would be marked ready, copied to future
+  donors, and never refilled. `summary_version` is **not** part of
+  `pipeline_identity` — a prompt change must not invalidate a parse; it exists
+  so a later backfill can find stale prose, including donor copies.
+  Concept extraction stays best-effort per group, since a partial miss degrades
+  recall instead of hiding the file from `list_sources`.
 5. Concept extraction in groups of chunks (not per chunk) → upsert concepts and
    mentions. Relation-free by design: co-mention across files is recovered at
-   query time.
-6. Mark only the file's current chapter plus the workspace dirty and enqueue
-  `summaries_rollup`.
+   query time. Group size is a mention-granularity knob (~12 chunks / 20k chars),
+   not a context budget.
+6. Stop. There is no chapter/workspace summary tree and no rollup job.
+   Cross-document reasoning happens at query time, conditioned on the question.
 
 Concurrent duplicate jobs coordinate on the canonical content row. The creator
 indexes it; other workers wait for its ready marker. A failed creator removes
@@ -341,20 +341,25 @@ the processing claim so a waiting upload can retry.
 The claim names its owner (`rag_contents.claim_job_id`, cleared on ready) and
 that ownership is load-bearing, because a waiter's file points at the creator's
 row: only the owner's heartbeat refreshes the claim, and only the owner's expired
-lease drops it. Refreshing or dropping by file instead would let a live waiter
-mask a dead creator forever, and a dead waiter cascade a live creator's chunks
-away mid-write. A waiter returns from the wait only once the content is ready or
-it has taken the claim over itself.
+lease drops it. A waiter that has waited `CONTENT_CLAIM_WAIT_S` may steal a
+`processing` row, but only when `updated_at` is older than `CONTENT_CLAIM_STALE_S`
+**and** the owning job is not `running` with a live lease — a missed heartbeat
+write is not enough. `replace_content_chunks` takes that row `FOR UPDATE` and
+raises `RetryableError` if the claim has moved, so a stolen creator discards its
+write instead of failing on a foreign key. Refreshing or dropping by file instead
+would let a live waiter mask a dead creator forever, and a dead waiter cascade a
+live creator's chunks away mid-write. A waiter returns from the wait only once the
+content is ready or it has taken the claim over itself.
 
-### Summary tree maintenance
+### File summaries (no tree)
 
 Content summaries are shared by identical files. Moving a file between chapters
-does **not** re-summarize it; a trigger marks the source and destination chapters
-(and the workspace) dirty and enqueues rollup. Rollup rebuilds chapter and
-workspace prose from existing content summaries only, never from raw chunks —
-that is what keeps reorganization cheap. A failed chapter LLM call leaves that
-chapter dirty and skips the workspace rebuild so a blank overview is never
-persisted.
+does **not** re-summarize it. There is no chapter or workspace rollup: at a
+100-file workspace cap, `list_sources` can put every name and ~50-word
+descriptor into one tool result (~7k tokens), and the model has the question
+that an embedding index would not. `describe_documents` returns the detailed
+tier for up to eight files. Summaries are never embedded or cited — citations
+always point at document passages.
 
 ## Search workflow
 
@@ -391,7 +396,7 @@ Streaming chat (`POST /chat/stream` via the Go gateway):
 2. The agent **primes** with one retrieval before the model is asked anything —
    a question about the user's sources almost always needs them, and making the
    model ask wastes a round.
-3. Capped tool loop (`EVO_AGENT_MAX_STEPS`, default 4). The final round drops
+3. Capped tool loop (`EVO_AGENT_MAX_STEPS`, default 12). The final round drops
    tools entirely so the turn cannot end on another tool call with no answer.
 4. SSE events: `tool` (progress), `citations` (once, before tokens), `token`,
    `done` (or `error`).
@@ -401,7 +406,8 @@ Streaming chat (`POST /chat/stream` via the Go gateway):
 | Tool | Side effects | Notes |
 | --- | --- | --- |
 | `search_workspace` | none | Hybrid search; scope-intersected |
-| `list_sources` | none | Chapters, files, summaries |
+| `list_sources` | none | Chapters, file names, passage counts, and the short descriptor |
+| `describe_documents` | none | Detailed summaries for up to eight files; scope-intersected |
 | `read_document` | none | Sequential chunks by index |
 | `related_concepts` | none | Co-mention bridge |
 | `generate_material` | yes | POST to Go `/api/internal/materials` |
@@ -486,7 +492,8 @@ job and pipeline `/workspace/delete` endpoint are gone.
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
 | Query model | `EVO_QUERY_MODEL` | Last resort for a call handed a bare model string. Ingest and vision come from the job pin; chat/generate/editor from Settings → LLM via the gateway |
 | Search | `EVO_SEARCH_CANDIDATES`, `EVO_SEARCH_TOP_K`, `EVO_SEARCH_PER_FILE_CAP` | |
-| Agent | `EVO_AGENT_MAX_STEPS` | Cap is the design, not a safety valve |
+| Agent | `EVO_AGENT_MAX_STEPS` | Default 12. Cap is the design, not a safety valve |
+| LLM input budget | `EVO_LLM_INPUT_BUDGET_TOKENS` | Default 50000. One CJK-aware budget for file summaries, generate context, and map-reduce |
 | Captions | `EVO_CAPTION_IMAGES`, `EVO_CAPTION_CONCURRENCY`, `EVO_CAPTION_MAX_EDGE`, `EVO_CAPTION_VERSION` | Per file at upload; the env flag is only a fallback |
 | Caption safety valve | `EVO_CAPTION_MAX_PER_FILE` | `0` (uncapped); the filters bound the cost |
 
@@ -499,8 +506,9 @@ test suite.
 - **No extracted relations.** Entities + co-mention replace a knowledge graph.
   Relation extraction was most of LightRAG's ingest cost and most of its
   accuracy failures.
-- **Summaries roll up from summaries.** Reorganization stays cheap; only content
-  change rewrites file-level prose.
+- **No summary tree.** File descriptors live in `list_sources`; detailed
+  summaries are fetched on demand. Cross-document reasoning is query-time, not
+  a precomputed rollup that cannot see the question.
 - **Scope is SQL, not a prompt hint.** The agent cannot search outside the
   user's chapter/file selection.
 - **Generate is deterministic; chat is agentic.** Mixing them would make

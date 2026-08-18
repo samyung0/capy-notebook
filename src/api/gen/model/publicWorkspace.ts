@@ -20,6 +20,7 @@ export interface PublicWorkspace {
   color: UserColor;
   createdAt: string;
   fileCount: number;
+  filesLimit: number;
   id: string;
   isOwner: boolean;
   lastAccessedAt: string;

@@ -37,6 +37,18 @@ owner's** plan, create-only (no retroactive invalidation): **10 MiB** free,
 elsewhere. `GET /api/source-upload-policy?workspaceId=` returns the cap the
 dialog should enforce.
 
+Per-workspace **file count** is a separate bound from byte quota: it exists so
+the chat catalogue (`list_sources`) fits in one tool result. `MaxFilesPerWorkspace`
+is 100. Open unexpired source upload sessions count toward the cap so concurrent
+session creates cannot all pass a check against 99; `SweepExpiredUploads` returns
+those slots. `MaxFilesPerUpload` is 20 and is enforced server-side per request
+(the browser picker is only the first line). Both gates run in
+`gateWorkspaceFilesTx` at session creation and on every other file-insert path
+(cloud import preflights the whole batch). Clone needs no exemption: a source at
+or under 100 clones to at most 100. The workspace payload reports `fileCount` and
+`filesLimit`. Overflow is `files_limit_exceeded`; a too-large batch is
+`files_batch_exceeded`.
+
 ## Counter model
 
 `user_storage` holds folded `used_bytes` and `reserved_bytes`.

@@ -3,20 +3,17 @@
 Claims jobs from the Postgres queue and turns uploads into retrievable chunks:
 
 - ``txt`` / ``md`` / ``json`` are read straight from B2 and chunked as markdown.
+  The gateway still labels those jobs ``parseMode=none`` (there is no MinerU
+  route to pick); they are indexed. ``parseMode=none`` on any other kind is
+  store-only: the blob is kept, ``indexed=false``.
 - ``parseMode=fast`` parses on Modal with MinerU's pipeline OCR backend.
 - ``parseMode=accurate`` parses on Modal with MinerU's hybrid VLM backend:
   better on dense layouts, more GPU seconds per page.
-- ``parseMode=none`` jobs are normally never enqueued (the gateway marks the
-  file ready directly); a stray one is finished without indexing.
 
 Both parse routes return the same bundle — a ``content_list.json`` carrying a
 page index and bounding box per block, plus the extracted images — so both
 produce citations a reader can jump to and figures that can be captioned. They
 differ in cost and fidelity, not in output shape.
-
-The second job type is ``summaries_rollup``: a debounced rebuild of the chapter
-and workspace summaries, enqueued by a database trigger whenever files move
-between chapters and by ingest whenever content changes.
 
 Live progress is published to Redis; the Go gateway fans it to the browser over
 SSE.
@@ -31,6 +28,7 @@ import logging
 import shutil
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 from .. import obs, progress, registry, use_compatible_event_loop
@@ -63,7 +61,17 @@ _TEXT_KINDS = {"txt", "md", "json"}
 _PARSE_ROUTES = {
     "accurate": modal_parser.ROUTE_ACCURATE,
     "fast": modal_parser.ROUTE_FAST,
+    # Renamed before the current mode names existed; keep parsing these rather
+    # than failing a job that was already queued.
+    "advanced": modal_parser.ROUTE_ACCURATE,
 }
+
+
+def _parse_route(parse_mode: str) -> str:
+    route = _PARSE_ROUTES.get(parse_mode)
+    if route is None:
+        raise TerminalError(f"unknown parse mode {parse_mode!r}")
+    return route
 
 
 # ----------------------------------------------------------- sync DB helpers
@@ -101,12 +109,6 @@ def _claim_one() -> dict | None:
                     row["id"],
                     "ingest timed out after the worker died",
                 )
-            elif row["outcome"] == "failed" and row["type"] == "summaries_rollup":
-                ws = payload.get("workspaceId")
-                if ws:
-                    _notify_rollup_terminal(
-                        ws, "summary refresh timed out after the worker died"
-                    )
         except Exception:
             log.exception("could not announce reclaimed job %s", row["id"])
     return job
@@ -169,14 +171,20 @@ def _finish_ok(
                     artifact_fingerprint or "",
                     artifact_version or "",
                 )
-            notification = db.add_notification(
-                cur,
-                file_id,
-                "system",
-                {"code": notification_code, "fileName": name},
-            )
             db.set_job(cur, job_id, "done")
         conn.commit()
+    try:
+        with db.connect() as conn:
+            with conn.cursor() as cur:
+                notification = db.add_notification(
+                    cur,
+                    file_id,
+                    "system",
+                    {"code": notification_code, "fileName": name},
+                )
+            conn.commit()
+    except Exception:
+        log.warning("could not notify for file %s", file_id, exc_info=True)
     if notification is not None:
         user_id = str(notification.pop("userId"))
         progress.publish_notification(user_id, notification)
@@ -253,28 +261,6 @@ def _notify_ingest_terminal(
     log.info("ingest %s failed terminally: %s", name, error)
 
 
-def _notify_rollup_terminal(workspace_id: str, error: str) -> None:
-    obs.capture_error(RuntimeError(error), stage="rollup_terminal")
-    notification = None
-    with db.connect() as conn, conn.cursor() as cur:
-        owner = db.workspace_owner_user_id(cur, workspace_id)
-        if owner:
-            notification = db.add_workspace_notification(
-                cur,
-                user_id=owner,
-                workspace_id=workspace_id,
-                kind="system",
-                data={
-                    "code": "summaries_rollup_failed",
-                    "message": "Workspace overview couldn't be refreshed; it will retry on the next change.",
-                },
-            )
-        conn.commit()
-    if notification is not None:
-        user_id = str(notification.pop("userId"))
-        progress.publish_notification(user_id, notification)
-
-
 def _read_name(file_id: str) -> str:
     with db.connect() as conn, conn.cursor() as cur:
         return db.file_name(cur, file_id)
@@ -345,11 +331,13 @@ def _touch_or_upsert_artifact(
         conn.commit()
 
 
-def _drop_parse_zip(object_path: str | None) -> None:
+def _drop_parse_zip(object_path: str | None, file_id: str | None = None) -> None:
     if not object_path:
         return
     with db.connect() as conn, conn.cursor() as cur:
         db.drop_artifact_cache(cur, object_path)
+        if file_id:
+            db.clear_file_parse_artifact(cur, file_id)
         conn.commit()
 
 
@@ -361,7 +349,7 @@ def _file_exists(file_id: str) -> bool:
 def _pipeline_identity(*, kind: str, parse_mode: str, caption_images: bool) -> str:
     if kind in _TEXT_KINDS:
         return f"{cfg.parse_method}:direct:none:none:{CHUNKER_VERSION}"
-    route = _PARSE_ROUTES.get(parse_mode, modal_parser.ROUTE_ACCURATE)
+    route = _parse_route(parse_mode)
     cap = cfg.caption_version if caption_images else "none"
     return (
         f"{cfg.parse_method}:{route}:{modal_parser.parser_version(route)}"
@@ -514,7 +502,7 @@ async def _chunks_for(
         progress.publish(ws, file_id, "indexing", 40)
         return chunk_markdown(text), None, None, None
 
-    route = _PARSE_ROUTES.get(parse_mode, modal_parser.ROUTE_ACCURATE)
+    route = _parse_route(parse_mode)
     info = await asyncio.to_thread(blobstore.object_info, blob_path)
     if info is None:
         raise TerminalError("source blob is missing")
@@ -602,27 +590,10 @@ async def process_ingest_job(job: dict) -> None:
         pins = registry.pins_from_payload(
             payload, embedding=await _workspace_embedding_spec(ws)
         )
-    except Exception as exc:  # noqa: BLE001 - refuse the job, do not guess
-        # Fail closed. Without pins this job would run on whatever this worker's
-        # surface defaults happen to be right now and settle at those rates, and
-        # the vectors would land in whichever space the default names — neither
-        # of which is what the upload was priced or scoped for. A failed file the
-        # user can retry is recoverable; silently underpriced work in the wrong
-        # vector space is not.
-        obs.capture_error(exc, stage="ingest_job_pins")
-        name = await asyncio.to_thread(_read_name, file_id)
-        note = f"{name}: ingest refused because its model pins could not be resolved."
-        await asyncio.to_thread(
-            _finish_fail,
-            file_id,
-            job["id"],
-            f"{note} {exc}",
-            int(job.get("attempts") or 1),
-        )
-        progress.publish(
-            ws, file_id, "failed", 100, status="failed", message=note, indexed=False
-        )
-        return
+    except (registry.RegistryError, TerminalError) as exc:
+        raise TerminalError(
+            f"ingest refused because its model pins could not be resolved: {exc}"
+        ) from exc
 
     registry.set_job_pins(pins)
     try:
@@ -734,7 +705,6 @@ async def _reuse_donor(
     )
     if association["ready"]:
         note = f"{name}: identical content already indexed; reusing its index."
-        await store.mark_workspace_dirty(ws, file_id)
         await asyncio.to_thread(
             _finish_ok,
             file_id,
@@ -762,16 +732,27 @@ async def _reuse_donor(
     )
     if not copied:
         await store.abandon_content(association["content_id"])
+        await store.attach_file_content(
+            workspace_id=ws,
+            file_id=file_id,
+            content_hash=donor["content_hash"],
+            source_sha256=source_sha256,
+            pipeline_identity=identity,
+            claim_job_id=job["id"],
+        )
         return False
     try:
         if copy_vectors:
-            await store.mark_content_ready(association["content_id"])
+            await store.mark_content_ready(
+                association["content_id"], claim_job_id=job["id"]
+            )
             result = {"chunks": "copied", "donor": donor["id"]}
         else:
             result = await indexing.embed_copied_chunks(
-                workspace_id=ws, content_id=association["content_id"]
+                workspace_id=ws,
+                content_id=association["content_id"],
+                claim_job_id=job["id"],
             )
-        await store.mark_workspace_dirty(ws, file_id)
     except BaseException:
         await store.abandon_content(association["content_id"])
         raise
@@ -895,7 +876,6 @@ async def _process_ingest_job(
 
     if association["ready"]:
         note = f"{name}: identical content already indexed; reusing its index."
-        await store.mark_workspace_dirty(ws, file_id)
         await asyncio.to_thread(
             _finish_ok,
             file_id,
@@ -914,7 +894,7 @@ async def _process_ingest_job(
         await asyncio.to_thread(
             _charge_ingest, file_id, ws, payload.get("actorUserId") or ""
         )
-        await asyncio.to_thread(_drop_parse_zip, artifact_key)
+        await asyncio.to_thread(_drop_parse_zip, artifact_key, file_id)
         return
 
     try:
@@ -925,6 +905,7 @@ async def _process_ingest_job(
             file_name=name,
             chunks=chunks,
             on_progress=lambda pct: progress.publish(ws, file_id, "indexing", pct),
+            claim_job_id=job["id"],
         )
     except BaseException:
         await store.abandon_content(association["content_id"])
@@ -943,74 +924,9 @@ async def _process_ingest_job(
     await asyncio.to_thread(
         _charge_ingest, file_id, ws, payload.get("actorUserId") or ""
     )
-    await asyncio.to_thread(_drop_parse_zip, artifact_key)
+    await asyncio.to_thread(_drop_parse_zip, artifact_key, file_id)
     progress.publish(ws, file_id, "done", 100, status="ready", indexed=True)
     log.info("indexed %s: %s", name, result)
-
-
-async def process_rollup_job(job: dict) -> None:
-    ws = (job["payload"] or {})["workspaceId"]
-    # A rollup carries no enqueue-time snapshot to inherit: it is queued by a
-    # database trigger with no user context, and every subsequent dirty folds
-    # into the one pending row. The worker is therefore the only thing that can
-    # choose a model here, so it resolves the ingest default once, explicitly,
-    # and both summarizing and settling read that same pin. Embedding is not
-    # needed — a rollup only rewrites prose.
-    pins = registry.JobPins(
-        ingest=await asyncio.to_thread(
-            registry.registry.default, registry.SURFACE_INGEST
-        )
-    )
-    registry.set_job_pins(pins)
-    try:
-        result = await indexing.rollup_summaries(ws)
-        await asyncio.to_thread(
-            _finish_job_ok, job["id"], int(job.get("attempts") or 1)
-        )
-        await asyncio.to_thread(_charge_rollup, ws)
-    finally:
-        registry.set_job_pins(None)
-    log.info("workspace %s summary rollup: %s", ws, result)
-
-
-def _charge_rollup(workspace_id: str) -> None:
-    """Bill summaries_rollup to the workspace owner. There is no actor: the
-    job is enqueued from a trigger with no user context, and pending jobs
-    fold together per workspace."""
-    usage = obs.current_usage()
-    if usage is None or usage.is_empty():
-        return
-    try:
-        ingest = registry.ingest_spec()
-        with db.connect() as conn, conn.cursor() as cur:
-            owner = db.workspace_owner_user_id(cur, workspace_id)
-            if not owner:
-                return
-            db.record_usage_event(
-                cur,
-                actor_user_id=owner,
-                workspace_id=workspace_id,
-                kind="llm",
-                surface="ingest",
-                provider=ingest.provider_slug,
-                model=usage.model or ingest.provider_model_id,
-                model_key=ingest.model_key,
-                model_version=ingest.version,
-                input_tokens=usage.input_tokens,
-                output_tokens=usage.output_tokens,
-                unit="tokens",
-                credit_micros=registry.credits_for_tokens(
-                    ingest, "llm", usage.input_tokens, usage.output_tokens
-                ),
-                cost_micro_usd=registry.cost_micro_usd(
-                    ingest, usage.input_tokens, usage.output_tokens
-                ),
-                trace_id=obs.trace_id(),
-                metadata={"kind": "summaries_rollup"},
-            )
-            conn.commit()
-    except Exception as exc:  # noqa: BLE001
-        obs.capture_error(exc, stage="rollup_charge")
 
 
 async def main_async() -> None:
@@ -1029,26 +945,31 @@ async def main_async() -> None:
         cfg.modal_fast_parse_url or "(unset)",
     )
 
+    last_sweep = 0.0
+    sweep_every = 300.0
     try:
         while True:
             try:
                 job = await asyncio.to_thread(_claim_one)
             except Exception:
-                log.exception("claim error")
+                log.warning("claim error", exc_info=True)
                 await asyncio.sleep(cfg.poll_interval)
                 continue
 
             if not job:
-                try:
-                    with db.connect() as conn, conn.cursor() as cur:
-                        db.sweep_artifact_cache(
-                            cur,
-                            caption_ttl_days=cfg.caption_cache_ttl_days,
-                            parse_zip_ttl_hours=cfg.parse_zip_ttl_hours,
-                        )
-                        conn.commit()
-                except Exception:
-                    log.warning("artifact cache sweep failed", exc_info=True)
+                now = time.monotonic()
+                if now - last_sweep >= sweep_every:
+                    try:
+                        with db.connect() as conn, conn.cursor() as cur:
+                            db.sweep_artifact_cache(
+                                cur,
+                                caption_ttl_days=cfg.caption_cache_ttl_days,
+                                parse_zip_ttl_hours=cfg.parse_zip_ttl_hours,
+                            )
+                            conn.commit()
+                        last_sweep = now
+                    except Exception:
+                        log.warning("artifact cache sweep failed", exc_info=True)
                 await asyncio.sleep(cfg.poll_interval)
                 continue
 
@@ -1076,14 +997,12 @@ async def main_async() -> None:
             heartbeat.start()
             try:
                 async with asyncio.timeout(policy.timeout_s):
-                    if job.get("type") == "summaries_rollup":
-                        await process_rollup_job(job)
-                    else:
-                        await process_ingest_job(job)
+                    await process_ingest_job(job)
                 log.info("job %s done", job["id"])
             except Exception as exc:  # noqa: BLE001 - retry vs terminal is decided below
                 try:
-                    await _handle_job_failure(job, exc)
+                    async with asyncio.timeout(30):
+                        await _handle_job_failure(job, exc)
                 except Exception:
                     # Bookkeeping for one failed job must not take the worker
                     # down; the lease reaper is the backstop for this row.
@@ -1091,6 +1010,7 @@ async def main_async() -> None:
             finally:
                 stop.set()
     finally:
+        db.close_pool()
         await store.close_pool()
 
 
@@ -1103,34 +1023,20 @@ async def _handle_job_failure(job: dict, exc: BaseException) -> None:
     attempts = int(job.get("attempts") or 1)
     if isinstance(exc, TimeoutError):
         exc = RetryableError("job exceeded its wall-clock timeout")
-    log.exception("%s job %s failed", job_type, job["id"])
     retry = is_retryable(exc) and attempts < policy.max_attempts
     if retry:
+        log.warning("%s job %s failed; retrying: %s", job_type, job["id"], exc)
         outcome = await asyncio.to_thread(_requeue, job, str(exc))
         log.info("job %s requeued (%s)", job["id"], outcome)
         return
+    log.exception("%s job %s failed", job_type, job["id"])
     obs.capture_error(exc, stage=f"{job_type}_terminal")
     try:
-        if job_type == "summaries_rollup":
-            await asyncio.to_thread(
-                _finish_job_fail_only, job["id"], str(exc), attempts
-            )
-            if ws:
-                await asyncio.to_thread(_notify_rollup_terminal, ws, str(exc))
-        else:
-            await asyncio.to_thread(
-                _notify_ingest_terminal, fid, ws, job["id"], str(exc), attempts
-            )
+        await asyncio.to_thread(
+            _notify_ingest_terminal, fid, ws, job["id"], str(exc), attempts
+        )
     except Exception:
         log.exception("failed to record job failure")
-
-
-def _finish_job_fail_only(job_id: str, error: str, attempt: int | None = None) -> None:
-    with db.connect() as conn, conn.cursor() as cur:
-        if _lost_claim(cur, job_id, attempt):
-            return
-        db.set_job(cur, job_id, "failed", error[:500])
-        conn.commit()
 
 
 def main() -> None:
