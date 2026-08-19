@@ -18,16 +18,45 @@ carry two strings: ``text`` is what a citation shows and what the model reads;
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from typing import Any
 
 from ..config import cfg
 
+log = logging.getLogger("evo.retrieval.chunking")
+
 # Bumped when packing, overlap, or indexed_text shape change. Part of
 # rag_contents.pipeline_identity, so a bump invalidates every donor and
 # re-parses rather than copying stale chunks.
 CHUNKER_VERSION = "v1"
+
+# Picture blocks arrive under two labels: ``image`` for photos and diagrams,
+# ``chart`` for plots the layout model recognises as data graphics. Same shape,
+# different caption key, and both are captionable figures. Kept in step with
+# ``parse/figures.py``, which must select exactly this set or a block gets
+# described and then dropped (or dropped and never described).
+_IMAGE_TYPES = frozenset({"image", "chart"})
+
+# Text-bearing blocks that are not headings. Indexed as ordinary body text.
+#
+# ``header`` earns its place here by measurement, not by its name: on a slide
+# deck it is the *slide title* (it sits in the top band), and on a book's table
+# of contents it is "Contents". Dropping it as running furniture cost real
+# titles. It is not promoted to a heading either — MinerU gives it no
+# ``text_level``, and inventing one would let a genuine running header
+# ("Chapter 3") overwrite the section path on every page of a book.
+_BODY_TEXT_TYPES = frozenset({"header", "page_footnote"})
+
+# Blocks whose text is a list of items rather than a single string.
+_LIST_TYPES = frozenset({"list"})
+
+# Page furniture, dropped on purpose. ``page_number`` is a bare digit,
+# ``footer`` is the repeated conference/publisher line, ``aside_text`` is the
+# rotated margin stamp a scanner picks up as noise (in one sample it read
+# "r00[:0:::02"), and ``discarded`` is MinerU's own reject label.
+_FURNITURE_TYPES = frozenset({"footer", "page_number", "aside_text", "discarded"})
 
 # MinerU normalizes bbox coordinates to a 0..1000 box with the origin at the
 # top-left of the page. Recorded per region so a renderer never has to infer it.
@@ -288,13 +317,20 @@ def chunk_content_list(content_list: list[dict[str, Any]]) -> list[Chunk]:
     """Chunk MinerU's block list, keeping page and bbox per block.
 
     Block types follow MinerU's schema: ``text`` (with ``text_level`` set on
-    headings), ``table``, ``equation``, ``image``. Images contribute their
-    caption or generated description; a bare image with neither adds nothing to
-    retrieval and is skipped.
+    headings), ``table``, ``equation``, the picture types in
+    :data:`_IMAGE_TYPES`, the prose types in :data:`_BODY_TEXT_TYPES`, and
+    :data:`_LIST_TYPES`. Pictures contribute their caption or generated
+    description; a bare one with neither adds nothing to retrieval and is
+    skipped, as is the page furniture in :data:`_FURNITURE_TYPES`.
+
+    Anything else is counted and logged rather than silently discarded. Parsers
+    add block types between versions, and a type this function does not know
+    about is content that vanishes from search with nothing failing.
     """
     stack: list[tuple[int, str]] = []
     pending: list[_Block] = []
     chunks: list[Chunk] = []
+    unknown: dict[str, int] = {}
 
     def flush_section() -> None:
         if pending:
@@ -319,6 +355,16 @@ def chunk_content_list(content_list: list[dict[str, Any]]) -> list[Chunk]:
                 _push_heading(stack, level, text)
                 continue
             pending.append(_Block(text, None, page_no, bbox))
+        elif kind in _BODY_TEXT_TYPES:
+            text = str(item.get("text") or "").strip()
+            if text:
+                pending.append(_Block(text, None, page_no, bbox))
+        elif kind in _LIST_TYPES:
+            # A reference list arrives as one block of many items and is the
+            # only place a paper's citations exist in the parse.
+            text = "\n".join(_as_list(item.get("list_items")))
+            if text:
+                pending.append(_Block(text, None, page_no, bbox))
         elif kind == "table":
             body = str(item.get("table_body") or "").strip()
             caption = " ".join(_as_list(item.get("table_caption")))
@@ -330,12 +376,24 @@ def chunk_content_list(content_list: list[dict[str, Any]]) -> list[Chunk]:
             text = str(item.get("text") or item.get("latex") or "").strip()
             if text:
                 pending.append(_Block(text, None, page_no, bbox))
-        elif kind == "image":
-            caption = " ".join(_as_list(item.get("image_caption")))
+        elif kind in _IMAGE_TYPES:
+            caption = " ".join(
+                _as_list(item.get("image_caption"))
+                + _as_list(item.get("chart_caption"))
+            )
+            footnote = " ".join(
+                _as_list(item.get("image_footnote"))
+                + _as_list(item.get("chart_footnote"))
+            )
             described = str(item.get("description") or "").strip()
-            text = "\n".join(p for p in (caption, described) if p)
+            text = "\n".join(p for p in (caption, described, footnote) if p)
             if text:
                 pending.append(_Block(f"[Figure] {text}", None, page_no, bbox))
+        elif kind not in _FURNITURE_TYPES:
+            unknown[str(kind)] = unknown.get(str(kind), 0) + 1
+
+    if unknown:
+        log.warning("dropped unrecognised content_list block types: %s", unknown)
 
     flush_section()
     return chunks

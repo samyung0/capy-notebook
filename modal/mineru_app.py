@@ -59,7 +59,7 @@ Contract (matches pipeline/pipeline/parse/modal_parser.py):
     -> {"artifact": {"key", "size", "sha256", "etag", "parser_version",
                      "source_fingerprint"}}
 
-    POST /file_parse  (multipart: file=<bytes>, parse_method=auto, filename=...)
+    POST /file_parse  (multipart: file=<bytes>, parse_method=ocr, filename=...)
     -> {"content_list": [...], "images": {"<name>": "<base64>"}, "md": "..."}
        Used only by modal/test_snapshot.py; the ingest worker always uses JSON.
 """
@@ -114,6 +114,13 @@ ACCURATE_EFFORT = "medium"
 ACCURATE_PARSER_VERSION = "mineru-3.4-hybrid-v1"
 ACCURATE_MAX_INPUTS = 2
 
+# Production parse_method. ``auto`` trusts a broken text layer on lecture
+# decks (68% <sub>/<sup> noise). ``ocr`` forces pixels and clears it on both
+# backends. Warmup MUST use the same value so the GPU snapshot includes the
+# OCR sidecar path; a first live request of ``ocr`` after an ``auto`` snapshot
+# is how a 8s parse turned into a 542s HTTP gateway timeout.
+PARSE_METHOD = "ocr"
+
 # --- fast route -------------------------------------------------------------
 FAST_BACKEND = "pipeline"
 FAST_PARSER_VERSION = "mineru-3.4-pipeline-v1"
@@ -153,11 +160,16 @@ accurate_image = _base_image.pip_install(
 # The fast route never touches vLLM, so [pipeline] instead of [all] keeps the
 # image (and therefore the cold boot) much smaller: torch + torchvision +
 # onnxruntime rather than the whole inference-engine stack.
+#
+# `six` is an undeclared import in MinerU's PP-OCRv6 pytorchocr stack. The
+# accurate image gets it by accident via vLLM; the slim pipeline extra does not,
+# and snapshot warmup dies at `import six` before the container can serve.
 fast_image = _base_image.pip_install(
     "mineru[pipeline]>=3.4.4,<3.5",
     "fastapi[standard]",
     "python-multipart",
     "requests>=2.31",
+    "six",
 ).env(_shared_env)
 
 app = modal.App("evo-mineru")
@@ -181,7 +193,9 @@ def download_models() -> None:
             sample = os.path.join(d, "warm.txt")
             with open(sample, "w") as f:
                 f.write("warm up")
-            subprocess.run(["mineru", "-p", sample, "-o", d, "-m", "auto"], check=False)
+            subprocess.run(
+                ["mineru", "-p", sample, "-o", d, "-m", PARSE_METHOD], check=False
+            )
     model_volume.commit()
 
 
@@ -321,7 +335,7 @@ def _parse_documents_sync(
                 pdf_bytes_list=[payloads[i] for i in indices],
                 p_lang_list=[LANG for _ in indices],
                 backend=backend,
-                parse_method=documents[indices[0]].parse_method or "auto",
+                parse_method=documents[indices[0]].parse_method or PARSE_METHOD,
                 # Skip artifacts nobody downloads: debug PDFs and raw model dumps.
                 f_draw_layout_bbox=False,
                 f_draw_span_bbox=False,
@@ -460,7 +474,7 @@ async def _parse_accurate(document: _Document) -> dict:
             p_lang_list=[LANG],
             backend=ACCURATE_BACKEND,
             effort=ACCURATE_EFFORT,
-            parse_method=document.parse_method or "auto",
+            parse_method=document.parse_method or PARSE_METHOD,
             f_draw_layout_bbox=False,
             f_draw_span_bbox=False,
             f_dump_middle_json=False,
@@ -514,7 +528,7 @@ def _build_asgi(service: Any, parser_version: str):
         output_url = str(body.get("output_url") or "")
         output_key = str(body.get("output_key") or "")
         name = str(body.get("filename") or "document")
-        parse_method = str(body.get("parse_method") or "auto")
+        parse_method = str(body.get("parse_method") or PARSE_METHOD)
         fingerprint = str(body.get("source_fingerprint") or "")
         if (
             body.get("artifact_schema") != ARTIFACT_SCHEMA
@@ -583,7 +597,7 @@ def _build_asgi(service: Any, parser_version: str):
         upload = form.get("file")
         if upload is None:
             return JSONResponse({"detail": "missing file field"}, status_code=400)
-        parse_method = str(form.get("parse_method") or "auto")
+        parse_method = str(form.get("parse_method") or PARSE_METHOD)
         name = str(
             form.get("filename") or getattr(upload, "filename", "") or "document"
         )
@@ -642,7 +656,10 @@ class MineruAccurate:
         # aio_do_parse will use; restored containers then serve their first
         # request with zero lazy loading. Async on purpose: Modal runs async
         # hooks on the same event loop that serves the ASGI app, so the vLLM
-        # engine is created on the loop it will be used from.
+        # engine is created on the loop it will be used from. Warmup uses
+        # PARSE_METHOD (ocr) so the OCR detection sidecars are inside the
+        # snapshot too — an auto warmup left the first live ocr request to
+        # lazy-load them and blow past Modal's HTTP gateway.
         #
         # This method runs ONLY when Modal builds the snapshot (snap=True). If
         # you see the "[snapshot-build] warmup" logs below on an ordinary cold
@@ -653,7 +670,7 @@ class MineruAccurate:
             "[snapshot-build] warmup: loading models + engine init (this is the slow path)",
             flush=True,
         )
-        await _parse_accurate(_Document(_warmup_png(), "warmup.png", "auto"))
+        await _parse_accurate(_Document(_warmup_png(), "warmup.png", PARSE_METHOD))
         print(
             f"[snapshot-build] warmup done in {time.perf_counter() - t0:.1f}s",
             flush=True,
@@ -705,7 +722,7 @@ class MineruFast:
         t0 = time.perf_counter()
         print("[snapshot-build] warmup: loading pipeline OCR/layout models", flush=True)
         _parse_documents_sync(
-            [_Document(_warmup_png(), "warmup.png", "auto")], FAST_BACKEND
+            [_Document(_warmup_png(), "warmup.png", PARSE_METHOD)], FAST_BACKEND
         )
         print(
             f"[snapshot-build] warmup done in {time.perf_counter() - t0:.1f}s",

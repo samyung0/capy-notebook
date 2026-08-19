@@ -121,6 +121,28 @@ def test_a_figure_the_parser_already_described_is_not_recaptioned(tmp_path: Path
     assert figures.select_figures(content_list, tmp_path) == []
 
 
+def test_chart_blocks_are_selected_and_use_their_own_caption_key(tmp_path: Path):
+    """A recognised data graphic comes back typed ``chart``, not ``image``.
+
+    Selecting only ``image`` skipped these, so a plot was neither captioned here
+    nor indexed by the chunker — it left the corpus entirely.
+    """
+    _write(tmp_path / "images" / "plot.png", _diagram())
+    content_list = [
+        _image_block(
+            "images/plot.png",
+            0,
+            type="chart",
+            chart_caption=["Figure 4: glucose uptake"],
+        )
+    ]
+
+    selected = figures.select_figures(content_list, tmp_path)
+
+    assert [f.path.name for f in selected] == ["plot.png"]
+    assert "Figure 4: glucose uptake" in selected[0].context
+
+
 def test_a_thumbnail_sized_bbox_is_rejected_even_when_the_crop_is_large(
     tmp_path: Path,
 ):
@@ -316,6 +338,39 @@ async def test_the_prompt_carries_the_page_but_not_the_file_name(
     prompt = captioning["calls"][0]
     assert "lecture.pdf" not in prompt
     assert "Page: 4" in prompt
+
+
+async def test_the_context_preamble_is_absent_when_there_is_no_context(
+    tmp_path: Path, captioning
+):
+    """A lone figure must not be promised context that never arrives.
+
+    The preamble ends in a colon. Emitted with nothing after it, it reads as a
+    cue that reference material follows, which is an invitation to invent some.
+    """
+    _write(tmp_path / "images" / "a.png", _diagram(seed=1))
+
+    await _caption_all(tmp_path, [_image_block("images/a.png", 0)])
+
+    prompt = captioning["calls"][0]
+    assert figures._CAPTION_CONTEXT_PREAMBLE not in prompt
+    assert not prompt.rstrip().endswith(":")
+
+
+async def test_the_context_preamble_appears_once_context_exists(
+    tmp_path: Path, captioning
+):
+    _write(tmp_path / "images" / "a.png", _diagram(seed=1))
+    content_list = [
+        _text_block("The Krebs cycle", 0, level=1),
+        _image_block("images/a.png", 0),
+    ]
+
+    await _caption_all(tmp_path, content_list)
+
+    prompt = captioning["calls"][0]
+    assert figures._CAPTION_CONTEXT_PREAMBLE in prompt
+    assert "The Krebs cycle" in prompt
 
 
 async def test_an_unreadable_cache_is_not_a_failed_ingest(

@@ -87,13 +87,26 @@ _HASH_DISTANCE = 6
 _REPEAT_MIN_PAGES = 3
 _REPEAT_PAGE_RATIO = 0.3
 
-_CAPTION_PROMPT = (
-    "You are describing a figure from a study document so that a student's "
-    "search query can find it. Write two or three sentences naming what the "
-    "figure shows: the concepts, quantities, structures, axes, labels or steps "
-    "in it. Prefer the document's own terminology. Transcribe any text in the "
-    "image in its original language. Do not describe the visual styling and do "
-    "not begin with phrases like 'This image shows'."
+# Picture blocks arrive under two labels: ``image`` and ``chart`` (a plot the
+# layout model recognised as a data graphic). A chart is the single most
+# caption-worthy thing in a lecture deck, and it carries the same ``img_path``
+# as an image. Must match ``_IMAGE_TYPES`` in retrieval/chunking.py — a block
+# captioned here but unknown there is money spent on text nobody indexes.
+_IMAGE_TYPES = frozenset({"image", "chart"})
+
+# Per-type caption keys, checked in order. MinerU names the field after the
+# block type, so a chart's label lives under ``chart_caption``.
+_CAPTION_KEYS = ("image_caption", "chart_caption")
+
+_CAPTION_PROMPT = """You are describing a figure from a study document so that a student's search query can find it.
+Caption the image in brief and easy to understand way. List out facts/data/formulas clearly visible in the image (if any)
+Focus on the facts and drop all unnecessary opinions. Make the sentences short and drop all the fillers, preamble or pleasantries"""
+
+# Appended only when there is context to introduce. Left dangling on a figure
+# with no surrounding text, the trailing colon reads as a promise of material
+# that never arrives, which is an invitation to invent some.
+_CAPTION_CONTEXT_PREAMBLE = (
+    "Suggested context of the image is provided below, only use it for reference:"
 )
 
 
@@ -145,17 +158,13 @@ def _context_for(content_list: list[dict[str, Any]], index: int) -> str:
     if headings:
         parts.append("Section: " + " › ".join(reversed(headings)))
 
-    own = " ".join(
-        str(value).strip()
-        for value in (
-            item.get("image_caption")
-            if isinstance(item.get("image_caption"), list)
-            else [item.get("image_caption")]
-        )
-        if str(value or "").strip()
-    )
-    if own:
-        parts.append(f"Figure label: {own}")
+    labels: list[str] = []
+    for key in _CAPTION_KEYS:
+        raw = item.get(key)
+        values = raw if isinstance(raw, list) else [raw]
+        labels.extend(str(v).strip() for v in values if str(v or "").strip())
+    if labels:
+        parts.append("Figure label: " + " ".join(labels))
 
     for offset in (-1, 1):
         cursor = index + offset
@@ -258,7 +267,7 @@ def select_figures(content_list: list[dict[str, Any]], raw_dir: Path) -> list[Fi
     order: list[str] = []
 
     for index, item in enumerate(content_list):
-        if not isinstance(item, dict) or item.get("type") != "image":
+        if not isinstance(item, dict) or item.get("type") not in _IMAGE_TYPES:
             continue
         if str(item.get("description") or "").strip():
             continue
@@ -419,6 +428,7 @@ def _prompt(figure: Figure) -> str:
     if figure.page is not None:
         parts.append(f"Page: {figure.page + 1}")
     if figure.context:
+        parts.append(_CAPTION_CONTEXT_PREAMBLE)
         parts.append("\nSurrounding content:\n" + figure.context)
     return "\n".join(parts)
 

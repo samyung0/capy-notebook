@@ -147,7 +147,8 @@
     "gen:api:msw": "pnpm gen:openapi && pnpm gen:api",
     "gen:api:watch": "pnpm gen:api:clean && orval --watch",
     "fix": "ultracite fix",
-    "prepare": "husky"
+    "prepare": "husky",
+    "deploy:modal": "modal deploy modal/mineru_app.py"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs,cjs,json,jsonc,css,scss,md,mdx}": [

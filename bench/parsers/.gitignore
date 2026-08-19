@@ -1,0 +1,5 @@
+# Benchmark inputs and outputs are local artifacts, not source.
+# docs/ holds real uploads (possibly someone's lecture notes) — never commit it.
+docs/
+out/
+*.failure.log

@@ -95,7 +95,7 @@ def test_a_changed_source_addresses_a_different_artifact():
 
 def test_parse_method_participates_in_the_fingerprint(monkeypatch):
     _, before = modal_parser.artifact_identity(_descriptor())
-    monkeypatch.setattr(modal_parser.cfg, "parse_method", "ocr")
+    monkeypatch.setattr(modal_parser.cfg, "parse_method", "txt")
     _, after = modal_parser.artifact_identity(_descriptor())
 
     assert before != after

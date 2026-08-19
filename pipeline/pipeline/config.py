@@ -68,7 +68,9 @@ class Config:
     # The fast endpoint may hold a request behind up to five others in its
     # container, so the client timeout has to cover queueing, not just parsing.
     modal_parse_timeout: int = int(_env("MODAL_PARSE_TIMEOUT", "900"))
-    parse_method: str = _env("EVO_PARSE_METHOD", "auto")  # auto | ocr | txt
+    # ``auto`` trusts the PDF text layer. On lecture decks with a broken font
+    # cmap that produced 68% <sub>/<sup> noise, so the default is ``ocr``.
+    parse_method: str = _env("EVO_PARSE_METHOD", "ocr")  # ocr | auto | txt
 
     # ---- chunking ---------------------------------------------------------
     # Target size in characters, not tokens: the boundary decisions here are

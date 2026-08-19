@@ -98,6 +98,100 @@ def test_tables_equations_and_captioned_images_are_indexed():
     assert "blank.png" not in text
 
 
+def test_chart_blocks_are_indexed_like_images():
+    """A ``chart`` is a picture block under a different label.
+
+    MinerU's GPU routes label recognised data graphics ``chart`` rather than
+    ``image``, with the caption under ``chart_caption``. Treating that as an
+    unknown type dropped the single most retrievable thing on a lecture slide.
+    """
+    chunks = chunk_content_list(
+        [
+            {
+                "type": "chart",
+                "img_path": "images/plot.jpg",
+                "chart_caption": ["Glucose uptake over time"],
+                "description": "Line chart, uptake rises then plateaus.",
+                "page_idx": 2,
+                "bbox": [71, 468, 383, 836],
+            }
+        ]
+    )
+
+    text = "\n".join(c.text for c in chunks)
+    assert "[Figure] Glucose uptake over time" in text
+    assert "uptake rises then plateaus" in text
+    assert chunks[0].regions[0].page == 3
+    assert chunks[0].regions[0].bbox == [71.0, 468.0, 383.0, 836.0]
+
+
+def test_list_blocks_carry_their_items():
+    """A ``list`` holds its text in ``list_items``, not ``text``.
+
+    On a paper this block *is* the references section, so reading only ``text``
+    silently drops every citation in the document.
+    """
+    chunks = chunk_content_list(
+        [
+            _block("References", 0, level=1),
+            {
+                "type": "list",
+                "sub_type": "ref_text",
+                "list_items": [
+                    "[1] Ba, Kiros, Hinton. Layer normalization. 2016.",
+                    "[2] Bahdanau, Cho, Bengio. Neural machine translation. 2014.",
+                ],
+                "page_idx": 9,
+            },
+        ]
+    )
+
+    text = "\n".join(c.text for c in chunks)
+    assert "Layer normalization" in text
+    assert "Neural machine translation" in text
+
+
+def test_header_and_footnote_are_body_text_not_headings():
+    """``header`` is the slide title on a deck, so it must not be dropped.
+
+    It must also not become a heading: MinerU gives it no ``text_level``, and a
+    genuine running header would then overwrite the section path on every page.
+    """
+    chunks = chunk_content_list(
+        [
+            _block("Glycolysis", 0, level=1),
+            {"type": "header", "text": "Energy Metabolism", "page_idx": 1},
+            {
+                "type": "page_footnote",
+                "text": "Work done at Google Brain.",
+                "page_idx": 1,
+            },
+        ]
+    )
+
+    assert [c.section_path for c in chunks] == ["Glycolysis"]
+    text = "\n".join(c.text for c in chunks)
+    assert "Energy Metabolism" in text
+    assert "Work done at Google Brain." in text
+
+
+def test_page_furniture_is_dropped_but_unknown_types_are_logged(caplog):
+    """Silence is the bug: furniture stays silent, novel types must not."""
+    with caplog.at_level("WARNING"):
+        chunks = chunk_content_list(
+            [
+                {"type": "page_number", "text": "47", "page_idx": 0},
+                {"type": "footer", "text": "31st Conference on NeurIPS", "page_idx": 0},
+                {"type": "aside_text", "text": "r00[:0:::02", "page_idx": 0},
+                {"type": "sparkline", "text": "something new upstream", "page_idx": 0},
+            ]
+        )
+
+    assert chunks == []
+    assert "NeurIPS" not in caplog.text
+    assert "sparkline" in caplog.text
+
+
 def test_markdown_has_no_page_model():
     chunks = chunk_markdown("# Title\n\n" + "Body sentence. " * 40)
 

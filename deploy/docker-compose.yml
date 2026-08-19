@@ -167,7 +167,7 @@ services:
       MODAL_PARSE_TOKEN: ${MODAL_PARSE_TOKEN:-}
       MODAL_PARSE_TIMEOUT: ${MODAL_PARSE_TIMEOUT:-900}
       MODAL_B2_ARTIFACTS: ${MODAL_B2_ARTIFACTS:-true}
-      EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-auto}
+      EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-ocr}
       # Embeddings (OpenRouter): credentials only. The model is pinned per
       # workspace from model_configs; EMBEDDING_DIM is the shipped width.
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}

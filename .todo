@@ -19,6 +19,44 @@ https://mineru.shmakov.tools/guides/choosing-gpu/
 high PRIORITIES:
 
 2. check marker v2 vs unlimited ocr vs mineru vs docling, slight decrease in accuracy but can move off from modal into cpu only server?
+   MEASURED (see bench/parsers/README.md + cpu-parser-decision canvas). Unlimited-OCR out (GPU
+   vLLM only). MinerU sub/sup corruption (68% markup noise on lecture decks) reproduces on Modal
+   fast, Modal accurate AND their hosted platform on parse_method=auto/txt — issue raised upstream.
+   parse_method=ocr CLEARS IT COMPLETELY (0% noise) and also fixes a broken font cmap in the same
+   deck (U+FFFD chars, "Glycolysis S tep 1"). On the deck ocr is even faster than auto. Cost of ocr
+   on clean born-digital docs: <=28% more time, 99.6% word-identical, same equations/headings; only
+   risk is identifiers (llion@google.com -> 1lion@google.com).
+   VLM CAN do OCR too: first accurate+ocr 10p try died at 542s (Modal HTTP gateway, not the VLM).
+   Retried after snapshot restore: 3 pages in 2.86s GPU / 10 pages in 8.38s GPU, 0% noise.
+   DONE: both Modal warmups + request fallbacks + EVO_PARSE_METHOD default are now `ocr`. Redeploy
+   so the GPU snapshot is rebuilt with OCR sidecars inside it.
+   CPU VM for fast: YES, but not by lifting MinerU. MinerU pipeline+ocr on 4 vCPU did the lecture
+   deck in 54.9s / 0.20 pg/s (clean, 0% noise) vs 10.8s on the L4 (~5×) vs marker --disable_ocr
+   22.5s. Marker 2 has NO Paddle/Rapid/Easy OCR plugin — OcrBuilder is wired to Surya VLM. The
+   cheap OCR is RapidOCR (PP-OCRv6-small onnx, same family as Paddle) *next to* marker, not inside
+   it: per-page router + marker --disable_ocr + RapidOCR on flagged pages = 0.27 pg/s composed.
+   NOTE: auto returns byte-identical output to txt on that deck, i.e. auto silently picks the broken
+   path whenever a text layer exists. Do not rely on auto.
+2c. DONE: EVO_PARSE_METHOD default is `ocr` (config, docker-compose, .env.example). parse_method
+   is already inside artifact_identity(), so a flip re-parses instead of serving cached corrupt
+   zips. Tests still pin auto in conftest so cassettes do not need a re-record.
+   Winner for fast: marker v2 `fast --disable_ocr` (1.10 pg/s warm on 4 vCPU, heading depth 4,
+   equations) + a pypdfium2 per-page text-density router (17 ms/page) + RapidOCR ONNX on the flagged
+   pages only. Composed 0.27 pg/s warm, 3.4x MinerU-on-CPU, recovers the most text of anything
+   measured. Do NOT use marker's own OCR on CPU: surya 2 is a Qwen-VL served through llama.cpp at
+   6.1 tok/s and it runs away past 2,000 tokens on a dense scan.
+   Still open before building: worst-case latency ceiling for a 100-page upload, whether `accurate`
+   becomes marker-balanced-on-GPU or is deleted, and concurrent uploads per box.
+2b. FIXED: retrieval/chunking.py `chunk_content_list` branched on text/table/equation/image with no
+   else, silently dropping every other block type. Real content lost: `list` (stores text under
+   `list_items` — this was EVERY citation in every paper), `chart` (dropped from chunking AND from
+   captioning, since parse/figures.py `select_figures` also required type == "image"), `header`
+   (slide titles, and a book's "Contents"), `page_footnote`. Now split into _IMAGE_TYPES /
+   _BODY_TEXT_TYPES / _LIST_TYPES / _FURNITURE_TYPES, with unrecognised types counted and logged.
+   `header` is body text on purpose, NOT a heading: it has no text_level and a running header would
+   otherwise overwrite section_path on every page of a book. Also fixed the new caption prompt
+   emitting its "context provided below:" preamble when there is no context (dangling colon invites
+   hallucination). 4 new tests, test-catalog.md updated.
 3. how to make a summary/description page for workspaces that is seo friendly? use ISR if tanstack router supports it? Only expose endpoint that shows chapters and file names for link shared and public workspaces (for the summary page of workspaces). To retrieve file content/any other info, user must log in first (i.e. viewing/commenting/editing workspace which is on a different page than the summary must require user login to prevent abuse)
 4. make a less crowded UI for workspaces
 5. gate todo and calendar(schedule) behind feature flag, dont release yet, in dashboard replace the right side panels with a recent files panels (click to jump to workspace view mode)
