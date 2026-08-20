@@ -57,19 +57,21 @@ class Config:
     # the worker (and its job lease) until the process is killed.
     provider_timeout_s: float = float(_env("EVO_PROVIDER_TIMEOUT_S", "120"))
 
-    # ---- Modal MinerU parse service --------------------------------------
+    # ---- Modal parse service ---------------------------------------------
     # Both parse routes are Modal GPU endpoints and return the same bundle
-    # (content_list + images). They differ in MinerU backend, and therefore in
-    # cost, accuracy and how many documents one container parses at once:
-    # 'accurate' is the hybrid VLM, 'fast' is the pipeline OCR stack.
+    # (content_list + images). They differ in engine, and therefore in cost,
+    # accuracy and how many documents one container parses at once:
+    # 'accurate' is MinerU hybrid VLM OCR, 'fast' is Marker no-OCR plus
+    # RapidOCR (PP-OCRv6) on pages the scan probe flags.
     modal_parse_url: str = _env("MODAL_PARSE_URL", "")
     modal_fast_parse_url: str = _env("MODAL_FAST_PARSE_URL", "")
     modal_parse_token: str = _env("MODAL_PARSE_TOKEN", "")
-    # The fast endpoint may hold a request behind up to five others in its
-    # container, so the client timeout has to cover queueing, not just parsing.
+    # The fast endpoint may hold a request behind up to three others in its
+    # container (4 digital at once, 2 if RapidOCR is in play), so the client
+    # timeout has to cover queueing, not just parsing.
     modal_parse_timeout: int = int(_env("MODAL_PARSE_TIMEOUT", "900"))
-    # ``auto`` trusts the PDF text layer. On lecture decks with a broken font
-    # cmap that produced 68% <sub>/<sup> noise, so the default is ``ocr``.
+    # Fast: ``ocr`` runs RapidOCR on scanned/thin pages; ``txt`` skips it.
+    # Accurate always OCRs with MinerU's VLM. Kept in the artifact fingerprint.
     parse_method: str = _env("EVO_PARSE_METHOD", "ocr")  # ocr | auto | txt
 
     # ---- chunking ---------------------------------------------------------

@@ -1,17 +1,17 @@
-"""Client for the Modal-hosted MinerU GPU parse service (both parse routes).
+"""Client for the Modal-hosted GPU parse service (both parse routes).
 
 The service never receives document bytes from this process: it is handed a
 presigned GET for the source and a presigned PUT for the result, and it streams
-between them. What comes back is a zip containing MinerU's ``content_list.json``
+between them. What comes back is a zip containing ``content_list.json``
 (one entry per layout block, with page index and bounding box) plus the images
 it extracted. That block list is what makes page-accurate citations and figure
 captioning possible.
 
 Two routes share this client and this bundle format, differing only in which
-MinerU backend produced it:
+engine produced it:
 
-    accurate -> hybrid VLM, higher fidelity on dense layouts, slower per page
-    fast     -> pipeline OCR, cheaper, batched several documents to a container
+    accurate -> MinerU hybrid-engine (VLM OCR)
+    fast     -> Marker fast with OCR off, RapidOCR (PP-OCRv6) on scanned pages
 
 Artifacts are addressed by a fingerprint over (source object, etag, size, parse
 options, route, parser version). Re-ingesting the same document — a retry, a
@@ -52,7 +52,7 @@ ROUTE_FAST = "fast"
 # loudly instead of writing a bundle nobody can read back.
 PARSER_VERSIONS = {
     ROUTE_ACCURATE: "mineru-3.4-hybrid-v1",
-    ROUTE_FAST: "mineru-3.4-pipeline-v1",
+    ROUTE_FAST: "marker-2-hybrid-v1",
 }
 
 

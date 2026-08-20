@@ -1,67 +1,29 @@
-"""Modal app: MineRU document parsing on GPUs, exposed as two HTTPS endpoints.
+"""Modal app: two HTTPS parse routes, same bundle, different engines.
 
-Both parse routes run here. The MinerU cloud "Agent lightweight" API used to
-serve the cheap route, but it polls, returns markdown only, and carries neither
-bounding boxes nor extracted images — so the cheap route could never produce
-page-accurate citations or captionable figures. Running both routes on Modal
-means one output shape (``content_list.json`` + images) for every parse.
+    Route      What runs                                      GPU   In-flight
+    accurate   MinerU hybrid-engine (VLM OCR, async vLLM)     L4    2
+    fast       Marker ``fast --disable_ocr`` + PP-OCRv6       L4    4 digital /
+               on pages the scan probe flags                        2 OCR-heavy
 
-    Route      Backend          GPU   In-flight/container   Produces
-    accurate   hybrid-engine    L4    2                     content_list + images
-    fast       pipeline         L4    6                     content_list + images
+Class names stay ``MineruAccurate`` / ``MineruFast`` so the existing
+``*.modal.run`` URLs keep working.
 
-Why Modal: MineRU benefits a lot from a GPU but ingest is bursty, so a
-scale-to-zero serverless GPU is far cheaper than an always-on pod. Model weights
-are cached on a Modal Volume so warm starts skip the multi-GB download.
+Accurate is the old MinerU path on purpose: GPU memory snapshots restored
+cleanly there, and cold boot was seconds, not nine minutes of a sidecar vLLM.
+Two in-flight documents share one async vLLM engine.
 
-Concurrency is deliberately different per route because MinerU's two backends
-have opposite execution models:
-
-* ``hybrid-engine`` runs through ``aio_do_parse``, which is genuinely async — it
-  drives vLLM's async engine, so two in-flight documents interleave on one event
-  loop and vLLM's continuous batching packs their pages into shared forward
-  passes. ``@modal.concurrent`` is all that is needed.
-* ``pipeline`` is synchronous. ``aio_do_parse`` dispatches straight to the
-  blocking implementation ("pipeline模式暂不支持异步" upstream), so N concurrent
-  asyncio tasks would serialize *and* wedge the event loop, taking /healthz down
-  with them. :class:`_ParsePump` is the answer: every request's B2 download and
-  upload stay on the loop and overlap freely, while exactly one thread ever
-  drives MinerU. Whatever piled up while that thread was busy is handed over as
-  one multi-document call, which is the shape MinerU's cross-document page
-  batching is built for. Nothing waits on a timer, so a lone request is never
-  delayed to fill a batch.
-
-Cold-start strategy (in layers):
-    1. Models load ONCE per container via ``@modal.enter`` using MineRU's
-       in-process Python API (``mineru.cli.common.aio_do_parse`` + its
-       ``ModelSingleton``). Warm requests skip model loading entirely.
-    2. GPU memory snapshots (``enable_memory_snapshot=True`` +
-       ``experimental_options={"enable_gpu_snapshot": True}``) checkpoint the
-       process AFTER the models are loaded onto the GPU and warmed up, so cold
-       boots restore straight into a ready-to-serve state instead of paying
-       imports + weight loading + engine init (~minutes) on every boot.
+Fast is Marker. ``fast --disable_ocr`` has no in-PDF page parallel. Marker's
+CLI scales with spawned processes (PDFium is not thread-safe). This app does
+the same, but RapidOCR is CPU and six OCR jobs on 8 vCPUs made lecture decks
+slower than serial. So: 4 worker processes, 4 digital PDFs at once, only 2
+when the probe flags any page for RapidOCR. B2 download/upload still overlap
+on the loop.
 
 Deploy:
     modal deploy modal/mineru_app.py
-    # one-time (downloads weights onto the Volume):
     modal run modal/mineru_app.py::download_models
 
-Then point the worker at both printed web URLs:
-    MODAL_PARSE_URL=https://<org>--evo-mineru-mineruaccurate-web.modal.run/file_parse
-    MODAL_FAST_PARSE_URL=https://<org>--evo-mineru-minerufast-web.modal.run/file_parse
-    MODAL_PARSE_TOKEN=<the token in the evo-mineru-token secret>
-
-Contract (matches pipeline/pipeline/parse/modal_parser.py):
-    POST /file_parse  (JSON: source_url, output_url, output_key, filename,
-                       parse_method, artifact_schema, parser_version,
-                       source_fingerprint)
-    Authorization: Bearer <MINERU_PARSE_TOKEN>
-    -> {"artifact": {"key", "size", "sha256", "etag", "parser_version",
-                     "source_fingerprint"}}
-
-    POST /file_parse  (multipart: file=<bytes>, parse_method=ocr, filename=...)
-    -> {"content_list": [...], "images": {"<name>": "<base64>"}, "md": "..."}
-       Used only by modal/test_snapshot.py; the ingest worker always uses JSON.
+Contract: ``pipeline/pipeline/parse/modal_parser.py``.
 """
 
 from __future__ import annotations
@@ -72,118 +34,124 @@ import glob
 import hashlib
 import io
 import json
+import multiprocessing as mp
 import os
 import subprocess
+import sys
 import tempfile
 import time
 import uuid
 import zipfile
-from collections import deque
-from dataclasses import dataclass, field
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 import modal
 
+_HERE = Path(__file__).resolve().parent
+for _path in (_HERE, Path("/root")):
+    if _path.is_dir() and str(_path) not in sys.path:
+        sys.path.insert(0, str(_path))
+
 CACHE_DIR = "/cache"
-
-# p_lang_list selects the per-language PP-OCR model and only affects the
-# ``pipeline`` backend; ``hybrid`` ignores it entirely because the MinerU2.5 VLM
-# does native multilingual OCR. MinerU 3.x language codes are script/model
-# families, not ISO codes: ch, ch_server, korean, ta, te, ka, th, el, arabic,
-# east_slavic, cyrillic, devanagari. "ch" covers Chinese (both scripts),
-# Japanese and Latin — but NOT Korean, which needs its own pack. Korean sources
-# should therefore use the accurate route until this becomes a per-file choice.
-LANG = "ch"
-
 ARTIFACT_SCHEMA = "evo-mineru-bundle-v1"
 MAX_SOURCE_BYTES = 100 << 20
+PARSE_METHOD = "ocr"
 
-# --- accurate route ---------------------------------------------------------
-# 3.x consolidated the backend names: engine-specific pins like
-# "hybrid-vllm-async-engine" / "hybrid-auto-engine" no longer validate
-# (normalize_backend raises, or silently aliases). The only public hybrid local
-# backend is "hybrid-engine"; routed through ``aio_do_parse`` it auto-selects
-# the *async* vLLM engine, which is what this event-loop-bound app needs.
+# p_lang_list selects the per-language PP-OCR model and only affects MinerU's
+# pipeline backend. Hybrid ignores it: MinerU2.5 VLM does native multilingual
+# OCR. "ch" covers Chinese, Japanese and Latin — not Korean.
+LANG = "ch"
+
 ACCURATE_BACKEND = "hybrid-engine"
-# medium (MinerU's own default) trades some accuracy for a large speed-up, and
-# notably turns MinerU's built-in image/chart analysis OFF. That is deliberate:
-# figures are described by our own captioning pass in the ingest worker, which
-# can see neighbouring text and is far cheaper than GPU seconds here.
 ACCURATE_EFFORT = "medium"
 ACCURATE_PARSER_VERSION = "mineru-3.4-hybrid-v1"
 ACCURATE_MAX_INPUTS = 2
 
-# Production parse_method. ``auto`` trusts a broken text layer on lecture
-# decks (68% <sub>/<sup> noise). ``ocr`` forces pixels and clears it on both
-# backends. Warmup MUST use the same value so the GPU snapshot includes the
-# OCR sidecar path; a first live request of ``ocr`` after an ``auto`` snapshot
-# is how a 8s parse turned into a 542s HTTP gateway timeout.
-PARSE_METHOD = "ocr"
+FAST_PARSER_VERSION = "marker-2-hybrid-v1"
+FAST_DIGITAL_SLOTS = 4
+FAST_OCR_SLOTS = 2
+FAST_MAX_INPUTS = FAST_DIGITAL_SLOTS
 
-# --- fast route -------------------------------------------------------------
-FAST_BACKEND = "pipeline"
-FAST_PARSER_VERSION = "mineru-3.4-pipeline-v1"
-FAST_MAX_INPUTS = 6
-
-# Cache MinerU/HF model weights across cold starts (shared by both routes).
 model_volume = modal.Volume.from_name("evo-mineru-models", create_if_missing=True)
-
-# A Modal Secret named "evo-mineru-token" must define MINERU_PARSE_TOKEN.
 token_secret = modal.Secret.from_name("evo-mineru-token")
 
-_shared_env = {
+_mineru_env = {
     "MINERU_MODEL_SOURCE": "huggingface",
     "HF_HOME": f"{CACHE_DIR}/huggingface",
     "MINERU_DEVICE_MODE": "cuda",
-    # torch.compile with parallel inductor threads is a known cause of
-    # GPU-memory-snapshot capture failures (see Modal snapshot docs).
     "TORCHINDUCTOR_COMPILE_THREADS": "1",
+    "TOKENIZERS_PARALLELISM": "false",
 }
 
-_base_image = modal.Image.debian_slim(python_version="3.11").apt_install(
-    "libgl1", "libglib2.0-0", "libgomp1"
+_marker_env = {
+    "HF_HOME": f"{CACHE_DIR}/huggingface",
+    "HF_HUB_CACHE": f"{CACHE_DIR}/huggingface",
+    "MODEL_CACHE_DIR": f"{CACHE_DIR}/datalab",
+    "TORCHINDUCTOR_COMPILE_THREADS": "1",
+    "TOKENIZERS_PARALLELISM": "false",
+    # 6 Marker workers on 8 vCPUs: keep each from grabbing every core.
+    "OMP_NUM_THREADS": "2",
+    "MKL_NUM_THREADS": "2",
+    "SURYA_INFERENCE_AUTOSTART": "false",
+    "PYTHONPATH": "/root",
+}
+
+_base_image = (
+    modal.Image.debian_slim(python_version="3.11")
+    .apt_install("libgl1", "libglib2.0-0", "libgomp1")
 )
 
-# [all] pulls in vllm, required by the hybrid backend's local inference engine.
-# Pinned to the 3.4.x line: 3.4 upgrades pipeline OCR to PP-OCRv6 and the hybrid
-# VLM to MinerU2.5-Pro with native multilingual OCR. Capped below 3.5 so a
-# redeploy can't silently pull a new major that changes backend names or the
-# aio_do_parse contract this app depends on.
+
+def _with_helpers(image: modal.Image) -> modal.Image:
+    return image.add_local_file(
+        str(_HERE / "marker_adapt.py"),
+        remote_path="/root/marker_adapt.py",
+        copy=True,
+    ).add_local_file(
+        str(_HERE / "scan_pages.py"),
+        remote_path="/root/scan_pages.py",
+        copy=True,
+    ).add_local_file(
+        str(_HERE / "marker_worker.py"),
+        remote_path="/root/marker_worker.py",
+        copy=True,
+    )
+
+
+# [all] pulls vLLM for MinerU's hybrid-engine. Pin 3.4: PP-OCRv6 + MinerU2.5-Pro.
 accurate_image = _base_image.pip_install(
     "mineru[all]>=3.4.4,<3.5",
     "fastapi[standard]",
     "python-multipart",
     "requests>=2.31",
-).env(_shared_env)
+).env(_mineru_env)
 
-# The fast route never touches vLLM, so [pipeline] instead of [all] keeps the
-# image (and therefore the cold boot) much smaller: torch + torchvision +
-# onnxruntime rather than the whole inference-engine stack.
-#
-# `six` is an undeclared import in MinerU's PP-OCRv6 pytorchocr stack. The
-# accurate image gets it by accident via vLLM; the slim pipeline extra does not,
-# and snapshot warmup dies at `import six` before the container can serve.
-fast_image = _base_image.pip_install(
-    "mineru[pipeline]>=3.4.4,<3.5",
-    "fastapi[standard]",
-    "python-multipart",
-    "requests>=2.31",
-    "six",
-).env(_shared_env)
+# Fast never starts a VLM. onnxruntime-gpu last so it wins over a CPU wheel.
+# CUDA EP still cannot load libcublasLt in this image; RapidOCR stays on CPU.
+fast_image = _with_helpers(
+    _base_image.pip_install(
+        "marker-pdf>=2.0,<3",
+        "rapidocr>=3.9",
+        "fastapi[standard]",
+        "python-multipart",
+        "requests>=2.31",
+        "pypdfium2",
+        "pillow",
+    )
+    .run_commands("pip uninstall -y onnxruntime onnxruntime-gpu || true")
+    .pip_install("onnxruntime-gpu==1.19.2")
+    .env(_marker_env)
+)
 
 app = modal.App("evo-mineru")
 
 
 @app.function(image=accurate_image, gpu="L4", volumes={CACHE_DIR: model_volume}, timeout=3600)
 def download_models() -> None:
-    """Warm the Volume with MineRU's model weights (run once after deploy).
-
-    Downloads both routes' weights: the Volume is shared, and the pipeline OCR
-    models are small next to the VLM.
-    """
-    # `mineru-models-download` ships with the package; fall back to a tiny parse
-    # that triggers the lazy download if the CLI name changes between versions.
+    """Warm the Volume with MinerU weights (run once after deploy)."""
     try:
         subprocess.run(
             ["mineru-models-download", "-s", "huggingface", "-m", "all"], check=True
@@ -199,17 +167,28 @@ def download_models() -> None:
     model_volume.commit()
 
 
+@app.function(
+    image=fast_image,
+    gpu="L4",
+    volumes={CACHE_DIR: model_volume},
+    timeout=3600,
+    memory=16384,
+)
+def download_fast_models() -> None:
+    """Pull RapidOCR ONNX + Marker fast-layout weights onto the Volume."""
+    from marker.models import create_model_dict
+    from rapidocr import RapidOCR
+
+    create_model_dict()
+    RapidOCR()
+    model_volume.commit()
+
+
 # ------------------------------------------------------------------ outputs
 
 
 def _collect_outputs(out_dir: str, stem: str) -> dict:
-    """Collect one document's normalized outputs, addressed by its unique stem.
-
-    MineRU writes each document under a directory named after the stem it was
-    given, which is why :func:`_parse_documents` assigns synthetic unique stems:
-    two uploads both called "lecture.pdf" in one batch would otherwise land in
-    the same output directory and clobber each other.
-    """
+    """Collect one document's MinerU files, addressed by the unique stem."""
     matches = glob.glob(
         os.path.join(out_dir, "**", f"{stem}_content_list.json"), recursive=True
     )
@@ -218,13 +197,13 @@ def _collect_outputs(out_dir: str, stem: str) -> dict:
     content_path = matches[0]
     base = os.path.dirname(content_path)
 
-    with open(content_path, "r", encoding="utf-8") as f:
+    with open(content_path, encoding="utf-8") as f:
         content_list = json.load(f)
 
     md = ""
     md_matches = glob.glob(os.path.join(base, f"{stem}.md"))
     if md_matches:
-        with open(md_matches[0], "r", encoding="utf-8") as f:
+        with open(md_matches[0], encoding="utf-8") as f:
             md = f.read()
 
     images: dict[str, str] = {}
@@ -232,7 +211,7 @@ def _collect_outputs(out_dir: str, stem: str) -> dict:
         try:
             with open(img, "rb") as f:
                 images[os.path.basename(img)] = base64.b64encode(f.read()).decode()
-        except Exception:
+        except OSError:
             pass
 
     return {"content_list": content_list, "images": images, "md": md}
@@ -294,167 +273,44 @@ class _Document:
     parse_method: str
 
 
-def _parse_documents_sync(
-    documents: list[_Document], backend: str, **parse_kwargs: Any
-) -> list[dict | Exception]:
-    """Parse a batch of documents in one blocking MineRU call.
+class _ParallelFastParser:
+    """One Marker parse per spawned process. PDFium cannot share a process."""
 
-    Blocking on purpose: this is the pipeline backend's only execution mode, and
-    the caller guarantees exactly one thread is inside it at a time.
+    def __init__(self, init_fn: Any, parse_fn: Any, workers: int) -> None:
+        self._parse_fn = parse_fn
+        ctx = mp.get_context("spawn")
+        self._pool = ProcessPoolExecutor(
+            max_workers=workers,
+            mp_context=ctx,
+            initializer=init_fn,
+        )
+        self._slots = asyncio.Semaphore(workers)
 
-    A batch is all-or-nothing to MineRU, so a single malformed PDF would fail
-    its neighbours. When the batch call raises, each document is retried alone
-    and only the genuinely broken ones end up with an exception.
-    """
-    from mineru.cli.common import do_parse, read_fn
-
-    if not documents:
-        return []
-
-    with tempfile.TemporaryDirectory() as work:
-        out_dir = os.path.join(work, "out")
-        os.makedirs(out_dir, exist_ok=True)
-
-        stems: list[str] = []
-        payloads: list[bytes] = []
-        for index, document in enumerate(documents):
-            # read_fn handles suffix sniffing and image->PDF conversion exactly
-            # like the CLI does; office formats pass through as raw bytes.
-            input_path = os.path.join(work, f"{index}_{os.path.basename(document.name)}")
-            with open(input_path, "wb") as fh:
-                fh.write(document.data)
-            stems.append(f"doc{index}_{uuid.uuid4().hex[:8]}")
-            payloads.append(read_fn(input_path))
-
-        def run(indices: list[int]) -> None:
-            do_parse(
-                output_dir=out_dir,
-                # do_parse mutates the lists it is handed (office documents are
-                # removed in place after conversion), so pass throwaway copies.
-                pdf_file_names=[stems[i] for i in indices],
-                pdf_bytes_list=[payloads[i] for i in indices],
-                p_lang_list=[LANG for _ in indices],
-                backend=backend,
-                parse_method=documents[indices[0]].parse_method or PARSE_METHOD,
-                # Skip artifacts nobody downloads: debug PDFs and raw model dumps.
-                f_draw_layout_bbox=False,
-                f_draw_span_bbox=False,
-                f_dump_middle_json=False,
-                f_dump_model_output=False,
-                f_dump_orig_pdf=False,
-                **parse_kwargs,
-            )
-
-        everything = list(range(len(documents)))
-        try:
-            run(everything)
-        except Exception:
-            if len(documents) == 1:
-                raise
-            for index in everything:
-                try:
-                    run([index])
-                except Exception:
-                    pass
-
-        results: list[dict | Exception] = []
-        for index in everything:
-            try:
-                results.append(_collect_outputs(out_dir, stems[index]))
-            except Exception as exc:  # noqa: BLE001 — reported per document
-                results.append(exc)
-        return results
-
-
-@dataclass
-class _PumpItem:
-    document: _Document
-    future: asyncio.Future
-
-
-@dataclass
-class _ParsePump:
-    """Serializes synchronous MineRU calls onto one thread, batching the queue.
-
-    One consumer task owns the only thread that ever enters MineRU, so there is
-    no question of the pipeline backend's shared ``ModelSingleton`` being
-    thread-safe and no GIL contention between parses. Requests still arrive
-    concurrently, and their B2 download/upload phases overlap with somebody
-    else's GPU time — which is where most of the win is, because MineRU's
-    pipeline backend already batches pages within a document.
-
-    Coalescing is opportunistic: the pump takes whatever is *already* waiting
-    when it wakes, up to ``max_batch``. It never sleeps to fill a batch, so a
-    single request is served with no added latency, while a burst gets MineRU's
-    cross-document batching (worth the most on short documents) for free.
-    """
-
-    backend: str
-    max_batch: int
-    parse_kwargs: dict[str, Any] = field(default_factory=dict)
-    _pending: deque[_PumpItem] = field(default_factory=deque, init=False)
-    _wake: asyncio.Event = field(default_factory=asyncio.Event, init=False)
-    _task: asyncio.Task | None = field(default=None, init=False)
-
-    def ensure_running(self) -> None:
-        if self._task is None or self._task.done():
-            self._task = asyncio.create_task(self._run())
+    async def warm(self, ping_fn: Any, n: int) -> None:
+        loop = asyncio.get_running_loop()
+        await asyncio.gather(
+            *[loop.run_in_executor(self._pool, ping_fn) for _ in range(n)]
+        )
 
     async def submit(self, document: _Document) -> dict:
-        self.ensure_running()
-        item = _PumpItem(document, asyncio.get_running_loop().create_future())
-        self._pending.append(item)
-        self._wake.set()
-        return await item.future
-
-    def _take_batch(self) -> list[_PumpItem]:
-        batch = [self._pending.popleft()]
-        # do_parse takes one parse_method for the whole call, so only documents
-        # asking for the same one may share a batch. In practice the worker
-        # sends a single configured value, making this a no-op.
-        method = batch[0].document.parse_method
-        deferred: list[_PumpItem] = []
-        while self._pending and len(batch) < self.max_batch:
-            item = self._pending.popleft()
-            target = batch if item.document.parse_method == method else deferred
-            target.append(item)
-        self._pending.extendleft(reversed(deferred))
-        return batch
-
-    async def _run(self) -> None:
-        while True:
-            if not self._pending:
-                self._wake.clear()
-                await self._wake.wait()
-                continue
-            batch = self._take_batch()
-            try:
-                results: list[dict | Exception] = await asyncio.to_thread(
-                    _parse_documents_sync,
-                    [item.document for item in batch],
-                    self.backend,
-                    **self.parse_kwargs,
-                )
-            except Exception as exc:  # noqa: BLE001 — one failure, every waiter
-                for item in batch:
-                    if not item.future.done():
-                        item.future.set_exception(exc)
-                continue
-            for item, result in zip(batch, results):
-                if item.future.done():
-                    continue
-                if isinstance(result, Exception):
-                    item.future.set_exception(result)
-                else:
-                    item.future.set_result(result)
+        loop = asyncio.get_running_loop()
+        async with self._slots:
+            return await loop.run_in_executor(
+                self._pool,
+                self._parse_fn,
+                document.data,
+                document.name,
+                document.parse_method,
+            )
 
 
 async def _parse_accurate(document: _Document) -> dict:
-    """Parse one document on the hybrid backend, on the container's event loop.
+    """Parse one document on MinerU hybrid, on the container's event loop.
 
     Must always run on the container's main event loop: vLLM's async engine
-    binds its background tasks to the loop it was created on (during the warmup
-    parse), and using it from another loop breaks it.
+    binds its background tasks to the loop it was created on (during warmup),
+    and using it from another loop breaks it. Two in-flight docs share that
+    engine — no serial lock.
     """
     from mineru.cli.common import aio_do_parse, read_fn
 
@@ -488,15 +344,6 @@ async def _parse_accurate(document: _Document) -> dict:
 
 
 def _build_asgi(service: Any, parser_version: str):
-    """Build the Starlette app both routes serve.
-
-    Parse the multipart form off the raw Starlette Request instead of via
-    FastAPI's ``UploadFile = File(...)`` parameter. FastAPI builds a Pydantic
-    TypeAdapter for ``UploadFile``, which blows up ("class not fully defined")
-    whenever the pinned fastapi / pydantic / starlette trio drifts out of sync
-    in the image — exactly the kind of transitive-version breakage a long-lived
-    serverless endpoint should not be fragile to.
-    """
     import requests
     from starlette.applications import Starlette
     from starlette.requests import Request
@@ -506,7 +353,7 @@ def _build_asgi(service: Any, parser_version: str):
     def _authorized(request: Request) -> bool:
         expected = os.environ.get("MINERU_PARSE_TOKEN", "")
         if not expected:
-            return True  # no token configured -> open (dev only)
+            return True
         auth = request.headers.get("authorization", "")
         return auth.startswith("Bearer ") and auth[7:] == expected
 
@@ -515,10 +362,6 @@ def _build_asgi(service: Any, parser_version: str):
         return None if restored is None else round(time.perf_counter() - restored, 3)
 
     async def healthz(_request: Request) -> JSONResponse:
-        # ``uptime_s`` = seconds this container has served since the snapshot
-        # restore finished. A cold /healthz round-trip therefore measures
-        # restore-to-ready overhead with no parse cost mixed in. It stays
-        # responsive under load because no route ever blocks the event loop.
         return JSONResponse(
             {"ok": True, "uptime_s": _uptime(), "parser_version": parser_version}
         )
@@ -542,15 +385,14 @@ def _build_asgi(service: Any, parser_version: str):
         try:
             _validate_b2_url(source_url)
             _validate_b2_url(output_url)
-            # Every blocking call goes through a thread. Under input concurrency
-            # a bare requests.get here would stall every other in-flight parse
-            # and the health check with it.
             source = await asyncio.to_thread(
                 lambda: requests.get(source_url, timeout=(30, 300))
             )
             source.raise_for_status()
             if len(source.content) > MAX_SOURCE_BYTES:
-                return JSONResponse({"detail": "source exceeds 100 MB"}, status_code=413)
+                return JSONResponse(
+                    {"detail": "source exceeds 100 MB"}, status_code=413
+                )
 
             t0 = time.perf_counter()
             result = await service.parse(_Document(source.content, name, parse_method))
@@ -570,7 +412,9 @@ def _build_asgi(service: Any, parser_version: str):
             )
             uploaded.raise_for_status()
         except Exception as e:  # noqa: BLE001
-            return JSONResponse({"detail": f"remote parse failed: {e}"}, status_code=500)
+            return JSONResponse(
+                {"detail": f"remote parse failed: {e}"}, status_code=500
+            )
         return JSONResponse(
             {
                 "artifact": {
@@ -606,10 +450,8 @@ def _build_asgi(service: Any, parser_version: str):
         t0 = time.perf_counter()
         try:
             result = await service.parse(_Document(data, name, parse_method))
-        except Exception as e:  # noqa: BLE001 — surface parse failures as 500 JSON
+        except Exception as e:  # noqa: BLE001
             return JSONResponse({"detail": f"parse failed: {e}"}, status_code=500)
-        # Extra keys the RAG worker ignores; the snapshot test script reads them
-        # to split server parse time from cold-boot + network latency.
         result["_server_parse_s"] = round(time.perf_counter() - t0, 3)
         result["_uptime_s"] = _uptime()
         return JSONResponse(result)
@@ -633,9 +475,6 @@ def _build_asgi(service: Any, parser_version: str):
     timeout=1800,
     scaledown_window=300,
     enable_memory_snapshot=True,
-    # GPU memory snapshots (alpha): the checkpoint also captures GPU state, so
-    # the loaded VLM + warm vLLM engine restore directly instead of being
-    # rebuilt after every cold boot.
     experimental_options={"enable_gpu_snapshot": True},
 )
 # Two in-flight documents share one async vLLM engine and one KV cache. The
@@ -647,24 +486,18 @@ def _build_asgi(service: Any, parser_version: str):
 class MineruAccurate:
     @modal.enter(snap=True)
     async def load_models(self) -> None:
-        # Everything here is captured in the GPU memory snapshot (with
-        # enable_gpu_snapshot the GPU *is* attached during the snap phase, and
-        # the weights Volume is readable). Parse a tiny synthetic page through
-        # the real request path so the full hybrid stack — the MinerU2.5 VLM
-        # inside its async vLLM engine plus the per-language OCR models — lands
-        # in the process-wide ModelSingleton under exactly the keys
-        # aio_do_parse will use; restored containers then serve their first
-        # request with zero lazy loading. Async on purpose: Modal runs async
-        # hooks on the same event loop that serves the ASGI app, so the vLLM
-        # engine is created on the loop it will be used from. Warmup uses
-        # PARSE_METHOD (ocr) so the OCR detection sidecars are inside the
-        # snapshot too — an auto warmup left the first live ocr request to
-        # lazy-load them and blow past Modal's HTTP gateway.
+        # Captured in the GPU memory snapshot. Parse a tiny page through the
+        # real request path so MinerU2.5 + async vLLM + OCR sidecars land in
+        # ModelSingleton under the keys aio_do_parse will use.
         #
-        # This method runs ONLY when Modal builds the snapshot (snap=True). If
-        # you see the "[snapshot-build] warmup" logs below on an ordinary cold
-        # boot, the snapshot is NOT being restored — that's the exact failure
-        # this whole design guards against, so it's logged loudly on purpose.
+        # Async on purpose: Modal runs async hooks on the same event loop that
+        # serves ASGI, so the vLLM engine is created on the loop it will be
+        # used from. Warmup uses PARSE_METHOD (ocr) so the first live ocr
+        # request is not a lazy-load that blows past the HTTP gateway.
+        #
+        # This method runs ONLY when Modal builds the snapshot. If you see the
+        # "[snapshot-build] warmup" logs on an ordinary cold boot, the snapshot
+        # is NOT being restored.
         t0 = time.perf_counter()
         print(
             "[snapshot-build] warmup: loading models + engine init (this is the slow path)",
@@ -678,12 +511,11 @@ class MineruAccurate:
 
     @modal.enter(snap=False)
     def after_restore(self) -> None:
-        # Runs on EVERY container start AFTER a snapshot restore (snap=False).
-        # If the GPU snapshot works, reaching this point means the VLM + vLLM
-        # engine are already live in this process — the first /file_parse should
-        # then be ~parse-time only, with no minutes-long engine init.
         self._restored_monotonic = time.perf_counter()
-        print("[cold-boot] accurate container ready (restored from snapshot)", flush=True)
+        print(
+            "[cold-boot] accurate container ready (restored from snapshot)",
+            flush=True,
+        )
 
     async def parse(self, document: _Document) -> dict:
         return await _parse_accurate(document)
@@ -703,44 +535,60 @@ class MineruAccurate:
     secrets=[token_secret],
     timeout=1800,
     scaledown_window=300,
-    enable_memory_snapshot=True,
-    experimental_options={"enable_gpu_snapshot": True},
+    memory=32768,
+    cpu=8.0,
+    enable_memory_snapshot=False,
 )
-# Six in-flight documents per container. The pipeline backend has no vLLM KV
-# cache and streams page by page at roughly 4 GB, so VRAM is nowhere near the
-# limit on an L4 — the binding constraint is that only one of the six may be
-# inside MineRU at a time (see _ParsePump). The other five overlap their B2
-# download/upload with that parse, and any that queue up get folded into the
-# next batched call.
+# Four spawned Marker processes. Digital PDFs may use all four. RapidOCR is
+# CPU, so jobs the probe flags for OCR share a second lane of two. GPU
+# snapshots stay off: restore died with SIGSEGV (exit 139) once CUDA
+# RapidOCR/ort touched this image.
 @modal.concurrent(max_inputs=FAST_MAX_INPUTS)
 class MineruFast:
-    @modal.enter(snap=True)
-    def load_models(self) -> None:
-        # Sync on purpose, unlike the accurate route: the pipeline backend is
-        # synchronous and holds no event-loop-bound state, so there is nothing
-        # to bind to the serving loop and no reason to build one here.
+    @modal.enter()
+    async def load_models(self) -> None:
         t0 = time.perf_counter()
-        print("[snapshot-build] warmup: loading pipeline OCR/layout models", flush=True)
-        _parse_documents_sync(
-            [_Document(_warmup_png(), "warmup.png", PARSE_METHOD)], FAST_BACKEND
+        print("[cold-boot] fast: marker worker processes + rapidocr", flush=True)
+        from PIL import Image as PILImage
+        from marker.models import create_model_dict
+        from marker_worker import init_worker, parse_document, ping
+
+        def _start_layout_server() -> None:
+            models = create_model_dict()
+            models["fast_layout_model"]([PILImage.new("RGB", (64, 64), "white")])
+
+        await asyncio.to_thread(_start_layout_server)
+        self._parser = _ParallelFastParser(
+            init_worker, parse_document, FAST_MAX_INPUTS
         )
+        self._digital_slots = asyncio.Semaphore(FAST_DIGITAL_SLOTS)
+        self._ocr_slots = asyncio.Semaphore(FAST_OCR_SLOTS)
+        self._probe_lock = asyncio.Lock()
+        await self._parser.warm(ping, FAST_MAX_INPUTS)
+        await self._parser.submit(
+            _Document(_warmup_png(), "warmup.png", PARSE_METHOD)
+        )
+        self._restored_monotonic = time.perf_counter()
         print(
-            f"[snapshot-build] warmup done in {time.perf_counter() - t0:.1f}s",
+            f"[cold-boot] fast ready in {time.perf_counter() - t0:.1f}s",
             flush=True,
         )
 
-    @modal.enter(snap=False)
-    async def after_restore(self) -> None:
-        # Async so the pump's consumer task is created on the same event loop
-        # that will serve the ASGI app. ensure_running() in submit() covers the
-        # case where Modal ever changes that.
-        self._restored_monotonic = time.perf_counter()
-        self._pump = _ParsePump(backend=FAST_BACKEND, max_batch=FAST_MAX_INPUTS)
-        self._pump.ensure_running()
-        print("[cold-boot] fast container ready (restored from snapshot)", flush=True)
-
     async def parse(self, document: _Document) -> dict:
-        return await self._pump.submit(document)
+        heavy = await self._ocr_heavy(document)
+        lane = self._ocr_slots if heavy else self._digital_slots
+        async with lane:
+            result = await self._parser.submit(document)
+        result["_fast_lane"] = "ocr" if heavy else "digital"
+        return result
+
+    async def _ocr_heavy(self, document: _Document) -> bool:
+        from scan_pages import job_needs_rapidocr, probe_pages
+
+        # PDFium is not thread-safe. One probe at a time in this process.
+        async with self._probe_lock:
+            probes = await asyncio.to_thread(probe_pages, document.data)
+        return job_needs_rapidocr(probes, document.parse_method)
 
     @modal.asgi_app()
     def web(self):
@@ -752,7 +600,7 @@ def _warmup_png() -> bytes:
     from PIL import ImageDraw
 
     img = PILImage.new("RGB", (800, 600), "white")
-    ImageDraw.Draw(img).text((100, 100), "warm up", fill="black")
+    ImageDraw.Draw(img).text((100, 100), "Metabolic Pathways warmup", fill="black")
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return buf.getvalue()

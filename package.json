@@ -157,8 +157,8 @@
     ],
     "*.go": "gofmt -w",
     "*.py": [
-      "uv --native-tls run --with ruff ruff format",
-      "uv --native-tls run --with ruff ruff check --fix"
+      "uv run --with ruff ruff format --extend-exclude modal --force-exclude",
+      "uv run --with ruff ruff check --fix --extend-exclude modal --force-exclude"
     ],
     "*.{yml,yaml}": "prettier --write"
   },

@@ -103,8 +103,8 @@ def test_parse_method_participates_in_the_fingerprint(monkeypatch):
 
 def test_the_two_routes_never_share_an_artifact():
     """Both routes emit the same bundle shape from the same source bytes, so
-    only the route keeps a cheap pipeline parse from being served to someone who
-    asked for the hybrid VLM."""
+    only the route keeps a cheap hybrid parse from being served to someone who
+    asked for the MinerU VLM OCR path."""
     accurate_key, accurate = modal_parser.artifact_identity(_descriptor())
     fast_key, fast = modal_parser.artifact_identity(
         _descriptor(route=modal_parser.ROUTE_FAST)

@@ -1,10 +1,12 @@
-"""Manually drive the Modal MineRU endpoint to test the GPU memory snapshot.
+"""Manually drive the Modal parse endpoint to test the GPU memory snapshot.
 
 The GPU snapshot's whole job is to make a *cold* boot fast: instead of
-re-importing torch, reloading weights and re-initializing the vLLM engine
-(minutes), a cold container restores straight into a ready-to-serve state.
-This script measures that from the outside so you can cross-check against the
-per-container duration Modal shows in the dashboard.
+re-importing torch, reloading weights and re-starting vLLM (accurate MinerU),
+a cold container restores straight into a ready-to-serve state. Fast (Marker)
+does not use GPU snapshots — restore died with SIGSEGV — so its first call
+after scale-from-zero still pays model load. This script measures that from
+the outside so you can cross-check against the per-container duration Modal
+shows in the dashboard.
 
 What it measures
 ----------------
@@ -30,7 +32,8 @@ the last request. To guarantee a cold boot either:
 
 Usage
 -----
-    # env: MODAL_PARSE_URL=https://<org>--evo-mineru-mineruparser-web.modal.run/file_parse
+    # env: MODAL_PARSE_URL=https://<org>--evo-mineru-mineruaccurate-web.modal.run/file_parse
+    #      MODAL_FAST_PARSE_URL=https://<org>--evo-mineru-minerufast-web.modal.run/file_parse
     #      MODAL_PARSE_TOKEN=<token in the evo-mineru-token secret>
     python modal/test_snapshot.py                 # 3 parses, warm-ish
     python modal/test_snapshot.py --wait-cold 330 # force a cold boot first
@@ -39,6 +42,7 @@ Usage
 
 Requires only ``requests`` (already in the pipeline venv).
 """
+
 from __future__ import annotations
 
 import argparse
@@ -55,12 +59,14 @@ def _make_sample_pdf() -> bytes:
 
     Avoids a Pillow/repo-file dependency so the script is self-contained.
     """
-    stream_body = b"BT /F1 24 Tf 72 700 Td (MinerU snapshot test page) Tj ET"
+    stream_body = b"BT /F1 24 Tf 72 700 Td (Marker snapshot test page) Tj ET"
     objects = [
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-        b"/Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
+        (
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>"
+        ),
         b"<< /Length %d >>\nstream\n%s\nendstream" % (len(stream_body), stream_body),
         b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
     ]
@@ -78,6 +84,11 @@ def _make_sample_pdf() -> bytes:
     pdf += b"trailer\n<< /Size %d /Root 1 0 R >>\n" % n
     pdf += b"startxref\n%d\n%%%%EOF" % xref_pos
     return bytes(pdf)
+
+
+def _file_parse_url(url: str) -> str:
+    url = url.rstrip("/")
+    return url if url.endswith("/file_parse") else url + "/file_parse"
 
 
 def _healthz_url(parse_url: str) -> str:
@@ -98,7 +109,12 @@ def ping_healthz(url: str, token: str | None, timeout: float) -> tuple[float, di
 
 
 def do_parse(
-    url: str, token: str | None, data: bytes, name: str, parse_method: str, timeout: float
+    url: str,
+    token: str | None,
+    data: bytes,
+    name: str,
+    parse_method: str,
+    timeout: float,
 ) -> tuple[float, dict]:
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     t0 = time.perf_counter()
@@ -116,25 +132,51 @@ def do_parse(
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--url", default=os.environ.get("MODAL_PARSE_URL", ""),
-                    help="full /file_parse URL (default: $MODAL_PARSE_URL)")
-    ap.add_argument("--token", default=os.environ.get("MODAL_PARSE_TOKEN", ""),
-                    help="bearer token (default: $MODAL_PARSE_TOKEN)")
-    ap.add_argument("--file", help="document to parse (default: a generated 1-page PDF)")
-    ap.add_argument("-n", "--num", type=int, default=3, help="number of parse requests (default 3)")
-    ap.add_argument("--parse-method", default="auto")
-    ap.add_argument("--wait-cold", type=int, default=0,
-                    help="sleep N seconds first to force a cold boot (use ~330 to clear the 300s scaledown window)")
-    ap.add_argument("--timeout", type=float, default=900.0, help="per-request timeout seconds")
-    ap.add_argument("--healthz-only", action="store_true", help="only probe /healthz (restore-only signal)")
-    ap.add_argument("--skip-healthz", action="store_true",
-                    help="don't ping /healthz first, so the FIRST parse pays (and measures) the cold boot"
-                         " — the real end-user first-request latency")
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    ap.add_argument(
+        "--url",
+        default=os.environ.get("MODAL_PARSE_URL", ""),
+        help="full /file_parse URL (default: $MODAL_PARSE_URL)",
+    )
+    ap.add_argument(
+        "--token",
+        default=os.environ.get("MODAL_PARSE_TOKEN", ""),
+        help="bearer token (default: $MODAL_PARSE_TOKEN)",
+    )
+    ap.add_argument(
+        "--file", help="document to parse (default: a generated 1-page PDF)"
+    )
+    ap.add_argument(
+        "-n", "--num", type=int, default=3, help="number of parse requests (default 3)"
+    )
+    ap.add_argument("--parse-method", default="ocr")
+    ap.add_argument(
+        "--wait-cold",
+        type=int,
+        default=0,
+        help="sleep N seconds first to force a cold boot (use ~330 to clear the 300s scaledown window)",
+    )
+    ap.add_argument(
+        "--timeout", type=float, default=900.0, help="per-request timeout seconds"
+    )
+    ap.add_argument(
+        "--healthz-only",
+        action="store_true",
+        help="only probe /healthz (restore-only signal)",
+    )
+    ap.add_argument(
+        "--skip-healthz",
+        action="store_true",
+        help="don't ping /healthz first, so the FIRST parse pays (and measures) the cold boot"
+        " — the real end-user first-request latency",
+    )
     args = ap.parse_args()
 
     if not args.url:
         ap.error("no URL: pass --url or set MODAL_PARSE_URL")
+    args.url = _file_parse_url(args.url)
     token = args.token or None
 
     if args.file:
@@ -148,8 +190,11 @@ def main() -> int:
     health_url = _healthz_url(args.url)
 
     if args.wait_cold > 0:
-        print(f"waiting {args.wait_cold}s to let the container scale to zero "
-              f"(scaledown_window is 300s)...", flush=True)
+        print(
+            f"waiting {args.wait_cold}s to let the container scale to zero "
+            f"(scaledown_window is 300s)...",
+            flush=True,
+        )
         time.sleep(args.wait_cold)
 
     print(f"endpoint : {args.url}")
@@ -163,9 +208,16 @@ def main() -> int:
     if not args.skip_healthz:
         try:
             h_elapsed, h_body = ping_healthz(health_url, token, args.timeout)
-            print(f"healthz  : {h_elapsed:7.2f}s  (server uptime_s={h_body.get('uptime_s')})")
-            if isinstance(h_body.get("uptime_s"), (int, float)) and h_body["uptime_s"] < 5:
-                print("           ^ uptime_s < 5s => this was a fresh cold boot / restore")
+            print(
+                f"healthz  : {h_elapsed:7.2f}s  (server uptime_s={h_body.get('uptime_s')})"
+            )
+            if (
+                isinstance(h_body.get("uptime_s"), (int, float))
+                and h_body["uptime_s"] < 5
+            ):
+                print(
+                    "           ^ uptime_s < 5s => this was a fresh cold boot / restore"
+                )
         except Exception as e:  # noqa: BLE001
             print(f"healthz  : FAILED ({e})")
 
@@ -179,7 +231,9 @@ def main() -> int:
     totals: list[float] = []
     for i in range(args.num):
         try:
-            elapsed, body = do_parse(args.url, token, data, name, args.parse_method, args.timeout)
+            elapsed, body = do_parse(
+                args.url, token, data, name, args.parse_method, args.timeout
+            )
         except Exception as e:  # noqa: BLE001
             print(f"{i:3d}   FAILED: {e}")
             return 1
@@ -187,8 +241,14 @@ def main() -> int:
         uptime = body.get("_uptime_s")
         overhead = None if server is None else elapsed - server
         totals.append(elapsed)
-        tag = "  <- cold boot?" if i == 0 and isinstance(uptime, (int, float)) and uptime < 15 else ""
-        print(f"{i:3d}   {_fmt(elapsed)}   {_fmt(server)}       {_fmt(overhead)}   {_fmt(uptime)}{tag}")
+        tag = (
+            "  <- cold boot?"
+            if i == 0 and isinstance(uptime, (int, float)) and uptime < 15
+            else ""
+        )
+        print(
+            f"{i:3d}   {_fmt(elapsed)}   {_fmt(server)}       {_fmt(overhead)}   {_fmt(uptime)}{tag}"
+        )
 
     print("-" * 64)
     if len(totals) >= 2:
@@ -199,8 +259,12 @@ def main() -> int:
         print(f"cold-boot penalty   : {cold - warm:.2f}s")
         print()
         print("Interpretation:")
-        print("  * small penalty (seconds) + first uptime_s near 0 => snapshot restore works.")
-        print("  * penalty in the minutes  => snapshot NOT restoring; check Modal logs for")
+        print(
+            "  * small penalty (seconds) + first uptime_s near 0 => snapshot restore works."
+        )
+        print(
+            "  * penalty in the minutes  => snapshot NOT restoring; check Modal logs for"
+        )
         print("    '[snapshot-build] warmup' lines appearing on an ordinary cold boot.")
     print()
     print("Now compare against Modal: `modal app logs evo-mineru` and the dashboard's")

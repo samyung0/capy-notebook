@@ -1,1 +1,1 @@
-"""Document parsing routes: Modal GPU MinerU ('advanced') and MinerU lite."""
+"""Document parsing routes: Modal GPU (MinerU accurate VLM, Marker fast hybrid)."""

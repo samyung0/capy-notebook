@@ -3,12 +3,12 @@
 Claims jobs from the Postgres queue and turns uploads into retrievable chunks:
 
 - ``txt`` / ``md`` / ``json`` are read straight from B2 and chunked as markdown.
-  The gateway still labels those jobs ``parseMode=none`` (there is no MinerU
+  The gateway still labels those jobs ``parseMode=none`` (there is no GPU parse
   route to pick); they are indexed. ``parseMode=none`` on any other kind is
   store-only: the blob is kept, ``indexed=false``.
-- ``parseMode=fast`` parses on Modal with MinerU's pipeline OCR backend.
-- ``parseMode=accurate`` parses on Modal with MinerU's hybrid VLM backend:
-  better on dense layouts, more GPU seconds per page.
+- ``parseMode=fast`` parses on Modal with Marker (no VLM) plus PP-OCRv6
+  on scanned / thin-text pages.
+- ``parseMode=accurate`` parses on Modal with MinerU hybrid VLM OCR.
 
 Both parse routes return the same bundle — a ``content_list.json`` carrying a
 page index and bounding box per block, plus the extracted images — so both
@@ -577,7 +577,7 @@ async def process_ingest_job(job: dict) -> None:
     file_id = payload["fileId"]
     ws = payload["workspaceId"]
     kind = (payload.get("kind") or "").lower()
-    # 'fast' (Modal pipeline OCR, default), 'accurate' (Modal hybrid VLM), or
+    # 'fast' (Marker hybrid, default), 'accurate' (MinerU hybrid VLM), or
     # 'none' (blob-only; normally never enqueued at all).
     parse_mode = (payload.get("parseMode") or "fast").lower()
     # Chosen per file at upload time; the env default only covers a job that

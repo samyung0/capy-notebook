@@ -908,10 +908,10 @@ export function useUploadSource(wsId: string) {
       kind: SourceFile['kind'];
       chapterId?: string | null;
       chapterName?: string | null;
-      /** accurate = Modal MinerU hybrid backend, fast = Modal MinerU pipeline
-       * backend, none = store-only for non-text kinds (no parse, not indexed).
-       * Text kinds (txt/md/json) still index under none — there is no MinerU
-       * route to pick. */
+      /** accurate = Modal MinerU hybrid VLM, fast = Marker + RapidOCR on
+       * scanned pages, none = store-only for non-text kinds (no parse, not
+       * indexed). Text kinds (txt/md/json) still index under none — there is
+       * no GPU parse route to pick. */
       parseMode?: 'accurate' | 'fast' | 'none';
       /** Caption the figures found while parsing so they become searchable. */
       captionImages?: boolean;
