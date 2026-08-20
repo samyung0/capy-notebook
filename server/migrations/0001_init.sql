@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS users (
   locale                text NOT NULL DEFAULT 'en',
   -- Per-surface user model preference. Always a model_key, never NULL or empty:
   -- populated from the registry surface default at account creation. Ingest,
-  -- embedding, vision and STT are operator-only and are never stored here.
+  -- embedding and vision are operator-only and are never stored here.
   -- The value is a model_key, not a version: the version is resolved per
   -- request onto the assistant message (chat) or generate call.
   chat_model_key        text NOT NULL DEFAULT 'deepseek-flash',
@@ -127,6 +127,9 @@ CREATE TABLE IF NOT EXISTS users (
   -- so this is the surface where an expensive choice costs the most relative to
   -- the value delivered — worth watching if credit burn looks wrong.
   editor_model_key      text NOT NULL DEFAULT 'deepseek-flash',
+  -- Open-question marking. May be a registry key or a client-only browser:
+  -- prefix (in-tab GGUF). Browser keys skip registry lookup.
+  quiz_model_key        text NOT NULL DEFAULT 'deepseek-flash',
   -- Account lifecycle. deletion_requested_at starts the reactivation window;
   -- purge_after is when the purge job runs; deleted_at is set by the purge
   -- itself, after which the row is a scrubbed tombstone.
@@ -142,6 +145,7 @@ CREATE TABLE IF NOT EXISTS users (
   CONSTRAINT users_chat_model_key_nonempty CHECK (chat_model_key <> ''),
   CONSTRAINT users_generate_model_key_nonempty CHECK (generate_model_key <> ''),
   CONSTRAINT users_editor_model_key_nonempty CHECK (editor_model_key <> ''),
+  CONSTRAINT users_quiz_model_key_nonempty CHECK (quiz_model_key <> ''),
   CONSTRAINT users_purge_window_check
     CHECK (purge_after IS NULL OR deletion_requested_at IS NOT NULL),
   CONSTRAINT users_deleted_requires_request_check
@@ -246,7 +250,7 @@ CREATE TABLE IF NOT EXISTS files (
                           (floor(extract(epoch FROM clock_timestamp()) * 1000000)::bigint),
   size_bytes            bigint NOT NULL DEFAULT 0 CHECK (size_bytes >= 0),
   added_at              timestamptz NOT NULL DEFAULT now(),
-  status                text NOT NULL DEFAULT 'ready',   -- processing | ready | failed
+	status                text NOT NULL DEFAULT 'ready',   -- pending | processing | ready | failed
   -- True after ingest has written retrieval chunks. Viewable files uploaded
   -- with parseMode=none (audio, store-only) stay false.
   indexed               boolean NOT NULL DEFAULT false,
@@ -424,8 +428,9 @@ CREATE TABLE IF NOT EXISTS attempts (
   quiz_name      text NOT NULL DEFAULT '',
   workspace_name text NOT NULL DEFAULT '',
   chapters       text[] NOT NULL DEFAULT '{}',
-  correct        int NOT NULL DEFAULT 0,
-  total          int NOT NULL DEFAULT 0,
+  -- Points awarded / points possible. Half-points are allowed (open questions).
+  correct        numeric NOT NULL DEFAULT 0,
+  total          numeric NOT NULL DEFAULT 0,
   pct            int NOT NULL DEFAULT 0,
   answers        jsonb NOT NULL DEFAULT '{}',
   questions      jsonb NOT NULL DEFAULT '[]',
@@ -1288,11 +1293,11 @@ CREATE TABLE IF NOT EXISTS model_configs (
   created_at                   timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (model_key, version),
   CONSTRAINT model_configs_surfaces_check CHECK (
-    surfaces <@ ARRAY['chat','generate','editor','ingest','embedding','vision','stt']::text[]
+    surfaces <@ ARRAY['chat','generate','editor','quiz','ingest','embedding','vision']::text[]
     AND surfaces <> '{}'
   ),
   CONSTRAINT model_configs_default_for_check CHECK (
-    is_default_for <@ ARRAY['chat','generate','editor','ingest','embedding','vision','stt']::text[]
+    is_default_for <@ ARRAY['chat','generate','editor','quiz','ingest','embedding','vision']::text[]
   ),
   -- An embedding row must declare the width it emits, and that width must
   -- already have a rag_chunk_vectors_<dim> table. Discovering a new width at
@@ -1316,7 +1321,7 @@ INSERT INTO model_registry_state (id, version) VALUES (true, 1)
 
 -- Bootstrap the models the product ships with. New versions are written
 -- from the ops dashboard registry grid; these rows are the 1x Flash
--- reference and the embedding / vision / STT defaults.
+-- reference and the embedding / vision defaults.
 --
 -- Retargeting the embedding default is not a hot reload and not a migration:
 -- each workspace pins its own embedding model at creation and keeps it, so a
@@ -1333,13 +1338,13 @@ INSERT INTO model_configs (
   ('deepseek-flash', 1, 'DeepSeek Flash', 'deepseek',
    'https://api.deepseek.com', 'deepseek-v4-flash',
    '{"temperature": 0.3}'::jsonb,
-   ARRAY['chat','generate','editor','ingest'],
+   ARRAY['chat','generate','editor','quiz','ingest'],
    250, 1000, 140000, 280000, true,
-   ARRAY['chat','generate','editor','ingest']),
+   ARRAY['chat','generate','editor','quiz','ingest']),
   ('deepseek-pro', 1, 'DeepSeek Pro', 'deepseek',
    'https://api.deepseek.com', 'deepseek-v4-pro',
    '{"temperature": 0.3}'::jsonb,
-   ARRAY['chat','generate'],
+   ARRAY['chat','generate','quiz'],
    775, 3100, 434000, 868000, true,
    ARRAY[]::text[]),
   ('qwen-embed', 1, 'Qwen3 Embedding 4B', 'openrouter',
@@ -1354,13 +1359,7 @@ INSERT INTO model_configs (
    '{"temperature": 0.2}'::jsonb,
    ARRAY['vision'],
    250, 1000, 100000, 400000, true,
-   ARRAY['vision']),
-  ('whisper', 1, 'Whisper', 'openai',
-   'https://api.openai.com/v1', 'whisper-1',
-   '{}'::jsonb,
-   ARRAY['stt'],
-   0, 0, 0, 0, true,
-   ARRAY['stt'])
+   ARRAY['vision'])
 ON CONFLICT (model_key, version) DO NOTHING;
 --
 -- Shape mirrors storage accounting on purpose: an append-only ledger for the
@@ -1380,11 +1379,10 @@ CREATE TABLE IF NOT EXISTS usage_events (
   trace_id       text,
   actor_user_id  text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   workspace_id   text REFERENCES workspaces(id) ON DELETE SET NULL,
-  -- What was consumed: llm | embedding | caption | transcribe | parse_gpu |
-  -- email | egress.
+  -- What was consumed: llm | embedding | caption | parse_gpu | email | egress.
   kind           text NOT NULL,
-  -- Where the user was: chat | generate | editor | ingest | transcribe |
-  -- system. Same kind, different product surface.
+  -- Where the user was: chat | generate | editor | ingest | system.
+  -- Same kind, different product surface.
   surface        text NOT NULL DEFAULT 'system',
   provider       text NOT NULL DEFAULT '',
   model          text NOT NULL DEFAULT '',

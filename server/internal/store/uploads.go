@@ -163,7 +163,7 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 	fileURL := "/api/files/" + fileID + "/raw"
 	now := time.Now().UTC()
 	ready := !sourceupload.NeedsIngestJob(u.Kind, u.ParseMode)
-	status := "processing"
+	status := "pending"
 	if ready {
 		status = "ready"
 	}

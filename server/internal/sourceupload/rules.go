@@ -10,9 +10,9 @@ import (
 )
 
 const (
-	// Both parse modes run MinerU on our own GPU and return the same output;
-	// they differ in which backend produced it. "accurate" is the hybrid VLM,
-	// "fast" is the pipeline OCR stack.
+	// ParseModeFast is the live CPU parser (Marker + RapidOCR on scans).
+	// ParseModeAccurate is a retired alias: old clients and queued jobs still
+	// send it, and we treat it as fast.
 	ParseModeAccurate = "accurate"
 	ParseModeFast     = "fast"
 	ParseModeNone     = "none"
@@ -367,8 +367,8 @@ func IsTextKind(kind string) bool {
 
 func DefaultParseMode(name, kind string) string {
 	if IsTextKind(kind) {
-		// Text is never sent to MinerU. The worker reads the bytes and chunks
-		// them; parseMode=none still enqueues that job (see NeedsIngestJob).
+		// Text is never sent to the GPU parser. The worker reads the bytes and
+		// chunks them; parseMode=none still enqueues that job (see NeedsIngestJob).
 		return ParseModeNone
 	}
 	if parseExtensions[extensionKey(name)] {
@@ -421,8 +421,8 @@ func Validate(name, kind, mode string, size, maxBytes int64) error {
 		return nil
 	}
 
-	switch mode {
-	case ParseModeAccurate, ParseModeFast:
+	switch CanonicalParseMode(mode) {
+	case ParseModeFast:
 		if !parseExtensions[extensionKey(name)] {
 			return fmt.Errorf("parsing does not support %s files", Extension(name))
 		}
@@ -433,10 +433,18 @@ func Validate(name, kind, mode string, size, maxBytes int64) error {
 	return nil
 }
 
-// parseExtensions is shared by both modes: they are the same MinerU entry point
-// on the same service, so anything one can read the other can too. They used to
-// differ only because the cheap mode was a third-party cloud API with its own
-// narrower format list.
+// CanonicalParseMode maps retired names onto the live parser so old clients
+// and queued jobs keep working.
+func CanonicalParseMode(mode string) string {
+	switch strings.ToLower(mode) {
+	case ParseModeAccurate, "advanced":
+		return ParseModeFast
+	default:
+		return mode
+	}
+}
+
+// parseExtensions is the format list the GPU parser accepts.
 var parseExtensions = map[string]bool{
 	"pdf": true, "doc": true, "docx": true, "ppt": true, "pptx": true,
 	"xls": true, "xlsx": true, "png": true, "jpg": true, "jpeg": true,
@@ -455,7 +463,7 @@ func ExtensionsByKind() map[string][]string {
 }
 
 func ParseExtensions(mode string) []string {
-	if mode != ParseModeAccurate && mode != ParseModeFast {
+	if CanonicalParseMode(mode) != ParseModeFast {
 		return []string{}
 	}
 	out := make([]string, 0, len(parseExtensions))

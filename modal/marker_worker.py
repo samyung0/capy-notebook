@@ -31,21 +31,23 @@ class _Document:
 
 
 def init_worker() -> None:
-    global _MODELS, _OCR
+    global _MODELS
+    if _MODELS is not None:
+        return
     from marker.models import create_model_dict
 
     _MODELS = create_model_dict()
-    _OCR = _rapidocr_engine()
+    print(f"marker: models pid={os.getpid()} rapidocr=lazy-local", flush=True)
 
 
 def ping() -> int:
-    if _MODELS is None or _OCR is None:
+    if _MODELS is None:
         init_worker()
     return os.getpid()
 
 
 def parse_document(data: bytes, name: str, parse_method: str) -> dict:
-    if _MODELS is None or _OCR is None:
+    if _MODELS is None:
         init_worker()
     converter = _marker_converter(
         FAST_MODE,
@@ -53,7 +55,7 @@ def parse_document(data: bytes, name: str, parse_method: str) -> dict:
         force_ocr=False,
         models=dict(_MODELS),
     )
-    return parse_fast(_Document(data, name, parse_method), converter, _OCR)
+    return parse_fast(_Document(data, name, parse_method), converter)
 
 
 def _marker_converter(mode: str, *, disable_ocr: bool, force_ocr: bool, models: dict):
@@ -137,8 +139,19 @@ def _run_marker(converter: Any, data: bytes, name: str) -> dict[str, Any]:
 def _rapidocr_engine() -> Any:
     from rapidocr import RapidOCR
 
-    print(f"rapidocr: cpu pid={os.getpid()}", flush=True)
+    print(f"rapidocr: lazy-local pid={os.getpid()}", flush=True)
     return RapidOCR()
+
+
+def _ensure_local_ocr() -> Any:
+    global _OCR
+    if _OCR is None:
+        _OCR = _rapidocr_engine()
+    return _OCR
+
+
+def _page_lines(image: Any) -> list[dict[str, Any]]:
+    return _rapid_lines(_ensure_local_ocr(), image)
 
 
 def _as_seq(value: Any) -> list[Any]:
@@ -203,14 +216,14 @@ def _render_page(pdf: Any, index: int, max_edge: float = 2800.0) -> Any:
 
 
 def _ocr_flagged_pages(
-    engine: Any, data: bytes, page_indices: list[int]
+    data: bytes, page_indices: list[int]
 ) -> dict[int, list[dict[str, Any]]]:
     if not page_indices or not data.lstrip().startswith(b"%PDF"):
         if page_indices and not data.lstrip().startswith(b"%PDF"):
             from PIL import Image as PILImage
 
             image = PILImage.open(io.BytesIO(data)).convert("RGB")
-            return {0: _rapid_lines(engine, image)}
+            return {0: _page_lines(image)}
         return {}
     import pypdfium2 as pdfium
 
@@ -221,13 +234,13 @@ def _ocr_flagged_pages(
             if index < 0 or index >= len(pdf):
                 continue
             image = _render_page(pdf, index)
-            out[index] = _rapid_lines(engine, image)
+            out[index] = _page_lines(image)
     finally:
         pdf.close()
     return out
 
 
-def parse_fast(document: _Document, converter: Any, ocr_engine: Any) -> dict:
+def parse_fast(document: _Document, converter: Any, _ocr_engine: Any = None) -> dict:
     from marker_adapt import content_list_to_md, drop_scan_rasters, merge_ocr_lines
     from scan_pages import probe_pages
 
@@ -247,7 +260,7 @@ def parse_fast(document: _Document, converter: Any, ocr_engine: Any) -> dict:
     )
     if not flagged:
         return result
-    ocr_pages = _ocr_flagged_pages(ocr_engine, document.data, flagged)
+    ocr_pages = _ocr_flagged_pages(document.data, flagged)
     flagged_set = set(flagged)
     result["content_list"] = drop_scan_rasters(result["content_list"], flagged_set)
     result["content_list"] = merge_ocr_lines(result["content_list"], ocr_pages)

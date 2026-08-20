@@ -44,7 +44,7 @@ import normalize
 
 SUPPORTED_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".pptx", ".docx", ".xlsx"}
 
-# Matches modal/mineru_app.py. "ch" covers Chinese, Japanese and Latin scripts
+# Matches modal/parse_common.py. "ch" covers Chinese, Japanese and Latin scripts
 # but not Korean, so keep it identical to production rather than tuning it here.
 MINERU_LANG = "ch"
 
@@ -404,11 +404,11 @@ def run_mineru(
 ) -> BackendResult:
     """MinerU's `pipeline` backend on CPU — the incumbent, unported.
 
-    This is the control in the experiment. It is the same backend
-    ``modal/mineru_app.py`` already serves on an L4, just with
-    ``MINERU_DEVICE_MODE=cpu``, so if it is fast enough here the cheapest
-    migration is no parser change at all: same ``content_list``, same bboxes,
-    same ``parser_version`` scheme, no adapter, no re-tuned figure filters.
+    This is the control in the experiment. It is MinerU's CPU pipeline
+    backend with ``MINERU_DEVICE_MODE=cpu``, so if it is fast enough here the
+    cheapest migration is no parser change at all: same ``content_list``, same
+    bboxes, same ``parser_version`` scheme, no adapter, no re-tuned figure
+    filters.
 
     Parsed one document at a time on purpose. Production batches several into a
     single call for cross-document page batching, so this understates MinerU's

@@ -23,6 +23,7 @@ type User struct {
 	ChatModelKey       string             `json:"chatModelKey"`
 	GenerateModelKey   string             `json:"generateModelKey"`
 	EditorModelKey     string             `json:"editorModelKey"`
+	QuizModelKey       string             `json:"quizModelKey"`
 	PlanTier           PlanTier           `json:"planTier"`
 	SubscriptionStatus SubscriptionStatus `json:"subscriptionStatus"`
 }
@@ -131,8 +132,8 @@ type Attempt struct {
 	QuizName      string    `json:"quizName"`
 	WorkspaceName string    `json:"workspaceName"`
 	Chapters      []string  `json:"chapters" nullable:"false"`
-	Correct       int       `json:"correct"`
-	Total         int       `json:"total"`
+	Correct       float64   `json:"correct"`
+	Total         float64   `json:"total"`
 	Pct           int       `json:"pct"`
 	TakenAt       time.Time `json:"takenAt"`
 }

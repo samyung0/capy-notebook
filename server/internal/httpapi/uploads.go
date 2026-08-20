@@ -91,6 +91,7 @@ func (a *api) createSourceUpload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 		return
 	}
+	in.ParseMode = sourceupload.CanonicalParseMode(in.ParseMode)
 	in.CaptionImages = sourceupload.NormalizeCaptionImages(in.Kind, in.ParseMode, in.CaptionImages)
 	if sourceupload.NeedsIngestJob(in.Kind, in.ParseMode) {
 		if err := a.s.AssertCreditsAvailable(r.Context(), uid(r)); err != nil {

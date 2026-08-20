@@ -1,11 +1,10 @@
-"""Offline unit tests for the Modal MinerU client (no network).
+"""Offline unit tests for the Modal parse client (no network).
 
 The client never sees document bytes — it brokers presigned URLs and then
 unpacks a zip that a remote service produced. Everything worth testing is in
-that handoff: artifact addressing (which is what makes re-ingest free, and what
-keeps the two parse routes from colliding), the validation of an artifact that
-arrived from outside this process, and the recovery path when a cached artifact
-turns out to be corrupt.
+that handoff: artifact addressing (which is what makes re-ingest free), the
+validation of an artifact that arrived from outside this process, and the
+recovery path when a cached artifact turns out to be corrupt.
 """
 
 from __future__ import annotations
@@ -19,7 +18,6 @@ import pytest
 
 from pipeline.parse import modal_parser
 
-ACCURATE_VERSION = modal_parser.PARSER_VERSIONS[modal_parser.ROUTE_ACCURATE]
 FAST_VERSION = modal_parser.PARSER_VERSIONS[modal_parser.ROUTE_FAST]
 
 
@@ -27,7 +25,7 @@ def _descriptor(**overrides) -> dict:
     base = {
         "blob_path": "sources/blob_1.pdf",
         "source_sha256": "aa" * 32,
-        "route": modal_parser.ROUTE_ACCURATE,
+        "route": modal_parser.ROUTE_FAST,
     }
     base.update(overrides)
     return modal_parser.source_descriptor(
@@ -52,7 +50,7 @@ def _artifact_zip(
             json.dumps(
                 {
                     "schema": schema or modal_parser.ARTIFACT_SCHEMA,
-                    "parser_version": parser_version or ACCURATE_VERSION,
+                    "parser_version": parser_version or FAST_VERSION,
                     "source_fingerprint": fingerprint,
                 }
             ),
@@ -81,7 +79,7 @@ def test_artifact_key_is_stable_and_versioned():
     assert (key1, fingerprint1) == (key2, fingerprint2)
     assert (
         key1
-        == f"parsed/{descriptor['source_sha256']}/{ACCURATE_VERSION}/{fingerprint1}.zip"
+        == f"parsed/{descriptor['source_sha256']}/{FAST_VERSION}/{fingerprint1}.zip"
     )
 
 
@@ -99,20 +97,6 @@ def test_parse_method_participates_in_the_fingerprint(monkeypatch):
     _, after = modal_parser.artifact_identity(_descriptor())
 
     assert before != after
-
-
-def test_the_two_routes_never_share_an_artifact():
-    """Both routes emit the same bundle shape from the same source bytes, so
-    only the route keeps a cheap hybrid parse from being served to someone who
-    asked for the MinerU VLM OCR path."""
-    accurate_key, accurate = modal_parser.artifact_identity(_descriptor())
-    fast_key, fast = modal_parser.artifact_identity(
-        _descriptor(route=modal_parser.ROUTE_FAST)
-    )
-
-    assert accurate != fast
-    assert accurate_key != fast_key
-    assert FAST_VERSION in fast_key
 
 
 def test_an_unknown_route_is_rejected():
@@ -136,7 +120,7 @@ class _Resp:
 @pytest.fixture
 def modal_urls(monkeypatch):
     monkeypatch.setattr(
-        modal_parser.cfg, "modal_parse_url", "https://accurate.modal.test/file_parse"
+        modal_parser.cfg, "modal_parse_url", "https://legacy.modal.test/file_parse"
     )
     monkeypatch.setattr(
         modal_parser.cfg, "modal_fast_parse_url", "https://fast.modal.test/file_parse"
@@ -161,19 +145,21 @@ def test_a_cache_hit_never_calls_modal(monkeypatch, modal_urls):
     assert artifact["cached"] is True
 
 
-@pytest.mark.parametrize(
-    ("route", "env"),
-    [
-        (modal_parser.ROUTE_ACCURATE, "MODAL_PARSE_URL"),
-        (modal_parser.ROUTE_FAST, "MODAL_FAST_PARSE_URL"),
-    ],
-)
-def test_missing_modal_url_is_a_configuration_error(monkeypatch, route, env):
+def test_missing_modal_url_is_a_configuration_error(monkeypatch):
     monkeypatch.setattr(modal_parser.cfg, "modal_parse_url", "")
     monkeypatch.setattr(modal_parser.cfg, "modal_fast_parse_url", "")
 
-    with pytest.raises(modal_parser.ModalParseError, match=env):
-        modal_parser._request_artifact(_descriptor(route=route), "doc.pdf")
+    with pytest.raises(modal_parser.ModalParseError, match="MODAL_FAST_PARSE_URL"):
+        modal_parser._request_artifact(_descriptor(), "doc.pdf")
+
+
+def test_legacy_parse_url_is_used_when_fast_url_is_unset(monkeypatch):
+    monkeypatch.setattr(
+        modal_parser.cfg, "modal_parse_url", "https://legacy.modal.test/file_parse"
+    )
+    monkeypatch.setattr(modal_parser.cfg, "modal_fast_parse_url", "")
+
+    assert modal_parser._endpoint() == "https://legacy.modal.test/file_parse"
 
 
 def _stub_presign(monkeypatch, response) -> list[dict]:
@@ -192,13 +178,11 @@ def _stub_presign(monkeypatch, response) -> list[dict]:
     return calls
 
 
-def test_each_route_calls_its_own_endpoint_with_its_own_version(
-    monkeypatch, modal_urls
-):
-    key, _ = modal_parser.artifact_identity(_descriptor(route=modal_parser.ROUTE_FAST))
+def test_the_request_uses_the_fast_endpoint_and_version(monkeypatch, modal_urls):
+    key, _ = modal_parser.artifact_identity(_descriptor())
     calls = _stub_presign(monkeypatch, _Resp(200, {"artifact": {"key": key}}))
 
-    modal_parser._request_artifact(_descriptor(route=modal_parser.ROUTE_FAST), "d.pdf")
+    modal_parser._request_artifact(_descriptor(), "d.pdf")
 
     assert calls[0]["url"] == "https://fast.modal.test/file_parse"
     assert calls[0]["json"]["parser_version"] == FAST_VERSION
@@ -249,7 +233,7 @@ def test_extract_writes_the_bundle(tmp_path: Path, monkeypatch):
     raw = tmp_path / "raw"
     raw.mkdir()
 
-    modal_parser._extract(artifact, raw, ACCURATE_VERSION)
+    modal_parser._extract(artifact, raw, FAST_VERSION)
 
     assert json.loads((raw / "content_list.json").read_text())[0]["text"] == "Hello"
     assert (raw / "images" / "fig1.png").is_file()
@@ -263,7 +247,7 @@ def test_extract_rejects_path_traversal(tmp_path: Path, monkeypatch):
     raw.mkdir()
 
     with pytest.raises(modal_parser.ModalParseError, match="unsafe path"):
-        modal_parser._extract(artifact, raw, ACCURATE_VERSION)
+        modal_parser._extract(artifact, raw, FAST_VERSION)
     assert not (tmp_path / "outside.txt").exists()
 
 
@@ -274,24 +258,13 @@ def test_extract_rejects_a_checksum_mismatch(tmp_path: Path, monkeypatch):
     raw.mkdir()
 
     with pytest.raises(modal_parser.ModalParseError, match="checksum mismatch"):
-        modal_parser._extract(artifact, raw, ACCURATE_VERSION)
+        modal_parser._extract(artifact, raw, FAST_VERSION)
 
 
 def test_extract_rejects_a_stale_parser_version(tmp_path: Path, monkeypatch):
     """A bundle from an older parser would silently degrade citations, so it is
     a cache miss rather than a usable artifact."""
     artifact = _install_artifact(monkeypatch, tmp_path, parser_version="mineru-0.1")
-    raw = tmp_path / "raw"
-    raw.mkdir()
-
-    with pytest.raises(modal_parser.ModalParseError, match="version mismatch"):
-        modal_parser._extract(artifact, raw, ACCURATE_VERSION)
-
-
-def test_extract_rejects_a_bundle_from_the_other_route(tmp_path: Path, monkeypatch):
-    """Belt and braces behind the route-specific key: a hybrid bundle answering a
-    pipeline request means something upstream is mixing the two up."""
-    artifact = _install_artifact(monkeypatch, tmp_path, parser_version=ACCURATE_VERSION)
     raw = tmp_path / "raw"
     raw.mkdir()
 
@@ -306,7 +279,7 @@ def test_extract_rejects_an_artifact_from_another_source(tmp_path: Path, monkeyp
     raw.mkdir()
 
     with pytest.raises(modal_parser.ModalParseError, match="source mismatch"):
-        modal_parser._extract(artifact, raw, ACCURATE_VERSION)
+        modal_parser._extract(artifact, raw, FAST_VERSION)
 
 
 def test_parse_to_bundle_discards_a_corrupt_cached_artifact(

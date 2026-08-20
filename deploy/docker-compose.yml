@@ -161,11 +161,12 @@ services:
       B2_KEY_ID: ${B2_KEY_ID:-}
       B2_APP_KEY: ${B2_APP_KEY:-}
       REDIS_URL: redis://redis:6379/0
-      # Modal GPU MinerU parse service: one endpoint per parse mode.
+      # Modal CPU parse service (Marker + RapidOCR on scans).
       MODAL_PARSE_URL: ${MODAL_PARSE_URL:-}
       MODAL_FAST_PARSE_URL: ${MODAL_FAST_PARSE_URL:-}
       MODAL_PARSE_TOKEN: ${MODAL_PARSE_TOKEN:-}
       MODAL_PARSE_TIMEOUT: ${MODAL_PARSE_TIMEOUT:-900}
+      EVO_PARSE_FAST_SLOTS: ${EVO_PARSE_FAST_SLOTS:-72}
       MODAL_B2_ARTIFACTS: ${MODAL_B2_ARTIFACTS:-true}
       EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-ocr}
       # Embeddings (OpenRouter): credentials only. The model is pinned per
@@ -214,9 +215,6 @@ services:
       EVO_QUERY_MODEL: ${EVO_QUERY_MODEL:-deepseek-v4-flash}
       GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
       GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
-      WHISPER_API_KEY: ${WHISPER_API_KEY:-}
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      WHISPER_BASE_URL: ${WHISPER_BASE_URL:-}
     ports:
       # Bound to localhost: this is a debug port. Do not publish :8001 on a
       # public interface — the gateway reaches retrieval over the docker network.

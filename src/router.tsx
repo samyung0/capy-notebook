@@ -149,7 +149,7 @@ const appRoutes = [
     loader: ({ context: { queryClient: qc } }) => {
       qc.prefetchQuery(meQuery());
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
-      qc.prefetchQuery(tasksQuery());
+      qc.prefetchQuery(allFilesQuery());
       qc.prefetchQuery(canvasesQuery());
     },
     path: '/',
@@ -207,6 +207,9 @@ const appRoutes = [
       qc.prefetchQuery(attemptQuery(params.attemptId))
   ),
   createRoute({
+    beforeLoad: () => {
+      if (!features.schedule) throw redirect({ to: '/' });
+    },
     component: lazyRouteComponent(() => import('@/routes/Schedule')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
@@ -236,11 +239,16 @@ const appRoutes = [
     () => import('@/routes/Files'),
     ({ context: { queryClient: qc } }) => qc.prefetchQuery(allFilesQuery())
   ),
-  page(
-    '/tasks',
-    () => import('@/routes/Tasks'),
-    ({ context: { queryClient: qc } }) => qc.prefetchQuery(tasksQuery())
-  ),
+  createRoute({
+    beforeLoad: () => {
+      if (!features.tasks) throw redirect({ to: '/' });
+    },
+    component: lazyRouteComponent(() => import('@/routes/Tasks')),
+    getParentRoute: () => authShellRoute,
+    loader: ({ context: { queryClient: qc } }) =>
+      qc.prefetchQuery(tasksQuery()),
+    path: '/tasks',
+  }),
   ...(features.thinking
     ? [
         page(

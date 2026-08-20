@@ -37,3 +37,8 @@ export function formatFileSize(bytes: number): string {
 export function isImageFile(file: Pick<SourceFile, 'kind' | 'name'>) {
   return file.kind === 'image' || IMAGE_EXTS.has(fileExt(file.name));
 }
+
+/** True while ingest is waiting for a worker/GPU slot or actively running. */
+export function fileIsIngesting(status?: string) {
+  return status === 'pending' || status === 'processing';
+}

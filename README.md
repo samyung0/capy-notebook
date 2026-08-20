@@ -8,7 +8,7 @@ Study workspace: notes, sources, quizzes, flashcards, schedule, and AI retrieval
 - **API** (`server/`) — Go HTTP gateway (`/api`). Workspaces, materials, files, comments, sharing, quota, billing, jobs, notifications. Owns Postgres migrations.
 - **Collaboration** (`collaboration/`) — Hocuspocus/Yjs sidecar. Authoritative live document state for materials.
 - **Pipeline** (`pipeline/`) — Python ingest worker (parse, chunk, embed, summarize) and FastAPI retrieval service (chat, generate).
-- **Parser** (`modal/`) — MinerU on Modal GPUs. Accurate and fast document parse routes.
+- **Parser** (`modal/`) — Marker + RapidOCR on Modal CPU (`evo-mineru-fast`). One parse route.
 - **Postgres** — App data plus `pgvector` retrieval index.
 - **Redis** — Pub/sub and collaboration replica sync.
 - **Object storage** — Backblaze B2 for uploads, parse artifacts, and editor assets.

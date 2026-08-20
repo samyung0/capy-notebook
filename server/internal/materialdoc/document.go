@@ -35,7 +35,7 @@ var (
 )
 
 var (
-	questionTypes   = set("mcq", "multi", "boolean", "fill", "short", "matching", "ordering")
+	questionTypes   = set("mcq", "multi", "boolean", "short", "open", "matching", "ordering")
 	cognitiveLevels = set("recall", "application", "analysis")
 	youtubeVideoID  = regexp.MustCompile(`^[A-Za-z0-9_-]{11}$`)
 )
@@ -418,6 +418,22 @@ func validateQuizQuestion(node map[string]any) error {
 			return errors.New("acceptedAnswers must be a string array")
 		}
 	}
+	if value, ok := node["hints"]; ok {
+		if _, ok := stringArray(value); !ok {
+			return errors.New("hints must be a string array")
+		}
+	}
+	if value, ok := node["rubrics"]; ok {
+		if _, ok := stringArray(value); !ok {
+			return errors.New("rubrics must be a string array")
+		}
+	}
+	if value, ok := node["points"]; ok {
+		n, ok := number(value)
+		if !ok || n <= 0 {
+			return errors.New("points must be a positive number")
+		}
+	}
 	if value, ok := node["pairs"]; ok {
 		pairs, ok := value.([]any)
 		if !ok {
@@ -520,6 +536,84 @@ func requireID(node map[string]any) error {
 		return errors.New("id is required")
 	}
 	return nil
+}
+
+func number(value any) (float64, bool) {
+	switch v := value.(type) {
+	case json.Number:
+		f, err := v.Float64()
+		return f, err == nil
+	case float64:
+		return v, true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	default:
+		return 0, false
+	}
+}
+
+func applyAcceptedAnswers(question map[string]any, id string, children *[]any, node map[string]any) error {
+	accepted, err := objectArray(question["accepted"], "accepted")
+	if err != nil {
+		return err
+	}
+	answers := make([]any, len(accepted))
+	for i, answer := range accepted {
+		value, ok := answer["value"].(string)
+		if !ok {
+			return fmt.Errorf("accepted[%d].value must be a string", i)
+		}
+		answers[i] = value
+		child := textElement("quiz_option", value)
+		child["id"] = fmt.Sprintf("%s:option:%d", id, i+1)
+		child["role"] = "accepted-answer"
+		*children = append(*children, child)
+	}
+	node["acceptedAnswers"] = answers
+	return nil
+}
+
+func optionalStringValues(field any, name string) ([]any, error) {
+	if field == nil {
+		return []any{}, nil
+	}
+	objs, err := objectArray(field, name)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]any, len(objs))
+	for i, obj := range objs {
+		value, ok := obj["value"].(string)
+		if !ok {
+			return nil, fmt.Errorf("%s[%d].value must be a string", name, i)
+		}
+		out[i] = value
+	}
+	return out, nil
+}
+
+func wrapStringValues(ss []string) []any {
+	if ss == nil {
+		ss = []string{}
+	}
+	out := make([]any, len(ss))
+	for i, s := range ss {
+		out[i] = map[string]any{"value": s}
+	}
+	return out
+}
+
+func extractAccepted(question map[string]any, options []map[string]any) []any {
+	answers, ok := stringArray(question["acceptedAnswers"])
+	if !ok {
+		answers = make([]string, len(options))
+		for i, option := range options {
+			answers[i] = nodeText(option)
+		}
+	}
+	return wrapStringValues(answers)
 }
 
 func integer(value any) (int64, bool) {
@@ -644,24 +738,27 @@ func quizQuestionNode(question map[string]any) (map[string]any, error) {
 		} else {
 			node["correctOptionIds"] = []any{fmt.Sprintf("%s:option:2", id)}
 		}
-	case "fill", "short":
-		accepted, err := objectArray(question["accepted"], "accepted")
+	case "short":
+		if err := applyAcceptedAnswers(question, id, &children, node); err != nil {
+			return nil, err
+		}
+	case "open":
+		if err := applyAcceptedAnswers(question, id, &children, node); err != nil {
+			return nil, err
+		}
+		hints, err := optionalStringValues(question["hints"], "hints")
 		if err != nil {
 			return nil, err
 		}
-		answers := make([]any, len(accepted))
-		for i, answer := range accepted {
-			value, ok := answer["value"].(string)
-			if !ok {
-				return nil, fmt.Errorf("accepted[%d].value must be a string", i)
-			}
-			answers[i] = value
-			child := textElement("quiz_option", value)
-			child["id"] = fmt.Sprintf("%s:option:%d", id, i+1)
-			child["role"] = "accepted-answer"
-			children = append(children, child)
+		rubrics, err := optionalStringValues(question["rubrics"], "rubrics")
+		if err != nil {
+			return nil, err
 		}
-		node["acceptedAnswers"] = answers
+		if len(rubrics) == 0 {
+			return nil, errors.New("rubrics is required")
+		}
+		node["hints"] = hints
+		node["rubrics"] = rubrics
 	case "matching":
 		pairs, err := objectArray(question["pairs"], "pairs")
 		if err != nil {
@@ -699,6 +796,13 @@ func quizQuestionNode(question map[string]any) (map[string]any, error) {
 	}
 	if explanation, ok := question["explanation"].(string); ok && explanation != "" {
 		children = append(children, textElement("quiz_explanation", explanation))
+	}
+	if raw, ok := question["points"]; ok {
+		n, ok := number(raw)
+		if !ok || n <= 0 {
+			return nil, errors.New("points must be a positive number")
+		}
+		node["points"] = n
 	}
 	node["children"] = children
 	return node, nil
@@ -782,6 +886,9 @@ func ExtractQuiz(raw string) (json.RawMessage, *int, error) {
 				item["explanation"] = text
 			}
 		}
+		if n, ok := number(question["points"]); ok && n > 0 {
+			item["points"] = n
+		}
 		options := childrenOfType(question, "quiz_option")
 		switch question["questionType"] {
 		case "mcq", "multi":
@@ -808,19 +915,14 @@ func ExtractQuiz(raw string) (json.RawMessage, *int, error) {
 		case "boolean":
 			correct, _ := question["correctBoolean"].(bool)
 			item["correct"] = correct
-		case "fill", "short":
-			answers, ok := stringArray(question["acceptedAnswers"])
-			if !ok {
-				answers = make([]string, len(options))
-				for i, option := range options {
-					answers[i] = nodeText(option)
-				}
-			}
-			accepted := make([]any, len(answers))
-			for i, answer := range answers {
-				accepted[i] = map[string]any{"value": answer}
-			}
-			item["accepted"] = accepted
+		case "short":
+			item["accepted"] = extractAccepted(question, options)
+		case "open":
+			item["accepted"] = extractAccepted(question, options)
+			hints, _ := stringArray(question["hints"])
+			rubrics, _ := stringArray(question["rubrics"])
+			item["hints"] = wrapStringValues(hints)
+			item["rubrics"] = wrapStringValues(rubrics)
 		case "matching":
 			pairs, _ := question["pairs"].([]any)
 			if pairs == nil {

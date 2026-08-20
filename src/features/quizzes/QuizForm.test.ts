@@ -33,17 +33,9 @@ const questions: Question[] = [
   },
   {
     accepted: [{ value: 'Accepted' }],
-    id: 'fill',
+    id: 'short',
     level: 'application',
     prompt: 'Fill this',
-    type: 'fill',
-  },
-  {
-    accepted: [{ value: 'Short answer' }],
-    explanation: 'A concise explanation.',
-    id: 'short',
-    level: 'analysis',
-    prompt: 'Explain briefly',
     type: 'short',
   },
   {
@@ -62,6 +54,15 @@ const questions: Question[] = [
     ],
     prompt: 'Match these',
     type: 'matching',
+  },
+  {
+    accepted: [{ value: 'Cristae increase surface area.' }],
+    hints: [{ value: 'ATP' }],
+    id: 'open',
+    level: 'application',
+    prompt: 'Why folded?',
+    rubrics: [{ value: 'Mentions folds' }],
+    type: 'open',
   },
 ];
 

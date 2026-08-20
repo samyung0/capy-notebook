@@ -69,7 +69,7 @@ func TestRandInt(t *testing.T) {
 // buildQuestions must emit shapes the frontend QuestionRunner can render for
 // every question type.
 func TestBuildQuestionsAllTypes(t *testing.T) {
-	types := []string{"mcq", "multi", "boolean", "fill", "short", "matching", "ordering"}
+	types := []string{"mcq", "multi", "boolean", "short", "open", "matching", "ordering"}
 	raw := buildQuestions(generateOpts{Types: types, Difficulty: []string{"easy", "hard"}, Count: len(types)})
 
 	var qs []map[string]any
@@ -95,9 +95,16 @@ func TestBuildQuestionsAllTypes(t *testing.T) {
 			if _, ok := q["correct"].(bool); !ok {
 				t.Errorf("boolean missing bool correct")
 			}
-		case "fill", "short":
+		case "short":
 			if _, ok := q["accepted"].([]any); !ok {
 				t.Errorf("%v missing accepted", q["type"])
+			}
+		case "open":
+			if _, ok := q["accepted"].([]any); !ok {
+				t.Errorf("open missing accepted")
+			}
+			if _, ok := q["rubrics"].([]any); !ok {
+				t.Errorf("open missing rubrics")
 			}
 		case "ordering":
 			if _, ok := q["items"].([]any); !ok {

@@ -4,6 +4,7 @@ import { Spinner } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useOnlineStatus } from '@/lib/online';
+import { fileIsIngesting } from './fileUtils';
 
 export function FileLoading({
   message = m.files_loading_preview(),
@@ -45,7 +46,7 @@ export function FileNotIndexedBanner({
 }: {
   file: Pick<SourceFile, 'indexed' | 'status'>;
 }) {
-  if (file.status === 'processing' || file.indexed) return null;
+  if (fileIsIngesting(file.status) || file.indexed) return null;
   const failed = file.status === 'failed';
   return (
     <div

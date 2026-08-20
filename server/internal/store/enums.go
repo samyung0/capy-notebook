@@ -217,13 +217,14 @@ func (FileKind) Schema(r huma.Registry) *huma.Schema {
 type FileStatus string
 
 const (
+	FilePending    FileStatus = "pending"
 	FileProcessing FileStatus = "processing"
 	FileReady      FileStatus = "ready"
 	FileFailed     FileStatus = "failed"
 )
 
 func (FileStatus) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "FileStatus", "processing", "ready", "failed")
+	return enumRef(r, "FileStatus", "pending", "processing", "ready", "failed")
 }
 
 // NotificationKind categorises an in-app notification.

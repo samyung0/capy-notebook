@@ -9,6 +9,7 @@ export type FileStatus = typeof FileStatus[keyof typeof FileStatus];
 
 
 export const FileStatus = {
+  pending: 'pending',
   processing: 'processing',
   ready: 'ready',
   failed: 'failed',

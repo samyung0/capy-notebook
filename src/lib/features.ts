@@ -15,8 +15,14 @@ const flag = (key: string, fallback: boolean): boolean => {
 };
 
 export const features = {
+  /** Plate editor AI (command menu, copilot, editor model picker). */
+  editorAi: flag('VITE_FEATURE_EDITOR_AI', false),
   /** Community explore page. */
   explore: flag('VITE_FEATURE_EXPLORE', false),
+  /** Calendar / schedule page. */
+  schedule: flag('VITE_FEATURE_SCHEDULE', false),
+  /** Tasks page. */
+  tasks: flag('VITE_FEATURE_TASKS', false),
   /** Thinking space (canvas) pages. */
   thinking: flag('VITE_FEATURE_THINKING', false),
 } as const;
@@ -24,3 +30,8 @@ export const features = {
 export type FeatureName = keyof typeof features;
 
 export const isFeatureEnabled = (name: FeatureName): boolean => features[name];
+
+/** Editor AI chrome and plugins. Media uploads stay on `allowExternalAssets`. */
+export function editorAiEnabled(allowExternalAssets = true): boolean {
+  return features.editorAi && allowExternalAssets;
+}

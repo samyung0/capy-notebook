@@ -86,7 +86,8 @@ they do not crash a page boundary or emit the default mutation toast. A
 `model_unavailable` (422) response before the stream opens is the same surface,
 with copy that sends the user to Settings → LLM. Ingest and
 notification streams update cached connection status, reconnect with backoff,
-and use the status banner when disconnected. An ingest `failed` event updates
+and use the status banner when disconnected. An ingest `pending` or
+`processing` event updates the file row in place; a `failed` event updates
 the affected file state and triggers a refetch. A file that finished without
 retrieval chunks (`indexed: false`, including ingest failure and
 `parseMode=none` store-only uploads) still renders its viewer. The center pane

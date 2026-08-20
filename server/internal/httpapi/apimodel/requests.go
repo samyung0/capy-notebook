@@ -142,8 +142,8 @@ type UpdateQuizReq struct {
 }
 
 type CreateAttemptReq struct {
-	Correct   int              `json:"correct" minimum:"0"`
-	Total     int              `json:"total" minimum:"1"`
+	Correct   float64          `json:"correct" minimum:"0"`
+	Total     float64          `json:"total" exclusiveMinimum:"0"`
 	Wrong     []map[string]any `json:"wrong,omitempty" doc:"Questions answered incorrectly"`
 	Answers   map[string]any   `json:"answers,omitempty" doc:"User answers keyed by question id"`
 	Questions []map[string]any `json:"questions,omitempty" doc:"Question snapshot taken at submit time"`

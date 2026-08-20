@@ -1,4 +1,4 @@
-"""Client for the Modal-hosted GPU parse service (both parse routes).
+"""Client for the Modal-hosted parse service.
 
 The service never receives document bytes from this process: it is handed a
 presigned GET for the source and a presigned PUT for the result, and it streams
@@ -7,17 +7,13 @@ between them. What comes back is a zip containing ``content_list.json``
 it extracted. That block list is what makes page-accurate citations and figure
 captioning possible.
 
-Two routes share this client and this bundle format, differing only in which
-engine produced it:
-
-    accurate -> MinerU hybrid-engine (VLM OCR)
-    fast     -> Marker fast with OCR off, RapidOCR (PP-OCRv6) on scanned pages
+The live route is Marker fast with OCR off, plus RapidOCR (PP-OCRv6) on
+scanned pages. Queued jobs that still say ``accurate`` / ``advanced`` are
+mapped onto this same route.
 
 Artifacts are addressed by a fingerprint over (source object, etag, size, parse
 options, route, parser version). Re-ingesting the same document — a retry, a
-re-upload, a cloned workspace — hits the cached zip instead of the GPU. The
-route is part of that identity: the same PDF parsed fast and then accurate must
-not collide on one cached artifact.
+re-upload, a cloned workspace — hits the cached zip instead of Modal.
 """
 
 from __future__ import annotations
@@ -44,14 +40,12 @@ log = logging.getLogger("evo.parse.modal")
 SOURCE_DESCRIPTOR_SCHEMA = "evo-b2-source-v1"
 ARTIFACT_SCHEMA = "evo-mineru-bundle-v1"
 
-ROUTE_ACCURATE = "accurate"
 ROUTE_FAST = "fast"
 
-# Must match the constants in modal/mineru_app.py: the service rejects a request
+# Must match the constants in modal/parse_common.py: the service rejects a request
 # whose parser_version it does not serve, so a version bump on either side fails
 # loudly instead of writing a bundle nobody can read back.
 PARSER_VERSIONS = {
-    ROUTE_ACCURATE: "mineru-3.4-hybrid-v1",
     ROUTE_FAST: "marker-2-hybrid-v1",
 }
 
@@ -67,11 +61,10 @@ def parser_version(route: str) -> str:
         raise ModalParseError(f"unknown parse route {route!r}") from None
 
 
-def _endpoint(route: str) -> str:
-    url = cfg.modal_parse_url if route == ROUTE_ACCURATE else cfg.modal_fast_parse_url
+def _endpoint() -> str:
+    url = cfg.modal_fast_parse_url or cfg.modal_parse_url
     if not url:
-        env = "MODAL_PARSE_URL" if route == ROUTE_ACCURATE else "MODAL_FAST_PARSE_URL"
-        raise ModalParseError(f"{env} is not configured")
+        raise ModalParseError("MODAL_FAST_PARSE_URL is not configured")
     return url
 
 
@@ -87,7 +80,7 @@ def source_descriptor(
 
 
 def artifact_identity(descriptor: Mapping[str, Any]) -> tuple[str, str]:
-    route = str(descriptor.get("route") or ROUTE_ACCURATE)
+    route = str(descriptor.get("route") or ROUTE_FAST)
     version = parser_version(route)
     source_sha256 = str(descriptor.get("source_sha256") or "")
     identity = f"{source_sha256}:{cfg.parse_method}:{route}:{version}"
@@ -103,9 +96,9 @@ def _request_artifact(
     Isolated from unzipping so tests can record/replay this single network call —
     the only expensive, non-deterministic step. See pipeline/tests/README.md.
     """
-    route = str(descriptor.get("route") or ROUTE_ACCURATE)
+    route = str(descriptor.get("route") or ROUTE_FAST)
     version = parser_version(route)
-    endpoint = _endpoint(route)
+    endpoint = _endpoint()
 
     artifact_key, fingerprint = artifact_identity(descriptor)
     cached = blobstore.object_info(artifact_key)
@@ -149,7 +142,7 @@ def _request_artifact(
     if artifact.get("key") != artifact_key:
         raise ModalParseError("modal returned an unexpected artifact key")
     artifact["fingerprint"] = fingerprint
-    # _server_parse_s measures GPU wall time inside the container. It excludes
+    # _server_parse_s measures parse wall time inside the container. It excludes
     # queue wait and cold start, which are only visible from Modal's own
     # metrics, so this undercounts what Modal actually bills — it is the
     # attributable share, not the invoice.
@@ -214,7 +207,7 @@ def parse_to_bundle(
 
     Blocking (requests + file IO); call via ``asyncio.to_thread``.
     """
-    version = parser_version(str(descriptor.get("route") or ROUTE_ACCURATE))
+    version = parser_version(str(descriptor.get("route") or ROUTE_FAST))
     raw_dir.mkdir(parents=True, exist_ok=True)
     artifact = _request_artifact(descriptor, upload_name)
     try:

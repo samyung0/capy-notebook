@@ -73,12 +73,6 @@ func (a *api) getSourceUploadPolicy(
 
 	parseModes := []apimodel.SourceUploadParseModePolicy{
 		{
-			Mode:            sourceupload.ParseModeAccurate,
-			Extensions:      sourceupload.ParseExtensions(sourceupload.ParseModeAccurate),
-			MaxBytes:        maxBytes,
-			SupportsFigures: true,
-		},
-		{
 			Mode:            sourceupload.ParseModeFast,
 			Extensions:      sourceupload.ParseExtensions(sourceupload.ParseModeFast),
 			MaxBytes:        maxBytes,

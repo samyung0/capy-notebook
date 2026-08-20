@@ -35,7 +35,8 @@ harness reports `pg/s/cpu` as the headline number.
 
 **Unlimited-OCR is not in here on purpose.** It needs vLLM/SGLang with the fa3
 attention backend and decodes up to 32k tokens per document. It is a GPU VLM. If
-you want it evaluated, it belongs in a comparison against the `accurate` route.
+you want it evaluated, it belongs in a GPU VLM comparison. The old Modal
+`accurate` (MinerU hybrid VLM) route is gone.
 
 ## Results — mixed corpus, 4 vCPU, 42 pages
 
@@ -337,7 +338,7 @@ for documents whose text layer passes a sanity check.
   than `auto` once warm. The CPU plan still wins on price (marker 1.10-1.31
   pg/s on four cores vs ~0.9-1.2 pg/s on a rented L4).
 - **Both routes default to `ocr` now.** Warmup, request fallbacks, and
-  `EVO_PARSE_METHOD` all use `ocr`. Redeploy so the GPU snapshot is rebuilt with
+  `EVO_PARSE_METHOD` all use `ocr`. Redeploy so the CPU memory snapshot is rebuilt with
   the OCR sidecar path inside it — an `auto` snapshot is how an 8s parse became
   a 542s gateway timeout.
 

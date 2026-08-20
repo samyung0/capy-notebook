@@ -8,13 +8,13 @@ export function questionTypeLabel(type: QuestionType): string {
       return 'Multiple response';
     case 'boolean':
       return 'True or false';
-    case 'fill':
-      return 'Fill in the blank';
     case 'short':
       return 'Short answer';
     case 'ordering':
       return 'Ordering';
     case 'matching':
       return 'Matching';
+    case 'open':
+      return 'Open answer';
   }
 }

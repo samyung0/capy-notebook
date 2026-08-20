@@ -45,7 +45,7 @@ type Config struct {
 	// Authenticated applies to ordinary API traffic, keyed by user id.
 	Authenticated Rule
 	// AI applies to the expensive model-backed routes (chat, generate,
-	// transcribe, plate command) on top of Authenticated.
+	// plate command) on top of Authenticated.
 	AI Rule
 	// AIBurst is a short-window guard so a scripted loop trips something
 	// immediately even when the hourly budget still has room.

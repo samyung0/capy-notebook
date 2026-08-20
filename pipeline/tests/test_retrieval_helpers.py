@@ -161,6 +161,13 @@ def test_normalize_questions_fills_ids_and_maps_legacy_difficulty():
         [
             {"type": "mcq", "prompt": "?", "options": ["a", "b"], "difficulty": "easy"},
             {"id": "q_keep", "type": "short", "prompt": "?"},
+            {
+                "type": "open",
+                "prompt": "Explain",
+                "accepted": ["cristae"],
+                "hints": ["ATP"],
+                "rubrics": ["Mentions folds"],
+            },
         ],
         {"easy": "recall"},
     )
@@ -169,6 +176,9 @@ def test_normalize_questions_fills_ids_and_maps_legacy_difficulty():
     assert questions[0]["options"][0] == {"value": "a", "explanation": ""}
     assert questions[0]["id"].startswith("q_")
     assert questions[1]["id"] == "q_keep" and questions[1]["level"] == "application"
+    assert questions[2]["accepted"] == [{"value": "cristae"}]
+    assert questions[2]["hints"] == [{"value": "ATP"}]
+    assert questions[2]["rubrics"] == [{"value": "Mentions folds"}]
 
 
 def test_normalize_questions_skips_non_objects():

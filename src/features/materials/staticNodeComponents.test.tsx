@@ -181,16 +181,9 @@ describe('static study-block renderers', () => {
       },
       {
         accepted: [{ value: 'Accepted answer' }],
-        id: 'fill',
+        id: 'short',
         level: 'application',
         prompt: 'Fill this',
-        type: 'fill',
-      },
-      {
-        accepted: [{ value: 'Short answer' }],
-        id: 'short',
-        level: 'analysis',
-        prompt: 'Explain briefly',
         type: 'short',
       },
       {
@@ -208,6 +201,15 @@ describe('static study-block renderers', () => {
         prompt: 'Match these',
         type: 'matching',
       },
+      {
+        accepted: [{ value: 'Cristae increase surface area.' }],
+        hints: [{ value: 'ATP' }],
+        id: 'open',
+        level: 'application',
+        prompt: 'Why is the inner membrane folded?',
+        rubrics: [{ value: 'Mentions folds' }],
+        type: 'open',
+      },
     ];
 
     const html = renderMaterial([
@@ -221,6 +223,7 @@ describe('static study-block renderers', () => {
     expect(html).toContain('First item');
     expect(html).toContain('Left');
     expect(html).toContain('value="Right" selected=""');
+    expect(html).toContain('Why is the inner membrane folded?');
     expect(html).toContain('Pairs are shown in their correct arrangement.');
     expect(html).toContain('border-solid-success');
     expect(html).toContain('cursor-default');

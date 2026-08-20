@@ -1474,7 +1474,7 @@ func (s *Store) ListAttempts(ctx context.Context, userID string) ([]Attempt, err
 	return out, rows.Err()
 }
 
-func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, correct, total int, answers, questions json.RawMessage) (Attempt, error) {
+func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, correct, total float64, answers, questions json.RawMessage) (Attempt, error) {
 	quizName, workspaceName := "Review mistakes", ""
 	chapters := []string{}
 	var linkedMaterial *string

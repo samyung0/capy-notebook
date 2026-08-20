@@ -21,6 +21,7 @@ import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { Menu } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
+import { formatPoints } from '@/features/quizzes/grade';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -252,7 +253,7 @@ function PastAttempts() {
           </div>
           <div className="flex-1 md:text-center">
             <Badge tone={scoreTone(a.pct)}>
-              {a.correct}/{a.total} · {a.pct}%
+              {formatPoints(a.correct)}/{formatPoints(a.total)} · {a.pct}%
             </Badge>
           </div>
           <div className="flex-[1.3] text-fg-muted text-sm">

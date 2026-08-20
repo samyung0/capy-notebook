@@ -1,1 +1,1 @@
-"""Document parsing routes: Modal GPU (MinerU accurate VLM, Marker fast hybrid)."""
+"""Document parsing: Modal CPU (Marker hybrid + RapidOCR on scanned pages)."""

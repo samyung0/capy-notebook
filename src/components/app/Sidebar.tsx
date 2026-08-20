@@ -24,7 +24,15 @@ function items(): { general: NavItem[]; tools: NavItem[]; bottom: NavItem[] } {
     general: [
       { exact: true, icon: 'dashboard', label: m.nav_dashboard(), to: '/' },
       { icon: 'workspaces', label: m.nav_workspaces(), to: '/workspaces' },
-      { icon: 'schedule', label: m.nav_schedule(), to: '/schedule' },
+      ...(features.schedule
+        ? [
+            {
+              icon: 'schedule' as IconName,
+              label: m.nav_schedule(),
+              to: '/schedule',
+            },
+          ]
+        : []),
       ...(features.explore
         ? [
             {
@@ -39,7 +47,9 @@ function items(): { general: NavItem[]; tools: NavItem[]; bottom: NavItem[] } {
       { icon: 'quiz', label: m.nav_quizzes(), to: '/quizzes' },
       { icon: 'flashcards', label: m.nav_flashcards(), to: '/flashcards' },
       { icon: 'files', label: m.nav_files(), to: '/files' },
-      { icon: 'todo', label: m.nav_tasks(), to: '/tasks' },
+      ...(features.tasks
+        ? [{ icon: 'todo' as IconName, label: m.nav_tasks(), to: '/tasks' }]
+        : []),
       ...(features.thinking
         ? [
             {

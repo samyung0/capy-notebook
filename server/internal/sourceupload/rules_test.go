@@ -104,17 +104,10 @@ func TestNeedsIngestJob(t *testing.T) {
 }
 
 func TestParsePolicyLists(t *testing.T) {
-	accurate := ParseExtensions(ParseModeAccurate)
 	fast := ParseExtensions(ParseModeFast)
 	supported := SupportedExtensions()
-	if !contains(accurate, ".doc") || !contains(accurate, ".pptx") {
-		t.Fatalf("accurate policy is missing expected extensions: %v", accurate)
-	}
-	// Both modes are the same MinerU service, so their format support must not
-	// drift apart. They used to differ only because the cheap mode was a
-	// third-party cloud API.
-	if len(fast) != len(accurate) {
-		t.Fatalf("fast policy %v does not match accurate policy %v", fast, accurate)
+	if !contains(fast, ".doc") || !contains(fast, ".pptx") {
+		t.Fatalf("fast policy is missing expected extensions: %v", fast)
 	}
 	if contains(ParseExtensions(ParseModeNone), ".pdf") {
 		t.Fatal("parse mode none should advertise no extensions")
@@ -130,19 +123,30 @@ func TestNormalizeCaptionImages(t *testing.T) {
 		requested  bool
 		want       bool
 	}{
-		{kind: "pdf", mode: ParseModeAccurate, requested: true, want: true},
 		{kind: "pdf", mode: ParseModeFast, requested: true, want: true},
 		{kind: "pdf", mode: ParseModeAccurate, requested: false, want: false},
 		// Nothing to caption: no parse ran, or the source has no figures.
 		{kind: "pdf", mode: ParseModeNone, requested: true, want: false},
-		{kind: "txt", mode: ParseModeAccurate, requested: true, want: false},
-		{kind: "md", mode: ParseModeAccurate, requested: true, want: false},
+		{kind: "txt", mode: ParseModeFast, requested: true, want: false},
+		{kind: "md", mode: ParseModeFast, requested: true, want: false},
 	}
 	for _, test := range tests {
 		if got := NormalizeCaptionImages(test.kind, test.mode, test.requested); got != test.want {
 			t.Errorf("NormalizeCaptionImages(%q, %q, %t) = %t, want %t",
 				test.kind, test.mode, test.requested, got, test.want)
 		}
+	}
+}
+
+func TestCanonicalParseMode(t *testing.T) {
+	if got := CanonicalParseMode(ParseModeAccurate); got != ParseModeFast {
+		t.Fatalf("accurate alias = %q, want fast", got)
+	}
+	if got := CanonicalParseMode("advanced"); got != ParseModeFast {
+		t.Fatalf("advanced alias = %q, want fast", got)
+	}
+	if got := CanonicalParseMode(ParseModeFast); got != ParseModeFast {
+		t.Fatalf("fast stayed %q", got)
 	}
 }
 

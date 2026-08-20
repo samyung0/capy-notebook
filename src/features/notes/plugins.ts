@@ -111,6 +111,7 @@ import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { YouTubeEmbedElement } from '@/features/materials/YouTubeEmbed';
 import { m } from '@/i18n';
+import { editorAiEnabled } from '@/lib/features';
 import { openAiMenu } from './ai/aiMenuState';
 import { buildAiPlugins } from './ai/aiPlugins';
 import { BlockContextMenu, BlockDraggable } from './BlockInteractions';
@@ -473,7 +474,7 @@ function buildBlockInteractionKit(
             path[0] === editor.children.length - 1 &&
             editor.api.isEmpty(element)
           ),
-        ...(allowExternalAssets && {
+        ...(editorAiEnabled(allowExternalAssets) && {
           onKeyDownSelecting: (
             keyEditor: SlateEditor,
             event: KeyboardEvent
@@ -621,7 +622,7 @@ export interface BuildPluginsOptions extends EditorCollaborationOptions {
  * parser or renderer plugin is ever unloaded. */
 export function buildPlugins(options: BuildPluginsOptions): AnyPlugin[] {
   return [
-    ...(options.mode === 'edit' && options.allowExternalAssets
+    ...(options.mode === 'edit' && editorAiEnabled(options.allowExternalAssets)
       ? buildAiPlugins(options.workspaceId)
       : // The AI plugin set registers its own CursorOverlay variant; non-AI
         // editors still need the overlay for selection feedback in dialogs.

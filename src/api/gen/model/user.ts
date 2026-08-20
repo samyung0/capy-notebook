@@ -20,6 +20,7 @@ export interface User {
   locale: string;
   name: string;
   planTier: PlanTier;
+  quizModelKey: string;
   streak: number;
   subscriptionStatus: SubscriptionStatus;
 }

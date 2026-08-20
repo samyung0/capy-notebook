@@ -32,13 +32,15 @@ function modelDescription(key: string): string {
   }
 }
 
-const SURFACE_LABEL: Record<ModelSurface, () => string> = {
+type CloudSurface = Exclude<ModelSurface, 'quiz'>;
+
+const SURFACE_LABEL: Record<CloudSurface, () => string> = {
   chat: () => m.settings_llm_chat(),
   editor: () => m.settings_llm_editor(),
   generate: () => m.settings_llm_generate(),
 };
 
-const PREF_FIELD: Record<ModelSurface, keyof SetModelPrefsReq> = {
+const PREF_FIELD: Record<CloudSurface, keyof SetModelPrefsReq> = {
   chat: 'chatModelKey',
   editor: 'editorModelKey',
   generate: 'generateModelKey',
@@ -52,7 +54,7 @@ export function ModelPicker({
   surface,
 }: {
   className?: string;
-  surface: ModelSurface;
+  surface: CloudSurface;
 }) {
   const { data } = useModels(surface, { errorBoundary: false });
   const { isPending, mutate } = useSetModelPrefs();

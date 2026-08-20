@@ -20,7 +20,7 @@ export interface CreateAttemptReq {
      * @nullable
      */
   questions?: CreateAttemptReqQuestionsItem[] | null;
-  /** @minimum 1 */
+  /** @exclusiveMinimum 0 */
   total: number;
   /**
      * Questions answered incorrectly

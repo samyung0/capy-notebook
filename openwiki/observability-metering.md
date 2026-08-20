@@ -176,13 +176,19 @@ enabled version of that key. The `{modelKey, modelVersion, displayName}` pair
 is written onto the **assistant message**. Settings changes apply to the next
 message in an existing thread. Generate resolves `users.generate_model_key`
 the same way per request. The browser cannot choose a model per message.
-Chat, generate and editor preferences are edited in **Settings → LLM**
+Chat, generate, editor and quiz preferences are edited in **Settings → LLM**
 (`GET /api/models`, `PATCH /api/me/models`). Empty preference writes are
 rejected, and a `PATCH` only touches the surfaces it names. Editor AI
 (`/ai/command`, `/ai/copilot`, `/complete/stream`) resolves
 `users.editor_model_key` the same way chat does. It is the highest-call-volume
 surface per user, so it is the one where an expensive choice shows up first in
-credit burn.
+credit burn. Quiz marking (`POST /api/quiz-grade`) resolves
+`users.quiz_model_key` the same way, reserved at the editor estimate. A
+`browser:` prefix is a client-only in-tab GGUF: it is stored on the user row,
+skipped by registry lookup, and never metered. Those grades never call
+`POST /api/quiz-grade`, write no `usage_events`, and do not appear on
+Billing. Attempt points stay on the quiz snapshot for the taker. They are
+not a billed or trusted score.
 
 Ingest and vision are pinned onto the job at enqueue (`ingestJobPayload`),
 because their defaults are hot-reloadable and a queued job may outlive one.
@@ -195,10 +201,7 @@ preference.
 Nothing resolves a surface default on the way to a provider call. `resolve_pinned`
 in the pipeline requires an exact `(key, version)` for every surface, and a pin
 or preference that cannot be loaded fails the request (`model_unavailable`) or
-the job. There is no Flash fallback. The one remaining exception is `/transcribe`,
-which still picks the STT default itself; it is safe only because transcription
-is priced per second of audio rather than per token, and both change together
-(`.todo-stt-pin`).
+the job. There is no Flash fallback.
 
 Per-model credit multipliers live on the config row. The 1x reference is DeepSeek
 Flash (250 / 1000 micros per input/output token). USD columns are
@@ -290,9 +293,9 @@ file was already accepted, and refusing halfway leaves a half-indexed document.
 `_charge_ingest` can therefore push a user past their limit; the next
 interactive request is what refuses.
 
-GPU time comes from Modal's `_server_parse_s`, which measures wall time inside
+Parse time comes from Modal's `_server_parse_s`, which measures wall time inside
 the container and **excludes queue wait and cold start**. It is the attributable
-share, not the invoice.
+share, not the invoice. Ledger kind is still `parse_gpu`.
 
 ### Pricing is policy
 
@@ -334,7 +337,7 @@ worked with one.
 **Route classes** (`middleware.go`): request cost across this API varies by four
 orders of magnitude. Listing workspaces touches one index; a chat turn runs an
 agent loop of up to four model calls. AI routes (`/chat/stream`, `/generate`,
-`/ai/command`, `/transcribe`) are 200/hour with burst 15, plus a 15/minute
+`/ai/command`) are 200/hour with burst 15, plus a 15/minute
 short-window guard so a scripted loop trips immediately. Cheap editor routes
 (`/complete/stream`, `/ai/copilot`) have their own 120/minute class so typing
 in the note does not consume the chat allowance. Upload routes carry a tighter
@@ -426,5 +429,4 @@ the likelihood grew every time the registry was reconfigured.
 | `RATE_LIMIT_DISABLED` | gateway | forced true under `APP_ENV=e2e` |
 | `RATE_LIMIT_AI_PER_HOUR` | gateway | overrides the default 200; 15/min burst and editor 120/min are code-only |
 | `RATE_LIMIT_CONCURRENT_STREAMS` | gateway | overrides the default 3 |
-| `WHISPER_API_KEY` / `OPENAI_API_KEY` | retrieval | STT; unset → empty transcripts |
 | `SENTRY_DSN_GATEWAY` / `_RETRIEVAL` / `_WORKER` / `_COLLABORATION` | compose | mapped onto each process's `SENTRY_DSN` |

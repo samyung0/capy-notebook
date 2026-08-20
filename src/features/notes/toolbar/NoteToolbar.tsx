@@ -75,7 +75,7 @@ import { TableMenu } from '@/features/notes/toolbar/ToolbarTableMenu';
 import { WidgetSettingsDialog } from '@/features/notes/toolbar/ToolbarWidgetSettingsDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { VoiceButton } from '../ai/VoiceButton';
+import { editorAiEnabled } from '@/lib/features';
 
 // TODO: what is this
 // Plate's plugin transforms are intentionally richer than its base editor type.
@@ -490,8 +490,7 @@ export function NoteToolbar({ className }: { className?: string }) {
           )}
         </div>
         <div className="ml-auto flex shrink-0 items-center pl-2">
-          {mode === 'edit' && allowExternalAssets && <VoiceButton />}
-          {allowExternalAssets && (
+          {editorAiEnabled(allowExternalAssets) && (
             <ToolbarButton
               label={m.editor_ai_commands()}
               onClick={() => openAiMenu(editor)}

@@ -4,7 +4,7 @@ Three tiers:
 
 | tier | files | needs | cost |
 | --- | --- | --- | --- |
-| **offline unit** | `test_chunking.py`, `test_retrieval_helpers.py`, `test_modal_parser.py`, `test_figures.py`, `test_ingest_worker.py`, `test_ai_adapter.py` | nothing | free, ~2s |
+| **offline unit** | `test_chunking.py`, `test_retrieval_helpers.py`, `test_modal_parser.py`, `test_figures.py`, `test_ingest_worker.py`, `test_parse_slots.py`, `test_marker_worker_ocr.py`, `test_ai_adapter.py` | nothing | free, ~2s |
 | **SQL integration** (`@pytest.mark.integration`) | `test_store_sql.py` | Docker | free, ~10s |
 | **cassette integration** (`@pytest.mark.cassette`) | `test_ingest_query.py`, `test_generate.py` | Docker + recorded cassettes | free on replay |
 

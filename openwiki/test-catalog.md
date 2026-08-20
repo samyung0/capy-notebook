@@ -40,7 +40,8 @@ at the top of each section.
 
 | File | About |
 | --- | --- |
-| [`src/features/materials/document.test.ts`](../src/features/materials/document.test.ts) | Plate material normalize/validate/round-trip, stable IDs, metrics, media/YouTube rules. |
+| [`src/features/materials/document.test.ts`](../src/features/materials/document.test.ts) | Plate material normalize/validate/round-trip, stable IDs, metrics, media/YouTube rules, and rejection of `fill`. |
+| [`src/features/materials/openItem.test.ts`](../src/features/materials/openItem.test.ts) | Workspace-open search keeps a valid material `mode` and drops it for files / in-workspace navigation. |
 | [`src/features/materials/heavyDocument.test.ts`](../src/features/materials/heavyDocument.test.ts) | When heavy documents show an interstitial vs open immediately (render vs write caps). |
 | [`src/features/materials/modePolicy.test.ts`](../src/features/materials/modePolicy.test.ts) | View/comment/edit mode allowed by role, including quiz/flashcard defaults. |
 | [`src/features/materials/staticNodeComponents.test.tsx`](../src/features/materials/staticNodeComponents.test.tsx) | Read-only static renderers for study blocks, quizzes, flashcards, and unsafe links. |
@@ -68,7 +69,11 @@ at the top of each section.
 
 | File | About |
 | --- | --- |
-| [`src/features/quizzes/QuizForm.test.ts`](../src/features/quizzes/QuizForm.test.ts) | Quiz question validation and round-trip for every supported question type. |
+| [`src/features/quizzes/QuizForm.test.ts`](../src/features/quizzes/QuizForm.test.ts) | Quiz question validation and round-trip for every supported question type, including open. |
+| [`src/features/quizzes/grade.test.ts`](../src/features/quizzes/grade.test.ts) | Points default to 1, half-points snap, closed questions are all-or-nothing, open awards scale by question points. |
+| [`src/features/quizzes/judge.test.ts`](../src/features/quizzes/judge.test.ts) | Open-answer judge prompt includes rubrics; parse snaps 0 / 0.5 / 1; blank answers skip the model. |
+| [`src/features/files/fileUtils.test.ts`](../src/features/files/fileUtils.test.ts) | `fileIsIngesting` treats pending and processing as in-flight, ready/failed as idle. |
+| [`src/features/dashboard/recentItems.test.ts`](../src/features/dashboard/recentItems.test.ts) | Merges files and materials by created time and caps the dashboard recent list. |
 | [`src/features/workspace/access.test.ts`](../src/features/workspace/access.test.ts) | Workspace access helpers for read-only viewers, editors, and owner-only share. |
 | [`src/features/workspace/generateTitle.test.ts`](../src/features/workspace/generateTitle.test.ts) | Numbered generate-file defaults skip taken names; empty/overlong/duplicate titles are rejected. |
 | [`src/features/workspace/sourceUpload.test.ts`](../src/features/workspace/sourceUpload.test.ts) | Source-upload extension/parser policy from server limits (10 MB mock cap), image-caption availability per mode, byte-weighted progress, per-batch and remaining-workspace file caps, concurrency pool, and 429 backoff. |
@@ -101,7 +106,7 @@ at the top of each section.
 | [`server/internal/mail/capture_test.go`](../server/internal/mail/capture_test.go) | Recording mail sender keeps bounded history and ignores failed deliveries. |
 | [`server/internal/mail/mail_test.go`](../server/internal/mail/mail_test.go) | Invite and model-deprecated email render/localization, role labels, and unsubscribe tokens. |
 | [`server/internal/pipeline/client_test.go`](../server/internal/pipeline/client_test.go) | Pipeline HTTP client success, error status, bad JSON, and connection refused. |
-| [`server/internal/ratelimit/classify_test.go`](../server/internal/ratelimit/classify_test.go) | Route class split (AI vs editor vs upload vs exempt) and default AI/burst/editor budgets. |
+| [`server/internal/ratelimit/classify_test.go`](../server/internal/ratelimit/classify_test.go) | Route class split (AI vs editor vs upload vs exempt), `/quiz-grade` as AI, and default AI/burst/editor budgets. |
 | [`server/internal/sourceupload/rules_test.go`](../server/internal/sourceupload/rules_test.go) | Source kind-from-name map, upload validation (10/30 MB plan caps), caption-flag normalization, and policy list parsing. |
 | [`server/internal/models/registry_test.go`](../server/internal/models/registry_test.go) | Load-on-miss of an unseen `(key, version)`, a miss that never degrades to the current default, ResolveUser requiring a non-empty enabled preference, and `EmbeddingDim` rejecting a config that declares no width. |
 
@@ -110,7 +115,7 @@ at the top of each section.
 | File | About |
 | --- | --- |
 | [`server/internal/httpapi/account_gates_test.go`](../server/internal/httpapi/account_gates_test.go) | Over-quota owner gates, storage-owner state on reads, editor deck create, generated authorship, generate title uniqueness. |
-| [`server/internal/httpapi/billing_gates_test.go`](../server/internal/httpapi/billing_gates_test.go) | 403 `llm_credits_exhausted` on chat/generate/editor/transcribe; client `model` ignored and the assistant message is stamped; upload actor-credits vs owner-storage. |
+| [`server/internal/httpapi/billing_gates_test.go`](../server/internal/httpapi/billing_gates_test.go) | 403 `llm_credits_exhausted` on chat/generate/editor; client `model` ignored and the assistant message is stamped; upload actor-credits vs owner-storage. |
 | [`server/internal/httpapi/ai_plate_test.go`](../server/internal/httpapi/ai_plate_test.go) | Plate command/copilot request validation and AI data-stream copy/malformed/done checks. |
 | [`server/internal/httpapi/editor_assets_test.go`](../server/internal/httpapi/editor_assets_test.go) | Editor asset metadata validation, signatures, and object keys not using original filenames. |
 | [`server/internal/httpapi/email_unsubscribe_test.go`](../server/internal/httpapi/email_unsubscribe_test.go) | GET unsubscribe is read-only and does not mutate preferences. |
@@ -126,7 +131,7 @@ at the top of each section.
 
 | File | About |
 | --- | --- |
-| [`server/internal/materialdoc/document_test.go`](../server/internal/materialdoc/document_test.go) | Quiz/flashcard round-trips, ID rewrite, JSON escaping, validation, YouTube/diagram, write limits. |
+| [`server/internal/materialdoc/document_test.go`](../server/internal/materialdoc/document_test.go) | Quiz/flashcard round-trips including open questions and points, ID rewrite, JSON escaping, validation (including rejection of `fill`), YouTube/diagram, write limits. |
 
 ### Store
 
@@ -138,7 +143,7 @@ at the top of each section.
 | [`server/internal/store/collaboration_owner_test.go`](../server/internal/store/collaboration_owner_test.go) | Collab writes follow storage owner; active editors cannot grow over-quota materials. |
 | [`server/internal/store/contracts_test.go`](../server/internal/store/contracts_test.go) | Role/share/invite/comment/material JSON contracts and stable card-ID rewrite map. |
 | [`server/internal/store/credits_test.go`](../server/internal/store/credits_test.go) | Credit reserve/settle, settle idempotency, concurrent gate at remaining budget, sweep-then-late-settle, monthly rollover, billing credit counters, and actor-scoped usage report grouping. |
-| [`server/internal/store/chat_pin_test.go`](../server/internal/store/chat_pin_test.go) | Assistant message pin survives finalize; ingest job payload carries actor + ingest/vision pins and refuses to build without either an actor or a registry; a clone inherits the source workspace's embedding pin; empty chat/generate/editor prefs rejected; new users get registry defaults. |
+| [`server/internal/store/chat_pin_test.go`](../server/internal/store/chat_pin_test.go) | Assistant message pin survives finalize; ingest job payload carries actor + ingest/vision pins and refuses to build without either an actor or a registry; a clone inherits the source workspace's embedding pin; empty chat/generate/editor/quiz prefs rejected; browser quiz keys store without a registry row; new users get registry defaults. |
 | [`server/internal/store/pricing_test.go`](../server/internal/store/pricing_test.go) | Same token counts on two models produce different credit micros; Pro reserve estimates scale. |
 | [`server/internal/store/material_revisions_test.go`](../server/internal/store/material_revisions_test.go) | Daily version overwrite, UTC rollover, tier retention, and downgrade pruning. |
 | [`server/internal/store/notifications_test.go`](../server/internal/store/notifications_test.go) | Notification recipient scoping, email outbox/leases, and category disable atomicity. |
@@ -163,14 +168,17 @@ See also [`pipeline-tests.md`](pipeline-tests.md) for disposable Postgres/Redis 
 | [`pipeline/tests/test_agent.py`](../pipeline/tests/test_agent.py) | Offline: agent primes with a search, citations emit before tokens, the last tool round drops tools, a mid-loop tool call runs before the streamed answer, and `done` carries usage. |
 | [`pipeline/tests/test_ingest_query.py`](../pipeline/tests/test_ingest_query.py) | Cassette: index → search → grounded cited answer, re-index convergence, scope confinement, cross-document concepts, cascade teardown. |
 | [`pipeline/tests/test_figures.py`](../pipeline/tests/test_figures.py) | Offline: line diagrams surviving the flatness filters, recurring page furniture dropped by perceptual hash, bbox and duplicate handling, `chart` blocks selected and labelled from `chart_caption`, caption cache keyed by `source_sha256` (not parse route or blob path), prompt carrying the page but not the uploader's file name, and the context preamble present only when there is context to introduce. |
-| [`pipeline/tests/test_ingest_worker.py`](../pipeline/tests/test_ingest_worker.py) | Offline: parse-mode → route selection (including the `advanced` alias and unknown-mode terminal), txt/md/json bypassing the parser, parse zip recorded before captioning, captions reaching the chunker, the source hash coming from the bytes rather than the uploader-settable checksum header, missing model pins failing terminally, a database error during pin read propagating as retryable, and a missing `actorUserId` failing the file without retry. |
-| [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py) | Artifact addressing/caching per route keyed by source sha256, per-route endpoints and versions, rejection of traversal, checksum, version and source mismatches, corrupt-cache recovery. |
-| [`pipeline/tests/test_marker_adapt.py`](../pipeline/tests/test_marker_adapt.py) | Marker JSON → content_list (heading depth, bbox scale, skip running headers, figure crops), scan-vs-figure probe, image-object bounds, dropping full-page scan rasters, RapidOCR merge skipping duplicate lines, `txt` parse skipping the OCR lane. |
-| [`pipeline/tests/test_registry_billing.py`](../pipeline/tests/test_registry_billing.py) | Per-model credits, registry miss never falls back, no surface (chat, generate, editor, ingest, embedding, vision, STT) resolves its own default in place of a pin, ingest job pins stick after a default change, claim-time owner/actor matrix including a job with no actor, ingest bills the actor. |
+| [`pipeline/tests/test_ingest_worker.py`](../pipeline/tests/test_ingest_worker.py) | Offline: parse-mode → route selection (including the `advanced` alias and unknown-mode terminal), txt/md/json bypassing the parser, parse zip recorded before captioning, captions reaching the chunker, the source hash coming from the bytes rather than the uploader-settable checksum header, missing model pins failing terminally, a database error during pin read propagating as retryable, a missing `actorUserId` failing the file without retry, a full GPU queue putting the job back without spending an attempt, and text kinds not taking a parse slot. |
+| [`pipeline/tests/test_parse_slots.py`](../pipeline/tests/test_parse_slots.py) | Offline: Redis-down fail-open on parse-slot acquire, and default cap matching 12×6 fast. |
+| [`pipeline/tests/test_pool_shutdown.py`](../pipeline/tests/test_pool_shutdown.py) | Offline: ProcessPoolExecutor close terminates a stuck worker and joins the manager thread (the Modal Thread-2 hang). |
+| [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py) | Artifact addressing/caching keyed by source sha256, endpoint and version, rejection of traversal, checksum, version and source mismatches, corrupt-cache recovery. |
+| [`pipeline/tests/test_marker_adapt.py`](../pipeline/tests/test_marker_adapt.py) | Marker JSON → content_list (heading depth, bbox scale including RapidOCR numpy polygons, skip running headers, figure crops), scan-vs-figure probe, image-object bounds, dropping full-page scan rasters, RapidOCR merge skipping duplicate lines, `txt` parse skipping the OCR lane. |
+| [`pipeline/tests/test_quiz_grade.py`](../pipeline/tests/test_quiz_grade.py) | Offline: open-answer judge prompt includes rubrics; parse snaps 0 / 0.5 / 1. |
+| [`pipeline/tests/test_registry_billing.py`](../pipeline/tests/test_registry_billing.py) | Per-model credits, registry miss never falls back, no surface (chat, generate, editor, quiz, ingest, embedding, vision) resolves its own default in place of a pin, ingest job pins stick after a default change, claim-time owner/actor matrix including a job with no actor, ingest bills the actor. |
 | [`pipeline/tests/test_retrieval_helpers.py`](../pipeline/tests/test_retrieval_helpers.py) | Tool scope narrowing, stable citation numbering, per-file diversity cap, JSON extraction and question normalization, two-tier file summaries retrying instead of storing a permanent blank, and summary/concept prompts excluding the uploader's file name. |
 | [`pipeline/tests/test_locale.py`](../pipeline/tests/test_locale.py) | Account locale on chat/generate/editor prompts; continue-writing does not force UI language; ingest is out of scope. |
-| [`pipeline/tests/test_jobs.py`](../pipeline/tests/test_jobs.py) | Retryable vs terminal errors, backoff, and per-type attempt budget. |
-| [`pipeline/tests/test_store_sql.py`](../pipeline/tests/test_store_sql.py) | Docker (no model calls): hybrid search halves, CJK recall, scoping, canonical duplicate ownership/deletion, concept co-mention, two-tier content summaries on the workspace outline, cascades, job `not_before`/requeue/lease reclaim, only the claiming attempt writing its outcome, content-claim ownership (a waiter cannot refresh or drop the creator's claim, and never returns a claim it does not own), steal refused while the owner job's lease is live and allowed once it expires or the job is done, `replace_content_chunks` raising when the claim moved, finishing a deleted file leaving the job `done` with no notification, donor copy across workspaces, donor copy without vectors when pins differ, artifact GC skips in-flight jobs. |
+| [`pipeline/tests/test_jobs.py`](../pipeline/tests/test_jobs.py) | Retryable vs terminal errors, capacity-wait is not a failure, backoff, and per-type attempt budget. |
+| [`pipeline/tests/test_store_sql.py`](../pipeline/tests/test_store_sql.py) | Docker (no model calls): hybrid search halves, CJK recall, scoping, canonical duplicate ownership/deletion, concept co-mention, two-tier content summaries on the workspace outline, cascades, job `not_before`/requeue/lease reclaim, capacity yield not spending an attempt, only the claiming attempt writing its outcome, content-claim ownership (a waiter cannot refresh or drop the creator's claim, and never returns a claim it does not own), steal refused while the owner job's lease is live and allowed once it expires or the job is done, `replace_content_chunks` raising when the claim moved, finishing a deleted file leaving the job `done` with no notification, donor copy across workspaces, donor copy without vectors when pins differ, artifact GC skips in-flight jobs. |
 
 ---
 
@@ -229,5 +237,6 @@ Supporting (not tests): [`e2e/perf/metrics.ts`](../e2e/perf/metrics.ts) instrume
 
 | File | About |
 | --- | --- |
-| [`modal/test_snapshot.py`](../modal/test_snapshot.py) | Manual script measuring Modal Marker GPU snapshot cold-boot vs parse latency. |
-| [`modal/bench_parse.py`](../modal/bench_parse.py) | Manual script timing one job vs max in-flight jobs on both parse routes. |
+| [`modal/test_snapshot.py`](../modal/test_snapshot.py) | Manual script measuring Modal CPU memory-snapshot cold-boot vs parse latency on `evo-mineru-fast`. |
+| [`pipeline/tests/test_marker_worker_ocr.py`](../pipeline/tests/test_marker_worker_ocr.py) | Lazy RapidOCR: first scan page loads one local engine, later pages reuse it (no ONNX). |
+| [`modal/bench_mixed_lanes.py`](../modal/bench_mixed_lanes.py) | Manual mixed-lane load: 6 digital lecture parses + 2 OCR jobs of lecture+newspaper glued together; checks the combined bundle kept slide text and recovered scan lines. |

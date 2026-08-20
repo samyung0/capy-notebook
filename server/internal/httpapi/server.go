@@ -190,7 +190,6 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Post("/api/workspaces/{id}/ai/command", a.aiCommand)
 	r.Post("/api/workspaces/{id}/ai/copilot", a.aiCopilot)
 	r.Post("/api/workspaces/{id}/generate", a.generate)
-	r.Post("/api/transcribe", a.transcribe)
 	if cfg.PipelineSecret != "" {
 		r.Post("/api/internal/materials", a.internalCreateMaterial)
 	}
@@ -350,7 +349,7 @@ func (a *api) assertWSRead(w http.ResponseWriter, r *http.Request, wsID string) 
 /* ------------------------------------------------------ raw source handlers */
 
 // addSource handles both the real upload (multipart: stores bytes, marks the
-// file 'processing', enqueues an ingest job) and the mock-compatible JSON
+// file 'pending', enqueues an ingest job) and the mock-compatible JSON
 // metadata path (no bytes, lands 'ready').
 //
 // Storage is charged to the workspace owner, so the lifecycle and quota gate is
@@ -473,6 +472,7 @@ func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 		return
 	}
+	parseMode = sourceupload.CanonicalParseMode(parseMode)
 	captionImages := sourceupload.NormalizeCaptionImages(kind, parseMode, r.FormValue("captionImages") == "true")
 
 	if sourceupload.NeedsIngestJob(kind, parseMode) {
@@ -928,9 +928,14 @@ func buildQuestions(opts generateOpts) json.RawMessage {
 		case "boolean":
 			q["correct"] = true
 			q["explanation"] = "This statement is true based on your sources."
-		case "fill", "short":
+		case "short":
 			q["accepted"] = wrapValues("answer")
 			q["explanation"] = "The accepted answer follows from the source material."
+		case "open":
+			q["accepted"] = wrapValues("A full-mark answer covers the key idea.")
+			q["hints"] = wrapValues("Look at the source explanation.")
+			q["rubrics"] = wrapValues("Names the key mechanism", "Links it to the outcome")
+			q["points"] = 1
 		case "ordering":
 			q["items"] = wrapValues("First", "Second", "Third")
 		case "matching":

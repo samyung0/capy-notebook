@@ -168,8 +168,8 @@ func TestSetModelPrefsRejectsEmpty(t *testing.T) {
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
 	empty := ""
-	for _, surface := range []string{"chat", "generate", "editor"} {
-		var chat, generate, editor *string
+	for _, surface := range []string{"chat", "generate", "editor", "quiz"} {
+		var chat, generate, editor, quiz *string
 		switch surface {
 		case "chat":
 			chat = &empty
@@ -177,8 +177,10 @@ func TestSetModelPrefsRejectsEmpty(t *testing.T) {
 			generate = &empty
 		case "editor":
 			editor = &empty
+		case "quiz":
+			quiz = &empty
 		}
-		if err := s.SetModelPrefs(ctx, userID, chat, generate, editor); !errors.Is(err, ErrModelKeyRequired) {
+		if err := s.SetModelPrefs(ctx, userID, chat, generate, editor, quiz); !errors.Is(err, ErrModelKeyRequired) {
 			t.Fatalf("%s: got %v", surface, err)
 		}
 	}
@@ -207,7 +209,27 @@ func TestUpsertUserPopulatesRegistryDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if me.ChatModelKey == "" || me.GenerateModelKey == "" || me.EditorModelKey == "" {
+	if me.ChatModelKey == "" || me.GenerateModelKey == "" || me.EditorModelKey == "" || me.QuizModelKey == "" {
 		t.Fatalf("prefs empty: %#v", me)
+	}
+}
+
+func TestSetModelPrefsAcceptsBrowserQuizKey(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	key := "browser:ternary-1.7b"
+	if err := s.SetModelPrefs(ctx, userID, nil, nil, nil, &key); err != nil {
+		t.Fatal(err)
+	}
+	me, err := s.Me(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if me.QuizModelKey != key {
+		t.Fatalf("quiz pref = %q", me.QuizModelKey)
+	}
+	if err := s.SetModelPrefs(ctx, userID, &key, nil, nil, nil); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("browser key on chat: %v", err)
 	}
 }

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pipeline.jobs import (
+    CapacityWait,
     RetryableError,
     TerminalError,
     backoff_s,
@@ -15,6 +16,7 @@ def test_unknown_errors_are_retryable():
     assert is_retryable(RuntimeError("provider 503"))
     assert is_retryable(RetryableError("chapter failed"))
     assert not is_retryable(TerminalError("file gone"))
+    assert not is_retryable(CapacityWait("fast"))
     assert not is_retryable(KeyboardInterrupt())
 
 

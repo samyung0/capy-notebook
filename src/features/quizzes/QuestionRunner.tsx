@@ -8,6 +8,7 @@ import {
   QUIZ_REVIEW_OPTION_NEUTRAL_CLASS,
   QUIZ_REVIEW_PROMPT_CLASS,
 } from '@/features/notes/nodeStyles';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { LEVEL_TONE, levelLabel } from '@/lib/levels';
 import { type Answer, fuzzyMatch } from './grade';
@@ -150,7 +151,7 @@ export function QuestionRunner({
         </div>
       )}
 
-      {(question.type === 'fill' || question.type === 'short') && (
+      {question.type === 'short' && (
         <div className="flex flex-col gap-2">
           <input
             className={cn(
@@ -172,6 +173,36 @@ export function QuestionRunner({
             <p className="t-meta text-fg-muted">
               Accepted: {question.accepted.map((a) => a.value).join(', ')}
             </p>
+          )}
+        </div>
+      )}
+
+      {question.type === 'open' && (
+        <div className="flex flex-col gap-2">
+          <textarea
+            className={cn(
+              'min-h-28 rounded-button border bg-surface px-3 py-2.5 text-fg text-sm outline-none',
+              review
+                ? question.awarded != null && question.awarded > 0
+                  ? 'border-solid-success'
+                  : 'border-solid-error'
+                : 'border-line focus:border-line-strong'
+            )}
+            onChange={(e) => !review && onChange(e.target.value)}
+            placeholder={review ? '(no answer)' : m.quiz_open_placeholder()}
+            readOnly={review}
+            value={answer as string}
+          />
+          {review && (
+            <div className="flex flex-col gap-1">
+              {question.awardReason && (
+                <p className="t-meta text-fg-muted">{question.awardReason}</p>
+              )}
+              <p className="t-meta text-fg-muted">
+                {m.quiz_model_answer()}:{' '}
+                {question.accepted.map((a) => a.value).join(' ')}
+              </p>
+            </div>
           )}
         </div>
       )}

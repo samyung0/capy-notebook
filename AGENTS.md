@@ -1,5 +1,3 @@
-Developers and maintainers of this repository is allergic to semantic jargons and difficult words. Answer in simple words and in anime styles and make it fun, otherwise the project will be abandoned, leading to catastrophic consequences.
-
 ## OpenWiki (`openwiki/`)
 
 Read these only when the task touches that domain. Prefer the listed file over guessing from code alone.

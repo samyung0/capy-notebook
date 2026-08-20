@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"strings"
 	"time"
@@ -58,42 +57,6 @@ func (c *Client) PostStream(ctx context.Context, path string, body any) (io.Read
 // streamHC returns a client with no overall timeout (streaming responses can run
 // far longer than the 90s sync budget); the request context governs its life.
 func (c *Client) streamHC() *http.Client { return &http.Client{} }
-
-// PostMultipart uploads a single file field ("file") to path and returns the raw
-// JSON response. Used for audio transcription (multipart -> Whisper).
-func (c *Client) PostMultipart(ctx context.Context, path, filename string, r io.Reader) (json.RawMessage, error) {
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	fw, err := mw.CreateFormFile("file", filename)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := io.Copy(fw, r); err != nil {
-		return nil, err
-	}
-	if err := mw.Close(); err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.base+path, &buf)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	obs.Inject(ctx, req)
-	res, err := c.hc.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer res.Body.Close()
-	data, err := io.ReadAll(res.Body)
-	if err != nil {
-		return nil, err
-	}
-	if res.StatusCode >= 300 {
-		return nil, fmt.Errorf("pipeline %s: %s", path, res.Status)
-	}
-	return data, nil
-}
 
 // PostRaw posts body as JSON and returns the raw JSON response.
 func (c *Client) PostRaw(ctx context.Context, path string, body any) (json.RawMessage, error) {

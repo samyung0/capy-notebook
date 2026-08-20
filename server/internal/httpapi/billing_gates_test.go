@@ -1,20 +1,15 @@
 package httpapi_test
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
-	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
-	"github.com/evonotes/server/internal/auth"
 	"github.com/evonotes/server/internal/blob"
 	"github.com/evonotes/server/internal/httpapi"
 	"github.com/evonotes/server/internal/models"
@@ -113,7 +108,7 @@ func errorCode(t *testing.T, rec *httptest.ResponseRecorder) string {
 	return rec.Body.String()
 }
 
-func TestCreditsExhaustedOnChatGenerateEditorTranscribe(t *testing.T) {
+func TestCreditsExhaustedOnChatGenerateEditor(t *testing.T) {
 	fx := openBilling(t)
 	exhaustCredits(t, fx.pool, fx.actorID)
 	ws := fx.workspaceID
@@ -151,24 +146,6 @@ func TestCreditsExhaustedOnChatGenerateEditorTranscribe(t *testing.T) {
 		})
 	if command.Code != http.StatusForbidden || errorCode(t, command) != "llm_credits_exhausted" {
 		t.Fatalf("command: %d %s", command.Code, command.Body.String())
-	}
-
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	part, err := mw.CreateFormFile("file", "clip.webm")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _ = io.Copy(part, strings.NewReader("not-really-audio"))
-	_ = mw.Close()
-	req := httptest.NewRequest(http.MethodPost, "/api/transcribe", &buf)
-	req.Header.Set("Content-Type", mw.FormDataContentType())
-	req.Header.Set(auth.HeaderE2EUserID, fx.actorID)
-	req.Header.Set(auth.HeaderE2ESecret, "e2e-test-secret")
-	rec := httptest.NewRecorder()
-	fx.handler.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden || errorCode(t, rec) != "llm_credits_exhausted" {
-		t.Fatalf("transcribe: %d %s", rec.Code, rec.Body.String())
 	}
 }
 

@@ -50,9 +50,12 @@ import type {
    them bind to the wire contract instead of restating it. Contracts whose UI
    shape is richer than the wire (rich text, the Question union,
    non-transferable roles) are overridden further down. */
-/** The surfaces a user may pick a model for. Ingest, embedding, vision and STT
+/** The surfaces a user may pick a model for. Ingest, embedding and vision
  * are operator-only: they are chosen from the registry and never stored per
- * user, so they are absent from the query enum the server accepts. */
+ * user, so they are absent from the query enum the server accepts. Quiz is
+ * user-selectable and includes in-tab `browser:` keys that never live in
+ * model_configs. */
+export type ModelSurface = 'chat' | 'generate' | 'editor' | 'quiz';
 export type {
   AccessCapabilities,
   AccountStatus,
@@ -76,7 +79,6 @@ export type {
   Flashcard,
   IntegrationsStatus,
   Label,
-  ListModelsSurface as ModelSurface,
   LocaleInputBody,
   MaterialRef,
   MaterialUpdateResult,
@@ -247,14 +249,16 @@ export interface ChatMessage {
 
 /* ---------------- Quizzes: the polymorphic Question union ----------------
    The backend stores questions opaquely; the frontend owns this shape. */
-export type QuestionType =
-  | 'mcq' // single correct
-  | 'multi' // multiple correct
-  | 'boolean'
-  | 'fill' // fill in the blank
-  | 'short' // short answer
-  | 'matching'
-  | 'ordering';
+export const QUESTION_TYPES = [
+  'mcq', // single correct
+  'multi', // multiple correct
+  'boolean',
+  'short',
+  'matching',
+  'ordering',
+  'open',
+] as const;
+export type QuestionType = (typeof QUESTION_TYPES)[number];
 
 /**
  * Cognitive level of a question (a light Depth-of-Knowledge style tag). Replaces
@@ -264,9 +268,14 @@ export type QuestionType =
 export type CognitiveLevel = 'recall' | 'application' | 'analysis';
 
 interface BaseQuestion {
+  /** Snapshot-only: points awarded when this attempt was graded. */
+  awarded?: number;
+  awardReason?: string;
   explanation?: string;
   id: string;
   level: CognitiveLevel;
+  /** Question value. Defaults to 1. Open questions may award half. */
+  points?: number;
   prompt: string;
   type: QuestionType;
 }
@@ -287,7 +296,7 @@ export interface BooleanQuestion extends BaseQuestion {
 export interface TextQuestion extends BaseQuestion {
   /** accepted answers (case-insensitive), object-wrapped for useFieldArray */
   accepted: { value: string }[];
-  type: 'fill' | 'short';
+  type: 'short';
 }
 export interface MatchingQuestion extends BaseQuestion {
   pairs: { left: string; right: string }[];
@@ -298,12 +307,20 @@ export interface OrderingQuestion extends BaseQuestion {
   items: { value: string }[];
   type: 'ordering';
 }
+export interface OpenQuestion extends BaseQuestion {
+  /** Model answer the judge compares against. */
+  accepted: { value: string }[];
+  hints: { value: string }[];
+  rubrics: { value: string }[];
+  type: 'open';
+}
 export type Question =
   | ChoiceQuestion
   | BooleanQuestion
   | TextQuestion
   | MatchingQuestion
-  | OrderingQuestion;
+  | OrderingQuestion
+  | OpenQuestion;
 
 /* ---------------- Generate (request options, not wire response types) ----------------
    Every generation is scoped: `chapters` (ids) and/or `fileIds` narrow the

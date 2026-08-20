@@ -264,7 +264,6 @@ function ParseModeSelect({
     policy,
     pending.pageCount
   );
-  if (issues.accurate && issues.fast) return;
   return (
     <Select
       onValueChange={(v) => onChange(v as ParseMode)}
@@ -275,10 +274,6 @@ function ParseModeSelect({
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          <SelectItem disabled={!!issues.accurate} size="sm" value="accurate">
-            {m.source_accurate_parsing()}
-            {issues.accurate ? ` (${issues.accurate})` : ''}
-          </SelectItem>
           <SelectItem disabled={!!issues.fast} size="sm" value="fast">
             {m.source_fast_parsing()}
             {issues.fast ? ` (${issues.fast})` : ''}

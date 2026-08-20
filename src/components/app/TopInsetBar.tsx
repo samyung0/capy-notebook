@@ -3,7 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { USE_MSW } from '@/api/auth';
 import { useMe, useSearch } from '@/api/hooks';
-import type { SearchKind } from '@/api/types';
+import type { SearchKind, SearchResult } from '@/api/types';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
@@ -19,6 +19,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { Menu } from '@/components/ui/Menu';
 import { cn } from '@/lib/cn';
+import { features } from '@/lib/features';
 import { useDebounced } from '@/lib/useDebounced';
 import { userColorPair } from '@/lib/userColor';
 
@@ -41,6 +42,12 @@ const KIND_ICON: Record<SearchKind, Parameters<typeof Icon>[0]['name']> = {
   workspace: 'workspaces',
 };
 
+function visibleSearchResult(result: SearchResult): boolean {
+  if (result.kind === 'event') return features.schedule;
+  if (result.kind === 'thinking') return features.thinking;
+  return true;
+}
+
 function SearchDialog({
   open,
   setOpen,
@@ -55,6 +62,7 @@ function SearchDialog({
   });
   const navigate = useNavigate();
   const query = debounced.trim();
+  const results = data?.filter(visibleSearchResult);
 
   return (
     <Dialog
@@ -103,8 +111,8 @@ function SearchDialog({
             ) : isFetching ? (
               <SkeletonList className="p-1 px-2.5" count={5} rowHeight={48} />
             ) : query ? (
-              data?.length ? (
-                data.map((r) => {
+              results?.length ? (
+                results.map((r) => {
                   const c = r.color ? userColorPair(r.color) : null;
                   return (
                     <button

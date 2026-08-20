@@ -11,7 +11,8 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import {
   type Answer,
   emptyAnswer,
-  gradeQuestion,
+  formatPoints,
+  scoreQuestion,
 } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { m } from '@/i18n';
@@ -96,7 +97,8 @@ export default function AttemptResult() {
                   : 'error'
             }
           >
-            {attempt.correct}/{attempt.total} · {attempt.pct}%
+            {formatPoints(attempt.correct)}/{formatPoints(attempt.total)} ·{' '}
+            {attempt.pct}%
           </Badge>
         </div>
 
@@ -106,13 +108,17 @@ export default function AttemptResult() {
             tone={scoreTone(attempt.pct)}
             value={attempt.pct}
           />
+          <p className="t-meta mt-2 text-fg-muted">
+            {m.quiz_score_reference()}
+          </p>
         </div>
 
         {hasBreakdown ? (
           <div className="flex flex-col gap-4">
             {attempt.questions.map((q, i) => {
               const a = answers?.[q.id] ?? emptyAnswer(q);
-              const ok = gradeQuestion(q, a);
+              const scored = scoreQuestion(q, a);
+              const ok = scored.awarded >= scored.max && scored.max > 0;
               return (
                 <div
                   className="rounded-card border border-line bg-surface p-4"

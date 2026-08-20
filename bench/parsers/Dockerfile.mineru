@@ -31,7 +31,7 @@ RUN pip install --no-cache-dir torch torchvision \
     --index-url https://download.pytorch.org/whl/cpu
 
 # [pipeline] not [all]: the hybrid VLM route needs vLLM and is GPU-only, so it
-# has no place in a CPU benchmark. Same version floor as modal/mineru_app.py so
+# has no place in a CPU benchmark. Same version floor as modal/parse_common.py so
 # this measures the backend actually in production.
 # `six` is an undeclared transitive import in the pipeline backend's model
 # stack. On the Modal image it arrives by accident via the CUDA extras; on a

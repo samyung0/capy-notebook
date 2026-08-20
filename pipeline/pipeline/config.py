@@ -58,20 +58,21 @@ class Config:
     provider_timeout_s: float = float(_env("EVO_PROVIDER_TIMEOUT_S", "120"))
 
     # ---- Modal parse service ---------------------------------------------
-    # Both parse routes are Modal GPU endpoints and return the same bundle
-    # (content_list + images). They differ in engine, and therefore in cost,
-    # accuracy and how many documents one container parses at once:
-    # 'accurate' is MinerU hybrid VLM OCR, 'fast' is Marker no-OCR plus
-    # RapidOCR (PP-OCRv6) on pages the scan probe flags.
+    # One CPU endpoint: Marker with OCR off, RapidOCR (PP-OCRv6) on pages the
+    # scan probe flags. MODAL_FAST_PARSE_URL wins; MODAL_PARSE_URL is an alias
+    # so older compose files still work.
     modal_parse_url: str = _env("MODAL_PARSE_URL", "")
     modal_fast_parse_url: str = _env("MODAL_FAST_PARSE_URL", "")
     modal_parse_token: str = _env("MODAL_PARSE_TOKEN", "")
-    # The fast endpoint may hold a request behind up to three others in its
-    # container (4 digital at once, 2 if RapidOCR is in play), so the client
+    # The endpoint may hold a request behind other documents sharing the
+    # container (6 digital at once, 2 if RapidOCR is in play), so the client
     # timeout has to cover queueing, not just parsing.
     modal_parse_timeout: int = int(_env("MODAL_PARSE_TIMEOUT", "900"))
-    # Fast: ``ocr`` runs RapidOCR on scanned/thin pages; ``txt`` skips it.
-    # Accurate always OCRs with MinerU's VLM. Kept in the artifact fingerprint.
+    # Must match modal/parse_common.py: max_containers × max_inputs. Extra jobs
+    # wait in Postgres with file status pending instead of opening more boxes.
+    parse_fast_slots: int = int(_env("EVO_PARSE_FAST_SLOTS", "72"))
+    # ``ocr`` runs RapidOCR on scanned/thin pages; ``txt`` skips it.
+    # Kept in the artifact fingerprint.
     parse_method: str = _env("EVO_PARSE_METHOD", "ocr")  # ocr | auto | txt
 
     # ---- chunking ---------------------------------------------------------
@@ -150,14 +151,6 @@ class Config:
     # Bumped whenever the prompt, the model or the filters change, so cached
     # captions from an older definition are not reused.
     caption_version: str = _env("EVO_CAPTION_VERSION", "v1")
-
-    # ---- speech-to-text (Whisper-compatible, OpenAI API) ------------------
-    # Used by /transcribe for voice notes. Defaults to OpenAI Whisper; point
-    # WHISPER_BASE_URL at any OpenAI-compatible STT endpoint to swap providers.
-    stt = ProviderCfg(
-        api_key=_env("WHISPER_API_KEY", _env("OPENAI_API_KEY")),
-        base_url=_env("WHISPER_BASE_URL", "https://api.openai.com/v1"),
-    )
 
     @property
     def query_models(self) -> set[str]:

@@ -46,6 +46,7 @@ import {
 } from '@/components/ui/ContextMenu';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { editorAiEnabled } from '@/lib/features';
 import { openAiMenu } from './ai/aiMenuState';
 import { useEditorRuntime } from './EditorRuntime';
 import { toggleEditorBlock } from './editorTransforms';
@@ -534,7 +535,7 @@ export function BlockContextMenu({ children }: { children: React.ReactNode }) {
 
           if (disabled) return event.preventDefault();
 
-          if (allowExternalAssets) {
+          if (editorAiEnabled(allowExternalAssets)) {
             editor.getApi(AIChatPlugin).aiChat.hide({ focus: false });
           }
           setTimeout(() => {
@@ -562,7 +563,7 @@ export function BlockContextMenu({ children }: { children: React.ReactNode }) {
           }}
         >
           <ContextMenuGroup>
-            {allowExternalAssets && (
+            {editorAiEnabled(allowExternalAssets) && (
               <ContextMenuItem onClick={() => setAskAiPending(true)}>
                 {m.editor_ask_ai()}
               </ContextMenuItem>

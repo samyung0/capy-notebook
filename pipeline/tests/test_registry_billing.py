@@ -9,7 +9,6 @@ from pipeline.registry import (
     SURFACE_CHAT,
     SURFACE_EMBEDDING,
     SURFACE_INGEST,
-    SURFACE_STT,
     SURFACE_VISION,
     JobPins,
     ModelConfig,
@@ -31,7 +30,7 @@ def _spec(**overrides) -> ModelConfig:
         "provider_slug": "deepseek",
         "base_url": "https://example.test",
         "provider_model_id": "flash",
-        "surfaces": ("chat", "generate", "editor", "ingest"),
+        "surfaces": ("chat", "generate", "editor", "quiz", "ingest"),
         "micros_per_input_token": 250,
         "micros_per_output_token": 1000,
     }
@@ -72,11 +71,9 @@ def test_chat_pin_does_not_fall_back(monkeypatch):
         resolve_pinned(None, None, SURFACE_CHAT)
 
 
-@pytest.mark.parametrize(
-    "surface", [SURFACE_INGEST, SURFACE_EMBEDDING, SURFACE_VISION, SURFACE_STT]
-)
+@pytest.mark.parametrize("surface", [SURFACE_INGEST, SURFACE_EMBEDDING, SURFACE_VISION])
 def test_no_surface_resolves_its_own_default(monkeypatch, surface):
-    """Ingest, embedding, vision and STT used to fall back to the live default
+    """Ingest, embedding and vision used to fall back to the live default
     when handed no pin, which is how an ingest job could run on a model nobody
     had priced and write vectors into a space nobody had chosen. Strictness here
     is what forces the choice back onto the caller that pays for it."""

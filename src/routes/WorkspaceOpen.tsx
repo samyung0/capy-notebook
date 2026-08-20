@@ -51,6 +51,7 @@ import {
 import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
 import { FileListItem } from '@/features/files/FileListItem';
+import { fileIsIngesting } from '@/features/files/fileUtils';
 import { CenterContent } from '@/features/materials/CenterContent';
 import { MaterialListItem } from '@/features/materials/MaterialListItem';
 import {
@@ -346,7 +347,7 @@ export default function WorkspaceOpen() {
   ) {
     const key = `${item.type}:${item.id}`;
     const draggable =
-      !readOnly && !(item.type === 'file' && item.data.status === 'processing');
+      !readOnly && !(item.type === 'file' && fileIsIngesting(item.data.status));
     return (
       <div
         key={key}
@@ -744,6 +745,7 @@ export default function WorkspaceOpen() {
                 item={openItem}
                 onDeleted={() => setOpenItem(null)}
                 readOnly={readOnly}
+                requestedMode={search.mode ?? null}
                 workspaceId={workspaceId}
               />
             </AppErrorBoundary>

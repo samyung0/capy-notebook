@@ -270,6 +270,7 @@ export const handlers = [
       chat: db.user.chatModelKey,
       editor: db.user.editorModelKey,
       generate: db.user.generateModelKey,
+      quiz: db.user.quizModelKey,
     };
     const selected = prefs[surface] ?? 'deepseek-flash';
     return HttpResponse.json({
@@ -290,11 +291,13 @@ export const handlers = [
       chatModelKey?: string;
       editorModelKey?: string;
       generateModelKey?: string;
+      quizModelKey?: string;
     };
     const fields = [
       'chatModelKey',
       'editorModelKey',
       'generateModelKey',
+      'quizModelKey',
     ] as const;
     for (const field of fields) {
       const value = body[field];
@@ -307,6 +310,34 @@ export const handlers = [
       db.user[field] = value;
     }
     return new HttpResponse(null, { status: 204 });
+  }),
+  http.post('/api/quiz-grade', async ({ request }) => {
+    const body = (await request.json()) as {
+      rubrics?: string[];
+      userAnswer?: string;
+    };
+    const answer = (body.userAnswer ?? '').toLowerCase();
+    if (!answer.trim()) {
+      return HttpResponse.json({ award: 0, reason: '' });
+    }
+    const rubrics = body.rubrics ?? [];
+    const hits = rubrics.filter((rubric) =>
+      rubric
+        .toLowerCase()
+        .split(/\s+/)
+        .some((word) => word.length > 3 && answer.includes(word))
+    );
+    const award =
+      hits.length === 0 ? 0 : hits.length < rubrics.length ? 0.5 : 1;
+    return HttpResponse.json({
+      award,
+      reason:
+        award === 1
+          ? 'Covers the marking scheme.'
+          : award === 0.5
+            ? 'Partly covers the marking scheme.'
+            : 'Does not meet the marking scheme.',
+    });
   }),
 
   /* ---------------- global search ---------------- */
@@ -1274,9 +1305,9 @@ export const handlers = [
       name,
       position: db.nextContentPosition(String(params.id), chapterId),
       sizeBytes: Math.round(200 + Math.random() * 3000) * 1024,
-      // Mirror the real backend: uploads start 'processing' and the client
-      // animates progress (useUploadSource) before flipping to 'ready'.
-      status: 'processing',
+      // Mirror the real backend: uploads start 'pending' until a worker
+      // claims the ingest job, then the client animates progress.
+      status: 'pending',
       workspaceId: String(params.id),
     };
     db.files.push(f);
@@ -1566,10 +1597,6 @@ export const handlers = [
       usage: { completionTokens: 5, promptTokens: 8 },
     });
   }),
-  http.post('/api/transcribe', async () => {
-    await delay(600);
-    return HttpResponse.json({ text: 'This is a mock voice transcription.' });
-  }),
   http.post('/api/workspaces/:id/generate', async ({ params, request }) => {
     await delay(900);
     const opts = (await request.json()) as GenerateOptions;
@@ -1708,14 +1735,25 @@ export const handlers = [
             explanation: 'This statement is true based on your sources.',
             type: 'boolean',
           } as Question;
-        case 'fill':
         case 'short':
           return {
             ...base,
             accepted: [{ value: 'answer' }],
             explanation:
               'The accepted answer follows from the source material.',
-            type,
+            type: 'short',
+          } as Question;
+        case 'open':
+          return {
+            ...base,
+            accepted: [{ value: 'A full-mark answer covers the key idea.' }],
+            explanation: 'Marked against the rubric, not a keyword match.',
+            hints: [{ value: 'Look at the source explanation.' }],
+            rubrics: [
+              { value: 'Names the key mechanism' },
+              { value: 'Links it to the outcome' },
+            ],
+            type: 'open',
           } as Question;
         case 'ordering':
           return {
@@ -2310,7 +2348,7 @@ export const handlers = [
           name: `${body.provider}-import-${i + 1}.pdf`,
           position: db.nextContentPosition(wsId, body.chapterId ?? null),
           sizeBytes: 512 * 1024,
-          status: 'processing' as const,
+          status: 'pending' as const,
           workspaceId: wsId,
         };
         db.files.unshift(f);

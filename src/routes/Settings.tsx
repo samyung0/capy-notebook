@@ -26,6 +26,7 @@ import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
 import { ModelPicker } from '@/features/settings/ModelPicker';
+import { QuizModelPicker } from '@/features/settings/QuizModelPicker';
 import { SubscriptionTab } from '@/features/settings/SubscriptionTab';
 import {
   type SettingsTab,
@@ -33,6 +34,7 @@ import {
 } from '@/features/settings/settingsSearch';
 import { getLocale, m, setLocale as setParaglideLocale } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { features } from '@/lib/features';
 import { STYLES, THEMES, useTheme } from '@/theme/ThemeProvider';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -374,12 +376,21 @@ function LlmTab() {
         <p className="t-subtitle">{m.settings_llm_generate()}</p>
         <ModelPicker className="mt-3" surface="generate" />
       </div>
+      {features.editorAi && (
+        <div className="mt-4 rounded-card border border-line bg-surface px-5 py-4">
+          <p className="t-subtitle">{m.settings_llm_editor()}</p>
+          <p className="mt-1 text-fg-secondary text-sm">
+            {m.settings_llm_editor_hint()}
+          </p>
+          <ModelPicker className="mt-3" surface="editor" />
+        </div>
+      )}
       <div className="mt-4 rounded-card border border-line bg-surface px-5 py-4">
-        <p className="t-subtitle">{m.settings_llm_editor()}</p>
+        <p className="t-subtitle">{m.settings_llm_quiz()}</p>
         <p className="mt-1 text-fg-secondary text-sm">
-          {m.settings_llm_editor_hint()}
+          {m.settings_llm_quiz_hint()}
         </p>
-        <ModelPicker className="mt-3" surface="editor" />
+        <QuizModelPicker className="mt-3" />
       </div>
     </>
   );

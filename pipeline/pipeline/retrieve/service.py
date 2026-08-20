@@ -1,4 +1,4 @@
-"""Retrieval HTTP service. The Go gateway proxies /chat/stream and /generate here.
+"""Retrieval HTTP service. The Go gateway proxies /chat/stream, /generate and /quiz-grade here.
 
 Chat runs a capped tool loop over the workspace index (see retrieval/agent.py).
 Generation runs fixed workflows instead, because its output has to parse.
@@ -13,9 +13,9 @@ import logging
 import secrets
 import threading
 from contextlib import asynccontextmanager
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import FastAPI, File, Request, UploadFile
+from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -25,6 +25,7 @@ from ..retrieval import models, store, workflows
 from ..retrieval.agent import run_agent
 from ..retrieval.locale import response_language_rule, rewrite_language_rule
 from ..retrieval.tools import ToolContext
+from . import quiz_grade as quiz_grade_mod
 from .ai_adapter import router as plate_ai_router
 
 obs.init_logging("retrieval")
@@ -278,6 +279,48 @@ async def complete_stream(req: CompleteReq, request: Request):
     )
 
 
+class QuizGradeReq(BaseModel):
+    workspaceId: str | None = None
+    prompt: str = ""
+    hints: list[str] | None = None
+    rubrics: list[str] | None = None
+    modelAnswer: str = ""
+    userAnswer: str = ""
+    modelKey: str | None = None
+    configVersion: int | None = None
+    locale: str | None = None
+
+
+@app.post("/quiz-grade")
+async def quiz_grade(req: QuizGradeReq) -> dict[str, Any]:
+    model = models.resolve_query_model(
+        req.modelKey, req.configVersion, surface=registry.SURFACE_QUIZ
+    )
+    text = await models.complete_text(
+        [
+            {"role": "system", "content": quiz_grade_mod.GRADE_SYSTEM},
+            {
+                "role": "user",
+                "content": quiz_grade_mod.build_grade_prompt(
+                    prompt=req.prompt,
+                    hints=req.hints or [],
+                    rubrics=req.rubrics or [],
+                    model_answer=req.modelAnswer,
+                    user_answer=req.userAnswer,
+                ),
+            },
+        ],
+        model=model,
+        temperature=0.1,
+        max_tokens=80,
+    )
+    payload = quiz_grade_mod.parse_grade_response(text)
+    usage = obs.current_usage()
+    if usage is not None and not usage.is_empty():
+        payload["usage"] = usage.as_dict()
+    return payload
+
+
 @app.post("/ai/command")
 async def ai_command(req: CompleteReq):
     """Non-streaming one-shot AI command (kept for parity with the gateway)."""
@@ -293,48 +336,6 @@ async def ai_command(req: CompleteReq):
     except Exception as e:
         log.exception("ai command failed")
         return {"text": "", "error": str(e)}
-
-
-# --------------------------------------------------------------- transcription
-
-
-@app.post("/transcribe")
-async def transcribe(file: Annotated[UploadFile, File()]):
-    """Transcribe an uploaded audio blob via a Whisper-compatible STT provider.
-
-    The one surface that still chooses its own model instead of being handed a
-    pin. It is safe only because transcription is billed on audio duration, so
-    the model does not affect the charge; both of those change together when STT
-    becomes user-selectable (see `.todo-stt-pin`).
-    """
-    spec = registry.registry.default(registry.SURFACE_STT)
-    try:
-        client = models.client_for(spec)
-        data = await file.read()
-        text = ""
-        duration_ms = 0
-        try:
-            resp = await client.audio.transcriptions.create(
-                model=spec.provider_model_id,
-                file=(file.filename or "audio.webm", data),
-                response_format="verbose_json",
-            )
-            text = getattr(resp, "text", "") or ""
-            duration_s = float(getattr(resp, "duration", 0) or 0)
-            duration_ms = int(duration_s * 1000)
-        except Exception:  # noqa: BLE001 - verbose_json is not universal
-            resp = await client.audio.transcriptions.create(
-                model=spec.provider_model_id,
-                file=(file.filename or "audio.webm", data),
-            )
-            text = getattr(resp, "text", "") or ""
-        if duration_ms <= 0 and data:
-            # ~32 kbit/s floor so a provider that omits duration still bills.
-            duration_ms = max(1000, (len(data) * 8) // 32)
-        return {"text": text, "durationMillis": duration_ms}
-    except Exception as e:
-        log.exception("transcription failed")
-        return {"text": "", "durationMillis": 0, "error": str(e)}
 
 
 # ------------------------------------------------------------------- generate
@@ -489,14 +490,16 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
             f"{_LEVEL_GUIDE}. Aim for a mix across these levels: {levels}, and make "
             "each question genuinely match the cognitive demand of its level. "
             "Return ONLY a JSON array of question objects. Each object has: "
-            '"type" (one of mcq, multi, boolean, fill, short, ordering, matching), '
+            '"type" (one of mcq, multi, boolean, short, open, ordering, matching), '
             '"level" (recall|application|analysis), "prompt", and the fields '
             "appropriate to its type (mcq/multi: options[] + correct[] indices; "
-            "boolean: correct bool; fill/short: accepted[]; ordering: items[] in "
-            "order; matching: pairs[] of {left,right}). For mcq and multi, each "
-            'option MUST be an object {"value": "...", "explanation": "..."} where '
-            "the explanation says why that option is correct or incorrect. For "
-            "boolean, fill, short, ordering and matching, add a single "
+            "boolean: correct bool; short: accepted[]; open: accepted[] model "
+            "answer, hints[], rubrics[] marking-scheme strings, optional points; "
+            "ordering: items[] in order; matching: pairs[] of {left,right}). For "
+            "mcq and multi, each option MUST be an object "
+            '{"value": "...", "explanation": "..."} where the explanation says '
+            "why that option is correct or incorrect. For boolean, short, open, "
+            "ordering and matching, add a single "
             '"explanation" field for the question.'
         ),
         context=context,

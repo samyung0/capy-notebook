@@ -124,21 +124,20 @@ type UsageEvent struct {
 // keys in every dashboard query and rollup row; a typo creates a silent second
 // category rather than an error.
 const (
-	KindLLM        = "llm"
-	KindEmbedding  = "embedding"
-	KindCaption    = "caption"
-	KindTranscribe = "transcribe"
-	KindParseGPU   = "parse_gpu"
-	KindEmail      = "email"
+	KindLLM       = "llm"
+	KindEmbedding = "embedding"
+	KindCaption   = "caption"
+	KindParseGPU  = "parse_gpu"
+	KindEmail     = "email"
 )
 
 const (
-	SurfaceChat       = "chat"
-	SurfaceGenerate   = "generate"
-	SurfaceEditor     = "editor"
-	SurfaceIngest     = "ingest"
-	SurfaceTranscribe = "transcribe"
-	SurfaceSystem     = "system"
+	SurfaceChat     = "chat"
+	SurfaceGenerate = "generate"
+	SurfaceEditor   = "editor"
+	SurfaceQuiz     = "quiz"
+	SurfaceIngest   = "ingest"
+	SurfaceSystem   = "system"
 )
 
 /* --------------------------------------------------------------- counter */

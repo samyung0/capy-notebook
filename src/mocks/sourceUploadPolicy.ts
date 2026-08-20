@@ -62,7 +62,7 @@ const supportedExtensions = [...extensionKinds.keys()]
   .map((extension) => `.${extension}`)
   .sort((a, b) => a.localeCompare(b));
 
-/** Mirrors sourceupload.parseExtensions: both modes hit the same MinerU app. */
+/** Mirrors sourceupload.parseExtensions: the GPU parser's format list. */
 const parseExtensions = [
   '.bmp',
   '.doc',
@@ -90,12 +90,6 @@ export const sourceUploadPolicy: SourceUploadPolicy = {
   })),
   maxBytes: 10 * 1024 * 1024,
   parseModes: [
-    {
-      extensions: parseExtensions,
-      maxBytes: 10 * 1024 * 1024,
-      mode: 'accurate',
-      supportsFigures: true,
-    },
     {
       extensions: parseExtensions,
       maxBytes: 10 * 1024 * 1024,

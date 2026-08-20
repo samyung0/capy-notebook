@@ -1,5 +1,6 @@
 ---
 name: modern-web-guidance
+disable-model-invocation: true
 description: |
 THIS TOOL IS DISABLED! DO NOT READ
   Search tool for modern web development best practices. MANDATORY: Execute FIRST for all HTML/CSS and clientside JS tasks. Do NOT skip — web APIs evolve rapidly and training weights contain obsolete patterns.

@@ -1,12 +1,11 @@
-"""Manually drive the Modal parse endpoint to test the GPU memory snapshot.
+"""Manually drive the Modal parse endpoint to test the CPU memory snapshot.
 
-The GPU snapshot's whole job is to make a *cold* boot fast: instead of
-re-importing torch, reloading weights and re-starting vLLM (accurate MinerU),
-a cold container restores straight into a ready-to-serve state. Fast (Marker)
-does not use GPU snapshots — restore died with SIGSEGV — so its first call
-after scale-from-zero still pays model load. This script measures that from
-the outside so you can cross-check against the per-container duration Modal
-shows in the dashboard.
+The snapshot's job is to make a *cold* boot faster: instead of re-importing
+torch and reloading parent weights, a cold container restores and then
+spawns Marker workers. Capturing those children in the snapshot used to
+SIGSEGV. Restore is tens of seconds (worker spawn), not minutes. This
+script measures cold vs warm from the outside so you can cross-check
+against the per-container duration Modal shows in the dashboard.
 
 What it measures
 ----------------
@@ -17,26 +16,27 @@ What it measures
   The reply carries ``_server_parse_s`` (parse-only, measured in-container)
   so you can subtract it out.
 
-If the snapshot works, the FIRST call after a cold start returns in a few
-seconds and its ``uptime_s`` is small. If it's broken, that first call blocks
-for minutes while the container reloads models, and the Modal logs will show
-the ``[snapshot-build] warmup`` lines on an ordinary boot.
+If the snapshot works, a cold ``/healthz`` is tens of seconds (restore +
+worker spawn) and its ``uptime_s`` is small. If it's broken, that first
+call blocks for minutes while the container reloads models, and the Modal
+logs will show ``[enter snap=True]`` on that same container (build or
+no-snapshot fallback). ``[enter snap=False]`` always prints and is not
+proof of restore.
 
 Forcing a cold start
 --------------------
-A deployed container lingers ``scaledown_window`` seconds (300 = 5 min) after
-the last request. To guarantee a cold boot either:
-  * pass ``--wait-cold 330`` (sleeps past the window, then measures), or
-  * run this once, wait >5 min idle, run again, or
-  * redeploy (``modal deploy modal/mineru_app.py``) right before running.
+A deployed container lingers ``scaledown_window`` seconds after the last
+request (30s). To guarantee a cold boot either:
+  * pass ``--wait-cold 40``, or
+  * run this once, wait past the window, run again, or
+  * redeploy (``pnpm run deploy:modal``) right before running.
 
 Usage
 -----
-    # env: MODAL_PARSE_URL=https://<org>--evo-mineru-mineruaccurate-web.modal.run/file_parse
-    #      MODAL_FAST_PARSE_URL=https://<org>--evo-mineru-minerufast-web.modal.run/file_parse
+    # env: MODAL_FAST_PARSE_URL=https://<org>--evo-mineru-fast.modal.run
     #      MODAL_PARSE_TOKEN=<token in the evo-mineru-token secret>
     python modal/test_snapshot.py                 # 3 parses, warm-ish
-    python modal/test_snapshot.py --wait-cold 330 # force a cold boot first
+    python modal/test_snapshot.py --wait-cold 40
     python modal/test_snapshot.py -n 5 --file some.pdf
     python modal/test_snapshot.py --healthz-only  # restore-only probe
 
@@ -137,8 +137,9 @@ def main() -> int:
     )
     ap.add_argument(
         "--url",
-        default=os.environ.get("MODAL_PARSE_URL", ""),
-        help="full /file_parse URL (default: $MODAL_PARSE_URL)",
+        default=os.environ.get("MODAL_FAST_PARSE_URL")
+        or os.environ.get("MODAL_PARSE_URL", ""),
+        help="full /file_parse URL (default: $MODAL_FAST_PARSE_URL)",
     )
     ap.add_argument(
         "--token",
@@ -156,7 +157,8 @@ def main() -> int:
         "--wait-cold",
         type=int,
         default=0,
-        help="sleep N seconds first to force a cold boot (use ~330 to clear the 300s scaledown window)",
+        help="sleep N seconds first to force a cold boot "
+        "(scaledown is 30s)",
     )
     ap.add_argument(
         "--timeout", type=float, default=900.0, help="per-request timeout seconds"
@@ -175,7 +177,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if not args.url:
-        ap.error("no URL: pass --url or set MODAL_PARSE_URL")
+        ap.error("no URL: pass --url or set MODAL_FAST_PARSE_URL")
     args.url = _file_parse_url(args.url)
     token = args.token or None
 
@@ -192,7 +194,7 @@ def main() -> int:
     if args.wait_cold > 0:
         print(
             f"waiting {args.wait_cold}s to let the container scale to zero "
-            f"(scaledown_window is 300s)...",
+            f"(scaledown is 30s)...",
             flush=True,
         )
         time.sleep(args.wait_cold)
@@ -263,12 +265,16 @@ def main() -> int:
             "  * small penalty (seconds) + first uptime_s near 0 => snapshot restore works."
         )
         print(
-            "  * penalty in the minutes  => snapshot NOT restoring; check Modal logs for"
+            "  * penalty in the minutes  => snapshot NOT restoring; check Modal logs:"
         )
-        print("    '[snapshot-build] warmup' lines appearing on an ordinary cold boot.")
+        print(
+            "    [enter snap=True] on that container => build or no-snapshot fallback."
+        )
+        print("    [enter snap=False] always prints — it is not proof of restore.")
     print()
-    print("Now compare against Modal: `modal app logs evo-mineru` and the dashboard's")
-    print("per-container 'up' duration / cold-start timing for this same run.")
+    print("Now compare against Modal: `modal app logs evo-mineru-fast`")
+    print("and the dashboard's per-container 'up' duration / cold-start")
+    print("timing for this same run.")
     return 0
 
 

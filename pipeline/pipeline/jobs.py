@@ -22,6 +22,13 @@ class TerminalError(Exception):
     """Do not retry. The job is failed and, for ingest, the file is failed."""
 
 
+class CapacityWait(Exception):
+    """GPU parse slots are full. The job goes back to pending; the file stays pending.
+
+    Not a failure. Do not spend an attempt and do not mark the file failed.
+    """
+
+
 @dataclass(frozen=True)
 class JobPolicy:
     max_attempts: int
@@ -62,7 +69,7 @@ def backoff_s(policy: JobPolicy, attempts: int) -> int:
 
 
 def is_retryable(exc: BaseException) -> bool:
-    if isinstance(exc, TerminalError):
+    if isinstance(exc, (TerminalError, CapacityWait)):
         return False
     if isinstance(exc, RetryableError):
         return True

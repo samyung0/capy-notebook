@@ -38,7 +38,6 @@ describe('source upload policy', () => {
         sourceUploadPolicy
       )
     ).toEqual({
-      accurate: 'over 10 MB',
       fast: 'over 10 MB',
     });
     expect(
@@ -51,7 +50,6 @@ describe('source upload policy', () => {
     expect(
       parseModeIssues(file('archive.zip'), 'unknown', sourceUploadPolicy)
     ).toEqual({
-      accurate: 'format not supported',
       fast: 'format not supported',
     });
     expect(defaultParseMode(file('script.py'), 'txt', sourceUploadPolicy)).toBe(
@@ -61,7 +59,6 @@ describe('source upload policy', () => {
 
   it('offers image captioning only for modes that extract figures', () => {
     expect(supportsFigures('fast', 'pdf', sourceUploadPolicy)).toBe(true);
-    expect(supportsFigures('accurate', 'pdf', sourceUploadPolicy)).toBe(true);
     expect(supportsFigures('none', 'pdf', sourceUploadPolicy)).toBe(false);
     expect(supportsFigures('fast', 'txt', sourceUploadPolicy)).toBe(false);
   });

@@ -11,4 +11,5 @@ export interface SetModelPrefsReq {
   chatModelKey?: string;
   editorModelKey?: string;
   generateModelKey?: string;
+  quizModelKey?: string;
 }

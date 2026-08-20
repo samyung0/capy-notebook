@@ -446,6 +446,29 @@ def test_requeue_then_claim(workspace):
     assert claimed["attempts"] == 2
 
 
+def test_capacity_yield_does_not_spend_an_attempt(workspace):
+    from pipeline.store import db
+
+    job_id = f"job_{workspace.id[-8:]}"
+    workspace.scalar(
+        """
+        INSERT INTO jobs (id, type, payload, status, attempts)
+        VALUES (%s, 'ingest', '{}'::jsonb, 'running', 1)
+        RETURNING id
+        """,
+        (job_id,),
+    )
+    with workspace._connect() as conn:
+        cur = conn.cursor()
+        db.release_job_for_capacity(cur, job_id, 1, backoff_s=0)
+        _isolate_job(cur, job_id)
+        claimed = db.claim_job(cur, {"ingest": 180})
+        conn.commit()
+    assert claimed is not None
+    assert claimed["id"] == job_id
+    assert claimed["attempts"] == 1
+
+
 def test_lease_reclaim_fails_after_budget(workspace):
     from pipeline.store import db
 

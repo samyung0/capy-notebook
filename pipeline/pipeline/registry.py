@@ -10,9 +10,8 @@ Two rules keep a resolved model from drifting away from the one that was priced:
 * :func:`resolve_pinned` requires an exact pin for **every** surface. Nothing
   that can bill, and nothing that writes a vector, is allowed to pick a model
   for itself; the caller that reserved the spend, enqueued the job or created
-  the workspace already chose one. ``registry.default`` remains for the two
-  callers whose job it is to choose (ingest enqueue in the gateway, and
-  ``/transcribe`` until STT is pinned too).
+  the workspace already chose one. ``registry.default`` remains for the
+  caller whose job it is to choose (ingest enqueue in the gateway).
 """
 
 from __future__ import annotations
@@ -34,10 +33,10 @@ POLL_INTERVAL = 30.0
 SURFACE_CHAT = "chat"
 SURFACE_GENERATE = "generate"
 SURFACE_EDITOR = "editor"
+SURFACE_QUIZ = "quiz"
 SURFACE_INGEST = "ingest"
 SURFACE_EMBEDDING = "embedding"
 SURFACE_VISION = "vision"
-SURFACE_STT = "stt"
 
 
 @dataclass(frozen=True)
@@ -289,7 +288,13 @@ def bootstrap_llm(provider_model_id: str) -> ModelConfig:
         base_url=cfg.llm.base_url,
         provider_model_id=provider_model_id or cfg.query_model,
         params={"temperature": 0.3},
-        surfaces=(SURFACE_CHAT, SURFACE_GENERATE, SURFACE_EDITOR, SURFACE_INGEST),
+        surfaces=(
+            SURFACE_CHAT,
+            SURFACE_GENERATE,
+            SURFACE_EDITOR,
+            SURFACE_QUIZ,
+            SURFACE_INGEST,
+        ),
         micros_per_input_token=250,
         micros_per_output_token=1000,
     )
@@ -348,8 +353,6 @@ def provider_cfg_for(spec: ModelConfig) -> ProviderCfg:
         return ProviderCfg(cfg.embedding.api_key, base or cfg.embedding.base_url)
     if slug == "google":
         return ProviderCfg(cfg.vision.api_key, base or cfg.vision.base_url)
-    if slug == "openai":
-        return ProviderCfg(cfg.stt.api_key, base or cfg.stt.base_url)
     return ProviderCfg(cfg.llm.api_key, base or cfg.llm.base_url)
 
 

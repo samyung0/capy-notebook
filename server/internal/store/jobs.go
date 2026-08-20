@@ -10,13 +10,16 @@ import (
 	"github.com/evonotes/server/internal/obs"
 )
 
-// CreateSourceWithJob inserts an uploaded file as 'processing' and enqueues an
+// CreateSourceWithJob inserts an uploaded file as 'pending' and enqueues an
 // ingest job in the same transaction (Postgres-backed queue; the Python worker
-// claims it with SKIP LOCKED). The file's url points at the raw-blob endpoint
-// so the viewer can render it immediately. parseMode selects which MinerU
-// backend the worker parses with: 'accurate' (hybrid VLM) or 'fast' (pipeline
-// OCR) — text kinds ignore it and are inserted directly. captionImages asks the
-// worker to describe the figures that parse extracted.
+// claims it with SKIP LOCKED). The file stays pending until a worker actually
+// starts (or a GPU parse slot is free); then it becomes 'processing'. The
+// file's url points at the raw-blob endpoint so the viewer can render it
+// immediately. parseMode selects the GPU parser the worker runs:
+// 'fast' (Marker + RapidOCR on scans). Retired names 'accurate' and
+// 'advanced' are stored as 'fast'. Text kinds ignore it and
+// are inserted directly. captionImages asks the worker to describe the figures
+// that parse extracted.
 func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, engine, parseMode string, captionImages bool) (File, string, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -43,7 +46,7 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 	now := time.Now().UTC()
 	if _, err := tx.Exec(ctx, `INSERT INTO files
 		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, engine, blob_path, url)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'processing',$10,$11,$12,$13)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'pending',$10,$11,$12,$13)`,
 		fileID, wsID, ownerID, nullStr(createdBy), chapterID, name, kind, sizeBytes, now, parser, engine, blobPath, url); err != nil {
 		return File{}, "", err
 	}
@@ -65,7 +68,7 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 		return File{}, "", err
 	}
 
-	f := File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "processing", Indexed: false, URL: &url}
+	f := File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "pending", Indexed: false, URL: &url}
 	return f, jobID, nil
 }
 

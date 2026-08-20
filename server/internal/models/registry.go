@@ -38,10 +38,10 @@ const (
 	SurfaceChat      = "chat"
 	SurfaceGenerate  = "generate"
 	SurfaceEditor    = "editor"
+	SurfaceQuiz      = "quiz"
 	SurfaceIngest    = "ingest"
 	SurfaceEmbedding = "embedding"
 	SurfaceVision    = "vision"
-	SurfaceSTT       = "stt"
 )
 
 var ErrNotFound = errors.New("model config not found")

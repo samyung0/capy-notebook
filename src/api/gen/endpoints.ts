@@ -59,6 +59,8 @@ import type {
   PublicQuiz,
   PublicWorkspace,
   Quiz,
+  QuizGradeReq,
+  QuizGradeResp,
   RecentFile,
   ReorderChaptersReq,
   ReorderContentReq,
@@ -2868,7 +2870,7 @@ export const getSetModelPrefsUrl = () => {
 }
 
 /**
- * @summary Set chat, generate and editor model preferences
+ * @summary Set chat, generate, editor and quiz model preferences
  */
 export const setModelPrefs = async (setModelPrefsReq: NonReadonly<SetModelPrefsReq>, options?: RequestInit): Promise<setModelPrefsResponse> => {
 
@@ -3300,6 +3302,56 @@ export const readNotification = async (id: string, options?: RequestInit): Promi
 
   const data: readNotificationResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as readNotificationResponse
+}
+
+
+
+export type gradeQuizAnswerResponse200 = {
+  data: QuizGradeResp
+  status: 200
+}
+
+export type gradeQuizAnswerResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type gradeQuizAnswerResponseSuccess = (gradeQuizAnswerResponse200) & {
+  headers: Headers;
+};
+export type gradeQuizAnswerResponseError = (gradeQuizAnswerResponseDefault) & {
+  headers: Headers;
+};
+
+export type gradeQuizAnswerResponse = (gradeQuizAnswerResponseSuccess | gradeQuizAnswerResponseError)
+
+export const getGradeQuizAnswerUrl = () => {
+
+
+
+
+  return `/api/quiz-grade`
+}
+
+/**
+ * @summary Mark one open quiz answer against its marking scheme
+ */
+export const gradeQuizAnswer = async (quizGradeReq: NonReadonly<QuizGradeReq>, options?: RequestInit): Promise<gradeQuizAnswerResponse> => {
+
+  const res = await fetch(getGradeQuizAnswerUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(quizGradeReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: gradeQuizAnswerResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as gradeQuizAnswerResponse
 }
 
 

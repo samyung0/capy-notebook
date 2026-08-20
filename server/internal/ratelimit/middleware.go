@@ -30,6 +30,7 @@ var aiSuffixes = []string{
 	"/chat/stream",
 	"/ai/command",
 	"/generate",
+	"/quiz-grade",
 }
 
 var editorSuffixes = []string{
@@ -64,9 +65,6 @@ func classify(path string) class {
 		if strings.HasPrefix(path, prefix) {
 			return classExempt
 		}
-	}
-	if path == "/api/transcribe" {
-		return classAI
 	}
 	for _, suffix := range editorSuffixes {
 		if strings.HasSuffix(path, suffix) {

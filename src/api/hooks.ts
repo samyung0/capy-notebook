@@ -695,7 +695,8 @@ export const allFilesQuery = () =>
     queryFn: () => api.get<SourceFile[]>('/files'),
     queryKey: ['files', 'all'],
   });
-export const useAllFiles = () => useQuery(allFilesQuery());
+export const useAllFiles = (options?: QueryUiOptions) =>
+  useQuery({ ...allFilesQuery(), meta: queryMeta(options) });
 
 export function useUpdateFile(wsId: string) {
   const qc = useQueryClient();
@@ -873,7 +874,7 @@ function simulateMswProgress(qc: QueryClient, wsId: string, fileId: string) {
     pct = Math.min(100, pct + 20);
     patchFileInCache(qc, wsId, fileId, {
       ingestPct: pct,
-      status: 'processing',
+      status: pct < 40 ? 'pending' : 'processing',
     });
     if (pct >= 100) {
       clearInterval(timer);
@@ -908,11 +909,10 @@ export function useUploadSource(wsId: string) {
       kind: SourceFile['kind'];
       chapterId?: string | null;
       chapterName?: string | null;
-      /** accurate = Modal MinerU hybrid VLM, fast = Marker + RapidOCR on
-       * scanned pages, none = store-only for non-text kinds (no parse, not
-       * indexed). Text kinds (txt/md/json) still index under none — there is
-       * no GPU parse route to pick. */
-      parseMode?: 'accurate' | 'fast' | 'none';
+      /** fast = Marker + RapidOCR on scanned pages, none = store-only for
+       * non-text kinds (no parse, not indexed). Text kinds (txt/md/json)
+       * still index under none — there is no GPU parse route to pick. */
+      parseMode?: 'fast' | 'none';
       /** Caption the figures found while parsing so they become searchable. */
       captionImages?: boolean;
       onUploadProgress?: (pct: number) => void;
@@ -973,7 +973,7 @@ export function useUploadSource(wsId: string) {
           next.push({
             ...file,
             ingestPct: 0,
-            status: file.status ?? 'processing',
+            status: file.status ?? 'pending',
           });
         }
         return next;
@@ -1023,7 +1023,9 @@ export function useIngestProgress(wsId: string, enabled = true) {
             typeof value.fileId !== 'string' ||
             typeof value.pct !== 'number' ||
             !Number.isFinite(value.pct) ||
-            !['processing', 'ready', 'failed'].includes(String(value.status))
+            !['pending', 'processing', 'ready', 'failed'].includes(
+              String(value.status)
+            )
           ) {
             return;
           }

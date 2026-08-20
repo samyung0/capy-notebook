@@ -3,6 +3,7 @@ import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
+import { llmRuntimePlugin } from './vite-llm-runtime';
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
@@ -10,12 +11,21 @@ export default defineConfig(({ mode }) => {
   const useMsw = env.VITE_USE_MSW !== 'false' && mode === 'development';
   return {
     assetsInclude: ['**/*.wasm'],
+    build: {
+      rollupOptions: {
+        input: {
+          llmRuntime: path.resolve(import.meta.dirname, 'llm-runtime.html'),
+          main: path.resolve(import.meta.dirname, 'index.html'),
+        },
+      },
+    },
     optimizeDeps: {
-      exclude: ['@extend-ai/react-pptx'],
+      exclude: ['@extend-ai/react-pptx', '@wllama/wllama'],
     },
     plugins: [
       react(),
       tailwindcss(),
+      llmRuntimePlugin(),
       paraglideVitePlugin({
         outdir: './src/i18n/paraglide',
         project: './project.inlang',
@@ -29,6 +39,7 @@ export default defineConfig(({ mode }) => {
       },
     },
     server: {
+      host: true,
       open: true,
       port: Number.parseInt(env.VITE_PORT, 10) || 5173,
       // Only proxy when hitting the real Go gateway. With MSW on, the service

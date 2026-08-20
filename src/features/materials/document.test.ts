@@ -168,4 +168,27 @@ describe('Universal Plate material documents', () => {
       })
     ).toBe(false);
   });
+
+  it('rejects fill as a question type', () => {
+    expect(
+      isMaterialDocument({
+        schemaVersion: 1,
+        value: [
+          {
+            children: [
+              {
+                children: [{ children: [{ text: '?' }], type: 'quiz_prompt' }],
+                id: 'q1',
+                level: 'recall',
+                questionType: 'fill',
+                type: 'quiz_question',
+              },
+            ],
+            id: 'quiz_1',
+            type: 'quiz',
+          },
+        ],
+      })
+    ).toBe(false);
+  });
 });

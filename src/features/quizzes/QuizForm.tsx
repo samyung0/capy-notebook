@@ -1,4 +1,9 @@
-import type { CognitiveLevel, Question, QuestionType } from '@/api/types';
+import {
+  type CognitiveLevel,
+  QUESTION_TYPES,
+  type Question,
+  type QuestionType,
+} from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { Icon } from '@/components/ui/Icon';
@@ -7,22 +12,10 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { LEVELS, levelLabel } from '@/lib/levels';
 
-const Q_TYPES: QuestionType[] = [
-  'mcq',
-  'multi',
-  'boolean',
-  'fill',
-  'short',
-  'matching',
-  'ordering',
-];
-
 function quizTypeLabel(type: QuestionType): string {
   switch (type) {
     case 'boolean':
       return m.quiz_type_boolean();
-    case 'fill':
-      return m.quiz_type_fill();
     case 'matching':
       return m.quiz_type_matching();
     case 'mcq':
@@ -33,6 +26,8 @@ function quizTypeLabel(type: QuestionType): string {
       return m.quiz_type_ordering();
     case 'short':
       return m.quiz_type_short();
+    case 'open':
+      return m.quiz_type_open();
   }
 }
 
@@ -71,8 +66,6 @@ export function createBlankQuestion(
       };
     case 'boolean':
       return { ...shared, correct: true, type: 'boolean' };
-    case 'fill':
-      return { ...shared, accepted: [{ value: '' }], type: 'fill' };
     case 'short':
       return { ...shared, accepted: [{ value: '' }], type: 'short' };
     case 'ordering':
@@ -89,6 +82,14 @@ export function createBlankQuestion(
           { left: '', right: '' },
         ],
         type: 'matching',
+      };
+    case 'open':
+      return {
+        ...shared,
+        accepted: [{ value: '' }],
+        hints: [],
+        rubrics: [{ value: '' }],
+        type: 'open',
       };
   }
 }
@@ -109,7 +110,6 @@ export function isCompleteQuestion(question: Question): boolean {
       );
     case 'boolean':
       return true;
-    case 'fill':
     case 'short':
       return (
         question.accepted.length > 0 &&
@@ -124,6 +124,11 @@ export function isCompleteQuestion(question: Question): boolean {
       return (
         question.pairs.length >= 2 &&
         question.pairs.every((pair) => pair.left.trim() && pair.right.trim())
+      );
+    case 'open':
+      return (
+        question.accepted.some((answer) => answer.value.trim()) &&
+        question.rubrics.some((rubric) => rubric.value.trim())
       );
   }
 }
@@ -194,7 +199,7 @@ export function QuizForm({
               onChange={(e) => changeType(i, e.target.value as QuestionType)}
               value={q.type}
             >
-              {Q_TYPES.map((t) => (
+              {QUESTION_TYPES.map((t) => (
                 <option key={t} value={t}>
                   {quizTypeLabel(t)}
                 </option>
@@ -213,6 +218,25 @@ export function QuizForm({
                 </option>
               ))}
             </select>
+            <label className="flex items-center gap-1.5">
+              <span className="t-label text-fg-muted">{m.quiz_points()}</span>
+              <input
+                className={selectClass}
+                min={0.5}
+                onChange={(e) => {
+                  const points = Number(e.target.value);
+                  update(
+                    i,
+                    Number.isFinite(points) && points > 0
+                      ? { ...q, points }
+                      : { ...q, points: undefined }
+                  );
+                }}
+                step={0.5}
+                type="number"
+                value={q.points ?? 1}
+              />
+            </label>
             <button
               aria-label={m.quiz_delete_question()}
               className="ml-auto text-fg-muted hover:text-tint-error-fg"
@@ -318,7 +342,7 @@ export function QuizForm({
             </div>
           )}
 
-          {(q.type === 'fill' || q.type === 'short') && (
+          {q.type === 'short' && (
             <label className="mt-3 flex flex-col gap-1.5">
               <p className="t-label text-fg-muted">
                 {m.quiz_accepted_answers()}
@@ -433,6 +457,95 @@ export function QuizForm({
                   })
                 }
               />
+            </div>
+          )}
+
+          {q.type === 'open' && (
+            <div className="mt-3 flex flex-col gap-3">
+              <label className="flex flex-col gap-1.5">
+                <p className="t-label text-fg-muted">{m.quiz_model_answer()}</p>
+                <textarea
+                  className="min-h-20 rounded-button border border-line bg-surface px-3 py-2 text-fg text-sm outline-none focus:border-line-strong"
+                  onChange={(e) =>
+                    update(i, { ...q, accepted: [{ value: e.target.value }] })
+                  }
+                  placeholder={m.quiz_model_answer_placeholder()}
+                  value={q.accepted[0]?.value ?? ''}
+                />
+              </label>
+              <div className="flex flex-col gap-2">
+                <p className="t-label text-fg-muted">{m.quiz_hints()}</p>
+                {q.hints.map((hint, hi) => (
+                  <div className="flex items-center gap-2" key={hi}>
+                    <Input
+                      onChange={(e) => {
+                        const hints = [...q.hints];
+                        hints[hi] = { value: e.target.value };
+                        update(i, { ...q, hints });
+                      }}
+                      placeholder={m.quiz_hint_n({ n: hi + 1 })}
+                      value={hint.value}
+                      wrapperClassName="flex-1"
+                    />
+                    <button
+                      aria-label={m.quiz_remove_hint()}
+                      className="text-fg-muted hover:text-fg"
+                      onClick={() =>
+                        update(i, {
+                          ...q,
+                          hints: q.hints.filter((_, x) => x !== hi),
+                        })
+                      }
+                      type="button"
+                    >
+                      <Icon name="x" size={15} />
+                    </button>
+                  </div>
+                ))}
+                <AddRowButton
+                  label={m.quiz_add_hint()}
+                  onClick={() =>
+                    update(i, { ...q, hints: [...q.hints, { value: '' }] })
+                  }
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <p className="t-label text-fg-muted">{m.quiz_rubrics()}</p>
+                {q.rubrics.map((rubric, ri) => (
+                  <div className="flex items-center gap-2" key={ri}>
+                    <Input
+                      onChange={(e) => {
+                        const rubrics = [...q.rubrics];
+                        rubrics[ri] = { value: e.target.value };
+                        update(i, { ...q, rubrics });
+                      }}
+                      placeholder={m.quiz_rubric_n({ n: ri + 1 })}
+                      value={rubric.value}
+                      wrapperClassName="flex-1"
+                    />
+                    <button
+                      aria-label={m.quiz_remove_rubric()}
+                      className="text-fg-muted hover:text-fg disabled:opacity-30"
+                      disabled={q.rubrics.length <= 1}
+                      onClick={() =>
+                        update(i, {
+                          ...q,
+                          rubrics: q.rubrics.filter((_, x) => x !== ri),
+                        })
+                      }
+                      type="button"
+                    >
+                      <Icon name="x" size={15} />
+                    </button>
+                  </div>
+                ))}
+                <AddRowButton
+                  label={m.quiz_add_rubric()}
+                  onClick={() =>
+                    update(i, { ...q, rubrics: [...q.rubrics, { value: '' }] })
+                  }
+                />
+              </div>
             </div>
           )}
 

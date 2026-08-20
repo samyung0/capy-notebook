@@ -32,8 +32,6 @@ function kindLabel(kind: string): string {
       return m.billing_kind_embedding();
     case 'caption':
       return m.billing_kind_caption();
-    case 'transcribe':
-      return m.billing_kind_transcribe();
     case 'parse_gpu':
       return m.billing_kind_parse_gpu();
     case 'email':
@@ -53,8 +51,6 @@ function surfaceLabel(surface: string): string {
       return m.billing_surface_editor();
     case 'ingest':
       return m.billing_surface_ingest();
-    case 'transcribe':
-      return m.billing_surface_transcribe();
     case 'system':
       return m.billing_surface_system();
     default:

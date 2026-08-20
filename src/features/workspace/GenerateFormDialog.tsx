@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
-import type {
-  Chapter,
-  CognitiveLevel,
-  DiagramType,
-  GenerateOptions,
-  QuestionType,
-  SourceFile,
+import {
+  type Chapter,
+  type CognitiveLevel,
+  type DiagramType,
+  type GenerateOptions,
+  QUESTION_TYPES,
+  type QuestionType,
+  type SourceFile,
 } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import {
@@ -26,22 +27,10 @@ import {
 } from './generateTitle';
 export type GenerateMode = 'flashcards' | 'quiz' | 'mindmap' | 'diagram';
 
-const Q_TYPES: QuestionType[] = [
-  'mcq',
-  'multi',
-  'boolean',
-  'fill',
-  'short',
-  'matching',
-  'ordering',
-];
-
 function questionTypeLabel(type: QuestionType): string {
   switch (type) {
     case 'boolean':
       return m.quiz_type_boolean();
-    case 'fill':
-      return m.quiz_type_fill();
     case 'matching':
       return m.quiz_type_matching();
     case 'mcq':
@@ -52,6 +41,8 @@ function questionTypeLabel(type: QuestionType): string {
       return m.quiz_type_ordering();
     case 'short':
       return m.quiz_type_short();
+    case 'open':
+      return m.quiz_type_open();
   }
 }
 
@@ -331,7 +322,7 @@ export function GenerateFormDialog({
                   {m.generate_question_types()}
                 </p>
                 <div className="flex flex-wrap gap-1.5">
-                  {Q_TYPES.map((t) => (
+                  {QUESTION_TYPES.map((t) => (
                     <Chip
                       active={types.includes(t)}
                       key={t}

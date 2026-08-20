@@ -349,10 +349,27 @@ def merge_ocr_lines(
     return merged
 
 
+def _plain_poly(value: Any) -> Any:
+    if isinstance(value, (str, bytes, int, float)):
+        return value
+    to_list = getattr(value, "tolist", None)
+    if callable(to_list) and not isinstance(value, (list, tuple)):
+        try:
+            return to_list()
+        except (TypeError, ValueError):
+            pass
+    if isinstance(value, (list, tuple)):
+        return [_plain_poly(item) for item in value]
+    return value
+
+
 def ocr_line_bbox(
     poly: Any, image_width: float, image_height: float
 ) -> list[float] | None:
     """Scale a RapidOCR polygon (pixel space, top-left) onto the 1000 page."""
+    # RapidOCR 3 hands back numpy arrays, not lists. Without this, every OCR
+    # line lands in content_list with bbox=null and citations cannot highlight.
+    poly = _plain_poly(poly)
     xs: list[float] = []
     ys: list[float] = []
     if isinstance(poly, (list, tuple)) and poly:

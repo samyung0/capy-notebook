@@ -206,3 +206,14 @@ def test_ocr_line_bbox_scales_polygon_onto_the_page():
     assert box[1] == pytest.approx(50.0)
     assert box[2] == pytest.approx(550.0)
     assert box[3] == pytest.approx(100.0)
+
+
+def test_ocr_line_bbox_accepts_numpy_shaped_polygons():
+    """RapidOCR boxes are ndarrays; treating them as opaque dropped every bbox."""
+
+    class _Array:
+        def tolist(self):
+            return [[10, 20], [110, 20], [110, 40], [10, 40]]
+
+    box = ocr_line_bbox(_Array(), 200, 400)
+    assert box == ocr_line_bbox([[10, 20], [110, 20], [110, 40], [10, 40]], 200, 400)

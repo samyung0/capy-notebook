@@ -14,10 +14,10 @@ func TestQuizRoundTripPreservesEveryQuestionTypeAndGrading(t *testing.T) {
 		{"id":"q1","type":"mcq","level":"recall","prompt":"Pick one","options":[{"value":"A","explanation":"yes"},{"value":"B","explanation":"no"}],"correct":[0]},
 		{"id":"q2","type":"multi","level":"application","prompt":"Pick many","options":[{"value":"A"},{"value":"B"},{"value":"C"}],"correct":[0,2]},
 		{"id":"q3","type":"boolean","level":"recall","prompt":"True?","correct":false,"explanation":"Because."},
-		{"id":"q4","type":"fill","level":"application","prompt":"Fill","accepted":[{"value":"alpha"},{"value":"beta"}]},
-		{"id":"q5","type":"short","level":"analysis","prompt":"Explain","accepted":[{"value":"answer"}]},
-		{"id":"q6","type":"matching","level":"application","prompt":"Match","pairs":[{"left":"A","right":"1"},{"left":"B","right":"2"}]},
-		{"id":"q7","type":"ordering","level":"analysis","prompt":"Order","items":[{"value":"First"},{"value":"Second"}]}
+		{"id":"q4","type":"short","level":"application","prompt":"Answer","accepted":[{"value":"alpha"},{"value":"beta"}]},
+		{"id":"q5","type":"matching","level":"application","prompt":"Match","pairs":[{"left":"A","right":"1"},{"left":"B","right":"2"}]},
+		{"id":"q6","type":"ordering","level":"analysis","prompt":"Order","items":[{"value":"First"},{"value":"Second"}]},
+		{"id":"q7","type":"open","level":"application","prompt":"Explain","accepted":[{"value":"cristae"}],"hints":[{"value":"ATP"}],"rubrics":[{"value":"Mentions folds"}],"points":1}
 	]`)
 	limit := 20
 	raw, err := QuizDocument("Quiz", questions, &limit)
@@ -43,6 +43,15 @@ func TestQuizRoundTripPreservesEveryQuestionTypeAndGrading(t *testing.T) {
 	}
 	if !reflect.DeepEqual(wantValue, gotValue) {
 		t.Fatalf("question grading payload changed:\nwant %#v\ngot  %#v", wantValue, gotValue)
+	}
+}
+
+func TestFillQuestionTypeIsRejected(t *testing.T) {
+	_, err := QuizDocument("Quiz", json.RawMessage(
+		`[{"id":"q1","type":"fill","level":"recall","prompt":"Fill?","accepted":[{"value":"alpha"}]}]`,
+	), nil)
+	if err == nil {
+		t.Fatal("fill type was accepted")
 	}
 }
 

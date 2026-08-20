@@ -178,6 +178,16 @@ async def produce_mapped(
     )
 
 
+def _wrap_values(raw: Any) -> list[dict[str, str]]:
+    out: list[dict[str, str]] = []
+    for item in raw or []:
+        if isinstance(item, dict):
+            out.append({"value": str(item.get("value") or "")})
+        elif isinstance(item, str):
+            out.append({"value": item})
+    return out
+
+
 def normalize_questions(
     data: Any, level_aliases: dict[str, str]
 ) -> list[dict[str, Any]]:
@@ -199,6 +209,11 @@ def normalize_questions(
                 opt if isinstance(opt, dict) else {"value": str(opt), "explanation": ""}
                 for opt in item["options"]
             ]
+        if item.get("type") in ("short", "open"):
+            item["accepted"] = _wrap_values(item.get("accepted"))
+        if item.get("type") == "open":
+            item["hints"] = _wrap_values(item.get("hints"))
+            item["rubrics"] = _wrap_values(item.get("rubrics"))
         questions.append(item)
     return questions
 

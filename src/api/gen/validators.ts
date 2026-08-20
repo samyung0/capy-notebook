@@ -131,13 +131,13 @@ export const GetAccountStatusResponse = zod.object({
 export const ListAttemptsResponseItem = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "chapters": zod.array(zod.string()),
-  "correct": zod.int(),
+  "correct": zod.number(),
   "id": zod.string(),
   "materialId": zod.string().nullable(),
   "pct": zod.int(),
   "quizName": zod.string(),
   "takenAt": zod.iso.datetime({"offset":true}),
-  "total": zod.int(),
+  "total": zod.number(),
   "workspaceName": zod.string()
 })
 export const ListAttemptsResponse = zod.array(ListAttemptsResponseItem)
@@ -154,14 +154,14 @@ export const GetAttemptResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answers": zod.record(zod.string(), zod.unknown()),
   "chapters": zod.array(zod.string()),
-  "correct": zod.int(),
+  "correct": zod.number(),
   "id": zod.string(),
   "materialId": zod.string().nullable(),
   "pct": zod.int(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
   "quizName": zod.string(),
   "takenAt": zod.iso.datetime({"offset":true}),
-  "total": zod.int(),
+  "total": zod.number(),
   "workspaceName": zod.string()
 })
 
@@ -825,7 +825,7 @@ export const ListAllFilesResponseItem = zod.object({
   "name": zod.string(),
   "position": zod.int(),
   "sizeBytes": zod.int(),
-  "status": zod.enum(['processing', 'ready', 'failed']).optional(),
+  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "url": zod.string().optional(),
   "workspaceId": zod.string()
 })
@@ -860,7 +860,7 @@ export const GetFileResponse = zod.object({
   "name": zod.string(),
   "position": zod.int(),
   "sizeBytes": zod.int(),
-  "status": zod.enum(['processing', 'ready', 'failed']).optional(),
+  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "url": zod.string().optional(),
   "workspaceId": zod.string()
 })
@@ -893,7 +893,7 @@ export const UpdateFileResponse = zod.object({
   "name": zod.string(),
   "position": zod.int(),
   "sizeBytes": zod.int(),
-  "status": zod.enum(['processing', 'ready', 'failed']).optional(),
+  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "url": zod.string().optional(),
   "workspaceId": zod.string()
 })
@@ -1266,6 +1266,7 @@ export const GetMeResponse = zod.object({
   "locale": zod.string(),
   "name": zod.string(),
   "planTier": zod.enum(['free', 'pro']),
+  "quizModelKey": zod.string(),
   "streak": zod.int(),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
@@ -1282,12 +1283,13 @@ export const SetLocaleResponse = zod.void()
 
 
 /**
- * @summary Set chat, generate and editor model preferences
+ * @summary Set chat, generate, editor and quiz model preferences
  */
 export const SetModelPrefsBody = zod.object({
   "chatModelKey": zod.string().optional(),
   "editorModelKey": zod.string().optional(),
-  "generateModelKey": zod.string().optional()
+  "generateModelKey": zod.string().optional(),
+  "quizModelKey": zod.string().optional()
 })
 
 export const SetModelPrefsResponse = zod.void()
@@ -1317,7 +1319,7 @@ export const GetMistakesResponse = zod.object({
 export const listModelsQuerySurfaceDefault = `chat`;
 
 export const ListModelsQueryParams = zod.object({
-  "surface": zod.enum(['chat', 'generate', 'editor']).default(listModelsQuerySurfaceDefault)
+  "surface": zod.enum(['chat', 'generate', 'editor', 'quiz']).default(listModelsQuerySurfaceDefault)
 })
 
 export const ListModelsResponse = zod.object({
@@ -1410,6 +1412,25 @@ export const ReadNotificationParams = zod.object({
 })
 
 export const ReadNotificationResponse = zod.void()
+
+
+/**
+ * @summary Mark one open quiz answer against its marking scheme
+ */
+export const GradeQuizAnswerBody = zod.object({
+  "hints": zod.array(zod.string()),
+  "modelAnswer": zod.string(),
+  "prompt": zod.string(),
+  "rubrics": zod.array(zod.string()),
+  "userAnswer": zod.string(),
+  "workspaceId": zod.string().optional()
+})
+
+export const GradeQuizAnswerResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "award": zod.number(),
+  "reason": zod.string()
+})
 
 
 /**
@@ -1541,27 +1562,28 @@ export const CreateAttemptParams = zod.object({
 
 export const createAttemptBodyCorrectMin = 0;
 
+export const createAttemptBodyTotalExclusiveMin = 0;
 
 
 
 export const CreateAttemptBody = zod.object({
   "answers": zod.record(zod.string(), zod.unknown()).optional().describe('User answers keyed by question id'),
-  "correct": zod.int().min(createAttemptBodyCorrectMin),
+  "correct": zod.number().min(createAttemptBodyCorrectMin),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())).nullish().describe('Question snapshot taken at submit time'),
-  "total": zod.int().min(1),
+  "total": zod.number().gt(createAttemptBodyTotalExclusiveMin),
   "wrong": zod.array(zod.record(zod.string(), zod.unknown())).nullish().describe('Questions answered incorrectly')
 })
 
 export const CreateAttemptResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "chapters": zod.array(zod.string()),
-  "correct": zod.int(),
+  "correct": zod.number(),
   "id": zod.string(),
   "materialId": zod.string().nullable(),
   "pct": zod.int(),
   "quizName": zod.string(),
   "takenAt": zod.iso.datetime({"offset":true}),
-  "total": zod.int(),
+  "total": zod.number(),
   "workspaceName": zod.string()
 })
 
@@ -1626,7 +1648,7 @@ export const GetSourceUploadPolicyResponse = zod.object({
   "extensions": zod.array(zod.string()),
   "maxBytes": zod.int(),
   "maxPages": zod.int().optional(),
-  "mode": zod.enum(['accurate', 'fast', 'none']),
+  "mode": zod.enum(['fast', 'none']),
   "supportsFigures": zod.boolean()
 }))
 })
@@ -2232,7 +2254,7 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "name": zod.string(),
   "position": zod.int(),
   "sizeBytes": zod.int(),
-  "status": zod.enum(['processing', 'ready', 'failed']).optional(),
+  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "url": zod.string().optional(),
   "workspaceId": zod.string()
 })

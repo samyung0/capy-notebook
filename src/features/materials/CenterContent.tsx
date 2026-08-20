@@ -11,7 +11,7 @@ import {
   FileNotIndexedBanner,
 } from '@/features/files/FileStates';
 import { FileViewer } from '@/features/files/FileViewer';
-import { IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
+import { fileIsIngesting, IMAGE_MIN_ZOOM } from '@/features/files/fileUtils';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -49,6 +49,7 @@ export function CenterContent({
   readOnly = false,
   color,
   onDeleted,
+  requestedMode = null,
   workspaceId,
 }: {
   chapters: Chapter[];
@@ -56,10 +57,13 @@ export function CenterContent({
   readOnly?: boolean;
   color?: UserColor;
   onDeleted: () => void;
+  requestedMode?: MaterialMode | null;
   workspaceId: string;
 }) {
   const [imageZoom, setImageZoom] = useState(IMAGE_MIN_ZOOM);
-  const [materialMode, setMaterialMode] = useState<MaterialMode | null>(null);
+  const [materialMode, setMaterialMode] = useState<MaterialMode | null>(
+    requestedMode
+  );
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [editorStatus, setEditorStatus] = useState<NoteEditorStatus | null>(
     null
@@ -67,10 +71,10 @@ export function CenterContent({
 
   useEffect(() => {
     setImageZoom(IMAGE_MIN_ZOOM);
-    setMaterialMode(null);
+    setMaterialMode(requestedMode);
     setEditorStatus(null);
     setIsFullscreen(false);
-  }, [item?.kind, item?.id]);
+  }, [item?.kind, item?.id, requestedMode]);
 
   const changeMaterialMode = (nextMode: MaterialMode) => {
     setEditorStatus(null);
@@ -284,12 +288,17 @@ function FileBody({
   });
   if (isLoading) return <FileLoading />;
   if (!isLoading && isError) return <FileError />;
-  if (file?.status === 'processing') {
+  if (file && fileIsIngesting(file.status)) {
+    const waiting = file.status === 'pending';
     return (
       <div className="grid h-full place-items-center">
         <div className="flex w-64 -translate-y-1/2 flex-col items-center gap-3">
           <Icon className="size-7" name="sparkles" />
-          <p>Processing {file.name}…</p>
+          <p>
+            {waiting
+              ? m.files_pending_named({ name: file.name })
+              : m.files_processing_named({ name: file.name })}
+          </p>
           <ProgressBar
             className="w-full"
             showLabel

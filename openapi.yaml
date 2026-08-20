@@ -116,8 +116,8 @@ components:
             type: string
           type: array
         correct:
-          format: int64
-          type: integer
+          format: double
+          type: number
         id:
           type: string
         materialId:
@@ -132,8 +132,8 @@ components:
           format: date-time
           type: string
         total:
-          format: int64
-          type: integer
+          format: double
+          type: number
         workspaceName:
           type: string
       required:
@@ -164,8 +164,8 @@ components:
             type: string
           type: array
         correct:
-          format: int64
-          type: integer
+          format: double
+          type: number
         id:
           type: string
         materialId:
@@ -185,8 +185,8 @@ components:
           format: date-time
           type: string
         total:
-          format: int64
-          type: integer
+          format: double
+          type: number
         workspaceName:
           type: string
       required:
@@ -495,9 +495,9 @@ components:
           description: User answers keyed by question id
           type: object
         correct:
-          format: int64
+          format: double
           minimum: 0
-          type: integer
+          type: number
         questions:
           description: Question snapshot taken at submit time
           items:
@@ -506,9 +506,10 @@ components:
           nullable: true
           type: array
         total:
-          format: int64
-          minimum: 1
-          type: integer
+          exclusiveMinimum: true
+          format: double
+          minimum: 0
+          type: number
         wrong:
           description: Questions answered incorrectly
           items:
@@ -1090,6 +1091,7 @@ components:
       type: string
     FileStatus:
       enum:
+        - pending
         - processing
         - ready
         - failed
@@ -1785,6 +1787,56 @@ components:
         - privacy
         - isOwner
       type: object
+    QuizGradeReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/QuizGradeReq.json
+          format: uri
+          readOnly: true
+          type: string
+        hints:
+          items:
+            type: string
+          type: array
+        modelAnswer:
+          type: string
+        prompt:
+          type: string
+        rubrics:
+          items:
+            type: string
+          type: array
+        userAnswer:
+          type: string
+        workspaceId:
+          type: string
+      required:
+        - hints
+        - modelAnswer
+        - prompt
+        - rubrics
+        - userAnswer
+      type: object
+    QuizGradeResp:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/QuizGradeResp.json
+          format: uri
+          readOnly: true
+          type: string
+        award:
+          format: double
+          type: number
+        reason:
+          type: string
+      required:
+        - award
+        - reason
+      type: object
     RecentFile:
       additionalProperties: false
       properties:
@@ -1931,6 +1983,8 @@ components:
           type: string
         generateModelKey:
           type: string
+        quizModelKey:
+          type: string
       type: object
     ShareRole:
       enum:
@@ -1969,7 +2023,6 @@ components:
           type: integer
         mode:
           enum:
-            - accurate
             - fast
             - none
           type: string
@@ -2547,6 +2600,8 @@ components:
           type: string
         planTier:
           $ref: "#/components/schemas/PlanTier"
+        quizModelKey:
+          type: string
         streak:
           format: int64
           type: integer
@@ -2561,6 +2616,7 @@ components:
         - chatModelKey
         - generateModelKey
         - editorModelKey
+        - quizModelKey
         - planTier
         - subscriptionStatus
       type: object
@@ -4036,7 +4092,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Set chat, generate and editor model preferences
+      summary: Set chat, generate, editor and quiz model preferences
       tags:
         - Account
   /api/mistakes:
@@ -4071,6 +4127,7 @@ paths:
               - chat
               - generate
               - editor
+              - quiz
             type: string
       responses:
         "200":
@@ -4220,6 +4277,31 @@ paths:
       summary: Mark one notification read
       tags:
         - Account
+  /api/quiz-grade:
+    post:
+      operationId: gradeQuizAnswer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/QuizGradeReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/QuizGradeResp"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Mark one open quiz answer against its marking scheme
+      tags:
+        - Quizzes
   /api/quizzes:
     get:
       operationId: listQuizzes

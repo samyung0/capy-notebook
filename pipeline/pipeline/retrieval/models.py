@@ -57,7 +57,7 @@ def resolve_query_model(
     requested: str | None = None,
     surface: str = registry.SURFACE_CHAT,
 ) -> ModelConfig:
-    """Resolve the exact pinned chat/generate/editor model.
+    """Resolve the exact pinned chat/generate/editor/quiz model.
 
     ``requested`` is accepted for API compatibility and ignored: a client-
     supplied model string must never override the pin. An empty pin is an
@@ -160,8 +160,11 @@ async def complete_text(
     *,
     model: str | ModelConfig,
     temperature: float | None = None,
+    max_tokens: int | None = None,
 ) -> str:
-    message = await complete(messages, model=model, temperature=temperature)
+    message = await complete(
+        messages, model=model, temperature=temperature, max_tokens=max_tokens
+    )
     return (getattr(message, "content", "") or "").strip()
 
 

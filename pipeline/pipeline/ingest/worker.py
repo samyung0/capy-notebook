@@ -6,17 +6,16 @@ Claims jobs from the Postgres queue and turns uploads into retrievable chunks:
   The gateway still labels those jobs ``parseMode=none`` (there is no GPU parse
   route to pick); they are indexed. ``parseMode=none`` on any other kind is
   store-only: the blob is kept, ``indexed=false``.
-- ``parseMode=fast`` parses on Modal with Marker (no VLM) plus PP-OCRv6
-  on scanned / thin-text pages.
-- ``parseMode=accurate`` parses on Modal with MinerU hybrid VLM OCR.
+- ``parseMode=fast`` (and old ``accurate`` / ``advanced`` jobs) parse on Modal
+  with Marker plus PP-OCRv6 on scanned / thin-text pages.
 
-Both parse routes return the same bundle — a ``content_list.json`` carrying a
-page index and bounding box per block, plus the extracted images — so both
-produce citations a reader can jump to and figures that can be captioned. They
-differ in cost and fidelity, not in output shape.
+The parse returns a bundle — a ``content_list.json`` carrying a page index and
+bounding box per block, plus the extracted images — so citations a reader can
+jump to and figures that can be captioned come from the same shape.
 
 Live progress is published to Redis; the Go gateway fans it to the browser over
-SSE.
+SSE. A file is ``pending`` until this worker is actually parsing (and holding a
+GPU slot); extra jobs wait there instead of opening more Modal boxes.
 
 Run: ``python -m pipeline.ingest.worker``
 """
@@ -37,13 +36,14 @@ from ..jobs import (
     CONTENT_CLAIM_STALE_S,
     CONTENT_CLAIM_WAIT_S,
     POLICIES,
+    CapacityWait,
     RetryableError,
     TerminalError,
     backoff_s,
     is_retryable,
     policy_for,
 )
-from ..parse import figures, modal_parser
+from ..parse import figures, modal_parser, slots
 from ..retrieval import indexing, store
 from ..retrieval.chunking import (
     CHUNKER_VERSION,
@@ -59,11 +59,10 @@ log = logging.getLogger("evo.worker")
 _TEXT_KINDS = {"txt", "md", "json"}
 
 _PARSE_ROUTES = {
-    "accurate": modal_parser.ROUTE_ACCURATE,
     "fast": modal_parser.ROUTE_FAST,
-    # Renamed before the current mode names existed; keep parsing these rather
-    # than failing a job that was already queued.
-    "advanced": modal_parser.ROUTE_ACCURATE,
+    # Retired names. Jobs already in the queue still parse rather than fail.
+    "accurate": modal_parser.ROUTE_FAST,
+    "advanced": modal_parser.ROUTE_FAST,
 }
 
 
@@ -341,6 +340,34 @@ def _drop_parse_zip(object_path: str | None, file_id: str | None = None) -> None
         conn.commit()
 
 
+def _set_file_status(file_id: str, status: str) -> None:
+    with db.connect() as conn, conn.cursor() as cur:
+        db.set_file_status(cur, file_id, status)
+        conn.commit()
+
+
+def _yield_for_capacity(job: dict, file_id: str, workspace_id: str, name: str) -> None:
+    """Give the GPU slot back to the queue. File stays pending; attempt is undone."""
+    attempt = int(job.get("attempts") or 1)
+    with db.connect() as conn, conn.cursor() as cur:
+        if _lost_claim(cur, job["id"], attempt):
+            return
+        db.release_job_for_capacity(
+            cur, job["id"], attempt, backoff_s=slots.YIELD_BACKOFF_S
+        )
+        db.set_file_status(cur, file_id, "pending")
+        conn.commit()
+    progress.publish(
+        workspace_id,
+        file_id,
+        "queued",
+        5,
+        status="pending",
+        message=f"{name}: waiting for a parser slot",
+    )
+    log.info("ingest %s waiting for a parser slot", name)
+
+
 def _file_exists(file_id: str) -> bool:
     with db.connect() as conn, conn.cursor() as cur:
         return db.file_exists(cur, file_id)
@@ -489,17 +516,20 @@ async def _chunks_for(
     ws: str,
     file_id: str,
     source_sha256: str,
+    job_id: str | None = None,
 ) -> tuple[list[Chunk], str | None, str | None, str | None]:
     """Parse one source into chunks, plus its parse-artifact identity if any."""
     blob_path = payload.get("blobPath")
 
     if kind in _TEXT_KINDS:
+        if job_id:
+            await asyncio.to_thread(_set_file_status, file_id, "processing")
         local_path, cleanup = await asyncio.to_thread(blobstore.fetch_local, blob_path)
         try:
             text = await asyncio.to_thread(_read_text, local_path)
         finally:
             await asyncio.to_thread(cleanup)
-        progress.publish(ws, file_id, "indexing", 40)
+        progress.publish(ws, file_id, "indexing", 40, status="processing")
         return chunk_markdown(text), None, None, None
 
     route = _parse_route(parse_mode)
@@ -511,12 +541,24 @@ async def _chunks_for(
         source_sha256=source_sha256,
         route=route,
     )
-    progress.publish(ws, file_id, "parsing", 15)
+    held_slot = False
+    if job_id:
+        held_slot = await asyncio.to_thread(slots.try_acquire, route, job_id)
+        if not held_slot:
+            raise CapacityWait(route)
+        await asyncio.to_thread(_set_file_status, file_id, "processing")
+    progress.publish(ws, file_id, "parsing", 15, status="processing")
     raw_dir = Path(tempfile.mkdtemp(prefix="evo_parse_"))
     try:
-        content_list, artifact_key, fingerprint = await asyncio.to_thread(
-            modal_parser.parse_to_bundle, descriptor, name, raw_dir
-        )
+        try:
+            content_list, artifact_key, fingerprint = await asyncio.to_thread(
+                modal_parser.parse_to_bundle, descriptor, name, raw_dir
+            )
+        finally:
+            # Free the GPU slot before captioning / indexing; those do not
+            # occupy a Modal container.
+            if held_slot and job_id:
+                await asyncio.to_thread(slots.release, route, job_id)
         if artifact_key:
             # Record before captioning: a later vision failure must not leave
             # the zip untracked for the blob reaper.
@@ -577,8 +619,8 @@ async def process_ingest_job(job: dict) -> None:
     file_id = payload["fileId"]
     ws = payload["workspaceId"]
     kind = (payload.get("kind") or "").lower()
-    # 'fast' (Marker hybrid, default), 'accurate' (MinerU hybrid VLM), or
-    # 'none' (blob-only; normally never enqueued at all).
+    # 'fast' (Marker hybrid, default) or 'none' (blob-only; normally never
+    # enqueued at all). Old 'accurate' / 'advanced' jobs map onto fast.
     parse_mode = (payload.get("parseMode") or "fast").lower()
     # Chosen per file at upload time; the env default only covers a job that
     # predates the option or an import path that cannot express one.
@@ -600,6 +642,10 @@ async def process_ingest_job(job: dict) -> None:
         await _process_ingest_job(
             job, payload, file_id, ws, kind, parse_mode, caption_images
         )
+    except CapacityWait:
+        name = await asyncio.to_thread(_read_name, file_id)
+        await asyncio.to_thread(_yield_for_capacity, job, file_id, ws, name)
+        raise
     finally:
         registry.set_job_pins(None)
 
@@ -796,7 +842,7 @@ async def _process_ingest_job(
             ws, file_id, "failed", 100, status="failed", message=note, indexed=False
         )
         return
-    progress.publish(ws, file_id, "queued", 5)
+    progress.publish(ws, file_id, "queued", 5, status="pending")
 
     if parse_mode == "none" and kind not in _TEXT_KINDS:
         note = f"{name}: stored without parsing (not indexed for retrieval)."
@@ -851,6 +897,7 @@ async def _process_ingest_job(
         ws=ws,
         file_id=file_id,
         source_sha256=source_sha256,
+        job_id=job["id"],
     )
     if not chunks:
         raise RetryableError("parse produced no indexable content")
@@ -940,9 +987,8 @@ async def main_async() -> None:
     # embedding from its workspace, so this process has no single answer for any
     # of them.
     log.info(
-        "worker up — accurate=%s fast=%s",
-        cfg.modal_parse_url or "(unset)",
-        cfg.modal_fast_parse_url or "(unset)",
+        "worker up — parse=%s",
+        cfg.modal_fast_parse_url or cfg.modal_parse_url or "(unset)",
     )
 
     last_sweep = 0.0
@@ -999,6 +1045,8 @@ async def main_async() -> None:
                 async with asyncio.timeout(policy.timeout_s):
                     await process_ingest_job(job)
                 log.info("job %s done", job["id"])
+            except CapacityWait:
+                log.info("job %s waiting for a parser slot", job["id"])
             except Exception as exc:  # noqa: BLE001 - retry vs terminal is decided below
                 try:
                     async with asyncio.timeout(30):

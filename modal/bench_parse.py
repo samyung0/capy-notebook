@@ -1,20 +1,22 @@
-"""Time both Modal parse routes: one job, then a full container (4 fast / 2 accurate).
+"""Time the Modal parse endpoint: one job, then a burst on one box.
 
 Warm the container first (a cheap /healthz), then:
 
   1. one multipart parse
-  2. N concurrent parses of the same file (N = --jobs, default = route max)
+  2. N concurrent parses of the same file (N = --jobs, default 8)
 
 Prints wall clock, in-container ``_server_parse_s``, block/char counts, and
-which pages the fast probe sent to RapidOCR.
+which lane (digital vs ocr) each job took.
 
     python modal/bench_parse.py --file bench/parsers/docs/metabolic_pathway.pdf
-    python modal/bench_parse.py --route fast --jobs 4 --file ...
-    python modal/bench_parse.py --route accurate --jobs 2 --file ...
-    python modal/bench_parse.py --both --file ...
+    python modal/bench_parse.py --jobs 8 --parse-method txt --file ...
+    python modal/bench_parse.py --sweep 1,2,4,6,8 --parse-method txt --file ...
 
-Needs ``requests``. URLs/token from env (MODAL_PARSE_URL / MODAL_FAST_PARSE_URL /
+Needs ``requests``. URL/token from env (MODAL_FAST_PARSE_URL or MODAL_PARSE_URL /
 MODAL_PARSE_TOKEN) or flags.
+
+To measure *one* box, keep N <= that box's max_inputs. Extra concurrent HTTP
+opens a second container and the burst wall stops meaning "one GPU".
 """
 
 from __future__ import annotations
@@ -29,7 +31,7 @@ from pathlib import Path
 
 import requests
 
-ROUTE_MAX = {"fast": 4, "accurate": 2}
+DEFAULT_JOBS = 8
 
 
 def _file_parse_url(url: str) -> str:
@@ -37,15 +39,14 @@ def _file_parse_url(url: str) -> str:
     return url if url.endswith("/file_parse") else url + "/file_parse"
 
 
-def _parse_url(route: str, args: argparse.Namespace) -> str:
-    if args.url:
-        return args.url
-    if route == "accurate":
-        url = os.environ.get("MODAL_PARSE_URL", "")
-    else:
-        url = os.environ.get("MODAL_FAST_PARSE_URL", "")
+def _parse_url(args: argparse.Namespace) -> str:
+    url = (
+        args.url
+        or os.environ.get("MODAL_FAST_PARSE_URL", "")
+        or os.environ.get("MODAL_PARSE_URL", "")
+    )
     if not url:
-        raise SystemExit(f"no URL for {route}: pass --url or set the env var")
+        raise SystemExit("no URL: pass --url or set MODAL_FAST_PARSE_URL")
     return _file_parse_url(url)
 
 
@@ -72,6 +73,9 @@ def _summarize(body: dict) -> str:
         extra += f"  ocr_pages={ocr_pages}"
     if lane:
         extra += f"  lane={lane}"
+    rss = body.get("_rss") or {}
+    if rss.get("total_rss_mb") is not None:
+        extra += f"  rss={rss.get('total_rss_mb')}MB/{rss.get('n_procs')}procs"
     return (
         f"blocks={len(items)} chars={chars} headings={headings} "
         f"images={len(images)}{extra}"
@@ -101,8 +105,42 @@ def do_parse(
     return elapsed, resp.json()
 
 
-def run_route(
-    route: str,
+def _healthz(url: str, token: str | None, timeout: float) -> None:
+    health = _healthz_url(url)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    print(f"\n=== fast  {url}")
+    try:
+        t0 = time.perf_counter()
+        hz = requests.get(health, headers=headers, timeout=timeout)
+        hz.raise_for_status()
+        body = hz.json()
+        rss = ""
+        if body.get("total_rss_mb") is not None:
+            pss = body.get("total_pss_mb")
+            cgroup = body.get("cgroup_mb")
+            extra_mem = ""
+            if pss:
+                extra_mem += f" pss={pss}MB"
+            if cgroup is not None:
+                extra_mem += f" cgroup={cgroup}MB"
+            rss = (
+                f"  rss={body.get('total_rss_mb')}MB{extra_mem} "
+                f"(parent={body.get('parent_rss_mb')} "
+                f"kids={body.get('children_rss_mb')} "
+                f"n={body.get('n_procs')})"
+            )
+        device = body.get("device")
+        extra = f"  device={device}" if device else ""
+        print(
+            f"healthz: {time.perf_counter() - t0:.2f}s  "
+            f"uptime_s={body.get('uptime_s')}  "
+            f"version={body.get('parser_version')}{rss}{extra}"
+        )
+    except Exception as exc:  # noqa: BLE001
+        print(f"healthz: FAILED ({exc})")
+
+
+def run_burst(
     url: str,
     token: str | None,
     data: bytes,
@@ -111,31 +149,14 @@ def run_route(
     parse_method: str,
     timeout: float,
 ) -> None:
-    health = _healthz_url(url)
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    print(f"\n=== {route}  {url}")
-    print(f"payload: {name} ({len(data)} bytes)  jobs={jobs}")
-    try:
-        t0 = time.perf_counter()
-        hz = requests.get(health, headers=headers, timeout=timeout)
-        hz.raise_for_status()
-        body = hz.json()
-        print(
-            f"healthz: {time.perf_counter() - t0:.2f}s  "
-            f"uptime_s={body.get('uptime_s')}  version={body.get('parser_version')}"
-        )
-    except Exception as exc:  # noqa: BLE001
-        print(f"healthz: FAILED ({exc})")
-
-    print("-- one job --")
-    elapsed, body = do_parse(url, token, data, name, parse_method, timeout)
-    server = body.get("_server_parse_s")
-    print(
-        f"  wall={elapsed:.2f}s  server_parse={server}  "
-        f"uptime_s={body.get('_uptime_s')}  {_summarize(body)}"
-    )
-
     if jobs <= 1:
+        print("-- one job --")
+        elapsed, body = do_parse(url, token, data, name, parse_method, timeout)
+        server = body.get("_server_parse_s")
+        print(
+            f"  wall={elapsed:.2f}s  server_parse={server}  "
+            f"uptime_s={body.get('_uptime_s')}  {_summarize(body)}"
+        )
         return
 
     print(f"-- {jobs} jobs at once --")
@@ -174,19 +195,27 @@ def run_route(
             f"per-job server_parse median={statistics.median(servers):.2f}s  "
             f"max={max(servers):.2f}s  sum={sum(servers):.2f}s"
         )
+        if burst > 0:
+            print(f"effective parallelism: {sum(servers) / burst:.2f}x")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    ap.add_argument("--route", choices=("fast", "accurate"), default="fast")
-    ap.add_argument("--both", action="store_true", help="run fast then accurate")
     ap.add_argument("--url", default="", help="override /file_parse URL")
     ap.add_argument("--token", default=os.environ.get("MODAL_PARSE_TOKEN", ""))
     ap.add_argument("--file", required=True, help="PDF to parse")
     ap.add_argument(
-        "--jobs", type=int, default=0, help="0 = route max (6 fast / 2 accurate)"
+        "--jobs",
+        type=int,
+        default=DEFAULT_JOBS,
+        help=f"concurrent jobs (default {DEFAULT_JOBS})",
+    )
+    ap.add_argument(
+        "--sweep",
+        default="",
+        help="comma-separated job counts to run in order, e.g. 1,2,4,6,8",
     )
     ap.add_argument("--parse-method", default="ocr")
     ap.add_argument("--timeout", type=float, default=900.0)
@@ -196,12 +225,20 @@ def main() -> int:
     data = path.read_bytes()
     name = path.name
     token = args.token or None
-    routes = ("fast", "accurate") if args.both else (args.route,)
+    url = _parse_url(args)
+    print(f"payload: {name} ({len(data)} bytes)")
 
-    for route in routes:
-        url = _parse_url(route, args)
-        jobs = args.jobs or ROUTE_MAX[route]
-        run_route(route, url, token, data, name, jobs, args.parse_method, args.timeout)
+    _healthz(url, token, args.timeout)
+
+    counts = (
+        [int(part) for part in args.sweep.split(",") if part.strip()]
+        if args.sweep
+        else [1, args.jobs]
+        if args.jobs > 1
+        else [1]
+    )
+    for jobs in counts:
+        run_burst(url, token, data, name, jobs, args.parse_method, args.timeout)
 
     return 0
 

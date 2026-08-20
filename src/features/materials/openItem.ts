@@ -1,9 +1,12 @@
+import type { MaterialMode } from './modePolicy';
+
 /** What the center content pane is currently showing. A source file or a
  * persisted study material (markdown: mindmap, diagram, quiz, flashcards).
  *
  * `page` is a 1-based page in the open file, set when a chat citation is
  * clicked. It lives in the URL rather than in component state so a cited page
- * survives a reload and can be linked to. */
+ * survives a reload and can be linked to. `mode` is an optional initial
+ * material mode (dashboard links force view). */
 export type OpenItem =
   | { kind: 'file'; id: string; page?: number }
   | { kind: 'material'; id: string };
@@ -13,7 +16,16 @@ export type WorkspaceOpenSearch = {
   file?: string;
   material?: string;
   page?: number;
+  mode?: MaterialMode;
 };
+
+const MATERIAL_MODES = new Set<MaterialMode>(['view', 'edit', 'comment']);
+
+function parseMaterialMode(value: unknown): MaterialMode | undefined {
+  return typeof value === 'string' && MATERIAL_MODES.has(value as MaterialMode)
+    ? (value as MaterialMode)
+    : undefined;
+}
 
 export function parseWorkspaceOpenSearch(
   search: Record<string, unknown>
@@ -26,7 +38,10 @@ export function parseWorkspaceOpenSearch(
     const page = Number.isInteger(raw) && raw > 0 ? raw : undefined;
     return page ? { file, page } : { file };
   }
-  if (material) return { material };
+  if (material) {
+    const mode = parseMaterialMode(search.mode);
+    return mode ? { material, mode } : { material };
+  }
   return {};
 }
 

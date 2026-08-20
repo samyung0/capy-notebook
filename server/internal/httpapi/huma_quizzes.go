@@ -55,6 +55,7 @@ func (a *api) registerQuizzes(api huma.API) {
 	reg(api, http.MethodPost, "/api/quizzes/{id}/attempts", "createAttempt", tag, "Record a quiz attempt", http.StatusCreated, a.createAttempt)
 	reg(api, http.MethodGet, "/api/attempts", "listAttempts", tag, "List attempts", http.StatusOK, a.listAttempts)
 	reg(api, http.MethodGet, "/api/attempts/{id}", "getAttempt", tag, "Get an attempt's result breakdown", http.StatusOK, a.getAttempt)
+	a.registerQuizGrade(api)
 }
 
 func (a *api) listQuizzes(ctx context.Context, _ *struct{}) (*quizzesOutput, error) {

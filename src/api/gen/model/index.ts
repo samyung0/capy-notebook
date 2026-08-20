@@ -92,6 +92,8 @@ export * from './publicQuiz.ts';
 export * from './publicQuizQuestionsItem.ts';
 export * from './publicWorkspace.ts';
 export * from './quiz.ts';
+export * from './quizGradeReq.ts';
+export * from './quizGradeResp.ts';
 export * from './quizQuestionsItem.ts';
 export * from './recentFile.ts';
 export * from './region.ts';

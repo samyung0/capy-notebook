@@ -34,7 +34,7 @@ internal materials endpoint the chat agent calls).
 flowchart LR
   Upload[Upload / move file] --> Jobs[(jobs)]
   Jobs --> Worker[Ingest worker]
-  Worker --> Parse[Modal MinerU: accurate or fast]
+  Worker --> Parse[Modal Marker parse]
   Parse --> Caption[Figure filter + caption]
   Caption --> Chunk[Heading-aware chunker]
   Chunk --> Index[Embed + file summary + concepts]
@@ -175,32 +175,49 @@ defaults. A transient database error while *reading* those pins retries with the
 normal attempt budget; only a missing or invalid pin is terminal. See
 [observability-metering.md](observability-metering.md) §8.
 
-### Parse routes
+### Parse route
 
 Controlled by `parseMode` on the job payload:
 
 | Mode | Parser | Output | Page model |
 | --- | --- | --- | --- |
-| `fast` (default) | Modal MinerU, pipeline OCR backend | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
-| `accurate` | Modal MinerU, hybrid VLM backend | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
+| `fast` (default) | Modal Marker hybrid + RapidOCR on scanned pages | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
 | `none` | — | Blob stored, not indexed | — |
 | txt / md / json kinds | Direct B2 read | Markdown | No |
 
-Both parse modes are the same MinerU service on our own L4 GPUs and return the
-same bundle, so both give page-accurate citations and both extract the figures
-captioning needs. They differ in the backend that produced it: `accurate` runs
-the hybrid VLM, which reads dense layouts, tables and formulas better and costs
-more GPU seconds per page; `fast` runs pipeline OCR, several documents batched
-into one container. Pipeline OCR uses the `ch` language pack, which covers
-Chinese and English — Korean and Japanese documents should use `accurate`.
+`accurate` and `advanced` are retired names: the worker maps them onto `fast`
+so already-queued jobs still parse.
+
+The bundle carries page-accurate citations and the figures captioning needs.
+Marker runs with RapidOCR only on pages the scan probe flags.
+
+### Parse capacity
+
+Modal will not open an unbounded pile of CPU boxes. Caps live in
+`modal/parse_common.py` and must match `EVO_PARSE_FAST_SLOTS`:
+
+| Route | Boxes | Jobs per box | Fleet cap | Idle window |
+| --- | --- | --- | --- | --- |
+| fast | 12 | 6 digital / 2 OCR | 72 HTTP, ~24 OCR | 30s |
+
+A new upload lands `files.status=pending` with a `jobs` row still `pending`.
+The worker only flips the file to `processing` once it is actually running
+(and, for Modal parse, once it holds a Redis parse slot). If every slot is
+taken, the job is put back to `pending` without spending an attempt, and the
+UI keeps showing a wait. Redis down fails *open*: the call still goes to
+Modal, and `max_containers` is the last brake.
+
+Each ingest replica still runs one job at a time, so `WORKER_REPLICAS` is how
+many jobs leave the pending queue at once. Do not set it above the parse cap
+you actually want to pay for.
 
 Parse zips are addressed by `(source_sha256, parse method, route, parser
 version)` and cached in B2 for the **cold start** only: retries of a job that
-has not yet produced a donor, and a `fast` → `accurate` switch. After a
+has not yet produced a donor. After a
 successful ingest the zip is dropped (15-minute grace so a concurrent download
 can finish). A terminal failure keeps it so a manual retry stays cheap.
 
-The worker records the zip on `artifact_cache` as soon as MinerU returns,
+The worker records the zip on `artifact_cache` as soon as the parser returns,
 **before** figure captioning. A later vision failure must not leave that object
 untracked. The worker may `blobstore.delete` only **unrecorded** zips (corrupt
 cache recovery).
@@ -243,7 +260,7 @@ is unreachable forever while a needless caption costs a fraction of a cent:
 Captions are cached in B2 under a **source-identity** key
 (`captions/{source_sha256}/{caption version}.json`), keyed inside the JSON by
 image content hash. The parse fingerprint is not part of the path: a re-parse
-(different MinerU route or parser version) must not recaption unchanged
+(different parser version) must not recaption unchanged
 figures, and a delete-then-re-upload of the same bytes hits the same object.
 Ownership lives on `artifact_cache` (TTL since last use), not on
 `files.caption_blob_path`, so deleting the file does not reap the cache.
@@ -487,7 +504,7 @@ job and pipeline `/workspace/delete` endpoint are gone.
 | Concern | Env | Default / note |
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material` |
-| Parse routes | `MODAL_PARSE_URL`, `MODAL_FAST_PARSE_URL` | One per mode; both from one Modal deploy |
+| Parse | `MODAL_FAST_PARSE_URL` (or `MODAL_PARSE_URL`) | Marker app `evo-mineru-fast` |
 | Chunk size | `EVO_CHUNK_*` | Character budgets, not tokens |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
 | Query model | `EVO_QUERY_MODEL` | Last resort for a call handed a bare model string. Ingest and vision come from the job pin; chat/generate/editor from Settings → LLM via the gateway |

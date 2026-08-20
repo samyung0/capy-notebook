@@ -19,11 +19,12 @@ them should have public DNS.
 | Hostname | Serves | Public DNS | Proxied |
 | --- | --- | --- | --- |
 | `abcd.com` | SPA (Cloudflare Pages / static) | yes | yes |
+| `llm.abcd.com` | optional; only if `VITE_LLM_RUNTIME_ORIGIN` is set | optional | yes |
 | `www.abcd.com` | redirect to apex | yes | yes |
 | `api.abcd.com` | Go gateway (`server`, :8080) | yes | yes |
 | `collab.abcd.com` | Hocuspocus WebSocket (`collaboration`, :1234) | yes | yes |
 | `ops.abcd.com` | operator dashboard, later | yes, later | yes |
-| retrieval :8001 | Python chat/generate/transcribe | **no** | — |
+| retrieval :8001 | Python chat/generate | **no** | — |
 | ingest worker | Modal parse + embed | **no** | — |
 | Postgres / Redis | — | **no** | — |
 
@@ -39,6 +40,17 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
 1. **SPA.** Cloudflare Pages custom domain on `abcd.com` and `www.abcd.com`,
    or CNAME those names to whatever static host you use. Orange cloud on.
    Coolify does not serve the SPA in the topology below.
+   The quiz judge is `llm-runtime.html`, usually same-origin as the SPA.
+   Isolation headers live only on that document (`COOP`/`COEP` plus
+   `Document-Isolation-Policy: isolate-and-credentialless`). The SPA stays
+   unisolated so Clerk, Google Picker, Stripe, and PDF.js keep working.
+   Chrome 137+ isolates that iframe and gives it SharedArrayBuffer / extra
+   CPU threads even when the parent is not isolated. COOP/COEP alone
+   cannot. Safari and Firefox stay single-thread. A second hostname
+   (`llm.abcd.com`, `VITE_LLM_RUNTIME_ORIGIN`) is optional. If you use one,
+   add the SPA origin to `frame-ancestors` and set `VITE_APP_URL`. Do not
+   set `Cross-Origin-Resource-Policy: same-origin` on the runtime document
+   or the parent cannot embed it.
 2. **API + collab.** Pick one of §1.1 Coolify (typical), §1.2 bare compose, or
    §1.3 public A records. Retrieval, worker, Postgres, and Redis stay off
    public DNS in every option.
@@ -118,8 +130,7 @@ token.
 
 Same values whether Coolify, bare compose, or A records. Coolify domain fields
 are `http://`; these vars stay `https://` / `wss://`. Copy the rest from
-`deploy/.env.example` (Clerk, Stripe, four Sentry DSNs, provider keys,
-`WHISPER_API_KEY` for billed transcribe). `RATE_LIMIT_AI_PER_HOUR` defaults to
+`deploy/.env.example` (Clerk, Stripe, four Sentry DSNs, provider keys). `RATE_LIMIT_AI_PER_HOUR` defaults to
 200; the 15/minute AI burst and 120/minute editor class are not env-overridable.
 
 Gateway env once those hostnames exist:
@@ -243,8 +254,9 @@ sweeps on a 5-minute timer while the queue is idle, not on every 2-second poll.
 
 `WORKER_REPLICAS` in `deploy/docker-compose.yml` (default 1) is the number of
 ingest worker containers. `claim_job` uses `FOR UPDATE SKIP LOCKED`, so replicas
-share the queue without extra coordination. Each replica runs one job at a time,
-so this is also the number of concurrent Modal parses.
+share the queue without extra coordination. Each replica runs one job at a time.
+Parse has its own cap (72 HTTP / ~24 OCR); extra parse jobs stay `pending`
+instead of opening more Modal boxes. Replicas above that cap mostly wait.
 
 Connection budget after the worker's sync pool (`max_size=4`) plus the async
 retrieval pool (`max_size=8`): **12 connections per replica**. Against default
@@ -297,10 +309,14 @@ delete a live creator's `rag_contents` row.
 ## 7. Modal
 
 1. Set `modal_parse_token` and keep the parse endpoints authenticated. An
-   unauthenticated GPU endpoint is a free GPU for whoever finds it.
-2. Set a **spend limit** on the workspace. A parse loop on a malformed document
+   unauthenticated parse endpoint is a free bill for whoever finds it.
+2. Deploy the parse app: `pnpm run deploy:modal`. Point
+   `MODAL_FAST_PARSE_URL` at
+   `https://<workspace>--evo-mineru-fast.modal.run`. The old
+   `evo-mineru-accurate` app can be stopped.
+3. Set a **spend limit** on the workspace. A parse loop on a malformed document
    is the most expensive failure mode in the system.
-3. Optionally enable Modal's OpenTelemetry export for queue wait and cold start
+4. Optionally enable Modal's OpenTelemetry export for queue wait and cold start
    — the two numbers the ledger cannot see.
 
 ---

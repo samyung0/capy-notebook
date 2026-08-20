@@ -102,6 +102,23 @@ type SetModelPrefsReq struct {
 	ChatModelKey     *string `json:"chatModelKey,omitempty"`
 	GenerateModelKey *string `json:"generateModelKey,omitempty"`
 	EditorModelKey   *string `json:"editorModelKey,omitempty"`
+	QuizModelKey     *string `json:"quizModelKey,omitempty"`
+}
+
+// QuizGradeReq is one open-answer marking request. The gateway builds the
+// judge prompt server-side; the client only sends the question fields.
+type QuizGradeReq struct {
+	Hints       []string `json:"hints" nullable:"false"`
+	ModelAnswer string   `json:"modelAnswer"`
+	Prompt      string   `json:"prompt"`
+	Rubrics     []string `json:"rubrics" nullable:"false"`
+	UserAnswer  string   `json:"userAnswer"`
+	WorkspaceID string   `json:"workspaceId,omitempty"`
+}
+
+type QuizGradeResp struct {
+	Award  float64 `json:"award"`
+	Reason string  `json:"reason"`
 }
 
 // SourceUploadPolicy describes the server-owned file allowlist and parser
@@ -113,7 +130,7 @@ type SourceUploadKindPolicy struct {
 }
 
 type SourceUploadParseModePolicy struct {
-	Mode       string   `json:"mode" enum:"accurate,fast,none"`
+	Mode       string   `json:"mode" enum:"fast,none"`
 	Extensions []string `json:"extensions" nullable:"false"`
 	MaxBytes   int64    `json:"maxBytes"`
 	MaxPages   int      `json:"maxPages,omitempty"`

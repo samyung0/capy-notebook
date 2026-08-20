@@ -1,9 +1,9 @@
 import { isApiError } from '@/api/client';
 import type { FileKind, SourceUploadPolicy } from '@/api/types';
 
-export type ParseMode = 'accurate' | 'fast' | 'none';
+export type ParseMode = 'fast' | 'none';
 
-const PARSING_MODES = ['accurate', 'fast'] as const;
+const PARSING_MODES = ['fast'] as const;
 type ParsingMode = (typeof PARSING_MODES)[number];
 
 export function fileExt(name: string): string {
@@ -41,7 +41,7 @@ export function parseModeIssues(
   policy: SourceUploadPolicy,
   pageCount?: number | null
 ): Record<ParsingMode, string | null> {
-  if (isTextKind(kind, policy)) return { accurate: null, fast: null };
+  if (isTextKind(kind, policy)) return { fast: null };
   const ext = extensionWithDot(file.name);
   const issueFor = (mode: ParsingMode) => {
     const rule = policy.parseModes.find((entry) => entry.mode === mode);
@@ -62,7 +62,7 @@ export function parseModeIssues(
     }
     return null;
   };
-  return { accurate: issueFor('accurate'), fast: issueFor('fast') };
+  return { fast: issueFor('fast') };
 }
 
 export function defaultParseMode(
@@ -74,7 +74,6 @@ export function defaultParseMode(
   if (isTextKind(kind, policy)) return 'none';
   const issues = parseModeIssues(file, kind, policy, pageCount);
   if (!issues.fast) return 'fast';
-  if (!issues.accurate) return 'accurate';
   return 'none';
 }
 

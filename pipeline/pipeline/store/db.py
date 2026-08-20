@@ -171,6 +171,28 @@ def requeue_job(
     return "pending"
 
 
+def release_job_for_capacity(cur, job_id: str, attempt: int, *, backoff_s: int) -> None:
+    """Put a running job back to pending without spending an attempt.
+
+    Used when every Modal parse slot is taken. ``claim_job`` already incremented
+    ``attempts``; undoing that is what keeps a long queue from looking like
+    three failures.
+    """
+    cur.execute(
+        """
+        UPDATE jobs SET
+            status='pending',
+            attempts=GREATEST(attempts-1, 0),
+            error=NULL,
+            not_before=now() + make_interval(secs => %s),
+            lease_expires_at=NULL,
+            updated_at=now()
+        WHERE id=%s AND status='running' AND attempts=%s
+        """,
+        (backoff_s, job_id, attempt),
+    )
+
+
 def reclaim_expired_leases(
     cur, *, max_attempts: dict[str, int], backoff_base_s: dict[str, int]
 ) -> list[dict[str, Any]]:

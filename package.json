@@ -44,6 +44,7 @@
     "@tanstack/react-query": "^5.59.0",
     "@tanstack/react-router": "^1.58.0",
     "@tanstack/react-router-devtools": "^1.167.0",
+    "@wllama/wllama": "3.6.0",
     "ai": "^7.0.15",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
@@ -148,7 +149,8 @@
     "gen:api:watch": "pnpm gen:api:clean && orval --watch",
     "fix": "ultracite fix",
     "prepare": "husky",
-    "deploy:modal": "modal deploy modal/mineru_app.py"
+    "deploy:modal": "modal deploy modal/mineru_fast.py",
+    "deploy:modal:fast": "modal deploy modal/mineru_fast.py"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs,cjs,json,jsonc,css,scss,md,mdx}": [

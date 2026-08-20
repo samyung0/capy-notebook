@@ -1,0 +1,5 @@
+/llm-runtime.html
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: credentialless
+  Document-Isolation-Policy: isolate-and-credentialless
+  Content-Security-Policy: frame-ancestors 'self' https://abcd.com http://localhost:5173 http://127.0.0.1:5173

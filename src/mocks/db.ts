@@ -148,6 +148,7 @@ export const user: User = {
   locale: 'en',
   name: 'Kate Malone',
   planTier: 'pro',
+  quizModelKey: 'deepseek-flash',
   streak: 0,
   subscriptionStatus: 'active',
 };
@@ -461,7 +462,7 @@ const seedQuizzes: Quiz[] = [
         id: 'q4',
         level: 'application',
         prompt: 'The diffusion of water across a membrane is called ____.',
-        type: 'fill',
+        type: 'short',
       },
       {
         id: 'q5',
@@ -509,7 +510,7 @@ const seedQuizzes: Quiz[] = [
         level: 'application',
         prompt:
           'The organelle that produces most of the cell’s ATP is the ____.',
-        type: 'fill',
+        type: 'short',
       },
       {
         accepted: wv('cellular respiration', 'aerobic respiration'),
@@ -583,7 +584,7 @@ const seedQuizzes: Quiz[] = [
         level: 'application',
         prompt:
           'A diagram used to predict offspring genotypes is a ____ square.',
-        type: 'fill',
+        type: 'short',
       },
       {
         correct: true,
@@ -667,7 +668,7 @@ const seedQuizzes: Quiz[] = [
         id: 'q25',
         level: 'application',
         prompt: '∫ 2x dx = x² + ____.',
-        type: 'fill',
+        type: 'short',
       },
       {
         correct: [0],

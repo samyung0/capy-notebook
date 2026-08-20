@@ -46,7 +46,7 @@ def publish(
     message: str = "",
     indexed: bool | None = None,
 ) -> None:
-    """Emit a progress event. ``status`` is one of processing|ready|failed."""
+    """Emit a progress event. ``status`` is one of pending|processing|ready|failed."""
     event = {
         "fileId": file_id,
         "workspaceId": workspace_id,

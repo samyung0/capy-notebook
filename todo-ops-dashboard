@@ -115,7 +115,7 @@ Ordered by how often you will actually open them.
 The page that answers "is anything on fire, and what did today cost".
 
 - Credits consumed today / this month, split by `kind` (llm, embedding,
-  caption, parse_gpu, transcribe, email) — stacked area over 30 days.
+  caption, parse_gpu, email) — stacked area over 30 days.
 - Same split by `surface` (chat, generate, editor, ingest) — this is the one
   that tells you which *product feature* is expensive, which is the number that
   changes decisions.
@@ -207,16 +207,16 @@ registry; changing them is `psql`.
 
 A matrix:
 
-| | chat | generate | editor | ingest | embedding | vision | stt |
-|---|---|---|---|---|---|---|---|
-| `deepseek-flash` | `(deepseek-flash, v1)` | … | … | … | empty | empty | empty |
-| `deepseek-pro` | `(deepseek-pro, v1)` | … | empty | empty | empty | empty | empty |
-| `qwen-embed` | empty | empty | empty | empty | `(qwen-embed, v1)` | empty | empty |
-| … | | | | | | | |
+| | chat | generate | editor | ingest | embedding | vision |
+|---|---|---|---|---|---|---|
+| `deepseek-flash` | `(deepseek-flash, v1)` | … | … | … | empty | empty |
+| `deepseek-pro` | `(deepseek-pro, v1)` | … | empty | empty | empty | empty |
+| `qwen-embed` | empty | empty | empty | empty | `(qwen-embed, v1)` | empty |
+| … | | | | | | |
 
 - **Row** = user-facing key. This is the slug in Settings and in
   `users.chat_model_key` / `generate_model_key`. Operator-only keys
-  (embedding / vision / stt) still get a row; they just never appear in
+  (embedding / vision) still get a row; they just never appear in
   Settings.
 - **Column** = surface. Same enum as `model_configs.surfaces`.
 - **Cell** = an llm config pin `{model_key, version}`, or empty. Empty means
@@ -227,7 +227,7 @@ A matrix:
   and the operator only picks a version / a catalog row of that key.
 - One cell per column is the **surface default** (`is_default_for`). Mark
   it on the grid. New accounts snapshot that key. Editor / ingest /
-  embedding / vision / stt are not user-selectable; their default cell is
+  embedding / vision are not user-selectable; their default cell is
   the live default the gateway/pipeline poll.
 
 Clicking a filled cell opens the config: `display_name`, `provider_slug`,

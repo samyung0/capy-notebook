@@ -396,10 +396,10 @@ export const bioNotes: SeedNote[] = [
             {
               accepted: [{ value: 'ATP' }, { value: 'adenosine triphosphate' }],
               explanation: 'ATP is the cell’s short-term energy currency.',
-              id: 'bio_matrix_q_fill',
+              id: 'bio_matrix_q_short',
               level: 'recall',
               prompt: 'The main short-term energy carrier is ____.',
-              type: 'fill',
+              type: 'short',
             },
           ],
         },

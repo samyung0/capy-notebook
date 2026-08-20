@@ -7,7 +7,7 @@ import "github.com/evonotes/server/internal/models"
 //
 // Per-model multipliers live on model_configs and are read through the
 // registry. The constants below are the 1x reference and the non-token rates
-// (GPU, mail, the caption floor, speech duration) that are not model-specific.
+// (GPU, mail, the caption floor) that are not model-specific.
 //
 // They are intentionally not derived from provider invoices. Provider prices
 // move, are quoted in different currencies and units, and some (cached input,
@@ -29,12 +29,10 @@ const (
 	// inconsistently across providers.
 	microsPerCaptionCall = 2_000 // 2 credits per figure caption
 
-	// Speech is billed on audio duration, which is what providers charge for.
-	microsPerTranscribeSecond = 100_000 / 60 // ~0.1 credits per minute
-
-	// L4 GPU time on Modal. Parsing a large PDF is the single most expensive
-	// thing an upload triggers, so it is priced to be visible.
-	microsPerGPUSecond = 500_000 // 0.5 credits per GPU-second
+	// Modal parse wall time (CPU Marker + RapidOCR). Parsing a large PDF is
+	// the single most expensive thing an upload triggers, so it is priced
+	// to be visible. Ledger kind stays parse_gpu.
+	microsPerGPUSecond = 500_000 // 0.5 credits per parse-second
 
 	// Mail is nearly free per message but is the easiest thing to abuse via
 	// invite spam, so it is metered.
@@ -112,10 +110,6 @@ func CreditsForCaption(rates TokenRates, inputTokens, outputTokens int64) int64 
 	return microsPerCaptionCall + CreditsForTokens(rates, KindLLM, inputTokens, outputTokens)
 }
 
-func CreditsForTranscribe(durationMillis int64) int64 {
-	return durationMillis * microsPerTranscribeSecond / 1000
-}
-
 func CreditsForGPU(gpuMillis int64) int64 {
 	return gpuMillis * microsPerGPUSecond / 1000
 }
@@ -146,8 +140,8 @@ const (
 	EstimateGenerateMicros = 12 * MicrosPerCredit
 	// Editor commands are single short completions.
 	EstimateEditorMicros = 2 * MicrosPerCredit
-	// Transcription is bounded by the upload size cap rather than by tokens.
-	EstimateTranscribeMicros = 3 * MicrosPerCredit
+	// Open-question marking is one short JSON completion.
+	EstimateQuizMicros = EstimateEditorMicros
 	// Ingest is not reserved (post-hoc), but upload gating uses this as the
 	// "is there anything left" threshold via AssertCreditsAvailable.
 	EstimateIngestMicros = 4 * MicrosPerCredit

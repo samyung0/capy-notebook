@@ -1,9 +1,10 @@
-import type {
-  ChoiceQuestion,
-  CognitiveLevel,
-  OrderingQuestion,
-  Question,
-  QuestionType,
+import {
+  type ChoiceQuestion,
+  type CognitiveLevel,
+  type OrderingQuestion,
+  QUESTION_TYPES,
+  type Question,
+  type QuestionType,
 } from '@/api/types';
 import { MATERIAL_SCHEMA_VERSION } from '@/lib/const';
 import { uid } from '@/lib/id';
@@ -59,10 +60,13 @@ export interface QuizQuestionElement extends MaterialElement {
   children: (QuizPromptElement | QuizOptionElement | QuizExplanationElement)[];
   correctBoolean?: boolean;
   correctOptionIds?: string[];
+  hints?: string[];
   id: string;
   level: CognitiveLevel;
   pairs?: { left: string; right: string }[];
+  points?: number;
   questionType: QuestionType;
+  rubrics?: string[];
   type: 'quiz_question';
 }
 
@@ -129,15 +133,7 @@ const CUSTOM_TYPES = new Set([
 ]);
 const MEDIA_TYPES = new Set(['img', 'image', 'audio', 'file']);
 const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
-const QUESTION_TYPES = new Set<QuestionType>([
-  'mcq',
-  'multi',
-  'boolean',
-  'fill',
-  'short',
-  'matching',
-  'ordering',
-]);
+const QUESTION_TYPE_SET = new Set<QuestionType>(QUESTION_TYPES);
 const COGNITIVE_LEVELS = new Set<CognitiveLevel>([
   'recall',
   'application',
@@ -191,7 +187,7 @@ function validateCustomElement(element: MaterialElement): boolean {
       const question = element as QuizQuestionElement;
       return (
         hasId(element) &&
-        QUESTION_TYPES.has(question.questionType) &&
+        QUESTION_TYPE_SET.has(question.questionType) &&
         COGNITIVE_LEVELS.has(question.level) &&
         element.children.every(
           (child) =>
@@ -456,7 +452,7 @@ function questionOptions(question: Question): {
       options,
     };
   }
-  if (question.type === 'fill' || question.type === 'short') {
+  if (question.type === 'short' || question.type === 'open') {
     return {
       options: question.accepted.map((answer, index) => ({
         ...(textElement('quiz_option', answer.value) as QuizOptionElement),
@@ -511,10 +507,15 @@ export function quizQuestionNode(question: Question): QuizQuestionElement {
   };
   if (correctOptionIds?.length) node.correctOptionIds = correctOptionIds;
   if (question.type === 'boolean') node.correctBoolean = question.correct;
-  if (question.type === 'fill' || question.type === 'short') {
+  if (question.type === 'short' || question.type === 'open') {
     node.acceptedAnswers = question.accepted.map((answer) => answer.value);
   }
+  if (question.type === 'open') {
+    node.hints = question.hints.map((hint) => hint.value);
+    node.rubrics = question.rubrics.map((rubric) => rubric.value);
+  }
   if (question.type === 'matching') node.pairs = question.pairs;
+  if (question.points != null) node.points = question.points;
   return node;
 }
 
@@ -616,6 +617,7 @@ export function quizQuestionElementToQuestion(
     level: question.level,
     prompt,
     ...(explanation ? { explanation } : {}),
+    ...(question.points == null ? {} : { points: question.points }),
   };
   switch (question.questionType) {
     case 'boolean':
@@ -624,14 +626,23 @@ export function quizQuestionElementToQuestion(
         correct: question.correctBoolean ?? true,
         type: 'boolean',
       };
-    case 'fill':
     case 'short':
       return {
         ...base,
         accepted: (question.acceptedAnswers ?? options.map(nodeText)).map(
           (value) => ({ value })
         ),
-        type: question.questionType,
+        type: 'short',
+      };
+    case 'open':
+      return {
+        ...base,
+        accepted: (question.acceptedAnswers ?? options.map(nodeText)).map(
+          (value) => ({ value })
+        ),
+        hints: (question.hints ?? []).map((value) => ({ value })),
+        rubrics: (question.rubrics ?? []).map((value) => ({ value })),
+        type: 'open',
       };
     case 'matching':
       return { ...base, pairs: question.pairs ?? [], type: 'matching' };

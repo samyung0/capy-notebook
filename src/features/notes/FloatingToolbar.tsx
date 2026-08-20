@@ -26,6 +26,7 @@ import {
 import { ButtonTooltip } from '@/components/ui/Tooltip';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { features } from '@/lib/features';
 import { openAiMenu } from './ai/aiMenuState';
 import { useCollaborationActions } from './Collaboration';
 import { useEditorRuntime } from './EditorRuntime';
@@ -33,10 +34,28 @@ import { insertInlineEquation } from './editorCommands';
 import { EDITOR_SHORTCUTS } from './toolbar/ToolbarButton';
 
 export function FloatingToolbar() {
+  return features.editorAi ? (
+    <FloatingToolbarWithAi />
+  ) : (
+    <FloatingToolbarChrome hideForAi={false} showAi={false} />
+  );
+}
+
+function FloatingToolbarWithAi() {
+  const aiOpen = usePluginOption(AIChatPlugin, 'open');
+  return <FloatingToolbarChrome hideForAi={aiOpen} showAi />;
+}
+
+function FloatingToolbarChrome({
+  hideForAi,
+  showAi,
+}: {
+  hideForAi: boolean;
+  showAi: boolean;
+}) {
   const editor = useEditorRef();
   const editorId = useEditorId();
   const focusedEditorId = useEventEditorValue('focus');
-  const aiOpen = usePluginOption(AIChatPlugin, 'open');
   const { canComment } = useEditorRuntime();
   const collaboration = useCollaborationActions();
   const state = useFloatingToolbarState({
@@ -57,7 +76,7 @@ export function FloatingToolbar() {
       placement: 'top',
     },
     focusedEditorId,
-    hideToolbar: aiOpen,
+    hideToolbar: hideForAi,
   });
   const { clickOutsideRef, hidden, props, ref } = useFloatingToolbar(state);
 
@@ -77,14 +96,19 @@ export function FloatingToolbar() {
         ref={ref}
         role="toolbar"
       >
-        <FloatingButton
-          label={m.editor_ai_commands()}
-          onClick={() => openAiMenu(editor)}
-          shortcut={EDITOR_SHORTCUTS.ai}
-        >
-          <Sparkles /> <span className="pr-1 text-xs">{m.editor_ask_ai()}</span>
-        </FloatingButton>
-        <Separator />
+        {showAi && (
+          <>
+            <FloatingButton
+              label={m.editor_ai_commands()}
+              onClick={() => openAiMenu(editor)}
+              shortcut={EDITOR_SHORTCUTS.ai}
+            >
+              <Sparkles />{' '}
+              <span className="pr-1 text-xs">{m.editor_ask_ai()}</span>
+            </FloatingButton>
+            <Separator />
+          </>
+        )}
         <FloatingButton
           label={m.editor_bold()}
           onClick={() => mark(KEYS.bold)}

@@ -1,7 +1,13 @@
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { isApiError } from '@/api/client';
-import { useCloneQuiz, useQuiz, useSubmitAttempt } from '@/api/hooks';
+import {
+  useCloneQuiz,
+  useMe,
+  useModels,
+  useQuiz,
+  useSubmitAttempt,
+} from '@/api/hooks';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
@@ -13,9 +19,11 @@ import { userToast } from '@/components/ui/userToast';
 import {
   type Answer,
   emptyAnswer,
-  gradeQuestion,
+  formatPoints,
+  scoreQuestion,
 } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
+import { gradeAttemptQuestions } from '@/features/quizzes/scoreAttempt';
 import { m } from '@/i18n';
 import { toastCloneError, toastSignInRequired } from '@/lib/authToasts';
 
@@ -39,17 +47,29 @@ export default function QuizAttempt() {
   });
   const navigate = useNavigate();
 
+  const { data: me } = useMe();
+  const { data: quizModels } = useModels('quiz', { errorBoundary: false });
   const [idx, setIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
   const [done, setDone] = useState(false);
+  const [graded, setGraded] = useState<Awaited<
+    ReturnType<typeof gradeAttemptQuestions>
+  > | null>(null);
+  const [grading, setGrading] = useState(false);
 
-  const score = useMemo(() => {
-    if (!quiz) return { correct: 0, total: 0 };
-    const correct = quiz.questions.filter((q) =>
-      gradeQuestion(q, answers[q.id])
-    ).length;
-    return { correct, total: quiz.questions.length };
+  const liveScore = useMemo(() => {
+    if (!quiz) return { awarded: 0, max: 0 };
+    return quiz.questions
+      .map((q) => scoreQuestion(q, answers[q.id]))
+      .reduce(
+        (acc, s) => ({
+          awarded: acc.awarded + s.awarded,
+          max: acc.max + s.max,
+        }),
+        { awarded: 0, max: 0 }
+      );
   }, [quiz, answers]);
+  const score = graded ?? liveScore;
 
   if (fetchStatus === 'paused') {
     return (
@@ -100,43 +120,64 @@ export default function QuizAttempt() {
   const q = quiz.questions[idx];
   const answer = answers[q.id] ?? emptyAnswer(q);
 
-  function finish() {
+  async function finish() {
     if (!quiz) return;
-    const wrong = quiz.questions.filter(
-      (qq) => !gradeQuestion(qq, answers[qq.id])
-    );
-    submit(
-      {
-        answers,
-        correct: score.correct,
-        questions: quiz.questions,
-        quizId,
-        total: score.total,
-        wrong,
-      },
-      {
-        onError: (err) => {
-          if (isApiError(err) && err.status === 401) {
-            toastSignInRequired(
-              m.quiz_signin_save_title(),
-              m.quiz_signin_save_body()
-            );
-            return;
-          }
-          userToast({
-            description:
-              err instanceof Error ? err.message : m.quiz_save_attempt_retry(),
-            title: m.quiz_save_attempt_failed(),
-            variant: 'error',
-          });
+    setGrading(true);
+    try {
+      const result = await gradeAttemptQuestions(quiz.questions, answers, {
+        modelKey:
+          me?.quizModelKey || quizModels?.selectedKey || 'deepseek-flash',
+        workspaceId: quiz.workspaceId,
+      });
+      setGraded(result);
+      const wrong = result.questions.filter((qq) => {
+        const s = scoreQuestion(qq, answers[qq.id]);
+        return s.awarded < s.max;
+      });
+      submit(
+        {
+          answers,
+          correct: result.awarded,
+          questions: result.questions,
+          quizId,
+          total: result.max,
+          wrong,
         },
-        onSuccess: () => setDone(true),
-      }
-    );
+        {
+          onError: (err) => {
+            if (isApiError(err) && err.status === 401) {
+              toastSignInRequired(
+                m.quiz_signin_save_title(),
+                m.quiz_signin_save_body()
+              );
+              return;
+            }
+            userToast({
+              description:
+                err instanceof Error
+                  ? err.message
+                  : m.quiz_save_attempt_retry(),
+              title: m.quiz_save_attempt_failed(),
+              variant: 'error',
+            });
+          },
+          onSuccess: () => setDone(true),
+        }
+      );
+    } catch (err) {
+      userToast({
+        description:
+          err instanceof Error ? err.message : m.quiz_grade_failed_body(),
+        title: m.quiz_grade_failed(),
+        variant: 'error',
+      });
+    } finally {
+      setGrading(false);
+    }
   }
 
   if (done) {
-    const pct = Math.round((score.correct / Math.max(1, score.total)) * 100);
+    const pct = Math.round((score.awarded / Math.max(0.5, score.max)) * 100);
     return (
       <PanelWithInvertedRadius>
         <div className="mx-auto flex h-full max-w-2xl flex-col items-center justify-center gap-5 px-6 text-center">
@@ -144,11 +185,12 @@ export default function QuizAttempt() {
             <Icon name="quiz" size={30} />
           </span>
           <p className="t-page-title">
-            {score.correct} / {score.total}
+            {formatPoints(score.awarded)} / {formatPoints(score.max)}
           </p>
           <p className="t-body text-fg-muted">
             {m.quiz_you_scored({ name: quiz.name, pct: String(pct) })}
           </p>
+          <p className="t-meta text-fg-muted">{m.quiz_score_reference()}</p>
           <div className="w-full max-w-sm">
             <ProgressBar
               height={8}
@@ -157,8 +199,9 @@ export default function QuizAttempt() {
             />
           </div>
           <div className="mt-4 flex w-full max-w-md flex-col gap-2 text-left">
-            {quiz.questions.map((qq, i) => {
-              const ok = gradeQuestion(qq, answers[qq.id]);
+            {(graded?.questions ?? quiz.questions).map((qq, i) => {
+              const s = scoreQuestion(qq, answers[qq.id]);
+              const ok = s.awarded >= s.max && s.max > 0;
               return (
                 <div
                   className="flex items-start gap-2 rounded-card border border-line bg-surface px-3 py-2"
@@ -260,12 +303,16 @@ export default function QuizAttempt() {
             </Button>
           ) : (
             <Button
-              disabled={submitIsPending}
+              disabled={submitIsPending || grading}
               iconRight="check"
-              onClick={finish}
+              onClick={() => void finish()}
               variant="accent"
             >
-              {submitIsPending ? m.canvas_saving() : m.action_finish()}
+              {grading
+                ? m.quiz_grading()
+                : submitIsPending
+                  ? m.canvas_saving()
+                  : m.action_finish()}
             </Button>
           )}
         </div>

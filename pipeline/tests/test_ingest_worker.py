@@ -82,10 +82,10 @@ async def _run(parse_mode: str, *, caption_images: bool = False):
     ("parse_mode", "route"),
     [
         ("fast", modal_parser.ROUTE_FAST),
-        ("accurate", modal_parser.ROUTE_ACCURATE),
+        ("accurate", modal_parser.ROUTE_FAST),
         # A job enqueued before the modes were renamed, or by a gateway running
         # older code: parse it rather than fail it.
-        ("advanced", modal_parser.ROUTE_ACCURATE),
+        ("advanced", modal_parser.ROUTE_FAST),
     ],
 )
 async def test_the_parse_mode_selects_the_route(parse_stub, parse_mode, route):
@@ -266,7 +266,7 @@ async def test_a_missing_source_blob_fails_before_paying_for_a_parse(
     monkeypatch.setattr(worker.blobstore, "object_info", lambda _p: None)
 
     with pytest.raises(TerminalError, match="source blob is missing"):
-        await _run("accurate")
+        await _run("fast")
 
     assert parse_stub["descriptor"] is None
 
@@ -314,3 +314,80 @@ def test_a_vanished_source_reads_as_missing_rather_than_an_s3_error(monkeypatch)
 
     with pytest.raises(FileNotFoundError):
         blobstore.sha256_object("sources/gone.pdf")
+
+
+async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
+    parse_stub, monkeypatch
+):
+    """When every GPU slot is taken, the file stays pending and the attempt is undone."""
+    from pipeline.jobs import CapacityWait
+
+    yielded: list[str] = []
+
+    async def _pin(_ws):
+        return object()
+
+    async def _no_donor(**_k):
+        return None
+
+    monkeypatch.setattr(worker, "_workspace_embedding_spec", _pin)
+    monkeypatch.setattr(
+        worker.registry, "pins_from_payload", lambda *_a, **_k: object()
+    )
+    monkeypatch.setattr(worker.registry, "set_job_pins", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker, "_file_exists", lambda *_a, **_k: True)
+    monkeypatch.setattr(worker, "_read_name", lambda *_a, **_k: "notes.pdf")
+    monkeypatch.setattr(worker, "_account_allows_ingest", lambda *_a, **_k: True)
+    monkeypatch.setattr(worker, "_record_source_sha", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker.blobstore, "sha256_object", lambda *_a: "aa" * 32)
+    monkeypatch.setattr(worker.store, "find_ready_donor", _no_donor)
+    monkeypatch.setattr(worker.slots, "try_acquire", lambda *_a, **_k: False)
+    monkeypatch.setattr(
+        worker, "_yield_for_capacity", lambda job, *_a, **_k: yielded.append(job["id"])
+    )
+
+    with pytest.raises(CapacityWait):
+        await worker.process_ingest_job(
+            {
+                "id": "job_wait",
+                "attempts": 1,
+                "payload": {
+                    "fileId": "f_1",
+                    "workspaceId": "ws_1",
+                    "blobPath": "sources/blob_1.pdf",
+                    "kind": "pdf",
+                    "parseMode": "fast",
+                    "actorUserId": "u_1",
+                },
+            }
+        )
+
+    assert yielded == ["job_wait"]
+    assert parse_stub["descriptor"] is None
+
+
+async def test_text_sources_do_not_take_a_gpu_slot(parse_stub, monkeypatch):
+    taken: list[tuple] = []
+    monkeypatch.setattr(
+        worker.blobstore, "fetch_local", lambda _p: ("/tmp/notes.md", lambda: None)
+    )
+    monkeypatch.setattr(worker, "_read_text", lambda _p: "# Notes")
+    monkeypatch.setattr(worker, "chunk_markdown", lambda text: [text])
+    monkeypatch.setattr(worker, "_set_file_status", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        worker.slots, "try_acquire", lambda *a, **k: taken.append((a, k)) or True
+    )
+
+    await worker._chunks_for(
+        payload={"blobPath": "sources/notes.md"},
+        name="notes.md",
+        kind="md",
+        parse_mode="fast",
+        caption_images=True,
+        ws="ws_1",
+        file_id="f_1",
+        source_sha256="aa" * 32,
+        job_id="job_1",
+    )
+
+    assert taken == []

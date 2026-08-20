@@ -8,6 +8,7 @@ import {
 } from '@/features/workspace/ContentActions';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { fileIsIngesting } from './fileUtils';
 
 /** A file row in the workspace sidebar. Opens the file in the center pane, shows
  * ingest progress, and exposes a hover action menu (rename / properties /
@@ -33,7 +34,7 @@ export function FileListItem({
   /** Shared workspace viewers can open files but cannot mutate them. */
   readOnly?: boolean;
 }) {
-  const processing = file.status === 'processing';
+  const ingesting = fileIsIngesting(file.status);
   const failed = file.status === 'failed';
 
   return (
@@ -48,10 +49,10 @@ export function FileListItem({
           className={cn(
             'flex w-full items-center gap-1.5 rounded-button px-1.5 py-1.5 pl-2 text-left',
             active && 'font-bold',
-            processing && 'cursor-default'
+            ingesting && 'cursor-default'
           )}
-          disabled={processing}
-          onClick={() => !processing && onOpen(file.id)}
+          disabled={ingesting}
+          onClick={() => !ingesting && onOpen(file.id)}
           type="button"
         >
           <Icon
@@ -69,7 +70,7 @@ export function FileListItem({
             {file.name}
           </span>
         </button>
-        {processing && (
+        {ingesting && (
           <div className="mr-0.5">
             <Spinner />
           </div>
@@ -97,7 +98,7 @@ export function FileListItem({
           {m.files_processing_error()}
         </div>
       )}
-      {processing && (
+      {ingesting && (
         <div className="mr-1.5 mb-0.5 ml-6">
           <ProgressBar height={4} tone={color} value={file.ingestPct ?? 0} />
         </div>
