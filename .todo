@@ -62,14 +62,20 @@ chapter scoped query/filtering is only soft steered using prompt, underlying rea
 
 no reindex job (not available, deliberately deferred)
 a workspace pins its embedding model at creation (workspaces.embedding_model_key)
-and keeps it for life; nothing re-embeds an existing corpus into a different
-model. cost is proportional to total corpus size rather than to what changed, so
-it is the one operation whose price is unbounded by what the user just did.
+and keeps it for life. CreateWorkspace always goes through newWorkspaceEmbedding.
+there is no per-file re-embed product path: donor copy may re-embed when the
+only ready donor is in another space, and that is reuse fallback, not a feature
+to grow. cost of a real reindex is proportional to total corpus size rather
+than to what changed, so it is the one operation whose price is unbounded by
+what the user just did.
 consequences while it does not exist: retargeting the embedding default only
-affects new workspaces, a model in use can never be deleted or lose its
-provider, and every embedding_dim in use must always keep at least one enabled
-model behind it (same dimension from another provider or self-hosted is fine).
+affects new workspaces. an embedding model_configs row can never be disabled,
+deleted, stripped, or rewritten onto a different provider_model_id / params
+(postgres refuses). same width from another provider is a different space:
+new table, new row, clear the old is_default_for, mark the new row default,
+bump model_registry_state. if a vendor drops the model, move base_url /
+provider_slug and serve the same weights from elsewhere.
 if this is built: needs to be a job with progress + credit reservation, must
-rewrite rag_chunk_vectors_<dim> and rag_contents.embedding_* and
+rewrite that pin's rag_chunk_vectors_* table and rag_contents.embedding_* and
 workspaces.embedding_* in one transaction per content, and must block search or
 serve stale results while running.

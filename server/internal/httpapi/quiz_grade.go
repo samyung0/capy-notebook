@@ -46,11 +46,11 @@ func (a *api) gradeQuizAnswer(ctx context.Context, in *quizGradeInput) (*quizGra
 		}
 	}
 
-	_, rates, err := a.ratesForSurface(ctx, actor, models.SurfaceQuiz)
+	llm, err := a.resolveLLM(ctx, actor, models.SurfaceQuiz)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	charge, err := a.reserveSpend(ctx, actor, wsID, store.SurfaceQuiz, store.ScaleEstimate(store.EstimateQuizMicros, rates))
+	charge, err := a.beginSpend(ctx, actor, wsID, store.SurfaceQuiz, llm.PaidBy)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -59,18 +59,21 @@ func (a *api) gradeQuizAnswer(ctx context.Context, in *quizGradeInput) (*quizGra
 	if a.pipe == nil {
 		return nil, huma.Error503ServiceUnavailable("AI service is unavailable")
 	}
-	raw, err := a.pipe.PostRaw(ctx, "/quiz-grade", map[string]any{
-		"hints":         in.Body.Hints,
-		"modelAnswer":   in.Body.ModelAnswer,
-		"prompt":        in.Body.Prompt,
-		"rubrics":       in.Body.Rubrics,
-		"userAnswer":    in.Body.UserAnswer,
-		"workspaceId":   wsID,
-		"locale":        a.userLocale(ctx, actor),
-		"modelKey":      rates.ModelKey,
-		"configVersion": rates.ModelVersion,
-	})
+	body := map[string]any{
+		"hints":       in.Body.Hints,
+		"modelAnswer": in.Body.ModelAnswer,
+		"prompt":      in.Body.Prompt,
+		"rubrics":     in.Body.Rubrics,
+		"userAnswer":  in.Body.UserAnswer,
+		"workspaceId": wsID,
+		"locale":      a.userLocale(ctx, actor),
+	}
+	llm.attach(body)
+	raw, err := a.pipe.PostRaw(ctx, "/quiz-grade", body)
 	if err != nil {
+		if mapped := pipelineLLMError(err); mapped != nil {
+			return nil, hErr(mapped)
+		}
 		return nil, huma.Error503ServiceUnavailable("AI service is unavailable")
 	}
 	usage := usageFrom(raw)
@@ -81,7 +84,7 @@ func (a *api) gradeQuizAnswer(ctx context.Context, in *quizGradeInput) (*quizGra
 	if json.Unmarshal(raw, &parsed) != nil {
 		return nil, huma.Error503ServiceUnavailable("AI service is unavailable")
 	}
-	charge.settle(ctx, usage.events(actor, wsID, store.SurfaceQuiz, rates, store.DefaultEmbeddingRates())...)
+	charge.settle(ctx, usage.events(actor, wsID, store.SurfaceQuiz, llm.Rates, store.DefaultEmbeddingRates(), llm.PaidBy)...)
 	return &quizGradeOutput{Body: apimodel.QuizGradeResp{
 		Award:  snapGradeAward(parsed.Award),
 		Reason: parsed.Reason,

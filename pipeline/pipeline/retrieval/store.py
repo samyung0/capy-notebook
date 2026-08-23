@@ -54,25 +54,29 @@ def vector_literal(values: list[float]) -> str:
     return "[" + ",".join(f"{v:.6g}" for v in values) + "]"
 
 
-# Vectors are stored one table per width, because the width is part of the
-# halfvec column type and pgvector cannot index a column whose dimension varies.
-# Adding a width means a new table in the migration and a new entry here.
-_VECTOR_TABLES = {2560: "rag_chunk_vectors_2560"}
+# Per pin, not per width. rag_chunk_vectors_2560 is the historical name for
+# qwen-embed v1. A later model, including another 2560-d one, gets its own
+# table and a new entry here.
+_VECTOR_TABLES = {("qwen-embed", 1): "rag_chunk_vectors_2560"}
 
 
-def vector_table(dim: int) -> str:
-    """The vector table for an embedding width.
+def vector_table(model_key: str, version: int) -> str:
+    """The vector table for one embedding pin.
 
-    Interpolated into SQL, so it is looked up rather than formatted: only widths
+    Interpolated into SQL, so it is looked up rather than formatted: only pins
     that exist in the schema can ever reach a statement.
     """
-    table = _VECTOR_TABLES.get(int(dim))
+    table = _VECTOR_TABLES.get((model_key, int(version)))
     if table is None:
         raise RuntimeError(
-            f"no vector table for embedding dimension {dim}; add one to "
+            f"no vector table for {model_key} v{version}; add one to "
             "0001_init.sql and _VECTOR_TABLES together"
         )
     return table
+
+
+def vector_table_for_pin(pin: dict[str, Any]) -> str:
+    return vector_table(pin["embedding_model_key"], int(pin["embedding_model_version"]))
 
 
 async def workspace_embedding_pin(workspace_id: str) -> dict[str, Any]:
@@ -206,9 +210,20 @@ async def steal_stale_content(
 
 
 async def find_ready_donor(
-    *, source_sha256: str, pipeline_identity: str
+    *,
+    source_sha256: str,
+    pipeline_identity: str,
+    embedding_model_key: str,
+    embedding_model_version: int,
+    embedding_dim: int,
 ) -> dict[str, Any] | None:
-    """A ready index of the same source bytes produced by the same pipeline."""
+    """A ready index of the same source bytes produced by the same pipeline.
+
+    Prefers a donor already in this workspace's vector space so a retarget of
+    the embedding default does not force every old workspace to re-embed a
+    file that already exists in its pin. Falls back to any ready donor; the
+    caller then copies text and re-embeds.
+    """
     if not source_sha256 or not pipeline_identity:
         return None
     db = await pool()
@@ -221,10 +236,20 @@ async def find_ready_donor(
             WHERE source_sha256 = %s
               AND pipeline_identity = %s
               AND status = 'ready'
-            ORDER BY updated_at DESC
+            ORDER BY (
+                embedding_model_key = %s
+                AND embedding_model_version = %s
+                AND embedding_dim = %s
+            ) DESC, updated_at DESC
             LIMIT 1
             """,
-            (source_sha256, pipeline_identity),
+            (
+                source_sha256,
+                pipeline_identity,
+                embedding_model_key,
+                embedding_model_version,
+                embedding_dim,
+            ),
         )
         row = await cur.fetchone()
     return dict(row) if row else None
@@ -313,7 +338,7 @@ async def copy_content_from_donor(
         pin = donor
         table = None
         if copy_vectors:
-            table = vector_table(int(pin["embedding_dim"] or 0))
+            table = vector_table_for_pin(pin)
 
         # INSERT..SELECT keeps tsvector/jsonb typed and derives dest chunk ids
         # in SQL, the same shape as cloneRetrievalIndex.
@@ -459,7 +484,7 @@ async def replace_content_chunks(
     for the insert loop is what stops a waiter from deleting it mid-write.
     """
     pin = await workspace_embedding_pin(workspace_id)
-    table = vector_table(pin["embedding_dim"])
+    table = vector_table_for_pin(pin)
     db = await pool()
     async with db.connection() as conn, conn.transaction():
         if claim_job_id is not None:
@@ -689,7 +714,6 @@ async def hybrid_search(
     terms: str,
     file_ids: list[str] | None,
     candidates: int,
-    embedding_dim: int,
 ) -> list[dict[str, Any]]:
     """Vector + lexical search fused with reciprocal rank fusion.
 
@@ -698,12 +722,13 @@ async def hybrid_search(
     unit, so any weight would be a tuning constant that drifts with the corpus.
     Ranks are unitless.
 
-    ``embedding_dim`` selects the vector table, and must be the workspace's own
-    width — the same one ``vector`` was produced at. The lexical half is
-    dimension-independent and always reads rag_chunks.
+    The vector table comes from the workspace pin, not from a width: two
+    models of the same dimension do not share a table. The lexical half is
+    model-independent and always reads rag_chunks.
     """
+    pin = await workspace_embedding_pin(workspace_id)
     db = await pool()
-    sql = _SEARCH_SQL_TEMPLATE.format(vector_table=vector_table(embedding_dim))
+    sql = _SEARCH_SQL_TEMPLATE.format(vector_table=vector_table_for_pin(pin))
     async with db.connection() as conn:
         cur = await conn.execute(
             sql,

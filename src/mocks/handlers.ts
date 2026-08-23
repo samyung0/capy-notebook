@@ -40,6 +40,10 @@ const refType = (kind: Material['kind']): MaterialRefType =>
   kind === 'flashcards' ? 'deck' : kind;
 
 const latency = () => delay(1000 + Math.random() * 220);
+const USER_KEY_MODELS: Record<string, string> = {
+  'claude-opus-5': 'anthropic',
+  'gpt-5.6-sol': 'openai',
+};
 const ownerMaterialAccess = {
   capabilities: {
     canComment: true,
@@ -273,25 +277,82 @@ export const handlers = [
       quiz: db.user.quizModelKey,
     };
     const selected = prefs[surface] ?? 'deepseek-flash';
+    const hasOpenAI = Boolean(db.llmCredentials.openai);
+    const hasAnthropic = Boolean(db.llmCredentials.anthropic);
+    const hasDeepSeek = Boolean(db.llmCredentials.deepseek);
+    const reasoning = {
+      canDisable: true,
+      defaultEffort: 'high',
+      defaultMode: 'off',
+      efforts: ['low', 'high', 'max'],
+    };
     return HttpResponse.json({
       defaultKey: 'deepseek-flash',
       models: [
         {
+          available: true,
           displayName: 'DeepSeek Flash',
           isDefault: true,
           key: 'deepseek-flash',
+          providerSlug: 'deepseek',
+          reasoning,
+          usesUserKey: hasDeepSeek,
         },
-        { displayName: 'DeepSeek Pro', isDefault: false, key: 'deepseek-pro' },
+        {
+          available: true,
+          displayName: 'DeepSeek Pro',
+          isDefault: false,
+          key: 'deepseek-pro',
+          providerSlug: 'deepseek',
+          reasoning,
+          usesUserKey: hasDeepSeek,
+        },
+        {
+          available: hasOpenAI,
+          displayName: 'GPT-5.6 Sol',
+          isDefault: false,
+          key: 'gpt-5.6-sol',
+          providerSlug: 'openai',
+          reasoning: {
+            canDisable: true,
+            defaultEffort: 'medium',
+            defaultMode: 'on',
+            efforts: ['low', 'medium', 'high', 'xhigh'],
+          },
+          usesUserKey: hasOpenAI,
+        },
+        {
+          available: hasAnthropic,
+          displayName: 'Claude Opus 5',
+          isDefault: false,
+          key: 'claude-opus-5',
+          providerSlug: 'anthropic',
+          reasoning: {
+            canDisable: false,
+            defaultEffort: 'high',
+            defaultMode: 'on',
+            efforts: ['low', 'medium', 'high', 'xhigh'],
+          },
+          usesUserKey: hasAnthropic,
+        },
       ],
       selectedKey: selected,
+      selectedReasoningEffort: db.userReasoning[surface]?.effort ?? '',
+      selectedReasoningMode: db.userReasoning[surface]?.mode ?? '',
     });
   }),
   http.patch('/api/me/models', async ({ request }) => {
     const body = (await request.json()) as {
       chatModelKey?: string;
+      chatReasoningEffort?: string;
+      chatReasoningMode?: string;
       editorModelKey?: string;
       generateModelKey?: string;
+      generateReasoningEffort?: string;
+      generateReasoningMode?: string;
       quizModelKey?: string;
+      quizReasoningEffort?: string;
+      quizReasoningMode?: string;
     };
     const fields = [
       'chatModelKey',
@@ -307,7 +368,65 @@ export const handlers = [
           { message: 'a model preference is required' },
           { status: 400 }
         );
+      const required = USER_KEY_MODELS[value];
+      if (required && !db.llmCredentials[required]) {
+        return HttpResponse.json(
+          {
+            detail: 'LLM model not available',
+            errors: [{ message: 'model_unavailable' }],
+          },
+          { status: 422 }
+        );
+      }
       db.user[field] = value;
+    }
+    const reasoning = [
+      ['chat', body.chatReasoningMode, body.chatReasoningEffort],
+      ['generate', body.generateReasoningMode, body.generateReasoningEffort],
+      ['quiz', body.quizReasoningMode, body.quizReasoningEffort],
+    ] as const;
+    for (const [surface, mode, effort] of reasoning) {
+      const current = db.userReasoning[surface] ?? { effort: '', mode: '' };
+      db.userReasoning[surface] = {
+        effort: effort ?? current.effort,
+        mode: mode ?? current.mode,
+      };
+    }
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.get('/api/me/llm-credentials', () =>
+    HttpResponse.json({
+      credentials: Object.entries(db.llmCredentials).map(([slug, last4]) => ({
+        last4,
+        providerSlug: slug,
+      })),
+    })
+  ),
+  http.put('/api/me/llm-credentials', async ({ request }) => {
+    const body = (await request.json()) as {
+      apiKey?: string;
+      providerSlug?: string;
+    };
+    const slug = body.providerSlug ?? '';
+    const key = (body.apiKey ?? '').trim();
+    if (!['openai', 'anthropic', 'deepseek'].includes(slug) || !key) {
+      return HttpResponse.json({ message: 'invalid key' }, { status: 400 });
+    }
+    db.llmCredentials[slug] = key.slice(-4);
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.delete('/api/me/llm-credentials/:provider', ({ params }) => {
+    const slug = String(params.provider);
+    delete db.llmCredentials[slug];
+    const locked = Object.entries(USER_KEY_MODELS)
+      .filter(([, provider]) => provider === slug)
+      .map(([key]) => key);
+    for (const field of [
+      'chatModelKey',
+      'generateModelKey',
+      'quizModelKey',
+    ] as const) {
+      if (locked.includes(db.user[field])) db.user[field] = 'deepseek-flash';
     }
     return new HttpResponse(null, { status: 204 });
   }),

@@ -44,6 +44,21 @@ const (
 	SurfaceVision    = "vision"
 )
 
+const (
+	AuthPlatform       = "platform"
+	AuthUserKey        = "user_key"
+	AuthPlatformOrUser = "platform_or_user"
+	PaidByPlatform     = "platform"
+	PaidByUser         = "user"
+)
+
+const modelConfigSelect = `
+		SELECT model_key, version, display_name, provider_slug, base_url, provider_model_id,
+		       auth_mode, context_window_tokens, params, surfaces,
+		       micros_per_input_token, micros_per_output_token,
+		       usd_micros_per_input_token, usd_micros_per_output_token, enabled, is_default_for
+		  FROM model_configs`
+
 var ErrNotFound = errors.New("model config not found")
 
 // Pin is the (key, version) pair written onto a conversation or job. It is
@@ -63,6 +78,8 @@ type Config struct {
 	ProviderSlug            string
 	BaseURL                 string
 	ProviderModelID         string
+	AuthMode                string
+	ContextWindowTokens     int
 	Params                  map[string]any
 	Surfaces                []string
 	MicrosPerInputToken     int64
@@ -87,6 +104,116 @@ func (c Config) Allows(surface string) bool {
 func (c Config) DefaultFor(surface string) bool {
 	for _, s := range c.IsDefaultFor {
 		if s == surface {
+			return true
+		}
+	}
+	return false
+}
+
+func (c Config) Auth() string {
+	if c.AuthMode == "" {
+		return AuthPlatform
+	}
+	return c.AuthMode
+}
+
+// Available is whether this user may select the row. Platform and
+// platform_or_user rows are always selectable. user_key rows need a credential.
+func (c Config) Available(hasCred bool) bool {
+	if c.Auth() == AuthUserKey {
+		return hasCred
+	}
+	return true
+}
+
+// UsesUserKey is whether a request from this user should call the provider
+// with their credential.
+func (c Config) UsesUserKey(hasCred bool) bool {
+	switch c.Auth() {
+	case AuthUserKey, AuthPlatformOrUser:
+		return hasCred
+	default:
+		return false
+	}
+}
+
+type ReasoningSpec struct {
+	CanDisable    bool
+	Efforts       []string
+	DefaultMode   string
+	DefaultEffort string
+	Style         string
+}
+
+func (c Config) Reasoning() ReasoningSpec {
+	spec := ReasoningSpec{
+		DefaultMode:   "off",
+		DefaultEffort: "medium",
+	}
+	raw, ok := c.Params["reasoning"]
+	if !ok {
+		return spec
+	}
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return spec
+	}
+	if v, ok := obj["canDisable"].(bool); ok {
+		spec.CanDisable = v
+	}
+	if v, ok := obj["defaultMode"].(string); ok && v != "" {
+		spec.DefaultMode = v
+	}
+	if v, ok := obj["defaultEffort"].(string); ok && v != "" {
+		spec.DefaultEffort = v
+	}
+	if v, ok := obj["style"].(string); ok {
+		spec.Style = v
+	}
+	switch list := obj["efforts"].(type) {
+	case []any:
+		for _, item := range list {
+			if s, ok := item.(string); ok && s != "" {
+				spec.Efforts = append(spec.Efforts, s)
+			}
+		}
+	case []string:
+		spec.Efforts = append(spec.Efforts, list...)
+	}
+	return spec
+}
+
+// ResolveReasoning applies a user override, then the catalog default, then
+// clamps to what this row actually accepts.
+func (c Config) ResolveReasoning(mode, effort string) (string, string) {
+	spec := c.Reasoning()
+	if mode == "" {
+		mode = spec.DefaultMode
+	}
+	if mode != "on" && mode != "off" {
+		mode = spec.DefaultMode
+	}
+	if !spec.CanDisable {
+		mode = "on"
+	}
+	if mode == "off" {
+		return "off", ""
+	}
+	if effort == "" {
+		effort = spec.DefaultEffort
+	}
+	if !containsString(spec.Efforts, effort) {
+		effort = spec.DefaultEffort
+		if !containsString(spec.Efforts, effort) && len(spec.Efforts) > 0 {
+			effort = spec.Efforts[0]
+		}
+	}
+	return mode, effort
+}
+
+func containsString(list []string, want string) bool {
+	for _, item := range list {
+		if item == want {
 			return true
 		}
 	}
@@ -175,11 +302,7 @@ func (r *Registry) refresh(ctx context.Context) error {
 		return nil
 	}
 
-	rows, err := r.pool.Query(ctx, `
-		SELECT model_key, version, display_name, provider_slug, base_url, provider_model_id,
-		       params, surfaces, micros_per_input_token, micros_per_output_token,
-		       usd_micros_per_input_token, usd_micros_per_output_token, enabled, is_default_for
-		  FROM model_configs`)
+	rows, err := r.pool.Query(ctx, modelConfigSelect)
 	if err != nil {
 		return err
 	}
@@ -232,6 +355,7 @@ func scanConfig(row rowScanner) (Config, error) {
 	)
 	err := row.Scan(
 		&c.Key, &c.Version, &c.DisplayName, &c.ProviderSlug, &c.BaseURL, &c.ProviderModelID,
+		&c.AuthMode, &c.ContextWindowTokens,
 		&params, &surfaces, &c.MicrosPerInputToken, &c.MicrosPerOutputToken,
 		&c.USDMicrosPerInputToken, &c.USDMicrosPerOutputToken, &c.Enabled, &defaultFor,
 	)
@@ -250,8 +374,9 @@ func scanConfig(row rowScanner) (Config, error) {
 }
 
 // Get returns the exact (key, version). Load-on-miss from the table; never
-// falls back to the current default. Disabled rows still resolve: a pinned
-// conversation must keep working after that version is disabled.
+// falls back to the current default. Disabled chat/generate rows still
+// resolve so a pinned conversation keeps working. Embedding rows cannot be
+// disabled or rewritten onto a different model: Postgres rejects the write.
 func (r *Registry) Get(ctx context.Context, key string, version int) (Config, error) {
 	if key == "" || version <= 0 {
 		return Config{}, ErrNotFound
@@ -275,11 +400,8 @@ func (r *Registry) Get(ctx context.Context, key string, version int) (Config, er
 }
 
 func (r *Registry) load(ctx context.Context, key string, version int) (Config, error) {
-	row := r.pool.QueryRow(ctx, `
-		SELECT model_key, version, display_name, provider_slug, base_url, provider_model_id,
-		       params, surfaces, micros_per_input_token, micros_per_output_token,
-		       usd_micros_per_input_token, usd_micros_per_output_token, enabled, is_default_for
-		  FROM model_configs WHERE model_key=$1 AND version=$2`, key, version)
+	row := r.pool.QueryRow(ctx, modelConfigSelect+`
+		 WHERE model_key=$1 AND version=$2`, key, version)
 	cfg, err := scanConfig(row)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return Config{}, fmt.Errorf("%w: %s v%d", ErrNotFound, key, version)
@@ -335,11 +457,7 @@ func (r *Registry) latestEnabled(ctx context.Context, key, surface string) (Conf
 	if found {
 		return best, nil
 	}
-	row := r.pool.QueryRow(ctx, `
-		SELECT model_key, version, display_name, provider_slug, base_url, provider_model_id,
-		       params, surfaces, micros_per_input_token, micros_per_output_token,
-		       usd_micros_per_input_token, usd_micros_per_output_token, enabled, is_default_for
-		  FROM model_configs
+	row := r.pool.QueryRow(ctx, modelConfigSelect+`
 		 WHERE model_key=$1 AND enabled AND $2 = ANY(surfaces)
 		 ORDER BY version DESC LIMIT 1`, key, surface)
 	cfg, err := scanConfig(row)
@@ -371,10 +489,10 @@ func (r *Registry) SnapshotIngest(ctx context.Context) (ingest, vision Config, e
 	return
 }
 
-// EmbeddingDim is the vector width a config emits, which selects the
-// rag_chunk_vectors_<dim> table its vectors belong in. A check constraint in the
-// migration requires the value on every embedding row, so a zero here means the
-// row was written around the schema.
+// EmbeddingDim is the vector width a config emits. The vector table is chosen
+// by pin, not by width; this value sizes the halfvec write. A check constraint
+// in the migration requires it on every embedding row, so a zero here means
+// the row was written around the schema.
 func (c Config) EmbeddingDim() (int, error) {
 	dim := int(c.ParamFloat("dimensions", 0))
 	if dim <= 0 {

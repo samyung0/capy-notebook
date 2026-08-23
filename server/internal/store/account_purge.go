@@ -124,6 +124,9 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM lifecycle_notices WHERE user_id=$1`, userID); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(ctx, `DELETE FROM user_llm_credentials WHERE user_id=$1`, userID); err != nil {
+		return err
+	}
 
 	// Scrub PII. Keep stripe_customer_id — invoice history depends on it.
 	// email is set NULL so the unique active-email index frees the address.

@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,6 +39,7 @@ type pipeChatEvent struct {
 	TokenCount   int              `json:"tokenCount,omitempty"`
 	GenerationID string           `json:"generationId,omitempty"`
 	Message      string           `json:"message,omitempty"`
+	Code         string           `json:"code,omitempty"`
 	// Usage arrives on the done event, aggregated across every provider call
 	// the turn made. A stream that is aborted mid-answer never reaches done, so
 	// its reservation settles at zero and expires — undercharging a user whose
@@ -80,25 +80,12 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	userID := uid(r)
 
-	// Concurrency, not rate, is what bounds a chat abuser: one stream can run
-	// for minutes and drive an agent loop the whole time, so a request-per-hour
-	// budget alone still allows arbitrary parallel spend.
-	slot, release := a.limiter.AcquireStream(ctx, userID)
-	if !slot {
-		w.Header().Set("Retry-After", "10")
-		writeJSON(w, http.StatusTooManyRequests, map[string]any{
-			"code":    "too_many_streams",
-			"message": "too many chat streams open",
-		})
-		return
-	}
-	defer release()
-
-	cfg, llmRates, err := a.ratesForSurface(ctx, userID, models.SurfaceChat)
+	llm, err := a.resolveLLM(ctx, userID, models.SurfaceChat)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
+	cfg, llmRates := llm.Cfg, llm.Rates
 
 	conv, err := a.resolveConversation(ctx, userID, wsID, req.ConversationID)
 	if err != nil {
@@ -106,7 +93,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	charge, err := a.reserveSpend(ctx, userID, wsID, store.SurfaceChat, store.ScaleEstimate(store.EstimateChatMicros, llmRates))
+	charge, err := a.beginSpend(ctx, userID, wsID, store.SurfaceChat, llm.PaidBy)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -161,7 +148,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		send(pipeChatEvent{Type: "token", Text: t})
 	}
 
-	streamErr := a.relayChat(ctx, userID, conv, cfg, req.Text, onToken, func(ev pipeChatEvent) {
+	streamErr := a.relayChat(ctx, userID, conv, llm, req.Text, onToken, func(ev pipeChatEvent) {
 		switch ev.Type {
 		case "citations":
 			citations = ev.Citations
@@ -193,12 +180,16 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		tokens = int(usage.InputTokens + usage.OutputTokens)
 	}
 	_ = a.s.FinalizeAssistantMessage(saveCtx, assistant.ID, builder.String(), status, tokens, citations, genID)
-	charge.settle(saveCtx, usage.events(userID, conv.WorkspaceID, store.SurfaceChat, llmRates, a.embeddingRates(saveCtx))...)
+	charge.settle(saveCtx, usage.events(userID, conv.WorkspaceID, store.SurfaceChat, llmRates, a.embeddingRates(saveCtx, conv.WorkspaceID), llm.PaidBy)...)
 
 	// Best-effort final event; the client may already be gone on abort.
 	if ctx.Err() == nil {
 		if streamErr != nil {
-			send(pipeChatEvent{Type: "error", Message: streamErr.Error()})
+			if code, msg, ok := llmKeyPayload(streamErr); ok {
+				send(pipeChatEvent{Type: "error", Code: code, Message: msg})
+			} else {
+				send(pipeChatEvent{Type: "error", Message: streamErr.Error()})
+			}
 		}
 		send(map[string]any{"type": "done", "status": status, "tokenCount": tokens, "generationId": genID})
 	}
@@ -224,7 +215,7 @@ func (a *api) resolveConversation(ctx context.Context, userID, wsID, convID stri
 // invoking onToken for each text chunk and onEvent for citations/done. When the
 // pipeline is unavailable it falls back to a streamed placeholder so the UI
 // still works end-to-end.
-func (a *api) relayChat(ctx context.Context, userID string, conv store.Conversation, cfg models.Config, query string, onToken func(string), onEvent func(pipeChatEvent)) error {
+func (a *api) relayChat(ctx context.Context, userID string, conv store.Conversation, llm resolvedLLM, query string, onToken func(string), onEvent func(pipeChatEvent)) error {
 	if a.pipe == nil {
 		a.streamFallback(ctx, query, onToken)
 		return nil
@@ -236,12 +227,15 @@ func (a *api) relayChat(ctx context.Context, userID string, conv store.Conversat
 	// workspace role there rather than trusting the agent.
 	body := map[string]any{
 		"query": query, "workspaceId": conv.WorkspaceID, "userId": userID,
-		"modelKey": cfg.Key, "configVersion": cfg.Version,
 		"history": history,
 		"locale":  a.userLocale(ctx, userID),
 	}
+	llm.attach(body)
 	rc, err := a.pipe.PostStream(ctx, "/chat/stream", body)
 	if err != nil {
+		if mapped := pipelineLLMError(err); mapped != nil {
+			return mapped
+		}
 		// Pipeline unreachable: degrade to a placeholder rather than erroring.
 		a.streamFallback(ctx, query, onToken)
 		return nil
@@ -265,7 +259,9 @@ func (a *api) relayChat(ctx context.Context, userID string, conv store.Conversat
 				case "token":
 					onToken(ev.Text)
 				case "error":
-					return errors.New(ev.Message)
+					if mapped := keyErrorFromEvent(ev.Code, ev.Message); mapped != nil {
+						return mapped
+					}
 				default:
 					onEvent(ev)
 				}

@@ -130,6 +130,14 @@ CREATE TABLE IF NOT EXISTS users (
   -- Open-question marking. May be a registry key or a client-only browser:
   -- prefix (in-tab GGUF). Browser keys skip registry lookup.
   quiz_model_key        text NOT NULL DEFAULT 'deepseek-flash',
+  -- Per-surface thinking override. Empty means the catalog default for the
+  -- selected model. Validated against that model's params.reasoning on write.
+  chat_reasoning_mode     text NOT NULL DEFAULT '',
+  chat_reasoning_effort   text NOT NULL DEFAULT '',
+  generate_reasoning_mode text NOT NULL DEFAULT '',
+  generate_reasoning_effort text NOT NULL DEFAULT '',
+  quiz_reasoning_mode     text NOT NULL DEFAULT '',
+  quiz_reasoning_effort   text NOT NULL DEFAULT '',
   -- Account lifecycle. deletion_requested_at starts the reactivation window;
   -- purge_after is when the purge job runs; deleted_at is set by the purge
   -- itself, after which the row is a scrubbed tombstone.
@@ -146,6 +154,16 @@ CREATE TABLE IF NOT EXISTS users (
   CONSTRAINT users_generate_model_key_nonempty CHECK (generate_model_key <> ''),
   CONSTRAINT users_editor_model_key_nonempty CHECK (editor_model_key <> ''),
   CONSTRAINT users_quiz_model_key_nonempty CHECK (quiz_model_key <> ''),
+  CONSTRAINT users_reasoning_mode_check CHECK (
+    chat_reasoning_mode IN ('', 'off', 'on')
+    AND generate_reasoning_mode IN ('', 'off', 'on')
+    AND quiz_reasoning_mode IN ('', 'off', 'on')
+  ),
+  CONSTRAINT users_reasoning_effort_check CHECK (
+    chat_reasoning_effort IN ('', 'low', 'medium', 'high', 'xhigh', 'max')
+    AND generate_reasoning_effort IN ('', 'low', 'medium', 'high', 'xhigh', 'max')
+    AND quiz_reasoning_effort IN ('', 'low', 'medium', 'high', 'xhigh', 'max')
+  ),
   CONSTRAINT users_purge_window_check
     CHECK (purge_after IS NULL OR deletion_requested_at IS NOT NULL),
   CONSTRAINT users_deleted_requires_request_check
@@ -153,6 +171,33 @@ CREATE TABLE IF NOT EXISTS users (
   CONSTRAINT users_suspension_reason_check
     CHECK ((suspended_at IS NULL) = (suspended_reason IS NULL))
 );
+ALTER TABLE users ADD COLUMN IF NOT EXISTS chat_reasoning_mode text NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS chat_reasoning_effort text NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS generate_reasoning_mode text NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS generate_reasoning_effort text NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS quiz_reasoning_mode text NOT NULL DEFAULT '';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS quiz_reasoning_effort text NOT NULL DEFAULT '';
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'users_reasoning_mode_check'
+  ) THEN
+    ALTER TABLE users ADD CONSTRAINT users_reasoning_mode_check CHECK (
+      chat_reasoning_mode IN ('', 'off', 'on')
+      AND generate_reasoning_mode IN ('', 'off', 'on')
+      AND quiz_reasoning_mode IN ('', 'off', 'on')
+    );
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'users_reasoning_effort_check'
+  ) THEN
+    ALTER TABLE users ADD CONSTRAINT users_reasoning_effort_check CHECK (
+      chat_reasoning_effort IN ('', 'low', 'medium', 'high', 'xhigh', 'max')
+      AND generate_reasoning_effort IN ('', 'low', 'medium', 'high', 'xhigh', 'max')
+      AND quiz_reasoning_effort IN ('', 'low', 'medium', 'high', 'xhigh', 'max')
+    );
+  END IF;
+END $$;
 -- Invite resolution looks users up by email, so live accounts must be unique on
 -- it. Tombstones are excluded: a scrubbed row holds no email, and a deleted
 -- account must not block the address from being used again.
@@ -203,9 +248,9 @@ CREATE TABLE IF NOT EXISTS workspaces (
   -- with, so a stale default yields an older space, never a mixed one.
   embedding_model_key     text NOT NULL DEFAULT 'qwen-embed',
   embedding_model_version int  NOT NULL DEFAULT 1,
-  -- Denormalized from the pinned config so both processes can pick the
-  -- rag_chunk_vectors_<dim> table without resolving the registry first, and so
-  -- the width is still readable if that config row is ever unreachable.
+  -- Width the pinned model emits. Selects the halfvec column size. The vector
+  -- table itself is chosen by (embedding_model_key, embedding_model_version),
+  -- not by this width: two 2560-d models do not share a table.
   embedding_dim           int  NOT NULL DEFAULT 2560,
   created_at       timestamptz NOT NULL DEFAULT now(),
   last_accessed_at timestamptz NOT NULL DEFAULT now(),
@@ -916,15 +961,16 @@ CREATE INDEX IF NOT EXISTS rag_chunks_search_idx ON rag_chunks USING gin(search)
 -- search (text, indexed_text, search, regions, pages) in one place — none of it
 -- depends on the embedding model.
 --
--- The split isolates *dimensions*, not vector spaces: two different 2560-dim
--- models share this table and its index. What guarantees a query is only ever
--- compared against its own space is workspaces.embedding_model_key, which is
--- fixed for the life of the workspace.
+-- Each embedding (model_key, version) owns its own vector table. Same width
+-- from another model is a different space and must not share an HNSW index.
+-- rag_chunk_vectors_2560 is the historical name for qwen-embed v1; a later
+-- model gets rag_chunk_vectors_<key>_<version>, even at 2560-d.
 --
--- Adding a width means adding a table here, adding the value to the
--- workspaces.embedding_dim and model_configs checks, and nothing else: existing
--- workspaces keep pointing at their own table. Removing one is not supported —
--- there is no reindex job (see openwiki/agentic-retrieval.md).
+-- Adding a model means a new table here, a new allowlist entry in
+-- pipeline/pipeline/retrieval/store.py and server/internal/store/queries.go,
+-- and the table name listed on that catalog row's params.vector_table.
+-- Removing a table is not supported: there is no reindex job
+-- (see openwiki/agentic-retrieval.md).
 CREATE TABLE IF NOT EXISTS rag_chunk_vectors_2560 (
   chunk_id     text PRIMARY KEY REFERENCES rag_chunks(id) ON DELETE CASCADE,
   -- Denormalized from the chunk so the vector scan can filter by workspace
@@ -1267,8 +1313,9 @@ $$;
 -- Model registry
 --
 -- Immutable versioned rows so a pinned conversation or ingest job can always
--- resolve the exact config it started with. API keys stay in env, looked up
--- by provider_slug; nothing secret enters this table.
+-- resolve the exact config it started with. Platform API keys stay in env,
+-- looked up by provider_slug. User-supplied keys live in
+-- user_llm_credentials, never here.
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS model_configs (
@@ -1278,6 +1325,12 @@ CREATE TABLE IF NOT EXISTS model_configs (
   provider_slug                text NOT NULL,
   base_url                     text NOT NULL DEFAULT '',
   provider_model_id            text NOT NULL,
+  -- platform: env key only. user_key: the actor's credential, never env.
+  -- platform_or_user: env unless this user has a credential for provider_slug.
+  auth_mode                    text NOT NULL DEFAULT 'platform',
+  -- Tokens the product may pack into a request. Required on every
+  -- chat/generate/editor/quiz/ingest row. Unused (0) on embedding/vision.
+  context_window_tokens        int  NOT NULL DEFAULT 50000,
   params                       jsonb NOT NULL DEFAULT '{}'::jsonb,
   surfaces                     text[] NOT NULL,
   -- Credit multipliers, in millionths of a credit per token. 1000 output
@@ -1288,6 +1341,12 @@ CREATE TABLE IF NOT EXISTS model_configs (
   -- tokens, so $0.14/MTok is stored as 140000.
   usd_micros_per_input_token   bigint NOT NULL DEFAULT 0,
   usd_micros_per_output_token  bigint NOT NULL DEFAULT 0,
+  -- Chat/generate/editor/quiz/ingest/vision may flip this to retire a version.
+  -- Embedding rows may not: protect_embedding_model_configs refuses
+  -- enabled=false, DELETE, stripping or adding the embedding surface, and
+  -- in-place changes to the pin, provider_model_id, or params. Same width
+  -- is a different space; a new model is a new row. base_url and
+  -- provider_slug stay writable so the same weights can move host.
   enabled                      boolean NOT NULL DEFAULT true,
   is_default_for               text[] NOT NULL DEFAULT '{}',
   created_at                   timestamptz NOT NULL DEFAULT now(),
@@ -1299,15 +1358,169 @@ CREATE TABLE IF NOT EXISTS model_configs (
   CONSTRAINT model_configs_default_for_check CHECK (
     is_default_for <@ ARRAY['chat','generate','editor','quiz','ingest','embedding','vision']::text[]
   ),
-  -- An embedding row must declare the width it emits, and that width must
-  -- already have a rag_chunk_vectors_<dim> table. Discovering a new width at
-  -- ingest time would mean a workspace whose vectors have nowhere to go, found
-  -- only once a user has uploaded into it.
+  -- An embedding row must declare the width it emits and the vector table it
+  -- writes. The width must already have a halfvec column of that size, and the
+  -- table name is per pin, not per width: two 2560-d models do not share a
+  -- table. Discovering a missing table at ingest time would mean a workspace
+  -- whose vectors have nowhere to go, found only once a user has uploaded.
   CONSTRAINT model_configs_embedding_dim_check CHECK (
     NOT ('embedding' = ANY(surfaces))
     OR params->>'dimensions' IN ('2560')
+  ),
+  CONSTRAINT model_configs_embedding_enabled_check CHECK (
+    NOT ('embedding' = ANY(surfaces)) OR enabled
+  ),
+  CONSTRAINT model_configs_auth_mode_check CHECK (
+    auth_mode IN ('platform', 'user_key', 'platform_or_user')
+  ),
+  CONSTRAINT model_configs_user_key_no_default CHECK (
+    auth_mode <> 'user_key' OR is_default_for = '{}'
+  ),
+  CONSTRAINT model_configs_llm_window_check CHECK (
+    NOT (surfaces && ARRAY['chat','generate','editor','quiz','ingest']::text[])
+    OR context_window_tokens > 0
   )
 );
+ALTER TABLE model_configs ADD COLUMN IF NOT EXISTS auth_mode text NOT NULL DEFAULT 'platform';
+ALTER TABLE model_configs ADD COLUMN IF NOT EXISTS context_window_tokens int NOT NULL DEFAULT 50000;
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'model_configs_auth_mode_check'
+  ) THEN
+    ALTER TABLE model_configs ADD CONSTRAINT model_configs_auth_mode_check CHECK (
+      auth_mode IN ('platform', 'user_key', 'platform_or_user')
+    );
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'model_configs_user_key_no_default'
+  ) THEN
+    ALTER TABLE model_configs ADD CONSTRAINT model_configs_user_key_no_default CHECK (
+      auth_mode <> 'user_key' OR is_default_for = '{}'
+    );
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'model_configs_llm_window_check'
+  ) THEN
+    ALTER TABLE model_configs ADD CONSTRAINT model_configs_llm_window_check CHECK (
+      NOT (surfaces && ARRAY['chat','generate','editor','quiz','ingest']::text[])
+      OR context_window_tokens > 0
+    );
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'model_configs_embedding_enabled_check'
+  ) THEN
+    ALTER TABLE model_configs ADD CONSTRAINT model_configs_embedding_enabled_check CHECK (
+      NOT ('embedding' = ANY(surfaces)) OR enabled
+    );
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM pg_trigger WHERE tgname = 'model_configs_protect_embedding'
+  ) THEN
+    EXECUTE 'ALTER TABLE model_configs DISABLE TRIGGER model_configs_protect_embedding';
+  END IF;
+  UPDATE model_configs
+     SET params = jsonb_set(
+       COALESCE(params, '{}'::jsonb), '{vector_table}', '"rag_chunk_vectors_2560"', true
+     )
+   WHERE 'embedding' = ANY(surfaces)
+     AND COALESCE(params->>'vector_table', '') = '';
+  IF EXISTS (
+    SELECT 1 FROM pg_trigger WHERE tgname = 'model_configs_protect_embedding'
+  ) THEN
+    EXECUTE 'ALTER TABLE model_configs ENABLE TRIGGER model_configs_protect_embedding';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'model_configs_embedding_table_check'
+  ) THEN
+    ALTER TABLE model_configs ADD CONSTRAINT model_configs_embedding_table_check CHECK (
+      NOT ('embedding' = ANY(surfaces))
+      OR params->>'vector_table' ~ '^rag_chunk_vectors_[a-z0-9_]+$'
+    );
+  END IF;
+END $$;
+
+-- Embedding pins live on the workspace for life. Disable, delete, stripping
+-- the surface, or rewriting the model identity would leave those workspaces
+-- resolving a row the operator thought had moved, or fail closed on every
+-- search and upload. A new embedding model, including another 2560-d one,
+-- is an INSERT. Chat versions can still be disabled or retargeted.
+CREATE OR REPLACE FUNCTION protect_embedding_model_configs() RETURNS trigger AS $$
+BEGIN
+  IF TG_OP = 'DELETE' THEN
+    IF 'embedding' = ANY(OLD.surfaces) THEN
+      RAISE EXCEPTION 'embedding model_configs rows cannot be deleted';
+    END IF;
+    RETURN OLD;
+  END IF;
+
+  IF 'embedding' = ANY(NEW.surfaces) AND NOT NEW.enabled THEN
+    RAISE EXCEPTION 'embedding model_configs rows cannot be disabled';
+  END IF;
+
+  IF TG_OP = 'UPDATE' THEN
+    IF 'embedding' = ANY(OLD.surfaces)
+       AND NOT ('embedding' = ANY(NEW.surfaces)) THEN
+      RAISE EXCEPTION 'cannot remove embedding from model_configs.surfaces';
+    END IF;
+
+    IF NOT ('embedding' = ANY(OLD.surfaces))
+       AND 'embedding' = ANY(NEW.surfaces) THEN
+      RAISE EXCEPTION 'cannot add embedding to an existing model_configs row; insert a new row';
+    END IF;
+
+    IF 'embedding' = ANY(OLD.surfaces) THEN
+      IF NEW.model_key IS DISTINCT FROM OLD.model_key
+         OR NEW.version IS DISTINCT FROM OLD.version THEN
+        RAISE EXCEPTION 'cannot change the pin of an embedding model_configs row';
+      END IF;
+      IF NEW.provider_model_id IS DISTINCT FROM OLD.provider_model_id THEN
+        RAISE EXCEPTION 'cannot change provider_model_id on an embedding model_configs row';
+      END IF;
+      IF NEW.params IS DISTINCT FROM OLD.params THEN
+        RAISE EXCEPTION 'cannot change params on an embedding model_configs row';
+      END IF;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS model_configs_protect_embedding ON model_configs;
+CREATE TRIGGER model_configs_protect_embedding
+  BEFORE INSERT OR UPDATE OR DELETE ON model_configs
+  FOR EACH ROW EXECUTE FUNCTION protect_embedding_model_configs();
+
+-- One live default per surface. The registry otherwise compares version across
+-- different keys and a tie is last-row-wins on an unordered scan. Retarget by
+-- clearing the old row's is_default_for, then marking the new one, in one
+-- transaction, then bump model_registry_state.version.
+CREATE OR REPLACE FUNCTION protect_one_default_per_surface() RETURNS trigger AS $$
+DECLARE
+  clash text;
+BEGIN
+  IF NEW.is_default_for = '{}' THEN
+    RETURN NEW;
+  END IF;
+  SELECT s INTO clash
+  FROM unnest(NEW.is_default_for) AS s
+  WHERE EXISTS (
+    SELECT 1 FROM model_configs c
+    WHERE (c.model_key, c.version) IS DISTINCT FROM (NEW.model_key, NEW.version)
+      AND s = ANY(c.is_default_for)
+  )
+  LIMIT 1;
+  IF clash IS NOT NULL THEN
+    RAISE EXCEPTION 'surface % already has a default; clear the other row first', clash;
+  END IF;
+  RETURN NEW;
+END $$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS model_configs_one_default ON model_configs;
+CREATE TRIGGER model_configs_one_default
+  BEFORE INSERT OR UPDATE OF is_default_for ON model_configs
+  FOR EACH ROW EXECUTE FUNCTION protect_one_default_per_surface();
+
 CREATE INDEX IF NOT EXISTS model_configs_enabled_idx
   ON model_configs (model_key, version DESC) WHERE enabled;
 
@@ -1326,41 +1539,131 @@ INSERT INTO model_registry_state (id, version) VALUES (true, 1)
 -- Retargeting the embedding default is not a hot reload and not a migration:
 -- each workspace pins its own embedding model at creation and keeps it, so a
 -- new default applies only to workspaces created afterwards. Existing
--- workspaces keep resolving the row they were pinned to, which is why an
--- embedding row that any workspace still points at must never be deleted and
--- its provider must stay reachable. See the operator checklist in
--- openwiki/deployment-runbook.md.
+-- workspaces keep resolving the row they were pinned to. Embedding rows
+-- cannot be disabled, deleted, stripped, or rewritten onto a different
+-- model (protect_embedding_model_configs). A later model, including another
+-- 2560-d one, is a new row and a new vector table. base_url may move so the
+-- same weights stay reachable. See openwiki/deployment-runbook.md.
 INSERT INTO model_configs (
   model_key, version, display_name, provider_slug, base_url, provider_model_id,
-  params, surfaces, micros_per_input_token, micros_per_output_token,
+  auth_mode, context_window_tokens, params, surfaces,
+  micros_per_input_token, micros_per_output_token,
   usd_micros_per_input_token, usd_micros_per_output_token, enabled, is_default_for
 ) VALUES
   ('deepseek-flash', 1, 'DeepSeek Flash', 'deepseek',
    'https://api.deepseek.com', 'deepseek-v4-flash',
-   '{"temperature": 0.3}'::jsonb,
+   'platform_or_user', 1000000,
+   '{"temperature": 0.3, "reasoning": {"canDisable": true, "efforts": ["low", "high", "max"], "defaultMode": "off", "defaultEffort": "high"}, "modalities": {"vision": false, "pdf": false}}'::jsonb,
    ARRAY['chat','generate','editor','quiz','ingest'],
    250, 1000, 140000, 280000, true,
    ARRAY['chat','generate','editor','quiz','ingest']),
   ('deepseek-pro', 1, 'DeepSeek Pro', 'deepseek',
    'https://api.deepseek.com', 'deepseek-v4-pro',
-   '{"temperature": 0.3}'::jsonb,
+   'platform_or_user', 1000000,
+   '{"temperature": 0.3, "reasoning": {"canDisable": true, "efforts": ["low", "high", "max"], "defaultMode": "off", "defaultEffort": "high"}, "modalities": {"vision": false, "pdf": false}}'::jsonb,
    ARRAY['chat','generate','quiz'],
    775, 3100, 434000, 868000, true,
    ARRAY[]::text[]),
+  ('gpt-5.6-sol', 1, 'GPT-5.6 Sol', 'openai',
+   'https://api.openai.com/v1', 'gpt-5.6-sol',
+   'user_key', 400000,
+   '{"reasoning": {"canDisable": true, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "medium"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
+   ARRAY['chat','generate','quiz'],
+   0, 0, 0, 0, true, ARRAY[]::text[]),
+  ('gpt-5.6-terra', 1, 'GPT-5.6 Terra', 'openai',
+   'https://api.openai.com/v1', 'gpt-5.6-terra',
+   'user_key', 400000,
+   '{"reasoning": {"canDisable": true, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "medium"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
+   ARRAY['chat','generate','quiz'],
+   0, 0, 0, 0, true, ARRAY[]::text[]),
+  ('gpt-5.6-luna', 1, 'GPT-5.6 Luna', 'openai',
+   'https://api.openai.com/v1', 'gpt-5.6-luna',
+   'user_key', 400000,
+   '{"reasoning": {"canDisable": true, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "medium"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
+   ARRAY['chat','generate','quiz'],
+   0, 0, 0, 0, true, ARRAY[]::text[]),
+  ('claude-opus-5', 1, 'Claude Opus 5', 'anthropic',
+   'https://api.anthropic.com/v1', 'claude-opus-5',
+   'user_key', 1000000,
+   '{"reasoning": {"canDisable": false, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "high", "style": "adaptive"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
+   ARRAY['chat','generate','quiz'],
+   0, 0, 0, 0, true, ARRAY[]::text[]),
+  ('claude-opus-4-8', 1, 'Claude Opus 4.8', 'anthropic',
+   'https://api.anthropic.com/v1', 'claude-opus-4-8',
+   'user_key', 1000000,
+   '{"reasoning": {"canDisable": false, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "high", "style": "adaptive"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
+   ARRAY['chat','generate','quiz'],
+   0, 0, 0, 0, true, ARRAY[]::text[]),
+  ('claude-opus-4-7', 1, 'Claude Opus 4.7', 'anthropic',
+   'https://api.anthropic.com/v1', 'claude-opus-4-7',
+   'user_key', 1000000,
+   '{"reasoning": {"canDisable": false, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "high", "style": "adaptive"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
+   ARRAY['chat','generate','quiz'],
+   0, 0, 0, 0, true, ARRAY[]::text[]),
+  ('claude-sonnet-5', 1, 'Claude Sonnet 5', 'anthropic',
+   'https://api.anthropic.com/v1', 'claude-sonnet-5',
+   'user_key', 1000000,
+   '{"reasoning": {"canDisable": false, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "high", "style": "adaptive"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
+   ARRAY['chat','generate','quiz'],
+   0, 0, 0, 0, true, ARRAY[]::text[]),
+  ('claude-sonnet-4-6', 1, 'Claude Sonnet 4.6', 'anthropic',
+   'https://api.anthropic.com/v1', 'claude-sonnet-4-6',
+   'user_key', 1000000,
+   '{"reasoning": {"canDisable": false, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "high", "style": "adaptive"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
+   ARRAY['chat','generate','quiz'],
+   0, 0, 0, 0, true, ARRAY[]::text[]),
+  ('claude-sonnet-4-5', 1, 'Claude Sonnet 4.5', 'anthropic',
+   'https://api.anthropic.com/v1', 'claude-sonnet-4-5',
+   'user_key', 200000,
+   '{"reasoning": {"canDisable": true, "efforts": ["low", "medium", "high"], "defaultMode": "off", "defaultEffort": "medium", "style": "budget"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
+   ARRAY['chat','generate','quiz'],
+   0, 0, 0, 0, true, ARRAY[]::text[]),
+  ('claude-haiku-4-5', 1, 'Claude Haiku 4.5', 'anthropic',
+   'https://api.anthropic.com/v1', 'claude-haiku-4-5',
+   'user_key', 200000,
+   '{"reasoning": {"canDisable": true, "efforts": ["low", "medium", "high"], "defaultMode": "off", "defaultEffort": "medium", "style": "budget"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
+   ARRAY['chat','generate','quiz'],
+   0, 0, 0, 0, true, ARRAY[]::text[]),
   ('qwen-embed', 1, 'Qwen3 Embedding 4B', 'openrouter',
    'https://openrouter.ai/api/v1', 'qwen/qwen3-embedding-4b',
-   '{"dimensions": 2560}'::jsonb,
+   'platform', 0,
+   '{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}'::jsonb,
    ARRAY['embedding'],
    50, 50, 20000, 20000, true,
    ARRAY['embedding']),
   ('gemini-flash-lite', 1, 'Gemini Flash Lite', 'google',
    'https://generativelanguage.googleapis.com/v1beta/openai/',
    'gemini-3.1-flash-lite-preview',
+   'platform', 0,
    '{"temperature": 0.2}'::jsonb,
    ARRAY['vision'],
    250, 1000, 100000, 400000, true,
    ARRAY['vision'])
 ON CONFLICT (model_key, version) DO NOTHING;
+
+-- Existing local DBs already have the v1 DeepSeek rows from an earlier seed.
+-- Bring those two rows onto the new auth/window/reasoning shape.
+UPDATE model_configs SET
+  auth_mode = 'platform_or_user',
+  context_window_tokens = 1000000,
+  params = '{"temperature": 0.3, "reasoning": {"canDisable": true, "efforts": ["low", "high", "max"], "defaultMode": "off", "defaultEffort": "high"}, "modalities": {"vision": false, "pdf": false}}'::jsonb
+WHERE model_key IN ('deepseek-flash', 'deepseek-pro') AND version = 1;
+
+-- Per-user provider keys for BYOK rows. One key unlocks every catalog model
+-- with that provider_slug. Ciphertext is AES-256-GCM under LLM_CREDENTIALS_KEY.
+CREATE TABLE IF NOT EXISTS user_llm_credentials (
+  user_id        text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider_slug  text NOT NULL,
+  key_ciphertext bytea NOT NULL,
+  key_nonce      bytea NOT NULL,
+  key_last4      text NOT NULL,
+  created_at     timestamptz NOT NULL DEFAULT now(),
+  updated_at     timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, provider_slug),
+  CONSTRAINT user_llm_credentials_provider_check CHECK (
+    provider_slug IN ('openai', 'anthropic', 'deepseek')
+  )
+);
 --
 -- Shape mirrors storage accounting on purpose: an append-only ledger for the
 -- hot path, a counter row for the gate to lock, and a reconcile pass to repair

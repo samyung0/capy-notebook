@@ -871,8 +871,13 @@ async def _process_ingest_job(
     identity = _pipeline_identity(
         kind=kind, parse_mode=parse_mode, caption_images=bool(caption_images)
     )
+    pin = await store.workspace_embedding_pin(ws)
     donor = await store.find_ready_donor(
-        source_sha256=source_sha256, pipeline_identity=identity
+        source_sha256=source_sha256,
+        pipeline_identity=identity,
+        embedding_model_key=pin["embedding_model_key"],
+        embedding_model_version=pin["embedding_model_version"],
+        embedding_dim=pin["embedding_dim"],
     )
     if donor:
         reused = await _reuse_donor(

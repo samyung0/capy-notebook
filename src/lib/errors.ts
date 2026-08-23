@@ -2,6 +2,9 @@ import {
   isApiError,
   isCreditsExhaustedError,
   isFileLimitError,
+  isInvalidLLMKeyError,
+  isLLMKeyError,
+  isLLMKeyFailedError,
   isModelUnavailableError,
   isStorageQuotaError,
 } from '@/api/client';
@@ -17,6 +20,7 @@ export type ErrorKind =
   | 'files'
   | 'credits'
   | 'model'
+  | 'llmKey'
   | 'validation'
   | 'server'
   | 'chunkLoad'
@@ -59,6 +63,7 @@ export function errorKind(error: unknown): ErrorKind {
   if (isFileLimitError(error)) return 'files';
   if (isCreditsExhaustedError(error)) return 'credits';
   if (isModelUnavailableError(error)) return 'model';
+  if (isLLMKeyError(error)) return 'llmKey';
 
   if (isApiError(error)) {
     if (error.code === 'account_over_quota' || error.code === 'account_locked')
@@ -71,7 +76,8 @@ export function errorKind(error: unknown): ErrorKind {
     if (error.status >= 500) return 'server';
   }
 
-  if (error instanceof TypeError || isNetworkMessage(error)) return 'network';
+  // fetch() throws TypeError('Failed to fetch'); other TypeErrors are bugs.
+  if (isNetworkMessage(error)) return 'network';
   return 'unknown';
 }
 
@@ -149,6 +155,13 @@ export function describeError(error: unknown): ErrorDescription {
         description: m.error_model_unavailable_body(),
         title: m.error_model_unavailable_title(),
       };
+    case 'llmKey':
+      return {
+        description: isInvalidLLMKeyError(error)
+          ? m.settings_llm_key_invalid()
+          : m.settings_llm_key_failed(),
+        title: m.error_llm_key_title(),
+      };
     case 'validation':
       return {
         description: m.error_validation_body(),
@@ -185,4 +198,27 @@ export function privateErrorDescription(): ErrorDescription {
 
 export function toastKeyFor(error: unknown): string {
   return `error:${errorKind(error)}`;
+}
+
+/** Maps provider-key failures from HTTP or stream payloads onto the settings copy. */
+export function llmKeyUserMessage(error: unknown): string | null {
+  if (isInvalidLLMKeyError(error)) return m.settings_llm_key_invalid();
+  if (isLLMKeyFailedError(error)) return m.settings_llm_key_failed();
+  const text = error instanceof Error ? error.message : String(error ?? '');
+  const lower = text.toLowerCase();
+  if (
+    lower.includes('rejected this key') ||
+    lower.includes('invalid_key') ||
+    lower.includes('invalid_llm_key')
+  ) {
+    return m.settings_llm_key_invalid();
+  }
+  if (
+    lower.includes('double check if the key') ||
+    lower.includes('key_failed') ||
+    lower.includes('llm_key_failed')
+  ) {
+    return m.settings_llm_key_failed();
+  }
+  return null;
 }

@@ -1,6 +1,10 @@
 package store
 
-import "github.com/evonotes/server/internal/models"
+import (
+	"context"
+
+	"github.com/evonotes/server/internal/models"
+)
 
 // Credit pricing. User charges are policy, expressed in micro-credits, where
 // one credit is 1000 output tokens of the 1x chat model (DeepSeek Flash).
@@ -64,6 +68,29 @@ func DefaultEmbeddingRates() TokenRates {
 	}
 }
 
+// EmbeddingRates is the catalog row the workspace is pinned to. Query
+// embeddings are recorded at zero credits; these rates only label the
+// usage_event and fill cost_micro_usd. The live registry default is the
+// wrong answer after a retarget: old workspaces still run the old model.
+func (s *Store) EmbeddingRates(ctx context.Context, workspaceID string) TokenRates {
+	if s.registry == nil || workspaceID == "" {
+		return DefaultEmbeddingRates()
+	}
+	var pin models.Pin
+	err := s.pool.QueryRow(ctx,
+		`SELECT embedding_model_key, embedding_model_version FROM workspaces WHERE id=$1`,
+		workspaceID,
+	).Scan(&pin.Key, &pin.Version)
+	if err != nil {
+		return DefaultEmbeddingRates()
+	}
+	cfg, err := s.registry.Get(ctx, pin.Key, pin.Version)
+	if err != nil {
+		return DefaultEmbeddingRates()
+	}
+	return RatesFromConfig(cfg)
+}
+
 func RatesFromConfig(cfg models.Config) TokenRates {
 	rates := TokenRates{
 		MicrosPerInputToken:     cfg.MicrosPerInputToken,
@@ -115,34 +142,3 @@ func CreditsForGPU(gpuMillis int64) int64 {
 }
 
 func CreditsForEmail(count int64) int64 { return count * microsPerEmail }
-
-// ScaleEstimate multiplies a 1x reserve estimate by the pinned model's output
-// multiplier so a Pro reservation holds proportionally more.
-func ScaleEstimate(baseMicros int64, rates TokenRates) int64 {
-	mult := rates.MicrosPerOutputToken
-	if mult <= 0 {
-		mult = baseMicrosPerOutputToken
-	}
-	return baseMicros * mult / baseMicrosPerOutputToken
-}
-
-// Spend estimates used by the reserve step. They only need to be the right
-// order of magnitude: settlement replaces them with measured cost, and their
-// job is to stop unbounded concurrent requests from each reading an empty
-// ledger. Callers scale them with ScaleEstimate when the pinned model is not 1x.
-const (
-	// A chat turn runs an agent loop of up to EVO_AGENT_MAX_STEPS (12) model
-	// calls plus embeddings. Each round re-sends the transcript, so a 12-step
-	// turn is ~8x a 4-step one; under-reserving lets concurrent turns each
-	// read a ledger missing the spend they are about to incur.
-	EstimateChatMicros = 48 * MicrosPerCredit
-	// Generate produces a whole material and may map-reduce across files.
-	EstimateGenerateMicros = 12 * MicrosPerCredit
-	// Editor commands are single short completions.
-	EstimateEditorMicros = 2 * MicrosPerCredit
-	// Open-question marking is one short JSON completion.
-	EstimateQuizMicros = EstimateEditorMicros
-	// Ingest is not reserved (post-hoc), but upload gating uses this as the
-	// "is there anything left" threshold via AssertCreditsAvailable.
-	EstimateIngestMicros = 4 * MicrosPerCredit
-)

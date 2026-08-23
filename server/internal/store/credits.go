@@ -39,6 +39,16 @@ func CreditLimitMicros(tier PlanTier) int64 {
 
 var ErrCreditsExhausted = errors.New("llm credits exhausted")
 
+// ErrTooManyLLMLeases means the actor already has ConcurrentLLMLeases
+// unsettled platform-paid calls. Distinct from credits exhausted: the budget
+// may still have room.
+var ErrTooManyLLMLeases = errors.New("too many llm leases")
+
+// ConcurrentLLMLeases caps unsettled platform-paid model calls per actor.
+// Worst-case overshoot is this many in-flight settlements. BYOK does not take
+// a lease.
+const ConcurrentLLMLeases = 5
+
 // CreditsExhaustedError is deliberately distinct from QuotaExceededError. They
 // render as different sentences: one is "you are out of credits", the other is
 // "the owner of this workspace is out of space", and a user can act on only one
@@ -260,25 +270,22 @@ func monthStart() time.Time {
 	return time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 }
 
-/* ------------------------------------------------------- reserve / settle */
+/* ------------------------------------------------------- begin / settle */
 
-// ReserveCredits gates an estimated spend and holds it against the actor's
-// budget. The returned id must be passed to SettleCredits or ReleaseCredits;
-// anything neither settled nor released is swept once it expires.
+// BeginSpend opens a 0-amount lease on the actor's inference budget. The
+// returned id must be passed to SettleCredits or ReleaseCredits; anything
+// neither settled nor released is swept once it expires.
 //
-// The estimate does not need to be accurate, only non-zero: its job is to stop
-// unbounded concurrent requests from each seeing an empty ledger. Settlement
-// replaces it with the measured cost.
-func (s *Store) ReserveCredits(
+// There is no estimated hold. The gate is used >= limit, plus at most
+// ConcurrentLLMLeases open rows for this actor. Settlement writes the measured
+// cost. The user_credits row lock serializes concurrent begins so the count
+// cannot race past the cap.
+func (s *Store) BeginSpend(
 	ctx context.Context,
 	actorUserID, workspaceID, surface string,
-	estimateMicros int64,
 ) (string, error) {
 	if actorUserID == "" {
 		return "", ErrNotFound
-	}
-	if estimateMicros < 0 {
-		return "", fmt.Errorf("negative credit estimate: %d", estimateMicros)
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -290,15 +297,25 @@ func (s *Store) ReserveCredits(
 	if err != nil {
 		return "", err
 	}
-	if usage.UsedMicros+usage.ReservedMicros+estimateMicros > usage.LimitMicros {
+	if usage.UsedMicros >= usage.LimitMicros {
 		return "", &CreditsExhaustedError{
-			UserID:          actorUserID,
-			UsedMicros:      usage.UsedMicros,
-			ReservedMicros:  usage.ReservedMicros,
-			RequestedMicros: estimateMicros,
-			LimitMicros:     usage.LimitMicros,
-			PlanTier:        usage.PlanTier,
+			UserID:         actorUserID,
+			UsedMicros:     usage.UsedMicros,
+			ReservedMicros: usage.ReservedMicros,
+			LimitMicros:    usage.LimitMicros,
+			PlanTier:       usage.PlanTier,
 		}
+	}
+
+	var open int64
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM credit_reservations
+		 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()`,
+		actorUserID).Scan(&open); err != nil {
+		return "", err
+	}
+	if open >= ConcurrentLLMLeases {
+		return "", ErrTooManyLLMLeases
 	}
 
 	id := uid("cr")
@@ -309,15 +326,10 @@ func (s *Store) ReserveCredits(
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO credit_reservations
 			(id, actor_user_id, workspace_id, trace_id, surface, amount_micros, expires_at)
-		VALUES ($1, $2, $3, $4, $5, $6, now() + ($7 * interval '1 millisecond'))`,
-		id, actorUserID, wsID, nullString(obs.TraceID(ctx)), surface, estimateMicros,
+		VALUES ($1, $2, $3, $4, $5, 0, now() + ($6 * interval '1 millisecond'))`,
+		id, actorUserID, wsID, nullString(obs.TraceID(ctx)), surface,
 		reservationTTL.Milliseconds(),
 	); err != nil {
-		return "", err
-	}
-	if _, err := tx.Exec(ctx, `UPDATE user_credits
-		SET reserved_micros = reserved_micros + $2, updated_at = now()
-		WHERE user_id = $1`, actorUserID, estimateMicros); err != nil {
 		return "", err
 	}
 	if err := tx.Commit(ctx); err != nil {

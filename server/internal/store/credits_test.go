@@ -56,18 +56,18 @@ func eventCount(t *testing.T, s *Store, userID, reservationID string) int64 {
 	return n
 }
 
-func TestReserveThenSettleReplacesTheHoldWithMeasuredCost(t *testing.T) {
+func TestBeginThenSettleWritesMeasuredCost(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
 
-	id, err := s.ReserveCredits(ctx, userID, "", SurfaceChat, EstimateChatMicros)
+	id, err := s.BeginSpend(ctx, userID, "", SurfaceChat)
 	if err != nil {
 		t.Fatal(err)
 	}
 	held := mustBalance(t, s, userID)
-	if held.ReservedMicros != EstimateChatMicros || held.UsedMicros != 0 {
-		t.Fatalf("after reserve: used=%d reserved=%d", held.UsedMicros, held.ReservedMicros)
+	if held.ReservedMicros != 0 || held.UsedMicros != 0 {
+		t.Fatalf("after begin: used=%d reserved=%d", held.UsedMicros, held.ReservedMicros)
 	}
 
 	const spent int64 = 1_500_000
@@ -89,7 +89,7 @@ func TestSettleCreditsTwiceDoesNotDoubleCharge(t *testing.T) {
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
 
-	id, err := s.ReserveCredits(ctx, userID, "", SurfaceChat, EstimateChatMicros)
+	id, err := s.BeginSpend(ctx, userID, "", SurfaceChat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -112,30 +112,39 @@ func TestSettleCreditsTwiceDoesNotDoubleCharge(t *testing.T) {
 	}
 }
 
-func TestConcurrentReservesAtTheRemainingBudgetBoundaryAdmitOne(t *testing.T) {
+func TestBeginSpendRejectsWhenUsedAtLimit(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
 
-	// Leave room for exactly one EstimateChatMicros hold. The gate is
-	// used+reserved+estimate > limit, so equality is still admitted.
 	limit := CreditLimitMicros(PlanFree)
 	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros)
-		VALUES ($1, $2)`, userID, limit-EstimateChatMicros); err != nil {
+		VALUES ($1, $2)`, userID, limit); err != nil {
 		t.Fatal(err)
 	}
+	_, err := s.BeginSpend(ctx, userID, "", SurfaceChat)
+	var exhausted *CreditsExhaustedError
+	if !errors.As(err, &exhausted) {
+		t.Fatalf("begin at limit: %v", err)
+	}
+}
+
+func TestBeginSpendCapsOpenLeases(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
 	var mu sync.Mutex
 	var ids []string
 	var errs []error
-	for range 2 {
+	for range ConcurrentLLMLeases + 1 {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			<-start
-			id, err := s.ReserveCredits(ctx, userID, "", SurfaceChat, EstimateChatMicros)
+			id, err := s.BeginSpend(ctx, userID, "", SurfaceChat)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -148,16 +157,16 @@ func TestConcurrentReservesAtTheRemainingBudgetBoundaryAdmitOne(t *testing.T) {
 	close(start)
 	wg.Wait()
 
-	if len(ids) != 1 || len(errs) != 1 {
-		t.Fatalf("concurrent reserve: %d succeeded, %d failed, want 1 and 1", len(ids), len(errs))
+	if len(ids) != ConcurrentLLMLeases || len(errs) != 1 {
+		t.Fatalf("concurrent begin: %d succeeded, %d failed, want %d and 1",
+			len(ids), len(errs), ConcurrentLLMLeases)
 	}
-	var exhausted *CreditsExhaustedError
-	if !errors.As(errs[0], &exhausted) {
-		t.Fatalf("losing reserve error = %v, want CreditsExhaustedError", errs[0])
+	if !errors.Is(errs[0], ErrTooManyLLMLeases) {
+		t.Fatalf("losing begin error = %v, want ErrTooManyLLMLeases", errs[0])
 	}
 	got := mustBalance(t, s, userID)
-	if got.ReservedMicros != EstimateChatMicros {
-		t.Fatalf("reserved=%d, want the single admitted hold %d", got.ReservedMicros, EstimateChatMicros)
+	if got.ReservedMicros != 0 {
+		t.Fatalf("reserved=%d, want 0", got.ReservedMicros)
 	}
 }
 
@@ -166,7 +175,7 @@ func TestSweepThenLateSettleChargesOnce(t *testing.T) {
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
 
-	id, err := s.ReserveCredits(ctx, userID, "", SurfaceChat, EstimateChatMicros)
+	id, err := s.BeginSpend(ctx, userID, "", SurfaceChat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -225,13 +234,13 @@ func TestStalePeriodDoesNotBlockTheNewMonth(t *testing.T) {
 		t.Fatalf("CreditBalance used=%d, want 0 for a lapsed period", reported.UsedMicros)
 	}
 
-	id, err := s.ReserveCredits(ctx, userID, "", SurfaceChat, EstimateChatMicros)
+	id, err := s.BeginSpend(ctx, userID, "", SurfaceChat)
 	if err != nil {
-		t.Fatalf("reserve against last month's full balance: %v", err)
+		t.Fatalf("begin against last month's full balance: %v", err)
 	}
 	got := mustBalance(t, s, userID)
-	if got.UsedMicros != 0 || got.ReservedMicros != EstimateChatMicros {
-		t.Fatalf("after rollover reserve: used=%d reserved=%d", got.UsedMicros, got.ReservedMicros)
+	if got.UsedMicros != 0 || got.ReservedMicros != 0 {
+		t.Fatalf("after rollover begin: used=%d reserved=%d", got.UsedMicros, got.ReservedMicros)
 	}
 	if err := s.ReleaseCredits(ctx, id); err != nil {
 		t.Fatal(err)

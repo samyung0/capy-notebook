@@ -204,11 +204,12 @@ Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L7
   user who created them, even inside the same workspace. Chat and generate
   model choice is an account preference (**Settings → LLM**), snapshotted onto
   new conversations; the browser cannot pick a model per request. Editor AI
-  uses the registry editor default and is not user-selectable.
+  uses `users.editor_model_key` the same way, including BYOK, and is gated by
+  `VITE_FEATURE_EDITOR_AI`.
 - Shared editors who are not members cannot use workspace chat or generation.
 - Generated material storage is charged to the workspace owner. The actor is
   recorded as author but does not become storage owner.
-- Inference credits are billed to the actor (`ReserveCredits` /
+- Inference credits are billed to the actor (`BeginSpend` /
   `llm_credits_exhausted`). Ingest claim-time checks owner
   lifecycle/storage and actor credits as two lookups; actor lifecycle is not
   checked, so a `deletion_pending` uploader cannot strand the owner's bytes.

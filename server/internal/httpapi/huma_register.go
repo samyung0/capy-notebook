@@ -47,6 +47,35 @@ func hErr(err error) error {
 	if errors.Is(err, store.ErrModelKeyRequired) {
 		return huma.Error400BadRequest("a model preference is required")
 	}
+	if errors.Is(err, store.ErrTooManyLLMLeases) {
+		return &huma.ErrorModel{
+			Status: http.StatusTooManyRequests,
+			Title:  http.StatusText(http.StatusTooManyRequests),
+			Detail: "too many AI requests in progress",
+			Errors: []*huma.ErrorDetail{{
+				Message: "too_many_streams",
+			}},
+		}
+	}
+	if errors.Is(err, store.ErrInvalidLLMKey) {
+		return &huma.ErrorModel{
+			Status: http.StatusBadRequest,
+			Title:  http.StatusText(http.StatusBadRequest),
+			Detail: "the provider rejected this key",
+			Errors: []*huma.ErrorDetail{{Message: "invalid_llm_key"}},
+		}
+	}
+	if errors.Is(err, store.ErrLLMKeyFailed) {
+		return &huma.ErrorModel{
+			Status: http.StatusBadRequest,
+			Title:  http.StatusText(http.StatusBadRequest),
+			Detail: "Something went wrong, please double check if the key is valid",
+			Errors: []*huma.ErrorDetail{{Message: "llm_key_failed"}},
+		}
+	}
+	if errors.Is(err, store.ErrLLMCredentialsUnavailable) {
+		return huma.Error503ServiceUnavailable("key storage is not configured")
+	}
 	if errors.Is(err, store.ErrModelUnavailable) {
 		return &huma.ErrorModel{
 			Status: http.StatusUnprocessableEntity,

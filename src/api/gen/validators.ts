@@ -1273,6 +1273,39 @@ export const GetMeResponse = zod.object({
 
 
 /**
+ * @summary Saved provider keys
+ */
+export const ListLLMCredentialsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "credentials": zod.array(zod.object({
+  "last4": zod.string(),
+  "providerSlug": zod.string()
+}))
+})
+
+
+/**
+ * @summary Save a provider key
+ */
+export const UpsertLLMCredentialBody = zod.object({
+  "apiKey": zod.string(),
+  "providerSlug": zod.string()
+})
+
+export const UpsertLLMCredentialResponse = zod.void()
+
+
+/**
+ * @summary Remove a provider key
+ */
+export const DeleteLLMCredentialParams = zod.object({
+  "provider": zod.string()
+})
+
+export const DeleteLLMCredentialResponse = zod.void()
+
+
+/**
  * @summary Set account locale
  */
 export const SetLocaleBody = zod.object({
@@ -1287,9 +1320,15 @@ export const SetLocaleResponse = zod.void()
  */
 export const SetModelPrefsBody = zod.object({
   "chatModelKey": zod.string().optional(),
+  "chatReasoningEffort": zod.string().optional(),
+  "chatReasoningMode": zod.string().optional(),
   "editorModelKey": zod.string().optional(),
   "generateModelKey": zod.string().optional(),
-  "quizModelKey": zod.string().optional()
+  "generateReasoningEffort": zod.string().optional(),
+  "generateReasoningMode": zod.string().optional(),
+  "quizModelKey": zod.string().optional(),
+  "quizReasoningEffort": zod.string().optional(),
+  "quizReasoningMode": zod.string().optional()
 })
 
 export const SetModelPrefsResponse = zod.void()
@@ -1326,11 +1365,22 @@ export const ListModelsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "defaultKey": zod.string(),
   "models": zod.array(zod.object({
+  "available": zod.boolean(),
   "displayName": zod.string(),
   "isDefault": zod.boolean(),
-  "key": zod.string()
+  "key": zod.string(),
+  "providerSlug": zod.string(),
+  "reasoning": zod.object({
+  "canDisable": zod.boolean(),
+  "defaultEffort": zod.string(),
+  "defaultMode": zod.string(),
+  "efforts": zod.array(zod.string())
+}).optional(),
+  "usesUserKey": zod.boolean()
 })),
-  "selectedKey": zod.string()
+  "selectedKey": zod.string(),
+  "selectedReasoningEffort": zod.string(),
+  "selectedReasoningMode": zod.string()
 })
 
 

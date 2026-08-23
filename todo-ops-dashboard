@@ -232,9 +232,12 @@ A matrix:
 
 Clicking a filled cell opens the config: `display_name`, `provider_slug`,
 `base_url`, `provider_model_id`, `params`, credit micros, USD micros,
-`enabled`, `surfaces`, created_at. Show the provider credential as a
-**masked env lookup** (`provider_slug` → process env). API keys are not
-stored on `model_configs` and must not be pasted into the dashboard.
+`enabled`, `surfaces`, created_at. On embedding rows `enabled`,
+`provider_model_id`, and `params` are read-only. `base_url` and
+`provider_slug` stay editable so the same weights can move host. Show
+the provider credential as a **masked env lookup** (`provider_slug` →
+process env). API keys are not stored on `model_configs` and must not be
+pasted into the dashboard.
 
 From that drawer the operator can **change** the cell (pick another catalog
 config, or add a new immutable version) or **clear** it (this key no longer
@@ -265,7 +268,14 @@ transaction**, then `UPDATE model_registry_state SET version = version + 1`.
 Do not mutate an existing version in place (rates, url, provider id,
 surfaces). That would reprice pins already stamped on messages/jobs.
 Instead: `INSERT` a new version, disable versions no remaining cell
-points at.
+points at. **Embedding is the exception:** insert the new row and leave
+every older embedding row enabled and pointed at the same
+`provider_model_id` / `params`. Postgres refuses disable, delete,
+stripping or adding the embedding surface, and in-place identity
+rewrites (`protect_embedding_model_configs`). Same width is a different
+space and a different table. A later 2560-d model is a new catalog row
+plus a new `rag_chunk_vectors_*` table, not an UPDATE of `qwen-embed`
+and not a write into `rag_chunk_vectors_2560`.
 
 Vision is a normal hot-reloadable column: retargeting it applies to jobs
 enqueued after the poll picks it up, and queued jobs keep their pin.
@@ -278,25 +288,34 @@ created afterwards, and there is no reindex job. Save must make the operator
 confirm, in these words or close to them:
 
 - existing workspaces will keep using their current embedding model, forever;
-- the retired model's row can never be deleted and its provider must stay
-  reachable, because those workspaces resolve it on every search and upload;
+- that model's row stays enabled and its provider must stay reachable,
+  because those workspaces resolve it on every search and upload;
 - retrieval quality now differs by workspace creation date.
+
+The embedding column has no disable, no clear, no deprecate, and no
+in-place model swap. The drawer must not offer `enabled = false` or a
+`provider_model_id` / `params` edit on a row whose `surfaces` include
+`embedding`. Adding a default is "insert a new catalog row, give it its own vector
+table, clear the old `is_default_for`, mark the new row default"; the
+previous default stays in the catalog, locked on. Two rows cannot list
+the same surface in `is_default_for`.
 
 Two hard refusals belong here, not just a warning:
 
-- **Never leave a dimension without a model.** Every distinct
-  `workspaces.embedding_dim` in use must still have at least one enabled,
-  reachable embedding row of that width after Save. Disabling the last model
-  behind a width in use breaks search for every workspace on it. Compute the
-  in-use set from `SELECT DISTINCT embedding_dim FROM workspaces`.
-- **A new width is a schema change, not a Save.** An embedding row whose
-  `params.dimensions` has no `rag_chunk_vectors_<dim>` table is already
-  rejected by a check constraint; the UI should say so rather than surfacing a
-  constraint violation.
+- **Never disable, delete, strip, or rewrite an embedding row.** Not even
+  when another model of the same width exists. The Save transaction will
+  hit the same trigger as `psql`. Do not catch-and-retry by rewriting
+  `provider_model_id`.
+- **A new embedding model is a schema change, not a Save.** Even at the
+  same width. An embedding row whose `params.vector_table` is missing, or
+  whose pin is not in the Go/Python allowlists, must not become the
+  default. The UI should say so rather than surfacing a constraint
+  violation.
 
 Worth showing on this screen: per-dimension and per-model workspace counts
-(`GROUP BY embedding_dim, embedding_model_key`), so "which models can I never
-turn off" is answerable without writing SQL.
+(`GROUP BY embedding_dim, embedding_model_key`), so you can see which pins
+still have live workspaces without writing SQL. Every embedding key in
+that list is permanent.
 
 ### 6.3 What Save must refuse
 
@@ -304,8 +323,10 @@ Same invariants `modelctl` used to enforce, now checked against the whole
 draft so a batch cannot leave the registry empty:
 
 - Every surface that currently has a default still has a default cell after
-  Save. Retargeting a default is "clear this cell + mark another", not
-  "leave the column with no default".
+  Save. Retargeting a chat/generate/editor/ingest/vision default is
+  "clear this cell + mark another", not "leave the column with no
+  default". Embedding retarget is only "mark another"; the previous
+  default row stays enabled.
 - Clearing the last chat/generate/editor cell of a user-facing key is
   **deprecate**, not a quiet empty. Operator must name a fallback key that
   still has that surface in the *saved* grid. Then, in the same
@@ -314,9 +335,14 @@ draft so a batch cannot leave the registry empty:
   notify (below). Editor is a user preference too as of the editor picker in
   Settings → LLM; a remap that forgets it leaves those users failing with
   `model_unavailable` on every keystroke that triggers the copilot.
+  Embedding keys are not in this flow. There is no user pref to remap, and
+  the row cannot be disabled.
 - A cell cannot point at a missing / disabled catalog row.
 - Do not disable a version that is still the default for a surface; move
   the default first (or as an earlier step in the same batch).
+- Do not disable, delete, clear, or rewrite `provider_model_id` /
+  `params` on an embedding cell, and do not run deprecate against a key
+  that serves `embedding`.
 - Two admins saving at once: lock `model_configs` (and remapped users)
   in the transaction; bump is the cache invalidation.
 
@@ -360,6 +386,9 @@ to retarget everyone's default model.
 - `server/internal/models` and `pipeline/pipeline/registry.py` already
   poll `model_registry_state` every 30s. Save only needs to bump.
 - Tests belong next to the ops write handler, not a resurrected CLI.
-  Cover: version bump (disable old, insert new, prefs unchanged), last
-  chat cell of a key requires fallback + remap + mail, refuse Save that
-  drops a surface default, never DELETE `model_configs`.
+  Cover: version bump (disable old, insert new, prefs unchanged) for
+  chat/generate/editor only, last chat cell of a key requires fallback +
+  remap + mail, refuse Save that drops a surface default, never DELETE
+  `model_configs`, refuse disable/delete/strip/rewrite of any embedding
+  row, and allow inserting a second same-width embedding row as a new
+  key.

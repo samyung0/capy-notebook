@@ -9,6 +9,7 @@ dependencies = [
   "psycopg[binary,pool]>=3.1",
   # Model providers (OpenAI-compatible: OpenRouter / DeepSeek / Gemini).
   "openai>=1.30",
+  "cryptography>=42",
   # Modal parse client + Redis progress + retrieval API.
   "requests>=2.31",
   "redis>=5.0",

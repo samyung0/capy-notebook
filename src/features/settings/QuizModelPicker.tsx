@@ -18,19 +18,13 @@ import {
   formatBytes,
   isBrowserQuizModel,
 } from '@/features/quizzes/browserModels';
+import { sortModelOptions } from '@/features/settings/llmOptions';
+import {
+  ModelOptionLabel,
+  providerLabel,
+} from '@/features/settings/ModelPicker';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-
-function cloudLabel(key: string, fallback: string): string {
-  switch (key) {
-    case 'deepseek-flash':
-      return m.model_deepseek_flash();
-    case 'deepseek-pro':
-      return m.model_deepseek_pro();
-    default:
-      return fallback;
-  }
-}
 
 function SlowIcon() {
   return (
@@ -64,8 +58,9 @@ export function QuizModelPicker({ className }: { className?: string }) {
   const [downloadError, setDownloadError] = useState('');
   const [isolated, setIsolated] = useState<boolean | null>(null);
   const [webgpu, setWebgpu] = useState<boolean | null>(null);
-  const cloud = data?.models ?? [];
+  const cloud = sortModelOptions(data?.models ?? []);
   const selectedKey = data?.selectedKey || '';
+  const selectedCloud = cloud.find((option) => option.key === selectedKey);
   const browser = browserQuizModel(selectedKey);
   const selectedWarn = browser
     ? browserModelWarn(browser, { isolated, webgpu })
@@ -92,37 +87,54 @@ export function QuizModelPicker({ className }: { className?: string }) {
 
   return (
     <div className={cn('flex min-w-0 flex-col gap-1.5', className)}>
-      <Select
-        disabled={isPending}
-        onValueChange={(key) => {
-          setDownloadError('');
-          mutate({ quizModelKey: key });
-        }}
-        value={selectedKey || undefined}
-      >
-        <SelectTrigger
-          aria-label={m.settings_llm_quiz()}
-          className="w-full max-w-sm"
+      <div className="flex min-w-0 flex-wrap items-start gap-2">
+        <Select
+          disabled={isPending}
+          onValueChange={(key) => {
+            setDownloadError('');
+            mutate({ quizModelKey: key });
+          }}
+          value={selectedKey || undefined}
         >
-          <SelectValue placeholder={m.model_picker_label()} />
-        </SelectTrigger>
-        <SelectContent>
-          {cloud.map((option) => (
-            <SelectItem key={option.key} value={option.key}>
-              {cloudLabel(option.key, option.displayName)}
-              {option.isDefault ? ` · ${m.settings_llm_default()}` : ''}
-            </SelectItem>
-          ))}
-          {BROWSER_QUIZ_MODELS.map((option) => {
-            const warn = !!browserModelWarn(option, { isolated, webgpu });
-            return (
-              <SelectItem key={option.id} value={option.id}>
-                <BrowserOptionLabel model={option} warn={warn} />
+          <SelectTrigger
+            aria-label={m.settings_llm_quiz()}
+            className="w-full max-w-sm"
+          >
+            <SelectValue placeholder={m.model_picker_label()} />
+          </SelectTrigger>
+          <SelectContent>
+            {cloud.map((option) => (
+              <SelectItem
+                disabled={!option.available}
+                key={option.key}
+                title={
+                  option.available
+                    ? undefined
+                    : m.settings_llm_locked({
+                        provider: providerLabel(option.providerSlug),
+                      })
+                }
+                value={option.key}
+              >
+                <ModelOptionLabel option={option} />
               </SelectItem>
-            );
-          })}
-        </SelectContent>
-      </Select>
+            ))}
+            {BROWSER_QUIZ_MODELS.map((option) => {
+              const warn = !!browserModelWarn(option, { isolated, webgpu });
+              return (
+                <SelectItem key={option.id} value={option.id}>
+                  <BrowserOptionLabel model={option} warn={warn} />
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+      </div>
+      {selectedCloud?.usesUserKey ? (
+        <p className="text-fg-muted text-sm">
+          {m.settings_llm_byok_disclaimer()}
+        </p>
+      ) : null}
       {selectedWarn ? (
         <p
           className="flex items-start gap-2 rounded-button border border-solid-warning/40 bg-tint-warning px-3 py-2 text-sm text-tint-warning-fg"

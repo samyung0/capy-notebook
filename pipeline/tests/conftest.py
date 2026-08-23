@@ -2,7 +2,7 @@
 
 Why record-replay
 -----------------
-The pipeline's real cost is model traffic: OpenRouter embeddings and DeepSeek
+The pipeline's real cost is model traffic: embeddings and DeepSeek
 completions for summaries, concept extraction and answers. Those HTTP
 interactions are recorded ONCE into per-test YAML cassettes
 (``tests/cassettes/``) and replayed for free afterwards. Postgres and Redis are
@@ -50,6 +50,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # pinned here.
 os.environ["EMBEDDING_DIM"] = os.environ.get("EMBEDDING_DIM", "2560")
 os.environ["EVO_QUERY_MODEL"] = "deepseek-v4-flash"
+os.environ["EMBEDDING_BASE_URL"] = "https://openrouter.ai/api/v1"
 os.environ["OPENROUTER_BASE_URL"] = "https://openrouter.ai/api/v1"
 os.environ["DEEPSEEK_BASE_URL"] = "https://api.deepseek.com"
 os.environ["GEMINI_BASE_URL"] = (
@@ -62,7 +63,12 @@ os.environ["EVO_EMBEDDING_BATCH"] = "1000"
 
 # Dummy provider keys for replay (never sent anywhere — VCR intercepts). Real
 # keys come from the exported environment in record mode.
-for _k in ("OPENROUTER_API_KEY", "DEEPSEEK_API_KEY", "GOOGLE_API_KEY"):
+for _k in (
+    "EMBEDDING_API_KEY",
+    "OPENROUTER_API_KEY",
+    "DEEPSEEK_API_KEY",
+    "GOOGLE_API_KEY",
+):
     os.environ.setdefault(_k, "test-dummy-key")
 
 # Ryuk (testcontainers' container reaper) races its own port publication on

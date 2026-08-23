@@ -135,6 +135,7 @@ async def produce_mapped(
     model: str | models.ModelConfig,
     combine: str,
     locale: str | None = None,
+    budget: int | None = None,
 ) -> str:
     """Map-reduce for scopes too large for one context window.
 
@@ -142,6 +143,13 @@ async def produce_mapped(
     against the instruction, then the summaries are combined. It costs more
     calls, so it is not the default path.
     """
+    if budget is None:
+        from .. import registry
+
+        if isinstance(model, models.ModelConfig):
+            budget = registry.input_budget(model)
+        else:
+            budget = cfg.llm_input_budget_tokens
     by_file: dict[str, list[Passage]] = {}
     for passage in passages:
         by_file.setdefault(passage.file_id, []).append(passage)
@@ -149,7 +157,7 @@ async def produce_mapped(
     for group in by_file.values():
         context = clip_to_tokens(
             "\n\n".join(p.as_context(i + 1) for i, p in enumerate(group)),
-            cfg.llm_input_budget_tokens,
+            budget,
         )
         partials.append(
             await produce(
@@ -168,9 +176,7 @@ async def produce_mapped(
             },
             {
                 "role": "user",
-                "content": clip_to_tokens(
-                    "\n\n---\n\n".join(partials), cfg.llm_input_budget_tokens
-                ),
+                "content": clip_to_tokens("\n\n---\n\n".join(partials), budget),
             },
         ],
         model=model,
@@ -218,8 +224,6 @@ def normalize_questions(
     return questions
 
 
-def overflows(context: str, passages: list[Passage]) -> bool:
-    return (
-        estimate_tokens(context) >= cfg.llm_input_budget_tokens
-        and len({p.file_id for p in passages}) > 1
-    )
+def overflows(context: str, passages: list[Passage], budget: int | None = None) -> bool:
+    limit = cfg.llm_input_budget_tokens if budget is None else budget
+    return estimate_tokens(context) >= limit and len({p.file_id for p in passages}) > 1

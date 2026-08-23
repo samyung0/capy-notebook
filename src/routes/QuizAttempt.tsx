@@ -26,6 +26,7 @@ import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { gradeAttemptQuestions } from '@/features/quizzes/scoreAttempt';
 import { m } from '@/i18n';
 import { toastCloneError, toastSignInRequired } from '@/lib/authToasts';
+import { describeError, llmKeyUserMessage } from '@/lib/errors';
 
 export default function QuizAttempt() {
   const params = useParams({ strict: false });
@@ -47,7 +48,7 @@ export default function QuizAttempt() {
   });
   const navigate = useNavigate();
 
-  const { data: me } = useMe();
+  const { data: me } = useMe({ errorBoundary: false });
   const { data: quizModels } = useModels('quiz', { errorBoundary: false });
   const [idx, setIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, Answer>>({});
@@ -165,10 +166,13 @@ export default function QuizAttempt() {
         }
       );
     } catch (err) {
+      const keyMessage = llmKeyUserMessage(err);
+      const described = keyMessage ? describeError(err) : null;
       userToast({
         description:
-          err instanceof Error ? err.message : m.quiz_grade_failed_body(),
-        title: m.quiz_grade_failed(),
+          keyMessage ??
+          (err instanceof Error ? err.message : m.quiz_grade_failed_body()),
+        title: described?.title ?? m.quiz_grade_failed(),
         variant: 'error',
       });
     } finally {

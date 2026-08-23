@@ -163,6 +163,97 @@ func TestCloneInheritsSourceEmbeddingPin(t *testing.T) {
 	}
 }
 
+func TestCreateWorkspacePinsLiveEmbeddingDefault(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	userID := newCreditsTestUser(t, s)
+
+	first, err := s.CreateWorkspace(ctx, userID, "First", ColorGreen, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var key string
+	var version int
+	if err := s.pool.QueryRow(ctx,
+		`SELECT embedding_model_key, embedding_model_version FROM workspaces WHERE id=$1`,
+		first.ID,
+	).Scan(&key, &version); err != nil {
+		t.Fatal(err)
+	}
+	if key != "qwen-embed" || version != 1 {
+		t.Fatalf("first workspace: %s v%d", key, version)
+	}
+
+	altKey := "alt-embed-" + first.ID
+	altPin := models.Pin{Key: altKey, Version: 1}
+	vectorTables[altPin] = "rag_chunk_vectors_2560"
+	t.Cleanup(func() { delete(vectorTables, altPin) })
+
+	if _, err := s.pool.Exec(ctx, `
+		UPDATE model_configs SET is_default_for='{}'
+		 WHERE model_key='qwen-embed' AND version=1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO model_configs (
+			model_key, version, display_name, provider_slug, base_url, provider_model_id,
+			params, surfaces, micros_per_input_token, micros_per_output_token,
+			usd_micros_per_input_token, usd_micros_per_output_token, enabled, is_default_for
+		) VALUES ($1, 1, 'Alt Embed', 'openrouter', 'https://example.test', 'alt-embed',
+			'{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}'::jsonb,
+			ARRAY['embedding'], 99, 99, 0, 0, true, ARRAY['embedding'])`, altKey); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `
+		UPDATE model_registry_state SET version = version + 1 WHERE id = true`); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		// Embedding rows cannot be deleted. Clear the test default first.
+		_, _ = s.pool.Exec(context.Background(), `
+			UPDATE model_configs SET is_default_for='{}' WHERE model_key=$1`, altKey)
+		_, _ = s.pool.Exec(context.Background(), `
+			UPDATE model_configs SET is_default_for=ARRAY['embedding']
+			 WHERE model_key='qwen-embed' AND version=1`)
+		_, _ = s.pool.Exec(context.Background(), `
+			UPDATE model_registry_state SET version = version + 1 WHERE id = true`)
+	})
+
+	fresh, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(fresh)
+
+	second, err := s.CreateWorkspace(ctx, userID, "Second", ColorBlue, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.pool.QueryRow(ctx,
+		`SELECT embedding_model_key, embedding_model_version FROM workspaces WHERE id=$1`,
+		second.ID,
+	).Scan(&key, &version); err != nil {
+		t.Fatal(err)
+	}
+	if key != altKey || version != 1 {
+		t.Fatalf("newWorkspaceEmbedding skipped the live default: %s v%d", key, version)
+	}
+
+	oldRates := s.EmbeddingRates(ctx, first.ID)
+	if oldRates.ModelKey != "qwen-embed" || oldRates.MicrosPerInputToken != 50 {
+		t.Fatalf("old workspace rates followed the new default: %#v", oldRates)
+	}
+	newRates := s.EmbeddingRates(ctx, second.ID)
+	if newRates.ModelKey != altKey || newRates.MicrosPerInputToken != 99 {
+		t.Fatalf("new workspace rates: %#v", newRates)
+	}
+}
+
 func TestSetModelPrefsRejectsEmpty(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -180,7 +271,9 @@ func TestSetModelPrefsRejectsEmpty(t *testing.T) {
 		case "quiz":
 			quiz = &empty
 		}
-		if err := s.SetModelPrefs(ctx, userID, chat, generate, editor, quiz); !errors.Is(err, ErrModelKeyRequired) {
+		if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{
+			ChatModelKey: chat, GenerateModelKey: generate, EditorModelKey: editor, QuizModelKey: quiz,
+		}); !errors.Is(err, ErrModelKeyRequired) {
 			t.Fatalf("%s: got %v", surface, err)
 		}
 	}
@@ -219,7 +312,7 @@ func TestSetModelPrefsAcceptsBrowserQuizKey(t *testing.T) {
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
 	key := "browser:ternary-1.7b"
-	if err := s.SetModelPrefs(ctx, userID, nil, nil, nil, &key); err != nil {
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{QuizModelKey: &key}); err != nil {
 		t.Fatal(err)
 	}
 	me, err := s.Me(ctx, userID)
@@ -229,7 +322,17 @@ func TestSetModelPrefsAcceptsBrowserQuizKey(t *testing.T) {
 	if me.QuizModelKey != key {
 		t.Fatalf("quiz pref = %q", me.QuizModelKey)
 	}
-	if err := s.SetModelPrefs(ctx, userID, &key, nil, nil, nil); !errors.Is(err, ErrNotFound) {
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModelKey: &key}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("browser key on chat: %v", err)
+	}
+}
+
+func TestSetModelPrefsRejectsLockedUserKey(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	key := "gpt-5.6-sol"
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModelKey: &key}); !errors.Is(err, ErrModelUnavailable) {
+		t.Fatalf("locked byok: %v", err)
 	}
 }

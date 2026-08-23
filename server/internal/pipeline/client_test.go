@@ -17,6 +17,9 @@ func TestPostRawSuccess(t *testing.T) {
 		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
 			t.Errorf("content-type = %q, want application/json", ct)
 		}
+		if got := r.Header.Get(SecretHeader); got != "s3cret" {
+			t.Errorf("secret = %q, want s3cret", got)
+		}
 		// Echo the body back so we can assert it was marshalled.
 		body, _ := io.ReadAll(r.Body)
 		var in map[string]any
@@ -28,7 +31,7 @@ func TestPostRawSuccess(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	c := New(srv.URL + "/") // trailing slash should be trimmed
+	c := New(srv.URL+"/", "s3cret") // trailing slash should be trimmed
 	raw, err := c.PostRaw(context.Background(), "/retrieve", map[string]any{"query": "atp", "k": 5})
 	if err != nil {
 		t.Fatalf("PostRaw: %v", err)
@@ -42,20 +45,31 @@ func TestPostRawSuccess(t *testing.T) {
 	}
 }
 
+func TestErrorDecode(t *testing.T) {
+	direct := &Error{Body: []byte(`{"code":"invalid_key","message":"nope"}`)}
+	if got := direct.Decode(); got.Code != "invalid_key" || got.Message != "nope" {
+		t.Fatalf("direct: %#v", got)
+	}
+	wrapped := &Error{Body: []byte(`{"detail":{"code":"key_failed","message":"check"}}`)}
+	if got := wrapped.Decode(); got.Code != "key_failed" || got.Message != "check" {
+		t.Fatalf("wrapped: %#v", got)
+	}
+}
+
 func TestPostRawErrorStatus(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)
 	}))
 	defer srv.Close()
 
-	c := New(srv.URL)
+	c := New(srv.URL, "")
 	if _, err := c.PostRaw(context.Background(), "/error", map[string]any{}); err == nil {
 		t.Errorf("expected error on 500 response")
 	}
 }
 
 func TestPostRawUnmarshalableBody(t *testing.T) {
-	c := New("http://localhost:0")
+	c := New("http://localhost:0", "")
 	// channels can't be marshalled to JSON → error before any network call.
 	if _, err := c.PostRaw(context.Background(), "/x", make(chan int)); err == nil {
 		t.Errorf("expected marshal error")
@@ -64,7 +78,7 @@ func TestPostRawUnmarshalableBody(t *testing.T) {
 
 func TestPostRawConnRefused(t *testing.T) {
 	// Nothing listening → transport error surfaces.
-	c := New("http://127.0.0.1:1")
+	c := New("http://127.0.0.1:1", "")
 	if _, err := c.PostRaw(context.Background(), "/x", map[string]any{"a": 1}); err == nil {
 		t.Errorf("expected connection error")
 	}

@@ -1142,6 +1142,33 @@ components:
         - google
         - microsoft
       type: object
+    LLMCredential:
+      additionalProperties: false
+      properties:
+        last4:
+          type: string
+        providerSlug:
+          type: string
+      required:
+        - providerSlug
+        - last4
+      type: object
+    LLMCredentialsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/LLMCredentialsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        credentials:
+          items:
+            $ref: "#/components/schemas/LLMCredential"
+          type: array
+      required:
+        - credentials
+      type: object
     Label:
       additionalProperties: false
       properties:
@@ -1435,16 +1462,46 @@ components:
     ModelOption:
       additionalProperties: false
       properties:
+        available:
+          type: boolean
         displayName:
           type: string
         isDefault:
           type: boolean
         key:
           type: string
+        providerSlug:
+          type: string
+        reasoning:
+          $ref: "#/components/schemas/ModelReasoning"
+        usesUserKey:
+          type: boolean
       required:
         - key
         - displayName
         - isDefault
+        - available
+        - usesUserKey
+        - providerSlug
+      type: object
+    ModelReasoning:
+      additionalProperties: false
+      properties:
+        canDisable:
+          type: boolean
+        defaultEffort:
+          type: string
+        defaultMode:
+          type: string
+        efforts:
+          items:
+            type: string
+          type: array
+      required:
+        - canDisable
+        - efforts
+        - defaultMode
+        - defaultEffort
       type: object
     ModelsResponse:
       additionalProperties: false
@@ -1463,10 +1520,16 @@ components:
           type: array
         selectedKey:
           type: string
+        selectedReasoningEffort:
+          type: string
+        selectedReasoningMode:
+          type: string
       required:
         - models
         - selectedKey
         - defaultKey
+        - selectedReasoningMode
+        - selectedReasoningEffort
       type: object
     Notification:
       additionalProperties: false
@@ -1979,11 +2042,23 @@ components:
           type: string
         chatModelKey:
           type: string
+        chatReasoningEffort:
+          type: string
+        chatReasoningMode:
+          type: string
         editorModelKey:
           type: string
         generateModelKey:
           type: string
+        generateReasoningEffort:
+          type: string
+        generateReasoningMode:
+          type: string
         quizModelKey:
+          type: string
+        quizReasoningEffort:
+          type: string
+        quizReasoningMode:
           type: string
       type: object
     ShareRole:
@@ -2491,6 +2566,23 @@ components:
           $ref: "#/components/schemas/Privacy"
         shareRole:
           $ref: "#/components/schemas/ShareRole"
+      type: object
+    UpsertLLMCredentialReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/UpsertLLMCredentialReq.json
+          format: uri
+          readOnly: true
+          type: string
+        apiKey:
+          type: string
+        providerSlug:
+          type: string
+      required:
+        - providerSlug
+        - apiKey
       type: object
     UsageBucket:
       additionalProperties: false
@@ -4051,6 +4143,66 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Current user
+      tags:
+        - Account
+  /api/me/llm-credentials:
+    get:
+      operationId: listLLMCredentials
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LLMCredentialsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Saved provider keys
+      tags:
+        - Account
+    put:
+      operationId: upsertLLMCredential
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpsertLLMCredentialReq"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Save a provider key
+      tags:
+        - Account
+  /api/me/llm-credentials/{provider}:
+    delete:
+      operationId: deleteLLMCredential
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Remove a provider key
       tags:
         - Account
   /api/me/locale:

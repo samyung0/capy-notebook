@@ -14,10 +14,4 @@ func TestCreditsForTokensDifferByModel(t *testing.T) {
 	if proC <= flashC {
 		t.Fatalf("pro (%d) must cost more than flash (%d)", proC, flashC)
 	}
-	if ScaleEstimate(EstimateChatMicros, pro) <= EstimateChatMicros {
-		t.Fatal("pro reserve estimate must scale above the 1x base")
-	}
-	if ScaleEstimate(EstimateChatMicros, flash) != EstimateChatMicros {
-		t.Fatal("1x model must keep the base estimate")
-	}
 }

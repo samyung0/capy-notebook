@@ -154,8 +154,7 @@
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs,cjs,json,jsonc,css,scss,md,mdx}": [
-      "biome format --write --no-errors-on-unmatched --files-ignore-unknown=true",
-      "ultracite fix"
+      "ultracite fix --skip=types"
     ],
     "*.go": "gofmt -w",
     "*.py": [

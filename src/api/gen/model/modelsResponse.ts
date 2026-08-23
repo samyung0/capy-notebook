@@ -12,4 +12,6 @@ export interface ModelsResponse {
   defaultKey: string;
   models: ModelOption[];
   selectedKey: string;
+  selectedReasoningEffort: string;
+  selectedReasoningMode: string;
 }

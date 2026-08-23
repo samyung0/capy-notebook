@@ -17,13 +17,69 @@ import (
 	"github.com/evonotes/server/internal/obs"
 )
 
+const SecretHeader = "X-Pipeline-Secret"
+
 type Client struct {
-	base string
-	hc   *http.Client
+	base   string
+	secret string
+	hc     *http.Client
 }
 
-func New(base string) *Client {
-	return &Client{base: strings.TrimRight(base, "/"), hc: &http.Client{Timeout: 90 * time.Second}}
+func New(base, secret string) *Client {
+	return &Client{
+		base:   strings.TrimRight(base, "/"),
+		secret: secret,
+		hc:     &http.Client{Timeout: 90 * time.Second},
+	}
+}
+
+// Error is a non-2xx pipeline response. Body is the raw JSON, if any.
+type Error struct {
+	Path   string
+	Status int
+	Body   []byte
+}
+
+func (e *Error) Error() string {
+	if e == nil {
+		return "pipeline error"
+	}
+	return fmt.Sprintf("pipeline %s: %s", e.Path, http.StatusText(e.Status))
+}
+
+type ErrorBody struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func (e *Error) Decode() ErrorBody {
+	if e == nil || len(e.Body) == 0 {
+		return ErrorBody{}
+	}
+	var raw map[string]any
+	if json.Unmarshal(e.Body, &raw) != nil {
+		return ErrorBody{}
+	}
+	if body := errorBodyFrom(raw); body.Code != "" {
+		return body
+	}
+	if detail, ok := raw["detail"].(map[string]any); ok {
+		return errorBodyFrom(detail)
+	}
+	return ErrorBody{}
+}
+
+func errorBodyFrom(raw map[string]any) ErrorBody {
+	code, _ := raw["code"].(string)
+	message, _ := raw["message"].(string)
+	return ErrorBody{Code: code, Message: message}
+}
+
+func (c *Client) applyHeaders(req *http.Request) {
+	req.Header.Set("Content-Type", "application/json")
+	if c.secret != "" {
+		req.Header.Set(SecretHeader, c.secret)
+	}
 }
 
 // PostStream posts body as JSON and returns the live response body for the
@@ -39,7 +95,7 @@ func (c *Client) PostStream(ctx context.Context, path string, body any) (io.Read
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	c.applyHeaders(req)
 	req.Header.Set("Accept", "text/event-stream")
 	obs.Inject(ctx, req)
 	res, err := c.streamHC().Do(req)
@@ -49,7 +105,7 @@ func (c *Client) PostStream(ctx context.Context, path string, body any) (io.Read
 	if res.StatusCode >= 300 {
 		body, _ := io.ReadAll(res.Body)
 		res.Body.Close()
-		return nil, fmt.Errorf("pipeline %s: %s: %s", path, res.Status, string(body))
+		return nil, &Error{Path: path, Status: res.StatusCode, Body: body}
 	}
 	return res.Body, nil
 }
@@ -68,7 +124,7 @@ func (c *Client) PostRaw(ctx context.Context, path string, body any) (json.RawMe
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	c.applyHeaders(req)
 	obs.Inject(ctx, req)
 	res, err := c.hc.Do(req)
 	if err != nil {
@@ -80,7 +136,7 @@ func (c *Client) PostRaw(ctx context.Context, path string, body any) (json.RawMe
 		return nil, err
 	}
 	if res.StatusCode >= 300 {
-		return nil, fmt.Errorf("pipeline %s: %s", path, res.Status)
+		return nil, &Error{Path: path, Status: res.StatusCode, Body: data}
 	}
 	return data, nil
 }

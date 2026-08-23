@@ -7,8 +7,9 @@ like a quality problem rather than a bug.
 
 from __future__ import annotations
 
-from pipeline.retrieval import tools, workflows
-from pipeline.retrieval.search import Passage, _cap_per_file
+from pipeline.registry import ModelConfig
+from pipeline.retrieval import models, tools, workflows
+from pipeline.retrieval.search import Passage, _cap_per_file, search
 from pipeline.retrieval.store import normalize_concept
 from pipeline.retrieval.tools import ToolContext
 
@@ -202,6 +203,105 @@ def test_overflow_only_triggers_with_more_than_one_document():
     assert workflows.overflows(big, one_file) is False
     assert workflows.overflows(big, two_files) is True
     assert workflows.overflows("short", two_files) is False
+
+
+# ------------------------------------------------------- query embed prefix
+
+
+def _embed_spec(provider_model_id: str) -> ModelConfig:
+    return ModelConfig(
+        model_key="qwen-embed",
+        version=1,
+        display_name="embed",
+        provider_slug="openrouter",
+        base_url="https://example.test",
+        provider_model_id=provider_model_id,
+        params={"dimensions": 2560},
+        surfaces=("embedding",),
+    )
+
+
+def test_qwen3_query_gets_instruct_prefix():
+    spec = _embed_spec("qwen/qwen3-embedding-4b")
+    shaped = models.format_query("chlorophyll", spec)
+
+    assert shaped.startswith("Instruct:")
+    assert shaped.endswith("Query:chlorophyll")
+    assert "notes and uploaded materials" in shaped
+
+
+def test_qwen3_huggingface_id_also_prefixes():
+    spec = _embed_spec("Qwen/Qwen3-Embedding-8B")
+    assert models.format_query("gravity", spec).endswith("Query:gravity")
+
+
+def test_non_qwen3_query_stays_raw():
+    spec = _embed_spec("text-embedding-3-large")
+    assert models.format_query("chlorophyll", spec) == "chlorophyll"
+
+
+async def test_search_prefixes_qwen3_vectors_not_lexical_terms(monkeypatch):
+    """The workspace pin decides the prefix. Lexical terms stay the raw query."""
+    spec = _embed_spec("qwen/qwen3-embedding-4b")
+    seen: dict[str, object] = {}
+
+    async def pin(_ws: str) -> dict[str, object]:
+        return {
+            "embedding_model_key": "qwen-embed",
+            "embedding_model_version": 1,
+            "embedding_dim": 2560,
+        }
+
+    async def fake_embed(texts: list[str], *, spec: ModelConfig) -> list[list[float]]:
+        seen["texts"] = texts
+        return [[0.0] * spec.embedding_dim]
+
+    async def fake_hybrid(**kwargs: object) -> list:
+        seen["terms"] = kwargs["terms"]
+        return []
+
+    monkeypatch.setattr("pipeline.retrieval.search.store.workspace_embedding_pin", pin)
+    monkeypatch.setattr(
+        "pipeline.retrieval.search.registry.resolve_pinned", lambda *_a, **_k: spec
+    )
+    monkeypatch.setattr("pipeline.retrieval.search.models.embed", fake_embed)
+    monkeypatch.setattr("pipeline.retrieval.search.store.hybrid_search", fake_hybrid)
+
+    await search(workspace_id="ws", query="chlorophyll")
+
+    assert seen["texts"] == [models.format_query("chlorophyll", spec)]
+    assert seen["terms"] == "chlorophyll"
+
+
+async def test_search_skips_prefix_when_workspace_pin_is_not_qwen3(monkeypatch):
+    spec = _embed_spec("text-embedding-3-large")
+    seen: dict[str, object] = {}
+
+    async def pin(_ws: str) -> dict[str, object]:
+        return {
+            "embedding_model_key": "openai-embed",
+            "embedding_model_version": 1,
+            "embedding_dim": 2560,
+        }
+
+    async def fake_embed(texts: list[str], *, spec: ModelConfig) -> list[list[float]]:
+        seen["texts"] = texts
+        return [[0.0] * spec.embedding_dim]
+
+    async def fake_hybrid(**kwargs: object) -> list:
+        del kwargs
+        return []
+
+    monkeypatch.setattr("pipeline.retrieval.search.store.workspace_embedding_pin", pin)
+    monkeypatch.setattr(
+        "pipeline.retrieval.search.registry.resolve_pinned", lambda *_a, **_k: spec
+    )
+    monkeypatch.setattr("pipeline.retrieval.search.models.embed", fake_embed)
+    monkeypatch.setattr("pipeline.retrieval.search.store.hybrid_search", fake_hybrid)
+
+    await search(workspace_id="ws", query="chlorophyll")
+
+    assert seen["texts"] == ["chlorophyll"]
 
 
 # ------------------------------------------------------------ file summaries

@@ -39,6 +39,11 @@ SURFACE_EMBEDDING = "embedding"
 SURFACE_VISION = "vision"
 
 
+AUTH_PLATFORM = "platform"
+AUTH_USER_KEY = "user_key"
+AUTH_PLATFORM_OR_USER = "platform_or_user"
+
+
 @dataclass(frozen=True)
 class ModelConfig:
     model_key: str
@@ -55,6 +60,8 @@ class ModelConfig:
     usd_micros_per_output_token: int = 0
     enabled: bool = True
     is_default_for: tuple[str, ...] = ()
+    auth_mode: str = AUTH_PLATFORM
+    context_window_tokens: int = 0
 
     @property
     def pin(self) -> tuple[str, int]:
@@ -85,6 +92,26 @@ class ModelConfig:
         except (TypeError, ValueError):
             return fallback
 
+    def reasoning(self) -> dict[str, Any]:
+        raw = self.params.get("reasoning")
+        return raw if isinstance(raw, dict) else {}
+
+    def reasoning_style(self) -> str:
+        return str(self.reasoning().get("style") or "")
+
+    def reasoning_efforts(self) -> tuple[str, ...]:
+        raw = self.reasoning().get("efforts") or ()
+        return tuple(str(item) for item in raw if item)
+
+    def reasoning_can_disable(self) -> bool:
+        return bool(self.reasoning().get("canDisable", True))
+
+    def reasoning_default_mode(self) -> str:
+        return str(self.reasoning().get("defaultMode") or "off")
+
+    def reasoning_default_effort(self) -> str:
+        return str(self.reasoning().get("defaultEffort") or "medium")
+
 
 class RegistryError(RuntimeError):
     """A pinned (model_key, version) could not be loaded. Never a silent default."""
@@ -98,6 +125,50 @@ class JobPins:
 
 
 _job_pins: ContextVar[JobPins | None] = ContextVar("job_pins", default=None)
+
+_select_cols = """
+                    SELECT model_key, version, display_name, provider_slug, base_url,
+                           provider_model_id, params, surfaces,
+                           micros_per_input_token, micros_per_output_token,
+                           usd_micros_per_input_token, usd_micros_per_output_token,
+                           enabled, is_default_for, auth_mode, context_window_tokens
+                      FROM model_configs
+"""
+
+
+@dataclass
+class RequestLLM:
+    user_id: str = ""
+    paid_by: str = ""
+    user_api_key: str = ""
+    reasoning_mode: str = ""
+    reasoning_effort: str = ""
+
+
+_request_llm: ContextVar[RequestLLM | None] = ContextVar("request_llm", default=None)
+
+
+def bind_request_llm(
+    user_id: str | None = None,
+    paid_by: str | None = None,
+    reasoning_mode: str | None = None,
+    reasoning_effort: str | None = None,
+    *,
+    user_api_key: str | None = None,
+) -> None:
+    _request_llm.set(
+        RequestLLM(
+            user_id=(user_id or "").strip(),
+            paid_by=(paid_by or "").strip(),
+            user_api_key=(user_api_key or "").strip(),
+            reasoning_mode=(reasoning_mode or "").strip(),
+            reasoning_effort=(reasoning_effort or "").strip(),
+        )
+    )
+
+
+def current_request_llm() -> RequestLLM:
+    return _request_llm.get() or RequestLLM()
 
 
 def set_job_pins(pins: JobPins | None) -> None:
@@ -136,16 +207,7 @@ class Registry:
                 with self._lock:
                     if self._rev == rev and self._current:
                         return
-                cur.execute(
-                    """
-                    SELECT model_key, version, display_name, provider_slug, base_url,
-                           provider_model_id, params, surfaces,
-                           micros_per_input_token, micros_per_output_token,
-                           usd_micros_per_input_token, usd_micros_per_output_token,
-                           enabled, is_default_for
-                      FROM model_configs
-                    """
-                )
+                cur.execute(_select_cols)
                 rows = cur.fetchall()
         except Exception:  # noqa: BLE001 - first boot falls back to config.py
             if not self._started:
@@ -185,14 +247,7 @@ class Registry:
     def _load(self, key: str, version: int) -> ModelConfig:
         with db.connect() as conn, conn.cursor() as cur:
             cur.execute(
-                """
-                SELECT model_key, version, display_name, provider_slug, base_url,
-                       provider_model_id, params, surfaces,
-                       micros_per_input_token, micros_per_output_token,
-                       usd_micros_per_input_token, usd_micros_per_output_token,
-                       enabled, is_default_for
-                  FROM model_configs WHERE model_key=%s AND version=%s
-                """,
+                _select_cols + " WHERE model_key=%s AND version=%s",
                 (key, version),
             )
             row = cur.fetchone()
@@ -231,13 +286,8 @@ class Registry:
             return best
         with db.connect() as conn, conn.cursor() as cur:
             cur.execute(
-                """
-                SELECT model_key, version, display_name, provider_slug, base_url,
-                       provider_model_id, params, surfaces,
-                       micros_per_input_token, micros_per_output_token,
-                       usd_micros_per_input_token, usd_micros_per_output_token,
-                       enabled, is_default_for
-                  FROM model_configs
+                _select_cols
+                + """
                  WHERE model_key=%s AND enabled AND %s = ANY(surfaces)
                  ORDER BY version DESC LIMIT 1
                 """,
@@ -258,6 +308,8 @@ def _from_row(row: tuple[Any, ...]) -> ModelConfig:
         params = {}
     surfaces = tuple(row[7] or ())
     defaults = tuple(row[13] or ())
+    auth_mode = row[14] if len(row) > 14 and row[14] else AUTH_PLATFORM
+    window = int(row[15]) if len(row) > 15 and row[15] is not None else 0
     return ModelConfig(
         model_key=row[0],
         version=int(row[1]),
@@ -273,6 +325,8 @@ def _from_row(row: tuple[Any, ...]) -> ModelConfig:
         usd_micros_per_output_token=int(row[11]),
         enabled=bool(row[12]),
         is_default_for=defaults,
+        auth_mode=str(auth_mode),
+        context_window_tokens=window,
     )
 
 
@@ -345,15 +399,56 @@ def vision_spec() -> ModelConfig:
 
 
 def provider_cfg_for(spec: ModelConfig) -> ProviderCfg:
-    slug = spec.provider_slug
+    """Credentials for one catalog row.
+
+    Embedding and vision are platform-only: one env pair each, never a user
+    key. Chat / generate / editor / quiz / ingest use the bound user key when
+    the row allows it, otherwise the DeepSeek platform key.
+    """
     base = spec.base_url
-    if slug == "deepseek":
-        return ProviderCfg(cfg.llm.api_key, base or cfg.llm.base_url)
-    if slug == "openrouter":
+    if spec.allows(SURFACE_EMBEDDING):
         return ProviderCfg(cfg.embedding.api_key, base or cfg.embedding.base_url)
-    if slug == "google":
+    if spec.allows(SURFACE_VISION):
         return ProviderCfg(cfg.vision.api_key, base or cfg.vision.base_url)
-    return ProviderCfg(cfg.llm.api_key, base or cfg.llm.base_url)
+
+    req = current_request_llm()
+    if req.paid_by == "user":
+        key = req.user_api_key or _load_user_key(req.user_id, spec.provider_slug)
+        if not key or spec.auth_mode not in (AUTH_USER_KEY, AUTH_PLATFORM_OR_USER):
+            raise RegistryError(f"user key required for {spec.model_key}")
+        return ProviderCfg(key, base)
+    if req.user_api_key and spec.auth_mode in (AUTH_USER_KEY, AUTH_PLATFORM_OR_USER):
+        return ProviderCfg(req.user_api_key, base)
+    if spec.auth_mode == AUTH_USER_KEY:
+        raise RegistryError(f"user key required for {spec.model_key}")
+    if spec.provider_slug == "deepseek":
+        return ProviderCfg(cfg.llm.api_key, base or cfg.llm.base_url)
+    raise RegistryError(f"unknown platform provider {spec.provider_slug}")
+
+
+def _load_user_key(user_id: str, provider_slug: str) -> str:
+    if not user_id or not provider_slug:
+        return ""
+    from . import credentials
+
+    key = credentials.decrypt_user_provider_key(user_id, provider_slug)
+    req = current_request_llm()
+    req.user_api_key = key
+    return key
+
+
+def context_window(spec: ModelConfig) -> int:
+    return spec.context_window_tokens or cfg.llm_input_budget_tokens
+
+
+def input_budget(spec: ModelConfig) -> int:
+    return max(4000, context_window(spec) - 8192)
+
+
+def extra_headers_for(spec: ModelConfig) -> dict[str, str]:
+    if spec.provider_slug == "anthropic":
+        return {"anthropic-version": "2023-06-01"}
+    return {}
 
 
 def credits_for_tokens(

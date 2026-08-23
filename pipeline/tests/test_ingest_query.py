@@ -55,7 +55,7 @@ async def test_index_file_writes_chunks_summary_and_concepts(
     )
     # Every chunk must carry both retrieval representations, or one half of the
     # hybrid search silently returns nothing for this file. The vector lives in
-    # the per-width side table, so a missing one is an absent row rather than a
+    # the per-pin side table, so a missing one is an absent row rather than a
     # NULL column.
     assert (
         workspace.scalar(

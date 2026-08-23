@@ -20,7 +20,7 @@ from typing import Any
 
 from .. import obs
 from ..config import cfg
-from . import models, tools
+from . import compact, models, tools
 from .locale import response_language_rule
 from .search import Passage, search
 from .tools import ToolContext
@@ -80,6 +80,7 @@ async def run_agent(
     numbered = tools.remember(ctx, await _prime(ctx, query))
     yield {"type": "tool", "tool": "search_workspace", "detail": query}
 
+    spec = models._as_spec(model)
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_prompt(locale)}
     ]
@@ -97,9 +98,13 @@ async def run_agent(
         # no answer at all.
         last = step == cfg.agent_max_steps - 1
         try:
+            messages = await compact.compact_messages(messages, spec)
             message = await models.complete(
-                messages, model=model, tools=None if last else schemas
+                messages, model=spec, tools=None if last else schemas
             )
+        except models.UserKeyError as exc:
+            yield exc.as_event()
+            return
         except Exception as exc:
             log.exception("agent step failed")
             yield {"type": "error", "message": str(exc)}
@@ -111,23 +116,25 @@ async def run_agent(
         if not calls:
             break
 
-        messages.append(
-            {
-                "role": "assistant",
-                "content": message.content or "",
-                "tool_calls": [
-                    {
-                        "id": call.id,
-                        "type": "function",
-                        "function": {
-                            "name": call.function.name,
-                            "arguments": call.function.arguments,
-                        },
-                    }
-                    for call in calls
-                ],
-            }
-        )
+        assistant: dict[str, Any] = {
+            "role": "assistant",
+            "content": message.content or "",
+            "tool_calls": [
+                {
+                    "id": call.id,
+                    "type": "function",
+                    "function": {
+                        "name": call.function.name,
+                        "arguments": call.function.arguments,
+                    },
+                }
+                for call in calls
+            ],
+        }
+        reasoning = getattr(message, "reasoning_content", None)
+        if reasoning:
+            assistant["reasoning_content"] = reasoning
+        messages.append(assistant)
         for call in calls:
             name = call.function.name
             args = _parse_args(call.function.arguments)
@@ -155,8 +162,13 @@ async def run_agent(
             ),
         }
     )
-    async for token in models.stream_text(messages, model=model, temperature=0.4):
-        yield {"type": "token", "text": token}
+    try:
+        messages = await compact.compact_messages(messages, spec)
+        async for token in models.stream_text(messages, model=spec, temperature=0.4):
+            yield {"type": "token", "text": token}
+    except models.UserKeyError as exc:
+        yield exc.as_event()
+        return
 
     # done carries the whole turn's spend: the prime search embedding, every
     # tool-loop completion, and the streamed answer. The gateway settles the

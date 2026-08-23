@@ -63,9 +63,6 @@ func rateLimitConfig(appEnv string) ratelimit.Config {
 	if n := envInt("RATE_LIMIT_AI_PER_HOUR", 0); n > 0 {
 		cfg.AI.Limit = n
 	}
-	if n := envInt("RATE_LIMIT_CONCURRENT_STREAMS", 0); n > 0 {
-		cfg.ConcurrentStreams = n
-	}
 	return cfg
 }
 
@@ -212,9 +209,10 @@ func main() {
 		log.Fatalf("blob store: %v", err)
 	}
 
+	pipeSecret := env("PIPELINE_SECRET", "")
 	var pipe *pipeline.Client
 	if u := env("PIPELINE_URL", ""); u != "" {
-		pipe = pipeline.New(u)
+		pipe = pipeline.New(u, pipeSecret)
 		log.Printf("pipeline at %s", u)
 	}
 
@@ -241,6 +239,11 @@ func main() {
 		log.Fatalf("model registry: %v", err)
 	}
 	st.SetModelRegistry(modelReg)
+	if credKey, err := store.ParseCredentialKey(env("LLM_CREDENTIALS_KEY", "")); err == nil {
+		st.SetLLMCredentialKey(credKey)
+	} else if env("LLM_CREDENTIALS_KEY", "") != "" {
+		log.Printf("llm credentials key: %v", err)
+	}
 	go modelReg.Poll(ctx)
 
 	emailSender, err := newEmailSender(appEnv, emailBackend, resendAPIKey, emailFrom, emailReplyTo)
@@ -363,7 +366,7 @@ func main() {
 		EmailUnsubscribeSecret: emailUnsubscribeSecret,
 		CollaborationSecret:    env("COLLABORATION_SECRET", "dev-collaboration-secret"),
 		CollaborationURL:       env("COLLABORATION_URL", "ws://localhost:1234"),
-		PipelineSecret:         env("PIPELINE_SECRET", ""),
+		PipelineSecret:         pipeSecret,
 		AllowedOrigins:         envList("CORS_ALLOWED_ORIGINS"),
 		RateLimit:              rateLimitConfig(appEnv),
 		ModelRegistry:          modelReg,

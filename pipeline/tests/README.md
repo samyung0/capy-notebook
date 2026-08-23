@@ -5,7 +5,7 @@ Three tiers:
 | tier | files | needs | cost |
 | --- | --- | --- | --- |
 | **offline unit** | `test_chunking.py`, `test_retrieval_helpers.py`, `test_modal_parser.py`, `test_figures.py`, `test_ingest_worker.py`, `test_parse_slots.py`, `test_marker_worker_ocr.py`, `test_ai_adapter.py` | nothing | free, ~2s |
-| **SQL integration** (`@pytest.mark.integration`) | `test_store_sql.py` | Docker | free, ~10s |
+| **SQL integration** (`@pytest.mark.integration`) | `test_store_sql.py`, `test_model_configs_lock.py` | Docker | free, ~10s |
 | **cassette integration** (`@pytest.mark.cassette`) | `test_ingest_query.py`, `test_generate.py` | Docker + recorded cassettes | free on replay |
 
 The retrieval index is owned by `server/migrations/0001_init.sql`, so both
@@ -41,7 +41,7 @@ model or embedding-dimension changes, or chunking changes. Recording hits the
 real services and costs tokens.
 
 ```bash
-export OPENROUTER_API_KEY="..."   # embeddings
+export EMBEDDING_API_KEY="..."    # embeddings (OPENROUTER_API_KEY still works)
 export DEEPSEEK_API_KEY="..."     # summaries, concepts, answers
 
 export EVO_TEST_RECORD=once       # record only interactions not already saved

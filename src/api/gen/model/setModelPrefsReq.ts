@@ -9,7 +9,13 @@ export interface SetModelPrefsReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   chatModelKey?: string;
+  chatReasoningEffort?: string;
+  chatReasoningMode?: string;
   editorModelKey?: string;
   generateModelKey?: string;
+  generateReasoningEffort?: string;
+  generateReasoningMode?: string;
   quizModelKey?: string;
+  quizReasoningEffort?: string;
+  quizReasoningMode?: string;
 }

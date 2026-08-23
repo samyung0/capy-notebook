@@ -14,6 +14,7 @@ import re
 import secrets
 from typing import Any
 
+from .. import registry
 from ..config import cfg
 from ..jobs import RetryableError
 from ..registry import embedding_spec, ingest_spec
@@ -250,7 +251,10 @@ def _parse_summary_payload(raw: str) -> tuple[str, str]:
 
 
 def _input_budget() -> int:
-    return max(1000, cfg.llm_input_budget_tokens - _PROMPT_RESERVE_TOKENS)
+    try:
+        return max(1000, registry.input_budget(ingest_spec()))
+    except Exception:  # noqa: BLE001 - no ingest pin yet; use the env fallback
+        return max(1000, cfg.llm_input_budget_tokens - _PROMPT_RESERVE_TOKENS)
 
 
 def _chunk_groups(chunks: list[Chunk], budget: int) -> list[list[Chunk]]:
@@ -284,6 +288,7 @@ async def _summarize_once(body: str, word_target: int) -> tuple[str, str]:
             },
         ],
         model=ingest_spec(),
+        reasoning=False,
     )
     return _parse_summary_payload(raw)
 
@@ -304,6 +309,7 @@ async def _summarize_mapped(chunks: list[Chunk], word_target: int) -> tuple[str,
                 },
             ],
             model=ingest_spec(),
+            reasoning=False,
         )
         if raw and raw.strip():
             partials.append(raw.strip())
@@ -386,6 +392,7 @@ async def extract_concepts(
                 ],
                 model=ingest_spec(),
                 temperature=0.0,
+                reasoning=False,
             )
         except Exception:
             log.warning("concept extraction failed for %s", file_name, exc_info=True)

@@ -70,21 +70,35 @@ func (s *Store) SetLocale(ctx context.Context, userID, locale string) error {
 	return err
 }
 
+// ModelPrefsPatch updates one or more surface preferences. Nil fields stay.
+type ModelPrefsPatch struct {
+	ChatModelKey            *string
+	GenerateModelKey        *string
+	EditorModelKey          *string
+	QuizModelKey            *string
+	ChatReasoningMode       *string
+	ChatReasoningEffort     *string
+	GenerateReasoningMode   *string
+	GenerateReasoningEffort *string
+	QuizReasoningMode       *string
+	QuizReasoningEffort     *string
+}
+
 // SetModelPrefs stores the user's chat/generate/editor/quiz preference. Omitted
 // fields are left unchanged so a picker on one surface cannot wipe another.
-// Empty strings are rejected: every account always has a concrete key, populated
-// from the registry default at insert. Registry keys are validated against
-// enabled configs that advertise the surface. Quiz also accepts a browser:
-// prefix for in-tab GGUFs, which skip registry lookup.
-func (s *Store) SetModelPrefs(ctx context.Context, userID string, chatKey, generateKey, editorKey, quizKey *string) error {
+// Empty model keys are rejected: every account always has a concrete key,
+// populated from the registry default at insert. Registry keys are validated
+// against enabled configs that advertise the surface. user_key rows also need
+// a credential. Quiz also accepts a browser: prefix for in-tab GGUFs.
+func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPrefsPatch) error {
 	for _, pref := range []struct {
 		key     *string
 		surface string
 	}{
-		{chatKey, SurfaceChat},
-		{generateKey, SurfaceGenerate},
-		{editorKey, SurfaceEditor},
-		{quizKey, SurfaceQuiz},
+		{patch.ChatModelKey, SurfaceChat},
+		{patch.GenerateModelKey, SurfaceGenerate},
+		{patch.EditorModelKey, SurfaceEditor},
+		{patch.QuizModelKey, SurfaceQuiz},
 	} {
 		if pref.key == nil {
 			continue
@@ -98,9 +112,18 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, chatKey, gener
 			}
 			continue
 		}
-		if err := s.assertModelKey(ctx, *pref.key, pref.surface); err != nil {
+		if err := s.assertModelKey(ctx, userID, *pref.key, pref.surface); err != nil {
 			return err
 		}
+	}
+	if err := validateReasoningPatch(patch.ChatReasoningMode, patch.ChatReasoningEffort); err != nil {
+		return err
+	}
+	if err := validateReasoningPatch(patch.GenerateReasoningMode, patch.GenerateReasoningEffort); err != nil {
+		return err
+	}
+	if err := validateReasoningPatch(patch.QuizReasoningMode, patch.QuizReasoningEffort); err != nil {
+		return err
 	}
 	deref := func(p *string) string {
 		if p == nil {
@@ -113,29 +136,121 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, chatKey, gener
 		generate_model_key = CASE WHEN $4 THEN $5 ELSE generate_model_key END,
 		editor_model_key = CASE WHEN $6 THEN $7 ELSE editor_model_key END,
 		quiz_model_key = CASE WHEN $8 THEN $9 ELSE quiz_model_key END,
+		chat_reasoning_mode = CASE WHEN $10 THEN $11 ELSE chat_reasoning_mode END,
+		chat_reasoning_effort = CASE WHEN $12 THEN $13 ELSE chat_reasoning_effort END,
+		generate_reasoning_mode = CASE WHEN $14 THEN $15 ELSE generate_reasoning_mode END,
+		generate_reasoning_effort = CASE WHEN $16 THEN $17 ELSE generate_reasoning_effort END,
+		quiz_reasoning_mode = CASE WHEN $18 THEN $19 ELSE quiz_reasoning_mode END,
+		quiz_reasoning_effort = CASE WHEN $20 THEN $21 ELSE quiz_reasoning_effort END,
 		updated_at = now()
 		WHERE id=$1`, userID,
-		chatKey != nil, deref(chatKey),
-		generateKey != nil, deref(generateKey),
-		editorKey != nil, deref(editorKey),
-		quizKey != nil, deref(quizKey))
+		patch.ChatModelKey != nil, deref(patch.ChatModelKey),
+		patch.GenerateModelKey != nil, deref(patch.GenerateModelKey),
+		patch.EditorModelKey != nil, deref(patch.EditorModelKey),
+		patch.QuizModelKey != nil, deref(patch.QuizModelKey),
+		patch.ChatReasoningMode != nil, deref(patch.ChatReasoningMode),
+		patch.ChatReasoningEffort != nil, deref(patch.ChatReasoningEffort),
+		patch.GenerateReasoningMode != nil, deref(patch.GenerateReasoningMode),
+		patch.GenerateReasoningEffort != nil, deref(patch.GenerateReasoningEffort),
+		patch.QuizReasoningMode != nil, deref(patch.QuizReasoningMode),
+		patch.QuizReasoningEffort != nil, deref(patch.QuizReasoningEffort))
 	return err
 }
 
-func (s *Store) assertModelKey(ctx context.Context, key, surface string) error {
-	var ok bool
+func validateReasoningPatch(mode, effort *string) error {
+	if mode != nil && *mode != "" && *mode != "off" && *mode != "on" {
+		return ErrNotFound
+	}
+	if effort != nil && *effort != "" {
+		switch *effort {
+		case "low", "medium", "high", "xhigh", "max":
+		default:
+			return ErrNotFound
+		}
+	}
+	return nil
+}
+
+func (s *Store) assertModelKey(ctx context.Context, userID, key, surface string) error {
+	var authMode, provider string
 	err := s.pool.QueryRow(ctx, `
-		SELECT EXISTS (
-			SELECT 1 FROM model_configs
-			 WHERE model_key=$1 AND enabled AND $2 = ANY(surfaces)
-		)`, key, surface).Scan(&ok)
+		SELECT auth_mode, provider_slug FROM model_configs
+		 WHERE model_key=$1 AND enabled AND $2 = ANY(surfaces)
+		 ORDER BY version DESC LIMIT 1`, key, surface).Scan(&authMode, &provider)
+	if isNoRows(err) {
+		return ErrNotFound
+	}
 	if err != nil {
 		return err
 	}
-	if !ok {
-		return ErrNotFound
+	if authMode == models.AuthUserKey {
+		ok, credErr := s.HasLLMCredential(ctx, userID, provider)
+		if credErr != nil {
+			return credErr
+		}
+		if !ok {
+			return ErrModelUnavailable
+		}
 	}
 	return nil
+}
+
+type UserLLMPrefs struct {
+	ChatModelKey            string
+	GenerateModelKey        string
+	EditorModelKey          string
+	QuizModelKey            string
+	ChatReasoningMode       string
+	ChatReasoningEffort     string
+	GenerateReasoningMode   string
+	GenerateReasoningEffort string
+	QuizReasoningMode       string
+	QuizReasoningEffort     string
+}
+
+func (s *Store) UserLLMPrefs(ctx context.Context, userID string) (UserLLMPrefs, error) {
+	var p UserLLMPrefs
+	err := s.pool.QueryRow(ctx, `
+		SELECT chat_model_key, generate_model_key, editor_model_key, quiz_model_key,
+		       chat_reasoning_mode, chat_reasoning_effort,
+		       generate_reasoning_mode, generate_reasoning_effort,
+		       quiz_reasoning_mode, quiz_reasoning_effort
+		  FROM users WHERE id=$1`, userID).Scan(
+		&p.ChatModelKey, &p.GenerateModelKey, &p.EditorModelKey, &p.QuizModelKey,
+		&p.ChatReasoningMode, &p.ChatReasoningEffort,
+		&p.GenerateReasoningMode, &p.GenerateReasoningEffort,
+		&p.QuizReasoningMode, &p.QuizReasoningEffort,
+	)
+	if isNoRows(err) {
+		return p, ErrNotFound
+	}
+	return p, err
+}
+
+func (p UserLLMPrefs) ModelKey(surface string) string {
+	switch surface {
+	case SurfaceChat:
+		return p.ChatModelKey
+	case SurfaceGenerate:
+		return p.GenerateModelKey
+	case SurfaceEditor:
+		return p.EditorModelKey
+	case SurfaceQuiz:
+		return p.QuizModelKey
+	}
+	return ""
+}
+
+func (p UserLLMPrefs) Reasoning(surface string) (mode, effort string) {
+	switch surface {
+	case SurfaceChat:
+		return p.ChatReasoningMode, p.ChatReasoningEffort
+	case SurfaceGenerate:
+		return p.GenerateReasoningMode, p.GenerateReasoningEffort
+	case SurfaceQuiz:
+		return p.QuizReasoningMode, p.QuizReasoningEffort
+	}
+	return "", ""
 }
 
 // accountModelPrefs is the set written onto a brand-new user row. The registry

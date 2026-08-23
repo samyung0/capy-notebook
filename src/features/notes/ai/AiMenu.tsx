@@ -32,6 +32,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { llmKeyUserMessage } from '@/lib/errors';
 import { applyAiPreview, setAiPreview, useAiPreview } from './aiPreviewState';
 
 interface AiAction {
@@ -105,6 +106,10 @@ const ACTIONS: AiAction[] = [
   },
 ];
 
+function editorAiError(error: unknown): string {
+  return llmKeyUserMessage(error) ?? m.editor_ai_failed();
+}
+
 export function AiMenu() {
   const editor = useEditorRef();
   const open = usePluginOption(AIChatPlugin, 'open');
@@ -116,7 +121,7 @@ export function AiMenu() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const loading =
     chat.status === 'streaming' || chat.status === 'submitted' || streaming;
-  const streamError = chat.error ? m.editor_ai_failed() : null;
+  const streamError = chat.error ? editorAiError(chat.error) : null;
 
   useEffect(() => {
     if (!open) return;

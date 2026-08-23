@@ -144,7 +144,7 @@ Postgres, written in the same transaction as the counter it feeds.
 | --- | --- | --- |
 | Paid by | workspace **owner** | the **actor** |
 | Why | the bytes sit in their account | the cost is the request itself, and it is gone whether or not anything was kept |
-| Enforced by | `gateStorageTx` | `ReserveCredits` |
+| Enforced by | `gateStorageTx` | `BeginSpend` |
 | Error | `storage_quota_exceeded` | `llm_credits_exhausted` |
 
 An editor generating into someone else's workspace spends **their own** credits
@@ -183,7 +183,7 @@ rejected, and a `PATCH` only touches the surfaces it names. Editor AI
 `users.editor_model_key` the same way chat does. It is the highest-call-volume
 surface per user, so it is the one where an expensive choice shows up first in
 credit burn. Quiz marking (`POST /api/quiz-grade`) resolves
-`users.quiz_model_key` the same way, reserved at the editor estimate. A
+`users.quiz_model_key` the same way. A
 `browser:` prefix is a client-only in-tab GGUF: it is stored on the user row,
 skipped by registry lookup, and never metered. Those grades never call
 `POST /api/quiz-grade`, write no `usage_events`, and do not appear on
@@ -228,23 +228,27 @@ month by `kind` and `surface` and returns recent `usage_events` rows. It does
 ledger by up to a minute. USD is omitted: `cost_micro_usd` is reconciliation
 only.
 
-### Reserve → settle
+### Begin → settle
 
 ```
-reserve(estimate)  →  model calls  →  settle(measured)
-                                  ↘  release()      (failed before spending)
-                                  ↘  sweep          (crashed; expires at 30 min)
+begin(lease)  →  model calls  →  settle(measured)
+                              ↘  release()      (failed before spending)
+                              ↘  sweep          (crashed; expires at 30 min)
 ```
 
-Reservations exist because a purely post-hoc ledger lets two concurrent requests
-both pass a gate that neither would pass alone. The estimate only has to be the
-right order of magnitude — settlement replaces it.
+A lease is a 0-amount `credit_reservations` row, not a credit hold. The gate is
+`used >= limit`, plus at most five open leases per actor
+(`ConcurrentLLMLeases`). That bounds overshoot at five in-flight settlements
+without a per-model estimate that has to be bumped when an expensive row is
+added.
+
+BYOK skips the lease. Query embeddings are recorded at zero credits, so those
+calls cost the actor nothing to start. Ingest embeddings still bill through the
+worker.
 
 **A stream abandoned before its `done` event settles at zero.** Undercharging a
 user for an answer they never saw is the right side to err on, and
 reconciliation finds the gap.
-
-Estimates live in `server/internal/store/pricing.go`.
 
 ### Where tokens are captured
 
@@ -255,7 +259,11 @@ silently free.
 
 A contextvar accumulator (`obs.Usage`) aggregates across every call a request
 makes, because the unit of billing is the request: one chat turn is an agent
-loop of several completions plus embeddings, and the user asked one question.
+loop of several completions. Query embeddings travel in the same envelope and
+are written at **zero credits**. The product absorbs that cost. The usage row
+still carries `cost_micro_usd` and the model pin for reconciliation, and those
+must come from the workspace's embedding pin, not the live registry default.
+Ingest embeddings still bill the actor at the workspace pin's rates.
 
 Streamed completions send `stream_options={"include_usage": True}`. **Without
 it an OpenAI-compatible stream reports no usage at all**, which is how the
@@ -350,9 +358,9 @@ They authenticate by signature and both providers apply their own delivery rate.
 
 **Concurrency, not just rate**, bounds chat abuse: one stream runs for minutes
 and drives an agent loop the whole time, so a requests-per-hour budget alone
-still allows arbitrary parallel spend. `AcquireStream` uses a Redis sorted set
-whose entries expire, so a replica that dies mid-stream leaks a slot that ages
-out rather than one that is lost forever.
+still allows arbitrary parallel spend. `BeginSpend` counts open leases in
+Postgres (cap 5). A replica that dies mid-stream leaves a row the sweeper
+releases after 30 minutes. BYOK does not take a lease.
 
 **Redis failures fail open.** A limiter outage must not become an API outage;
 the edge still bounds the blast radius.
@@ -428,5 +436,4 @@ the likelihood grew every time the registry was reconfigured.
 | `CORS_ALLOWED_ORIGINS` | gateway | comma separated; empty means `*` |
 | `RATE_LIMIT_DISABLED` | gateway | forced true under `APP_ENV=e2e` |
 | `RATE_LIMIT_AI_PER_HOUR` | gateway | overrides the default 200; 15/min burst and editor 120/min are code-only |
-| `RATE_LIMIT_CONCURRENT_STREAMS` | gateway | overrides the default 3 |
 | `SENTRY_DSN_GATEWAY` / `_RETRIEVAL` / `_WORKER` / `_COLLABORATION` | compose | mapped onto each process's `SENTRY_DSN` |

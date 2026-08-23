@@ -24,11 +24,14 @@ Two Python processes share one Postgres schema owned by Go migrations
 | Process | Entry | Role |
 | --- | --- | --- |
 | Ingest worker | `python -m pipeline.ingest.worker` | Claims jobs, parses, chunks, embeds, writes a two-tier file summary, extracts concepts. Horizontally scalable (`WORKER_REPLICAS`); each replica runs one job at a time |
-| Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate` over the same index |
+| Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/quiz-grade`, `/complete/stream`, `/plate-ai/*` over the same index |
 
 The Go gateway is the public face: it authenticates the user, proxies chat and
 generate to the retrieval service, and owns material persistence (including the
-internal materials endpoint the chat agent calls).
+internal materials endpoint the chat agent calls). Retrieval HTTP is
+Go-only: every route except `/healthz` requires `X-Pipeline-Secret`. User
+provider keys stay ciphertext on that hop; retrieval decrypts them with
+`LLM_CREDENTIALS_KEY`.
 
 ```mermaid
 flowchart LR
@@ -98,8 +101,11 @@ disagreement findable instead of leaving it to show up as poor retrieval.
 
 Retargeting the registry's embedding default therefore applies **only to
 workspaces created afterwards**. Existing workspaces keep resolving the row
-they were pinned to, which is why an embedding row any workspace still points
-at must never be deleted or lose its provider.
+they were pinned to. Embedding rows cannot be disabled, deleted, stripped,
+or rewritten onto a different `provider_model_id` / `params`
+(`protect_embedding_model_configs`). A later model, including another
+2560-d one, is a new catalog row and a new vector table. `base_url` may
+move so the same weights stay reachable.
 
 This replaced a process-start freeze of the embedding default in both the Go
 and Python registries. The freeze stopped a 30-second poll from mixing spaces
@@ -108,40 +114,51 @@ each container last booted, so two replicas could legitimately disagree and a
 redeploy could silently change the answer. Nothing is frozen at process start
 now.
 
-### Vectors are stored one table per width
+New workspaces take the live default through `newWorkspaceEmbedding`
+(`CreateWorkspace` always calls it). Clone copies the source pin.
+Fixtures that `INSERT INTO workspaces` skip the helper and land on the
+column default, which is kept equal to the seeded `qwen-embed` row.
 
-`rag_chunks` holds the passage; the vector lives beside it in
-`rag_chunk_vectors_<dim>` (`rag_chunk_vectors_2560` today), one HNSW index each.
-The width is part of the `halfvec` column type and pgvector cannot index a
-column whose dimension varies, so a second width needs a second table — but the
-lexical half of hybrid search (`text`, `indexed_text`, `search`, `regions`,
-pages) does not depend on the model and stays in one place. `store.vector_table`
-in Python and `vectorTable` in Go both map a width to a table name from a fixed
-allowlist, because that name is interpolated into SQL.
+### Vectors are stored one table per embedding pin
 
-Note what this does and does not buy: it isolates **dimensions**, not spaces.
-Two different 2560-dim models share the table and its index. What guarantees a
-query only meets its own space is the workspace pin being immutable.
+`rag_chunks` holds the passage. The vector lives beside it in that pin's
+table (`rag_chunk_vectors_2560` for `qwen-embed` v1). The width is part of
+the `halfvec` column type, so a second width needs a second table. A
+second model at the same width also needs its own table. Two geometries
+must not share an HNSW index.
 
-Adding a width means a new table in `0001_init.sql`, a new entry in both
-allowlists, and the value added to the `workspaces.embedding_dim` and
-`model_configs` check constraints. Removing one is not supported.
+The lexical half of hybrid search (`text`, `indexed_text`, `search`,
+`regions`, pages) does not depend on the model and stays in `rag_chunks`.
+`store.vector_table` in Python and `vectorTable` in Go map
+`(model_key, version)` to a table name from a fixed allowlist, because
+that name is interpolated into SQL.
+
+Adding a model means a new table in `0001_init.sql`, a new allowlist
+entry in both languages, and `params.vector_table` on the catalog row.
+Removing a table is not supported.
 
 ### Reindexing is not available
 
-There is no job that re-embeds a workspace into a different model, and nothing
-in the product changes a workspace's embedding pin after creation. That is a
-real limitation, not an oversight: re-embedding is proportional to total corpus
-size rather than to what changed, so it is the one operation whose cost is
-unbounded by anything the user just did. Until it exists:
+There is no job that re-embeds a workspace into a different model, and
+nothing in the product changes a workspace's embedding pin after
+creation. There is also no per-file re-embed path: once any upload can
+rewrite vectors in place, every later change inherits that mess and the
+cost. Donor copy may re-embed when the only ready donor is in another
+space. That is reuse falling back, not a product feature.
+
+Re-embedding is proportional to total corpus size rather than to what
+changed, so it is the one operation whose cost is unbounded by anything
+the user just did. Until a reindex job exists:
 
 - a workspace stays in its original space for life;
 - cloning inherits the source's pin (`CloneWorkspace`) because
-  `cloneRetrievalIndex` copies vectors verbatim rather than re-embedding — a
-  clone that took the current default would be querying one space against
+  `cloneRetrievalIndex` copies vectors verbatim rather than re-embedding.
+  A clone that took the current default would query one space against
   chunks in another;
-- an embedding model in use has to stay reachable, which is an operator
-  obligation. See [deployment-runbook.md](deployment-runbook.md).
+- an embedding model in use has to stay reachable. The row itself cannot
+  be disabled, deleted, or rewritten onto a different model. See
+  [deployment-runbook.md](deployment-runbook.md). Prefer an open-weight
+  model so the same weights can be self-hosted if a vendor drops them.
 
 ## Ingest workflow
 
@@ -382,7 +399,10 @@ always point at document passages.
 
 `pipeline/retrieval/search.py` + `store.hybrid_search`:
 
-1. Embed the query.
+1. Embed the query. Search reads the workspace embedding pin (the same
+   row ingest used). When that pin is Qwen3-Embedding, the query is sent as
+   `Instruct: …\nQuery:…`; documents stay raw. Lexical terms use the
+   unprefixed query. Other embedding pins get the query unchanged.
 2. One SQL statement runs vector (cosine / HNSW) and lexical (`tsvector`)
    candidates, fused with reciprocal rank fusion (RRF). Ranks are fused rather
    than scores because cosine distance and `ts_rank_cd` share no unit.
@@ -415,8 +435,12 @@ Streaming chat (`POST /chat/stream` via the Go gateway):
    model ask wastes a round.
 3. Capped tool loop (`EVO_AGENT_MAX_STEPS`, default 12). The final round drops
    tools entirely so the turn cannot end on another tool call with no answer.
-4. SSE events: `tool` (progress), `citations` (once, before tokens), `token`,
-   `done` (or `error`).
+4. Before each completion, the transcript is compacted if it has reached 90%
+   of the pinned model's `context_window_tokens`: keep the system prompt and
+   the last turns (tool call + result stay together), summarize the middle,
+   then clip if still over.
+5. SSE events: `tool` (progress), `citations` (once, before tokens), `token`,
+   `done` (or `error` with `invalid_key` / `key_failed` when a user key fails).
 
 ### Tools
 
@@ -503,14 +527,15 @@ job and pipeline `/workspace/delete` endpoint are gone.
 
 | Concern | Env | Default / note |
 | --- | --- | --- |
-| Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material` |
+| Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
+| User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. |
 | Parse | `MODAL_FAST_PARSE_URL` (or `MODAL_PARSE_URL`) | Marker app `evo-mineru-fast` |
 | Chunk size | `EVO_CHUNK_*` | Character budgets, not tokens |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
 | Query model | `EVO_QUERY_MODEL` | Last resort for a call handed a bare model string. Ingest and vision come from the job pin; chat/generate/editor from Settings → LLM via the gateway |
 | Search | `EVO_SEARCH_CANDIDATES`, `EVO_SEARCH_TOP_K`, `EVO_SEARCH_PER_FILE_CAP` | |
 | Agent | `EVO_AGENT_MAX_STEPS` | Default 12. Cap is the design, not a safety valve |
-| LLM input budget | `EVO_LLM_INPUT_BUDGET_TOKENS` | Default 50000. One CJK-aware budget for file summaries, generate context, and map-reduce |
+| LLM input budget | catalog `context_window_tokens`, fallback `EVO_LLM_INPUT_BUDGET_TOKENS` | Per-model window minus 8k for output. Used for file summaries, generate gather/map-reduce, editor/quiz clips, and chat compact. |
 | Captions | `EVO_CAPTION_IMAGES`, `EVO_CAPTION_CONCURRENCY`, `EVO_CAPTION_MAX_EDGE`, `EVO_CAPTION_VERSION` | Per file at upload; the env flag is only a fallback |
 | Caption safety valve | `EVO_CAPTION_MAX_PER_FILE` | `0` (uncapped); the filters bound the cost |
 

@@ -4,9 +4,14 @@
  * Evo Notes API
  * OpenAPI spec version: 0.1.0
  */
+import type { ModelReasoning } from './modelReasoning.ts';
 
 export interface ModelOption {
+  available: boolean;
   displayName: string;
   isDefault: boolean;
   key: string;
+  providerSlug: string;
+  reasoning?: ModelReasoning;
+  usesUserKey: boolean;
 }

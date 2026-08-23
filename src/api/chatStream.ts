@@ -47,6 +47,12 @@ function errorMessage(payload: unknown, fallback: string): string {
     message?: unknown;
   };
   if (body.code === 'model_unavailable') return m.chat_model_unavailable();
+  if (body.code === 'invalid_llm_key' || body.code === 'invalid_key') {
+    return m.settings_llm_key_invalid();
+  }
+  if (body.code === 'llm_key_failed' || body.code === 'key_failed') {
+    return m.settings_llm_key_failed();
+  }
   if (typeof body.error?.message === 'string') return body.error.message;
   if (typeof body.message === 'string') return body.message;
   if (typeof body.detail === 'string') return body.detail;
@@ -113,6 +119,7 @@ export async function streamChat(
       tokenCount?: number;
       generationId?: string;
       message?: string;
+      code?: string;
       modelKey?: string;
       modelVersion?: number;
       modelDisplayName?: string;
@@ -148,7 +155,7 @@ export async function streamChat(
         });
         break;
       case 'error':
-        reportError(ev.message ?? 'stream error');
+        reportError(errorMessage(ev, ev.message ?? 'stream error'));
         break;
     }
   };

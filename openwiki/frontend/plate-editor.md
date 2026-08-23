@@ -272,11 +272,11 @@ Generate/comment replies follow the account locale injected by the gateway; edit
 keep the selection's language unless the instruction asks to translate. AI
 comments use the same relative-anchor REST path as user comments.
 
-Editor AI (`/ai/command`, `/ai/copilot`, `/complete/stream`) uses the registry's
-**editor** default. It is not the Settings → LLM chat/generate picker, and the
-browser cannot choose a model. Those preferences only pin new chat threads and
-per-request generate. See [observability-metering.md](../observability-metering.md)
-for pinning and credit rates.
+Editor AI (`/ai/command`, `/ai/copilot`, `/complete/stream`) resolves
+`users.editor_model_key` the same way chat does, including BYOK. Chrome is
+gated by `VITE_FEATURE_EDITOR_AI` (off by default). See
+[observability-metering.md](../observability-metering.md) for pinning, leases,
+and credit rates.
 
 ## Static rendering
 

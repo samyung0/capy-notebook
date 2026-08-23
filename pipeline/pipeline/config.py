@@ -17,6 +17,14 @@ def _env(key: str, default: str = "") -> str:
     return os.getenv(key, default)
 
 
+def _env_first(*keys: str, default: str = "") -> str:
+    for key in keys:
+        value = os.getenv(key)
+        if value:
+            return value
+    return default
+
+
 @dataclass(frozen=True)
 class ProviderCfg:
     api_key: str
@@ -45,6 +53,9 @@ class Config:
     # one place. Unset disables those tools instead of bypassing the checks.
     gateway_url: str = _env("GATEWAY_URL", "")
     pipeline_secret: str = _env("PIPELINE_SECRET", "")
+    # Same 32-byte value as the Go gateway. Retrieval decrypts user keys here
+    # so the plaintext never crosses the gateway hop.
+    llm_credentials_key: str = _env("LLM_CREDENTIALS_KEY", "")
 
     # ---- worker -----------------------------------------------------------
     poll_interval: float = float(_env("EVO_POLL_INTERVAL", "2.0"))
@@ -83,19 +94,23 @@ class Config:
     chunk_overlap_chars: int = int(_env("EVO_CHUNK_OVERLAP_CHARS", "200"))
     chunk_min_chars: int = int(_env("EVO_CHUNK_MIN_CHARS", "160"))
 
-    # ---- embeddings (OpenRouter, OpenAI-compatible) -----------------------
+    # ---- embeddings (OpenAI-compatible) -----------------------------------
     # Credentials only. Which embedding model runs is never configured here: it
     # is pinned per workspace (`workspaces.embedding_model_key`) and resolved
     # from `model_configs`, because every chunk already in that workspace lives
     # in that model's vector space and there is no reindex job to move them.
+    # One env pair for every embedding row; base_url on the catalog row wins
+    # when set. OPENROUTER_* is the previous name and still accepted.
     embedding = ProviderCfg(
-        api_key=_env("OPENROUTER_API_KEY"),
-        base_url=_env("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1"),
+        api_key=_env_first("EMBEDDING_API_KEY", "OPENROUTER_API_KEY"),
+        base_url=_env_first(
+            "EMBEDDING_BASE_URL",
+            "OPENROUTER_BASE_URL",
+            default="https://openrouter.ai/api/v1",
+        ),
     )
-    # The width the schema ships with, matching halfvec(N) in
-    # server/migrations/0001_init.sql. Vectors are stored one table per width, so
-    # a new width is a schema change (see rag_chunk_vectors_2560) rather than an
-    # env edit; this stays as the declared default for fixtures and assertions.
+    # Width the seeded qwen-embed row emits. Fixtures use this for synthetic
+    # vectors. A new model is a new rag_chunk_vectors_* table, not an env edit.
     embedding_dim: int = int(_env("EMBEDDING_DIM", "2560"))
     embedding_batch: int = int(_env("EVO_EMBEDDING_BATCH", "64"))
 

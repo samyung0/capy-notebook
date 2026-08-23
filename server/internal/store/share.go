@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/evonotes/server/internal/materialdoc"
+	"github.com/evonotes/server/internal/models"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -865,7 +866,7 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 		}
 	}
 
-	if err := cloneRetrievalIndex(ctx, tx, srcID, newID, srcEmbed.Dim, fileMap, chapterMap); err != nil {
+	if err := cloneRetrievalIndex(ctx, tx, srcID, newID, srcEmbed.Pin, fileMap, chapterMap); err != nil {
 		return Workspace{}, err
 	}
 
@@ -940,16 +941,13 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 // describes. Copying the vectors is pure SQL where re-ingesting would mean
 // paying for the parse and the embeddings again.
 //
-// embeddingDim is the source workspace's width, which the clone inherited, and
-// therefore names the vector table on both sides of the copy.
+// The source pin names the vector table on both sides of the copy. An empty
+// workspace has no vectors, so the table is resolved only once there is
+// content; a fixture pin that is not in the allowlist can still clone.
 //
 // Canonical content receives fresh ids because it is workspace-scoped, while
 // duplicate logical files in the clone keep sharing one copied index.
-func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, embeddingDim int, fileMap, chapterMap map[string]string) error {
-	vectors, err := vectorTable(embeddingDim)
-	if err != nil {
-		return err
-	}
+func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, pin models.Pin, fileMap, chapterMap map[string]string) error {
 	oldFiles, newFiles := unzipIDs(fileMap)
 	if len(oldFiles) > 0 {
 		contentMap := map[string]string{}
@@ -975,6 +973,10 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, em
 		oldContents, newContents := unzipIDs(contentMap)
 
 		if len(oldContents) > 0 {
+			vectors, err := vectorTable(pin)
+			if err != nil {
+				return err
+			}
 			if _, err := tx.Exec(ctx, `
 				WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 				INSERT INTO rag_contents (id, workspace_id, content_hash, status,
@@ -998,14 +1000,13 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, em
 				oldFiles, newFiles, oldContents, newContents, newID); err != nil {
 				return err
 			}
-		}
-		// Mirrors copy_content_from_donor in pipeline/pipeline/retrieval/store.py:
-		// dest chunk ids are derived from dest workspace id + donor chunk id so
-		// the vector copy can recompute them and pair each embedding with its
-		// passage. newID is freshly minted, so the derivation is still unique
-		// across clones of the same source.
-		const newChunkID = `'rc_' || substr(md5($3 || c.id), 1, 12)`
-		if _, err := tx.Exec(ctx, `
+			// Mirrors copy_content_from_donor in pipeline/pipeline/retrieval/store.py:
+			// dest chunk ids are derived from dest workspace id + donor chunk id so
+			// the vector copy can recompute them and pair each embedding with its
+			// passage. newID is freshly minted, so the derivation is still unique
+			// across clones of the same source.
+			const newChunkID = `'rc_' || substr(md5($3 || c.id), 1, 12)`
+			if _, err := tx.Exec(ctx, `
 			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 			INSERT INTO rag_chunks
 				(id, workspace_id, content_id, chunk_idx, section_path, text, indexed_text,
@@ -1014,36 +1015,36 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, em
 			       $3, m.new_id, c.chunk_idx, c.section_path, c.text, c.indexed_text,
 			       c.token_count, c.page_start, c.page_end, c.regions, c.search
 			FROM rag_chunks c JOIN cmap m ON m.old_id = c.content_id`,
-			oldContents, newContents, newID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `
+				oldContents, newContents, newID); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `
 			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 			INSERT INTO `+vectors+` (chunk_id, workspace_id, embedding)
 			SELECT `+newChunkID+`, $3, v.embedding
 			FROM rag_chunks c
 			JOIN cmap m ON m.old_id = c.content_id
 			JOIN `+vectors+` v ON v.chunk_id = c.id`,
-			oldContents, newContents, newID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `
+				oldContents, newContents, newID); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `
 			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 			INSERT INTO rag_content_summaries
 				(content_id, workspace_id, fingerprint, descriptor, summary, summary_version, updated_at)
 			SELECT c.new_id, $3, s.fingerprint, s.descriptor, s.summary, s.summary_version, s.updated_at
 			FROM rag_content_summaries s JOIN cmap c ON c.old_id = s.content_id`,
-			oldContents, newContents, newID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `
+				oldContents, newContents, newID); err != nil {
+				return err
+			}
+			if _, err := tx.Exec(ctx, `
 			INSERT INTO rag_concepts (id, workspace_id, name, norm)
 			SELECT 'rcp_' || substr(md5(random()::text || clock_timestamp()::text || k.id), 1, 12),
 			       $1, k.name, k.norm
 			FROM rag_concepts k WHERE k.workspace_id = $2`, newID, srcID); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(ctx, `
+				return err
+			}
+			if _, err := tx.Exec(ctx, `
 			WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 			INSERT INTO rag_concept_mentions (concept_id, chunk_id)
 			SELECT nk.id, nc.id
@@ -1054,8 +1055,9 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, em
 			JOIN rag_chunks    nc ON nc.content_id = c.new_id AND nc.chunk_idx = oc.chunk_idx
 			JOIN rag_concepts  nk ON nk.workspace_id = $4 AND nk.norm = ok.norm
 			ON CONFLICT DO NOTHING`,
-			oldContents, newContents, srcID, newID); err != nil {
-			return err
+				oldContents, newContents, srcID, newID); err != nil {
+				return err
+			}
 		}
 	}
 

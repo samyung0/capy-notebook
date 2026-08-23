@@ -269,31 +269,29 @@ type workspaceEmbedding struct {
 }
 
 // vectorTables mirrors _VECTOR_TABLES in pipeline/pipeline/retrieval/store.py.
-// Vectors are stored one table per width because the width is part of the
-// halfvec column type; a new width means a new table in the migration and a new
-// entry in both maps.
-var vectorTables = map[int]string{2560: "rag_chunk_vectors_2560"}
+// One table per embedding pin, not per width: two 2560-d models do not share
+// an index. rag_chunk_vectors_2560 is the historical name for qwen-embed v1.
+var vectorTables = map[models.Pin]string{
+	{Key: "qwen-embed", Version: 1}: "rag_chunk_vectors_2560",
+}
 
 // vectorTable is looked up rather than formatted, because the result is
-// interpolated into SQL: only widths the schema actually has can reach a query.
-func vectorTable(dim int) (string, error) {
-	table, ok := vectorTables[dim]
+// interpolated into SQL: only pins the schema actually has can reach a query.
+func vectorTable(pin models.Pin) (string, error) {
+	table, ok := vectorTables[pin]
 	if !ok {
-		return "", fmt.Errorf("no vector table for embedding dimension %d", dim)
+		return "", fmt.Errorf("no vector table for %s v%d", pin.Key, pin.Version)
 	}
 	return table, nil
 }
 
 // newWorkspaceEmbedding resolves the embedding model a new workspace will keep
-// forever. Resolved once, here, rather than per ingest or per search: every
-// chunk in the workspace ends up in this model's space and there is no reindex
-// job that could move them, so a later disagreement is unrecoverable.
+// forever. CreateWorkspace is the only production path that mints a pin;
+// CloneWorkspace copies the source's. Raw INSERTs in fixtures skip this helper
+// and land on the column default, which is kept equal to the seeded row.
 //
-// A hard error when the registry cannot answer, because a workspace whose
-// embedding model is unknown can be uploaded to but never searched. The
-// hardcoded pair mirrors accountModelPrefs: it is the last resort for a process
-// with no registry at all (tests that insert rows without wiring one), and it
-// matches the seeded row and the column defaults in the migration.
+// There is no reindex job and no per-file re-embed path. Changing the registry
+// default only affects workspaces created after the poll picks it up.
 func (s *Store) newWorkspaceEmbedding(ctx context.Context) (workspaceEmbedding, error) {
 	if s.registry == nil {
 		return workspaceEmbedding{Pin: models.Pin{Key: "qwen-embed", Version: 1}, Dim: 2560}, nil
@@ -304,6 +302,9 @@ func (s *Store) newWorkspaceEmbedding(ctx context.Context) (workspaceEmbedding, 
 	}
 	dim, err := cfg.EmbeddingDim()
 	if err != nil {
+		return workspaceEmbedding{}, err
+	}
+	if _, err := vectorTable(cfg.Pin()); err != nil {
 		return workspaceEmbedding{}, err
 	}
 	return workspaceEmbedding{Pin: cfg.Pin(), Dim: dim}, nil

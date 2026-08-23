@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/evonotes/server/internal/models"
 	"github.com/evonotes/server/internal/obs"
 	"github.com/evonotes/server/internal/store"
 )
@@ -13,7 +14,7 @@ import (
 // self-corrects, so there is no reason to hold a goroutine open.
 const settleTimeout = 10 * time.Second
 
-// spend is an open reservation against the actor's inference budget. Callers
+// spend is an open lease against the actor's inference budget. Callers
 // must always finish it, either by settling measured usage or releasing it.
 //
 // Generation has two distinct costs charged to two distinct users: the produced
@@ -32,15 +33,18 @@ type spend struct {
 	done bool
 }
 
-// reserveSpend gates an estimated cost before any model is called. A zero
-// estimate still opens a reservation, so concurrent requests serialize on the
-// counter row rather than all reading the same pre-spend balance.
-func (a *api) reserveSpend(
+// beginSpend opens a lease before any model is called. Platform-paid calls
+// take one of ConcurrentLLMLeases slots and fail when used is already at the
+// cap. BYOK skips the lease: query embeddings are not billed, so those
+// requests cost us nothing to start.
+func (a *api) beginSpend(
 	ctx context.Context,
-	actorUserID, workspaceID, surface string,
-	estimateMicros int64,
+	actorUserID, workspaceID, surface, paidBy string,
 ) (*spend, error) {
-	id, err := a.s.ReserveCredits(ctx, actorUserID, workspaceID, surface, estimateMicros)
+	if paidBy == models.PaidByUser {
+		return &spend{api: a}, nil
+	}
+	id, err := a.s.BeginSpend(ctx, actorUserID, workspaceID, surface)
 	if err != nil {
 		return nil, err
 	}

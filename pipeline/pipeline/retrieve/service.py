@@ -16,13 +16,14 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 from .. import obs, registry, use_compatible_event_loop
 from ..config import cfg
 from ..retrieval import models, store, workflows
 from ..retrieval.agent import run_agent
+from ..retrieval.chunking import clip_to_tokens
 from ..retrieval.locale import response_language_rule, rewrite_language_rule
 from ..retrieval.tools import ToolContext
 from . import quiz_grade as quiz_grade_mod
@@ -60,6 +61,32 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Evo Notes retrieval", lifespan=lifespan)
 
+_SECRET_HEADER = "X-Pipeline-Secret"
+_PUBLIC_PATHS = {"/healthz"}
+
+
+def pipeline_secret_ok(got: str) -> bool:
+    expected = cfg.pipeline_secret
+    return (
+        bool(expected)
+        and len(got) == len(expected)
+        and secrets.compare_digest(got, expected)
+    )
+
+
+@app.middleware("http")
+async def require_pipeline_secret(request: Request, call_next):
+    if request.url.path in _PUBLIC_PATHS:
+        return await call_next(request)
+    if not pipeline_secret_ok(request.headers.get(_SECRET_HEADER, "")):
+        return JSONResponse({"message": "unauthorized"}, status_code=401)
+    return await call_next(request)
+
+
+@app.exception_handler(models.UserKeyError)
+async def user_key_error_handler(_request: Request, exc: models.UserKeyError):
+    return JSONResponse({"code": exc.code, "message": exc.message}, status_code=400)
+
 
 @app.middleware("http")
 async def request_context(request: Request, call_next):
@@ -84,21 +111,33 @@ def _uid(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(5)}"
 
 
-class ChatStreamReq(BaseModel):
-    query: str
-    workspaceId: str
-    userId: str | None = None
-    fileIds: list[str] | None = None
-    model: str | None = None  # ignored; pin is modelKey + configVersion
+class LLMPin(BaseModel):
     modelKey: str | None = None
     configVersion: int | None = None
+    userId: str | None = None
+    paidBy: str | None = None
+    reasoningMode: str | None = None
+    reasoningEffort: str | None = None
+
+
+def _bind_llm(req: LLMPin) -> None:
+    registry.bind_request_llm(
+        req.userId, req.paidBy, req.reasoningMode, req.reasoningEffort
+    )
+
+
+class ChatStreamReq(LLMPin):
+    query: str
+    workspaceId: str
+    fileIds: list[str] | None = None
+    model: str | None = None  # ignored; pin is modelKey + configVersion
     # Prior turns as OpenAI-style role/content pairs, sent to the LLM only.
     history: list[dict] | None = None
     # Account locale from the gateway (users.locale). Do not trust a browser field.
     locale: str | None = None
 
 
-class GenerateReq(BaseModel):
+class GenerateReq(LLMPin):
     workspaceId: str
     kind: str = "quiz"  # flashcards | quiz | mindmap | diagram (summary: legacy)
     length: str | None = None
@@ -114,8 +153,6 @@ class GenerateReq(BaseModel):
     diagramType: str | None = None  # diagram: auto|flowchart|sequence|class|state|er
     timeLimitMin: int | None = None
     locale: str | None = None
-    modelKey: str | None = None
-    configVersion: int | None = None
 
 
 # Legacy easy/medium/hard -> cognitive level, so old callers keep working.
@@ -169,6 +206,7 @@ def healthz():
 
 
 async def _chat_events(req: ChatStreamReq, request: Request):
+    _bind_llm(req)
     ctx = ToolContext(
         workspace_id=req.workspaceId,
         user_id=req.userId or "",
@@ -185,6 +223,8 @@ async def _chat_events(req: ChatStreamReq, request: Request):
             if await request.is_disconnected():
                 break
             yield _sse(event)
+    except models.UserKeyError as exc:
+        yield _sse(exc.as_event())
     except Exception as exc:
         log.exception("chat stream failed")
         yield _sse({"type": "error", "message": str(exc)})
@@ -205,14 +245,12 @@ async def chat_stream(req: ChatStreamReq, request: Request):
 # as chat so the Go gateway relays them unchanged.
 
 
-class CompleteReq(BaseModel):
+class CompleteReq(LLMPin):
     workspaceId: str
     mode: str = "command"  # command | continue
     prompt: str | None = None
     context: str | None = None
     model: str | None = None  # ignored; pin is modelKey + configVersion
-    modelKey: str | None = None
-    configVersion: int | None = None
     locale: str | None = None
 
 
@@ -250,9 +288,12 @@ def _complete_messages(req: CompleteReq) -> list[dict]:
 
 
 async def _complete_stream(req: CompleteReq, request: Request):
+    _bind_llm(req)
     model = models.resolve_query_model(
         req.modelKey, req.configVersion, surface=registry.SURFACE_EDITOR
     )
+    if req.context:
+        req.context = clip_to_tokens(req.context, registry.input_budget(model))
     try:
         async for token in models.stream_text(
             _complete_messages(req), model=model, temperature=0.7
@@ -265,6 +306,8 @@ async def _complete_stream(req: CompleteReq, request: Request):
         if usage is not None and not usage.is_empty():
             done["usage"] = usage.as_dict()
         yield _sse(done)
+    except models.UserKeyError as exc:
+        yield _sse(exc.as_event())
     except Exception as e:
         log.exception("complete stream failed")
         yield _sse({"type": "error", "message": str(e)})
@@ -279,20 +322,19 @@ async def complete_stream(req: CompleteReq, request: Request):
     )
 
 
-class QuizGradeReq(BaseModel):
+class QuizGradeReq(LLMPin):
     workspaceId: str | None = None
     prompt: str = ""
     hints: list[str] | None = None
     rubrics: list[str] | None = None
     modelAnswer: str = ""
     userAnswer: str = ""
-    modelKey: str | None = None
-    configVersion: int | None = None
     locale: str | None = None
 
 
 @app.post("/quiz-grade")
 async def quiz_grade(req: QuizGradeReq) -> dict[str, Any]:
+    _bind_llm(req)
     model = models.resolve_query_model(
         req.modelKey, req.configVersion, surface=registry.SURFACE_QUIZ
     )
@@ -301,18 +343,22 @@ async def quiz_grade(req: QuizGradeReq) -> dict[str, Any]:
             {"role": "system", "content": quiz_grade_mod.GRADE_SYSTEM},
             {
                 "role": "user",
-                "content": quiz_grade_mod.build_grade_prompt(
-                    prompt=req.prompt,
-                    hints=req.hints or [],
-                    rubrics=req.rubrics or [],
-                    model_answer=req.modelAnswer,
-                    user_answer=req.userAnswer,
+                "content": clip_to_tokens(
+                    quiz_grade_mod.build_grade_prompt(
+                        prompt=req.prompt,
+                        hints=req.hints or [],
+                        rubrics=req.rubrics or [],
+                        model_answer=req.modelAnswer,
+                        user_answer=req.userAnswer,
+                    ),
+                    registry.input_budget(model),
                 ),
             },
         ],
         model=model,
         temperature=0.1,
-        max_tokens=80,
+        max_tokens=models.quiz_grade_max_tokens(model),
+        reasoning=False,
     )
     payload = quiz_grade_mod.parse_grade_response(text)
     usage = obs.current_usage()
@@ -324,6 +370,7 @@ async def quiz_grade(req: QuizGradeReq) -> dict[str, Any]:
 @app.post("/ai/command")
 async def ai_command(req: CompleteReq):
     """Non-streaming one-shot AI command (kept for parity with the gateway)."""
+    _bind_llm(req)
     try:
         text = await models.complete_text(
             _complete_messages(req),
@@ -333,6 +380,8 @@ async def ai_command(req: CompleteReq):
             temperature=0.7,
         )
         return {"text": text}
+    except models.UserKeyError:
+        raise
     except Exception as e:
         log.exception("ai command failed")
         return {"text": "", "error": str(e)}
@@ -366,13 +415,16 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
 
 
 async def _generate(req: GenerateReq) -> dict[str, Any]:
+    _bind_llm(req)
     model = models.resolve_query_model(
         req.modelKey, req.configVersion, surface=registry.SURFACE_GENERATE
     )
     chapters = req.chapters or []
     file_ids = req.fileIds or []
     context, passages = await workflows.gather_context(
-        workspace_id=req.workspaceId, file_ids=file_ids or None
+        workspace_id=req.workspaceId,
+        file_ids=file_ids or None,
+        budget=registry.input_budget(model),
     )
     file_names = sorted({p.file_name for p in passages})
     scope = workflows.scope_label(chapters, file_names)
@@ -382,7 +434,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
             "Write a concise study summary of the most important ideas in these "
             "sources. Use short bullet points."
         )
-        if workflows.overflows(context, passages):
+        if workflows.overflows(context, passages, budget=registry.input_budget(model)):
             body = await workflows.produce_mapped(
                 instruction=instruction,
                 passages=passages,
@@ -393,6 +445,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
                     "removing duplicates and keeping the source distinctions clear."
                 ),
                 locale=req.locale,
+                budget=registry.input_budget(model),
             )
         else:
             body = await workflows.produce(

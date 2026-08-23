@@ -3,13 +3,19 @@ package httpapi
 import (
 	"encoding/json"
 
+	"github.com/evonotes/server/internal/models"
 	"github.com/evonotes/server/internal/store"
+)
+
+const (
+	modelsPaidByPlatform = models.PaidByPlatform
+	modelsPaidByUser     = models.PaidByUser
 )
 
 // pipeUsage is the token accounting the Python services report back. Every
 // model-backed pipeline response carries one, aggregated across all provider
-// calls the request made — a chat turn's agent loop is several completions plus
-// embeddings, and the browser should be charged for the turn, not the steps.
+// calls the request made. Completions bill the actor. Query embeddings are
+// recorded at zero credits.
 //
 // Absent or zero usage is normal and not an error: a provider may omit it, and
 // a streamed response only reports it when the stream is asked to include it.
@@ -35,15 +41,24 @@ func (u pipeUsage) empty() bool {
 // events converts reported usage into ledger rows. Completions and embeddings
 // become separate rows so a dashboard can show which one is actually driving
 // spend, rather than one blended number that hides it.
-func (u pipeUsage) events(actorUserID, workspaceID, surface string, llm, embed store.TokenRates) []store.UsageEvent {
+func (u pipeUsage) events(actorUserID, workspaceID, surface string, llm, embed store.TokenRates, paidBy string) []store.UsageEvent {
 	if u.empty() {
 		return nil
+	}
+	if paidBy == "" {
+		paidBy = modelsPaidByPlatform
 	}
 	var out []store.UsageEvent
 	if u.InputTokens > 0 || u.OutputTokens > 0 {
 		rates := llm
-		if rates.MicrosPerOutputToken == 0 {
+		if rates.MicrosPerOutputToken == 0 && paidBy != modelsPaidByUser {
 			rates = store.DefaultLLMRates()
+		}
+		credits := store.CreditsForTokens(rates, store.KindLLM, u.InputTokens, u.OutputTokens)
+		cost := store.CostMicroUSD(rates, u.InputTokens, u.OutputTokens)
+		if paidBy == modelsPaidByUser {
+			credits = 0
+			cost = 0
 		}
 		out = append(out, store.UsageEvent{
 			ActorUserID:  actorUserID,
@@ -57,12 +72,16 @@ func (u pipeUsage) events(actorUserID, workspaceID, surface string, llm, embed s
 			InputTokens:  u.InputTokens,
 			OutputTokens: u.OutputTokens,
 			Unit:         "tokens",
-			CreditMicros: store.CreditsForTokens(rates, store.KindLLM, u.InputTokens, u.OutputTokens),
-			CostMicroUSD: store.CostMicroUSD(rates, u.InputTokens, u.OutputTokens),
-			Metadata:     map[string]any{"calls": u.Calls},
+			CreditMicros: credits,
+			CostMicroUSD: cost,
+			Metadata:     map[string]any{"calls": u.Calls, "paidBy": paidBy},
 		})
 	}
 	if u.EmbedTokens > 0 {
+		// Query embeddings are absorbed: recorded for reconciliation, billed
+		// at zero credits. Rates must be the workspace pin, not the live
+		// default, or a retarget mislabels old-workspace search. Ingest still
+		// charges through the worker.
 		rates := embed
 		if rates.MicrosPerInputToken == 0 {
 			rates = store.DefaultEmbeddingRates()
@@ -77,7 +96,7 @@ func (u pipeUsage) events(actorUserID, workspaceID, surface string, llm, embed s
 			ModelVersion: rates.ModelVersion,
 			InputTokens:  u.EmbedTokens,
 			Unit:         "tokens",
-			CreditMicros: store.CreditsForTokens(rates, store.KindEmbedding, u.EmbedTokens, 0),
+			CreditMicros: 0,
 			CostMicroUSD: store.CostMicroUSD(rates, u.EmbedTokens, 0),
 		})
 	}

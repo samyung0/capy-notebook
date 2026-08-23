@@ -51,12 +51,13 @@ func (a *api) completeStream(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	userID := uid(r)
-	_, rates, err := a.ratesForSurface(ctx, userID, models.SurfaceEditor)
+	llm, err := a.resolveLLM(ctx, userID, models.SurfaceEditor)
 	if err != nil {
 		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
 		return
 	}
-	charge, err := a.reserveSpend(ctx, userID, wsID, store.SurfaceEditor, store.ScaleEstimate(store.EstimateEditorMicros, rates))
+	rates := llm.Rates
+	charge, err := a.beginSpend(ctx, userID, wsID, store.SurfaceEditor, llm.PaidBy)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -81,39 +82,48 @@ func (a *api) completeStream(w http.ResponseWriter, r *http.Request) {
 
 	onToken := func(t string) { send(map[string]any{"type": "token", "text": t}) }
 
-	usage, streamErr := a.relayComplete(ctx, userID, wsID, req, rates, onToken)
+	usage, streamErr := a.relayComplete(ctx, userID, wsID, req, llm, onToken)
 	if ctx.Err() != nil {
 		return
 	}
 	if streamErr != nil {
+		if code, msg, ok := llmKeyPayload(streamErr); ok {
+			send(map[string]any{
+				"type": "error", "code": code,
+				"message": msg, "retryable": false,
+			})
+			return
+		}
 		send(map[string]any{
 			"type": "error", "code": "ai_unavailable",
 			"message": "AI service is unavailable", "retryable": true,
 		})
 		return
 	}
-	charge.settle(ctx, usage.events(userID, wsID, store.SurfaceEditor, rates, store.DefaultEmbeddingRates())...)
+	charge.settle(ctx, usage.events(userID, wsID, store.SurfaceEditor, rates, store.DefaultEmbeddingRates(), llm.PaidBy)...)
 	send(map[string]any{"type": "done"})
 }
 
 // relayComplete streams the completion from the Python service. Provider/model
 // configuration is server-owned; browser model fields are intentionally ignored.
-func (a *api) relayComplete(ctx context.Context, userID, wsID string, req completeReq, rates store.TokenRates, onToken func(string)) (pipeUsage, error) {
+func (a *api) relayComplete(ctx context.Context, userID, wsID string, req completeReq, llm resolvedLLM, onToken func(string)) (pipeUsage, error) {
 	var usage pipeUsage
 	if a.pipe == nil {
 		return usage, errors.New("AI service is unavailable")
 	}
 	body := map[string]any{
-		"workspaceId":   wsID,
-		"mode":          req.Mode,
-		"prompt":        req.Prompt,
-		"context":       req.Context,
-		"locale":        a.userLocale(ctx, userID),
-		"modelKey":      rates.ModelKey,
-		"configVersion": rates.ModelVersion,
+		"workspaceId": wsID,
+		"mode":        req.Mode,
+		"prompt":      req.Prompt,
+		"context":     req.Context,
+		"locale":      a.userLocale(ctx, userID),
 	}
+	llm.attach(body)
 	rc, err := a.pipe.PostStream(ctx, "/complete/stream", body)
 	if err != nil {
+		if mapped := pipelineLLMError(err); mapped != nil {
+			return usage, mapped
+		}
 		return usage, fmt.Errorf("completion service unavailable: %w", err)
 	}
 	defer rc.Close()
@@ -133,7 +143,9 @@ func (a *api) relayComplete(ctx context.Context, userID, wsID string, req comple
 						case "done":
 							usage = ev.Usage
 						case "error":
-							return usage, errors.New(ev.Message)
+							if mapped := keyErrorFromEvent(ev.Code, ev.Message); mapped != nil {
+								return usage, mapped
+							}
 						}
 					}
 				}

@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .. import obs, registry
 from ..retrieval import models
+from ..retrieval.chunking import clip_to_tokens
 from ..retrieval.locale import response_language_rule, rewrite_language_rule
 
 log = logging.getLogger("evo.retrieve.ai")
@@ -66,6 +67,10 @@ class PlateCommandReq(BaseModel):
     locale: str | None = Field(default=None, max_length=16)
     modelKey: str | None = None
     configVersion: int | None = None
+    userId: str | None = None
+    paidBy: str | None = None
+    reasoningMode: str | None = None
+    reasoningEffort: str | None = None
 
 
 class PlateCopilotReq(BaseModel):
@@ -76,6 +81,10 @@ class PlateCopilotReq(BaseModel):
     system: str | None = Field(default=None, max_length=8_000)
     modelKey: str | None = None
     configVersion: int | None = None
+    userId: str | None = None
+    paidBy: str | None = None
+    reasoningMode: str | None = None
+    reasoningEffort: str | None = None
 
 
 class AIAdapterError(RuntimeError):
@@ -89,13 +98,29 @@ class AIAdapterError(RuntimeError):
 
 
 def _editor_spec(req: PlateCommandReq | PlateCopilotReq):
+    registry.bind_request_llm(
+        req.userId, req.paidBy, req.reasoningMode, req.reasoningEffort
+    )
     return models.resolve_query_model(
         req.modelKey, req.configVersion, surface=registry.SURFACE_EDITOR
     )
 
 
 def _ensure_provider(spec) -> None:
-    if not registry.provider_cfg_for(spec).api_key:
+    try:
+        provider = registry.provider_cfg_for(spec)
+    except registry.RegistryError as exc:
+        if registry.current_request_llm().paid_by == "user":
+            raise models.UserKeyError(models.KEY_FAILED, models.KEY_FAILED_MSG) from exc
+        raise AIAdapterError(
+            "ai_unavailable",
+            "AI provider is not configured",
+            status=503,
+            retryable=True,
+        ) from exc
+    if not provider.api_key:
+        if registry.current_request_llm().paid_by == "user":
+            raise models.UserKeyError(models.KEY_FAILED, models.KEY_FAILED_MSG)
         raise AIAdapterError(
             "ai_unavailable",
             "AI provider is not configured",
@@ -407,6 +432,7 @@ extraction, questions, and tables are generate. Output one lowercase word.
             model=spec,
             max_tokens=8,
             temperature=0,
+            reasoning=False,
         )
         choice = (
             (response.choices[0].message.content or "").strip().lower()
@@ -456,10 +482,21 @@ async def _wait_completion(
     model: Any,
     temperature: float | None = None,
     max_tokens: int | None = None,
+    reasoning: bool | None = None,
 ):
+    if messages:
+        last = dict(messages[-1])
+        last["content"] = clip_to_tokens(
+            str(last.get("content") or ""), registry.input_budget(model)
+        )
+        messages = [*messages[:-1], last]
     task = asyncio.create_task(
         models.complete_response(
-            messages, model=model, temperature=temperature, max_tokens=max_tokens
+            messages,
+            model=model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            reasoning=reasoning,
         )
     )
     try:
@@ -562,7 +599,12 @@ async def _text_events(request: Request, prompt: str, spec: Any) -> AsyncIterato
     text_id = secrets.token_urlsafe(18)
     yield _sse({"type": "text-start", "id": text_id})
     async for delta in models.stream_text(
-        [{"role": "user", "content": prompt}],
+        [
+            {
+                "role": "user",
+                "content": clip_to_tokens(prompt, registry.input_budget(spec)),
+            }
+        ],
         model=spec,
         max_tokens=MAX_OUTPUT_TOKENS,
         temperature=0.7,
@@ -605,6 +647,14 @@ async def command_events(req: PlateCommandReq, request: Request) -> AsyncIterato
         yield _sse({"type": "finish", "finishReason": "stop"})
     except asyncio.CancelledError:
         return
+    except models.UserKeyError as exc:
+        yield _sse(
+            {
+                "type": "error",
+                "errorText": exc.message,
+                "data": {"code": exc.code, "retryable": False},
+            }
+        )
     except AIAdapterError as exc:
         yield _sse(
             {
@@ -676,6 +726,7 @@ async def plate_copilot(req: PlateCopilotReq, request: Request):
             model=spec,
             max_tokens=50,
             temperature=0.7,
+            reasoning=False,
         )
     except asyncio.CancelledError as exc:
         raise HTTPException(
@@ -685,6 +736,11 @@ async def plate_copilot(req: PlateCopilotReq, request: Request):
                 "message": "request cancelled",
                 "retryable": True,
             },
+        ) from exc
+    except models.UserKeyError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": exc.code, "message": exc.message, "retryable": False},
         ) from exc
     except AIAdapterError as exc:
         raise HTTPException(

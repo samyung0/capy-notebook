@@ -369,31 +369,32 @@ changing it, be sure you accept:
   function of when a workspace was created. Anything you conclude from search
   quality afterwards has to account for that.
 - **The old model must keep working forever.** Every existing workspace still
-  resolves it on every search and every upload. Its `model_configs` row must
-  never be deleted, and its provider must stay reachable — including its exact
-  `provider_model_id`. Deprecating an embedding *model* is fine only if you can
-  serve the same one elsewhere.
-- **Deprecating a dimension is not possible.** Widths are a schema commitment:
-  `rag_chunk_vectors_<dim>` and the check constraints on
-  `workspaces.embedding_dim` and `model_configs`. **Every width any workspace
-  points at must always have at least one enabled, reachable embedding model
-  behind it.** If a provider drops a model, replace it with another model of
-  the same width (self-hosted counts) rather than retiring the width.
-- **A new width is a migration, not a config change.** Add the
-  `rag_chunk_vectors_<dim>` table and its HNSW index, extend both check
-  constraints, and add the width to the allowlists in
-  `pipeline/pipeline/retrieval/store.py` and `server/internal/store/queries.go`.
-  Without the table, the check constraint rejects the model row — which is the
-  intended failure, since discovering a missing width at ingest time would mean
-  a workspace whose vectors have nowhere to go.
+  resolves it on every search and every upload. Postgres refuses
+  `enabled=false`, `DELETE`, stripping or adding the embedding surface, and
+  in-place changes to the pin, `provider_model_id`, or `params`
+  (`protect_embedding_model_configs`). Same width from another model is a
+  different space and a different table. Add a `rag_chunk_vectors_*` table,
+  an allowlist entry in both languages, a `model_configs` row with
+  `params.vector_table`, then in one transaction clear the old
+  `is_default_for` and mark the new row (Postgres refuses two defaults for
+  the same surface). Bump `model_registry_state.version`. Old workspaces
+  stay on the old pin. If a vendor drops the model, change `base_url` /
+  `provider_slug` only and serve the **same weights** from elsewhere.
+- **Deprecating a table is not possible.** Every embedding row stays
+  enabled, and every pin in use keeps its table.
+- **A new model is a migration, not a config change.** Even at 2560-d.
+  Without the table, `CreateWorkspace` refuses the default pin, which is
+  the intended failure: discovering a missing table at ingest time would
+  mean a workspace whose vectors have nowhere to go.
 
 ### Disabling or deleting rows
 
 `enabled = false` is the safe control for chat/generate/editor: users holding
 that preference fail with `model_unavailable` rather than being silently
-downgraded, which is the intended behaviour. Rows are never deleted, because a
-pinned `(key, version)` is resolved forever — by assistant messages, by queued
-jobs, and by workspaces.
+downgraded, which is the intended behaviour. It is not allowed on embedding
+rows. Rows are never deleted, because a pinned `(key, version)` is resolved
+forever, by assistant messages, by queued jobs, and by workspaces.
+Embedding rows are the ones the database will actually reject a delete of.
 
 ---
 
@@ -407,7 +408,7 @@ jobs, and by workspaces.
 | `SELECT * FROM credit_reservations WHERE status='open' AND expires_at < now()` | empty after a minute (sweeper is running) |
 | `SELECT * FROM usage_daily` | populated within 5 minutes (rollup is running) |
 | Fire >200 AI requests in an hour, or 16 in a minute | `429` with `code: "ai_rate_limited"` |
-| Open 4 chat streams at once | 4th returns `429 too_many_streams` |
+| Open 6 platform-paid AI calls at once | 6th returns `429 too_many_streams` |
 | Hit the origin IP directly | connection refused |
 | Coolify: `ss`/`docker ps` shows `:8080`/`:1234` bound on `0.0.0.0` | wrong — only Traefik `:80` (tunnel target) should be public |
 

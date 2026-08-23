@@ -153,6 +153,11 @@ export const user: User = {
   subscriptionStatus: 'active',
 };
 
+export const llmCredentials: Record<string, string> = {};
+
+export const userReasoning: Record<string, { effort: string; mode: string }> =
+  {};
+
 export const workspaces: Workspace[] = [
   {
     capabilities: {

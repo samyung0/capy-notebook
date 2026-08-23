@@ -159,12 +159,13 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 	userID := uid(r)
-	_, rates, err := a.ratesForSurface(ctx, userID, models.SurfaceEditor)
+	llm, err := a.resolveLLM(ctx, userID, models.SurfaceEditor)
 	if err != nil {
 		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
 		return
 	}
-	charge, err := a.reserveSpend(ctx, userID, wsID, store.SurfaceEditor, store.ScaleEstimate(store.EstimateEditorMicros, rates))
+	rates := llm.Rates
+	charge, err := a.beginSpend(ctx, userID, wsID, store.SurfaceEditor, llm.PaidBy)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -177,15 +178,18 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	// apiKey/model/provider fields are never accepted across this trust boundary.
 	body := map[string]any{
-		"workspaceId":   wsID,
-		"messages":      req.Messages,
-		"ctx":           req.Context,
-		"locale":        a.userLocale(ctx, userID),
-		"modelKey":      rates.ModelKey,
-		"configVersion": rates.ModelVersion,
+		"workspaceId": wsID,
+		"messages":    req.Messages,
+		"ctx":         req.Context,
+		"locale":      a.userLocale(ctx, userID),
 	}
+	llm.attach(body)
 	rc, err := a.pipe.PostStream(ctx, "/plate-ai/command", body)
 	if err != nil {
+		if code, msg, ok := llmKeyPayload(err); ok {
+			writeAIError(w, http.StatusBadRequest, code, msg, false)
+			return
+		}
 		writeAIError(w, http.StatusBadGateway, "ai_unavailable", "AI service is unavailable", true)
 		return
 	}
@@ -215,7 +219,7 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 		send([]byte("[DONE]"))
 		return
 	}
-	charge.settle(ctx, usage.events(userID, wsID, store.SurfaceEditor, rates, store.DefaultEmbeddingRates())...)
+	charge.settle(ctx, usage.events(userID, wsID, store.SurfaceEditor, rates, store.DefaultEmbeddingRates(), llm.PaidBy)...)
 }
 
 // copyAIDataStream copies only valid data-stream payloads. It drops comments
@@ -304,12 +308,13 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	userID := uid(r)
-	_, rates, err := a.ratesForSurface(ctx, userID, models.SurfaceEditor)
+	llm, err := a.resolveLLM(ctx, userID, models.SurfaceEditor)
 	if err != nil {
 		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
 		return
 	}
-	charge, err := a.reserveSpend(ctx, userID, wsID, store.SurfaceEditor, store.ScaleEstimate(store.EstimateEditorMicros, rates))
+	rates := llm.Rates
+	charge, err := a.beginSpend(ctx, userID, wsID, store.SurfaceEditor, llm.PaidBy)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -320,16 +325,20 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
 		return
 	}
-	raw, err := a.pipe.PostRaw(ctx, "/plate-ai/copilot", map[string]any{
-		"workspaceId":   wsID,
-		"prompt":        req.Prompt,
-		"instructions":  req.Instructions,
-		"system":        req.System,
-		"modelKey":      rates.ModelKey,
-		"configVersion": rates.ModelVersion,
-	})
+	body := map[string]any{
+		"workspaceId":  wsID,
+		"prompt":       req.Prompt,
+		"instructions": req.Instructions,
+		"system":       req.System,
+	}
+	llm.attach(body)
+	raw, err := a.pipe.PostRaw(ctx, "/plate-ai/copilot", body)
 	if err != nil {
 		if ctx.Err() != nil {
+			return
+		}
+		if code, msg, ok := llmKeyPayload(err); ok {
+			writeAIError(w, http.StatusBadRequest, code, msg, false)
 			return
 		}
 		writeAIError(w, http.StatusBadGateway, "ai_unavailable", "AI service is unavailable", true)
@@ -339,7 +348,7 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 		writeAIError(w, http.StatusBadGateway, "invalid_upstream_response", "AI service returned invalid JSON", true)
 		return
 	}
-	charge.settle(ctx, usageFrom(raw).events(userID, wsID, store.SurfaceEditor, rates, store.DefaultEmbeddingRates())...)
+	charge.settle(ctx, usageFrom(raw).events(userID, wsID, store.SurfaceEditor, rates, store.DefaultEmbeddingRates(), llm.PaidBy)...)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(raw)
 }

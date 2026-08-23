@@ -262,6 +262,28 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		})
 		return
 	}
+	if errors.Is(err, store.ErrInvalidLLMKey) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"code":    "invalid_llm_key",
+			"message": "the provider rejected this key",
+		})
+		return
+	}
+	if errors.Is(err, store.ErrLLMKeyFailed) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"code":    "llm_key_failed",
+			"message": "Something went wrong, please double check if the key is valid",
+		})
+		return
+	}
+	if errors.Is(err, store.ErrTooManyLLMLeases) {
+		w.Header().Set("Retry-After", "10")
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{
+			"code":    "too_many_streams",
+			"message": "too many AI requests in progress",
+		})
+		return
+	}
 	// Distinct from storage_quota_exceeded on purpose: this one is about the
 	// caller's own inference budget, the other is about the workspace owner's
 	// disk. They render as completely different messages and only one of them
@@ -616,14 +638,15 @@ func (a *api) generate(w http.ResponseWriter, r *http.Request) {
 	}
 	userID := uid(r)
 	wsID := id(r)
-	_, llmRates, err := a.ratesForSurface(r.Context(), userID, models.SurfaceGenerate)
+	llm, err := a.resolveLLM(r.Context(), userID, models.SurfaceGenerate)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
+	llmRates := llm.Rates
 	// Model spend is the actor's; the material it produces is the workspace
 	// owner's and is gated by gateStorageTx further down.
-	charge, err := a.reserveSpend(r.Context(), userID, wsID, store.SurfaceGenerate, store.ScaleEstimate(store.EstimateGenerateMicros, llmRates))
+	charge, err := a.beginSpend(r.Context(), userID, wsID, store.SurfaceGenerate, llm.PaidBy)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -668,13 +691,13 @@ func (a *api) generate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if a.pipe != nil {
-		payload, usage, ok, err := a.generateViaPipe(r.Context(), userID, wsID, wsName, &opts, llmRates)
+		payload, usage, ok, err := a.generateViaPipe(r.Context(), userID, wsID, wsName, &opts, llm)
 		if err != nil {
 			a.fail(w, err)
 			return
 		}
 		if ok {
-			charge.settle(r.Context(), usage.events(userID, wsID, store.SurfaceGenerate, llmRates, a.embeddingRates(r.Context()))...)
+			charge.settle(r.Context(), usage.events(userID, wsID, store.SurfaceGenerate, llmRates, a.embeddingRates(r.Context(), wsID), llm.PaidBy)...)
 			writeJSON(w, 200, payload)
 			return
 		}
@@ -752,7 +775,7 @@ func (a *api) generateViaPipe(
 	ctx context.Context,
 	userID, wsID, wsName string,
 	opts *generateOpts,
-	rates store.TokenRates,
+	llm resolvedLLM,
 ) (any, pipeUsage, bool, error) {
 	fileIDs, fileNames, chapterNames := a.resolveScope(ctx, wsID, opts)
 	body := map[string]any{
@@ -760,12 +783,15 @@ func (a *api) generateViaPipe(
 		"count": opts.Count, "style": opts.Style, "types": opts.Types, "levels": opts.cognitiveLevels(),
 		"chapters": chapterNames, "fileIds": fileIDs,
 		"detail": opts.Detail, "diagramType": opts.DiagramType, "timeLimitMin": opts.TimeLimitMin,
-		"locale":   a.userLocale(ctx, userID),
-		"modelKey": rates.ModelKey, "configVersion": rates.ModelVersion,
+		"locale": a.userLocale(ctx, userID),
 	}
+	llm.attach(body)
 	var usage pipeUsage
 	raw, err := a.pipe.PostRaw(ctx, "/generate", body)
 	if err != nil {
+		if mapped := pipelineLLMError(err); mapped != nil {
+			return nil, usage, false, mapped
+		}
 		return nil, usage, false, nil
 	}
 	usage = usageFrom(raw)

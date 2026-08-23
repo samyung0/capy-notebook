@@ -28,6 +28,7 @@ import { NoteToolbar } from '@/features/notes/toolbar/NoteToolbar';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
+import { editorAiEnabled } from '@/lib/features';
 import { AiMenu } from './ai/AiMenu';
 import { NoteBlockDialogsProvider } from './blocks/dialogContext';
 import {
@@ -630,7 +631,9 @@ export function NoteEditorCore({
             </div>
             {mode === 'edit' && <FloatingToolbar />}
             <EditorCommandPalette />
-            {mode === 'edit' && allowExternalAssets && <AiMenu />}
+            {mode === 'edit' && editorAiEnabled(allowExternalAssets) && (
+              <AiMenu />
+            )}
           </CollaborationProvider>
         </Plate>
       </div>

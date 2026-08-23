@@ -4,7 +4,56 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/evonotes/server/internal/models"
+	"github.com/evonotes/server/internal/store"
 )
+
+func TestUsageEventsZeroLLMCreditsForUserKey(t *testing.T) {
+	u := pipeUsage{InputTokens: 10, OutputTokens: 4, EmbedTokens: 20, Calls: 2}
+	rates := store.TokenRates{
+		ModelKey:                "gpt-5.6-sol",
+		ModelVersion:            1,
+		MicrosPerInputToken:     250,
+		MicrosPerOutputToken:    1000,
+		USDMicrosPerInputToken:  1,
+		USDMicrosPerOutputToken: 1,
+	}
+	events := u.events("u_1", "ws_1", store.SurfaceChat, rates, store.DefaultEmbeddingRates(), models.PaidByUser)
+	if len(events) != 2 {
+		t.Fatalf("events: %d", len(events))
+	}
+	if events[0].Kind != store.KindLLM || events[0].CreditMicros != 0 {
+		t.Fatalf("llm event %#v", events[0])
+	}
+	if events[0].Metadata["paidBy"] != models.PaidByUser {
+		t.Fatalf("paidBy: %#v", events[0].Metadata)
+	}
+	if events[1].Kind != store.KindEmbedding || events[1].CreditMicros != 0 {
+		t.Fatalf("embed event %#v", events[1])
+	}
+}
+
+func TestUsageEventsZeroQueryEmbedCredits(t *testing.T) {
+	u := pipeUsage{InputTokens: 8, OutputTokens: 2, EmbedTokens: 1_000_000}
+	embed := store.TokenRates{
+		MicrosPerInputToken:    50,
+		USDMicrosPerInputToken: 20,
+	}
+	events := u.events("u_1", "ws_1", store.SurfaceChat, store.DefaultLLMRates(), embed, models.PaidByPlatform)
+	if len(events) != 2 {
+		t.Fatalf("events: %d", len(events))
+	}
+	if events[0].Kind != store.KindLLM || events[0].CreditMicros == 0 {
+		t.Fatalf("llm event %#v", events[0])
+	}
+	if events[1].Kind != store.KindEmbedding || events[1].CreditMicros != 0 {
+		t.Fatalf("query embed must not bill, got %#v", events[1])
+	}
+	if events[1].CostMicroUSD == 0 {
+		t.Fatal("query embed should keep reconciliation USD")
+	}
+}
 
 func TestKindFromName(t *testing.T) {
 	cases := map[string]string{

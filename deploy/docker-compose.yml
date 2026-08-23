@@ -112,6 +112,7 @@ services:
       EVO_ENGINE: ${EVO_ENGINE:-evo}
       PIPELINE_URL: http://retrieval:8001
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
+      LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:-}
       APP_URL: ${APP_URL:-http://localhost:5173}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
       EMAIL_BACKEND: ${EMAIL_BACKEND:-}
@@ -129,7 +130,6 @@ services:
       STRIPE_PRICE_TEAM: ${STRIPE_PRICE_TEAM:-}
       RATE_LIMIT_DISABLED: ${RATE_LIMIT_DISABLED:-}
       RATE_LIMIT_AI_PER_HOUR: ${RATE_LIMIT_AI_PER_HOUR:-}
-      RATE_LIMIT_CONCURRENT_STREAMS: ${RATE_LIMIT_CONCURRENT_STREAMS:-}
       # Parse/caption cache TTLs. The worker sweeps on the same values; both
       # services run the identical statement, so they must agree.
       EVO_CAPTION_CACHE_TTL_DAYS: ${EVO_CAPTION_CACHE_TTL_DAYS:-90}
@@ -169,8 +169,10 @@ services:
       EVO_PARSE_FAST_SLOTS: ${EVO_PARSE_FAST_SLOTS:-72}
       MODAL_B2_ARTIFACTS: ${MODAL_B2_ARTIFACTS:-true}
       EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-ocr}
-      # Embeddings (OpenRouter): credentials only. The model is pinned per
-      # workspace from model_configs; EMBEDDING_DIM is the shipped width.
+      # Embeddings: credentials only. The model is pinned per workspace from
+      # model_configs. OPENROUTER_* is still read if EMBEDDING_* is unset.
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://openrouter.ai/api/v1}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
@@ -207,6 +209,9 @@ services:
       # materials directly, so the agent inherits Go's authz and quota checks.
       GATEWAY_URL: http://server:8080
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
+      LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://openrouter.ai/api/v1}
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
       EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}

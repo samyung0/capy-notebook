@@ -84,25 +84,58 @@ type (
 	MaterialRef        = store.MaterialRef
 )
 
+type ModelReasoning struct {
+	CanDisable    bool     `json:"canDisable"`
+	Efforts       []string `json:"efforts" nullable:"false"`
+	DefaultMode   string   `json:"defaultMode"`
+	DefaultEffort string   `json:"defaultEffort"`
+}
+
 type ModelOption struct {
-	Key         string `json:"key"`
-	DisplayName string `json:"displayName"`
-	IsDefault   bool   `json:"isDefault"`
+	Key          string          `json:"key"`
+	DisplayName  string          `json:"displayName"`
+	IsDefault    bool            `json:"isDefault"`
+	Available    bool            `json:"available"`
+	UsesUserKey  bool            `json:"usesUserKey"`
+	ProviderSlug string          `json:"providerSlug"`
+	Reasoning    *ModelReasoning `json:"reasoning,omitempty"`
 }
 
 type ModelsResponse struct {
-	Models      []ModelOption `json:"models" nullable:"false"`
-	SelectedKey string        `json:"selectedKey"`
-	DefaultKey  string        `json:"defaultKey"`
+	Models                  []ModelOption `json:"models" nullable:"false"`
+	SelectedKey             string        `json:"selectedKey"`
+	DefaultKey              string        `json:"defaultKey"`
+	SelectedReasoningMode   string        `json:"selectedReasoningMode"`
+	SelectedReasoningEffort string        `json:"selectedReasoningEffort"`
 }
 
 // SetModelPrefsReq patches one or more surface preferences. Omitted fields are
 // left as they are, so a picker on one surface cannot reset another.
 type SetModelPrefsReq struct {
-	ChatModelKey     *string `json:"chatModelKey,omitempty"`
-	GenerateModelKey *string `json:"generateModelKey,omitempty"`
-	EditorModelKey   *string `json:"editorModelKey,omitempty"`
-	QuizModelKey     *string `json:"quizModelKey,omitempty"`
+	ChatModelKey            *string `json:"chatModelKey,omitempty"`
+	GenerateModelKey        *string `json:"generateModelKey,omitempty"`
+	EditorModelKey          *string `json:"editorModelKey,omitempty"`
+	QuizModelKey            *string `json:"quizModelKey,omitempty"`
+	ChatReasoningMode       *string `json:"chatReasoningMode,omitempty"`
+	ChatReasoningEffort     *string `json:"chatReasoningEffort,omitempty"`
+	GenerateReasoningMode   *string `json:"generateReasoningMode,omitempty"`
+	GenerateReasoningEffort *string `json:"generateReasoningEffort,omitempty"`
+	QuizReasoningMode       *string `json:"quizReasoningMode,omitempty"`
+	QuizReasoningEffort     *string `json:"quizReasoningEffort,omitempty"`
+}
+
+type LLMCredential struct {
+	ProviderSlug string `json:"providerSlug"`
+	Last4        string `json:"last4"`
+}
+
+type LLMCredentialsResponse struct {
+	Credentials []LLMCredential `json:"credentials" nullable:"false"`
+}
+
+type UpsertLLMCredentialReq struct {
+	ProviderSlug string `json:"providerSlug"`
+	APIKey       string `json:"apiKey"`
 }
 
 // QuizGradeReq is one open-answer marking request. The gateway builds the

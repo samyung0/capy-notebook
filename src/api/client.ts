@@ -58,6 +58,18 @@ export function isModelUnavailableError(err: unknown): err is ApiError {
   return isApiError(err) && err.code === 'model_unavailable';
 }
 
+export function isInvalidLLMKeyError(err: unknown): err is ApiError {
+  return isApiError(err) && err.code === 'invalid_llm_key';
+}
+
+export function isLLMKeyFailedError(err: unknown): err is ApiError {
+  return isApiError(err) && err.code === 'llm_key_failed';
+}
+
+export function isLLMKeyError(err: unknown): err is ApiError {
+  return isInvalidLLMKeyError(err) || isLLMKeyFailedError(err);
+}
+
 /** The stored document exists but the server could not decode it. Distinct from
  * a missing material, which the UI reports as deleted. */
 export function isMaterialContentUnreadable(err: unknown): err is ApiError {
@@ -78,6 +90,8 @@ const CODED_ERROR_MESSAGES = new Set([
   'files_batch_exceeded',
   'llm_credits_exhausted',
   'model_unavailable',
+  'invalid_llm_key',
+  'llm_key_failed',
   'material_content_unreadable',
   ...ACCOUNT_FORBIDDEN_CODES,
 ]);
@@ -317,6 +331,7 @@ export const qk = {
   ingestStream: (wsId: string) => ['workspace', wsId, 'ingest-stream'] as const,
   integrations: ['integrations'] as const,
   labels: ['labels'] as const,
+  llmCredentials: ['llm-credentials'] as const,
   material: (id: string) => ['material', id] as const,
   materialDiscussions: (id: string) => ['material', id, 'discussions'] as const,
   materialRevisions: (id: string) => ['material', id, 'revisions'] as const,

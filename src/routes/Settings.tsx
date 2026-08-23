@@ -25,6 +25,7 @@ import { Input, InputError } from '@/components/ui/Input';
 import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
+import { KeysSection } from '@/features/settings/KeysSection';
 import { ModelPicker } from '@/features/settings/ModelPicker';
 import { QuizModelPicker } from '@/features/settings/QuizModelPicker';
 import { SubscriptionTab } from '@/features/settings/SubscriptionTab';
@@ -368,7 +369,8 @@ function LlmTab() {
   return (
     <>
       <p className="mb-4 text-fg-secondary text-sm">{m.settings_llm_hint()}</p>
-      <div className="rounded-card border border-line bg-surface px-5 py-4">
+      <KeysSection />
+      <div className="mt-4 rounded-card border border-line bg-surface px-5 py-4">
         <p className="t-subtitle">{m.settings_llm_chat()}</p>
         <ModelPicker className="mt-3" surface="chat" />
       </div>

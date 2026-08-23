@@ -5,9 +5,9 @@ below is a pure test of the statements in ``retrieval/store.py`` and of the
 schema they assume. That separation matters because a column rename in
 ``0001_init.sql`` breaks these silently at runtime and nowhere at import time.
 
-Vectors live in a per-width side table, so these exercise the default width the
-fixture workspace is pinned to. ``store.vector_table`` is what keeps the
-interpolated table name inside the set the schema actually defines.
+Vectors live in a per-pin side table, so these exercise the seeded qwen-embed
+row the fixture workspace is pinned to. ``store.vector_table`` is what keeps
+the interpolated table name inside the set the schema actually defines.
 """
 
 from __future__ import annotations
@@ -74,7 +74,6 @@ async def test_lexical_half_matches_without_a_useful_vector(workspace):
         terms="chlorophyll or absorbs",
         file_ids=None,
         candidates=10,
-        embedding_dim=cfg.embedding_dim,
     )
 
     assert rows[0]["text"] == "Chlorophyll absorbs red light"
@@ -91,7 +90,6 @@ async def test_vector_half_matches_without_shared_vocabulary(workspace):
         terms="nothing matches this",
         file_ids=None,
         candidates=10,
-        embedding_dim=cfg.embedding_dim,
     )
 
     assert rows[0]["text"] == "beta"
@@ -109,7 +107,6 @@ async def test_cjk_is_retrievable_through_the_bigram_tokenizer(workspace):
         terms="光合 or 合作 or 作用",
         file_ids=None,
         candidates=10,
-        embedding_dim=cfg.embedding_dim,
     )
 
     assert rows and rows[0]["text"].startswith("光合作用")
@@ -127,7 +124,6 @@ async def test_search_is_scoped_to_the_workspace_and_the_file_filter(workspace):
         terms="chlorophyll",
         file_ids=[keep],
         candidates=10,
-        embedding_dim=cfg.embedding_dim,
     )
 
     assert {row["file_id"] for row in rows} == {keep}
@@ -143,7 +139,6 @@ async def test_chunks_carry_the_provenance_a_citation_needs(workspace):
         terms="chlorophyll",
         file_ids=None,
         candidates=10,
-        embedding_dim=cfg.embedding_dim,
     )
 
     row = rows[0]
@@ -318,7 +313,6 @@ async def test_duplicate_alias_survives_deleting_first_file(workspace):
         terms="chlorophyll",
         file_ids=[second],
         candidates=10,
-        embedding_dim=cfg.embedding_dim,
     )
     read = await store.read_file_range(file_id=second, start=0, count=1)
 
@@ -530,11 +524,16 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
         )
     other = type(workspace)(workspace.dsn, other_id)
     dest_file = other.add_file("copy.txt")
-    donor = await store.find_ready_donor(source_sha256=sha, pipeline_identity=identity)
+    pin = await store.workspace_embedding_pin(other.id)
+    donor = await store.find_ready_donor(
+        source_sha256=sha,
+        pipeline_identity=identity,
+        embedding_model_key=pin["embedding_model_key"],
+        embedding_model_version=pin["embedding_model_version"],
+        embedding_dim=pin["embedding_dim"],
+    )
     assert donor is not None
     assert donor["id"] == donor_id
-
-    pin = await store.workspace_embedding_pin(other.id)
     association = await store.attach_file_content(
         workspace_id=other.id,
         file_id=dest_file,
@@ -557,7 +556,7 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
         )
         == 1
     )
-    table = store.vector_table(pin["embedding_dim"])
+    table = store.vector_table_for_pin(pin)
     assert (
         other.scalar(
             f"SELECT count(*) FROM {table} v JOIN rag_chunks c ON c.id = v.chunk_id "
@@ -600,7 +599,14 @@ async def test_donor_copy_skips_vectors_when_pins_differ(workspace):
         )
     other = type(workspace)(workspace.dsn, other_id)
     dest_file = other.add_file("copy.txt")
-    donor = await store.find_ready_donor(source_sha256=sha, pipeline_identity=identity)
+    pin = await store.workspace_embedding_pin(other.id)
+    donor = await store.find_ready_donor(
+        source_sha256=sha,
+        pipeline_identity=identity,
+        embedding_model_key=pin["embedding_model_key"],
+        embedding_model_version=pin["embedding_model_version"],
+        embedding_dim=pin["embedding_dim"],
+    )
     association = await store.attach_file_content(
         workspace_id=other.id,
         file_id=dest_file,
@@ -622,8 +628,7 @@ async def test_donor_copy_skips_vectors_when_pins_differ(workspace):
         )
         == 1
     )
-    pin = await store.workspace_embedding_pin(other.id)
-    table = store.vector_table(pin["embedding_dim"])
+    table = store.vector_table_for_pin(pin)
     assert (
         other.scalar(
             f"SELECT count(*) FROM {table} v JOIN rag_chunks c ON c.id = v.chunk_id "
@@ -632,6 +637,78 @@ async def test_donor_copy_skips_vectors_when_pins_differ(workspace):
         )
         == 0
     )
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute("DELETE FROM workspaces WHERE id = %s", (other_id,))
+
+
+async def test_donor_lookup_prefers_matching_pin(workspace):
+    """A newer donor in another space must not steal reuse from the old pin."""
+    import secrets
+
+    import psycopg
+
+    src_file = workspace.add_file("lecture.txt")
+    await _write(workspace, src_file, ["donor passage about osmosis"])
+    matching_id = workspace.scalar(
+        "SELECT content_id FROM rag_file_contents WHERE file_id = %s", (src_file,)
+    )
+    sha = "ab" * 32
+    identity = "auto:direct:none:none:v1"
+    workspace.scalar(
+        """
+        UPDATE rag_contents
+        SET source_sha256 = %s, pipeline_identity = %s, updated_at = now() - interval '1 hour'
+        WHERE id = %s
+        RETURNING id
+        """,
+        (sha, identity, matching_id),
+    )
+
+    other_id = f"ws_{secrets.token_hex(6)}"
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO workspaces (id, user_id, name, color) VALUES (%s, %s, %s, 'blue')",
+            (other_id, workspace.user_id, "Other"),
+        )
+    other = type(workspace)(workspace.dsn, other_id)
+    dest_file = other.add_file("newer.txt")
+    await _write(other, dest_file, ["donor passage about osmosis"])
+    newer_id = other.scalar(
+        "SELECT content_id FROM rag_file_contents WHERE file_id = %s", (dest_file,)
+    )
+    other.scalar(
+        """
+        UPDATE rag_contents
+        SET source_sha256 = %s, pipeline_identity = %s,
+            embedding_model_key = 'other-embed', embedding_model_version = 1,
+            updated_at = now()
+        WHERE id = %s
+        RETURNING id
+        """,
+        (sha, identity, newer_id),
+    )
+
+    pin = await store.workspace_embedding_pin(workspace.id)
+    donor = await store.find_ready_donor(
+        source_sha256=sha,
+        pipeline_identity=identity,
+        embedding_model_key=pin["embedding_model_key"],
+        embedding_model_version=pin["embedding_model_version"],
+        embedding_dim=pin["embedding_dim"],
+    )
+    assert donor is not None
+    assert donor["id"] == matching_id
+
+    other_space = await store.find_ready_donor(
+        source_sha256=sha,
+        pipeline_identity=identity,
+        embedding_model_key="other-embed",
+        embedding_model_version=1,
+        embedding_dim=pin["embedding_dim"],
+    )
+    assert other_space is not None
+    assert other_space["id"] == newer_id
+
     with psycopg.connect(workspace.dsn, autocommit=True) as conn:
         conn.execute("DELETE FROM workspaces WHERE id = %s", (other_id,))
 

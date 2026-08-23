@@ -102,7 +102,7 @@ async def search(
         pin["embedding_model_version"],
         registry.SURFACE_EMBEDDING,
     )
-    vectors = await models.embed([query], spec=spec)
+    vectors = await models.embed([models.format_query(query, spec)], spec=spec)
     if not vectors:
         return []
     rows = await store.hybrid_search(
@@ -111,7 +111,6 @@ async def search(
         terms=search_query_terms(query),
         file_ids=file_ids,
         candidates=cfg.search_candidates,
-        embedding_dim=pin["embedding_dim"],
     )
     passages = [Passage.from_row(row) for row in rows]
     passages = await _rerank(query, passages)

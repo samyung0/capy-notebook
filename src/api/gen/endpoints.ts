@@ -39,6 +39,7 @@ import type {
   Flashcard,
   GetSourceUploadPolicyParams,
   IntegrationsStatus,
+  LLMCredentialsResponse,
   Label,
   ListModelsParams,
   ListNotificationsParams,
@@ -88,6 +89,7 @@ import type {
   UpdateWorkspaceMemberReq,
   UpdateWorkspaceReq,
   UpdateWorkspaceSharingReq,
+  UpsertLLMCredentialReq,
   UsageReport,
   User,
   Workspace,
@@ -2788,6 +2790,156 @@ export const getMe = async ( options?: RequestInit): Promise<getMeResponse> => {
 
   const data: getMeResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as getMeResponse
+}
+
+
+
+export type listLLMCredentialsResponse200 = {
+  data: LLMCredentialsResponse
+  status: 200
+}
+
+export type listLLMCredentialsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listLLMCredentialsResponseSuccess = (listLLMCredentialsResponse200) & {
+  headers: Headers;
+};
+export type listLLMCredentialsResponseError = (listLLMCredentialsResponseDefault) & {
+  headers: Headers;
+};
+
+export type listLLMCredentialsResponse = (listLLMCredentialsResponseSuccess | listLLMCredentialsResponseError)
+
+export const getListLLMCredentialsUrl = () => {
+
+
+
+
+  return `/api/me/llm-credentials`
+}
+
+/**
+ * @summary Saved provider keys
+ */
+export const listLLMCredentials = async ( options?: RequestInit): Promise<listLLMCredentialsResponse> => {
+
+  const res = await fetch(getListLLMCredentialsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listLLMCredentialsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listLLMCredentialsResponse
+}
+
+
+
+export type upsertLLMCredentialResponse204 = {
+  data: void
+  status: 204
+}
+
+export type upsertLLMCredentialResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type upsertLLMCredentialResponseSuccess = (upsertLLMCredentialResponse204) & {
+  headers: Headers;
+};
+export type upsertLLMCredentialResponseError = (upsertLLMCredentialResponseDefault) & {
+  headers: Headers;
+};
+
+export type upsertLLMCredentialResponse = (upsertLLMCredentialResponseSuccess | upsertLLMCredentialResponseError)
+
+export const getUpsertLLMCredentialUrl = () => {
+
+
+
+
+  return `/api/me/llm-credentials`
+}
+
+/**
+ * @summary Save a provider key
+ */
+export const upsertLLMCredential = async (upsertLLMCredentialReq: NonReadonly<UpsertLLMCredentialReq>, options?: RequestInit): Promise<upsertLLMCredentialResponse> => {
+
+  const res = await fetch(getUpsertLLMCredentialUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(upsertLLMCredentialReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: upsertLLMCredentialResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as upsertLLMCredentialResponse
+}
+
+
+
+export type deleteLLMCredentialResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteLLMCredentialResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type deleteLLMCredentialResponseSuccess = (deleteLLMCredentialResponse204) & {
+  headers: Headers;
+};
+export type deleteLLMCredentialResponseError = (deleteLLMCredentialResponseDefault) & {
+  headers: Headers;
+};
+
+export type deleteLLMCredentialResponse = (deleteLLMCredentialResponseSuccess | deleteLLMCredentialResponseError)
+
+export const getDeleteLLMCredentialUrl = (provider: string,) => {
+
+
+
+
+  return `/api/me/llm-credentials/${provider}`
+}
+
+/**
+ * @summary Remove a provider key
+ */
+export const deleteLLMCredential = async (provider: string, options?: RequestInit): Promise<deleteLLMCredentialResponse> => {
+
+  const res = await fetch(getDeleteLLMCredentialUrl(provider),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: deleteLLMCredentialResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteLLMCredentialResponse
 }
 
 
