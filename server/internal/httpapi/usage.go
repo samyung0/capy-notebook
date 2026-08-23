@@ -45,20 +45,11 @@ func (u pipeUsage) events(actorUserID, workspaceID, surface string, llm, embed s
 	if u.empty() {
 		return nil
 	}
-	if paidBy == "" {
-		paidBy = modelsPaidByPlatform
-	}
 	var out []store.UsageEvent
 	if u.InputTokens > 0 || u.OutputTokens > 0 {
-		rates := llm
-		if rates.MicrosPerOutputToken == 0 && paidBy != modelsPaidByUser {
-			rates = store.DefaultLLMRates()
-		}
-		credits := store.CreditsForTokens(rates, store.KindLLM, u.InputTokens, u.OutputTokens)
-		cost := store.CostMicroUSD(rates, u.InputTokens, u.OutputTokens)
+		credits := store.CreditsForTokens(llm, store.KindLLM, u.InputTokens, u.OutputTokens)
 		if paidBy == modelsPaidByUser {
 			credits = 0
-			cost = 0
 		}
 		out = append(out, store.UsageEvent{
 			ActorUserID:  actorUserID,
@@ -67,37 +58,31 @@ func (u pipeUsage) events(actorUserID, workspaceID, surface string, llm, embed s
 			Surface:      surface,
 			Provider:     u.Provider,
 			Model:        u.Model,
-			ModelKey:     rates.ModelKey,
-			ModelVersion: rates.ModelVersion,
+			ModelKey:     llm.ModelKey,
+			ModelVersion: llm.ModelVersion,
 			InputTokens:  u.InputTokens,
 			OutputTokens: u.OutputTokens,
 			Unit:         "tokens",
 			CreditMicros: credits,
-			CostMicroUSD: cost,
 			Metadata:     map[string]any{"calls": u.Calls, "paidBy": paidBy},
 		})
 	}
 	if u.EmbedTokens > 0 {
-		// Query embeddings are absorbed: recorded for reconciliation, billed
-		// at zero credits. Rates must be the workspace pin, not the live
-		// default, or a retarget mislabels old-workspace search. Ingest still
-		// charges through the worker.
-		rates := embed
-		if rates.MicrosPerInputToken == 0 {
-			rates = store.DefaultEmbeddingRates()
-		}
+		// Query embeddings are absorbed: recorded at zero credits. Rates must
+		// already be the workspace pin resolved before beginSpend. A missing
+		// pin should have failed the request. Ingest still charges through
+		// the worker.
 		out = append(out, store.UsageEvent{
 			ActorUserID:  actorUserID,
 			WorkspaceID:  workspaceID,
 			Kind:         store.KindEmbedding,
 			Surface:      surface,
 			Provider:     u.Provider,
-			ModelKey:     rates.ModelKey,
-			ModelVersion: rates.ModelVersion,
+			ModelKey:     embed.ModelKey,
+			ModelVersion: embed.ModelVersion,
 			InputTokens:  u.EmbedTokens,
 			Unit:         "tokens",
 			CreditMicros: 0,
-			CostMicroUSD: store.CostMicroUSD(rates, u.EmbedTokens, 0),
 		})
 	}
 	return out

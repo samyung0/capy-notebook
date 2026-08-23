@@ -203,10 +203,10 @@ func TestCreateWorkspacePinsLiveEmbeddingDefault(t *testing.T) {
 		INSERT INTO model_configs (
 			model_key, version, display_name, provider_slug, base_url, provider_model_id,
 			params, surfaces, micros_per_input_token, micros_per_output_token,
-			usd_micros_per_input_token, usd_micros_per_output_token, enabled, is_default_for
+			enabled, is_default_for
 		) VALUES ($1, 1, 'Alt Embed', 'openrouter', 'https://example.test', 'alt-embed',
 			'{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}'::jsonb,
-			ARRAY['embedding'], 99, 99, 0, 0, true, ARRAY['embedding'])`, altKey); err != nil {
+			ARRAY['embedding'], 99, 99, true, ARRAY['embedding'])`, altKey); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx, `
@@ -244,13 +244,47 @@ func TestCreateWorkspacePinsLiveEmbeddingDefault(t *testing.T) {
 		t.Fatalf("newWorkspaceEmbedding skipped the live default: %s v%d", key, version)
 	}
 
-	oldRates := s.EmbeddingRates(ctx, first.ID)
+	oldRates, err := s.EmbeddingRates(ctx, first.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if oldRates.ModelKey != "qwen-embed" || oldRates.MicrosPerInputToken != 50 {
 		t.Fatalf("old workspace rates followed the new default: %#v", oldRates)
 	}
-	newRates := s.EmbeddingRates(ctx, second.ID)
+	newRates, err := s.EmbeddingRates(ctx, second.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if newRates.ModelKey != altKey || newRates.MicrosPerInputToken != 99 {
 		t.Fatalf("new workspace rates: %#v", newRates)
+	}
+}
+
+func TestEmbeddingRatesFailsWhenPinCannotResolve(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	userID := newCreditsTestUser(t, s)
+	ws, err := s.CreateWorkspace(ctx, userID, "Broken pin", ColorGreen, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := s.EmbeddingRates(ctx, ""); !errors.Is(err, ErrModelUnavailable) {
+		t.Fatalf("empty workspace: %v", err)
+	}
+
+	if _, err := s.pool.Exec(ctx,
+		`UPDATE workspaces SET embedding_model_key='ghost-embed', embedding_model_version=1
+		   WHERE id=$1`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.EmbeddingRates(ctx, ws.ID); !errors.Is(err, ErrModelUnavailable) {
+		t.Fatalf("unknown pin: %v", err)
 	}
 }
 

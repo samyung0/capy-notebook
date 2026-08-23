@@ -184,6 +184,42 @@ func TestChatStreamIgnoresClientModelAndStampsTheAssistantMessage(t *testing.T) 
 	}
 }
 
+func TestIngestSlotsArePerActor(t *testing.T) {
+	fx := openBilling(t)
+	ctx := context.Background()
+
+	empty := doReq(t, fx.handler, http.MethodGet, "/api/me/ingest-slots", fx.actorID, nil)
+	if empty.Code != http.StatusOK {
+		t.Fatalf("empty slots = %d %s", empty.Code, empty.Body.String())
+	}
+	var slots store.IngestSlots
+	if err := json.Unmarshal(empty.Body.Bytes(), &slots); err != nil {
+		t.Fatal(err)
+	}
+	if slots.SlotsLimit != store.ConcurrentIngestLeases || slots.SlotsUsed != 0 || slots.SlotsFree != store.ConcurrentIngestLeases {
+		t.Fatalf("empty slots %#v", slots)
+	}
+
+	if _, err := fx.store.BeginIngestSpend(ctx, fx.actorID, fx.workspaceID); err != nil {
+		t.Fatal(err)
+	}
+	held := doReq(t, fx.handler, http.MethodGet, "/api/me/ingest-slots", fx.actorID, nil)
+	if err := json.Unmarshal(held.Body.Bytes(), &slots); err != nil {
+		t.Fatal(err)
+	}
+	if slots.SlotsUsed != 1 || slots.SlotsFree != store.ConcurrentIngestLeases-1 {
+		t.Fatalf("held slots %#v", slots)
+	}
+
+	owner := doReq(t, fx.handler, http.MethodGet, "/api/me/ingest-slots", fx.ownerID, nil)
+	if err := json.Unmarshal(owner.Body.Bytes(), &slots); err != nil {
+		t.Fatal(err)
+	}
+	if slots.SlotsUsed != 0 {
+		t.Fatalf("owner saw actor lease: %#v", slots)
+	}
+}
+
 func TestUploadRefusesActorCreditsAndOwnerStorageSeparately(t *testing.T) {
 	fx := openBilling(t)
 	body := map[string]any{

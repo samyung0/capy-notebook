@@ -919,13 +919,14 @@ export const GooglePickerTokenResponse = zod.object({
 
 
 /**
- * @summary Recent OneDrive files
+ * @summary OneDrive host for File Picker
  */
-export const MicrosoftRecentResponseItem = zod.object({
+export const MicrosoftDriveResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "driveType": zod.string(),
   "id": zod.string(),
-  "name": zod.string()
+  "webUrl": zod.string()
 })
-export const MicrosoftRecentResponse = zod.array(MicrosoftRecentResponseItem)
 
 
 /**

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/evonotes/server/internal/models"
 )
@@ -25,10 +26,6 @@ const (
 	baseMicrosPerOutputToken int64 = 1_000
 	baseMicrosPerInputToken  int64 = 250
 
-	// Embeddings are cheap and run in bulk during ingest; pricing them near
-	// zero avoids a single large upload consuming a month's allowance.
-	baseMicrosPerEmbeddingToken int64 = 50
-
 	// Vision calls carry a fixed floor because image tokens are reported
 	// inconsistently across providers.
 	microsPerCaptionCall = 2_000 // 2 credits per figure caption
@@ -43,38 +40,28 @@ const (
 	microsPerEmail = 100_000 // 0.1 credits per message
 )
 
-// TokenRates is the credit (and optional USD) multiplier for one resolved
-// model config. Zero values mean "use the 1x Flash reference".
+// TokenRates is the credit multiplier for one resolved model config.
+// Zeros stay zeros; they are not filled with the Flash 1x reference.
 type TokenRates struct {
-	MicrosPerInputToken     int64
-	MicrosPerOutputToken    int64
-	USDMicrosPerInputToken  int64
-	USDMicrosPerOutputToken int64
-	ModelKey                string
-	ModelVersion            int
-}
-
-func DefaultLLMRates() TokenRates {
-	return TokenRates{
-		MicrosPerInputToken:  baseMicrosPerInputToken,
-		MicrosPerOutputToken: baseMicrosPerOutputToken,
-	}
-}
-
-func DefaultEmbeddingRates() TokenRates {
-	return TokenRates{
-		MicrosPerInputToken:  baseMicrosPerEmbeddingToken,
-		MicrosPerOutputToken: baseMicrosPerEmbeddingToken,
-	}
+	MicrosPerInputToken  int64
+	MicrosPerOutputToken int64
+	ModelKey             string
+	ModelVersion         int
 }
 
 // EmbeddingRates is the catalog row the workspace is pinned to. Query
 // embeddings are recorded at zero credits; these rates only label the
-// usage_event and fill cost_micro_usd. The live registry default is the
-// wrong answer after a retarget: old workspaces still run the old model.
-func (s *Store) EmbeddingRates(ctx context.Context, workspaceID string) TokenRates {
-	if s.registry == nil || workspaceID == "" {
-		return DefaultEmbeddingRates()
+// usage_event. The live registry default is the wrong answer after a
+// retarget: old workspaces still run the old model.
+//
+// A missing workspace, empty pin, catalog miss, or non-embedding row is an
+// error. Callers must fail the request rather than substituting a default.
+func (s *Store) EmbeddingRates(ctx context.Context, workspaceID string) (TokenRates, error) {
+	if s.registry == nil {
+		return TokenRates{}, fmt.Errorf("%w: registry not configured", ErrModelUnavailable)
+	}
+	if workspaceID == "" {
+		return TokenRates{}, fmt.Errorf("%w: missing workspace for embedding", ErrModelUnavailable)
 	}
 	var pin models.Pin
 	err := s.pool.QueryRow(ctx,
@@ -82,53 +69,38 @@ func (s *Store) EmbeddingRates(ctx context.Context, workspaceID string) TokenRat
 		workspaceID,
 	).Scan(&pin.Key, &pin.Version)
 	if err != nil {
-		return DefaultEmbeddingRates()
+		return TokenRates{}, fmt.Errorf("%w: workspace embedding pin: %v", ErrModelUnavailable, err)
+	}
+	if pin.Zero() {
+		return TokenRates{}, fmt.Errorf("%w: empty workspace embedding pin", ErrModelUnavailable)
 	}
 	cfg, err := s.registry.Get(ctx, pin.Key, pin.Version)
 	if err != nil {
-		return DefaultEmbeddingRates()
+		return TokenRates{}, fmt.Errorf("%w: %v", ErrModelUnavailable, err)
 	}
-	return RatesFromConfig(cfg)
+	if !cfg.Allows(models.SurfaceEmbedding) {
+		return TokenRates{}, fmt.Errorf("%w: %s v%d is not an embedding model", ErrModelUnavailable, cfg.Key, cfg.Version)
+	}
+	return RatesFromConfig(cfg), nil
 }
 
 func RatesFromConfig(cfg models.Config) TokenRates {
-	rates := TokenRates{
-		MicrosPerInputToken:     cfg.MicrosPerInputToken,
-		MicrosPerOutputToken:    cfg.MicrosPerOutputToken,
-		USDMicrosPerInputToken:  cfg.USDMicrosPerInputToken,
-		USDMicrosPerOutputToken: cfg.USDMicrosPerOutputToken,
-		ModelKey:                cfg.Key,
-		ModelVersion:            cfg.Version,
+	return TokenRates{
+		MicrosPerInputToken:  cfg.MicrosPerInputToken,
+		MicrosPerOutputToken: cfg.MicrosPerOutputToken,
+		ModelKey:             cfg.Key,
+		ModelVersion:         cfg.Version,
 	}
-	if rates.MicrosPerInputToken <= 0 {
-		rates.MicrosPerInputToken = baseMicrosPerInputToken
-	}
-	if rates.MicrosPerOutputToken <= 0 {
-		rates.MicrosPerOutputToken = baseMicrosPerOutputToken
-	}
-	return rates
 }
 
-// CreditsForTokens prices a completion from the resolved config. Embeddings
-// use the config's input rate for both sides because they have no output.
+// CreditsForTokens prices a completion from the given rates. Embeddings use
+// the input rate for both sides because they have no output. Zero rates stay
+// zero; this does not invent Flash or embedding fills.
 func CreditsForTokens(rates TokenRates, kind string, inputTokens, outputTokens int64) int64 {
-	if rates.MicrosPerInputToken == 0 && rates.MicrosPerOutputToken == 0 {
-		rates = DefaultLLMRates()
-	}
 	if kind == KindEmbedding {
-		per := rates.MicrosPerInputToken
-		if per == 0 {
-			per = baseMicrosPerEmbeddingToken
-		}
-		return (inputTokens + outputTokens) * per
+		return (inputTokens + outputTokens) * rates.MicrosPerInputToken
 	}
 	return inputTokens*rates.MicrosPerInputToken + outputTokens*rates.MicrosPerOutputToken
-}
-
-// CostMicroUSD is reconciliation-only. Unit of the rate fields is micro-USD
-// per million tokens, so the result is micro-USD.
-func CostMicroUSD(rates TokenRates, inputTokens, outputTokens int64) int64 {
-	return (inputTokens*rates.USDMicrosPerInputToken + outputTokens*rates.USDMicrosPerOutputToken) / 1_000_000
 }
 
 // CreditsForCaption prices one vision call, with the per-token component on

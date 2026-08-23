@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -88,6 +89,12 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	cfg, llmRates := llm.Cfg, llm.Rates
 
 	conv, err := a.resolveConversation(ctx, userID, wsID, req.ConversationID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+
+	embed, err := a.resolveEmbedding(ctx, conv.WorkspaceID)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -180,13 +187,15 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		tokens = int(usage.InputTokens + usage.OutputTokens)
 	}
 	_ = a.s.FinalizeAssistantMessage(saveCtx, assistant.ID, builder.String(), status, tokens, citations, genID)
-	charge.settle(saveCtx, usage.events(userID, conv.WorkspaceID, store.SurfaceChat, llmRates, a.embeddingRates(saveCtx, conv.WorkspaceID), llm.PaidBy)...)
+	charge.settle(saveCtx, usage.events(userID, conv.WorkspaceID, store.SurfaceChat, llmRates, embed.Rates, llm.PaidBy)...)
 
 	// Best-effort final event; the client may already be gone on abort.
 	if ctx.Err() == nil {
 		if streamErr != nil {
 			if code, msg, ok := llmKeyPayload(streamErr); ok {
 				send(pipeChatEvent{Type: "error", Code: code, Message: msg})
+			} else if errors.Is(streamErr, errAIUnavailable) {
+				send(pipeChatEvent{Type: "error", Code: "ai_unavailable", Message: errAIUnavailable.Error()})
 			} else {
 				send(pipeChatEvent{Type: "error", Message: streamErr.Error()})
 			}
@@ -212,13 +221,12 @@ func (a *api) resolveConversation(ctx context.Context, userID, wsID, convID stri
 }
 
 // relayChat streams the grounded answer from the Python retrieval service,
-// invoking onToken for each text chunk and onEvent for citations/done. When the
-// pipeline is unavailable it falls back to a streamed placeholder so the UI
-// still works end-to-end.
+// invoking onToken for each text chunk and onEvent for citations/done. A
+// missing client or a failed handshake is an error; the caller marks the
+// turn failed instead of inventing tokens.
 func (a *api) relayChat(ctx context.Context, userID string, conv store.Conversation, llm resolvedLLM, query string, onToken func(string), onEvent func(pipeChatEvent)) error {
 	if a.pipe == nil {
-		a.streamFallback(ctx, query, onToken)
-		return nil
+		return errAIUnavailable
 	}
 
 	history := a.historyForPrompt(ctx, conv.ID)
@@ -236,9 +244,7 @@ func (a *api) relayChat(ctx context.Context, userID string, conv store.Conversat
 		if mapped := pipelineLLMError(err); mapped != nil {
 			return mapped
 		}
-		// Pipeline unreachable: degrade to a placeholder rather than erroring.
-		a.streamFallback(ctx, query, onToken)
-		return nil
+		return fmt.Errorf("%w: %v", errAIUnavailable, err)
 	}
 	defer rc.Close()
 
@@ -287,19 +293,6 @@ func (a *api) historyForPrompt(ctx context.Context, convID string) []map[string]
 		out = append(out, map[string]string{"role": m.Role, "content": m.Content})
 	}
 	return out
-}
-
-// streamFallback emits a short placeholder answer word-by-word so the streaming
-// UX is exercised even with the pipeline offline.
-func (a *api) streamFallback(ctx context.Context, query string, onToken func(string)) {
-	text := fmt.Sprintf("Based on your sources, %s relates to the key ideas in your materials. (Pipeline offline — showing a placeholder.)", strings.TrimRight(query, "?"))
-	for _, word := range strings.Fields(text) {
-		if ctx.Err() != nil {
-			return
-		}
-		onToken(word + " ")
-		time.Sleep(35 * time.Millisecond)
-	}
 }
 
 // titleFrom derives a short conversation title from the first user message.

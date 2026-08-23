@@ -244,7 +244,7 @@ func TestWorkspaceEditorCanCreateFlashcardDecks(t *testing.T) {
 // owner when CreatedBy is empty, so a caller that forgets to pass it silently
 // records the owner as the author.
 func TestGeneratedMaterialsRecordTheActorAsAuthor(t *testing.T) {
-	h := openShareHTTP(t)
+	h := openShareAPI(t, stubRetrieval(t))
 
 	for _, kind := range []string{"mindmap", "diagram", "flashcards", "quiz"} {
 		t.Run(kind, func(t *testing.T) {
@@ -283,7 +283,7 @@ func TestGeneratedMaterialsRecordTheActorAsAuthor(t *testing.T) {
 }
 
 func TestGenerateRequiresUniqueTitle(t *testing.T) {
-	h := openShareHTTP(t)
+	h := openShareAPI(t, stubRetrieval(t))
 	body := map[string]any{"kind": "quiz", "count": 1, "title": "Shared generate name"}
 	first := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
 		"u_editor", body)

@@ -55,8 +55,7 @@ const (
 const modelConfigSelect = `
 		SELECT model_key, version, display_name, provider_slug, base_url, provider_model_id,
 		       auth_mode, context_window_tokens, params, surfaces,
-		       micros_per_input_token, micros_per_output_token,
-		       usd_micros_per_input_token, usd_micros_per_output_token, enabled, is_default_for
+		       micros_per_input_token, micros_per_output_token, enabled, is_default_for
 		  FROM model_configs`
 
 var ErrNotFound = errors.New("model config not found")
@@ -72,22 +71,20 @@ func (p Pin) Zero() bool { return p.Key == "" || p.Version <= 0 }
 
 // Config is one immutable model_configs row.
 type Config struct {
-	Key                     string
-	Version                 int
-	DisplayName             string
-	ProviderSlug            string
-	BaseURL                 string
-	ProviderModelID         string
-	AuthMode                string
-	ContextWindowTokens     int
-	Params                  map[string]any
-	Surfaces                []string
-	MicrosPerInputToken     int64
-	MicrosPerOutputToken    int64
-	USDMicrosPerInputToken  int64
-	USDMicrosPerOutputToken int64
-	Enabled                 bool
-	IsDefaultFor            []string
+	Key                  string
+	Version              int
+	DisplayName          string
+	ProviderSlug         string
+	BaseURL              string
+	ProviderModelID      string
+	AuthMode             string
+	ContextWindowTokens  int
+	Params               map[string]any
+	Surfaces             []string
+	MicrosPerInputToken  int64
+	MicrosPerOutputToken int64
+	Enabled              bool
+	IsDefaultFor         []string
 }
 
 func (c Config) Pin() Pin { return Pin{Key: c.Key, Version: c.Version} }
@@ -357,7 +354,7 @@ func scanConfig(row rowScanner) (Config, error) {
 		&c.Key, &c.Version, &c.DisplayName, &c.ProviderSlug, &c.BaseURL, &c.ProviderModelID,
 		&c.AuthMode, &c.ContextWindowTokens,
 		&params, &surfaces, &c.MicrosPerInputToken, &c.MicrosPerOutputToken,
-		&c.USDMicrosPerInputToken, &c.USDMicrosPerOutputToken, &c.Enabled, &defaultFor,
+		&c.Enabled, &defaultFor,
 	)
 	if err != nil {
 		return Config{}, err

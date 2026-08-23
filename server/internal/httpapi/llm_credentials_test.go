@@ -28,6 +28,26 @@ func TestPipelineLLMError(t *testing.T) {
 	}
 }
 
+func TestPipelineGenerateError(t *testing.T) {
+	empty := &pipeline.Error{
+		Status: 502,
+		Body:   []byte(`{"code":"generate_empty","message":"The model returned no usable mindmap."}`),
+	}
+	if !errors.Is(pipelineGenerateError(empty), errGenerateEmpty) {
+		t.Fatalf("generate_empty: %v", pipelineGenerateError(empty))
+	}
+	wrapped := &pipeline.Error{
+		Status: 502,
+		Body:   []byte(`{"detail":{"code":"generate_empty","message":"no quiz"}}`),
+	}
+	if !errors.Is(pipelineGenerateError(wrapped), errGenerateEmpty) {
+		t.Fatalf("detail wrapper: %v", pipelineGenerateError(wrapped))
+	}
+	if pipelineGenerateError(&pipeline.Error{Status: 503, Body: []byte(`{"message":"down"}`)}) != nil {
+		t.Fatal("unrelated pipeline error must not map to generate_empty")
+	}
+}
+
 func TestKeyErrorFromEvent(t *testing.T) {
 	if !errors.Is(keyErrorFromEvent("invalid_key", "x"), store.ErrInvalidLLMKey) {
 		t.Fatal("invalid_key")

@@ -54,10 +54,8 @@ class ModelConfig:
     provider_model_id: str
     params: dict[str, Any] = field(default_factory=dict)
     surfaces: tuple[str, ...] = ()
-    micros_per_input_token: int = 250
-    micros_per_output_token: int = 1000
-    usd_micros_per_input_token: int = 0
-    usd_micros_per_output_token: int = 0
+    micros_per_input_token: int = 0
+    micros_per_output_token: int = 0
     enabled: bool = True
     is_default_for: tuple[str, ...] = ()
     auth_mode: str = AUTH_PLATFORM
@@ -130,7 +128,6 @@ _select_cols = """
                     SELECT model_key, version, display_name, provider_slug, base_url,
                            provider_model_id, params, surfaces,
                            micros_per_input_token, micros_per_output_token,
-                           usd_micros_per_input_token, usd_micros_per_output_token,
                            enabled, is_default_for, auth_mode, context_window_tokens
                       FROM model_configs
 """
@@ -307,9 +304,9 @@ def _from_row(row: tuple[Any, ...]) -> ModelConfig:
     if not isinstance(params, dict):
         params = {}
     surfaces = tuple(row[7] or ())
-    defaults = tuple(row[13] or ())
-    auth_mode = row[14] if len(row) > 14 and row[14] else AUTH_PLATFORM
-    window = int(row[15]) if len(row) > 15 and row[15] is not None else 0
+    defaults = tuple(row[11] or ())
+    auth_mode = row[12] if len(row) > 12 and row[12] else AUTH_PLATFORM
+    window = int(row[13]) if len(row) > 13 and row[13] is not None else 0
     return ModelConfig(
         model_key=row[0],
         version=int(row[1]),
@@ -321,9 +318,7 @@ def _from_row(row: tuple[Any, ...]) -> ModelConfig:
         surfaces=surfaces,
         micros_per_input_token=int(row[8]),
         micros_per_output_token=int(row[9]),
-        usd_micros_per_input_token=int(row[10]),
-        usd_micros_per_output_token=int(row[11]),
-        enabled=bool(row[12]),
+        enabled=bool(row[10]),
         is_default_for=defaults,
         auth_mode=str(auth_mode),
         context_window_tokens=window,
@@ -455,19 +450,11 @@ def credits_for_tokens(
     spec: ModelConfig, kind: str, input_tokens: int, output_tokens: int
 ) -> int:
     if kind == "embedding":
-        per = spec.micros_per_input_token or 50
-        return (input_tokens + output_tokens) * per
+        return (input_tokens + output_tokens) * spec.micros_per_input_token
     return (
         input_tokens * spec.micros_per_input_token
         + output_tokens * spec.micros_per_output_token
     )
-
-
-def cost_micro_usd(spec: ModelConfig, input_tokens: int, output_tokens: int) -> int:
-    return (
-        input_tokens * spec.usd_micros_per_input_token
-        + output_tokens * spec.usd_micros_per_output_token
-    ) // 1_000_000
 
 
 def poll_forever() -> None:

@@ -219,7 +219,7 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 		send([]byte("[DONE]"))
 		return
 	}
-	charge.settle(ctx, usage.events(userID, wsID, store.SurfaceEditor, rates, store.DefaultEmbeddingRates(), llm.PaidBy)...)
+	charge.settle(ctx, usage.events(userID, wsID, store.SurfaceEditor, rates, store.TokenRates{}, llm.PaidBy)...)
 }
 
 // copyAIDataStream copies only valid data-stream payloads. It drops comments
@@ -348,7 +348,7 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 		writeAIError(w, http.StatusBadGateway, "invalid_upstream_response", "AI service returned invalid JSON", true)
 		return
 	}
-	charge.settle(ctx, usageFrom(raw).events(userID, wsID, store.SurfaceEditor, rates, store.DefaultEmbeddingRates(), llm.PaidBy)...)
+	charge.settle(ctx, usageFrom(raw).events(userID, wsID, store.SurfaceEditor, rates, store.TokenRates{}, llm.PaidBy)...)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(raw)
 }

@@ -38,6 +38,18 @@ def _spec(**overrides) -> ModelConfig:
     return ModelConfig(**base)
 
 
+def test_credits_for_tokens_keeps_zeros():
+    spec = _spec(micros_per_input_token=0, micros_per_output_token=0)
+    assert credits_for_tokens(spec, "llm", 1000, 1000) == 0
+    embed = _spec(
+        model_key="qwen-embed",
+        surfaces=("embedding",),
+        micros_per_input_token=0,
+        micros_per_output_token=0,
+    )
+    assert credits_for_tokens(embed, "embedding", 1000, 0) == 0
+
+
 def test_credits_differ_by_model():
     flash = _spec()
     pro = _spec(
@@ -184,5 +196,25 @@ def test_ingest_bills_the_actor(monkeypatch):
         lambda: _spec(model_key="gemini-flash-lite", surfaces=("vision",)),
     )
 
-    worker._charge_ingest("f_1", "ws_1", "u_actor")
+    settled: list[str] = []
+    monkeypatch.setattr(
+        db, "settle_credit_reservation", lambda _cur, rid: settled.append(rid)
+    )
+    worker._charge_ingest("f_1", "ws_1", "u_actor", "cr_1")
     assert billed and billed[0]["actor_user_id"] == "u_actor"
+    assert billed[0]["reservation_id"] == "cr_1"
+    assert settled == ["cr_1"]
+
+
+def test_finish_fail_releases_reservation(monkeypatch):
+    released: list[str] = []
+    monkeypatch.setattr(db, "connect", lambda: _Conn())
+    monkeypatch.setattr(worker, "_lost_claim", lambda *_a, **_k: False)
+    monkeypatch.setattr(db, "set_file_status", lambda *_a, **_k: None)
+    monkeypatch.setattr(db, "set_file_indexed", lambda *_a, **_k: None)
+    monkeypatch.setattr(db, "set_job", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        db, "release_credit_reservation", lambda _cur, rid: released.append(rid)
+    )
+    worker._finish_fail("f_1", "j_1", "boom", 1, "cr_fail")
+    assert released == ["cr_fail"]

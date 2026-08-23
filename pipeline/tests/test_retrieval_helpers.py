@@ -157,6 +157,31 @@ def test_strip_fence_unwraps_mermaid():
     assert workflows.strip_fence("flowchart LR") == "flowchart LR"
 
 
+def test_require_helpers_reject_empty_model_output():
+    assert workflows.require_mermaid("```mermaid\nmindmap\n  root((X))\n```", "mindmap")
+    assert workflows.require_json_list('[{"front": "a"}]', "flashcards") == [
+        {"front": "a"}
+    ]
+    assert workflows.require_text("  bullets  ", "summary") == "bullets"
+
+    for fn, args in (
+        (workflows.require_mermaid, ("", "mindmap")),
+        (workflows.require_mermaid, ("   ", "diagram")),
+        (workflows.require_json_list, ("", "flashcards")),
+        (workflows.require_json_list, ("[]", "quiz")),
+        (workflows.require_json_list, ("not json", "quiz")),
+        (workflows.require_json_list, ('{"front": "a"}', "flashcards")),
+        (workflows.require_text, ("", "summary")),
+        (workflows.require_text, ("  \n", "summary")),
+    ):
+        try:
+            fn(*args)
+        except workflows.GenerateEmpty as exc:
+            assert exc.kind == args[-1]
+        else:
+            raise AssertionError(f"{fn.__name__}{args} should have failed")
+
+
 def test_normalize_questions_fills_ids_and_maps_legacy_difficulty():
     questions = workflows.normalize_questions(
         [

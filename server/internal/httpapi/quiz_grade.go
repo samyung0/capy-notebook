@@ -84,7 +84,7 @@ func (a *api) gradeQuizAnswer(ctx context.Context, in *quizGradeInput) (*quizGra
 	if json.Unmarshal(raw, &parsed) != nil {
 		return nil, huma.Error503ServiceUnavailable("AI service is unavailable")
 	}
-	charge.settle(ctx, usage.events(actor, wsID, store.SurfaceQuiz, llm.Rates, store.DefaultEmbeddingRates(), llm.PaidBy)...)
+	charge.settle(ctx, usage.events(actor, wsID, store.SurfaceQuiz, llm.Rates, store.TokenRates{}, llm.PaidBy)...)
 	return &quizGradeOutput{Body: apimodel.QuizGradeResp{
 		Award:  snapGradeAward(parsed.Award),
 		Reason: parsed.Reason,

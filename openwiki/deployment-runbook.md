@@ -415,3 +415,92 @@ Embedding rows are the ones the database will actually reject a delete of.
 If `usage_events` stays empty while chat works, the usual cause is a streamed
 completion without `stream_options={"include_usage": True}` — the request
 succeeds and reports nothing.
+
+---
+
+## 11. Google Drive and OneDrive pickers
+
+Cloud import uses two OAuth clients per provider. Clerk holds the download
+token. The browser picker uses a second public client (Google Picker API key
+plus app id, or an Entra SPA for OneDrive File Picker v8). Do not reuse the
+Clerk Microsoft token in the OneDrive picker. That token is Graph `Files.Read`.
+The picker needs a SharePoint-audience token (`{resource}/.default` for work,
+`OneDrive.ReadOnly` for personal).
+
+Skip this section and the import tab stays connect-only or fails closed.
+
+### Clerk custom credentials
+
+Clerk's shared Google and Microsoft credentials cannot add extra scopes.
+
+1. Create a Google Cloud OAuth web client. Use it as Clerk's Google custom
+   credentials.
+2. On the Clerk Google connection, add extra scope
+   `https://www.googleapis.com/auth/drive.file`.
+3. Create a Microsoft Entra web app (or reuse one) for Clerk. Add Graph
+   delegated `Files.Read` and `offline_access`.
+4. On the Clerk Microsoft connection, add extra scopes `Files.Read` and
+   `offline_access`.
+
+The Go gateway downloads with Clerk's token wallet. Same Google Cloud project
+must own the Picker API key, the Picker app id, and the Clerk Google client.
+`setAppId` is what lets `drive.file` open a file the user just picked.
+
+### Google Picker
+
+1. Enable **Google Picker API** and **Google Drive API** on that project.
+2. Create an API key. Restrict it to the Picker API.
+3. Copy the **project number** (not the project id). That is the app id.
+4. Set on the SPA build:
+
+```
+VITE_GOOGLE_PICKER_API_KEY=...
+VITE_GOOGLE_PICKER_APP_ID=...
+```
+
+Missing either variable shows a toast instead of a blank picker. `drive.file`
+is a restricted Google scope. A verification review may be required before
+unverified users can connect.
+
+### OneDrive File Picker v8 (MSAL)
+
+Create a **second** Entra app. This is a single-page application, not the Clerk
+web app.
+
+1. Authentication. Platform **Single-page application**. Redirect URIs are
+   `{SPA origin}/msal-redirect.html`, for example
+   `http://localhost:5173/msal-redirect.html` and
+   `https://abcd.com/msal-redirect.html`. Enable access tokens and ID tokens.
+2. Supported account types. Choose personal, work and school, or both. The
+   picker uses the `consumers` authority for `driveType=personal` and
+   `organizations` for work.
+3. API permissions (delegated only):
+   - Microsoft Graph `Files.Read`
+   - SharePoint `MyFiles.Read`
+4. Do **not** add `Files.Read.All` or `AllSites.Read` unless My files cannot
+   open without them.
+5. Set `VITE_MSAL_CLIENT_ID` on the SPA build to this app's client id.
+   If a school tenant rejects `common` / `organizations`, set
+   `VITE_MSAL_AUTHORITY=https://login.microsoftonline.com/<tenant-id>`.
+
+The host URL comes from Graph `GET /me/drive` (Clerk token, server-side), not
+from the user's email.
+
+- Personal. `https://onedrive.live.com/picker`
+- Work. `{origin of webUrl}/_layouts/15/FilePicker.aspx`
+
+The browser probes MSAL (`acquireTokenSilent`, then a popup) before the picker
+page loads. `AADSTS65001`, `AADSTS90094`, `consent_required`, `access_denied`,
+and an `InteractionRequiredAuthError` that the popup cannot complete become a
+toast that the connected account cannot use the picker. School tenants often
+need admin consent. `integrations.microsoft === true` is not enough.
+
+MSAL cache is `sessionStorage` and is cleared when the picker closes. Picker
+`postMessage` handlers check `event.origin` against the computed picker origin.
+
+### After pick
+
+Import stays `POST /api/workspaces/{id}/sources/import` with `fileIds` and,
+for OneDrive, optional `driveIds` of the same length. Download uses
+`/drives/{driveId}/items/{id}` when `driveId` is present, otherwise
+`/me/drive/items/{id}`.

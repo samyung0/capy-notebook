@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+
+	"github.com/evonotes/server/internal/models"
 )
 
 func newCreditsTestUser(t *testing.T, s *Store) string {
@@ -330,5 +332,169 @@ func TestUserUsageReportScopesToActorAndGroupsCurrentPeriod(t *testing.T) {
 	}
 	if report.Recent[0].CreditMicros == 0 && report.Recent[1].CreditMicros == 0 {
 		t.Fatal("recent rows should include credit micros, not USD")
+	}
+}
+
+func TestBeginIngestSpendCapsAndSettles(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+
+	var ids []string
+	for range ConcurrentIngestLeases {
+		id, err := s.BeginIngestSpend(ctx, userID, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, id)
+	}
+	if _, err := s.BeginIngestSpend(ctx, userID, ""); !errors.Is(err, ErrTooManyIngestLeases) {
+		t.Fatalf("21st ingest lease: %v", err)
+	}
+	slots, err := s.IngestSlots(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slots.SlotsUsed != ConcurrentIngestLeases || slots.SlotsFree != 0 {
+		t.Fatalf("slots %#v", slots)
+	}
+
+	chatID, err := s.BeginSpend(ctx, userID, "", SurfaceChat)
+	if err != nil {
+		t.Fatalf("ingest leases must not consume LLM slots: %v", err)
+	}
+	if err := s.ReleaseCredits(ctx, chatID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.SettleCredits(ctx, ids[0]); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReleaseCredits(ctx, ids[1]); err != nil {
+		t.Fatal(err)
+	}
+	slots, err = s.IngestSlots(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slots.SlotsUsed != ConcurrentIngestLeases-2 || slots.SlotsFree != 2 {
+		t.Fatalf("after close: %#v", slots)
+	}
+}
+
+func TestBeginIngestSpendRejectsWhenUsedAtLimit(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	limit := CreditLimitMicros(PlanFree)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros)
+		VALUES ($1, $2)`, userID, limit); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.BeginIngestSpend(ctx, userID, "")
+	var exhausted *CreditsExhaustedError
+	if !errors.As(err, &exhausted) {
+		t.Fatalf("begin ingest at limit: %v", err)
+	}
+}
+
+func TestSweepReleasesOrphanIngestReservation(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	id, err := s.BeginIngestSpend(ctx, userID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE credit_reservations
+		SET created_at = now() - interval '25 hours' WHERE id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+	released, err := s.SweepExpiredReservations(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if released < 1 {
+		t.Fatalf("orphan ingest not swept: %d", released)
+	}
+	slots, err := s.IngestSlots(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slots.SlotsUsed != 0 {
+		t.Fatalf("orphan still counted: %#v", slots)
+	}
+}
+
+func TestCreateSourceWithJobTakesIngestLease(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	owner := newBlobTestUser(t, s, "u_ingest_lease")
+	ws, err := s.CreateWorkspace(ctx, owner, "Ingest lease", ColorGreen, []TagRef{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	f, _, err := s.CreateSourceWithJob(ctx, ws.ID, owner, "notes.md", "md",
+		nil, "", 1, "sources/"+uid("blob"), "", "", "none", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	slots, err := s.IngestSlots(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slots.SlotsUsed != 1 || slots.SlotsFree != ConcurrentIngestLeases-1 {
+		t.Fatalf("after ingest enqueue: %#v", slots)
+	}
+
+	var reservationID string
+	if err := s.pool.QueryRow(ctx,
+		`SELECT payload->>'reservationId' FROM jobs WHERE payload->>'fileId'=$1`,
+		f.ID,
+	).Scan(&reservationID); err != nil {
+		t.Fatal(err)
+	}
+	if reservationID == "" {
+		t.Fatal("job payload missing reservationId")
+	}
+
+	if _, err := s.CreateSourceReady(ctx, ws.ID, owner, "clip.mp3", "audio",
+		nil, "", 1, "sources/"+uid("blob")); err != nil {
+		t.Fatal(err)
+	}
+	slots, err = s.IngestSlots(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slots.SlotsUsed != 1 {
+		t.Fatalf("store-only file took an ingest slot: %#v", slots)
+	}
+}
+
+func TestCreateSourceWithJobWithoutRegistryLeavesNoLease(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_ingest_noreg")
+	ws, err := s.CreateWorkspace(ctx, owner, "No registry", ColorGreen, []TagRef{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.CreateSourceWithJob(ctx, ws.ID, owner, "notes.md", "md",
+		nil, "", 1, "sources/"+uid("blob"), "", "", "none", false)
+	if !errors.Is(err, ErrIngestUnpinnable) {
+		t.Fatalf("err = %v, want ErrIngestUnpinnable", err)
+	}
+	slots, err := s.IngestSlots(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slots.SlotsUsed != 0 {
+		t.Fatalf("rolled-back enqueue left a lease: %#v", slots)
 	}
 }

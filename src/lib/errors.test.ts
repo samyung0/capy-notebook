@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '@/api/client';
+import { m } from '@/i18n';
 import {
   describeError,
   errorKind,
@@ -98,6 +99,14 @@ describe('frontend error normalization', () => {
     );
     expect(isNonDisclosing(error)).toBe(false);
     expect(describeError(error).action).toBe('subscription');
+  });
+
+  it('classifies ingest lease exhaustion separately from credit and stream limits', () => {
+    const error = new ApiError(429, 'Too Many Requests', undefined, {
+      code: 'too_many_ingest_leases',
+    });
+    expect(errorKind(error)).toBe('ingest');
+    expect(describeError(error).title).toBe(m.error_ingest_slots_title());
   });
 
   it('does not treat programming TypeErrors as network failures', () => {

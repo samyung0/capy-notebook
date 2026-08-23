@@ -107,6 +107,7 @@ def _claim_one() -> dict | None:
                     payload.get("workspaceId"),
                     row["id"],
                     "ingest timed out after the worker died",
+                    payload=payload,
                 )
         except Exception:
             log.exception("could not announce reclaimed job %s", row["id"])
@@ -190,7 +191,11 @@ def _finish_ok(
 
 
 def _finish_fail(
-    file_id: str | None, job_id: str, error: str, attempt: int | None = None
+    file_id: str | None,
+    job_id: str,
+    error: str,
+    attempt: int | None = None,
+    reservation_id: str = "",
 ) -> None:
     with db.connect() as conn:
         with conn.cursor() as cur:
@@ -200,6 +205,7 @@ def _finish_fail(
                 db.set_file_status(cur, file_id, "failed")
                 db.set_file_indexed(cur, file_id, False)
             db.set_job(cur, job_id, "failed", error[:500])
+            db.release_credit_reservation(cur, reservation_id)
         conn.commit()
 
 
@@ -231,22 +237,29 @@ def _requeue(job: dict, error: str) -> str:
     return outcome
 
 
+def _reservation_id(payload: dict) -> str:
+    return str(payload.get("reservationId") or "")
+
+
 def _notify_ingest_terminal(
     file_id: str | None,
     ws: str | None,
     job_id: str,
     error: str,
     attempt: int | None = None,
+    payload: dict | None = None,
 ) -> None:
+    reservation_id = _reservation_id(payload or {})
     if not file_id:
         with db.connect() as conn, conn.cursor() as cur:
             if _lost_claim(cur, job_id, attempt):
                 return
             db.set_job(cur, job_id, "failed", error[:500])
+            db.release_credit_reservation(cur, reservation_id)
             conn.commit()
         return
     name = _read_name(file_id)
-    _finish_fail(file_id, job_id, error, attempt)
+    _finish_fail(file_id, job_id, error, attempt, reservation_id)
     if ws:
         progress.publish(
             ws,
@@ -384,7 +397,12 @@ def _pipeline_identity(*, kind: str, parse_mode: str, caption_images: bool) -> s
     )
 
 
-def _charge_ingest(file_id: str, workspace_id: str, actor_user_id: str) -> None:
+def _charge_ingest(
+    file_id: str,
+    workspace_id: str,
+    actor_user_id: str,
+    reservation_id: str = "",
+) -> None:
     """Settle everything one ingest job spent, billed to the actor.
 
     Ingest is no longer an owner-billed exception. The payload records who
@@ -393,18 +411,15 @@ def _charge_ingest(file_id: str, workspace_id: str, actor_user_id: str) -> None:
     """
     usage = obs.current_usage()
     gpu_millis = obs.take_gpu_millis()
-    if usage is None and not gpu_millis:
-        return
     actor = actor_user_id
-    if not actor:
-        return
     try:
-        ingest = registry.ingest_spec()
-        embed = registry.embedding_spec()
-        vision = registry.vision_spec()
         with db.connect() as conn, conn.cursor() as cur:
             trace = obs.trace_id()
-            if usage is not None:
+            if actor and (usage is not None or gpu_millis):
+                ingest = registry.ingest_spec()
+                embed = registry.embedding_spec()
+                vision = registry.vision_spec()
+            if actor and usage is not None:
                 if usage.by_model:
                     for model_id, bucket in usage.by_model.items():
                         if model_id == embed.provider_model_id:
@@ -432,7 +447,7 @@ def _charge_ingest(file_id: str, workspace_id: str, actor_user_id: str) -> None:
                             credit_micros=registry.credits_for_tokens(
                                 spec, "llm", inp, out
                             ),
-                            cost_micro_usd=registry.cost_micro_usd(spec, inp, out),
+                            reservation_id=reservation_id,
                             trace_id=trace,
                             metadata={
                                 "fileId": file_id,
@@ -456,9 +471,7 @@ def _charge_ingest(file_id: str, workspace_id: str, actor_user_id: str) -> None:
                         credit_micros=registry.credits_for_tokens(
                             ingest, "llm", usage.input_tokens, usage.output_tokens
                         ),
-                        cost_micro_usd=registry.cost_micro_usd(
-                            ingest, usage.input_tokens, usage.output_tokens
-                        ),
+                        reservation_id=reservation_id,
                         trace_id=trace,
                         metadata={"fileId": file_id, "calls": usage.calls},
                     )
@@ -479,7 +492,7 @@ def _charge_ingest(file_id: str, workspace_id: str, actor_user_id: str) -> None:
                         credit_micros=registry.credits_for_tokens(
                             embed, "embedding", embed_tokens, 0
                         ),
-                        cost_micro_usd=registry.cost_micro_usd(embed, embed_tokens, 0),
+                        reservation_id=reservation_id,
                         trace_id=trace,
                         metadata={"fileId": file_id},
                     )
@@ -494,13 +507,21 @@ def _charge_ingest(file_id: str, workspace_id: str, actor_user_id: str) -> None:
                     units=gpu_millis,
                     unit="ms",
                     credit_micros=db.credits_for_gpu(gpu_millis),
+                    reservation_id=reservation_id,
                     trace_id=trace,
                     metadata={"fileId": file_id},
                 )
+            db.settle_credit_reservation(cur, reservation_id)
             conn.commit()
     except Exception as exc:  # noqa: BLE001 - metering must not fail a successful ingest
         # The file is already indexed. A missed charge is found by reconciliation.
         obs.capture_error(exc, stage="ingest_charge")
+        try:
+            with db.connect() as conn, conn.cursor() as cur:
+                db.settle_credit_reservation(cur, reservation_id)
+                conn.commit()
+        except Exception as close_exc:  # noqa: BLE001
+            obs.capture_error(close_exc, stage="ingest_lease_settle")
 
 
 # ------------------------------------------------------------------ parsing
@@ -767,7 +788,11 @@ async def _reuse_donor(
             ws, file_id, "done", 100, status="ready", message=note, indexed=True
         )
         await asyncio.to_thread(
-            _charge_ingest, file_id, ws, payload.get("actorUserId") or ""
+            _charge_ingest,
+            file_id,
+            ws,
+            payload.get("actorUserId") or "",
+            _reservation_id(payload),
         )
         return True
     copied = await store.copy_content_from_donor(
@@ -815,7 +840,11 @@ async def _reuse_donor(
         attempt=attempt,
     )
     await asyncio.to_thread(
-        _charge_ingest, file_id, ws, payload.get("actorUserId") or ""
+        _charge_ingest,
+        file_id,
+        ws,
+        payload.get("actorUserId") or "",
+        _reservation_id(payload),
     )
     progress.publish(ws, file_id, "done", 100, status="ready", indexed=True)
     log.info("indexed %s from donor: %s", name, result)
@@ -837,7 +866,14 @@ async def _process_ingest_job(
     name = await asyncio.to_thread(_read_name, file_id)
     if not await asyncio.to_thread(_account_allows_ingest, file_id, payload):
         note = f"{name}: ingest refused because the account is locked or over quota."
-        await asyncio.to_thread(_finish_fail, file_id, job["id"], note, attempt)
+        await asyncio.to_thread(
+            _finish_fail,
+            file_id,
+            job["id"],
+            note,
+            attempt,
+            _reservation_id(payload),
+        )
         progress.publish(
             ws, file_id, "failed", 100, status="failed", message=note, indexed=False
         )
@@ -857,6 +893,13 @@ async def _process_ingest_job(
         )
         progress.publish(
             ws, file_id, "done", 100, status="ready", message=note, indexed=False
+        )
+        await asyncio.to_thread(
+            _charge_ingest,
+            file_id,
+            ws,
+            payload.get("actorUserId") or "",
+            _reservation_id(payload),
         )
         return
 
@@ -944,7 +987,11 @@ async def _process_ingest_job(
             ws, file_id, "done", 100, status="ready", message=note, indexed=True
         )
         await asyncio.to_thread(
-            _charge_ingest, file_id, ws, payload.get("actorUserId") or ""
+            _charge_ingest,
+            file_id,
+            ws,
+            payload.get("actorUserId") or "",
+            _reservation_id(payload),
         )
         await asyncio.to_thread(_drop_parse_zip, artifact_key, file_id)
         return
@@ -974,7 +1021,11 @@ async def _process_ingest_job(
         attempt=attempt,
     )
     await asyncio.to_thread(
-        _charge_ingest, file_id, ws, payload.get("actorUserId") or ""
+        _charge_ingest,
+        file_id,
+        ws,
+        payload.get("actorUserId") or "",
+        _reservation_id(payload),
     )
     await asyncio.to_thread(_drop_parse_zip, artifact_key, file_id)
     progress.publish(ws, file_id, "done", 100, status="ready", indexed=True)
@@ -1086,7 +1137,13 @@ async def _handle_job_failure(job: dict, exc: BaseException) -> None:
     obs.capture_error(exc, stage=f"{job_type}_terminal")
     try:
         await asyncio.to_thread(
-            _notify_ingest_terminal, fid, ws, job["id"], str(exc), attempts
+            _notify_ingest_terminal,
+            fid,
+            ws,
+            job["id"],
+            str(exc),
+            attempts,
+            payload,
         )
     except Exception:
         log.exception("failed to record job failure")

@@ -47,6 +47,10 @@ export function isCreditsExhaustedError(err: unknown): err is ApiError {
   return isApiError(err) && err.code === 'llm_credits_exhausted';
 }
 
+export function isTooManyIngestLeasesError(err: unknown): err is ApiError {
+  return isApiError(err) && err.code === 'too_many_ingest_leases';
+}
+
 export function isFileLimitError(err: unknown): err is ApiError {
   return (
     isApiError(err) &&
@@ -328,6 +332,7 @@ export const qk = {
   exploreWorkspaces: ['explore', 'workspaces'] as const,
   file: (id: string) => ['file', id] as const,
   files: (wsId: string) => ['workspace', wsId, 'files'] as const,
+  ingestSlots: ['me', 'ingest-slots'] as const,
   ingestStream: (wsId: string) => ['workspace', wsId, 'ingest-stream'] as const,
   integrations: ['integrations'] as const,
   labels: ['labels'] as const,

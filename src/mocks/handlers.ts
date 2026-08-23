@@ -2386,6 +2386,13 @@ export const handlers = [
       subscriptionStatus: db.user.subscriptionStatus,
     })
   ),
+  http.get('/api/me/ingest-slots', async () =>
+    HttpResponse.json({
+      slotsFree: 20,
+      slotsLimit: 20,
+      slotsUsed: 0,
+    })
+  ),
   http.get('/api/usage', async () =>
     HttpResponse.json({
       byKind: [
@@ -2441,20 +2448,22 @@ export const handlers = [
   http.get('/api/integrations/google/picker-token', async () =>
     HttpResponse.json({ accessToken: 'mock-google-token' })
   ),
-  http.get('/api/integrations/microsoft/recent', async () =>
-    HttpResponse.json([
-      { id: 'ms_file_1', name: 'Biology Notes.docx' },
-      { id: 'ms_file_2', name: 'Lab Report.pdf' },
-    ])
+  http.get('/api/integrations/microsoft/drive', async () =>
+    HttpResponse.json({
+      driveType: 'personal',
+      id: 'b!mock',
+      webUrl: 'https://onedrive.live.com/?id=root',
+    })
   ),
   http.post(
     '/api/workspaces/:id/sources/import',
     async ({ params, request }) => {
       const wsId = params.id as string;
       const body = (await request.json()) as {
-        provider: string;
-        fileIds: string[];
         chapterId?: string | null;
+        driveIds?: string[];
+        fileIds: string[];
+        provider: string;
       };
       const created = body.fileIds.map((_fileId, i) => {
         const f = {

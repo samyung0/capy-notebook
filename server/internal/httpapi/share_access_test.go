@@ -16,11 +16,16 @@ import (
 	"github.com/evonotes/server/internal/blob"
 	"github.com/evonotes/server/internal/httpapi"
 	"github.com/evonotes/server/internal/models"
+	"github.com/evonotes/server/internal/pipeline"
 	"github.com/evonotes/server/internal/store"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func openShareHTTP(t *testing.T) http.Handler {
+	return openShareAPI(t, nil)
+}
+
+func openShareAPI(t *testing.T, pipe *pipeline.Client) http.Handler {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
@@ -37,13 +42,36 @@ func openShareHTTP(t *testing.T) http.Handler {
 		t.Fatalf("registry: %v", err)
 	}
 	st.SetModelRegistry(reg)
-	return httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "evo", httpapi.Config{
+	return httpapi.New(st, blob.NewMemory(), pipe, nil, "docling", "evo", httpapi.Config{
 		AuthDisabled:  true,
 		E2EAuth:       true,
 		E2ESecret:     "e2e-test-secret",
 		E2EUserIDs:    []string{"u_owner", "u_editor", "u_commenter", "u_viewer", "u_other"},
 		ModelRegistry: reg,
 	})
+}
+
+func stubRetrieval(t *testing.T) *pipeline.Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var in struct {
+			Kind string `json:"kind"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		w.Header().Set("Content-Type", "application/json")
+		switch in.Kind {
+		case "quiz":
+			_, _ = w.Write([]byte(`{"kind":"quiz","name":"n","questions":[{"id":"q1","type":"boolean","level":"recall","prompt":"Q?","correct":true}]}`))
+		case "flashcards":
+			_, _ = w.Write([]byte(`{"kind":"flashcards","cards":[{"front":"a","back":"b"}]}`))
+		case "mindmap", "diagram":
+			_, _ = fmt.Fprintf(w, `{"kind":%q,"title":"t","content":"# t"}`, in.Kind)
+		default:
+			http.Error(w, "unsupported", http.StatusBadRequest)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return pipeline.New(srv.URL, "")
 }
 
 func doReq(t *testing.T, h http.Handler, method, path, userID string, body any) *httptest.ResponseRecorder {

@@ -182,11 +182,16 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 		if u.CreatedBy != nil {
 			actor = *u.CreatedBy
 		}
+		reservationID, err := s.beginIngestSpendTx(ctx, tx, actor, u.WorkspaceID)
+		if err != nil {
+			return File{}, err
+		}
 		payload, err := s.ingestJobPayload(ctx, actor, map[string]any{
 			"fileId": fileID, "workspaceId": u.WorkspaceID, "blobPath": u.FinalPath,
 			"kind": u.Kind, "parser": parser, "engine": engine,
 			"parseMode": u.ParseMode, "captionImages": u.CaptionImages,
-			"sourceETag": sourceETag,
+			"sourceETag":    sourceETag,
+			"reservationId": reservationID,
 		})
 		if err != nil {
 			return File{}, err

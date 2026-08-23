@@ -12,7 +12,7 @@ import (
 	"github.com/evonotes/server/internal/store"
 )
 
-// The JSON billing/integration endpoints (status, picker-token, recent,
+// The JSON billing/integration endpoints (status, picker-token, drive,
 // disconnect) are registered with huma in huma_account.go. OAuth itself is
 // handled by Clerk: users link Google/Microsoft external accounts through the
 // Clerk frontend SDK and the backend fetches access tokens from Clerk's token
@@ -28,10 +28,16 @@ func (a *api) importSources(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Provider  string   `json:"provider"`
 		FileIds   []string `json:"fileIds"`
+		DriveIds  []string `json:"driveIds"`
 		ChapterID *string  `json:"chapterId"`
 	}
 	if err := decode(r, &body); err != nil || len(body.FileIds) == 0 {
 		writeJSON(w, 400, map[string]string{"message": "provider and fileIds required"})
+		return
+	}
+	refs, err := integrations.ZipImportDriveIDs(body.FileIds, body.DriveIds)
+	if err != nil {
+		writeJSON(w, 400, map[string]string{"message": err.Error()})
 		return
 	}
 	if err := a.s.AssertWorkspaceFileRoom(r.Context(), wsID, len(body.FileIds)); err != nil {
@@ -56,14 +62,14 @@ func (a *api) importSources(w http.ResponseWriter, r *http.Request) {
 	}
 
 	created := []store.File{}
-	for _, fid := range body.FileIds {
+	for _, ref := range refs {
 		var data []byte
 		var name string
 		switch body.Provider {
 		case integrations.ProviderGoogle:
-			data, name, err = integrations.DownloadGoogleFile(tok, fid)
+			data, name, err = integrations.DownloadGoogleFile(tok, ref.ID)
 		case integrations.ProviderMicrosoft:
-			data, name, err = integrations.DownloadMicrosoftFile(tok, fid)
+			data, name, err = integrations.DownloadMicrosoftFile(tok, ref.ID, ref.DriveID)
 		default:
 			writeJSON(w, 400, map[string]string{"message": "unknown provider"})
 			return

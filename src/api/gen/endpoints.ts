@@ -51,6 +51,7 @@ import type {
   MaterialRevision,
   MaterialUpdateResult,
   Message,
+  MicrosoftDriveHost,
   ModelsResponse,
   NotificationCountOutputBody,
   NotificationPage,
@@ -62,7 +63,6 @@ import type {
   Quiz,
   QuizGradeReq,
   QuizGradeResp,
-  RecentFile,
   ReorderChaptersReq,
   ReorderContentReq,
   RequestAccountDeletionReq,
@@ -2091,39 +2091,39 @@ export const googlePickerToken = async ( options?: RequestInit): Promise<googleP
 
 
 
-export type microsoftRecentResponse200 = {
-  data: RecentFile[]
+export type microsoftDriveResponse200 = {
+  data: MicrosoftDriveHost
   status: 200
 }
 
-export type microsoftRecentResponseDefault = {
+export type microsoftDriveResponseDefault = {
   data: ErrorModel
   status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type microsoftRecentResponseSuccess = (microsoftRecentResponse200) & {
+export type microsoftDriveResponseSuccess = (microsoftDriveResponse200) & {
   headers: Headers;
 };
-export type microsoftRecentResponseError = (microsoftRecentResponseDefault) & {
+export type microsoftDriveResponseError = (microsoftDriveResponseDefault) & {
   headers: Headers;
 };
 
-export type microsoftRecentResponse = (microsoftRecentResponseSuccess | microsoftRecentResponseError)
+export type microsoftDriveResponse = (microsoftDriveResponseSuccess | microsoftDriveResponseError)
 
-export const getMicrosoftRecentUrl = () => {
-
-
+export const getMicrosoftDriveUrl = () => {
 
 
-  return `/api/integrations/microsoft/recent`
+
+
+  return `/api/integrations/microsoft/drive`
 }
 
 /**
- * @summary Recent OneDrive files
+ * @summary OneDrive host for File Picker
  */
-export const microsoftRecent = async ( options?: RequestInit): Promise<microsoftRecentResponse> => {
+export const microsoftDrive = async ( options?: RequestInit): Promise<microsoftDriveResponse> => {
 
-  const res = await fetch(getMicrosoftRecentUrl(),
+  const res = await fetch(getMicrosoftDriveUrl(),
   {
     ...options,
     method: 'GET'
@@ -2135,8 +2135,8 @@ export const microsoftRecent = async ( options?: RequestInit): Promise<microsoft
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: microsoftRecentResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as microsoftRecentResponse
+  const data: microsoftDriveResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as microsoftDriveResponse
 }
 
 

@@ -1,3 +1,4 @@
+import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { USE_MSW } from '@/api/auth';
 import {
@@ -5,16 +6,24 @@ import {
   isCreditsExhaustedError,
   isFileLimitError,
   isStorageQuotaError,
+  isTooManyIngestLeasesError,
+  qk,
 } from '@/api/client';
 import {
   useChapters,
   useImportSources,
+  useIngestSlots,
   useIntegrations,
   useSourceUploadPolicy,
   useUploadSource,
   useWorkspace,
 } from '@/api/hooks';
-import type { Chapter, SourceFile, SourceUploadPolicy } from '@/api/types';
+import type {
+  Chapter,
+  MicrosoftDriveHost,
+  SourceFile,
+  SourceUploadPolicy,
+} from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import {
   ConfirmDialog,
@@ -38,23 +47,44 @@ import {
 import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
-import { m } from '@/i18n';
+import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { useProviderConnect } from '@/lib/useProviderConnect';
-import { OneDriveImportDialog } from './OneDriveImportDialog';
+import { googlePickerEnv } from '@/lib/googlePicker';
+import {
+  acquirePickerToken,
+  assertMsalConfigured,
+  clearPickerAuth,
+} from '@/lib/msalPickerAuth';
+import {
+  type ImportSourceRef,
+  isPickerConsentBlocked,
+  isPickerUserCancelled,
+  openOneDrivePicker,
+  pickerLocale,
+  toImportRequest,
+} from '@/lib/onedrivePicker';
+import {
+  useMicrosoftLoginHint,
+  useProviderConnect,
+} from '@/lib/useProviderConnect';
 import {
   aggregateUploadPct,
   capSourceUploads,
+  chunkItems,
   defaultParseMode,
   fileExt,
+  fileReachedTerminal,
   getFileKind,
   isTextKind,
+  MAX_FILES_PER_UPLOAD,
   MAX_FILES_PER_WORKSPACE,
-  MAX_SOURCE_UPLOAD_FILES,
   mapWithConcurrency,
+  needsIngestJob,
   type ParseMode,
   parseModeIssues,
   SOURCE_UPLOAD_CONCURRENCY,
+  shouldArmBeforeUnload,
+  splitSourceWave,
   supportsFigures,
   withUploadRetry,
 } from './sourceUpload';
@@ -83,6 +113,41 @@ function formatSize(bytes: number) {
   return `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+function useUnsentBeforeUnload(unsentCount: number) {
+  useEffect(() => {
+    if (!shouldArmBeforeUnload(unsentCount)) return;
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [unsentCount]);
+}
+
+async function waitForFileTerminal(
+  qc: QueryClient,
+  workspaceId: string,
+  fileId: string,
+  signal?: AbortSignal
+) {
+  const files = () => qc.getQueryData<SourceFile[]>(qk.files(workspaceId));
+  if (signal?.aborted || fileReachedTerminal(files(), fileId)) return;
+  await new Promise<void>((resolve) => {
+    let unsub = () => {};
+    const finish = () => {
+      signal?.removeEventListener('abort', finish);
+      unsub();
+      resolve();
+    };
+    unsub = qc.getQueryCache().subscribe(() => {
+      if (fileReachedTerminal(files(), fileId)) finish();
+    });
+    signal?.addEventListener('abort', finish);
+    if (signal?.aborted || fileReachedTerminal(files(), fileId)) finish();
+  });
+}
+
 function workspaceFileRoom(
   workspace:
     | {
@@ -98,6 +163,16 @@ function workspaceFileRoom(
     filesUsed,
     workspaceRoom: Math.max(0, filesLimit - filesUsed),
   };
+}
+
+function workspaceRoomToast(workspaceRoom: number, filesLimit: number) {
+  userToast({
+    title:
+      workspaceRoom <= 0
+        ? m.source_workspace_file_full({ limit: filesLimit })
+        : m.source_upload_too_many({ count: workspaceRoom }),
+    variant: 'error',
+  });
 }
 
 function fileLimitToast(
@@ -123,9 +198,11 @@ function fileLimitToast(
 interface GooglePickerBuilder {
   addView: (v: unknown) => GooglePickerBuilder;
   build: () => { setVisible: (v: boolean) => void };
+  setAppId: (id: string) => GooglePickerBuilder;
   setCallback: (
     cb: (data: { action: string; docs?: { id: string }[] }) => void
   ) => GooglePickerBuilder;
+  setDeveloperKey: (key: string) => GooglePickerBuilder;
   setOAuthToken: (t: string) => GooglePickerBuilder;
 }
 
@@ -324,6 +401,10 @@ function UploadFiles({
   className?: string;
 }) {
   const { mutateAsync: uploadSource } = useUploadSource(workspaceId);
+  const { refetch: refetchIngestSlots } = useIngestSlots({
+    errorBoundary: false,
+  });
+  const qc = useQueryClient();
   const { data: uploadPolicy } = useSourceUploadPolicy(workspaceId, {
     errorBoundary: false,
   });
@@ -332,8 +413,11 @@ function UploadFiles({
   });
   const inputRef = useRef<HTMLInputElement>(null);
   const uploadControllers = useRef(new Map<string, AbortController>());
+  const drainAbort = useRef(new AbortController());
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [unsentCount, setUnsentCount] = useState(0);
   const [files, setFiles] = useState<PendingFile[]>([]);
+  useUnsentBeforeUnload(unsentCount);
   // Row currently typing a new chapter name (replaces its chapter select).
   const [creatingKey, setCreatingKey] = useState<string | null>(null);
   const [newChapterName, setNewChapterName] = useState('');
@@ -341,6 +425,7 @@ function UploadFiles({
 
   useEffect(
     () => () => {
+      drainAbort.current.abort();
       for (const controller of uploadControllers.current.values())
         controller.abort();
     },
@@ -389,15 +474,7 @@ function UploadFiles({
         workspaceRoom
       );
       if (rejected > 0) {
-        userToast({
-          title:
-            workspaceRoom <= 0
-              ? m.source_workspace_file_full({ limit: filesLimit })
-              : m.source_upload_too_many({
-                  count: Math.min(MAX_SOURCE_UPLOAD_FILES, workspaceRoom),
-                }),
-          variant: 'error',
-        });
+        workspaceRoomToast(workspaceRoom, filesLimit);
       }
       return [...prev, ...accepted];
     });
@@ -454,70 +531,98 @@ function UploadFiles({
   const handleUpload = async () => {
     if (isSubmitting || files.length === 0) return;
     setIsSubmitting(true);
-    const batch = [...files];
     setFiles((prev) => prev.map((file) => ({ ...file, uploadPct: 0 })));
-    const results = await mapWithConcurrency(
-      batch,
-      SOURCE_UPLOAD_CONCURRENCY,
-      (f) => {
-        const controller = new AbortController();
-        uploadControllers.current.set(f.key, controller);
-        return withUploadRetry(() =>
-          uploadSource({
-            captionImages: f.captionImages,
-            chapterId: f.chapterId,
-            chapterName: f.chapterName,
-            file: f.file,
-            kind: f.kind,
-            onUploadProgress: (uploadPct) => patchFile(f.key, { uploadPct }),
-            parseMode: f.parseMode,
-            signal: controller.signal,
-          })
-        ).finally(() => uploadControllers.current.delete(f.key));
+    let remaining = [...files];
+    setUnsentCount(remaining.length);
+    const failed: PendingFile[] = [];
+    let sawError: unknown;
+    while (remaining.length > 0 && !drainAbort.current.signal.aborted) {
+      const { data: slots } = await refetchIngestSlots();
+      const slotsFree = slots?.slotsFree ?? MAX_FILES_PER_UPLOAD;
+      const { wave, rest } = splitSourceWave(
+        remaining,
+        (file) => needsIngestJob(file.kind, file.parseMode),
+        slotsFree
+      );
+      if (wave.length === 0) {
+        userToast({
+          title: m.source_ingest_waiting(),
+        });
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        continue;
       }
-    );
+      setUnsentCount(rest.length);
+      const results = await mapWithConcurrency(
+        wave,
+        SOURCE_UPLOAD_CONCURRENCY,
+        (f) => {
+          const controller = new AbortController();
+          uploadControllers.current.set(f.key, controller);
+          return withUploadRetry(() =>
+            uploadSource({
+              captionImages: f.captionImages,
+              chapterId: f.chapterId,
+              chapterName: f.chapterName,
+              file: f.file,
+              kind: f.kind,
+              onUploadProgress: (uploadPct) => patchFile(f.key, { uploadPct }),
+              parseMode: f.parseMode,
+              signal: controller.signal,
+            })
+          ).finally(() => uploadControllers.current.delete(f.key));
+        }
+      );
+      const ingestWaits: Promise<void>[] = [];
+      results.forEach((result, index) => {
+        const row = wave[index];
+        if (!row) return;
+        if (result.status === 'rejected') {
+          failed.push(row);
+          sawError ??= result.reason;
+          return;
+        }
+        if (needsIngestJob(row.kind, row.parseMode)) {
+          ingestWaits.push(
+            waitForFileTerminal(
+              qc,
+              workspaceId,
+              result.value.id,
+              drainAbort.current.signal
+            )
+          );
+        }
+      });
+      await Promise.all(ingestWaits);
+      remaining = rest;
+    }
+    if (drainAbort.current.signal.aborted) return;
+    setUnsentCount(0);
     setIsSubmitting(false);
-    if (results.every((r) => r.status === 'fulfilled')) {
+    if (failed.length === 0) {
       setFiles([]);
       setConfirmOpen(false);
       onClose?.();
-    } else {
-      const succeededKeys = new Set(
-        batch
-          .filter((_, index) => results[index]?.status === 'fulfilled')
-          .map((file) => file.key)
-      );
-      setFiles((prev) => prev.filter((file) => !succeededKeys.has(file.key)));
-      const quotaFailure = results.find(
-        (result) =>
-          result.status === 'rejected' && isStorageQuotaError(result.reason)
-      );
-      const creditsFailure = results.find(
-        (result) =>
-          result.status === 'rejected' && isCreditsExhaustedError(result.reason)
-      );
-      const fileLimitFailure = results.find(
-        (result) =>
-          result.status === 'rejected' && isFileLimitError(result.reason)
-      );
-      const fileToast =
-        fileLimitFailure && fileLimitFailure.status === 'rejected'
-          ? fileLimitToast(fileLimitFailure.reason)
-          : null;
-      userToast({
-        description: creditsFailure
-          ? m.error_credits_body()
-          : quotaFailure
+      return;
+    }
+    setFiles(failed);
+    const fileToast = fileLimitToast(sawError);
+    userToast({
+      description: isCreditsExhaustedError(sawError)
+        ? m.error_credits_body()
+        : isTooManyIngestLeasesError(sawError)
+          ? m.error_ingest_slots_body()
+          : isStorageQuotaError(sawError)
             ? m.error_quota_body()
             : fileToast?.description,
-        title: creditsFailure
-          ? m.error_credits_title()
-          : quotaFailure
+      title: isCreditsExhaustedError(sawError)
+        ? m.error_credits_title()
+        : isTooManyIngestLeasesError(sawError)
+          ? m.error_ingest_slots_title()
+          : isStorageQuotaError(sawError)
             ? m.error_quota_title()
             : (fileToast?.title ?? m.source_upload_failed()),
-        variant: 'error',
-      });
-    }
+      variant: 'error',
+    });
   };
   const formatFileSizes = () => {
     const totalBytes = files.reduce((acc, file) => acc + file.file.size, 0);
@@ -728,6 +833,11 @@ function UploadFiles({
                 total: files.length,
               })}
             </p>
+            {unsentCount > 0 && (
+              <p className="t-meta text-fg-muted">
+                {m.source_queue_progress({ remaining: unsentCount })}
+              </p>
+            )}
           </div>
         )}
       </ConfirmDialog>
@@ -770,49 +880,123 @@ function ImportFiles({
   onClose: () => void;
   className?: string;
 }) {
-  // const [chapterId, setChapterId] = useState<string | null>(null);
-  const [msOpen, setMsOpen] = useState(false);
   const { data: integrations } = useIntegrations({ errorBoundary: false });
-  const { isPending: importSourcesIsPending, mutate: importSources } =
-    useImportSources(workspaceId, { errorToast: false });
-  // const { data: msFiles } = useMicrosoftRecentFiles(msOpen && !!integrations?.microsoft);
-
+  const { mutateAsync: importSources } = useImportSources(workspaceId, {
+    errorToast: false,
+  });
+  const { refetch: refetchIngestSlots } = useIngestSlots({
+    errorBoundary: false,
+  });
+  const qc = useQueryClient();
   const connectProvider = useProviderConnect();
+  const microsoftLoginHint = useMicrosoftLoginHint();
+  const [unsentCount, setUnsentCount] = useState(0);
+  const [isDraining, setIsDraining] = useState(false);
+  const drainAbort = useRef(new AbortController());
+  useUnsentBeforeUnload(unsentCount);
+  useEffect(() => () => drainAbort.current.abort(), []);
 
   function handleImportError(error: unknown) {
     const fileToast = fileLimitToast(error);
     userToast({
       description: isCreditsExhaustedError(error)
         ? m.error_credits_body()
-        : isStorageQuotaError(error)
-          ? m.error_quota_body()
-          : fileToast
-            ? fileToast.description
-            : error instanceof Error
-              ? error.message
-              : m.source_try_again(),
+        : isTooManyIngestLeasesError(error)
+          ? m.error_ingest_slots_body()
+          : isStorageQuotaError(error)
+            ? m.error_quota_body()
+            : fileToast
+              ? fileToast.description
+              : error instanceof Error
+                ? error.message
+                : m.source_try_again(),
       title: isCreditsExhaustedError(error)
         ? m.error_credits_title()
-        : isStorageQuotaError(error)
-          ? m.error_quota_title()
-          : fileToast
-            ? fileToast.title
-            : m.source_import_failed(),
+        : isTooManyIngestLeasesError(error)
+          ? m.error_ingest_slots_title()
+          : isStorageQuotaError(error)
+            ? m.error_quota_title()
+            : fileToast
+              ? fileToast.title
+              : m.source_import_failed(),
       variant: 'error',
     });
   }
 
+  async function drainImport(
+    provider: 'google' | 'microsoft',
+    refs: ImportSourceRef[]
+  ) {
+    setIsDraining(true);
+    let remaining = [...refs];
+    setUnsentCount(remaining.length);
+    try {
+      while (remaining.length > 0 && !drainAbort.current.signal.aborted) {
+        const { data: slots } = await refetchIngestSlots();
+        const slotsFree = slots?.slotsFree ?? MAX_FILES_PER_UPLOAD;
+        const { wave, rest } = splitSourceWave(
+          remaining,
+          () => true,
+          slotsFree
+        );
+        if (wave.length === 0) {
+          userToast({ title: m.source_ingest_waiting() });
+          await new Promise((resolve) => setTimeout(resolve, 2000));
+          continue;
+        }
+        setUnsentCount(rest.length);
+        const chunks = chunkItems(wave, SOURCE_UPLOAD_CONCURRENCY);
+        const results = await mapWithConcurrency(
+          chunks,
+          SOURCE_UPLOAD_CONCURRENCY,
+          (chunk) =>
+            withUploadRetry(() =>
+              importSources(toImportRequest(provider, chunk, null))
+            )
+        );
+        const waits: Promise<void>[] = [];
+        for (const result of results) {
+          if (result.status === 'rejected') {
+            handleImportError(result.reason);
+            setUnsentCount(0);
+            return;
+          }
+          qc.setQueryData<SourceFile[]>(qk.files(workspaceId), (prev) => {
+            const next = prev ? [...prev] : [];
+            for (const file of result.value) {
+              if (!next.some((entry) => entry.id === file.id)) {
+                next.push({ ...file, ingestPct: file.ingestPct ?? 0 });
+              }
+            }
+            return next;
+          });
+          if (USE_MSW) continue;
+          for (const file of result.value) {
+            if (file.status === 'ready') continue;
+            waits.push(
+              waitForFileTerminal(
+                qc,
+                workspaceId,
+                file.id,
+                drainAbort.current.signal
+              )
+            );
+          }
+        }
+        await Promise.all(waits);
+        remaining = rest;
+      }
+      if (drainAbort.current.signal.aborted) return;
+      onClose();
+    } finally {
+      setUnsentCount(0);
+      setIsDraining(false);
+    }
+  }
+
   async function connect(provider: 'google' | 'microsoft') {
     if (USE_MSW) {
-      importSources(
-        {
-          chapterId: null,
-          fileIds: ['mock_drive_file'],
-          provider,
-        },
-        { onError: handleImportError }
-      );
-      onClose();
+      await drainImport(provider, [{ id: 'mock_drive_file' }]);
       return;
     }
     try {
@@ -830,18 +1014,11 @@ function ImportFiles({
 
   async function openGooglePicker() {
     if (USE_MSW) {
-      importSources(
-        {
-          chapterId: null,
-          fileIds: ['mock_drive_file'],
-          provider: 'google',
-        },
-        { onError: handleImportError }
-      );
-      onClose();
+      await drainImport('google', [{ id: 'mock_drive_file' }]);
       return;
     }
     try {
+      const { apiKey, appId } = googlePickerEnv();
       const { accessToken } = await api.get<{ accessToken: string }>(
         '/integrations/google/picker-token'
       );
@@ -852,6 +1029,8 @@ function ImportFiles({
       view.setIncludeFolders(true);
       const picker = new g.PickerBuilder()
         .addView(view)
+        .setDeveloperKey(apiKey)
+        .setAppId(appId)
         .setOAuthToken(accessToken)
         .setCallback((data: { action: string; docs?: { id: string }[] }) => {
           if (data.action === 'picked' && data.docs?.length) {
@@ -862,31 +1041,25 @@ function ImportFiles({
               workspaceRoom
             );
             if (rejected > 0) {
-              userToast({
-                title:
-                  workspaceRoom <= 0
-                    ? m.source_workspace_file_full({ limit: filesLimit })
-                    : m.source_upload_too_many({
-                        count: Math.min(MAX_SOURCE_UPLOAD_FILES, workspaceRoom),
-                      }),
-                variant: 'error',
-              });
+              workspaceRoomToast(workspaceRoom, filesLimit);
             }
             if (!accepted.length) return;
-            importSources(
-              {
-                chapterId: null,
-                fileIds: accepted,
-                provider: 'google',
-              },
-              { onError: handleImportError }
+            void drainImport(
+              'google',
+              accepted.map((id) => ({ id }))
             );
-            onClose();
           }
         })
         .build() as { setVisible: (v: boolean) => void };
       picker.setVisible(true);
     } catch (error) {
+      if (error instanceof Error && error.message === 'GOOGLE_PICKER_CONFIG') {
+        userToast({
+          title: m.source_google_picker_missing_config(),
+          variant: 'error',
+        });
+        return;
+      }
       handleImportError(error);
     }
   }
@@ -899,48 +1072,101 @@ function ImportFiles({
     await openGooglePicker();
   }
 
+  async function openMicrosoftPicker() {
+    if (USE_MSW) {
+      await drainImport('microsoft', [{ id: 'mock_drive_file' }]);
+      return;
+    }
+    let pickerWin: Window | null = null;
+    try {
+      assertMsalConfigured();
+      pickerWin = window.open('', 'OneDrivePicker', 'width=1080,height=680');
+      if (!pickerWin) throw new Error('POPUP_BLOCKED');
+      const drive = await api.get<MicrosoftDriveHost>(
+        '/integrations/microsoft/drive'
+      );
+      const items = await openOneDrivePicker({
+        acquireToken: acquirePickerToken,
+        clearAuth: clearPickerAuth,
+        drive,
+        locale: pickerLocale(getLocale()),
+        loginHint: microsoftLoginHint ?? undefined,
+        openWindow: () => pickerWin,
+      });
+      if (!items.length) return;
+      const { accepted, rejected } = capSourceUploads(0, items, workspaceRoom);
+      if (rejected > 0) {
+        workspaceRoomToast(workspaceRoom, filesLimit);
+      }
+      if (!accepted.length) return;
+      await drainImport('microsoft', accepted);
+    } catch (error) {
+      if (pickerWin && !pickerWin.closed) pickerWin.close();
+      if (isPickerUserCancelled(error)) return;
+      if (isPickerConsentBlocked(error)) {
+        userToast({
+          description: m.onedrive_picker_blocked_body(),
+          title: m.onedrive_picker_blocked_title(),
+          variant: 'error',
+        });
+        return;
+      }
+      if (error instanceof Error && error.message === 'MSAL_CONFIG') {
+        userToast({
+          title: m.onedrive_picker_missing_config(),
+          variant: 'error',
+        });
+        return;
+      }
+      if (error instanceof Error && error.message === 'POPUP_BLOCKED') {
+        userToast({
+          title: m.onedrive_picker_popup_blocked(),
+          variant: 'error',
+        });
+        return;
+      }
+      handleImportError(error);
+    }
+  }
+
   function onMicrosoftClick() {
     if (!integrations?.microsoft && !USE_MSW) {
       connect('microsoft');
       return;
     }
-    setMsOpen(true);
+    void openMicrosoftPicker();
   }
   return (
-    <>
-      <div className={cn(className)}>
-        <div className="grid grid-cols-2 gap-3">
-          <Button
-            disabled={importSourcesIsPending || workspaceRoom <= 0}
-            iconLeft="files"
-            onClick={onGoogleClick}
-            variant="outline"
-          >
-            Google Drive
-          </Button>
-          <Button
-            disabled={importSourcesIsPending || workspaceRoom <= 0}
-            iconLeft="files"
-            onClick={onMicrosoftClick}
-            variant="outline"
-          >
-            OneDrive
-          </Button>
-        </div>
-        {!integrations?.google && !integrations?.microsoft && !USE_MSW && (
-          <p className="t-meta text-center text-fg-muted">
-            {m.source_cloud_connect_hint()}
-          </p>
-        )}
+    <div className={cn(className)}>
+      <div className="grid grid-cols-2 gap-3">
+        <Button
+          disabled={isDraining || workspaceRoom <= 0}
+          iconLeft="files"
+          onClick={onGoogleClick}
+          variant="outline"
+        >
+          Google Drive
+        </Button>
+        <Button
+          disabled={isDraining || workspaceRoom <= 0}
+          iconLeft="files"
+          onClick={onMicrosoftClick}
+          variant="outline"
+        >
+          OneDrive
+        </Button>
       </div>
-      {msOpen && (
-        <OneDriveImportDialog
-          onClose={() => setMsOpen(false)}
-          open
-          workspaceId={workspaceId}
-        />
+      {unsentCount > 0 && (
+        <p className="t-meta text-center text-fg-muted">
+          {m.source_queue_progress({ remaining: unsentCount })}
+        </p>
       )}
-    </>
+      {!integrations?.google && !integrations?.microsoft && !USE_MSW && (
+        <p className="t-meta text-center text-fg-muted">
+          {m.source_cloud_connect_hint()}
+        </p>
+      )}
+    </div>
   );
 }
 

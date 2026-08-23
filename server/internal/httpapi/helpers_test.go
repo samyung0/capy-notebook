@@ -1,7 +1,11 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -12,14 +16,17 @@ import (
 func TestUsageEventsZeroLLMCreditsForUserKey(t *testing.T) {
 	u := pipeUsage{InputTokens: 10, OutputTokens: 4, EmbedTokens: 20, Calls: 2}
 	rates := store.TokenRates{
-		ModelKey:                "gpt-5.6-sol",
-		ModelVersion:            1,
-		MicrosPerInputToken:     250,
-		MicrosPerOutputToken:    1000,
-		USDMicrosPerInputToken:  1,
-		USDMicrosPerOutputToken: 1,
+		ModelKey:             "gpt-5.6-sol",
+		ModelVersion:         1,
+		MicrosPerInputToken:  250,
+		MicrosPerOutputToken: 1000,
 	}
-	events := u.events("u_1", "ws_1", store.SurfaceChat, rates, store.DefaultEmbeddingRates(), models.PaidByUser)
+	embed := store.TokenRates{
+		ModelKey:            "qwen-embed",
+		ModelVersion:        1,
+		MicrosPerInputToken: 50,
+	}
+	events := u.events("u_1", "ws_1", store.SurfaceChat, rates, embed, models.PaidByUser)
 	if len(events) != 2 {
 		t.Fatalf("events: %d", len(events))
 	}
@@ -34,13 +41,67 @@ func TestUsageEventsZeroLLMCreditsForUserKey(t *testing.T) {
 	}
 }
 
+func TestUsageEventsDoNotInventEmbedRates(t *testing.T) {
+	u := pipeUsage{EmbedTokens: 100}
+	events := u.events("u_1", "ws_1", store.SurfaceChat, store.TokenRates{}, store.TokenRates{}, models.PaidByPlatform)
+	if len(events) != 1 {
+		t.Fatalf("events: %d", len(events))
+	}
+	if events[0].Kind != store.KindEmbedding {
+		t.Fatalf("kind %#v", events[0])
+	}
+	if events[0].ModelKey != "" || events[0].CreditMicros != 0 {
+		t.Fatalf("invented embed rates: %#v", events[0])
+	}
+}
+
+func TestUsageEventsEmptyPaidByDoesNotInventRates(t *testing.T) {
+	u := pipeUsage{InputTokens: 10, OutputTokens: 4}
+	events := u.events("u_1", "ws_1", store.SurfaceChat, store.TokenRates{}, store.TokenRates{}, "")
+	if len(events) != 1 {
+		t.Fatalf("events: %d", len(events))
+	}
+	if events[0].CreditMicros != 0 {
+		t.Fatalf("empty rates must stay zero, got %#v", events[0])
+	}
+	if events[0].Metadata["paidBy"] != "" {
+		t.Fatalf("paidBy should stay empty, got %#v", events[0].Metadata)
+	}
+}
+
+func TestResolveEmbeddingRequiresStore(t *testing.T) {
+	a := &api{}
+	_, err := a.resolveEmbedding(context.Background(), "ws_1")
+	if !errors.Is(err, store.ErrModelUnavailable) {
+		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestFailMapsTooManyIngestLeases(t *testing.T) {
+	a := &api{}
+	rec := httptest.NewRecorder()
+	a.fail(rec, store.ErrTooManyIngestLeases)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["code"] != "too_many_ingest_leases" {
+		t.Fatalf("code = %#v", body["code"])
+	}
+}
+
 func TestUsageEventsZeroQueryEmbedCredits(t *testing.T) {
 	u := pipeUsage{InputTokens: 8, OutputTokens: 2, EmbedTokens: 1_000_000}
 	embed := store.TokenRates{
-		MicrosPerInputToken:    50,
-		USDMicrosPerInputToken: 20,
+		ModelKey:            "qwen-embed",
+		ModelVersion:        1,
+		MicrosPerInputToken: 50,
 	}
-	events := u.events("u_1", "ws_1", store.SurfaceChat, store.DefaultLLMRates(), embed, models.PaidByPlatform)
+	llm := store.TokenRates{MicrosPerInputToken: 250, MicrosPerOutputToken: 1000, ModelKey: "deepseek-flash", ModelVersion: 1}
+	events := u.events("u_1", "ws_1", store.SurfaceChat, llm, embed, models.PaidByPlatform)
 	if len(events) != 2 {
 		t.Fatalf("events: %d", len(events))
 	}
@@ -50,8 +111,8 @@ func TestUsageEventsZeroQueryEmbedCredits(t *testing.T) {
 	if events[1].Kind != store.KindEmbedding || events[1].CreditMicros != 0 {
 		t.Fatalf("query embed must not bill, got %#v", events[1])
 	}
-	if events[1].CostMicroUSD == 0 {
-		t.Fatal("query embed should keep reconciliation USD")
+	if events[1].ModelKey != "qwen-embed" {
+		t.Fatalf("query embed pin: %#v", events[1])
 	}
 }
 
@@ -181,6 +242,26 @@ func TestBuildQuestionsDefaults(t *testing.T) {
 		if q["type"] != "mcq" {
 			t.Errorf("default type = %v, want mcq", q["type"])
 		}
+	}
+}
+
+func TestRelayChatNilPipeDoesNotInventTokens(t *testing.T) {
+	a := &api{}
+	var n int
+	err := a.relayChat(
+		context.Background(),
+		"u",
+		store.Conversation{ID: "c", WorkspaceID: "w"},
+		resolvedLLM{},
+		"hello?",
+		func(string) { n++ },
+		func(pipeChatEvent) {},
+	)
+	if !errors.Is(err, errAIUnavailable) {
+		t.Fatalf("err = %v", err)
+	}
+	if n != 0 {
+		t.Fatalf("emitted %d tokens", n)
 	}
 }
 

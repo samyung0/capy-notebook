@@ -109,23 +109,75 @@ export function aggregateUploadPct(
   return Math.round((uploadedBytes / totalBytes) * 100);
 }
 
-export const MAX_SOURCE_UPLOAD_FILES = 20;
+export const MAX_FILES_PER_UPLOAD = 20;
+export const MAX_SOURCE_UPLOAD_FILES = MAX_FILES_PER_UPLOAD;
 export const MAX_FILES_PER_WORKSPACE = 100;
 export const SOURCE_UPLOAD_CONCURRENCY = 3;
+
+export function needsIngestJob(
+  kind: FileKind | string,
+  mode: ParseMode
+): boolean {
+  return kind === 'txt' || kind === 'md' || kind === 'json' || mode !== 'none';
+}
 
 export function capSourceUploads<T>(
   existingCount: number,
   incoming: T[],
-  workspaceRoom: number = MAX_SOURCE_UPLOAD_FILES
+  workspaceRoom: number = MAX_FILES_PER_WORKSPACE
 ): { accepted: T[]; rejected: number } {
-  const cap = Math.max(
-    0,
-    Math.min(MAX_SOURCE_UPLOAD_FILES, workspaceRoom) - existingCount
-  );
+  const cap = Math.max(0, workspaceRoom - existingCount);
   return {
     accepted: incoming.slice(0, cap),
     rejected: Math.max(0, incoming.length - cap),
   };
+}
+
+export function splitSourceWave<T>(
+  items: readonly T[],
+  itemNeedsIngest: (item: T) => boolean,
+  slotsFree: number,
+  maxPerUpload: number = MAX_FILES_PER_UPLOAD
+): { rest: T[]; wave: T[] } {
+  const wave: T[] = [];
+  const rest: T[] = [];
+  let ingestTaken = 0;
+  const ingestCap = Math.max(0, Math.min(slotsFree, maxPerUpload));
+  for (const item of items) {
+    if (!itemNeedsIngest(item)) {
+      wave.push(item);
+      continue;
+    }
+    if (ingestTaken < ingestCap) {
+      wave.push(item);
+      ingestTaken += 1;
+    } else {
+      rest.push(item);
+    }
+  }
+  return { rest, wave };
+}
+
+export function chunkItems<T>(items: readonly T[], size: number): T[][] {
+  const n = Math.max(1, size);
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += n) {
+    out.push(items.slice(i, i + n));
+  }
+  return out;
+}
+
+export function shouldArmBeforeUnload(unsentCount: number): boolean {
+  return unsentCount > 0;
+}
+
+export function fileReachedTerminal(
+  files: { id: string; status?: string }[] | undefined,
+  fileId: string
+): 'failed' | 'ready' | null {
+  const file = files?.find((entry) => entry.id === fileId);
+  if (file?.status === 'ready' || file?.status === 'failed') return file.status;
+  return null;
 }
 
 export async function mapWithConcurrency<T, R>(

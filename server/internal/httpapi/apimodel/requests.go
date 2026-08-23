@@ -232,10 +232,12 @@ type AccessTokenResp struct {
 	AccessToken string `json:"accessToken"`
 }
 
-// RecentFile is a lightweight file reference from an external provider.
-type RecentFile struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+// MicrosoftDriveHost is Graph GET /me/drive, used to choose the File Picker
+// v8 URL (personal vs work). The browser must not infer this from email.
+type MicrosoftDriveHost struct {
+	ID        string `json:"id"`
+	DriveType string `json:"driveType"`
+	WebURL    string `json:"webUrl"`
 }
 
 /* ------------------------------------------------------------------ helpers */

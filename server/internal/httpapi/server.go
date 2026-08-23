@@ -210,6 +210,16 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func decode(r *http.Request, v any) error { return json.NewDecoder(r.Body).Decode(v) }
 
+// errAIUnavailable is a failed handshake with the Python retrieval service.
+// Chat and generate used to invent a local answer here; the client must see
+// the miss so an outage does not look like a finished turn.
+var errAIUnavailable = errors.New("AI service is unavailable")
+
+// errGenerateEmpty is a 200-shaped pipeline miss: the model ran, but the
+// reply could not become a material. Distinct from errAIUnavailable so a
+// blank mindmap is not reported as the retrieval process being down.
+var errGenerateEmpty = errors.New("the model returned no usable material")
+
 func (a *api) fail(w http.ResponseWriter, err error) {
 	if errors.Is(err, store.ErrNotFound) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "not found"})
@@ -276,11 +286,32 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		})
 		return
 	}
+	if errors.Is(err, errAIUnavailable) {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
+			"code":    "ai_unavailable",
+			"message": errAIUnavailable.Error(),
+		})
+		return
+	}
+	if errors.Is(err, errGenerateEmpty) {
+		writeJSON(w, http.StatusBadGateway, map[string]string{
+			"code":    "generate_empty",
+			"message": errGenerateEmpty.Error(),
+		})
+		return
+	}
 	if errors.Is(err, store.ErrTooManyLLMLeases) {
 		w.Header().Set("Retry-After", "10")
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{
 			"code":    "too_many_streams",
 			"message": "too many AI requests in progress",
+		})
+		return
+	}
+	if errors.Is(err, store.ErrTooManyIngestLeases) {
+		writeJSON(w, http.StatusTooManyRequests, map[string]any{
+			"code":    "too_many_ingest_leases",
+			"message": "too many ingest jobs in progress",
 		})
 		return
 	}
@@ -644,6 +675,11 @@ func (a *api) generate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	llmRates := llm.Rates
+	embed, err := a.resolveEmbedding(r.Context(), wsID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
 	// Model spend is the actor's; the material it produces is the workspace
 	// owner's and is gated by gateStorageTx further down.
 	charge, err := a.beginSpend(r.Context(), userID, wsID, store.SurfaceGenerate, llm.PaidBy)
@@ -690,24 +726,16 @@ func (a *api) generate(w http.ResponseWriter, r *http.Request) {
 		wsName = ws.Name
 	}
 
-	if a.pipe != nil {
-		payload, usage, ok, err := a.generateViaPipe(r.Context(), userID, wsID, wsName, &opts, llm)
-		if err != nil {
-			a.fail(w, err)
-			return
-		}
-		if ok {
-			charge.settle(r.Context(), usage.events(userID, wsID, store.SurfaceGenerate, llmRates, a.embeddingRates(r.Context(), wsID), llm.PaidBy)...)
-			writeJSON(w, 200, payload)
-			return
-		}
+	if a.pipe == nil {
+		a.fail(w, errAIUnavailable)
+		return
 	}
-	// The local fallback runs no model at all, so there is nothing to charge.
-	payload, err := a.generateLocal(r.Context(), userID, wsID, wsName, opts)
+	payload, usage, err := a.generateViaPipe(r.Context(), userID, wsID, wsName, &opts, llm)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
+	charge.settle(r.Context(), usage.events(userID, wsID, store.SurfaceGenerate, llmRates, embed.Rates, llm.PaidBy)...)
 	writeJSON(w, 200, payload)
 }
 
@@ -776,7 +804,7 @@ func (a *api) generateViaPipe(
 	userID, wsID, wsName string,
 	opts *generateOpts,
 	llm resolvedLLM,
-) (any, pipeUsage, bool, error) {
+) (any, pipeUsage, error) {
 	fileIDs, fileNames, chapterNames := a.resolveScope(ctx, wsID, opts)
 	body := map[string]any{
 		"workspaceId": wsID, "kind": opts.Kind, "length": opts.Length, "format": opts.Format,
@@ -790,16 +818,19 @@ func (a *api) generateViaPipe(
 	raw, err := a.pipe.PostRaw(ctx, "/generate", body)
 	if err != nil {
 		if mapped := pipelineLLMError(err); mapped != nil {
-			return nil, usage, false, mapped
+			return nil, usage, mapped
 		}
-		return nil, usage, false, nil
+		if mapped := pipelineGenerateError(err); mapped != nil {
+			return nil, usage, mapped
+		}
+		return nil, usage, fmt.Errorf("%w: %v", errAIUnavailable, err)
 	}
 	usage = usageFrom(raw)
 	var head struct {
 		Kind string `json:"kind"`
 	}
 	if json.Unmarshal(raw, &head) != nil {
-		return nil, usage, false, nil
+		return nil, usage, fmt.Errorf("%w: invalid generate response", errAIUnavailable)
 	}
 	switch head.Kind {
 	case "quiz":
@@ -815,14 +846,18 @@ func (a *api) generateViaPipe(
 		if chapters == nil {
 			chapters = chapterNames
 		}
+		qs := strings.TrimSpace(string(qp.Questions))
+		if qs == "" || qs == "[]" || qs == "null" {
+			return nil, usage, errGenerateEmpty
+		}
 		quiz, err := a.s.CreateQuiz(ctx, store.Quiz{
 			UserID: userID, Name: name, WorkspaceID: wsID, WorkspaceName: wsName, Chapters: chapters,
 			Questions: qp.Questions, Privacy: "private", TimeLimitMin: qp.TimeLimitMin,
 		})
 		if err != nil {
-			return nil, usage, false, err
+			return nil, usage, err
 		}
-		return map[string]any{"kind": "quiz", "quiz": quiz}, usage, true, nil
+		return map[string]any{"kind": "quiz", "quiz": quiz}, usage, nil
 	case "flashcards":
 		var fp struct {
 			Cards []struct {
@@ -837,59 +872,34 @@ func (a *api) generateViaPipe(
 		}
 		res, err := a.persistDeck(ctx, userID, wsID, opts.Title, fronts)
 		if err != nil {
-			return nil, usage, false, err
+			return nil, usage, err
 		}
-		return res, usage, true, nil
+		return res, usage, nil
 	case "mindmap", "diagram":
 		var mp struct {
 			Title   string `json:"title"`
 			Content string `json:"content"`
 		}
 		_ = json.Unmarshal(raw, &mp)
-		res, err := a.persistMaterial(ctx, userID, wsID, wsName, store.MaterialKind(head.Kind), opts.Title, mp.Content, opts, chapterNames, fileNames)
+		res, err := a.persistMaterial(ctx, userID, wsID, wsName, store.MaterialKind(head.Kind), opts.Title, mp.Content, chapterNames, fileNames)
 		if err != nil {
-			return nil, usage, false, err
+			return nil, usage, err
 		}
-		return res, usage, true, nil
+		return res, usage, nil
 	}
 	var m map[string]any
 	if json.Unmarshal(raw, &m) != nil {
-		return nil, usage, false, nil
+		return nil, usage, fmt.Errorf("%w: invalid generate response", errAIUnavailable)
 	}
-	return m, usage, true, nil
-}
-
-// generateLocal is the offline fallback (and the mock-parity generator).
-func (a *api) generateLocal(ctx context.Context, userID, wsID, wsName string, opts generateOpts) (any, error) {
-	_, fileNames, chapterNames := a.resolveScope(ctx, wsID, &opts)
-	switch opts.Kind {
-	case "flashcards":
-		n := opts.Count
-		if n <= 0 {
-			n = 10
-		}
-		cards := make([][2]string, 0, n)
-		for i := 0; i < n; i++ {
-			cards = append(cards, [2]string{fmt.Sprintf("Term %d", i+1), fmt.Sprintf("Definition for term %d.", i+1)})
-		}
-		return a.persistDeck(ctx, userID, wsID, opts.Title, cards)
-	case "mindmap", "diagram":
-		return a.persistMaterial(ctx, userID, wsID, wsName, opts.Kind, opts.Title, localMaterialContent(wsName, opts), &opts, chapterNames, fileNames)
-	default:
-		quiz, err := a.s.CreateQuiz(ctx, store.Quiz{
-			UserID: userID, Name: opts.Title, WorkspaceID: wsID, WorkspaceName: wsName,
-			Chapters: chapterNames, Questions: buildQuestions(opts), Privacy: "private", TimeLimitMin: opts.TimeLimitMin,
-		})
-		if err != nil {
-			return nil, err
-		}
-		return map[string]any{"kind": "quiz", "quiz": quiz}, nil
-	}
+	return m, usage, nil
 }
 
 // persistDeck creates a real deck + cards so generated flashcards appear in the
 // library and the workspace materials list.
 func (a *api) persistDeck(ctx context.Context, userID, wsID, title string, cards [][2]string) (any, error) {
+	if len(cards) == 0 {
+		return nil, errGenerateEmpty
+	}
 	deck, err := a.s.CreateDeckWithCards(
 		ctx, userID, title, "green", wsID, cards,
 	)
@@ -909,9 +919,9 @@ func (a *api) persistDeck(ctx context.Context, userID, wsID, title string, cards
 //
 // userID is the author. Without it CreateMaterial falls back to the workspace
 // owner, which records a generation an editor ran as the owner's own work.
-func (a *api) persistMaterial(ctx context.Context, userID, wsID, wsName string, kind store.MaterialKind, title, content string, opts *generateOpts, chapterNames, fileNames []string) (any, error) {
-	if content == "" {
-		content = localMaterialContent(wsName, *opts)
+func (a *api) persistMaterial(ctx context.Context, userID, wsID, wsName string, kind store.MaterialKind, title, content string, chapterNames, fileNames []string) (any, error) {
+	if strings.TrimSpace(content) == "" {
+		return nil, errGenerateEmpty
 	}
 	mt, err := a.s.CreateMaterial(ctx, store.Material{
 		CreatedBy: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: kind, Title: title,
@@ -921,14 +931,6 @@ func (a *api) persistMaterial(ctx context.Context, userID, wsID, wsName string, 
 		return nil, err
 	}
 	return map[string]any{"kind": kind, "material": mt}, nil
-}
-
-// localMaterialContent is the offline mermaid document for mindmaps/diagrams.
-func localMaterialContent(wsName string, opts generateOpts) string {
-	if opts.Kind == "mindmap" {
-		return "# " + wsName + " mindmap\n\n```mermaid\nmindmap\n  root((Topic))\n    Key idea A\n      Detail 1\n      Detail 2\n    Key idea B\n      Detail 3\n```"
-	}
-	return "# " + wsName + " diagram\n\n```mermaid\nflowchart LR\n  A[Start] --> B[Process]\n  B --> C{Decision}\n  C -->|Yes| D[Outcome 1]\n  C -->|No| E[Outcome 2]\n```"
 }
 
 // buildQuestions mirrors the generator in src/mocks/handlers.ts so generated

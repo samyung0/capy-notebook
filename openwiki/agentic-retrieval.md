@@ -479,7 +479,9 @@ is fixed, and the gateway must persist a parseable artifact.
 3. Kind-specific normalizers (`extract_json`, `strip_fence`,
    `normalize_questions`) coerce the model reply into the shapes the Go
    persistence layer already expects: flashcards, quiz questions, mindmap /
-   diagram mermaid, notes.
+   diagram mermaid, notes. An empty or unparseable reply is
+   `generate_empty` (502), not a canned stub. Go refuses to persist an
+   empty quiz, deck, or mermaid document for the same reason.
 
 Response shapes are part of the contract with Go — do not change them lightly.
 

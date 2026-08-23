@@ -101,6 +101,35 @@ def strip_fence(text: str) -> str:
     return (match.group(1) if match else text).strip()
 
 
+class GenerateEmpty(ValueError):
+    """The model replied, but nothing in that reply can become a material."""
+
+    def __init__(self, kind: str):
+        self.kind = kind
+        super().__init__(f"The model returned no usable {kind}.")
+
+
+def require_text(raw: str, kind: str) -> str:
+    text = (raw or "").strip()
+    if not text:
+        raise GenerateEmpty(kind)
+    return text
+
+
+def require_mermaid(raw: str, kind: str) -> str:
+    code = strip_fence(raw)
+    if not code:
+        raise GenerateEmpty(kind)
+    return code
+
+
+def require_json_list(raw: str, kind: str) -> list[Any]:
+    data = extract_json(raw)
+    if not isinstance(data, list) or not data:
+        raise GenerateEmpty(kind)
+    return data
+
+
 async def produce(
     *,
     instruction: str,

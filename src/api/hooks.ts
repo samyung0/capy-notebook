@@ -41,6 +41,7 @@ import type {
   FileStatus,
   Flashcard,
   GenerateOptions,
+  IngestSlots,
   IntegrationsStatus,
   Label,
   LLMCredentialsResponse,
@@ -60,7 +61,6 @@ import type {
   PublicQuiz,
   PublicWorkspace,
   Quiz,
-  RecentFile,
   SaveCanvasReq,
   SearchResult,
   SetModelPrefsReq,
@@ -121,6 +121,14 @@ export const meQuery = () =>
   queryOptions({ queryFn: () => api.get<User>('/me'), queryKey: qk.me });
 export const useMe = (options?: QueryUiOptions) =>
   useQuery({ ...meQuery(), meta: queryMeta(options) });
+
+export const ingestSlotsQuery = () =>
+  queryOptions({
+    queryFn: () => api.get<IngestSlots>('/me/ingest-slots'),
+    queryKey: qk.ingestSlots,
+  });
+export const useIngestSlots = (options?: QueryUiOptions) =>
+  useQuery({ ...ingestSlotsQuery(), meta: queryMeta(options) });
 
 export const modelsQuery = (surface: ModelSurface) =>
   queryOptions({
@@ -547,27 +555,16 @@ export function useImportSources(
   return useMutation({
     meta: mutationMeta(options),
     mutationFn: (body: {
-      provider: 'google' | 'microsoft';
-      fileIds: string[];
       chapterId?: string | null;
+      driveIds?: string[];
+      fileIds: string[];
+      provider: 'google' | 'microsoft';
     }) =>
       api.post<SourceFile[]>(`/workspaces/${workspaceId}/sources/import`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.files(workspaceId) });
       qc.invalidateQueries({ queryKey: qk.workspaceStats(workspaceId) });
     },
-  });
-}
-
-export function useMicrosoftRecentFiles(
-  enabled: boolean,
-  options?: QueryUiOptions
-) {
-  return useQuery({
-    enabled,
-    meta: queryMeta(options),
-    queryFn: () => api.get<RecentFile[]>('/integrations/microsoft/recent'),
-    queryKey: ['integrations', 'microsoft', 'recent'],
   });
 }
 

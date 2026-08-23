@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@ai-sdk/react": "^4.0.16",
+    "@azure/msal-browser": "^5.19.0",
     "@base-ui/react": "^1.6.0",
     "@clerk/react": "^6.11.3",
     "@excalidraw/excalidraw": "0.18.1",

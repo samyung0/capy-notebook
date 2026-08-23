@@ -1,7 +1,6 @@
 // Package pipeline is a thin HTTP client for the Python retrieval/generate
-// service. The gateway calls it synchronously for chat and generate; on any
-// error the caller falls back to a local placeholder so the app keeps working
-// even when the pipeline is down.
+// service. The gateway calls it synchronously for chat and generate. A failed
+// handshake is returned to the caller; it must not invent a local answer.
 package pipeline
 
 import (

@@ -218,6 +218,26 @@ components:
       required:
         - planTier
       type: object
+    IngestSlots:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/IngestSlots.json
+          format: uri
+          readOnly: true
+          type: string
+        slotsFree:
+          type: integer
+        slotsLimit:
+          type: integer
+        slotsUsed:
+          type: integer
+      required:
+        - slotsFree
+        - slotsLimit
+        - slotsUsed
+      type: object
     BillingInfo:
       additionalProperties: false
       properties:
@@ -1459,6 +1479,26 @@ components:
         - status
         - createdAt
       type: object
+    MicrosoftDriveHost:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/MicrosoftDriveHost.json
+          format: uri
+          readOnly: true
+          type: string
+        driveType:
+          type: string
+        id:
+          type: string
+        webUrl:
+          type: string
+      required:
+        - id
+        - driveType
+        - webUrl
+      type: object
     ModelOption:
       additionalProperties: false
       properties:
@@ -1899,17 +1939,6 @@ components:
       required:
         - award
         - reason
-      type: object
-    RecentFile:
-      additionalProperties: false
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-      required:
-        - id
-        - name
       type: object
     Region:
       additionalProperties: false
@@ -3803,17 +3832,15 @@ paths:
       summary: Google picker token
       tags:
         - Billing & integrations
-  /api/integrations/microsoft/recent:
+  /api/integrations/microsoft/drive:
     get:
-      operationId: microsoftRecent
+      operationId: microsoftDrive
       responses:
         "200":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/RecentFile"
-                type: array
+                $ref: "#/components/schemas/MicrosoftDriveHost"
           description: OK
         default:
           content:
@@ -3821,7 +3848,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Recent OneDrive files
+      summary: OneDrive host for File Picker
       tags:
         - Billing & integrations
   /api/integrations/{provider}:
@@ -4203,6 +4230,25 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Remove a provider key
+      tags:
+        - Account
+  /api/me/ingest-slots:
+    get:
+      operationId: getIngestSlots
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestSlots"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Actor ingest slot remaining
       tags:
         - Account
   /api/me/locale:

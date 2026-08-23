@@ -6,12 +6,18 @@ import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
 import {
   aggregateUploadPct,
   capSourceUploads,
+  chunkItems,
   defaultParseMode,
+  fileReachedTerminal,
   getFileKind,
+  MAX_FILES_PER_UPLOAD,
   MAX_SOURCE_UPLOAD_FILES,
   mapWithConcurrency,
+  needsIngestJob,
   parseModeIssues,
   retryAfterMs,
+  shouldArmBeforeUnload,
+  splitSourceWave,
   supportsFigures,
   withUploadRetry,
 } from './sourceUpload';
@@ -81,11 +87,16 @@ describe('aggregate upload progress', () => {
 });
 
 describe('upload batch limits', () => {
-  it('caps incoming files against the batch maximum', () => {
-    const { accepted, rejected } = capSourceUploads(18, [1, 2, 3, 4]);
-    expect(accepted).toEqual([1, 2]);
-    expect(rejected).toBe(2);
-    expect(MAX_SOURCE_UPLOAD_FILES).toBe(20);
+  it('caps the picker at remaining workspace room, not the per-request 20', () => {
+    const { accepted, rejected } = capSourceUploads(
+      10,
+      Array.from({ length: 40 }, (_, i) => i),
+      80
+    );
+    expect(accepted).toHaveLength(40);
+    expect(rejected).toBe(0);
+    expect(MAX_SOURCE_UPLOAD_FILES).toBe(MAX_FILES_PER_UPLOAD);
+    expect(MAX_FILES_PER_UPLOAD).toBe(20);
   });
 
   it('caps the picker at remaining workspace room', () => {
@@ -96,6 +107,45 @@ describe('upload batch limits', () => {
       accepted: [],
       rejected: 2,
     });
+  });
+
+  it('chunks a wave without stuffing every id into one body', () => {
+    expect(chunkItems([1, 2, 3, 4, 5], 3)).toEqual([
+      [1, 2, 3],
+      [4, 5],
+    ]);
+  });
+
+  it('splits ingest work by free slots and leaves store-only unbounded', () => {
+    const items = [
+      { id: 'a', ingest: true },
+      { id: 'b', ingest: false },
+      { id: 'c', ingest: true },
+      { id: 'd', ingest: true },
+    ];
+    const { wave, rest } = splitSourceWave(items, (item) => item.ingest, 2);
+    expect(wave.map((item) => item.id)).toEqual(['a', 'b', 'c']);
+    expect(rest.map((item) => item.id)).toEqual(['d']);
+  });
+
+  it('arms beforeunload only while an unsent tail remains', () => {
+    expect(shouldArmBeforeUnload(0)).toBe(false);
+    expect(shouldArmBeforeUnload(3)).toBe(true);
+  });
+
+  it('treats text and parsed files as ingest jobs', () => {
+    expect(needsIngestJob('md', 'none')).toBe(true);
+    expect(needsIngestJob('pdf', 'fast')).toBe(true);
+    expect(needsIngestJob('audio', 'none')).toBe(false);
+  });
+
+  it('detects a terminal ingest status from the file cache', () => {
+    expect(
+      fileReachedTerminal([{ id: 'f1', status: 'pending' }], 'f1')
+    ).toBeNull();
+    expect(fileReachedTerminal([{ id: 'f1', status: 'ready' }], 'f1')).toBe(
+      'ready'
+    );
   });
 
   it('runs a bounded worker pool in original order', async () => {

@@ -327,10 +327,18 @@ async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
     async def _pin(_ws):
         return object()
 
+    async def _embed_pin(_ws):
+        return {
+            "embedding_dim": 2560,
+            "embedding_model_key": "qwen-embed",
+            "embedding_model_version": 1,
+        }
+
     async def _no_donor(**_k):
         return None
 
     monkeypatch.setattr(worker, "_workspace_embedding_spec", _pin)
+    monkeypatch.setattr(worker.store, "workspace_embedding_pin", _embed_pin)
     monkeypatch.setattr(
         worker.registry, "pins_from_payload", lambda *_a, **_k: object()
     )

@@ -88,6 +88,13 @@ async def user_key_error_handler(_request: Request, exc: models.UserKeyError):
     return JSONResponse({"code": exc.code, "message": exc.message}, status_code=400)
 
 
+@app.exception_handler(workflows.GenerateEmpty)
+async def generate_empty_handler(_request: Request, exc: workflows.GenerateEmpty):
+    return JSONResponse(
+        {"code": "generate_empty", "message": str(exc)}, status_code=502
+    )
+
+
 @app.middleware("http")
 async def request_context(request: Request, call_next):
     """Continue the gateway's trace and open a usage accumulator per request.
@@ -455,7 +462,11 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
                 model=model,
                 locale=req.locale,
             )
-        return {"kind": "summary", "title": "Workspace summary", "body": body}
+        return {
+            "kind": "summary",
+            "title": "Workspace summary",
+            "body": workflows.require_text(body, "summary"),
+        }
 
     if req.kind == "flashcards":
         n = req.count or 10
@@ -470,7 +481,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
             model=model,
             locale=req.locale,
         )
-        data = workflows.extract_json(raw) or []
+        data = workflows.require_json_list(raw, "flashcards")
         cards = [
             {
                 "id": _uid("c"),
@@ -483,6 +494,8 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
             for item in data
             if isinstance(item, dict)
         ]
+        if not cards:
+            raise workflows.GenerateEmpty("flashcards")
         return {"kind": "flashcards", "cards": cards}
 
     if req.kind == "mindmap":
@@ -499,7 +512,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
             model=model,
             locale=req.locale,
         )
-        code = workflows.strip_fence(raw) or "mindmap\n  root((Topic))"
+        code = workflows.require_mermaid(raw, "mindmap")
         return {
             "kind": "mindmap",
             "title": "Mindmap",
@@ -525,7 +538,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
             model=model,
             locale=req.locale,
         )
-        code = workflows.strip_fence(raw) or "flowchart LR\n  A --> B"
+        code = workflows.require_mermaid(raw, "diagram")
         return {
             "kind": "diagram",
             "title": "Diagram",
@@ -561,8 +574,10 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         locale=req.locale,
     )
     questions = workflows.normalize_questions(
-        workflows.extract_json(raw) or [], _LEVEL_ALIASES
+        workflows.require_json_list(raw, "quiz"), _LEVEL_ALIASES
     )
+    if not questions:
+        raise workflows.GenerateEmpty("quiz")
     return {
         "kind": "quiz",
         "name": "Workspace quiz",

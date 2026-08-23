@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -55,6 +54,9 @@ type billingOutput struct {
 type usageOutput struct {
 	Body apimodel.UsageReport
 }
+type ingestSlotsOutput struct {
+	Body apimodel.IngestSlots
+}
 type billingCheckoutInput struct {
 	Body apimodel.BillingCheckoutReq
 }
@@ -67,8 +69,8 @@ type integrationsOutput struct {
 type accessTokenOutput struct {
 	Body apimodel.AccessTokenResp
 }
-type recentFilesOutput struct {
-	Body []apimodel.RecentFile `nullable:"false"`
+type microsoftDriveOutput struct {
+	Body apimodel.MicrosoftDriveHost
 }
 type providerInput struct {
 	Provider string `path:"provider"`
@@ -83,6 +85,7 @@ type publicQuizzesOutput struct {
 func (a *api) registerAccount(api huma.API) {
 	const tag = "Account"
 	reg(api, http.MethodGet, "/api/me", "getMe", tag, "Current user", http.StatusOK, a.getMe)
+	reg(api, http.MethodGet, "/api/me/ingest-slots", "getIngestSlots", tag, "Actor ingest slot remaining", http.StatusOK, a.getIngestSlots)
 	reg(api, http.MethodPatch, "/api/me/locale", "setLocale", tag, "Set account locale", http.StatusNoContent, a.setLocale)
 	reg(api, http.MethodGet, "/api/search", "search", tag, "Global search", http.StatusOK, a.searchAll)
 	reg(api, http.MethodGet, "/api/notifications", "listNotifications", tag, "List notifications", http.StatusOK, a.listNotifications)
@@ -106,9 +109,17 @@ func (a *api) registerBillingIntegrations(api huma.API) {
 	reg(api, http.MethodPost, "/api/billing/checkout", "billingCheckout", tag, "Start checkout", http.StatusOK, a.billingCheckout)
 	reg(api, http.MethodPost, "/api/billing/portal", "billingPortal", tag, "Open billing portal", http.StatusOK, a.billingPortal)
 	reg(api, http.MethodGet, "/api/integrations", "getIntegrations", tag, "Integration status", http.StatusOK, a.getIntegrations)
-	reg(api, http.MethodGet, "/api/integrations/microsoft/recent", "microsoftRecent", tag, "Recent OneDrive files", http.StatusOK, a.microsoftRecent)
+	reg(api, http.MethodGet, "/api/integrations/microsoft/drive", "microsoftDrive", tag, "OneDrive host for File Picker", http.StatusOK, a.microsoftDrive)
 	reg(api, http.MethodGet, "/api/integrations/google/picker-token", "googlePickerToken", tag, "Google picker token", http.StatusOK, a.googlePickerTokenH)
 	reg(api, http.MethodDelete, "/api/integrations/{provider}", "deleteIntegration", tag, "Disconnect a provider", http.StatusNoContent, a.deleteIntegrationH)
+}
+
+func (a *api) getIngestSlots(ctx context.Context, _ *struct{}) (*ingestSlotsOutput, error) {
+	slots, err := a.s.IngestSlots(ctx, userID(ctx))
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &ingestSlotsOutput{Body: slots}, nil
 }
 
 func (a *api) getMe(ctx context.Context, _ *struct{}) (*meOutput, error) {
@@ -310,7 +321,7 @@ func (a *api) googlePickerTokenH(ctx context.Context, _ *struct{}) (*accessToken
 	return &accessTokenOutput{Body: apimodel.AccessTokenResp{AccessToken: tok}}, nil
 }
 
-func (a *api) microsoftRecent(ctx context.Context, _ *struct{}) (*recentFilesOutput, error) {
+func (a *api) microsoftDrive(ctx context.Context, _ *struct{}) (*microsoftDriveOutput, error) {
 	tok, err := integrations.ClerkAccessToken(ctx, userID(ctx), integrations.ProviderMicrosoft)
 	if errors.Is(err, integrations.ErrNotConnected) {
 		return nil, huma.Error404NotFound("microsoft account not connected")
@@ -318,23 +329,15 @@ func (a *api) microsoftRecent(ctx context.Context, _ *struct{}) (*recentFilesOut
 	if err != nil {
 		return nil, hErr(err)
 	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://graph.microsoft.com/v1.0/me/drive/recent", nil)
-	req.Header.Set("Authorization", "Bearer "+tok)
-	resp, err := http.DefaultClient.Do(req)
+	drive, err := integrations.GetMicrosoftDrive(ctx, tok)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	defer resp.Body.Close()
-	var out struct {
-		Value []apimodel.RecentFile `json:"value"`
-	}
-	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
-		return nil, hErr(err)
-	}
-	if out.Value == nil {
-		out.Value = []apimodel.RecentFile{}
-	}
-	return &recentFilesOutput{Body: out.Value}, nil
+	return &microsoftDriveOutput{Body: apimodel.MicrosoftDriveHost{
+		ID:        drive.ID,
+		DriveType: drive.DriveType,
+		WebURL:    drive.WebURL,
+	}}, nil
 }
 
 func (a *api) deleteIntegrationH(ctx context.Context, in *providerInput) (*Empty, error) {

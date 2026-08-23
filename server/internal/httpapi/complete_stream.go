@@ -100,7 +100,7 @@ func (a *api) completeStream(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-	charge.settle(ctx, usage.events(userID, wsID, store.SurfaceEditor, rates, store.DefaultEmbeddingRates(), llm.PaidBy)...)
+	charge.settle(ctx, usage.events(userID, wsID, store.SurfaceEditor, rates, store.TokenRates{}, llm.PaidBy)...)
 	send(map[string]any{"type": "done"})
 }
 

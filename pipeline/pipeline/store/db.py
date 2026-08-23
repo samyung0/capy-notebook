@@ -499,21 +499,20 @@ def record_usage_event(
     model: str = "",
     model_key: str = "",
     model_version: int = 0,
-    cost_micro_usd: int = 0,
     input_tokens: int = 0,
     output_tokens: int = 0,
     units: int = 0,
     unit: str = "",
     credit_micros: int = 0,
+    reservation_id: str = "",
     trace_id: str | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> None:
     """Append one metered consumption and charge it to the actor's counter.
 
-    Ingest spend cannot be reserved in advance: nothing is waiting on it, the
-    file was already accepted, and refusing halfway leaves a half-indexed
-    document. It is therefore recorded after the fact, which can push a user
-    past their limit — the next interactive request is what refuses, not this.
+    Ingest is leased at enqueue and recorded here after the job finishes. The
+    measured charge can still push a user past their limit; the next
+    interactive request is what refuses.
     """
     if not actor_user_id or credit_micros < 0:
         return
@@ -521,8 +520,9 @@ def record_usage_event(
         """
         INSERT INTO usage_events
             (trace_id, actor_user_id, workspace_id, kind, surface, provider, model,
-             model_key, model_version, cost_micro_usd,
-             input_tokens, output_tokens, units, unit, credit_micros, metadata)
+             model_key, model_version,
+             input_tokens, output_tokens, units, unit, credit_micros,
+             reservation_id, metadata)
         VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """,
         (
@@ -535,12 +535,12 @@ def record_usage_event(
             model,
             model_key,
             model_version,
-            cost_micro_usd,
             input_tokens,
             output_tokens,
             units,
             unit,
             credit_micros,
+            reservation_id or None,
             Jsonb(metadata or {}),
         ),
     )
@@ -557,6 +557,32 @@ def record_usage_event(
             """,
             (credit_micros, actor_user_id),
         )
+
+
+def settle_credit_reservation(cur, reservation_id: str) -> None:
+    if not reservation_id:
+        return
+    cur.execute(
+        """
+        UPDATE credit_reservations
+        SET status = 'settled', settled_at = now()
+        WHERE id = %s AND status = 'open'
+        """,
+        (reservation_id,),
+    )
+
+
+def release_credit_reservation(cur, reservation_id: str) -> None:
+    if not reservation_id:
+        return
+    cur.execute(
+        """
+        UPDATE credit_reservations
+        SET status = 'released', settled_at = now()
+        WHERE id = %s AND status = 'open'
+        """,
+        (reservation_id,),
+    )
 
 
 def account_allows_ingest(cur, user_id: str) -> bool:

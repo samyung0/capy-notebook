@@ -1337,10 +1337,6 @@ CREATE TABLE IF NOT EXISTS model_configs (
   -- micros is the 1x reference (one credit per 1k output tokens of Flash).
   micros_per_input_token       bigint NOT NULL,
   micros_per_output_token      bigint NOT NULL,
-  -- Reconciliation only, never charged from. Unit is micro-USD per million
-  -- tokens, so $0.14/MTok is stored as 140000.
-  usd_micros_per_input_token   bigint NOT NULL DEFAULT 0,
-  usd_micros_per_output_token  bigint NOT NULL DEFAULT 0,
   -- Chat/generate/editor/quiz/ingest/vision may flip this to retire a version.
   -- Embedding rows may not: protect_embedding_model_configs refuses
   -- enabled=false, DELETE, stripping or adding the embedding surface, and
@@ -1379,10 +1375,28 @@ CREATE TABLE IF NOT EXISTS model_configs (
   CONSTRAINT model_configs_llm_window_check CHECK (
     NOT (surfaces && ARRAY['chat','generate','editor','quiz','ingest']::text[])
     OR context_window_tokens > 0
+  ),
+  -- Credit micros may be 0 only on BYOK rows. Platform chat/generate/editor/
+  -- quiz/ingest/vision need both sides > 0. Embedding needs input > 0;
+  -- output may be 0.
+  CONSTRAINT model_configs_credit_rates_check CHECK (
+    auth_mode = 'user_key'
+    OR (
+      'embedding' = ANY(surfaces)
+      AND micros_per_input_token > 0
+      AND micros_per_output_token >= 0
+    )
+    OR (
+      NOT ('embedding' = ANY(surfaces))
+      AND micros_per_input_token > 0
+      AND micros_per_output_token > 0
+    )
   )
 );
 ALTER TABLE model_configs ADD COLUMN IF NOT EXISTS auth_mode text NOT NULL DEFAULT 'platform';
 ALTER TABLE model_configs ADD COLUMN IF NOT EXISTS context_window_tokens int NOT NULL DEFAULT 50000;
+ALTER TABLE model_configs DROP COLUMN IF EXISTS usd_micros_per_input_token;
+ALTER TABLE model_configs DROP COLUMN IF EXISTS usd_micros_per_output_token;
 DO $$
 BEGIN
   IF NOT EXISTS (
@@ -1412,6 +1426,23 @@ BEGIN
   ) THEN
     ALTER TABLE model_configs ADD CONSTRAINT model_configs_embedding_enabled_check CHECK (
       NOT ('embedding' = ANY(surfaces)) OR enabled
+    );
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'model_configs_credit_rates_check'
+  ) THEN
+    ALTER TABLE model_configs ADD CONSTRAINT model_configs_credit_rates_check CHECK (
+      auth_mode = 'user_key'
+      OR (
+        'embedding' = ANY(surfaces)
+        AND micros_per_input_token > 0
+        AND micros_per_output_token >= 0
+      )
+      OR (
+        NOT ('embedding' = ANY(surfaces))
+        AND micros_per_input_token > 0
+        AND micros_per_output_token > 0
+      )
     );
   END IF;
   IF EXISTS (
@@ -1547,89 +1578,88 @@ INSERT INTO model_registry_state (id, version) VALUES (true, 1)
 INSERT INTO model_configs (
   model_key, version, display_name, provider_slug, base_url, provider_model_id,
   auth_mode, context_window_tokens, params, surfaces,
-  micros_per_input_token, micros_per_output_token,
-  usd_micros_per_input_token, usd_micros_per_output_token, enabled, is_default_for
+  micros_per_input_token, micros_per_output_token, enabled, is_default_for
 ) VALUES
   ('deepseek-flash', 1, 'DeepSeek Flash', 'deepseek',
    'https://api.deepseek.com', 'deepseek-v4-flash',
    'platform_or_user', 1000000,
    '{"temperature": 0.3, "reasoning": {"canDisable": true, "efforts": ["low", "high", "max"], "defaultMode": "off", "defaultEffort": "high"}, "modalities": {"vision": false, "pdf": false}}'::jsonb,
    ARRAY['chat','generate','editor','quiz','ingest'],
-   250, 1000, 140000, 280000, true,
+   250, 1000, true,
    ARRAY['chat','generate','editor','quiz','ingest']),
   ('deepseek-pro', 1, 'DeepSeek Pro', 'deepseek',
    'https://api.deepseek.com', 'deepseek-v4-pro',
    'platform_or_user', 1000000,
    '{"temperature": 0.3, "reasoning": {"canDisable": true, "efforts": ["low", "high", "max"], "defaultMode": "off", "defaultEffort": "high"}, "modalities": {"vision": false, "pdf": false}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   775, 3100, 434000, 868000, true,
+   775, 3100, true,
    ARRAY[]::text[]),
   ('gpt-5.6-sol', 1, 'GPT-5.6 Sol', 'openai',
    'https://api.openai.com/v1', 'gpt-5.6-sol',
    'user_key', 400000,
    '{"reasoning": {"canDisable": true, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "medium"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, 0, 0, true, ARRAY[]::text[]),
+   0, 0, true, ARRAY[]::text[]),
   ('gpt-5.6-terra', 1, 'GPT-5.6 Terra', 'openai',
    'https://api.openai.com/v1', 'gpt-5.6-terra',
    'user_key', 400000,
    '{"reasoning": {"canDisable": true, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "medium"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, 0, 0, true, ARRAY[]::text[]),
+   0, 0, true, ARRAY[]::text[]),
   ('gpt-5.6-luna', 1, 'GPT-5.6 Luna', 'openai',
    'https://api.openai.com/v1', 'gpt-5.6-luna',
    'user_key', 400000,
    '{"reasoning": {"canDisable": true, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "medium"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, 0, 0, true, ARRAY[]::text[]),
+   0, 0, true, ARRAY[]::text[]),
   ('claude-opus-5', 1, 'Claude Opus 5', 'anthropic',
    'https://api.anthropic.com/v1', 'claude-opus-5',
    'user_key', 1000000,
    '{"reasoning": {"canDisable": false, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "high", "style": "adaptive"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, 0, 0, true, ARRAY[]::text[]),
+   0, 0, true, ARRAY[]::text[]),
   ('claude-opus-4-8', 1, 'Claude Opus 4.8', 'anthropic',
    'https://api.anthropic.com/v1', 'claude-opus-4-8',
    'user_key', 1000000,
    '{"reasoning": {"canDisable": false, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "high", "style": "adaptive"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, 0, 0, true, ARRAY[]::text[]),
+   0, 0, true, ARRAY[]::text[]),
   ('claude-opus-4-7', 1, 'Claude Opus 4.7', 'anthropic',
    'https://api.anthropic.com/v1', 'claude-opus-4-7',
    'user_key', 1000000,
    '{"reasoning": {"canDisable": false, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "high", "style": "adaptive"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, 0, 0, true, ARRAY[]::text[]),
+   0, 0, true, ARRAY[]::text[]),
   ('claude-sonnet-5', 1, 'Claude Sonnet 5', 'anthropic',
    'https://api.anthropic.com/v1', 'claude-sonnet-5',
    'user_key', 1000000,
    '{"reasoning": {"canDisable": false, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "high", "style": "adaptive"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, 0, 0, true, ARRAY[]::text[]),
+   0, 0, true, ARRAY[]::text[]),
   ('claude-sonnet-4-6', 1, 'Claude Sonnet 4.6', 'anthropic',
    'https://api.anthropic.com/v1', 'claude-sonnet-4-6',
    'user_key', 1000000,
    '{"reasoning": {"canDisable": false, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "high", "style": "adaptive"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, 0, 0, true, ARRAY[]::text[]),
+   0, 0, true, ARRAY[]::text[]),
   ('claude-sonnet-4-5', 1, 'Claude Sonnet 4.5', 'anthropic',
    'https://api.anthropic.com/v1', 'claude-sonnet-4-5',
    'user_key', 200000,
    '{"reasoning": {"canDisable": true, "efforts": ["low", "medium", "high"], "defaultMode": "off", "defaultEffort": "medium", "style": "budget"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, 0, 0, true, ARRAY[]::text[]),
+   0, 0, true, ARRAY[]::text[]),
   ('claude-haiku-4-5', 1, 'Claude Haiku 4.5', 'anthropic',
    'https://api.anthropic.com/v1', 'claude-haiku-4-5',
    'user_key', 200000,
    '{"reasoning": {"canDisable": true, "efforts": ["low", "medium", "high"], "defaultMode": "off", "defaultEffort": "medium", "style": "budget"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, 0, 0, true, ARRAY[]::text[]),
+   0, 0, true, ARRAY[]::text[]),
   ('qwen-embed', 1, 'Qwen3 Embedding 4B', 'openrouter',
    'https://openrouter.ai/api/v1', 'qwen/qwen3-embedding-4b',
    'platform', 0,
    '{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}'::jsonb,
    ARRAY['embedding'],
-   50, 50, 20000, 20000, true,
+   50, 50, true,
    ARRAY['embedding']),
   ('gemini-flash-lite', 1, 'Gemini Flash Lite', 'google',
    'https://generativelanguage.googleapis.com/v1beta/openai/',
@@ -1637,7 +1667,7 @@ INSERT INTO model_configs (
    'platform', 0,
    '{"temperature": 0.2}'::jsonb,
    ARRAY['vision'],
-   250, 1000, 100000, 400000, true,
+   250, 1000, true,
    ARRAY['vision'])
 ON CONFLICT (model_key, version) DO NOTHING;
 
@@ -1694,8 +1724,6 @@ CREATE TABLE IF NOT EXISTS usage_events (
   -- request time, never a silent fall back to the current default.
   model_key      text NOT NULL DEFAULT '',
   model_version  int  NOT NULL DEFAULT 0,
-  -- Reconciliation only (micro-USD). Never the charge.
-  cost_micro_usd bigint NOT NULL DEFAULT 0,
   input_tokens   bigint NOT NULL DEFAULT 0,
   output_tokens  bigint NOT NULL DEFAULT 0,
   -- Non-token resources: GPU milliseconds, bytes, message counts.
@@ -1708,6 +1736,7 @@ CREATE TABLE IF NOT EXISTS usage_events (
   metadata       jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at     timestamptz NOT NULL DEFAULT now()
 );
+ALTER TABLE usage_events DROP COLUMN IF EXISTS cost_micro_usd;
 CREATE INDEX IF NOT EXISTS usage_events_actor_idx
   ON usage_events(actor_user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS usage_events_trace_idx
@@ -1747,6 +1776,9 @@ CREATE INDEX IF NOT EXISTS credit_reservations_open_idx
   ON credit_reservations(expires_at) WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS credit_reservations_actor_idx
   ON credit_reservations(actor_user_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS credit_reservations_actor_open_surface_idx
+  ON credit_reservations(actor_user_id, surface)
+  WHERE status = 'open';
 
 -- Pre-aggregated for the operator dashboard. Dashboard queries must never scan
 -- the raw ledger: it is the same database serving chat requests.

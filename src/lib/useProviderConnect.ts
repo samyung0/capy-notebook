@@ -8,6 +8,7 @@
  *
  * Note: the extra scopes below must be allowed on the Clerk dashboard's
  * Google/Microsoft SSO connections (requires custom OAuth credentials).
+ * Google uses drive.file so Picker setAppId can grant the picked files.
  */
 import { useUser } from '@clerk/react';
 import { USE_MSW } from '@/api/auth';
@@ -15,7 +16,7 @@ import { USE_MSW } from '@/api/auth';
 export type ConnectProvider = 'google' | 'microsoft';
 
 const SCOPES: Record<ConnectProvider, string[]> = {
-  google: ['https://www.googleapis.com/auth/drive.readonly'],
+  google: ['https://www.googleapis.com/auth/drive.file'],
   microsoft: ['Files.Read', 'offline_access'],
 };
 
@@ -44,10 +45,23 @@ function useMockProviderConnect() {
   };
 }
 
-/** Module-level split keeps Clerk hooks out of the tree when there is no
- * ClerkProvider (MSW mode, or missing publishable key) — mirrors the
- * conditions in AppAuthProvider. */
+function useClerkMicrosoftLoginHint() {
+  const { user } = useUser();
+  return user?.externalAccounts.find(
+    (account) => account.provider === 'microsoft'
+  )?.emailAddress;
+}
+
+function useMockMicrosoftLoginHint(): string | undefined {
+  /* MSW / auth-disabled mode: no Clerk Microsoft email. */
+  const hint: string | undefined = undefined;
+  return hint;
+}
+
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 export const useProviderConnect = CLERK_ACTIVE
   ? useClerkProviderConnect
   : useMockProviderConnect;
+export const useMicrosoftLoginHint = CLERK_ACTIVE
+  ? useClerkMicrosoftLoginHint
+  : useMockMicrosoftLoginHint;

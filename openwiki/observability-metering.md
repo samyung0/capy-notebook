@@ -85,11 +85,13 @@ Errors that reached the client as a 5xx are captured by middleware. Errors that
 were **swallowed to keep a request alive** are the ones that need explicit
 reporting, because nothing else will ever surface them:
 
-- the chat fallback that silently replaces an unreachable pipeline with a
-  placeholder answer,
 - a failed credit settle,
 - collaboration persistence failures — the editor stays live and the user keeps
   typing into a document that is no longer being saved.
+
+Chat and generate used to invent a local answer when the retrieval service
+was unreachable. They now fail the request (`ai_unavailable`). The user sees
+that miss; do not reintroduce a placeholder to keep the stream "alive."
 
 Use `obs.CaptureErr` (Go), `obs.capture_error` (Python), `captureError` (Node).
 
@@ -204,8 +206,13 @@ or preference that cannot be loaded fails the request (`model_unavailable`) or
 the job. There is no Flash fallback.
 
 Per-model credit multipliers live on the config row. The 1x reference is DeepSeek
-Flash (250 / 1000 micros per input/output token). USD columns are
-reconciliation-only.
+Flash (250 / 1000 micros per input/output token). There is no USD estimate on
+`model_configs` or `usage_events`. `RatesFromConfig` and `credits_for_tokens`
+multiply the row as written. A 0 stays 0. Nothing fills Flash rates or a
+50-micros embedding default. Credit micros may be 0 only on `auth_mode='user_key'`
+rows (`model_configs_credit_rates_check`). Platform chat/generate/editor/quiz/
+ingest/vision rows need both micros > 0. Embedding needs input > 0; output may
+be 0.
 
 ### Tables
 
@@ -225,26 +232,33 @@ includes the current credit counter (`creditsUsedMicros` / reserved / limit /
 period start) next to storage. `GET /api/usage` groups this actor's current
 month by `kind` and `surface` and returns recent `usage_events` rows. It does
 **not** query `usage_daily` — that table is the operator dashboard and lags the
-ledger by up to a minute. USD is omitted: `cost_micro_usd` is reconciliation
-only.
+ledger by up to a minute. The page shows credits, tokens, `model_key`, and
+`paidBy`. It does not show USD.
 
 ### Begin → settle
 
 ```
 begin(lease)  →  model calls  →  settle(measured)
                               ↘  release()      (failed before spending)
-                              ↘  sweep          (crashed; expires at 30 min)
+                              ↘  sweep          (crashed; LLM expires at 30 min)
 ```
 
-A lease is a 0-amount `credit_reservations` row, not a credit hold. The gate is
-`used >= limit`, plus at most five open leases per actor
-(`ConcurrentLLMLeases`). That bounds overshoot at five in-flight settlements
-without a per-model estimate that has to be bumped when an expensive row is
-added.
+A lease is a 0-amount `credit_reservations` row, not a credit hold. Chat,
+generate, editor, and quiz share `ConcurrentLLMLeases` (5). The gate is
+`used >= limit` plus that cap. BYOK skips the LLM lease.
 
-BYOK skips the lease. Query embeddings are recorded at zero credits, so those
-calls cost the actor nothing to start. Ingest embeddings still bill through the
-worker.
+Ingest is a separate reservation (`surface='ingest'`), cap 20 per actor across
+every workspace (`ConcurrentIngestLeases`). `BeginSpend` does not count ingest
+rows. The ingest hold lasts until settle, fail, or release. It does not use the
+30-minute LLM TTL. A 24-hour backstop releases an ingest reservation that has
+no pending or running job pointing at `payload.reservationId`. A live pending
+job is not expired. `GET /api/me/ingest-slots` returns this actor's free/used/
+limit. The 21st enqueue fails with `too_many_ingest_leases`, distinct from
+`too_many_streams` and `llm_credits_exhausted`. Store-only uploads
+(`NeedsIngestJob` false) do not take a lease.
+
+Query embeddings are recorded at zero credits, so those calls cost the actor
+nothing to start. Ingest embeddings still bill through the worker.
 
 **A stream abandoned before its `done` event settles at zero.** Undercharging a
 user for an answer they never saw is the right side to err on, and
@@ -261,9 +275,13 @@ A contextvar accumulator (`obs.Usage`) aggregates across every call a request
 makes, because the unit of billing is the request: one chat turn is an agent
 loop of several completions. Query embeddings travel in the same envelope and
 are written at **zero credits**. The product absorbs that cost. The usage row
-still carries `cost_micro_usd` and the model pin for reconciliation, and those
-must come from the workspace's embedding pin, not the live registry default.
-Ingest embeddings still bill the actor at the workspace pin's rates.
+still carries the workspace embedding pin so the event is labeled. Chat and
+generate call `resolveEmbedding` before `BeginSpend`. `EmbeddingRates` fails
+closed on a nil registry, empty workspace, query miss, empty pin, catalog miss,
+or a row that is not embedding. There is no `DefaultEmbeddingRates`. A miss is
+`model_unavailable`. Editor, quiz, and `/complete/stream` pass empty embed
+rates and do not call `resolveEmbedding`. Ingest embeddings still bill the
+actor at the workspace pin's rates.
 
 Streamed completions send `stream_options={"include_usage": True}`. **Without
 it an OpenAI-compatible stream reports no usage at all**, which is how the
@@ -358,9 +376,10 @@ They authenticate by signature and both providers apply their own delivery rate.
 
 **Concurrency, not just rate**, bounds chat abuse: one stream runs for minutes
 and drives an agent loop the whole time, so a requests-per-hour budget alone
-still allows arbitrary parallel spend. `BeginSpend` counts open leases in
-Postgres (cap 5). A replica that dies mid-stream leaves a row the sweeper
-releases after 30 minutes. BYOK does not take a lease.
+still allows arbitrary parallel spend. `BeginSpend` counts open non-ingest
+leases in Postgres (cap 5). A replica that dies mid-stream leaves a row the
+sweeper releases after 30 minutes. BYOK does not take a lease. Ingest
+concurrency is the separate cap of 20 above, not this one.
 
 **Redis failures fail open.** A limiter outage must not become an API outage;
 the edge still bounds the blast radius.

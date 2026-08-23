@@ -254,6 +254,17 @@ func pipelineLLMError(err error) error {
 	}
 }
 
+func pipelineGenerateError(err error) error {
+	var pe *pipeline.Error
+	if !errors.As(err, &pe) {
+		return nil
+	}
+	if pe.Decode().Code == "generate_empty" {
+		return errGenerateEmpty
+	}
+	return nil
+}
+
 func keyErrorFromEvent(code, message string) error {
 	switch code {
 	case "invalid_key":
@@ -282,9 +293,22 @@ func llmKeyPayload(err error) (code, message string, ok bool) {
 	}
 }
 
-func (a *api) embeddingRates(ctx context.Context, workspaceID string) store.TokenRates {
+type resolvedEmbedding struct {
+	Rates store.TokenRates
+}
+
+// resolveEmbedding loads the workspace's embedding pin before a spend starts.
+// Chat and generate settle with these rates so a missing catalog row fails the
+// request instead of labeling usage after the fact.
+func (a *api) resolveEmbedding(ctx context.Context, workspaceID string) (resolvedEmbedding, error) {
+	var out resolvedEmbedding
 	if a.s == nil {
-		return store.DefaultEmbeddingRates()
+		return out, fmt.Errorf("%w: store not configured", store.ErrModelUnavailable)
 	}
-	return a.s.EmbeddingRates(ctx, workspaceID)
+	rates, err := a.s.EmbeddingRates(ctx, workspaceID)
+	if err != nil {
+		return out, err
+	}
+	out.Rates = rates
+	return out, nil
 }

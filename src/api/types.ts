@@ -84,6 +84,7 @@ export type {
   LocaleInputBody,
   MaterialRef,
   MaterialUpdateResult,
+  MicrosoftDriveHost,
   ModelOption,
   ModelReasoning,
   ModelsResponse,
@@ -93,7 +94,6 @@ export type {
   NotificationPrefs,
   PublicDeck,
   PublicWorkspace,
-  RecentFile,
   ReorderChaptersReq,
   ReorderContentReq,
   RequestAccountDeletionReq,
@@ -143,6 +143,12 @@ export {
   UserColor,
   WorkspaceRole,
 } from './gen/model';
+
+export interface IngestSlots {
+  slotsFree: number;
+  slotsLimit: number;
+  slotsUsed: number;
+}
 
 /* ---------------- UI-only color extras (not on the wire) ---------------- */
 export type SystemColor =

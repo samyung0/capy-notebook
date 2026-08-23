@@ -57,6 +57,16 @@ func hErr(err error) error {
 			}},
 		}
 	}
+	if errors.Is(err, store.ErrTooManyIngestLeases) {
+		return &huma.ErrorModel{
+			Status: http.StatusTooManyRequests,
+			Title:  http.StatusText(http.StatusTooManyRequests),
+			Detail: "too many ingest jobs in progress",
+			Errors: []*huma.ErrorDetail{{
+				Message: "too_many_ingest_leases",
+			}},
+		}
+	}
 	if errors.Is(err, store.ErrInvalidLLMKey) {
 		return &huma.ErrorModel{
 			Status: http.StatusBadRequest,

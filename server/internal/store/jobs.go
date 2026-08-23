@@ -41,6 +41,10 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 	if err := s.gateWorkspaceFilesTx(ctx, tx, wsID, 1); err != nil {
 		return File{}, "", err
 	}
+	reservationID, err := s.beginIngestSpendTx(ctx, tx, createdBy, wsID)
+	if err != nil {
+		return File{}, "", err
+	}
 	fileID := uid("f")
 	url := "/api/files/" + fileID + "/raw"
 	now := time.Now().UTC()
@@ -56,6 +60,7 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 		"fileId": fileID, "workspaceId": wsID, "blobPath": blobPath, "kind": kind,
 		"parser": parser, "engine": engine, "parseMode": parseMode,
 		"captionImages": captionImages,
+		"reservationId": reservationID,
 	})
 	if err != nil {
 		return File{}, "", err

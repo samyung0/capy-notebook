@@ -7,6 +7,7 @@ import {
   isLLMKeyFailedError,
   isModelUnavailableError,
   isStorageQuotaError,
+  isTooManyIngestLeasesError,
 } from '@/api/client';
 import { m } from '@/i18n';
 
@@ -19,6 +20,7 @@ export type ErrorKind =
   | 'quota'
   | 'files'
   | 'credits'
+  | 'ingest'
   | 'model'
   | 'llmKey'
   | 'validation'
@@ -62,6 +64,7 @@ export function errorKind(error: unknown): ErrorKind {
   if (isStorageQuotaError(error)) return 'quota';
   if (isFileLimitError(error)) return 'files';
   if (isCreditsExhaustedError(error)) return 'credits';
+  if (isTooManyIngestLeasesError(error)) return 'ingest';
   if (isModelUnavailableError(error)) return 'model';
   if (isLLMKeyError(error)) return 'llmKey';
 
@@ -149,6 +152,11 @@ export function describeError(error: unknown): ErrorDescription {
         action: 'subscription',
         description: m.error_credits_body(),
         title: m.error_credits_title(),
+      };
+    case 'ingest':
+      return {
+        description: m.error_ingest_slots_body(),
+        title: m.error_ingest_slots_title(),
       };
     case 'model':
       return {

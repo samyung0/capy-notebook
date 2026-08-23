@@ -75,6 +75,7 @@ type (
 	SearchResult       = store.SearchResult
 	WorkspaceStats     = store.WorkspaceStats
 	BillingInfo        = store.BillingInfo
+	IngestSlots        = store.IngestSlots
 	UsageReport        = store.UsageReport
 	IntegrationsStatus = store.IntegrationsStatus
 	Conversation       = store.Conversation

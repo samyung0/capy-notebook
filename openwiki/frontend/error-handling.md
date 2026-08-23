@@ -43,6 +43,10 @@ normal must use:
 meta: { errorToast: false }
 ```
 
+`too_many_ingest_leases` is kind `ingest`, distinct from `llm_credits_exhausted`
+and `too_many_streams`. The add-source dialog toasts it and keeps the unsent
+tail. Do not map it onto credits or the file-cap copy.
+
 Abort errors and account-blocking errors are also excluded from the global
 mutation toast. Toast IDs are derived from the normalized error kind, so repeated
 failures of the same kind update/deduplicate instead of stacking. The global
@@ -80,8 +84,9 @@ the related `reconnecting` status.
 
 ## Streaming failures
 
-Chat SSE failures stay on the assistant turn. An explicit `error` frame and a
-stream that closes before a terminal `done` frame both mark that turn as errored;
+Chat SSE failures stay on the assistant turn. An explicit `error` frame
+(including `ai_unavailable` when the retrieval handshake fails), and a
+stream that closes before a terminal `done` frame, both mark that turn as errored;
 they do not crash a page boundary or emit the default mutation toast. A
 `model_unavailable` (422) response before the stream opens is the same surface,
 with copy that sends the user to Settings → LLM. A rejected or unclear user

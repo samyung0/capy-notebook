@@ -44,10 +44,23 @@ var ErrCreditsExhausted = errors.New("llm credits exhausted")
 // may still have room.
 var ErrTooManyLLMLeases = errors.New("too many llm leases")
 
+// ErrTooManyIngestLeases means the actor already has ConcurrentIngestLeases
+// pending or running ingest jobs. Distinct from too-many-llm-leases and from
+// credits exhausted.
+var ErrTooManyIngestLeases = errors.New("too many ingest leases")
+
 // ConcurrentLLMLeases caps unsettled platform-paid model calls per actor.
 // Worst-case overshoot is this many in-flight settlements. BYOK does not take
-// a lease.
+// a lease. Ingest uses ConcurrentIngestLeases instead.
 const ConcurrentLLMLeases = 5
+
+// ConcurrentIngestLeases caps pending+running ingest jobs per actor.
+const ConcurrentIngestLeases = 20
+
+// ingestReservationHold is far enough that a live pending job is never
+// swept. Orphans with no job row are released after ingestReservationOrphanAge.
+const ingestReservationHold = 100 * 365 * 24 * time.Hour
+const ingestReservationOrphanAge = 24 * time.Hour
 
 // CreditsExhaustedError is deliberately distinct from QuotaExceededError. They
 // render as different sentences: one is "you are out of credits", the other is
@@ -78,8 +91,8 @@ type CreditUsage struct {
 	PeriodStart    time.Time `json:"periodStart"`
 }
 
-// UsageBucket is one grouping on the user-facing usage page. Cost-USD is
-// omitted on purpose: that column is reconciliation-only.
+// UsageBucket is one grouping on the user-facing usage page. Credits only;
+// there is no USD estimate on the ledger.
 type UsageBucket struct {
 	Key          string `json:"key"`
 	Events       int64  `json:"events"`
@@ -123,7 +136,6 @@ type UsageEvent struct {
 	Units         int64
 	Unit          string
 	CreditMicros  int64
-	CostMicroUSD  int64
 	ModelKey      string
 	ModelVersion  int
 	ReservationID string
@@ -310,8 +322,9 @@ func (s *Store) BeginSpend(
 	var open int64
 	if err := tx.QueryRow(ctx, `
 		SELECT count(*) FROM credit_reservations
-		 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()`,
-		actorUserID).Scan(&open); err != nil {
+		 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
+		   AND surface <> $2`,
+		actorUserID, SurfaceIngest).Scan(&open); err != nil {
 		return "", err
 	}
 	if open >= ConcurrentLLMLeases {
@@ -333,6 +346,106 @@ func (s *Store) BeginSpend(
 		return "", err
 	}
 	if err := tx.Commit(ctx); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+// IngestSlots is this actor's ingest concurrency remaining, across every
+// workspace. The create path still refuses the 21st under a row lock.
+type IngestSlots struct {
+	SlotsFree  int `json:"slotsFree"`
+	SlotsUsed  int `json:"slotsUsed"`
+	SlotsLimit int `json:"slotsLimit"`
+}
+
+func (s *Store) IngestSlots(ctx context.Context, actorUserID string) (IngestSlots, error) {
+	out := IngestSlots{SlotsLimit: ConcurrentIngestLeases, SlotsFree: ConcurrentIngestLeases}
+	if actorUserID == "" {
+		return out, ErrNotFound
+	}
+	var used int
+	err := s.pool.QueryRow(ctx, `
+		SELECT count(*) FROM credit_reservations
+		 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
+		   AND surface = $2`,
+		actorUserID, SurfaceIngest).Scan(&used)
+	if err != nil {
+		return out, err
+	}
+	out.SlotsUsed = used
+	out.SlotsFree = ConcurrentIngestLeases - used
+	if out.SlotsFree < 0 {
+		out.SlotsFree = 0
+	}
+	return out, nil
+}
+
+func (s *Store) BeginIngestSpend(
+	ctx context.Context,
+	actorUserID, workspaceID string,
+) (string, error) {
+	if actorUserID == "" {
+		return "", ErrNotFound
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	id, err := s.beginIngestSpendTx(ctx, tx, actorUserID, workspaceID)
+	if err != nil {
+		return "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func (s *Store) beginIngestSpendTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	actorUserID, workspaceID string,
+) (string, error) {
+	usage, err := s.lockedCreditUsageTx(ctx, tx, actorUserID)
+	if err != nil {
+		return "", err
+	}
+	if usage.UsedMicros >= usage.LimitMicros {
+		return "", &CreditsExhaustedError{
+			UserID:         actorUserID,
+			UsedMicros:     usage.UsedMicros,
+			ReservedMicros: usage.ReservedMicros,
+			LimitMicros:    usage.LimitMicros,
+			PlanTier:       usage.PlanTier,
+		}
+	}
+
+	var open int64
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*) FROM credit_reservations
+		 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
+		   AND surface = $2`,
+		actorUserID, SurfaceIngest).Scan(&open); err != nil {
+		return "", err
+	}
+	if open >= ConcurrentIngestLeases {
+		return "", ErrTooManyIngestLeases
+	}
+
+	id := uid("cr")
+	var wsID *string
+	if workspaceID != "" {
+		wsID = &workspaceID
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO credit_reservations
+			(id, actor_user_id, workspace_id, trace_id, surface, amount_micros, expires_at)
+		VALUES ($1, $2, $3, $4, $5, 0, now() + ($6 * interval '1 millisecond'))`,
+		id, actorUserID, wsID, nullString(obs.TraceID(ctx)), SurfaceIngest,
+		ingestReservationHold.Milliseconds(),
+	); err != nil {
 		return "", err
 	}
 	return id, nil
@@ -638,11 +751,11 @@ func insertUsageEventTx(ctx context.Context, tx pgx.Tx, ev UsageEvent) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO usage_events
 			(trace_id, actor_user_id, workspace_id, kind, surface, provider, model,
-			 model_key, model_version, cost_micro_usd,
+			 model_key, model_version,
 			 input_tokens, output_tokens, units, unit, credit_micros, reservation_id, metadata)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
 		nullString(ev.TraceID), ev.ActorUserID, wsID, ev.Kind, ev.Surface,
-		ev.Provider, ev.Model, ev.ModelKey, ev.ModelVersion, ev.CostMicroUSD,
+		ev.Provider, ev.Model, ev.ModelKey, ev.ModelVersion,
 		ev.InputTokens, ev.OutputTokens, ev.Units, ev.Unit,
 		ev.CreditMicros, nullString(ev.ReservationID), ev.Metadata,
 	)
@@ -694,7 +807,46 @@ func (s *Store) SweepExpiredReservations(ctx context.Context) (int64, error) {
 			return int64(len(releases)), err
 		}
 	}
-	return int64(len(releases)), nil
+	released, err := s.sweepOrphanIngestReservations(ctx)
+	if err != nil {
+		return int64(len(releases)), err
+	}
+	return int64(len(releases)) + released, nil
+}
+
+func (s *Store) sweepOrphanIngestReservations(ctx context.Context) (int64, error) {
+	rows, err := s.pool.Query(ctx, `
+		UPDATE credit_reservations r
+		SET status = 'released', settled_at = now()
+		WHERE r.status = 'open' AND r.surface = $1
+		  AND r.created_at < now() - ($2 * interval '1 millisecond')
+		  AND NOT EXISTS (
+		    SELECT 1 FROM jobs j
+		    WHERE j.type = 'ingest'
+		      AND j.status IN ('pending', 'running')
+		      AND j.payload->>'reservationId' = r.id
+		  )
+		RETURNING actor_user_id, amount_micros`,
+		SurfaceIngest, ingestReservationOrphanAge.Milliseconds())
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	var n int64
+	for rows.Next() {
+		var userID string
+		var micros int64
+		if err := rows.Scan(&userID, &micros); err != nil {
+			return n, err
+		}
+		if _, err := s.pool.Exec(ctx, `UPDATE user_credits
+			SET reserved_micros = GREATEST(0, reserved_micros - $2), updated_at = now()
+			WHERE user_id = $1`, userID, micros); err != nil {
+			return n, err
+		}
+		n++
+	}
+	return n, rows.Err()
 }
 
 // RollupUsage folds new ledger rows into usage_daily. It advances a watermark
