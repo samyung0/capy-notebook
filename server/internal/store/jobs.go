@@ -16,10 +16,9 @@ import (
 // starts (or a GPU parse slot is free); then it becomes 'processing'. The
 // file's url points at the raw-blob endpoint so the viewer can render it
 // immediately. parseMode selects the GPU parser the worker runs:
-// 'fast' (Marker + RapidOCR on scans). Retired names 'accurate' and
-// 'advanced' are stored as 'fast'. Text kinds ignore it and
-// are inserted directly. captionImages asks the worker to describe the figures
-// that parse extracted.
+// 'fast' (Marker + RapidOCR on scans). Unknown names fail validation.
+// Text kinds ignore it and are inserted directly. captionImages asks the
+// worker to describe the figures that parse extracted.
 func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, engine, parseMode string, captionImages bool) (File, string, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {

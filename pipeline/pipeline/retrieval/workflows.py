@@ -223,9 +223,7 @@ def _wrap_values(raw: Any) -> list[dict[str, str]]:
     return out
 
 
-def normalize_questions(
-    data: Any, level_aliases: dict[str, str]
-) -> list[dict[str, Any]]:
+def normalize_questions(data: Any) -> list[dict[str, Any]]:
     """Coerce the model's quiz JSON into the shape the frontend runner expects."""
     import secrets
 
@@ -234,8 +232,7 @@ def normalize_questions(
         if not isinstance(item, dict):
             continue
         item.setdefault("id", f"q_{secrets.token_hex(5)}")
-        if "level" not in item and "difficulty" in item:
-            item["level"] = level_aliases.get(item.pop("difficulty"), "application")
+        item.pop("difficulty", None)
         item.setdefault("level", "application")
         if item.get("type") in ("mcq", "multi") and isinstance(
             item.get("options"), list

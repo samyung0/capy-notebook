@@ -16,7 +16,7 @@ export interface CreateDiscussionReq {
   /** @maxLength 4096 */
   anchorStart?: string;
   /** @minimum 1 */
-  anchorVersion?: number;
+  anchorVersion: number;
   blockId?: string;
   /**
      * @minItems 1

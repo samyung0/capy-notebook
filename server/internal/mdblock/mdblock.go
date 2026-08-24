@@ -79,37 +79,6 @@ func ParseQuiz(content string) (json.RawMessage, *int, error) {
 	return json.RawMessage(b), doc.TimeLimitMin, nil
 }
 
-// quizFenceBody renders the YAML payload for a quiz block from JSON questions.
-func quizFenceBody(questions json.RawMessage, timeLimit *int) (string, error) {
-	var qs interface{} = []interface{}{}
-	if len(questions) > 0 {
-		if err := json.Unmarshal(questions, &qs); err != nil {
-			return "", err
-		}
-	}
-	doc := map[string]interface{}{"questions": qs}
-	if timeLimit != nil {
-		doc["timeLimitMin"] = *timeLimit
-	}
-	b, err := yaml.Marshal(doc)
-	if err != nil {
-		return "", err
-	}
-	return string(b), nil
-}
-
-// QuizContent builds a full quiz markdown document (heading + quiz fence).
-func QuizContent(title string, questions json.RawMessage, timeLimit *int) (string, error) {
-	body, err := quizFenceBody(questions, timeLimit)
-	if err != nil {
-		return "", err
-	}
-	if title == "" {
-		title = "Quiz"
-	}
-	return fmt.Sprintf("# %s\n\n```quiz\n%s```\n", title, body), nil
-}
-
 // ParseFlashcards extracts the flashcards fence and returns the authored cards.
 func ParseFlashcards(content string) ([]CardContent, error) {
 	body, ok := ExtractFence(content, "flashcards")
@@ -126,19 +95,4 @@ func ParseFlashcards(content string) ([]CardContent, error) {
 		doc.Cards = []CardContent{}
 	}
 	return doc.Cards, nil
-}
-
-// FlashcardsContent builds a full flashcards markdown document (heading + fence).
-func FlashcardsContent(title string, cards []CardContent) (string, error) {
-	if cards == nil {
-		cards = []CardContent{}
-	}
-	b, err := yaml.Marshal(map[string]interface{}{"cards": cards})
-	if err != nil {
-		return "", err
-	}
-	if title == "" {
-		title = "Flashcards"
-	}
-	return fmt.Sprintf("# %s\n\n```flashcards\n%s```\n", title, string(b)), nil
 }

@@ -14,6 +14,11 @@ import pytest
 
 pytestmark = pytest.mark.integration
 
+_CHAT_PARAMS = (
+    '{"reasoning":{"canDisable":true,"efforts":["low","high","max"],'
+    '"defaultMode":"off","defaultEffort":"max"}}'
+)
+
 
 def test_embedding_rows_are_frozen(_test_infra):
     import psycopg
@@ -79,10 +84,10 @@ def test_embedding_rows_are_frozen(_test_infra):
                 enabled, is_default_for
             ) VALUES (
                 %s, 1, 'Chat Disable', 'deepseek', 'https://example.test',
-                'chat-disable', '{}'::jsonb, ARRAY['chat'],
+                'chat-disable', %s::jsonb, ARRAY['chat'],
                 250, 1000, true, ARRAY[]::text[])
             """,
-            (chat_key,),
+            (chat_key, _CHAT_PARAMS),
         )
         with pytest.raises(psycopg.Error):
             conn.execute(
@@ -155,10 +160,10 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
                     auth_mode, enabled, is_default_for
                 ) VALUES (
                     %s, 1, 'Zero Platform', 'deepseek', 'https://example.test',
-                    'zero-platform', '{}'::jsonb, ARRAY['chat'],
+                    'zero-platform', %s::jsonb, ARRAY['chat'],
                     0, 0, 'platform', true, ARRAY[]::text[])
                 """,
-                (bad,),
+                (bad, _CHAT_PARAMS),
             )
         byok = f"zero-byok-{secrets.token_hex(4)}"
         conn.execute(
@@ -170,10 +175,10 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
                 auth_mode, enabled, is_default_for
             ) VALUES (
                 %s, 1, 'Zero BYOK', 'openai', 'https://example.test',
-                'zero-byok', '{}'::jsonb, ARRAY['chat'],
+                'zero-byok', %s::jsonb, ARRAY['chat'],
                 0, 0, 'user_key', true, ARRAY[]::text[])
             """,
-            (byok,),
+            (byok, _CHAT_PARAMS),
         )
         conn.execute("DELETE FROM model_configs WHERE model_key=%s", (byok,))
 
@@ -188,10 +193,10 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
                     auth_mode, enabled, is_default_for
                 ) VALUES (
                     %s, 1, 'Zero Hybrid', 'deepseek', 'https://example.test',
-                    'zero-hybrid', '{}'::jsonb, ARRAY['chat'],
+                    'zero-hybrid', %s::jsonb, ARRAY['chat'],
                     0, 0, 'platform_or_user', true, ARRAY[]::text[])
                 """,
-                (hybrid,),
+                (hybrid, _CHAT_PARAMS),
             )
         vision = f"zero-vision-{secrets.token_hex(4)}"
         with pytest.raises(psycopg.Error):
@@ -248,3 +253,61 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
             "UPDATE model_configs SET is_default_for='{}' WHERE model_key=%s",
             (embed,),
         )
+
+
+def test_llm_rows_require_catalog_reasoning(_test_infra):
+    import psycopg
+
+    with psycopg.connect(_test_infra, autocommit=True) as conn:
+        missing = f"no-reason-{secrets.token_hex(4)}"
+        with pytest.raises(psycopg.Error):
+            conn.execute(
+                """
+                INSERT INTO model_configs (
+                    model_key, version, display_name, provider_slug, base_url,
+                    provider_model_id, params, surfaces,
+                    micros_per_input_token, micros_per_output_token,
+                    enabled, is_default_for
+                ) VALUES (
+                    %s, 1, 'No Reason', 'deepseek', 'https://example.test',
+                    'no-reason', '{}'::jsonb, ARRAY['chat'],
+                    250, 1000, true, ARRAY[]::text[])
+                """,
+                (missing,),
+            )
+        wrong_default = f"wrong-default-{secrets.token_hex(4)}"
+        with pytest.raises(psycopg.Error):
+            conn.execute(
+                """
+                INSERT INTO model_configs (
+                    model_key, version, display_name, provider_slug, base_url,
+                    provider_model_id, params, surfaces,
+                    micros_per_input_token, micros_per_output_token,
+                    enabled, is_default_for
+                ) VALUES (
+                    %s, 1, 'Wrong Default', 'deepseek', 'https://example.test',
+                    'wrong-default',
+                    '{"reasoning":{"canDisable":true,"efforts":["low","high","max"],"defaultMode":"off","defaultEffort":"medium"}}'::jsonb,
+                    ARRAY['chat'],
+                    250, 1000, true, ARRAY[]::text[])
+                """,
+                (wrong_default,),
+            )
+        embed_reason = f"embed-reason-{secrets.token_hex(4)}"
+        with pytest.raises(psycopg.Error):
+            conn.execute(
+                """
+                INSERT INTO model_configs (
+                    model_key, version, display_name, provider_slug, base_url,
+                    provider_model_id, params, surfaces,
+                    micros_per_input_token, micros_per_output_token,
+                    enabled, is_default_for
+                ) VALUES (
+                    %s, 1, 'Embed Reason', 'openrouter', 'https://example.test',
+                    'embed-reason',
+                    '{"dimensions": 2560, "vector_table": "rag_chunk_vectors_reason", "reasoning":{"canDisable":true,"efforts":["low"],"defaultMode":"off","defaultEffort":"low"}}'::jsonb,
+                    ARRAY['embedding'],
+                    50, 50, true, ARRAY[]::text[])
+                """,
+                (embed_reason,),
+            )

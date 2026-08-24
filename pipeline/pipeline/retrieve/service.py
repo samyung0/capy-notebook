@@ -17,7 +17,7 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .. import obs, registry, use_compatible_event_loop
 from ..config import cfg
@@ -146,24 +146,21 @@ class ChatStreamReq(LLMPin):
 
 class GenerateReq(LLMPin):
     workspaceId: str
-    kind: str = "quiz"  # flashcards | quiz | mindmap | diagram (summary: legacy)
+    kind: str  # flashcards | quiz | mindmap | diagram
+    count: int = Field(ge=1, le=50)
+    levels: list[str] = Field(min_length=1)
+    types: list[str] = Field(min_length=1)
+    detail: str
+    diagramType: str
     length: str | None = None
     format: str | None = None
-    count: int | None = None
     style: str | None = None
-    types: list[str] | None = None
-    levels: list[str] | None = None  # cognitive levels: recall|application|analysis
-    difficulty: list[str] | None = None  # legacy alias, still accepted
     chapters: list[str] | None = None
-    fileIds: list[str] | None = None  # real files.id values, from the gateway
-    detail: str | None = None  # mindmap: brief|standard|detailed
-    diagramType: str | None = None  # diagram: auto|flowchart|sequence|class|state|er
+    fileIds: list[str] | None = None
     timeLimitMin: int | None = None
     locale: str | None = None
 
 
-# Legacy easy/medium/hard -> cognitive level, so old callers keep working.
-_LEVEL_ALIASES = {"easy": "recall", "medium": "application", "hard": "analysis"}
 _VALID_LEVELS = {"recall", "application", "analysis"}
 
 # What each cognitive level asks the LLM to write, so questions have a purpose
@@ -176,14 +173,12 @@ _LEVEL_GUIDE = (
 
 
 def _cognitive_levels(req: GenerateReq) -> list[str]:
-    if req.levels:
-        return [lvl for lvl in req.levels if lvl in _VALID_LEVELS] or [
-            "recall",
-            "application",
-        ]
-    if req.difficulty:
-        return [_LEVEL_ALIASES.get(d, "application") for d in req.difficulty]
-    return ["recall", "application"]
+    if not req.levels:
+        raise ValueError("levels is required")
+    invalid = [lvl for lvl in req.levels if lvl not in _VALID_LEVELS]
+    if invalid:
+        raise ValueError(f"invalid levels: {invalid}")
+    return list(req.levels)
 
 
 def _new_srs() -> dict:
@@ -436,40 +431,8 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
     file_names = sorted({p.file_name for p in passages})
     scope = workflows.scope_label(chapters, file_names)
 
-    if req.kind == "summary":  # legacy; UI no longer offers this
-        instruction = (
-            "Write a concise study summary of the most important ideas in these "
-            "sources. Use short bullet points."
-        )
-        if workflows.overflows(context, passages, budget=registry.input_budget(model)):
-            body = await workflows.produce_mapped(
-                instruction=instruction,
-                passages=passages,
-                scope=scope,
-                model=model,
-                combine=(
-                    "Merge these per-document summaries into one bullet list, "
-                    "removing duplicates and keeping the source distinctions clear."
-                ),
-                locale=req.locale,
-                budget=registry.input_budget(model),
-            )
-        else:
-            body = await workflows.produce(
-                instruction=instruction,
-                context=context,
-                scope=scope,
-                model=model,
-                locale=req.locale,
-            )
-        return {
-            "kind": "summary",
-            "title": "Workspace summary",
-            "body": workflows.require_text(body, "summary"),
-        }
-
     if req.kind == "flashcards":
-        n = req.count or 10
+        n = req.count
         raw = await workflows.produce(
             instruction=(
                 f"Create {n} study flashcards from these sources. Return ONLY a JSON "
@@ -499,7 +462,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         return {"kind": "flashcards", "cards": cards}
 
     if req.kind == "mindmap":
-        detail = req.detail or "standard"
+        detail = req.detail
         raw = await workflows.produce(
             instruction=(
                 "Create a Mermaid `mindmap` organizing the key concepts of these "
@@ -520,7 +483,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         }
 
     if req.kind == "diagram":
-        dtype = (req.diagramType or "auto").lower()
+        dtype = req.diagramType.lower()
         header = _DIAGRAM_HEADER.get(dtype)
         want = (
             f"a Mermaid `{header}` diagram"
@@ -545,9 +508,10 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
             "content": f"# Diagram\n\n```mermaid\n{code}\n```",
         }
 
-    # quiz
-    n = req.count or 5
-    types = req.types or ["mcq"]
+    if req.kind != "quiz":
+        raise ValueError(f"unsupported generate kind {req.kind!r}")
+    n = req.count
+    types = req.types
     levels = _cognitive_levels(req)
     raw = await workflows.produce(
         instruction=(
@@ -573,9 +537,7 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         model=model,
         locale=req.locale,
     )
-    questions = workflows.normalize_questions(
-        workflows.require_json_list(raw, "quiz"), _LEVEL_ALIASES
-    )
+    questions = workflows.normalize_questions(workflows.require_json_list(raw, "quiz"))
     if not questions:
         raise workflows.GenerateEmpty("quiz")
     return {

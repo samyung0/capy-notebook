@@ -6,8 +6,8 @@ Claims jobs from the Postgres queue and turns uploads into retrievable chunks:
   The gateway still labels those jobs ``parseMode=none`` (there is no GPU parse
   route to pick); they are indexed. ``parseMode=none`` on any other kind is
   store-only: the blob is kept, ``indexed=false``.
-- ``parseMode=fast`` (and old ``accurate`` / ``advanced`` jobs) parse on Modal
-  with Marker plus PP-OCRv6 on scanned / thin-text pages.
+- ``parseMode=fast`` parses on Modal with Marker plus PP-OCRv6 on scanned /
+  thin-text pages. Unknown modes fail the job.
 
 The parse returns a bundle — a ``content_list.json`` carrying a page index and
 bounding box per block, plus the extracted images — so citations a reader can
@@ -60,10 +60,20 @@ _TEXT_KINDS = {"txt", "md", "json"}
 
 _PARSE_ROUTES = {
     "fast": modal_parser.ROUTE_FAST,
-    # Retired names. Jobs already in the queue still parse rather than fail.
-    "accurate": modal_parser.ROUTE_FAST,
-    "advanced": modal_parser.ROUTE_FAST,
 }
+
+_REQUIRED_INGEST_STRINGS = (
+    "fileId",
+    "workspaceId",
+    "blobPath",
+    "kind",
+    "parseMode",
+    "actorUserId",
+    "ingestModelKey",
+    "visionModelKey",
+)
+_REQUIRED_INGEST_INTS = ("ingestModelVersion", "visionModelVersion")
+_REQUIRED_INGEST_BOOLS = ("captionImages",)
 
 
 def _parse_route(parse_mode: str) -> str:
@@ -219,7 +229,8 @@ def _finish_job_ok(job_id: str, attempt: int | None = None) -> None:
 
 
 def _requeue(job: dict, error: str) -> str:
-    policy = policy_for(job.get("type") or "ingest")
+    job_type = (job.get("type") or "").strip()
+    policy = policy_for(job_type)
     payload = job.get("payload") or {}
     attempt = int(job.get("attempts") or 1)
     with db.connect() as conn, conn.cursor() as cur:
@@ -228,7 +239,7 @@ def _requeue(job: dict, error: str) -> str:
         outcome = db.requeue_job(
             cur,
             job_id=job["id"],
-            job_type=job.get("type") or "ingest",
+            job_type=job_type,
             workspace_id=payload.get("workspaceId"),
             error=error,
             backoff_s=backoff_s(policy, attempt),
@@ -635,19 +646,38 @@ async def _chunks_for(
 # ------------------------------------------------------------------- jobs
 
 
+def _require_ingest_payload(payload: dict) -> None:
+    missing = [
+        key
+        for key in _REQUIRED_INGEST_STRINGS
+        if not str(payload.get(key) or "").strip()
+    ]
+    for key in _REQUIRED_INGEST_INTS:
+        if key not in payload or payload[key] is None:
+            missing.append(key)
+    for key in _REQUIRED_INGEST_BOOLS:
+        if key not in payload:
+            missing.append(key)
+    if missing:
+        raise TerminalError(f"ingest payload missing {', '.join(missing)}")
+
+
+async def process_job(job: dict) -> None:
+    job_type = (job.get("type") or "").strip()
+    policy_for(job_type)
+    if job_type != "ingest":
+        raise TerminalError(f"unknown job type {job_type!r}")
+    await process_ingest_job(job)
+
+
 async def process_ingest_job(job: dict) -> None:
     payload = job["payload"] or {}
+    _require_ingest_payload(payload)
     file_id = payload["fileId"]
     ws = payload["workspaceId"]
-    kind = (payload.get("kind") or "").lower()
-    # 'fast' (Marker hybrid, default) or 'none' (blob-only; normally never
-    # enqueued at all). Old 'accurate' / 'advanced' jobs map onto fast.
-    parse_mode = (payload.get("parseMode") or "fast").lower()
-    # Chosen per file at upload time; the env default only covers a job that
-    # predates the option or an import path that cannot express one.
-    caption_images = payload.get("captionImages")
-    if caption_images is None:
-        caption_images = cfg.caption_images
+    kind = str(payload["kind"]).lower()
+    parse_mode = str(payload["parseMode"]).lower()
+    caption_images = bool(payload["captionImages"])
 
     try:
         pins = registry.pins_from_payload(
@@ -1044,7 +1074,7 @@ async def main_async() -> None:
     # of them.
     log.info(
         "worker up — parse=%s",
-        cfg.modal_fast_parse_url or cfg.modal_parse_url or "(unset)",
+        cfg.modal_fast_parse_url or "(unset)",
     )
 
     last_sweep = 0.0
@@ -1088,7 +1118,12 @@ async def main_async() -> None:
                 job["id"],
                 extra={"job_id": job["id"]},
             )
-            policy = policy_for(job.get("type") or "ingest")
+            job_type = (job.get("type") or "").strip()
+            try:
+                policy = policy_for(job_type)
+            except TerminalError as exc:
+                await _handle_job_failure(job, exc)
+                continue
             stop = threading.Event()
             heartbeat = threading.Thread(
                 target=_heartbeat_loop,
@@ -1099,7 +1134,7 @@ async def main_async() -> None:
             heartbeat.start()
             try:
                 async with asyncio.timeout(policy.timeout_s):
-                    await process_ingest_job(job)
+                    await process_job(job)
                 log.info("job %s done", job["id"])
             except CapacityWait:
                 log.info("job %s waiting for a parser slot", job["id"])
@@ -1122,12 +1157,12 @@ async def _handle_job_failure(job: dict, exc: BaseException) -> None:
     payload = job.get("payload") or {}
     fid = payload.get("fileId")
     ws = payload.get("workspaceId")
-    job_type = job.get("type") or "ingest"
-    policy = policy_for(job_type)
+    job_type = (job.get("type") or "").strip()
+    policy = POLICIES.get(job_type)
     attempts = int(job.get("attempts") or 1)
     if isinstance(exc, TimeoutError):
         exc = RetryableError("job exceeded its wall-clock timeout")
-    retry = is_retryable(exc) and attempts < policy.max_attempts
+    retry = policy is not None and is_retryable(exc) and attempts < policy.max_attempts
     if retry:
         log.warning("%s job %s failed; retrying: %s", job_type, job["id"], exc)
         outcome = await asyncio.to_thread(_requeue, job, str(exc))

@@ -412,12 +412,13 @@ export const ListDecksResponse = zod.array(ListDecksResponseItem)
 /**
  * @summary Create a deck
  */
+export const createDeckBodyColorDefault = `green`;
 export const createDeckBodyNameMax = 200;
 
 
 
 export const CreateDeckBody = zod.object({
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).optional(),
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).default(createDeckBodyColorDefault),
   "name": zod.string().max(createDeckBodyNameMax).optional(),
   "workspaceId": zod.string().optional()
 })
@@ -1189,7 +1190,7 @@ export const CreateMaterialDiscussionBody = zod.object({
   "anchorEnd": zod.string().max(createMaterialDiscussionBodyAnchorEndMax).optional(),
   "anchorQuote": zod.string().max(createMaterialDiscussionBodyAnchorQuoteMax).optional(),
   "anchorStart": zod.string().max(createMaterialDiscussionBodyAnchorStartMax).optional(),
-  "anchorVersion": zod.int().min(1).optional(),
+  "anchorVersion": zod.int().min(1),
   "blockId": zod.string().optional(),
   "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).min(1).nullable()
 })
@@ -1270,6 +1271,17 @@ export const GetMeResponse = zod.object({
   "quizModelKey": zod.string(),
   "streak": zod.int(),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
+})
+
+
+/**
+ * @summary Actor ingest slot remaining
+ */
+export const GetIngestSlotsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "slotsFree": zod.int(),
+  "slotsLimit": zod.int(),
+  "slotsUsed": zod.int()
 })
 
 
@@ -1356,10 +1368,8 @@ export const GetMistakesResponse = zod.object({
 /**
  * @summary Enabled models for a surface
  */
-export const listModelsQuerySurfaceDefault = `chat`;
-
 export const ListModelsQueryParams = zod.object({
-  "surface": zod.enum(['chat', 'generate', 'editor', 'quiz']).default(listModelsQuerySurfaceDefault)
+  "surface": zod.enum(['chat', 'generate', 'editor', 'quiz']).optional()
 })
 
 export const ListModelsResponse = zod.object({
@@ -1708,10 +1718,8 @@ export const GetSourceUploadPolicyResponse = zod.object({
 /**
  * @summary List the user's tag catalog for a kind
  */
-export const listTagsQueryKindDefault = `workspace`;
-
 export const ListTagsQueryParams = zod.object({
-  "kind": zod.string().default(listTagsQueryKindDefault).describe('Tag kind: workspace | quiz | card')
+  "kind": zod.string().optional().describe('Tag kind: workspace | quiz | card')
 })
 
 export const listTagsResponseValueMax = 50;
@@ -1947,6 +1955,7 @@ export const ListWorkspacesResponse = zod.array(ListWorkspacesResponseItem)
 /**
  * @summary Create a workspace
  */
+export const createWorkspaceBodyColorDefault = `graphite`;
 export const createWorkspaceBodyNameMax = 100;
 
 export const createWorkspaceBodyTagsItemValueMax = 50;
@@ -1956,7 +1965,7 @@ export const createWorkspaceBodyTagsMax = 5;
 
 
 export const CreateWorkspaceBody = zod.object({
-  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).optional().describe('User color; defaults to graphite'),
+  "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).default(createWorkspaceBodyColorDefault).describe('User color'),
   "name": zod.string().min(1).max(createWorkspaceBodyNameMax).describe('Workspace name'),
   "tags": zod.array(zod.object({
   "id": zod.string().optional(),
@@ -2313,6 +2322,43 @@ export const ListWorkspaceFilesResponse = zod.array(ListWorkspaceFilesResponseIt
 
 
 /**
+ * @summary Generate a quiz, deck, mindmap, or diagram
+ */
+export const GenerateParams = zod.object({
+  "id": zod.string()
+})
+
+export const generateBodyCountMax = 50;
+
+export const generateBodyDetailDefault = `standard`;
+export const generateBodyDiagramTypeDefault = `auto`;
+export const generateBodyTimeLimitMinMax = 180;
+
+export const generateBodyTitleMax = 200;
+
+
+
+
+export const GenerateBody = zod.object({
+  "chapters": zod.array(zod.string()).optional(),
+  "count": zod.int().min(1).max(generateBodyCountMax),
+  "detail": zod.enum(['brief', 'standard', 'detailed']).default(generateBodyDetailDefault),
+  "diagramType": zod.enum(['auto', 'flowchart', 'sequence', 'class', 'state', 'er']).default(generateBodyDiagramTypeDefault),
+  "fileIds": zod.array(zod.string()).optional(),
+  "format": zod.string().optional(),
+  "kind": zod.enum(['flashcards', 'quiz', 'mindmap', 'diagram']),
+  "length": zod.string().optional(),
+  "levels": zod.array(zod.enum(['recall', 'application', 'analysis'])).min(1),
+  "style": zod.string().optional(),
+  "timeLimitMin": zod.int().min(1).max(generateBodyTimeLimitMinMax).optional(),
+  "title": zod.string().min(1).max(generateBodyTitleMax),
+  "types": zod.array(zod.enum(['mcq', 'multi', 'boolean', 'short', 'open', 'ordering', 'matching'])).min(1).default([`mcq`])
+})
+
+export const GenerateResponse = zod.record(zod.string(), zod.unknown())
+
+
+/**
  * @summary Privately invite a workspace member
  */
 export const CreateWorkspaceInviteParams = zod.object({
@@ -2369,7 +2415,7 @@ export const CreateMaterialBody = zod.object({
   "schemaVersion": zod.int(),
   "value": zod.array(zod.record(zod.string(), zod.unknown())).nullable()
 }).optional().describe('Versioned Plate document'),
-  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']).optional().describe('Material kind; defaults to note'),
+  "kind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']).describe('Material kind'),
   "scopeChapters": zod.array(zod.string()).nullish(),
   "scopeFileNames": zod.array(zod.string()).nullish(),
   "title": zod.string().max(createMaterialBodyTitleMax).optional()
@@ -2497,6 +2543,94 @@ export const UpdateWorkspaceSharingResponse = zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(updateWorkspaceSharingResponseTagsItemValueMax)
 }))
+})
+
+
+/**
+ * @summary Import sources from a connected drive
+ */
+export const ImportSourcesParams = zod.object({
+  "id": zod.string()
+})
+
+
+
+
+export const ImportSourcesBody = zod.object({
+  "chapterId": zod.string().optional(),
+  "driveIds": zod.array(zod.string()).optional(),
+  "fileIds": zod.array(zod.string()).min(1),
+  "provider": zod.enum(['google', 'microsoft'])
+})
+
+export const ImportSourcesResponseItem = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "addedAt": zod.iso.datetime({"offset":true}),
+  "chapterId": zod.string().nullable(),
+  "content": zod.string().optional(),
+  "id": zod.string(),
+  "indexed": zod.boolean(),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "name": zod.string(),
+  "position": zod.int(),
+  "sizeBytes": zod.int(),
+  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
+  "url": zod.string().optional(),
+  "workspaceId": zod.string()
+})
+export const ImportSourcesResponse = zod.array(ImportSourcesResponseItem)
+
+
+/**
+ * @summary Reserve a direct source upload
+ */
+export const CreateSourceUploadParams = zod.object({
+  "id": zod.string()
+})
+
+export const CreateSourceUploadBody = zod.object({
+  "captionImages": zod.boolean(),
+  "chapterId": zod.string().optional(),
+  "chapterName": zod.string().optional(),
+  "contentType": zod.string().optional(),
+  "kind": zod.string().optional(),
+  "name": zod.string(),
+  "parseMode": zod.string().optional(),
+  "sizeBytes": zod.int()
+})
+
+export const CreateSourceUploadResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "headers": zod.record(zod.string(), zod.string()),
+  "method": zod.string(),
+  "uploadId": zod.string(),
+  "url": zod.string()
+})
+
+
+/**
+ * @summary Complete a direct source upload
+ */
+export const CompleteSourceUploadParams = zod.object({
+  "id": zod.string(),
+  "uploadId": zod.string()
+})
+
+export const CompleteSourceUploadResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "addedAt": zod.iso.datetime({"offset":true}),
+  "chapterId": zod.string().nullable(),
+  "content": zod.string().optional(),
+  "id": zod.string(),
+  "indexed": zod.boolean(),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "name": zod.string(),
+  "position": zod.int(),
+  "sizeBytes": zod.int(),
+  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
+  "url": zod.string().optional(),
+  "workspaceId": zod.string()
 })
 
 

@@ -11,11 +11,8 @@ import (
 
 const (
 	// ParseModeFast is the live CPU parser (Marker + RapidOCR on scans).
-	// ParseModeAccurate is a retired alias: old clients and queued jobs still
-	// send it, and we treat it as fast.
-	ParseModeAccurate = "accurate"
-	ParseModeFast     = "fast"
-	ParseModeNone     = "none"
+	ParseModeFast = "fast"
+	ParseModeNone = "none"
 
 	// Per-file source caps, independent of plan storage quota and of editor
 	// assets (which have their own purpose ladder). GPU/LLM cost is metered
@@ -421,7 +418,7 @@ func Validate(name, kind, mode string, size, maxBytes int64) error {
 		return nil
 	}
 
-	switch CanonicalParseMode(mode) {
+	switch strings.ToLower(mode) {
 	case ParseModeFast:
 		if !parseExtensions[extensionKey(name)] {
 			return fmt.Errorf("parsing does not support %s files", Extension(name))
@@ -431,17 +428,6 @@ func Validate(name, kind, mode string, size, maxBytes int64) error {
 		return fmt.Errorf("unknown parse mode %q", mode)
 	}
 	return nil
-}
-
-// CanonicalParseMode maps retired names onto the live parser so old clients
-// and queued jobs keep working.
-func CanonicalParseMode(mode string) string {
-	switch strings.ToLower(mode) {
-	case ParseModeAccurate, "advanced":
-		return ParseModeFast
-	default:
-		return mode
-	}
 }
 
 // parseExtensions is the format list the GPU parser accepts.
@@ -463,7 +449,7 @@ func ExtensionsByKind() map[string][]string {
 }
 
 func ParseExtensions(mode string) []string {
-	if CanonicalParseMode(mode) != ParseModeFast {
+	if strings.ToLower(mode) != ParseModeFast {
 		return []string{}
 	}
 	out := make([]string, 0, len(parseExtensions))

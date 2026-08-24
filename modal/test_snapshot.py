@@ -137,8 +137,7 @@ def main() -> int:
     )
     ap.add_argument(
         "--url",
-        default=os.environ.get("MODAL_FAST_PARSE_URL")
-        or os.environ.get("MODAL_PARSE_URL", ""),
+        default=os.environ.get("MODAL_FAST_PARSE_URL", ""),
         help="full /file_parse URL (default: $MODAL_FAST_PARSE_URL)",
     )
     ap.add_argument(

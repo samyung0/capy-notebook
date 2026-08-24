@@ -162,7 +162,6 @@ services:
       B2_APP_KEY: ${B2_APP_KEY:-}
       REDIS_URL: redis://redis:6379/0
       # Modal CPU parse service (Marker + RapidOCR on scans).
-      MODAL_PARSE_URL: ${MODAL_PARSE_URL:-}
       MODAL_FAST_PARSE_URL: ${MODAL_FAST_PARSE_URL:-}
       MODAL_PARSE_TOKEN: ${MODAL_PARSE_TOKEN:-}
       MODAL_PARSE_TIMEOUT: ${MODAL_PARSE_TIMEOUT:-900}

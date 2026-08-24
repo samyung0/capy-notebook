@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from pipeline.jobs import (
     CapacityWait,
     RetryableError,
@@ -27,5 +29,11 @@ def test_backoff_grows_with_attempts():
     assert backoff_s(policy, 3) == policy.backoff_base_s * 4
 
 
-def test_unknown_job_types_use_the_ingest_policy():
-    assert policy_for("no_such_job").max_attempts == policy_for("ingest").max_attempts
+def test_unknown_job_types_are_terminal():
+    with pytest.raises(TerminalError, match="unknown job type"):
+        policy_for("no_such_job")
+
+
+def test_missing_job_type_is_terminal():
+    with pytest.raises(TerminalError, match="missing job type"):
+        policy_for("")

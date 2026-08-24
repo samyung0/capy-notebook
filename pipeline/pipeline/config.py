@@ -14,7 +14,10 @@ from dataclasses import dataclass
 
 
 def _env(key: str, default: str = "") -> str:
-    return os.getenv(key, default)
+    value = os.getenv(key)
+    if value:
+        return value
+    return default
 
 
 def _env_first(*keys: str, default: str = "") -> str:
@@ -70,9 +73,7 @@ class Config:
 
     # ---- Modal parse service ---------------------------------------------
     # One CPU endpoint: Marker with OCR off, RapidOCR (PP-OCRv6) on pages the
-    # scan probe flags. MODAL_FAST_PARSE_URL wins; MODAL_PARSE_URL is an alias
-    # so older compose files still work.
-    modal_parse_url: str = _env("MODAL_PARSE_URL", "")
+    # scan probe flags.
     modal_fast_parse_url: str = _env("MODAL_FAST_PARSE_URL", "")
     modal_parse_token: str = _env("MODAL_PARSE_TOKEN", "")
     # The endpoint may hold a request behind other documents sharing the

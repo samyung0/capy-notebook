@@ -108,7 +108,7 @@ class ModelConfig:
         return str(self.reasoning().get("defaultMode") or "off")
 
     def reasoning_default_effort(self) -> str:
-        return str(self.reasoning().get("defaultEffort") or "medium")
+        return str(self.reasoning().get("defaultEffort") or "")
 
 
 class RegistryError(RuntimeError):

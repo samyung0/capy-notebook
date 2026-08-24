@@ -29,6 +29,7 @@ import {
   mermaidNode,
   quizNode,
 } from '@/features/materials/document';
+import { effectiveReasoning } from '@/features/settings/llmOptions';
 import { getFileKind } from '@/features/workspace/sourceUpload';
 import { isKnown, newSrsState } from '@/lib/srs';
 import * as db from './db';
@@ -40,10 +41,76 @@ const refType = (kind: Material['kind']): MaterialRefType =>
   kind === 'flashcards' ? 'deck' : kind;
 
 const latency = () => delay(1000 + Math.random() * 220);
+const GENERATE_KINDS: GenerateOptions['kind'][] = [
+  'flashcards',
+  'quiz',
+  'mindmap',
+  'diagram',
+];
 const USER_KEY_MODELS: Record<string, string> = {
   'claude-opus-5': 'anthropic',
   'gpt-5.6-sol': 'openai',
 };
+
+function mockCatalogModels() {
+  const hasOpenAI = Boolean(db.llmCredentials.openai);
+  const hasAnthropic = Boolean(db.llmCredentials.anthropic);
+  const hasDeepSeek = Boolean(db.llmCredentials.deepseek);
+  const reasoning = {
+    canDisable: true,
+    defaultEffort: 'max',
+    defaultMode: 'off',
+    efforts: ['low', 'high', 'max'],
+  };
+  return [
+    {
+      available: true,
+      displayName: 'DeepSeek Flash',
+      isDefault: true,
+      key: 'deepseek-flash',
+      providerSlug: 'deepseek',
+      reasoning,
+      usesUserKey: hasDeepSeek,
+    },
+    {
+      available: true,
+      displayName: 'DeepSeek Pro',
+      isDefault: false,
+      key: 'deepseek-pro',
+      providerSlug: 'deepseek',
+      reasoning,
+      usesUserKey: hasDeepSeek,
+    },
+    {
+      available: hasOpenAI,
+      displayName: 'GPT-5.6 Sol',
+      isDefault: false,
+      key: 'gpt-5.6-sol',
+      providerSlug: 'openai',
+      reasoning: {
+        canDisable: true,
+        defaultEffort: 'medium',
+        defaultMode: 'on',
+        efforts: ['low', 'medium', 'high', 'xhigh'],
+      },
+      usesUserKey: hasOpenAI,
+    },
+    {
+      available: hasAnthropic,
+      displayName: 'Claude Opus 5',
+      isDefault: false,
+      key: 'claude-opus-5',
+      providerSlug: 'anthropic',
+      reasoning: {
+        canDisable: false,
+        defaultEffort: 'high',
+        defaultMode: 'on',
+        efforts: ['low', 'medium', 'high', 'xhigh'],
+      },
+      usesUserKey: hasAnthropic,
+    },
+  ];
+}
 const ownerMaterialAccess = {
   capabilities: {
     canComment: true,
@@ -63,6 +130,18 @@ interface MockWorkspaceInvite {
   token: string;
   workspaceId: string;
 }
+function copyText(
+  locale: string,
+  key: 'new_deck' | 'untitled_note' | 'untitled_quiz'
+): string {
+  const table = {
+    new_deck: { en: 'New deck', zh: '新建卡组' },
+    untitled_note: { en: 'Untitled note', zh: '未命名笔记' },
+    untitled_quiz: { en: 'Untitled quiz', zh: '未命名测验' },
+  } as const;
+  return locale === 'zh' ? table[key].zh : table[key].en;
+}
+
 interface MockInviteCandidate {
   avatarUrl?: string;
   email: string;
@@ -269,7 +348,16 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   http.get('/api/models', async ({ request }) => {
-    const surface = new URL(request.url).searchParams.get('surface') ?? 'chat';
+    const surface = new URL(request.url).searchParams.get('surface');
+    if (!surface) {
+      return HttpResponse.json({
+        defaultKey: '',
+        models: [],
+        selectedKey: '',
+        selectedReasoningEffort: '',
+        selectedReasoningMode: '',
+      });
+    }
     const prefs: Record<string, string | undefined> = {
       chat: db.user.chatModelKey,
       editor: db.user.editorModelKey,
@@ -277,68 +365,22 @@ export const handlers = [
       quiz: db.user.quizModelKey,
     };
     const selected = prefs[surface] ?? 'deepseek-flash';
-    const hasOpenAI = Boolean(db.llmCredentials.openai);
-    const hasAnthropic = Boolean(db.llmCredentials.anthropic);
-    const hasDeepSeek = Boolean(db.llmCredentials.deepseek);
-    const reasoning = {
-      canDisable: true,
-      defaultEffort: 'high',
-      defaultMode: 'off',
-      efforts: ['low', 'high', 'max'],
+    const models = mockCatalogModels();
+    const stored = db.userReasoning[selected]?.[surface] ?? {
+      effort: '',
+      mode: '',
     };
+    const resolved = effectiveReasoning(
+      models.find((item) => item.key === selected),
+      stored.mode,
+      stored.effort
+    );
     return HttpResponse.json({
       defaultKey: 'deepseek-flash',
-      models: [
-        {
-          available: true,
-          displayName: 'DeepSeek Flash',
-          isDefault: true,
-          key: 'deepseek-flash',
-          providerSlug: 'deepseek',
-          reasoning,
-          usesUserKey: hasDeepSeek,
-        },
-        {
-          available: true,
-          displayName: 'DeepSeek Pro',
-          isDefault: false,
-          key: 'deepseek-pro',
-          providerSlug: 'deepseek',
-          reasoning,
-          usesUserKey: hasDeepSeek,
-        },
-        {
-          available: hasOpenAI,
-          displayName: 'GPT-5.6 Sol',
-          isDefault: false,
-          key: 'gpt-5.6-sol',
-          providerSlug: 'openai',
-          reasoning: {
-            canDisable: true,
-            defaultEffort: 'medium',
-            defaultMode: 'on',
-            efforts: ['low', 'medium', 'high', 'xhigh'],
-          },
-          usesUserKey: hasOpenAI,
-        },
-        {
-          available: hasAnthropic,
-          displayName: 'Claude Opus 5',
-          isDefault: false,
-          key: 'claude-opus-5',
-          providerSlug: 'anthropic',
-          reasoning: {
-            canDisable: false,
-            defaultEffort: 'high',
-            defaultMode: 'on',
-            efforts: ['low', 'medium', 'high', 'xhigh'],
-          },
-          usesUserKey: hasAnthropic,
-        },
-      ],
+      models,
       selectedKey: selected,
-      selectedReasoningEffort: db.userReasoning[surface]?.effort ?? '',
-      selectedReasoningMode: db.userReasoning[surface]?.mode ?? '',
+      selectedReasoningEffort: resolved.effort,
+      selectedReasoningMode: resolved.mode,
     });
   }),
   http.patch('/api/me/models', async ({ request }) => {
@@ -381,13 +423,39 @@ export const handlers = [
       db.user[field] = value;
     }
     const reasoning = [
-      ['chat', body.chatReasoningMode, body.chatReasoningEffort],
-      ['generate', body.generateReasoningMode, body.generateReasoningEffort],
-      ['quiz', body.quizReasoningMode, body.quizReasoningEffort],
+      [
+        'chat',
+        db.user.chatModelKey,
+        body.chatReasoningMode,
+        body.chatReasoningEffort,
+      ],
+      [
+        'generate',
+        db.user.generateModelKey,
+        body.generateReasoningMode,
+        body.generateReasoningEffort,
+      ],
+      [
+        'quiz',
+        db.user.quizModelKey,
+        body.quizReasoningMode,
+        body.quizReasoningEffort,
+      ],
     ] as const;
-    for (const [surface, mode, effort] of reasoning) {
-      const current = db.userReasoning[surface] ?? { effort: '', mode: '' };
-      db.userReasoning[surface] = {
+    for (const [surface, modelKey, mode, effort] of reasoning) {
+      if (mode === undefined && effort === undefined) continue;
+      const spec = mockCatalogModels().find(
+        (item) => item.key === modelKey
+      )?.reasoning;
+      if (effort && spec && !spec.efforts.includes(effort)) {
+        return HttpResponse.json({ message: 'not found' }, { status: 404 });
+      }
+      const current = db.userReasoning[modelKey]?.[surface] ?? {
+        effort: '',
+        mode: '',
+      };
+      if (!db.userReasoning[modelKey]) db.userReasoning[modelKey] = {};
+      db.userReasoning[modelKey][surface] = {
         effort: effort ?? current.effort,
         mode: mode ?? current.mode,
       };
@@ -566,7 +634,8 @@ export const handlers = [
 
   /* ---------------- tags ---------------- */
   http.get('/api/tags', async ({ request }) => {
-    const kind = new URL(request.url).searchParams.get('kind') ?? 'workspace';
+    const kind = new URL(request.url).searchParams.get('kind');
+    if (!kind) return HttpResponse.json([]);
     const list = db.tagCatalog
       .filter((t) => t.kind === kind)
       .map((t) => ({ id: t.id, value: t.value }))
@@ -645,7 +714,7 @@ export const handlers = [
         canView: true,
       },
       chapterCount: 0,
-      color: (body.color as UserColor) ?? 'green',
+      color: (body.color as UserColor) ?? 'graphite',
       createdAt: new Date().toISOString(),
       fileCount: 0,
       filesLimit: 100,
@@ -1136,17 +1205,23 @@ export const handlers = [
       scopeChapters?: string[];
       scopeFileNames?: string[];
     };
+    if (!body.kind) {
+      return HttpResponse.json(
+        { message: 'kind is required' },
+        { status: 400 }
+      );
+    }
     const mt = db.makeMaterial({
       ...ownerMaterialAccess,
       chapterId: null,
       content: body.content ?? emptyMaterialDocument(),
       createdAt: new Date().toISOString(),
       id: uid('mat'),
-      kind: body.kind ?? 'note',
+      kind: body.kind,
       privacy: 'private',
       scopeChapters: body.scopeChapters ?? [],
       scopeFileNames: body.scopeFileNames ?? [],
-      title: body.title || 'Untitled note',
+      title: body.title || copyText(db.user.locale, 'untitled_note'),
       workspaceId: wsId,
       workspaceName: ws?.name ?? '',
     });
@@ -1228,12 +1303,18 @@ export const handlers = [
       anchorVersion?: number;
       contentRich: MaterialDiscussion['comments'][number]['contentRich'];
     };
+    if (body.anchorVersion == null || body.anchorVersion < 1) {
+      return HttpResponse.json(
+        { message: 'anchorVersion must be at least 1' },
+        { status: 400 }
+      );
+    }
     const now = new Date().toISOString();
     const discussion: MaterialDiscussion = {
       anchorEnd: body.anchorEnd,
       anchorQuote: body.anchorQuote ?? '',
       anchorStart: body.anchorStart,
-      anchorVersion: body.anchorVersion ?? 1,
+      anchorVersion: body.anchorVersion,
       authorName: db.user.name,
       blockId: body.blockId,
       comments: [
@@ -1720,16 +1801,53 @@ export const handlers = [
     await delay(900);
     const opts = (await request.json()) as GenerateOptions;
     const wsId = String(params.id);
-    const wsName =
-      db.workspaces.find((w) => w.id === wsId)?.name ?? 'Workspace';
-    // Chapters arrive as ids; resolve to names for display + storage parity
-    // with the Go backend.
-    const scopeChapterNames = opts.chapters
+    const ws = db.workspaces.find((w) => w.id === wsId);
+    if (!ws) return new HttpResponse(null, { status: 404 });
+    if (!opts.kind || !opts.count || opts.count < 1 || !opts.levels?.length) {
+      return HttpResponse.json(
+        { message: 'kind, count, and levels are required' },
+        { status: 400 }
+      );
+    }
+    if (!GENERATE_KINDS.includes(opts.kind)) {
+      return HttpResponse.json(
+        { message: `unsupported generate kind "${opts.kind}"` },
+        { status: 400 }
+      );
+    }
+    if (opts.kind === 'quiz' && !opts.types?.length) {
+      return HttpResponse.json(
+        { message: 'types is required' },
+        { status: 400 }
+      );
+    }
+    const unknownFile = (opts.fileIds ?? []).find(
+      (id) =>
+        !db.files.some((file) => file.id === id && file.workspaceId === wsId)
+    );
+    if (unknownFile) {
+      return HttpResponse.json(
+        { message: `unknown file id "${unknownFile}"` },
+        { status: 400 }
+      );
+    }
+    const unknownChapter = (opts.chapters ?? []).find(
+      (id) => !db.chapters.some((ch) => ch.id === id && ch.workspaceId === wsId)
+    );
+    if (unknownChapter) {
+      return HttpResponse.json(
+        { message: `unknown chapter id "${unknownChapter}"` },
+        { status: 400 }
+      );
+    }
+    const wsName = ws.name;
+    const chapters = opts.chapters ?? [];
+    const fileIds = opts.fileIds ?? [];
+    const scopeChapterNames = chapters
       .map((cid) => db.chapters.find((c) => c.id === cid)?.name)
       .filter(Boolean) as string[];
-    // Human-readable scope, for material titles / bodies.
-    const selectedFileIds = new Set(opts.fileIds);
-    for (const chapterId of opts.chapters) {
+    const selectedFileIds = new Set(fileIds);
+    for (const chapterId of chapters) {
       const chapter = db.chapters.find((item) => item.id === chapterId);
       for (const fileId of chapter?.fileIds ?? []) selectedFileIds.add(fileId);
     }
@@ -1953,7 +2071,7 @@ export const handlers = [
   http.post('/api/quizzes', async ({ request }) => {
     const body = (await request.json()) as Partial<Quiz>;
     const ws = db.workspaces.find((w) => w.id === body.workspaceId);
-    const name = body.name ?? 'Untitled quiz';
+    const name = body.name || copyText(db.user.locale, 'untitled_quiz');
     const material = db.makeMaterial({
       ...ownerMaterialAccess,
       chapterId: null,
@@ -2127,7 +2245,7 @@ export const handlers = [
   http.post('/api/decks', async ({ request }) => {
     const body = (await request.json()) as Partial<Deck>;
     const ws = db.workspaces.find((w) => w.id === body.workspaceId);
-    const name = body.name ?? 'Untitled deck';
+    const name = body.name || copyText(db.user.locale, 'new_deck');
     const id = uid('dk');
     const material = db.makeMaterial({
       ...ownerMaterialAccess,

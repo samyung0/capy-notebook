@@ -54,16 +54,12 @@ func TestChatErrorsWhenPipelineHTTPFails(t *testing.T) {
 func TestGenerateErrorsWhenPipelineMissing(t *testing.T) {
 	h := openShareHTTP(t)
 	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
-		"u_editor", map[string]any{"kind": "quiz", "count": 1, "title": "No pipe quiz"})
+		"u_editor", generateBody("quiz", "No pipe quiz"))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	var payload map[string]string
-	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
-		t.Fatal(err)
-	}
-	if payload["code"] != "ai_unavailable" {
-		t.Fatalf("code = %q body=%s", payload["code"], rec.Body.String())
+	if errorCode(t, rec) != "ai_unavailable" {
+		t.Fatalf("code = %q body=%s", errorCode(t, rec), rec.Body.String())
 	}
 }
 
@@ -75,7 +71,7 @@ func TestGenerateErrorsWhenPipelineHTTPFails(t *testing.T) {
 
 	h := openShareAPI(t, pipeline.New(down.URL, ""))
 	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
-		"u_editor", map[string]any{"kind": "quiz", "count": 1, "title": "Down pipe quiz"})
+		"u_editor", generateBody("quiz", "Down pipe quiz"))
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -104,7 +100,7 @@ func TestGenerateRejectsEmptyMaterial(t *testing.T) {
 	h := openShareAPI(t, pipeline.New(empty.URL, ""))
 	for _, kind := range []string{"mindmap", "diagram", "flashcards", "quiz"} {
 		rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
-			"u_editor", map[string]any{"kind": kind, "count": 1, "title": kind + " empty"})
+			"u_editor", generateBody(kind, kind+" empty"))
 		if rec.Code != http.StatusBadGateway {
 			t.Fatalf("%s status = %d body=%s", kind, rec.Code, rec.Body.String())
 		}
@@ -124,7 +120,7 @@ func TestGenerateMapsPipelineEmptyCode(t *testing.T) {
 
 	h := openShareAPI(t, pipeline.New(srv.URL, ""))
 	rec := doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/generate",
-		"u_editor", map[string]any{"kind": "mindmap", "title": "Empty from pipeline"})
+		"u_editor", generateBody("mindmap", "Empty from pipeline"))
 	if rec.Code != http.StatusBadGateway || errorCode(t, rec) != "generate_empty" {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}

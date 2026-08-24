@@ -239,6 +239,27 @@ the provider credential as a **masked env lookup** (`provider_slug` →
 process env). API keys are not stored on `model_configs` and must not be
 pasted into the dashboard.
 
+Adding a new chat / generate / editor / quiz row — platform or BYOK
+(`user_key` / `platform_or_user`) — must collect `params.reasoning` as
+named fields, not a raw JSON blob the operator has to remember:
+
+- `defaultMode`: `on` | `off`. This is what Settings shows before the
+  user saves a preference, and what the gateway sends when the stored
+  pref is empty.
+- `defaultEffort`: one of that row's `efforts`. DeepSeek seed rows use
+  `max`. OpenAI seed rows use `medium`.
+- `efforts`, `canDisable`, and optional `style` (`adaptive` / `budget`
+  for Anthropic).
+
+Embedding and vision rows omit reasoning. Save must refuse a
+chat/generate/editor/quiz/ingest insert whose `defaultEffort` is not in
+`efforts`, whose `efforts` list is empty or contains an unknown token,
+or whose `defaultMode` / `canDisable` is missing. Postgres already
+enforces this (`model_configs_reasoning_check`); the grid should catch
+it in the drawer so Save does not bounce on a constraint. There is no
+implicit `medium` default in Go or Python — a missing `defaultEffort`
+is a broken catalog row.
+
 From that drawer the operator can **change** the cell (pick another catalog
 config, or add a new immutable version) or **clear** it (this key no longer
 serves this surface). Edits stay local until Save.

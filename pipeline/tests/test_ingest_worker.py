@@ -78,21 +78,39 @@ async def _run(parse_mode: str, *, caption_images: bool = False):
     )
 
 
-@pytest.mark.parametrize(
-    ("parse_mode", "route"),
-    [
-        ("fast", modal_parser.ROUTE_FAST),
-        ("accurate", modal_parser.ROUTE_FAST),
-        # A job enqueued before the modes were renamed, or by a gateway running
-        # older code: parse it rather than fail it.
-        ("advanced", modal_parser.ROUTE_FAST),
-    ],
-)
-async def test_the_parse_mode_selects_the_route(parse_stub, parse_mode, route):
-    _, _, _, version = await _run(parse_mode)
+def _ingest_payload(**overrides):
+    payload = {
+        "fileId": "f_1",
+        "workspaceId": "ws_1",
+        "blobPath": "sources/blob_1.pdf",
+        "kind": "pdf",
+        "parseMode": "fast",
+        "captionImages": False,
+        "actorUserId": "u_1",
+        "ingestModelKey": "ingest",
+        "ingestModelVersion": 1,
+        "visionModelKey": "vision",
+        "visionModelVersion": 1,
+    }
+    payload.update(overrides)
+    return payload
 
-    assert parse_stub["descriptor"]["route"] == route
-    assert version == modal_parser.PARSER_VERSIONS[route]
+
+async def test_the_parse_mode_selects_the_route(parse_stub):
+    _, _, _, version = await _run("fast")
+
+    assert parse_stub["descriptor"]["route"] == modal_parser.ROUTE_FAST
+    assert version == modal_parser.PARSER_VERSIONS[modal_parser.ROUTE_FAST]
+
+
+@pytest.mark.parametrize("parse_mode", ["accurate", "advanced"])
+async def test_retired_parse_modes_fail(parse_stub, parse_mode):
+    from pipeline.jobs import TerminalError
+
+    with pytest.raises(TerminalError, match="unknown parse mode"):
+        await _run(parse_mode)
+
+    assert parse_stub["descriptor"] is None
 
 
 async def test_an_unknown_parse_mode_fails_before_paying_for_a_parse(parse_stub):
@@ -118,7 +136,7 @@ async def test_a_missing_model_config_fails_the_job_without_retry(monkeypatch):
             {
                 "id": "job_1",
                 "attempts": 1,
-                "payload": {"fileId": "f_1", "workspaceId": "ws_1"},
+                "payload": _ingest_payload(),
             }
         )
 
@@ -138,7 +156,7 @@ async def test_a_database_blip_while_reading_pins_is_not_terminal(monkeypatch):
             {
                 "id": "job_1",
                 "attempts": 1,
-                "payload": {"fileId": "f_1", "workspaceId": "ws_1"},
+                "payload": _ingest_payload(),
             }
         )
     assert is_retryable(psycopg.OperationalError("connection timed out"))
@@ -161,16 +179,18 @@ async def test_a_missing_actor_fails_the_file_without_retry(monkeypatch):
     monkeypatch.setattr(worker, "_finish_fail", lambda *a, **k: failed.append((a, k)))
     monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
 
-    await worker.process_ingest_job(
-        {
-            "id": "job_1",
-            "attempts": 1,
-            "payload": {"fileId": "f_1", "workspaceId": "ws_1"},
-        }
-    )
+    from pipeline.jobs import TerminalError
 
-    assert failed
-    assert failed[0][0][0] == "f_1"
+    with pytest.raises(TerminalError, match="actorUserId"):
+        await worker.process_ingest_job(
+            {
+                "id": "job_1",
+                "attempts": 1,
+                "payload": _ingest_payload(actorUserId=""),
+            }
+        )
+
+    assert failed == []
 
 
 async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatch):
@@ -359,14 +379,7 @@ async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
             {
                 "id": "job_wait",
                 "attempts": 1,
-                "payload": {
-                    "fileId": "f_1",
-                    "workspaceId": "ws_1",
-                    "blobPath": "sources/blob_1.pdf",
-                    "kind": "pdf",
-                    "parseMode": "fast",
-                    "actorUserId": "u_1",
-                },
+                "payload": _ingest_payload(),
             }
         )
 
@@ -399,3 +412,45 @@ async def test_text_sources_do_not_take_a_gpu_slot(parse_stub, monkeypatch):
     )
 
     assert taken == []
+
+
+async def test_a_missing_ingest_field_fails_without_retry():
+    from pipeline.jobs import TerminalError
+
+    payload = _ingest_payload()
+    del payload["parseMode"]
+    with pytest.raises(TerminalError, match="parseMode"):
+        await worker.process_ingest_job(
+            {"id": "job_1", "attempts": 1, "payload": payload}
+        )
+
+
+async def test_caption_images_false_is_not_treated_as_missing(monkeypatch):
+    from pipeline.jobs import TerminalError
+
+    async def _pin(_ws):
+        raise TerminalError("stop after payload")
+
+    monkeypatch.setattr(worker, "_workspace_embedding_spec", _pin)
+    with pytest.raises(TerminalError, match="stop after payload"):
+        await worker.process_ingest_job(
+            {
+                "id": "job_1",
+                "attempts": 1,
+                "payload": _ingest_payload(captionImages=False),
+            }
+        )
+
+
+async def test_unknown_job_type_is_terminal():
+    from pipeline.jobs import TerminalError
+
+    with pytest.raises(TerminalError, match="unknown job type"):
+        await worker.process_job({"id": "job_1", "type": "summarize", "payload": {}})
+
+
+async def test_blank_job_type_is_terminal():
+    from pipeline.jobs import TerminalError
+
+    with pytest.raises(TerminalError, match="missing job type"):
+        await worker.process_job({"id": "job_1", "type": "", "payload": {}})

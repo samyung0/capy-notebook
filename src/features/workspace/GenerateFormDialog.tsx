@@ -209,17 +209,18 @@ export function GenerateFormDialog({
   );
 
   async function run() {
-    if (titleError) return;
+    if (titleError || !levels.length) return;
+    if (mode === 'quiz' && !types.length) return;
     const scope = {
       chapters: chapterScope,
+      count,
       fileIds: fileScope,
+      levels,
       title: title.trim(),
     };
     let opts: GenerateOptions;
-    if (mode === 'flashcards')
-      opts = { count, kind: 'flashcards', style, ...scope };
-    else if (mode === 'quiz')
-      opts = { count, kind: 'quiz', levels, types, ...scope };
+    if (mode === 'flashcards') opts = { kind: 'flashcards', style, ...scope };
+    else if (mode === 'quiz') opts = { kind: 'quiz', types, ...scope };
     else if (mode === 'mindmap') opts = { detail, kind: 'mindmap', ...scope };
     else opts = { diagramType, kind: 'diagram', ...scope };
     await onGenerate(opts);
@@ -399,7 +400,10 @@ export function GenerateFormDialog({
           </Button>
           <Button
             disabled={
-              pending || !!titleError || (mode === 'quiz' && !types.length)
+              pending ||
+              !!titleError ||
+              !levels.length ||
+              (mode === 'quiz' && !types.length)
             }
             iconLeft={pending ? undefined : 'sparkles'}
             onClick={run}

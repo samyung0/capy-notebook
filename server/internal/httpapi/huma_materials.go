@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/evonotes/server/internal/copytext"
 	"github.com/evonotes/server/internal/httpapi/apimodel"
 	"github.com/evonotes/server/internal/materialdoc"
 	"github.com/evonotes/server/internal/store"
@@ -101,9 +102,6 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 		return nil, hErr(err)
 	}
 	kind := in.Body.Kind
-	if kind == "" {
-		kind = "note"
-	}
 	switch kind {
 	case "note", "quiz", "flashcards", "mindmap", "diagram":
 	default:
@@ -112,7 +110,7 @@ func (a *api) createMaterial(ctx context.Context, in *createMaterialInput) (*mat
 	title := in.Body.Title
 	if title == "" {
 		var err error
-		title, err = a.s.DisambiguateMaterialTitle(ctx, in.ID, "Untitled note")
+		title, err = a.s.DisambiguateMaterialTitle(ctx, in.ID, copytext.T(a.userLocale(ctx, userID(ctx)), copytext.UntitledNote))
 		if err != nil {
 			return nil, hErr(err)
 		}

@@ -39,11 +39,26 @@ describe('llm options', () => {
     expect(sorted.map((item) => item.key)).toEqual(['flash', 'claude', 'gpt']);
   });
 
-  it('clamps thinking to what the selected model accepts', () => {
+  it('resolves empty stored prefs to the catalog off default', () => {
     const selected = option({
       reasoning: {
         canDisable: true,
-        defaultEffort: 'high',
+        defaultEffort: 'max',
+        defaultMode: 'off',
+        efforts: ['low', 'high', 'max'],
+      },
+    });
+    expect(effectiveReasoning(selected, '', '')).toEqual({
+      effort: '',
+      mode: 'off',
+    });
+  });
+
+  it('uses catalog defaultEffort when the stored effort is not on this model', () => {
+    const selected = option({
+      reasoning: {
+        canDisable: true,
+        defaultEffort: 'max',
         defaultMode: 'off',
         efforts: ['low', 'high', 'max'],
       },
@@ -53,11 +68,30 @@ describe('llm options', () => {
       mode: 'off',
     });
     expect(effectiveReasoning(selected, 'on', 'medium')).toEqual({
-      effort: 'high',
+      effort: 'max',
       mode: 'on',
     });
     expect(effectiveReasoning(selected, 'on', 'max')).toEqual({
       effort: 'max',
+      mode: 'on',
+    });
+    expect(effectiveReasoning(selected, 'on', '')).toEqual({
+      effort: 'max',
+      mode: 'on',
+    });
+  });
+
+  it('does not invent an effort when the catalog default is missing', () => {
+    const selected = option({
+      reasoning: {
+        canDisable: true,
+        defaultEffort: '',
+        defaultMode: 'on',
+        efforts: ['low', 'high', 'max'],
+      },
+    });
+    expect(effectiveReasoning(selected, 'on', '')).toEqual({
+      effort: '',
       mode: 'on',
     });
   });

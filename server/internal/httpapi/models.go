@@ -16,7 +16,7 @@ import (
 )
 
 type modelsInput struct {
-	Surface string `query:"surface" enum:"chat,generate,editor,quiz" default:"chat"`
+	Surface string `query:"surface" enum:"chat,generate,editor,quiz"`
 }
 
 type modelsOutput struct {
@@ -37,11 +37,11 @@ func (a *api) registerModels(api huma.API) {
 }
 
 func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, error) {
-	surface := in.Surface
-	if surface == "" {
-		surface = models.SurfaceChat
-	}
 	out := apimodel.ModelsResponse{Models: []apimodel.ModelOption{}}
+	if in.Surface == "" {
+		return &modelsOutput{Body: out}, nil
+	}
+	surface := in.Surface
 	if a.modelReg == nil {
 		return &modelsOutput{Body: out}, nil
 	}
@@ -100,11 +100,12 @@ func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, e
 	for _, item := range items {
 		out.Models = append(out.Models, item.opt)
 	}
-	if prefErr == nil {
-		if selected, ok := findListed(items, out.SelectedKey); ok && selected.Reasoning != nil {
-			mode, effort := prefs.Reasoning(surface)
-			out.SelectedReasoningMode, out.SelectedReasoningEffort = listedCfg(items, out.SelectedKey).ResolveReasoning(mode, effort)
+	if selected, ok := findListed(items, out.SelectedKey); ok && selected.Reasoning != nil {
+		mode, effort := "", ""
+		if prefErr == nil {
+			mode, effort = prefs.Reasoning(surface)
 		}
+		out.SelectedReasoningMode, out.SelectedReasoningEffort = listedCfg(items, out.SelectedKey).ResolveReasoning(mode, effort)
 	}
 	return &modelsOutput{Body: out}, nil
 }
@@ -218,6 +219,9 @@ func (a *api) resolveLLM(ctx context.Context, userID, surface string) (resolvedL
 		}
 		mode, effort := prefs.Reasoning(surface)
 		out.ReasoningMode, out.ReasoningEffort = cfg.ResolveReasoning(mode, effort)
+		if out.ReasoningMode == "on" && out.ReasoningEffort == "" {
+			return out, fmt.Errorf("%w: %s reasoning on with no catalog effort", store.ErrModelUnavailable, cfg.Key)
+		}
 		return out, nil
 	default:
 		cfg, err := a.modelReg.Default(ctx, surface)

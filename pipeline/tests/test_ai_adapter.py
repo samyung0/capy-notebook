@@ -1,6 +1,9 @@
+from types import SimpleNamespace
+
 import pytest
 from pydantic import ValidationError
 
+from pipeline.retrieve import ai_adapter
 from pipeline.retrieve.ai_adapter import (
     PlateCommandReq,
     PlateContext,
@@ -113,3 +116,49 @@ def test_json_value_accepts_fence_and_rejects_prose():
     ]
     with pytest.raises(RuntimeError, match="invalid structured output"):
         _json_value("not json")
+
+
+class _Connected:
+    async def is_disconnected(self) -> bool:
+        return False
+
+
+async def test_generate_and_comment_omit_output_token_cap(monkeypatch):
+    captured: dict[str, int | None] = {}
+
+    async def fake_wait(*_args, **kwargs):
+        captured["comment"] = kwargs.get("max_tokens")
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="[]"))]
+        )
+
+    async def fake_stream(*_args, **kwargs):
+        captured["generate"] = kwargs.get("max_tokens")
+        if False:
+            yield ""
+
+    monkeypatch.setattr(ai_adapter, "_editor_spec", lambda _req: object())
+    monkeypatch.setattr(ai_adapter, "_wait_completion", fake_wait)
+    monkeypatch.setattr(ai_adapter.models, "stream_text", fake_stream)
+
+    req = PlateCommandReq(
+        workspaceId="ws_1",
+        messages=[_message("Review this")],
+        ctx=PlateContext(
+            children=[
+                {
+                    "id": "b1",
+                    "type": "p",
+                    "children": [{"text": "Hello"}],
+                }
+            ],
+            selection=None,
+        ),
+    )
+    spec = SimpleNamespace(context_window_tokens=16_000)
+    async for _ in ai_adapter._structured_events(_Connected(), req, "comment"):
+        pass
+    async for _ in ai_adapter._text_events(_Connected(), "write more", spec):
+        pass
+
+    assert captured == {"comment": None, "generate": None}

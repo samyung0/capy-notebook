@@ -182,7 +182,7 @@ def test_require_helpers_reject_empty_model_output():
             raise AssertionError(f"{fn.__name__}{args} should have failed")
 
 
-def test_normalize_questions_fills_ids_and_maps_legacy_difficulty():
+def test_normalize_questions_fills_ids_and_drops_legacy_difficulty():
     questions = workflows.normalize_questions(
         [
             {"type": "mcq", "prompt": "?", "options": ["a", "b"], "difficulty": "easy"},
@@ -195,10 +195,9 @@ def test_normalize_questions_fills_ids_and_maps_legacy_difficulty():
                 "rubrics": ["Mentions folds"],
             },
         ],
-        {"easy": "recall"},
     )
 
-    assert questions[0]["level"] == "recall" and "difficulty" not in questions[0]
+    assert questions[0]["level"] == "application" and "difficulty" not in questions[0]
     assert questions[0]["options"][0] == {"value": "a", "explanation": ""}
     assert questions[0]["id"].startswith("q_")
     assert questions[1]["id"] == "q_keep" and questions[1]["level"] == "application"
@@ -208,7 +207,7 @@ def test_normalize_questions_fills_ids_and_maps_legacy_difficulty():
 
 
 def test_normalize_questions_skips_non_objects():
-    assert workflows.normalize_questions(["nope", None], {}) == []
+    assert workflows.normalize_questions(["nope", None]) == []
 
 
 def test_scope_label_names_both_axes():

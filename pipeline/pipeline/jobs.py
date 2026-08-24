@@ -44,8 +44,6 @@ POLICIES: dict[str, JobPolicy] = {
     "ingest": JobPolicy(max_attempts=3, backoff_base_s=30, timeout_s=1800, lease_s=180),
 }
 
-DEFAULT_POLICY = POLICIES["ingest"]
-
 # After this long a waiter starts trying to steal a processing rag_contents
 # claim. The job wall-clock timeout is the hard bound; this is only the
 # steal-attempt threshold. A SIGKILLed creator never runs abandon_content.
@@ -59,7 +57,12 @@ CONTENT_CLAIM_STALE_S = 90
 
 
 def policy_for(job_type: str) -> JobPolicy:
-    return POLICIES.get(job_type, DEFAULT_POLICY)
+    if not job_type:
+        raise TerminalError("missing job type")
+    try:
+        return POLICIES[job_type]
+    except KeyError:
+        raise TerminalError(f"unknown job type {job_type!r}") from None
 
 
 def backoff_s(policy: JobPolicy, attempts: int) -> int:

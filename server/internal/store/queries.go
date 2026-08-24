@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/evonotes/server/internal/copytext"
 	"github.com/evonotes/server/internal/materialdoc"
 	"github.com/evonotes/server/internal/models"
 )
@@ -1611,10 +1612,11 @@ func (s *Store) CreateDeckWithCards(
 		}
 	}
 	if name == "" {
-		name = "New deck"
-	}
-	if color == "" {
-		color = "green"
+		var locale string
+		if userID != "" {
+			_ = s.pool.QueryRow(ctx, `SELECT locale FROM users WHERE id=$1`, userID).Scan(&locale)
+		}
+		name = copytext.T(locale, copytext.NewDeck)
 	}
 	cards := make([]materialdoc.Card, len(cardValues))
 	for i, card := range cardValues {

@@ -6,6 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
+
+	"github.com/evonotes/server/internal/copytext"
 	"github.com/evonotes/server/internal/models"
 )
 
@@ -86,10 +89,12 @@ type ModelPrefsPatch struct {
 
 // SetModelPrefs stores the user's chat/generate/editor/quiz preference. Omitted
 // fields are left unchanged so a picker on one surface cannot wipe another.
-// Empty model keys are rejected: every account always has a concrete key,
-// populated from the registry default at insert. Registry keys are validated
-// against enabled configs that advertise the surface. user_key rows also need
-// a credential. Quiz also accepts a browser: prefix for in-tab GGUFs.
+// Reasoning mode/effort is stored per (user, model, surface): switching
+// models must not reuse another model's effort. Empty model keys are
+// rejected: every account always has a concrete key, populated from the
+// registry default at insert. Registry keys are validated against enabled
+// configs that advertise the surface. user_key rows also need a credential.
+// Quiz also accepts a browser: prefix for in-tab GGUFs.
 func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPrefsPatch) error {
 	for _, pref := range []struct {
 		key     *string
@@ -116,13 +121,21 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 			return err
 		}
 	}
-	if err := validateReasoningPatch(patch.ChatReasoningMode, patch.ChatReasoningEffort); err != nil {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
 		return err
 	}
-	if err := validateReasoningPatch(patch.GenerateReasoningMode, patch.GenerateReasoningEffort); err != nil {
-		return err
-	}
-	if err := validateReasoningPatch(patch.QuizReasoningMode, patch.QuizReasoningEffort); err != nil {
+	defer tx.Rollback(ctx)
+
+	var current UserLLMPrefs
+	if err := tx.QueryRow(ctx, `
+		SELECT chat_model_key, generate_model_key, editor_model_key, quiz_model_key
+		  FROM users WHERE id=$1`, userID).Scan(
+		&current.ChatModelKey, &current.GenerateModelKey, &current.EditorModelKey, &current.QuizModelKey,
+	); err != nil {
+		if isNoRows(err) {
+			return ErrNotFound
+		}
 		return err
 	}
 	deref := func(p *string) string {
@@ -131,44 +144,116 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 		}
 		return *p
 	}
-	_, err := s.pool.Exec(ctx, `UPDATE users SET
+	if _, err := tx.Exec(ctx, `UPDATE users SET
 		chat_model_key = CASE WHEN $2 THEN $3 ELSE chat_model_key END,
 		generate_model_key = CASE WHEN $4 THEN $5 ELSE generate_model_key END,
 		editor_model_key = CASE WHEN $6 THEN $7 ELSE editor_model_key END,
 		quiz_model_key = CASE WHEN $8 THEN $9 ELSE quiz_model_key END,
-		chat_reasoning_mode = CASE WHEN $10 THEN $11 ELSE chat_reasoning_mode END,
-		chat_reasoning_effort = CASE WHEN $12 THEN $13 ELSE chat_reasoning_effort END,
-		generate_reasoning_mode = CASE WHEN $14 THEN $15 ELSE generate_reasoning_mode END,
-		generate_reasoning_effort = CASE WHEN $16 THEN $17 ELSE generate_reasoning_effort END,
-		quiz_reasoning_mode = CASE WHEN $18 THEN $19 ELSE quiz_reasoning_mode END,
-		quiz_reasoning_effort = CASE WHEN $20 THEN $21 ELSE quiz_reasoning_effort END,
 		updated_at = now()
 		WHERE id=$1`, userID,
 		patch.ChatModelKey != nil, deref(patch.ChatModelKey),
 		patch.GenerateModelKey != nil, deref(patch.GenerateModelKey),
 		patch.EditorModelKey != nil, deref(patch.EditorModelKey),
-		patch.QuizModelKey != nil, deref(patch.QuizModelKey),
-		patch.ChatReasoningMode != nil, deref(patch.ChatReasoningMode),
-		patch.ChatReasoningEffort != nil, deref(patch.ChatReasoningEffort),
-		patch.GenerateReasoningMode != nil, deref(patch.GenerateReasoningMode),
-		patch.GenerateReasoningEffort != nil, deref(patch.GenerateReasoningEffort),
-		patch.QuizReasoningMode != nil, deref(patch.QuizReasoningMode),
-		patch.QuizReasoningEffort != nil, deref(patch.QuizReasoningEffort))
+		patch.QuizModelKey != nil, deref(patch.QuizModelKey)); err != nil {
+		return err
+	}
+	chatKey := current.ChatModelKey
+	if patch.ChatModelKey != nil {
+		chatKey = *patch.ChatModelKey
+	}
+	generateKey := current.GenerateModelKey
+	if patch.GenerateModelKey != nil {
+		generateKey = *patch.GenerateModelKey
+	}
+	quizKey := current.QuizModelKey
+	if patch.QuizModelKey != nil {
+		quizKey = *patch.QuizModelKey
+	}
+	if err := upsertModelReasoning(ctx, tx, userID, chatKey, SurfaceChat, patch.ChatReasoningMode, patch.ChatReasoningEffort); err != nil {
+		return err
+	}
+	if err := upsertModelReasoning(ctx, tx, userID, generateKey, SurfaceGenerate, patch.GenerateReasoningMode, patch.GenerateReasoningEffort); err != nil {
+		return err
+	}
+	if err := upsertModelReasoning(ctx, tx, userID, quizKey, SurfaceQuiz, patch.QuizReasoningMode, patch.QuizReasoningEffort); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func upsertModelReasoning(ctx context.Context, tx pgx.Tx, userID, modelKey, surface string, mode, effort *string) error {
+	if mode == nil && effort == nil {
+		return nil
+	}
+	if err := validateReasoningPatch(mode, effort); err != nil {
+		return err
+	}
+	if IsBrowserQuizKey(modelKey) {
+		return ErrNotFound
+	}
+	if effort != nil && *effort != "" {
+		if err := assertCatalogEffort(ctx, tx, modelKey, surface, *effort); err != nil {
+			return err
+		}
+	}
+	_, err := tx.Exec(ctx, `
+		INSERT INTO user_model_reasoning (user_id, model_key, surface, mode, effort)
+		VALUES ($1, $2, $3, $4, $5)
+		ON CONFLICT (user_id, model_key, surface) DO UPDATE SET
+			mode = CASE WHEN $6 THEN EXCLUDED.mode ELSE user_model_reasoning.mode END,
+			effort = CASE WHEN $7 THEN EXCLUDED.effort ELSE user_model_reasoning.effort END`,
+		userID, modelKey, surface, derefString(mode), derefString(effort),
+		mode != nil, effort != nil)
 	return err
+}
+
+func derefString(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 func validateReasoningPatch(mode, effort *string) error {
 	if mode != nil && *mode != "" && *mode != "off" && *mode != "on" {
 		return ErrNotFound
 	}
-	if effort != nil && *effort != "" {
-		switch *effort {
-		case "low", "medium", "high", "xhigh", "max":
-		default:
-			return ErrNotFound
-		}
+	if effort != nil && *effort != "" && !models.IsKnownReasoningEffort(*effort) {
+		return ErrNotFound
 	}
 	return nil
+}
+
+func assertCatalogEffort(ctx context.Context, tx pgx.Tx, key, surface, effort string) error {
+	var params []byte
+	err := tx.QueryRow(ctx, `
+		SELECT params FROM model_configs
+		 WHERE model_key=$1 AND enabled AND $2 = ANY(surfaces)
+		 ORDER BY version DESC LIMIT 1`, key, surface).Scan(&params)
+	if isNoRows(err) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return err
+	}
+	var obj map[string]any
+	if err := json.Unmarshal(params, &obj); err != nil {
+		return err
+	}
+	cfg := models.Config{Params: obj}
+	if !containsEffort(cfg.Reasoning().Efforts, effort) {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func containsEffort(list []string, want string) bool {
+	for _, item := range list {
+		if item == want {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Store) assertModelKey(ctx context.Context, userID, key, surface string) error {
@@ -195,36 +280,48 @@ func (s *Store) assertModelKey(ctx context.Context, userID, key, surface string)
 	return nil
 }
 
+type modelSurfaceReasoning struct {
+	Mode   string
+	Effort string
+}
+
 type UserLLMPrefs struct {
-	ChatModelKey            string
-	GenerateModelKey        string
-	EditorModelKey          string
-	QuizModelKey            string
-	ChatReasoningMode       string
-	ChatReasoningEffort     string
-	GenerateReasoningMode   string
-	GenerateReasoningEffort string
-	QuizReasoningMode       string
-	QuizReasoningEffort     string
+	ChatModelKey     string
+	GenerateModelKey string
+	EditorModelKey   string
+	QuizModelKey     string
+	reasoning        map[string]modelSurfaceReasoning
 }
 
 func (s *Store) UserLLMPrefs(ctx context.Context, userID string) (UserLLMPrefs, error) {
 	var p UserLLMPrefs
 	err := s.pool.QueryRow(ctx, `
-		SELECT chat_model_key, generate_model_key, editor_model_key, quiz_model_key,
-		       chat_reasoning_mode, chat_reasoning_effort,
-		       generate_reasoning_mode, generate_reasoning_effort,
-		       quiz_reasoning_mode, quiz_reasoning_effort
+		SELECT chat_model_key, generate_model_key, editor_model_key, quiz_model_key
 		  FROM users WHERE id=$1`, userID).Scan(
 		&p.ChatModelKey, &p.GenerateModelKey, &p.EditorModelKey, &p.QuizModelKey,
-		&p.ChatReasoningMode, &p.ChatReasoningEffort,
-		&p.GenerateReasoningMode, &p.GenerateReasoningEffort,
-		&p.QuizReasoningMode, &p.QuizReasoningEffort,
 	)
 	if isNoRows(err) {
 		return p, ErrNotFound
 	}
-	return p, err
+	if err != nil {
+		return p, err
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT model_key, surface, mode, effort
+		  FROM user_model_reasoning WHERE user_id=$1`, userID)
+	if err != nil {
+		return p, err
+	}
+	defer rows.Close()
+	p.reasoning = map[string]modelSurfaceReasoning{}
+	for rows.Next() {
+		var modelKey, surface, mode, effort string
+		if err := rows.Scan(&modelKey, &surface, &mode, &effort); err != nil {
+			return p, err
+		}
+		p.reasoning[modelKey+"\x00"+surface] = modelSurfaceReasoning{Mode: mode, Effort: effort}
+	}
+	return p, rows.Err()
 }
 
 func (p UserLLMPrefs) ModelKey(surface string) string {
@@ -242,15 +339,15 @@ func (p UserLLMPrefs) ModelKey(surface string) string {
 }
 
 func (p UserLLMPrefs) Reasoning(surface string) (mode, effort string) {
-	switch surface {
-	case SurfaceChat:
-		return p.ChatReasoningMode, p.ChatReasoningEffort
-	case SurfaceGenerate:
-		return p.GenerateReasoningMode, p.GenerateReasoningEffort
-	case SurfaceQuiz:
-		return p.QuizReasoningMode, p.QuizReasoningEffort
+	key := p.ModelKey(surface)
+	if key == "" || p.reasoning == nil {
+		return "", ""
 	}
-	return "", ""
+	got, ok := p.reasoning[key+"\x00"+surface]
+	if !ok {
+		return "", ""
+	}
+	return got.Mode, got.Effort
 }
 
 // accountModelPrefs is the set written onto a brand-new user row. The registry
@@ -290,7 +387,9 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 		name = email
 	}
 	if name == "" {
-		name = "User"
+		var locale string
+		_ = s.pool.QueryRow(ctx, `SELECT locale FROM users WHERE id=$1`, id).Scan(&locale)
+		name = copytext.T(locale, copytext.User)
 	}
 	var created bool
 	chatKey, genKey, editorKey, quizKey, err := s.accountModelPrefs(ctx)

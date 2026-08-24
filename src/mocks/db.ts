@@ -155,8 +155,10 @@ export const user: User = {
 
 export const llmCredentials: Record<string, string> = {};
 
-export const userReasoning: Record<string, { effort: string; mode: string }> =
-  {};
+export const userReasoning: Record<
+  string,
+  Record<string, { effort: string; mode: string }>
+> = {};
 
 export const workspaces: Workspace[] = [
   {

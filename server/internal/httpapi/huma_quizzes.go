@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/evonotes/server/internal/copytext"
 	"github.com/evonotes/server/internal/httpapi/apimodel"
 	"github.com/evonotes/server/internal/store"
 )
@@ -97,7 +98,7 @@ func (a *api) createQuiz(ctx context.Context, in *createQuizInput) (*quizOutput,
 	b := in.Body
 	name := b.Name
 	if name == "" {
-		name = "Untitled quiz"
+		name = copytext.T(a.userLocale(ctx, userID(ctx)), copytext.UntitledQuiz)
 	}
 	privacy := b.Privacy
 	if privacy == "" {

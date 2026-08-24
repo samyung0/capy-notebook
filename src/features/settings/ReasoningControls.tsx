@@ -70,7 +70,7 @@ export function ReasoningControls({
           onValueChange={(value) => {
             mutate({ [reasoningField(surface, 'effort')]: value });
           }}
-          value={resolved.effort || spec.efforts[0]}
+          value={resolved.effort || spec.defaultEffort}
         >
           <SelectTrigger aria-label={m.settings_llm_effort()} className="w-34">
             <SelectValue />

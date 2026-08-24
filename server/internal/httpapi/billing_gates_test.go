@@ -105,6 +105,13 @@ func errorCode(t *testing.T, rec *httptest.ResponseRecorder) string {
 	if code, ok := body["code"].(string); ok {
 		return code
 	}
+	if details, ok := body["errors"].([]any); ok && len(details) > 0 {
+		if first, ok := details[0].(map[string]any); ok {
+			if msg, ok := first["message"].(string); ok {
+				return msg
+			}
+		}
+	}
 	return rec.Body.String()
 }
 
@@ -120,7 +127,7 @@ func TestCreditsExhaustedOnChatGenerateEditor(t *testing.T) {
 	}
 
 	gen := doReq(t, fx.handler, http.MethodPost, "/api/workspaces/"+ws+"/generate", fx.actorID,
-		map[string]any{"kind": "quiz", "title": "Credits quiz"})
+		generateBody("quiz", "Credits quiz"))
 	if gen.Code != http.StatusForbidden || errorCode(t, gen) != "llm_credits_exhausted" {
 		t.Fatalf("generate: %d %s", gen.Code, gen.Body.String())
 	}
@@ -224,7 +231,8 @@ func TestUploadRefusesActorCreditsAndOwnerStorageSeparately(t *testing.T) {
 	fx := openBilling(t)
 	body := map[string]any{
 		"name": "notes.pdf", "kind": "pdf", "parseMode": "fast",
-		"sizeBytes": 1024, "contentType": "application/pdf",
+		"captionImages": false,
+		"sizeBytes":     1024, "contentType": "application/pdf",
 	}
 
 	exhaustCredits(t, fx.pool, fx.actorID)

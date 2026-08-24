@@ -106,6 +106,54 @@ func TestRequestBodyValidation(t *testing.T) {
 			path:   "/api/account/deletion",
 			body:   `{"confirmEmail":""}`,
 		},
+		{
+			name:   "generate missing kind",
+			method: http.MethodPost,
+			path:   "/api/workspaces/ws_1/generate",
+			body:   `{"count":1,"levels":["recall"],"title":"t"}`,
+		},
+		{
+			name:   "generate missing count",
+			method: http.MethodPost,
+			path:   "/api/workspaces/ws_1/generate",
+			body:   `{"kind":"quiz","levels":["recall"],"title":"t"}`,
+		},
+		{
+			name:   "generate missing levels",
+			method: http.MethodPost,
+			path:   "/api/workspaces/ws_1/generate",
+			body:   `{"kind":"quiz","count":1,"title":"t"}`,
+		},
+		{
+			name:   "generate count zero",
+			method: http.MethodPost,
+			path:   "/api/workspaces/ws_1/generate",
+			body:   `{"kind":"quiz","count":0,"levels":["recall"],"title":"t"}`,
+		},
+		{
+			name:   "generate invalid level",
+			method: http.MethodPost,
+			path:   "/api/workspaces/ws_1/generate",
+			body:   `{"kind":"quiz","count":1,"levels":["easy"],"title":"t"}`,
+		},
+		{
+			name:   "create material missing kind",
+			method: http.MethodPost,
+			path:   "/api/workspaces/ws_1/materials",
+			body:   `{"title":"n"}`,
+		},
+		{
+			name:   "create discussion omit anchorVersion",
+			method: http.MethodPost,
+			path:   "/api/materials/mat_1/discussions",
+			body:   `{"contentRich":[{"type":"p"}]}`,
+		},
+		{
+			name:   "create discussion anchorVersion zero",
+			method: http.MethodPost,
+			path:   "/api/materials/mat_1/discussions",
+			body:   `{"anchorVersion":0,"contentRich":[{"type":"p"}]}`,
+		},
 	}
 
 	for _, tc := range cases {

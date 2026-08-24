@@ -31,7 +31,6 @@ router = APIRouter(prefix="/plate-ai", tags=["plate-ai"])
 MAX_CONTEXT_CHARS = 200_000
 MAX_INSTRUCTION_CHARS = 16_000
 MAX_HISTORY_CHARS = 32_000
-MAX_OUTPUT_TOKENS = 1_200
 
 
 class UIMessagePart(BaseModel):
@@ -526,7 +525,6 @@ async def _structured_events(
         request,
         [{"role": "user", "content": prompt}],
         model=spec,
-        max_tokens=MAX_OUTPUT_TOKENS,
         temperature=0.2,
     )
     raw = response.choices[0].message.content if response.choices else ""
@@ -606,7 +604,6 @@ async def _text_events(request: Request, prompt: str, spec: Any) -> AsyncIterato
             }
         ],
         model=spec,
-        max_tokens=MAX_OUTPUT_TOKENS,
         temperature=0.7,
     ):
         if await request.is_disconnected():

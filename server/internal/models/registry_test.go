@@ -11,6 +11,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
+const testLLMParams = `{"reasoning":{"canDisable":true,"efforts":["low","high","max"],"defaultMode":"off","defaultEffort":"max"}}`
+
 func openRegistry(t *testing.T) (*pgxpool.Pool, *Registry) {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
@@ -40,7 +42,7 @@ func TestGetLoadsPinnedVersionOnMissAndNeverFallsBack(t *testing.T) {
 			params, surfaces, micros_per_input_token, micros_per_output_token,
 			enabled, is_default_for
 		) VALUES ($1, 7, 'Miss Test', 'deepseek', 'https://example.test', 'miss-model',
-			'{}'::jsonb, ARRAY['chat'], 250, 1000, true, ARRAY[]::text[])`, key)
+			$2::jsonb, ARRAY['chat'], 250, 1000, true, ARRAY[]::text[])`, key, testLLMParams)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +91,7 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 			params, surfaces, micros_per_input_token, micros_per_output_token,
 			enabled, is_default_for
 		) VALUES ('deepseek-flash', 2, 'Flash v2', 'deepseek', 'https://example.test', 'flash-v2',
-			'{}'::jsonb, ARRAY['chat','generate','editor','ingest'], 250, 1000, true, ARRAY['chat'])`)
+			$1::jsonb, ARRAY['chat','generate','editor','ingest'], 250, 1000, true, ARRAY['chat'])`, testLLMParams)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +197,7 @@ func TestEmbeddingRowsAreFrozen(t *testing.T) {
 			params, surfaces, micros_per_input_token, micros_per_output_token,
 			enabled, is_default_for
 		) VALUES ($1, 1, 'Chat Disable', 'deepseek', 'https://example.test', 'chat-disable',
-			'{}'::jsonb, ARRAY['chat'], 250, 1000, true, ARRAY[]::text[])`, key)
+			$2::jsonb, ARRAY['chat'], 250, 1000, true, ARRAY[]::text[])`, key, testLLMParams)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +273,7 @@ func TestOneDefaultPerSurface(t *testing.T) {
 			params, surfaces, micros_per_input_token, micros_per_output_token,
 			enabled, is_default_for
 		) VALUES ($1, 1, 'Dup', 'deepseek', 'https://example.test', 'dup',
-			'{}'::jsonb, ARRAY['chat'], 250, 1000, true, ARRAY['chat'])`, key)
+			$2::jsonb, ARRAY['chat'], 250, 1000, true, ARRAY['chat'])`, key, testLLMParams)
 	if err == nil {
 		t.Fatal("two chat defaults")
 	}
@@ -324,7 +326,7 @@ func TestResolveReasoning(t *testing.T) {
 			"canDisable":    true,
 			"efforts":       []any{"low", "high", "max"},
 			"defaultMode":   "off",
-			"defaultEffort": "high",
+			"defaultEffort": "max",
 		},
 	}}
 	mode, effort := cfg.ResolveReasoning("", "")
@@ -336,8 +338,19 @@ func TestResolveReasoning(t *testing.T) {
 		t.Fatalf("user override: %s %s", mode, effort)
 	}
 	mode, effort = cfg.ResolveReasoning("on", "medium")
-	if mode != "on" || effort != "high" {
-		t.Fatalf("invalid effort clamps: %s %s", mode, effort)
+	if mode != "on" || effort != "max" {
+		t.Fatalf("invalid effort uses catalog default: %s %s", mode, effort)
+	}
+	noDefault := Config{Params: map[string]any{
+		"reasoning": map[string]any{
+			"canDisable":  true,
+			"efforts":     []any{"low", "high", "max"},
+			"defaultMode": "on",
+		},
+	}}
+	mode, effort = noDefault.ResolveReasoning("on", "")
+	if mode != "on" || effort != "" {
+		t.Fatalf("missing defaultEffort must not invent: %s %s", mode, effort)
 	}
 	locked := Config{Params: map[string]any{
 		"reasoning": map[string]any{
@@ -350,5 +363,82 @@ func TestResolveReasoning(t *testing.T) {
 	mode, _ = locked.ResolveReasoning("off", "high")
 	if mode != "on" {
 		t.Fatalf("cannot disable: %s", mode)
+	}
+	empty := Config{Params: map[string]any{
+		"reasoning": map[string]any{
+			"canDisable":  true,
+			"defaultMode": "on",
+		},
+	}}
+	mode, effort = empty.ResolveReasoning("on", "high")
+	if mode != "on" || effort != "" {
+		t.Fatalf("empty efforts must not invent: %s %s", mode, effort)
+	}
+	missing := Config{}
+	mode, effort = missing.ResolveReasoning("", "")
+	if mode != "off" || effort != "" {
+		t.Fatalf("missing reasoning block: %s %s", mode, effort)
+	}
+}
+
+func TestValidateCatalogReasoning(t *testing.T) {
+	ok := map[string]any{
+		"reasoning": map[string]any{
+			"canDisable":    true,
+			"efforts":       []any{"low", "high", "max"},
+			"defaultMode":   "off",
+			"defaultEffort": "max",
+		},
+	}
+	if err := ValidateCatalogReasoning([]string{SurfaceChat}, ok); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateCatalogReasoning([]string{SurfaceEmbedding}, map[string]any{
+		"dimensions": 2560,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateCatalogReasoning([]string{SurfaceChat}, map[string]any{}); err == nil {
+		t.Fatal("llm row without reasoning")
+	}
+	if err := ValidateCatalogReasoning([]string{SurfaceChat}, map[string]any{
+		"reasoning": map[string]any{
+			"canDisable":    true,
+			"efforts":       []any{"low", "high", "max"},
+			"defaultMode":   "off",
+			"defaultEffort": "medium",
+		},
+	}); err == nil {
+		t.Fatal("defaultEffort not in efforts")
+	}
+	if err := ValidateCatalogReasoning([]string{SurfaceVision}, ok); err == nil {
+		t.Fatal("vision row with reasoning")
+	}
+}
+
+func TestCatalogRefusesBrokenReasoning(t *testing.T) {
+	pool, _ := openRegistry(t)
+	ctx := context.Background()
+	key := fmt.Sprintf("bad-reason-%d", time.Now().UnixNano())
+	_, err := pool.Exec(ctx, `
+		INSERT INTO model_configs (
+			model_key, version, display_name, provider_slug, base_url, provider_model_id,
+			params, surfaces, micros_per_input_token, micros_per_output_token,
+			enabled, is_default_for
+		) VALUES ($1, 1, 'Bad', 'deepseek', 'https://example.test', 'bad',
+			'{}'::jsonb, ARRAY['chat'], 250, 1000, true, ARRAY[]::text[])`, key)
+	if err == nil {
+		t.Fatal("chat row without reasoning")
+	}
+	_, err = pool.Exec(ctx, `
+		INSERT INTO model_configs (
+			model_key, version, display_name, provider_slug, base_url, provider_model_id,
+			params, surfaces, micros_per_input_token, micros_per_output_token,
+			enabled, is_default_for
+		) VALUES ($1, 1, 'Bad Default', 'deepseek', 'https://example.test', 'bad-default',
+			'{"reasoning":{"canDisable":true,"efforts":["low","high","max"],"defaultMode":"off","defaultEffort":"medium"}}'::jsonb,
+			ARRAY['chat'], 250, 1000, true, ARRAY[]::text[])`, key)
+	if err == nil {
+		t.Fatal("defaultEffort not in efforts")
 	}
 }

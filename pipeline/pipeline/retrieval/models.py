@@ -76,7 +76,13 @@ def _raise_user_key(exc: BaseException) -> None:
 _clients: dict[str, AsyncOpenAI] = {}
 
 _QUIZ_GRADE_TOKENS = 80
-_ANTHROPIC_BUDGETS = {"low": 2048, "medium": 8192, "high": 16384}
+_ANTHROPIC_BUDGETS = {
+    "low": 2048,
+    "medium": 8192,
+    "high": 16384,
+    "xhigh": 32768,
+    "max": 65536,
+}
 
 
 def _client_cache_key(
@@ -121,9 +127,9 @@ def _effort_for(spec: ModelConfig, effort: str) -> str:
     if effort and effort in allowed:
         return effort
     fallback = spec.reasoning_default_effort()
-    if fallback in allowed:
+    if fallback and fallback in allowed:
         return fallback
-    return allowed[0] if allowed else effort
+    return ""
 
 
 def _resolve_reasoning_mode(spec: ModelConfig) -> str:
@@ -161,7 +167,11 @@ def _apply_reasoning(
         if kwargs.get("tools"):
             effort = "none"
         elif mode != "off":
-            effort = effort or "medium"
+            if not effort:
+                raise registry.RegistryError(
+                    f"{spec.model_key} v{spec.version} reasoning is on but "
+                    "the catalog lists no usable effort"
+                )
         else:
             effort = "none"
         kwargs["reasoning_effort"] = effort
@@ -169,24 +179,35 @@ def _apply_reasoning(
         return
     if slug == "deepseek":
         extra["thinking"] = {"type": "disabled" if mode == "off" else "enabled"}
-        if mode == "on" and effort:
+        if mode == "on":
+            if not effort:
+                raise registry.RegistryError(
+                    f"{spec.model_key} v{spec.version} reasoning is on but "
+                    "the catalog lists no usable effort"
+                )
             kwargs["reasoning_effort"] = effort
         kwargs["extra_body"] = extra
         return
     if slug == "anthropic":
         kwargs.pop("temperature", None)
-        if spec.reasoning_style() == "budget":
-            if mode == "off":
-                extra["thinking"] = {"type": "disabled"}
-            else:
-                extra["thinking"] = {
-                    "type": "enabled",
-                    "budget_tokens": _ANTHROPIC_BUDGETS.get(effort, 8192),
-                }
+        if mode == "off":
+            extra["thinking"] = {"type": "disabled"}
+        elif not effort:
+            raise registry.RegistryError(
+                f"{spec.model_key} v{spec.version} reasoning is on but "
+                "the catalog lists no usable effort"
+            )
+        elif spec.reasoning_style() == "budget":
+            budget = _ANTHROPIC_BUDGETS.get(effort)
+            if budget is None:
+                raise registry.RegistryError(
+                    f"{spec.model_key} v{spec.version} has no thinking "
+                    f"budget for effort {effort!r}"
+                )
+            extra["thinking"] = {"type": "enabled", "budget_tokens": budget}
         else:
-            extra["thinking"] = {"type": "disabled" if mode == "off" else "adaptive"}
-            if mode == "on" and effort:
-                extra["output_config"] = {"effort": effort}
+            extra["thinking"] = {"type": "adaptive"}
+            extra["output_config"] = {"effort": effort}
         kwargs["extra_body"] = extra
 
 

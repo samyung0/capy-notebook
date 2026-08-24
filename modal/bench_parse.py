@@ -12,7 +12,7 @@ which lane (digital vs ocr) each job took.
     python modal/bench_parse.py --jobs 8 --parse-method txt --file ...
     python modal/bench_parse.py --sweep 1,2,4,6,8 --parse-method txt --file ...
 
-Needs ``requests``. URL/token from env (MODAL_FAST_PARSE_URL or MODAL_PARSE_URL /
+Needs ``requests``. URL/token from env (MODAL_FAST_PARSE_URL /
 MODAL_PARSE_TOKEN) or flags.
 
 To measure *one* box, keep N <= that box's max_inputs. Extra concurrent HTTP
@@ -40,11 +40,7 @@ def _file_parse_url(url: str) -> str:
 
 
 def _parse_url(args: argparse.Namespace) -> str:
-    url = (
-        args.url
-        or os.environ.get("MODAL_FAST_PARSE_URL", "")
-        or os.environ.get("MODAL_PARSE_URL", "")
-    )
+    url = args.url or os.environ.get("MODAL_FAST_PARSE_URL", "")
     if not url:
         raise SystemExit("no URL: pass --url or set MODAL_FAST_PARSE_URL")
     return _file_parse_url(url)

@@ -10,7 +10,7 @@ import type { UserColor } from './userColor.ts';
 export interface CreateWorkspaceReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  /** User color; defaults to graphite */
+  /** User color */
   color?: UserColor;
   /**
      * Workspace name

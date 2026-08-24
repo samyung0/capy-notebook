@@ -106,9 +106,7 @@ async def test_generate_quiz_normalizes_into_the_runner_shape(
         scope="documents photosynthesis.txt",
         model="deepseek-v4-flash",
     )
-    questions = workflows.normalize_questions(
-        workflows.extract_json(raw), {"easy": "recall", "hard": "analysis"}
-    )
+    questions = workflows.normalize_questions(workflows.extract_json(raw))
 
     assert questions
     assert all(q["id"] and q["level"] for q in questions)

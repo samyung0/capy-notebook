@@ -6,12 +6,10 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"math/big"
 	"net/http"
 	"strings"
 	"sync"
-	"unicode/utf8"
 
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
@@ -98,8 +96,9 @@ type api struct {
 // New builds the full HTTP handler. huma owns every JSON operation (and the
 // live OpenAPI spec at /openapi.yaml + docs at /docs); a handful of endpoints
 // huma can't model — streaming SSE, multipart upload, blob download redirects,
-// webhooks, and the pipeline chat/generate passthrough — stay on raw chi and
-// are intentionally absent from the spec.
+// webhooks, and the pipeline chat passthrough — stay on raw chi and are
+// intentionally absent from the spec. /api/internal/* stays off Huma so Orval
+// does not generate a browser client for the service-to-service secret.
 func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client, parser, engine string, cfg Config) http.Handler {
 	billing.Init(billing.Config{SecretKey: cfg.StripeSecretKey})
 	a := &api{
@@ -178,18 +177,14 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Get("/api/e2e/emails", a.e2eEmails)
 	}
 	r.Post("/api/workspaces/{id}/sources", a.addSource)
-	r.Post("/api/workspaces/{id}/sources/uploads", a.createSourceUpload)
-	r.Post("/api/workspaces/{id}/sources/uploads/{uploadId}/complete", a.completeSourceUpload)
 	r.Post("/api/workspaces/{id}/editor-assets/uploads", a.reserveEditorAsset)
 	r.Post("/api/workspaces/{id}/editor-assets/uploads/{uploadId}/complete", a.completeEditorAssetUpload)
-	r.Post("/api/workspaces/{id}/sources/import", a.importSources)
 	r.Get("/api/workspaces/{id}/ingest-events", a.ingestEvents)
 	r.Get("/api/editor-assets/{assetId}/resolve", a.resolveEditorAsset)
 	r.Post("/api/workspaces/{id}/chat/stream", a.chatStream)
 	r.Post("/api/workspaces/{id}/complete/stream", a.completeStream)
 	r.Post("/api/workspaces/{id}/ai/command", a.aiCommand)
 	r.Post("/api/workspaces/{id}/ai/copilot", a.aiCopilot)
-	r.Post("/api/workspaces/{id}/generate", a.generate)
 	if cfg.PipelineSecret != "" {
 		r.Post("/api/internal/materials", a.internalCreateMaterial)
 	}
@@ -427,7 +422,7 @@ func (a *api) addSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if b.Kind == "" {
-		b.Kind = "pdf"
+		b.Kind = kindFromName(b.Name)
 	}
 	res, err := a.s.AddSource(r.Context(), id(r), b.Name, b.Kind, b.ChapterID, int64(randInt(200, 3200)))
 	if err != nil {
@@ -525,7 +520,6 @@ func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 		return
 	}
-	parseMode = sourceupload.CanonicalParseMode(parseMode)
 	captionImages := sourceupload.NormalizeCaptionImages(kind, parseMode, r.FormValue("captionImages") == "true")
 
 	if sourceupload.NeedsIngestJob(kind, parseMode) {
@@ -603,410 +597,4 @@ func contentType(kind string) string {
 	default:
 		return "application/octet-stream"
 	}
-}
-
-/* -------------------------------------------------------------- generation
-
-   Kept on raw chi because the pipeline path is a passthrough of arbitrary JSON
-   and generate is polymorphic. */
-
-type generateOpts struct {
-	Kind         store.MaterialKind `json:"kind"`
-	Length       string             `json:"length"`
-	Format       string             `json:"format"`
-	Count        int                `json:"count"`
-	Style        string             `json:"style"`
-	Types        []string           `json:"types"`
-	Levels       []string           `json:"levels"`      // cognitive levels: recall|application|analysis
-	Difficulty   []string           `json:"difficulty"`  // legacy alias, still accepted
-	Chapters     []string           `json:"chapters"`    // chapter ids; resolved to files + names in resolveScope
-	FileIds      []string           `json:"fileIds"`     // file-scoped retrieval filtering
-	Detail       string             `json:"detail"`      // mindmap: brief|standard|detailed
-	DiagramType  string             `json:"diagramType"` // diagram: auto|flowchart|sequence|class|state|er
-	TimeLimitMin *int               `json:"timeLimitMin"`
-	Title        string             `json:"title"`
-}
-
-// cognitiveLevels resolves the requested levels, accepting the legacy
-// difficulty field and mapping its values onto the new labels.
-func (o generateOpts) cognitiveLevels() []string {
-	if len(o.Levels) > 0 {
-		return o.Levels
-	}
-	if len(o.Difficulty) > 0 {
-		mapped := make([]string, 0, len(o.Difficulty))
-		for _, d := range o.Difficulty {
-			switch d {
-			case "easy":
-				mapped = append(mapped, "recall")
-			case "hard":
-				mapped = append(mapped, "analysis")
-			default:
-				mapped = append(mapped, "application")
-			}
-		}
-		return mapped
-	}
-	return []string{"recall", "application"}
-}
-
-const generateTitleMaxRunes = 200
-
-func normalizeGenerateTitle(title string) (string, error) {
-	title = strings.TrimSpace(title)
-	if title == "" {
-		return "", errors.New("title is required")
-	}
-	if utf8.RuneCountInString(title) > generateTitleMaxRunes {
-		return "", errors.New("title must be at most 200 characters")
-	}
-	return title, nil
-}
-
-func (a *api) generate(w http.ResponseWriter, r *http.Request) {
-	if !a.assertWS(w, r, id(r)) {
-		return
-	}
-	userID := uid(r)
-	wsID := id(r)
-	llm, err := a.resolveLLM(r.Context(), userID, models.SurfaceGenerate)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	llmRates := llm.Rates
-	embed, err := a.resolveEmbedding(r.Context(), wsID)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	// Model spend is the actor's; the material it produces is the workspace
-	// owner's and is gated by gateStorageTx further down.
-	charge, err := a.beginSpend(r.Context(), userID, wsID, store.SurfaceGenerate, llm.PaidBy)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	// Every path below either settles with measured usage or falls through to
-	// this release, so a rejected request never keeps budget held.
-	defer charge.release(r.Context())
-
-	var opts generateOpts
-	if err := decode(r, &opts); err != nil {
-		a.fail(w, err)
-		return
-	}
-	switch opts.Kind {
-	case store.MaterialFlashcards, store.MaterialQuiz, store.MaterialMindmap, store.MaterialDiagram:
-	default:
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "unsupported generate kind"})
-		return
-	}
-	if opts.Count < 0 || opts.Count > 50 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "count must be between 0 and 50"})
-		return
-	}
-	title, err := normalizeGenerateTitle(opts.Title)
-	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
-		return
-	}
-	opts.Title = title
-	taken, err := a.s.MaterialTitleTaken(r.Context(), wsID, title)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	if taken {
-		a.fail(w, store.ErrTitleTaken)
-		return
-	}
-	wsName := "Workspace"
-	if ws, err := a.s.GetWorkspaceShared(r.Context(), wsID); err == nil {
-		wsName = ws.Name
-	}
-
-	if a.pipe == nil {
-		a.fail(w, errAIUnavailable)
-		return
-	}
-	payload, usage, err := a.generateViaPipe(r.Context(), userID, wsID, wsName, &opts, llm)
-	if err != nil {
-		a.fail(w, err)
-		return
-	}
-	charge.settle(r.Context(), usage.events(userID, wsID, store.SurfaceGenerate, llmRates, embed.Rates, llm.PaidBy)...)
-	writeJSON(w, 200, payload)
-}
-
-// resolveScope maps the requested generation scope into concrete file ids for
-// retrieval filtering, file-name snapshots for material provenance, and
-// chapter-name snapshots for display and the pipeline's scope hint.
-//
-// Chapters arrive as ids (stable across rename), matched by id against the
-// workspace's chapter records; their member files union with any explicitly
-// selected file ids. Requested order is preserved for names. An empty fileIDs
-// result means "whole workspace" (no filtering).
-func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts) (fileIDs, fileNames, chapterNames []string) {
-	seen := map[string]struct{}{}
-	fileIDs = make([]string, 0, len(opts.FileIds))
-	fileNamesByID := map[string]string{}
-	if files, err := a.s.ListFiles(ctx, "", wsID); err == nil {
-		for _, file := range files {
-			fileNamesByID[file.ID] = file.Name
-		}
-	}
-	add := func(id string) {
-		if id == "" {
-			return
-		}
-		if _, ok := seen[id]; ok {
-			return
-		}
-		seen[id] = struct{}{}
-		fileIDs = append(fileIDs, id)
-	}
-	for _, id := range opts.FileIds {
-		add(id)
-	}
-	if len(opts.Chapters) > 0 {
-		if chapters, err := a.s.ListChapters(ctx, wsID); err == nil {
-			byID := make(map[string]store.Chapter, len(chapters))
-			for _, ch := range chapters {
-				byID[ch.ID] = ch
-			}
-			for _, id := range opts.Chapters {
-				ch, ok := byID[id]
-				if !ok {
-					continue
-				}
-				chapterNames = append(chapterNames, ch.Name)
-				for _, fid := range ch.FileIDs {
-					add(fid)
-				}
-			}
-		}
-	}
-	fileNames = make([]string, 0, len(fileIDs))
-	for _, id := range fileIDs {
-		if name, ok := fileNamesByID[id]; ok {
-			fileNames = append(fileNames, name)
-		}
-	}
-	return fileIDs, fileNames, chapterNames
-}
-
-// generateViaPipe asks the retrieval service to produce grounded output, then
-// persists it (quiz -> quizzes, flashcards -> deck+cards, mindmap/diagram ->
-// materials) so every artifact shows up in the workspace materials list.
-func (a *api) generateViaPipe(
-	ctx context.Context,
-	userID, wsID, wsName string,
-	opts *generateOpts,
-	llm resolvedLLM,
-) (any, pipeUsage, error) {
-	fileIDs, fileNames, chapterNames := a.resolveScope(ctx, wsID, opts)
-	body := map[string]any{
-		"workspaceId": wsID, "kind": opts.Kind, "length": opts.Length, "format": opts.Format,
-		"count": opts.Count, "style": opts.Style, "types": opts.Types, "levels": opts.cognitiveLevels(),
-		"chapters": chapterNames, "fileIds": fileIDs,
-		"detail": opts.Detail, "diagramType": opts.DiagramType, "timeLimitMin": opts.TimeLimitMin,
-		"locale": a.userLocale(ctx, userID),
-	}
-	llm.attach(body)
-	var usage pipeUsage
-	raw, err := a.pipe.PostRaw(ctx, "/generate", body)
-	if err != nil {
-		if mapped := pipelineLLMError(err); mapped != nil {
-			return nil, usage, mapped
-		}
-		if mapped := pipelineGenerateError(err); mapped != nil {
-			return nil, usage, mapped
-		}
-		return nil, usage, fmt.Errorf("%w: %v", errAIUnavailable, err)
-	}
-	usage = usageFrom(raw)
-	var head struct {
-		Kind string `json:"kind"`
-	}
-	if json.Unmarshal(raw, &head) != nil {
-		return nil, usage, fmt.Errorf("%w: invalid generate response", errAIUnavailable)
-	}
-	switch head.Kind {
-	case "quiz":
-		var qp struct {
-			Name         string          `json:"name"`
-			Chapters     []string        `json:"chapters"`
-			Questions    json.RawMessage `json:"questions"`
-			TimeLimitMin *int            `json:"timeLimitMin"`
-		}
-		_ = json.Unmarshal(raw, &qp)
-		name := opts.Title
-		chapters := qp.Chapters
-		if chapters == nil {
-			chapters = chapterNames
-		}
-		qs := strings.TrimSpace(string(qp.Questions))
-		if qs == "" || qs == "[]" || qs == "null" {
-			return nil, usage, errGenerateEmpty
-		}
-		quiz, err := a.s.CreateQuiz(ctx, store.Quiz{
-			UserID: userID, Name: name, WorkspaceID: wsID, WorkspaceName: wsName, Chapters: chapters,
-			Questions: qp.Questions, Privacy: "private", TimeLimitMin: qp.TimeLimitMin,
-		})
-		if err != nil {
-			return nil, usage, err
-		}
-		return map[string]any{"kind": "quiz", "quiz": quiz}, usage, nil
-	case "flashcards":
-		var fp struct {
-			Cards []struct {
-				Front string `json:"front"`
-				Back  string `json:"back"`
-			} `json:"cards"`
-		}
-		_ = json.Unmarshal(raw, &fp)
-		fronts := make([][2]string, 0, len(fp.Cards))
-		for _, c := range fp.Cards {
-			fronts = append(fronts, [2]string{c.Front, c.Back})
-		}
-		res, err := a.persistDeck(ctx, userID, wsID, opts.Title, fronts)
-		if err != nil {
-			return nil, usage, err
-		}
-		return res, usage, nil
-	case "mindmap", "diagram":
-		var mp struct {
-			Title   string `json:"title"`
-			Content string `json:"content"`
-		}
-		_ = json.Unmarshal(raw, &mp)
-		res, err := a.persistMaterial(ctx, userID, wsID, wsName, store.MaterialKind(head.Kind), opts.Title, mp.Content, chapterNames, fileNames)
-		if err != nil {
-			return nil, usage, err
-		}
-		return res, usage, nil
-	}
-	var m map[string]any
-	if json.Unmarshal(raw, &m) != nil {
-		return nil, usage, fmt.Errorf("%w: invalid generate response", errAIUnavailable)
-	}
-	return m, usage, nil
-}
-
-// persistDeck creates a real deck + cards so generated flashcards appear in the
-// library and the workspace materials list.
-func (a *api) persistDeck(ctx context.Context, userID, wsID, title string, cards [][2]string) (any, error) {
-	if len(cards) == 0 {
-		return nil, errGenerateEmpty
-	}
-	deck, err := a.s.CreateDeckWithCards(
-		ctx, userID, title, "green", wsID, cards,
-	)
-	if err != nil {
-		return nil, err
-	}
-	out, err := a.s.ListCards(ctx, deck.ID)
-	if err != nil {
-		return nil, err
-	}
-	deck, _ = a.s.GetDeck(ctx, deck.ID)
-	return map[string]any{"kind": "flashcards", "deck": deck, "cards": out}, nil
-}
-
-// persistMaterial stores a generated mindmap/diagram markdown document.
-// Scope values are immutable display-name snapshots, not entity references.
-//
-// userID is the author. Without it CreateMaterial falls back to the workspace
-// owner, which records a generation an editor ran as the owner's own work.
-func (a *api) persistMaterial(ctx context.Context, userID, wsID, wsName string, kind store.MaterialKind, title, content string, chapterNames, fileNames []string) (any, error) {
-	if strings.TrimSpace(content) == "" {
-		return nil, errGenerateEmpty
-	}
-	mt, err := a.s.CreateMaterial(ctx, store.Material{
-		CreatedBy: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: kind, Title: title,
-		Content: content, ScopeChapters: chapterNames, ScopeFileNames: fileNames, Privacy: "private",
-	})
-	if err != nil {
-		return nil, err
-	}
-	return map[string]any{"kind": kind, "material": mt}, nil
-}
-
-// buildQuestions mirrors the generator in src/mocks/handlers.ts so generated
-// quizzes match the QuestionRunner's expected shapes for every type. Free-text
-// arrays (options/accepted/items) are object-wrapped ({value}) so the frontend
-// can bind them with react-hook-form useFieldArray.
-func buildQuestions(opts generateOpts) json.RawMessage {
-	types := opts.Types
-	if len(types) == 0 {
-		types = []string{"mcq"}
-	}
-	levels := opts.cognitiveLevels()
-	n := opts.Count
-	if n <= 0 {
-		n = 5
-	}
-	arr := make([]map[string]any, 0, n)
-	for i := 0; i < n; i++ {
-		t := types[i%len(types)]
-		lvl := levels[i%len(levels)]
-		q := map[string]any{"id": randID("q"), "type": t, "level": lvl, "prompt": fmt.Sprintf("Generated %s question %d?", t, i+1)}
-		switch t {
-		case "boolean":
-			q["correct"] = true
-			q["explanation"] = "This statement is true based on your sources."
-		case "short":
-			q["accepted"] = wrapValues("answer")
-			q["explanation"] = "The accepted answer follows from the source material."
-		case "open":
-			q["accepted"] = wrapValues("A full-mark answer covers the key idea.")
-			q["hints"] = wrapValues("Look at the source explanation.")
-			q["rubrics"] = wrapValues("Names the key mechanism", "Links it to the outcome")
-			q["points"] = 1
-		case "ordering":
-			q["items"] = wrapValues("First", "Second", "Third")
-		case "matching":
-			q["pairs"] = []map[string]string{{"left": "A", "right": "1"}, {"left": "B", "right": "2"}}
-		case "multi":
-			q["options"] = wrapOptions(
-				[2]string{"A", "Correct — supported by the material."},
-				[2]string{"B", "Incorrect for this question."},
-				[2]string{"C", "Correct — also supported."},
-				[2]string{"D", "Incorrect for this question."},
-			)
-			q["correct"] = []int{0, 2}
-		default:
-			q["type"] = "mcq"
-			q["options"] = wrapOptions(
-				[2]string{"A", "Correct — this is the best answer."},
-				[2]string{"B", "Incorrect — a common distractor."},
-				[2]string{"C", "Incorrect for this question."},
-				[2]string{"D", "Incorrect for this question."},
-			)
-			q["correct"] = []int{0}
-		}
-		arr = append(arr, q)
-	}
-	b, _ := json.Marshal(arr)
-	return b
-}
-
-// wrapValues shapes bare strings as [{value}] for useFieldArray compatibility.
-func wrapValues(ss ...string) []map[string]string {
-	out := make([]map[string]string, len(ss))
-	for i, s := range ss {
-		out[i] = map[string]string{"value": s}
-	}
-	return out
-}
-
-// wrapOptions shapes [value, explanation] pairs as [{value, explanation}] so
-// mcq/multi options carry per-option explanations (why each is right/wrong).
-func wrapOptions(pairs ...[2]string) []map[string]string {
-	out := make([]map[string]string, len(pairs))
-	for i, p := range pairs {
-		out[i] = map[string]string{"value": p[0], "explanation": p[1]}
-	}
-	return out
 }

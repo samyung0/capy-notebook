@@ -341,18 +341,17 @@ export type GenerateKind = Exclude<MaterialKind, 'note'>;
 
 export interface GenerateScope {
   chapters: string[]; // chapter ids
+  count: number;
   fileIds: string[]; // file ids
+  levels: CognitiveLevel[];
   title: string;
 }
 export interface GenerateFlashcardsOptions extends GenerateScope {
-  count: number;
   kind: 'flashcards';
   style: 'term-def' | 'qa' | 'cloze';
 }
 export interface GenerateQuizOptions extends GenerateScope {
-  count: number;
   kind: 'quiz';
-  levels: CognitiveLevel[];
   timeLimitMin?: number;
   types: QuestionType[];
 }

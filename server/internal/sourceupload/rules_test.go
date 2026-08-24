@@ -35,7 +35,7 @@ func TestValidate(t *testing.T) {
 		wantError string
 	}{
 		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: 1},
-		{name: "notes.pdf", kind: "pdf", mode: ParseModeAccurate, size: 1},
+		{name: "notes.pdf", kind: "pdf", mode: "accurate", size: 1, wantError: "unknown parse mode"},
 		{name: "script.py", kind: "txt", mode: ParseModeNone, size: 1},
 		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: FreeSourceMaxBytes + 1, wantError: "10 MB"},
 		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: ProSourceMaxBytes + 1, maxBytes: ProSourceMaxBytes, wantError: "30 MB"},
@@ -124,7 +124,7 @@ func TestNormalizeCaptionImages(t *testing.T) {
 		want       bool
 	}{
 		{kind: "pdf", mode: ParseModeFast, requested: true, want: true},
-		{kind: "pdf", mode: ParseModeAccurate, requested: false, want: false},
+		{kind: "pdf", mode: ParseModeFast, requested: false, want: false},
 		// Nothing to caption: no parse ran, or the source has no figures.
 		{kind: "pdf", mode: ParseModeNone, requested: true, want: false},
 		{kind: "txt", mode: ParseModeFast, requested: true, want: false},
@@ -135,18 +135,6 @@ func TestNormalizeCaptionImages(t *testing.T) {
 			t.Errorf("NormalizeCaptionImages(%q, %q, %t) = %t, want %t",
 				test.kind, test.mode, test.requested, got, test.want)
 		}
-	}
-}
-
-func TestCanonicalParseMode(t *testing.T) {
-	if got := CanonicalParseMode(ParseModeAccurate); got != ParseModeFast {
-		t.Fatalf("accurate alias = %q, want fast", got)
-	}
-	if got := CanonicalParseMode("advanced"); got != ParseModeFast {
-		t.Fatalf("advanced alias = %q, want fast", got)
-	}
-	if got := CanonicalParseMode(ParseModeFast); got != ParseModeFast {
-		t.Fatalf("fast stayed %q", got)
 	}
 }
 

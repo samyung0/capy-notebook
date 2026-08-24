@@ -10,7 +10,7 @@ import (
 )
 
 type listTagsInput struct {
-	Kind string `query:"kind" doc:"Tag kind: workspace | quiz | card" default:"workspace"`
+	Kind string `query:"kind" doc:"Tag kind: workspace | quiz | card"`
 }
 type tagsOutput struct {
 	Body []apimodel.Tag `nullable:"false"`
@@ -22,11 +22,10 @@ func (a *api) registerTags(api huma.API) {
 }
 
 func (a *api) listTags(ctx context.Context, in *listTagsInput) (*tagsOutput, error) {
-	kind := in.Kind
-	if kind == "" {
-		kind = "workspace"
+	if in.Kind == "" {
+		return &tagsOutput{Body: []apimodel.Tag{}}, nil
 	}
-	res, err := a.s.ListTags(ctx, userID(ctx), kind)
+	res, err := a.s.ListTags(ctx, userID(ctx), in.Kind)
 	if err != nil {
 		return nil, hErr(err)
 	}

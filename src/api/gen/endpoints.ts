@@ -28,6 +28,7 @@ import type {
   CreateEventReq,
   CreateMaterialReq,
   CreateQuizReq,
+  CreateSourceUploadReq,
   CreateWorkspaceInviteReq,
   CreateWorkspaceReq,
   Deck,
@@ -37,7 +38,11 @@ import type {
   Event,
   File,
   Flashcard,
+  Generate200,
+  GenerateReq,
   GetSourceUploadPolicyParams,
+  ImportSourcesReq,
+  IngestSlots,
   IntegrationsStatus,
   LLMCredentialsResponse,
   Label,
@@ -71,6 +76,7 @@ import type {
   SearchResult,
   SetModelPrefsReq,
   SourceUploadPolicy,
+  SourceUploadReservation,
   Tag,
   Task,
   TransferWorkspaceReq,
@@ -2794,6 +2800,56 @@ export const getMe = async ( options?: RequestInit): Promise<getMeResponse> => {
 
 
 
+export type getIngestSlotsResponse200 = {
+  data: IngestSlots
+  status: 200
+}
+
+export type getIngestSlotsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getIngestSlotsResponseSuccess = (getIngestSlotsResponse200) & {
+  headers: Headers;
+};
+export type getIngestSlotsResponseError = (getIngestSlotsResponseDefault) & {
+  headers: Headers;
+};
+
+export type getIngestSlotsResponse = (getIngestSlotsResponseSuccess | getIngestSlotsResponseError)
+
+export const getGetIngestSlotsUrl = () => {
+
+
+
+
+  return `/api/me/ingest-slots`
+}
+
+/**
+ * @summary Actor ingest slot remaining
+ */
+export const getIngestSlots = async ( options?: RequestInit): Promise<getIngestSlotsResponse> => {
+
+  const res = await fetch(getGetIngestSlotsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getIngestSlotsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getIngestSlotsResponse
+}
+
+
+
 export type listLLMCredentialsResponse200 = {
   data: LLMCredentialsResponse
   status: 200
@@ -5195,6 +5251,57 @@ export const listWorkspaceFiles = async (id: string, options?: RequestInit): Pro
 
 
 
+export type generateResponse200 = {
+  data: Generate200
+  status: 200
+}
+
+export type generateResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type generateResponseSuccess = (generateResponse200) & {
+  headers: Headers;
+};
+export type generateResponseError = (generateResponseDefault) & {
+  headers: Headers;
+};
+
+export type generateResponse = (generateResponseSuccess | generateResponseError)
+
+export const getGenerateUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/generate`
+}
+
+/**
+ * @summary Generate a quiz, deck, mindmap, or diagram
+ */
+export const generate = async (id: string,
+    generateReq: NonReadonly<GenerateReq>, options?: RequestInit): Promise<generateResponse> => {
+
+  const res = await fetch(getGenerateUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(generateReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: generateResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as generateResponse
+}
+
+
+
 export type createWorkspaceInviteResponse202 = {
   data: void
   status: 202
@@ -5549,6 +5656,160 @@ export const updateWorkspaceSharing = async (id: string,
 
   const data: updateWorkspaceSharingResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateWorkspaceSharingResponse
+}
+
+
+
+export type importSourcesResponse201 = {
+  data: File[]
+  status: 201
+}
+
+export type importSourcesResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type importSourcesResponseSuccess = (importSourcesResponse201) & {
+  headers: Headers;
+};
+export type importSourcesResponseError = (importSourcesResponseDefault) & {
+  headers: Headers;
+};
+
+export type importSourcesResponse = (importSourcesResponseSuccess | importSourcesResponseError)
+
+export const getImportSourcesUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/sources/import`
+}
+
+/**
+ * @summary Import sources from a connected drive
+ */
+export const importSources = async (id: string,
+    importSourcesReq: NonReadonly<ImportSourcesReq>, options?: RequestInit): Promise<importSourcesResponse> => {
+
+  const res = await fetch(getImportSourcesUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(importSourcesReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: importSourcesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as importSourcesResponse
+}
+
+
+
+export type createSourceUploadResponse201 = {
+  data: SourceUploadReservation
+  status: 201
+}
+
+export type createSourceUploadResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createSourceUploadResponseSuccess = (createSourceUploadResponse201) & {
+  headers: Headers;
+};
+export type createSourceUploadResponseError = (createSourceUploadResponseDefault) & {
+  headers: Headers;
+};
+
+export type createSourceUploadResponse = (createSourceUploadResponseSuccess | createSourceUploadResponseError)
+
+export const getCreateSourceUploadUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/sources/uploads`
+}
+
+/**
+ * @summary Reserve a direct source upload
+ */
+export const createSourceUpload = async (id: string,
+    createSourceUploadReq: NonReadonly<CreateSourceUploadReq>, options?: RequestInit): Promise<createSourceUploadResponse> => {
+
+  const res = await fetch(getCreateSourceUploadUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createSourceUploadReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createSourceUploadResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createSourceUploadResponse
+}
+
+
+
+export type completeSourceUploadResponse201 = {
+  data: File
+  status: 201
+}
+
+export type completeSourceUploadResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type completeSourceUploadResponseSuccess = (completeSourceUploadResponse201) & {
+  headers: Headers;
+};
+export type completeSourceUploadResponseError = (completeSourceUploadResponseDefault) & {
+  headers: Headers;
+};
+
+export type completeSourceUploadResponse = (completeSourceUploadResponseSuccess | completeSourceUploadResponseError)
+
+export const getCompleteSourceUploadUrl = (id: string,
+    uploadId: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/sources/uploads/${uploadId}/complete`
+}
+
+/**
+ * @summary Complete a direct source upload
+ */
+export const completeSourceUpload = async (id: string,
+    uploadId: string, options?: RequestInit): Promise<completeSourceUploadResponse> => {
+
+  const res = await fetch(getCompleteSourceUploadUrl(id,uploadId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: completeSourceUploadResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as completeSourceUploadResponse
 }
 
 

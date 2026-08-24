@@ -68,10 +68,12 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	wsName := "Workspace"
-	if ws, err := a.s.GetWorkspaceShared(ctx, req.WorkspaceID); err == nil {
-		wsName = ws.Name
+	ws, err := a.s.GetWorkspaceShared(ctx, req.WorkspaceID)
+	if err != nil {
+		a.fail(w, err)
+		return
 	}
+	wsName := ws.Name
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		title = wsName + " " + req.Kind

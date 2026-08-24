@@ -104,6 +104,14 @@ def test_an_unknown_route_is_rejected():
         modal_parser.artifact_identity(_descriptor(route="turbo"))
 
 
+def test_a_missing_route_is_rejected_rather_than_read_as_fast():
+    """A blank route must not address (and bill) a parser nobody picked."""
+    with pytest.raises(modal_parser.ModalParseError, match="unknown parse route"):
+        modal_parser.artifact_identity({"source_sha256": "aa" * 32})
+    with pytest.raises(modal_parser.ModalParseError, match="unknown parse route"):
+        modal_parser.artifact_identity(_descriptor(route=""))
+
+
 # ------------------------------------------------------------- request path
 
 
@@ -119,9 +127,6 @@ class _Resp:
 
 @pytest.fixture
 def modal_urls(monkeypatch):
-    monkeypatch.setattr(
-        modal_parser.cfg, "modal_parse_url", "https://legacy.modal.test/file_parse"
-    )
     monkeypatch.setattr(
         modal_parser.cfg, "modal_fast_parse_url", "https://fast.modal.test/file_parse"
     )
@@ -146,20 +151,10 @@ def test_a_cache_hit_never_calls_modal(monkeypatch, modal_urls):
 
 
 def test_missing_modal_url_is_a_configuration_error(monkeypatch):
-    monkeypatch.setattr(modal_parser.cfg, "modal_parse_url", "")
     monkeypatch.setattr(modal_parser.cfg, "modal_fast_parse_url", "")
 
     with pytest.raises(modal_parser.ModalParseError, match="MODAL_FAST_PARSE_URL"):
         modal_parser._request_artifact(_descriptor(), "doc.pdf")
-
-
-def test_legacy_parse_url_is_used_when_fast_url_is_unset(monkeypatch):
-    monkeypatch.setattr(
-        modal_parser.cfg, "modal_parse_url", "https://legacy.modal.test/file_parse"
-    )
-    monkeypatch.setattr(modal_parser.cfg, "modal_fast_parse_url", "")
-
-    assert modal_parser._endpoint() == "https://legacy.modal.test/file_parse"
 
 
 def _stub_presign(monkeypatch, response) -> list[dict]:
@@ -331,3 +326,10 @@ def test_parse_to_bundle_propagates_a_fresh_artifact_failure(
 
     with pytest.raises(zipfile.BadZipFile):
         modal_parser.parse_to_bundle(_descriptor(), "doc.pdf", tmp_path / "raw")
+
+
+def test_empty_env_is_treated_as_unset(monkeypatch):
+    from pipeline.config import _env
+
+    monkeypatch.setenv("EVO_EMPTY_AS_UNSET", "")
+    assert _env("EVO_EMPTY_AS_UNSET", "fallback") == "fallback"

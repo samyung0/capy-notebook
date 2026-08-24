@@ -208,6 +208,99 @@ def test_reasoning_false_disables_even_when_catalog_cannot():
     assert "output_config" not in kwargs["extra_body"]
 
 
+def test_openai_reasoning_uses_catalog_default_effort():
+    bind_request_llm(reasoning_mode="on")
+    spec = _spec(
+        provider_slug="openai",
+        params={
+            "reasoning": {
+                "canDisable": True,
+                "efforts": ["low", "medium", "high"],
+                "defaultMode": "on",
+                "defaultEffort": "medium",
+            }
+        },
+    )
+    kwargs: dict = {"temperature": 0.3}
+    retrieval_models._apply_reasoning(spec, kwargs)
+    assert kwargs["reasoning_effort"] == "medium"
+
+
+def test_openai_reasoning_empty_catalog_efforts_fails():
+    bind_request_llm(reasoning_mode="on", reasoning_effort="high")
+    spec = _spec(
+        model_key="gpt-broken",
+        provider_slug="openai",
+        params={"reasoning": {"canDisable": True, "defaultMode": "on"}},
+    )
+    with pytest.raises(RegistryError, match="no usable effort"):
+        retrieval_models._apply_reasoning(spec, {"temperature": 0.3})
+
+
+def test_anthropic_budget_fail_closes_without_effort():
+    bind_request_llm(reasoning_mode="on")
+    spec = _spec(
+        model_key="claude-haiku-4-5",
+        provider_slug="anthropic",
+        params={
+            "reasoning": {
+                "canDisable": True,
+                "efforts": ["low", "medium", "high"],
+                "defaultMode": "off",
+                "defaultEffort": "",
+                "style": "budget",
+            }
+        },
+    )
+    with pytest.raises(RegistryError, match="no usable effort"):
+        retrieval_models._apply_reasoning(spec, {"temperature": 0.3})
+
+
+def test_anthropic_budget_maps_xhigh_and_max():
+    bind_request_llm(reasoning_mode="on", reasoning_effort="xhigh")
+    spec = _spec(
+        provider_slug="anthropic",
+        params={
+            "reasoning": {
+                "canDisable": True,
+                "efforts": ["low", "medium", "high", "xhigh", "max"],
+                "defaultMode": "off",
+                "defaultEffort": "medium",
+                "style": "budget",
+            }
+        },
+    )
+    kwargs: dict = {}
+    retrieval_models._apply_reasoning(spec, kwargs)
+    assert kwargs["extra_body"]["thinking"] == {
+        "type": "enabled",
+        "budget_tokens": 32768,
+    }
+    bind_request_llm(reasoning_mode="on", reasoning_effort="max")
+    kwargs = {}
+    retrieval_models._apply_reasoning(spec, kwargs)
+    assert kwargs["extra_body"]["thinking"]["budget_tokens"] == 65536
+
+
+def test_anthropic_budget_unknown_effort_fails():
+    bind_request_llm(reasoning_mode="on", reasoning_effort="ultra")
+    spec = _spec(
+        model_key="claude-broken",
+        provider_slug="anthropic",
+        params={
+            "reasoning": {
+                "canDisable": True,
+                "efforts": ["ultra"],
+                "defaultMode": "on",
+                "defaultEffort": "ultra",
+                "style": "budget",
+            }
+        },
+    )
+    with pytest.raises(RegistryError, match="no thinking budget"):
+        retrieval_models._apply_reasoning(spec, {"temperature": 0.3})
+
+
 def test_openai_reasoning_false_sets_effort_none():
     bind_request_llm(reasoning_mode="on", reasoning_effort="high")
     spec = _spec(

@@ -14,7 +14,7 @@ import (
 // always private; visibility is configured later through the sharing endpoint.
 type CreateWorkspaceReq struct {
 	Name  string          `json:"name" minLength:"1" maxLength:"100" doc:"Workspace name"`
-	Color store.UserColor `json:"color,omitempty" doc:"User color; defaults to graphite"`
+	Color store.UserColor `json:"color,omitempty" default:"graphite" doc:"User color"`
 	Tags  []TagInput      `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5; reuse existing by id or create new by value"`
 }
 
@@ -61,10 +61,9 @@ type UpdateFileReq struct {
 	ChapterID *string `json:"chapterId,omitempty"`
 }
 
-// CreateMaterialReq is the body for POST /api/workspaces/{id}/materials. Used to
-// create a user-authored note (markdown editor). Kind defaults to "note".
+// CreateMaterialReq is the body for POST /api/workspaces/{id}/materials.
 type CreateMaterialReq struct {
-	Kind           store.MaterialKind    `json:"kind,omitempty" doc:"Material kind; defaults to note"`
+	Kind           store.MaterialKind    `json:"kind" doc:"Material kind"`
 	Title          string                `json:"title,omitempty" maxLength:"200"`
 	Content        *materialdoc.Envelope `json:"content,omitempty" doc:"Versioned Plate document"`
 	ScopeChapters  []string              `json:"scopeChapters,omitempty"`
@@ -106,7 +105,7 @@ type CreateDiscussionReq struct {
 	BlockID       *string          `json:"blockId,omitempty"`
 	AnchorStart   []byte           `json:"anchorStart,omitempty" maxLength:"4096"`
 	AnchorEnd     []byte           `json:"anchorEnd,omitempty" maxLength:"4096"`
-	AnchorVersion int              `json:"anchorVersion,omitempty" minimum:"1"`
+	AnchorVersion int              `json:"anchorVersion" minimum:"1"`
 	AnchorQuote   string           `json:"anchorQuote,omitempty" maxLength:"1000"`
 	ContentRich   []map[string]any `json:"contentRich" minItems:"1"`
 }
@@ -151,8 +150,58 @@ type CreateAttemptReq struct {
 
 type CreateDeckReq struct {
 	Name        string          `json:"name,omitempty" maxLength:"200"`
-	Color       store.UserColor `json:"color,omitempty"`
+	Color       store.UserColor `json:"color,omitempty" default:"green"`
 	WorkspaceID string          `json:"workspaceId,omitempty"`
+}
+
+// GenerateReq is the body for POST /api/workspaces/{id}/generate.
+// kind, count, and levels are required. detail, diagramType, and types have
+// explicit defaults so OpenAPI/orval capture them; the handler does not invent
+// values after the gate.
+type GenerateReq struct {
+	Kind         store.GenerateKind           `json:"kind"`
+	Count        int                          `json:"count" minimum:"1" maximum:"50"`
+	Levels       []store.CognitiveLevel       `json:"levels" minItems:"1" nullable:"false"`
+	Types        []store.GenerateQuestionType `json:"types,omitempty" minItems:"1" default:"[\"mcq\"]" nullable:"false"`
+	Detail       store.GenerateDetail         `json:"detail,omitempty" default:"standard"`
+	DiagramType  store.GenerateDiagramType    `json:"diagramType,omitempty" default:"auto"`
+	Length       string                       `json:"length,omitempty"`
+	Format       string                       `json:"format,omitempty"`
+	Style        string                       `json:"style,omitempty"`
+	Chapters     []string                     `json:"chapters,omitempty" nullable:"false"`
+	FileIds      []string                     `json:"fileIds,omitempty" nullable:"false"`
+	TimeLimitMin *int                         `json:"timeLimitMin,omitempty" minimum:"1" maximum:"180"`
+	Title        string                       `json:"title" minLength:"1" maxLength:"200"`
+}
+
+// CreateSourceUploadReq reserves a direct-to-blob PUT. Empty kind and parseMode
+// are inferred from name, then validated. That inference is not a product default.
+type CreateSourceUploadReq struct {
+	Name          string  `json:"name"`
+	Kind          string  `json:"kind,omitempty"`
+	ChapterID     *string `json:"chapterId,omitempty"`
+	ChapterName   string  `json:"chapterName,omitempty"`
+	ParseMode     string  `json:"parseMode,omitempty"`
+	CaptionImages bool    `json:"captionImages"`
+	SizeBytes     int64   `json:"sizeBytes"`
+	ContentType   string  `json:"contentType,omitempty"`
+}
+
+// SourceUploadReservation is the presigned PUT the browser uses after reserve.
+type SourceUploadReservation struct {
+	UploadID  string            `json:"uploadId"`
+	URL       string            `json:"url"`
+	Method    string            `json:"method"`
+	Headers   map[string]string `json:"headers" nullable:"false"`
+	ExpiresAt time.Time         `json:"expiresAt"`
+}
+
+// ImportSourcesReq pulls files from a connected Drive/OneDrive account.
+type ImportSourcesReq struct {
+	Provider  string   `json:"provider" enum:"google,microsoft"`
+	FileIds   []string `json:"fileIds" minItems:"1" nullable:"false"`
+	DriveIds  []string `json:"driveIds,omitempty" nullable:"false"`
+	ChapterID *string  `json:"chapterId,omitempty"`
 }
 
 // UpdateDeckReq is the (partial) body for PATCH /api/decks/{id}.

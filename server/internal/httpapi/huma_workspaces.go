@@ -113,15 +113,11 @@ func (a *api) getWorkspace(ctx context.Context, in *workspaceIDInput) (*workspac
 }
 
 func (a *api) createWorkspace(ctx context.Context, in *createWorkspaceInput) (*workspaceOutput, error) {
-	color := in.Body.Color
-	if color == "" {
-		color = "graphite"
-	}
 	res, err := a.s.CreateWorkspace(
 		ctx,
 		userID(ctx),
 		in.Body.Name,
-		color,
+		in.Body.Color,
 		apimodel.ToTagRefs(in.Body.Tags),
 	)
 	if err != nil {

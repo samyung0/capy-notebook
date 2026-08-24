@@ -190,9 +190,6 @@ func (s *Store) CreateCommentDiscussion(
 	if err := validateRichContent(content); err != nil {
 		return Discussion{}, err
 	}
-	if anchorVersion == 0 {
-		anchorVersion = 1
-	}
 	if err := validateRelativeAnchor(anchorStart, anchorEnd, anchorVersion, anchorQuote); err != nil {
 		return Discussion{}, err
 	}

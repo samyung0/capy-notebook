@@ -8,8 +8,7 @@ it extracted. That block list is what makes page-accurate citations and figure
 captioning possible.
 
 The live route is Marker fast with OCR off, plus RapidOCR (PP-OCRv6) on
-scanned pages. Queued jobs that still say ``accurate`` / ``advanced`` are
-mapped onto this same route.
+scanned pages. Unknown parse modes fail.
 
 Artifacts are addressed by a fingerprint over (source object, etag, size, parse
 options, route, parser version). Re-ingesting the same document — a retry, a
@@ -61,8 +60,17 @@ def parser_version(route: str) -> str:
         raise ModalParseError(f"unknown parse route {route!r}") from None
 
 
+def _route(descriptor: Mapping[str, Any]) -> str:
+    """The route the descriptor was built with.
+
+    A missing route is a caller bug, not a request for the fast route: it would
+    silently price and version the artifact against a parser nobody asked for.
+    """
+    return str(descriptor.get("route") or "")
+
+
 def _endpoint() -> str:
-    url = cfg.modal_fast_parse_url or cfg.modal_parse_url
+    url = cfg.modal_fast_parse_url
     if not url:
         raise ModalParseError("MODAL_FAST_PARSE_URL is not configured")
     return url
@@ -80,7 +88,7 @@ def source_descriptor(
 
 
 def artifact_identity(descriptor: Mapping[str, Any]) -> tuple[str, str]:
-    route = str(descriptor.get("route") or ROUTE_FAST)
+    route = _route(descriptor)
     version = parser_version(route)
     source_sha256 = str(descriptor.get("source_sha256") or "")
     identity = f"{source_sha256}:{cfg.parse_method}:{route}:{version}"
@@ -96,7 +104,7 @@ def _request_artifact(
     Isolated from unzipping so tests can record/replay this single network call —
     the only expensive, non-deterministic step. See pipeline/tests/README.md.
     """
-    route = str(descriptor.get("route") or ROUTE_FAST)
+    route = _route(descriptor)
     version = parser_version(route)
     endpoint = _endpoint()
 
@@ -207,7 +215,7 @@ def parse_to_bundle(
 
     Blocking (requests + file IO); call via ``asyncio.to_thread``.
     """
-    version = parser_version(str(descriptor.get("route") or ROUTE_FAST))
+    version = parser_version(_route(descriptor))
     raw_dir.mkdir(parents=True, exist_ok=True)
     artifact = _request_artifact(descriptor, upload_name)
     try:

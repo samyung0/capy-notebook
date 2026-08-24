@@ -51,6 +51,15 @@ func openShareAPI(t *testing.T, pipe *pipeline.Client) http.Handler {
 	})
 }
 
+func generateBody(kind, title string) map[string]any {
+	return map[string]any{
+		"kind":   kind,
+		"count":  1,
+		"levels": []string{"recall"},
+		"title":  title,
+	}
+}
+
 func stubRetrieval(t *testing.T) *pipeline.Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -184,12 +193,13 @@ func TestCloudImportAuthorization(t *testing.T) {
 	cases := []struct {
 		name   string
 		user   string
+		body   map[string]any
 		status int
 	}{
-		{"owner reaches request validation", "u_owner", http.StatusBadRequest},
-		{"editor reaches request validation", "u_editor", http.StatusBadRequest},
-		{"commenter is rejected", "u_commenter", http.StatusNotFound},
-		{"viewer is rejected", "u_viewer", http.StatusNotFound},
+		{"owner reaches request validation", "u_owner", map[string]any{}, http.StatusUnprocessableEntity},
+		{"editor reaches request validation", "u_editor", map[string]any{}, http.StatusUnprocessableEntity},
+		{"commenter is rejected", "u_commenter", map[string]any{"provider": "google", "fileIds": []string{"drive-file"}}, http.StatusNotFound},
+		{"viewer is rejected", "u_viewer", map[string]any{"provider": "google", "fileIds": []string{"drive-file"}}, http.StatusNotFound},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -199,7 +209,7 @@ func TestCloudImportAuthorization(t *testing.T) {
 				http.MethodPost,
 				"/api/workspaces/ws_e2e_private/sources/import",
 				tc.user,
-				map[string]any{},
+				tc.body,
 			)
 			if rec.Code != tc.status {
 				t.Fatalf("cloud import by %s = %d body=%s", tc.user, rec.Code, rec.Body.String())

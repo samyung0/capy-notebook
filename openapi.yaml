@@ -218,26 +218,6 @@ components:
       required:
         - planTier
       type: object
-    IngestSlots:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/IngestSlots.json
-          format: uri
-          readOnly: true
-          type: string
-        slotsFree:
-          type: integer
-        slotsLimit:
-          type: integer
-        slotsUsed:
-          type: integer
-      required:
-        - slotsFree
-        - slotsLimit
-        - slotsUsed
-      type: object
     BillingInfo:
       additionalProperties: false
       properties:
@@ -379,6 +359,12 @@ components:
       required:
         - workspace
       type: object
+    CognitiveLevel:
+      enum:
+        - recall
+        - application
+        - analysis
+      type: string
     CollaborationTokenResponse:
       additionalProperties: false
       properties:
@@ -621,6 +607,7 @@ components:
           type: string
         color:
           $ref: "#/components/schemas/UserColor"
+          default: green
         name:
           maxLength: 200
           type: string
@@ -661,6 +648,7 @@ components:
           nullable: true
           type: array
       required:
+        - anchorVersion
         - contentRich
       type: object
     CreateEventReq:
@@ -712,7 +700,7 @@ components:
           description: Versioned Plate document
         kind:
           $ref: "#/components/schemas/MaterialKind"
-          description: Material kind; defaults to note
+          description: Material kind
         scopeChapters:
           items:
             type: string
@@ -726,6 +714,8 @@ components:
         title:
           maxLength: 200
           type: string
+      required:
+        - kind
       type: object
     CreateQuizReq:
       additionalProperties: false
@@ -760,6 +750,37 @@ components:
         workspaceId:
           type: string
       type: object
+    CreateSourceUploadReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CreateSourceUploadReq.json
+          format: uri
+          readOnly: true
+          type: string
+        captionImages:
+          type: boolean
+        chapterId:
+          type: string
+        chapterName:
+          type: string
+        contentType:
+          type: string
+        kind:
+          type: string
+        name:
+          type: string
+        parseMode:
+          type: string
+        sizeBytes:
+          format: int64
+          type: integer
+      required:
+        - name
+        - captionImages
+        - sizeBytes
+      type: object
     CreateWorkspaceInviteReq:
       additionalProperties: false
       properties:
@@ -791,7 +812,8 @@ components:
           type: string
         color:
           $ref: "#/components/schemas/UserColor"
-          description: User color; defaults to graphite
+          default: graphite
+          description: User color
         name:
           description: Workspace name
           maxLength: 100
@@ -1144,6 +1166,153 @@ components:
         - back
         - known
         - srs
+      type: object
+    GenerateDetail:
+      enum:
+        - brief
+        - standard
+        - detailed
+      type: string
+    GenerateDiagramType:
+      enum:
+        - auto
+        - flowchart
+        - sequence
+        - class
+        - state
+        - er
+      type: string
+    GenerateKind:
+      enum:
+        - flashcards
+        - quiz
+        - mindmap
+        - diagram
+      type: string
+    GenerateQuestionType:
+      enum:
+        - mcq
+        - multi
+        - boolean
+        - short
+        - open
+        - ordering
+        - matching
+      type: string
+    GenerateReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/GenerateReq.json
+          format: uri
+          readOnly: true
+          type: string
+        chapters:
+          items:
+            type: string
+          type: array
+        count:
+          format: int64
+          maximum: 50
+          minimum: 1
+          type: integer
+        detail:
+          $ref: "#/components/schemas/GenerateDetail"
+          default: standard
+        diagramType:
+          $ref: "#/components/schemas/GenerateDiagramType"
+          default: auto
+        fileIds:
+          items:
+            type: string
+          type: array
+        format:
+          type: string
+        kind:
+          $ref: "#/components/schemas/GenerateKind"
+        length:
+          type: string
+        levels:
+          items:
+            $ref: "#/components/schemas/CognitiveLevel"
+          minItems: 1
+          type: array
+        style:
+          type: string
+        timeLimitMin:
+          format: int64
+          maximum: 180
+          minimum: 1
+          type: integer
+        title:
+          maxLength: 200
+          minLength: 1
+          type: string
+        types:
+          default:
+            - mcq
+          items:
+            $ref: "#/components/schemas/GenerateQuestionType"
+          minItems: 1
+          type: array
+      required:
+        - kind
+        - count
+        - levels
+        - title
+      type: object
+    ImportSourcesReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ImportSourcesReq.json
+          format: uri
+          readOnly: true
+          type: string
+        chapterId:
+          type: string
+        driveIds:
+          items:
+            type: string
+          type: array
+        fileIds:
+          items:
+            type: string
+          minItems: 1
+          type: array
+        provider:
+          enum:
+            - google
+            - microsoft
+          type: string
+      required:
+        - provider
+        - fileIds
+      type: object
+    IngestSlots:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/IngestSlots.json
+          format: uri
+          readOnly: true
+          type: string
+        slotsFree:
+          format: int64
+          type: integer
+        slotsLimit:
+          format: int64
+          type: integer
+        slotsUsed:
+          format: int64
+          type: integer
+      required:
+        - slotsFree
+        - slotsUsed
+        - slotsLimit
       type: object
     IntegrationsStatus:
       additionalProperties: false
@@ -2168,6 +2337,35 @@ components:
         - accept
         - maxBytes
         - allowNoExtension
+      type: object
+    SourceUploadReservation:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceUploadReservation.json
+          format: uri
+          readOnly: true
+          type: string
+        expiresAt:
+          format: date-time
+          type: string
+        headers:
+          additionalProperties:
+            type: string
+          type: object
+        method:
+          type: string
+        uploadId:
+          type: string
+        url:
+          type: string
+      required:
+        - uploadId
+        - url
+        - method
+        - headers
+        - expiresAt
       type: object
     SrsState:
       additionalProperties: false
@@ -4172,6 +4370,25 @@ paths:
       summary: Current user
       tags:
         - Account
+  /api/me/ingest-slots:
+    get:
+      operationId: getIngestSlots
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestSlots"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Actor ingest slot remaining
+      tags:
+        - Account
   /api/me/llm-credentials:
     get:
       operationId: listLLMCredentials
@@ -4230,25 +4447,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Remove a provider key
-      tags:
-        - Account
-  /api/me/ingest-slots:
-    get:
-      operationId: getIngestSlots
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/IngestSlots"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Actor ingest slot remaining
       tags:
         - Account
   /api/me/locale:
@@ -4320,7 +4518,6 @@ paths:
           in: query
           name: surface
           schema:
-            default: chat
             enum:
               - chat
               - generate
@@ -4737,7 +4934,6 @@ paths:
           in: query
           name: kind
           schema:
-            default: workspace
             description: "Tag kind: workspace | quiz | card"
             type: string
       responses:
@@ -5370,6 +5566,38 @@ paths:
       summary: List workspace files
       tags:
         - Content
+  /api/workspaces/{id}/generate:
+    post:
+      operationId: generate
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GenerateReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                additionalProperties: {}
+                type: object
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Generate a quiz, deck, mindmap, or diagram
+      tags:
+        - Generate
   /api/workspaces/{id}/invites:
     post:
       operationId: createWorkspaceInvite
@@ -5569,6 +5797,100 @@ paths:
       summary: Update workspace sharing
       tags:
         - Workspaces
+  /api/workspaces/{id}/sources/import:
+    post:
+      operationId: importSources
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportSourcesReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/File"
+                type: array
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Import sources from a connected drive
+      tags:
+        - Content
+  /api/workspaces/{id}/sources/uploads:
+    post:
+      operationId: createSourceUpload
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateSourceUploadReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceUploadReservation"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Reserve a direct source upload
+      tags:
+        - Content
+  /api/workspaces/{id}/sources/uploads/{uploadId}/complete:
+    post:
+      operationId: completeSourceUpload
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: uploadId
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/File"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Complete a direct source upload
+      tags:
+        - Content
   /api/workspaces/{id}/stats:
     get:
       operationId: getWorkspaceStats

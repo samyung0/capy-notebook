@@ -130,14 +130,6 @@ CREATE TABLE IF NOT EXISTS users (
   -- Open-question marking. May be a registry key or a client-only browser:
   -- prefix (in-tab GGUF). Browser keys skip registry lookup.
   quiz_model_key        text NOT NULL DEFAULT 'deepseek-flash',
-  -- Per-surface thinking override. Empty means the catalog default for the
-  -- selected model. Validated against that model's params.reasoning on write.
-  chat_reasoning_mode     text NOT NULL DEFAULT '',
-  chat_reasoning_effort   text NOT NULL DEFAULT '',
-  generate_reasoning_mode text NOT NULL DEFAULT '',
-  generate_reasoning_effort text NOT NULL DEFAULT '',
-  quiz_reasoning_mode     text NOT NULL DEFAULT '',
-  quiz_reasoning_effort   text NOT NULL DEFAULT '',
   -- Account lifecycle. deletion_requested_at starts the reactivation window;
   -- purge_after is when the purge job runs; deleted_at is set by the purge
   -- itself, after which the row is a scrubbed tombstone.
@@ -154,16 +146,6 @@ CREATE TABLE IF NOT EXISTS users (
   CONSTRAINT users_generate_model_key_nonempty CHECK (generate_model_key <> ''),
   CONSTRAINT users_editor_model_key_nonempty CHECK (editor_model_key <> ''),
   CONSTRAINT users_quiz_model_key_nonempty CHECK (quiz_model_key <> ''),
-  CONSTRAINT users_reasoning_mode_check CHECK (
-    chat_reasoning_mode IN ('', 'off', 'on')
-    AND generate_reasoning_mode IN ('', 'off', 'on')
-    AND quiz_reasoning_mode IN ('', 'off', 'on')
-  ),
-  CONSTRAINT users_reasoning_effort_check CHECK (
-    chat_reasoning_effort IN ('', 'low', 'medium', 'high', 'xhigh', 'max')
-    AND generate_reasoning_effort IN ('', 'low', 'medium', 'high', 'xhigh', 'max')
-    AND quiz_reasoning_effort IN ('', 'low', 'medium', 'high', 'xhigh', 'max')
-  ),
   CONSTRAINT users_purge_window_check
     CHECK (purge_after IS NULL OR deletion_requested_at IS NOT NULL),
   CONSTRAINT users_deleted_requires_request_check
@@ -171,33 +153,33 @@ CREATE TABLE IF NOT EXISTS users (
   CONSTRAINT users_suspension_reason_check
     CHECK ((suspended_at IS NULL) = (suspended_reason IS NULL))
 );
-ALTER TABLE users ADD COLUMN IF NOT EXISTS chat_reasoning_mode text NOT NULL DEFAULT '';
-ALTER TABLE users ADD COLUMN IF NOT EXISTS chat_reasoning_effort text NOT NULL DEFAULT '';
-ALTER TABLE users ADD COLUMN IF NOT EXISTS generate_reasoning_mode text NOT NULL DEFAULT '';
-ALTER TABLE users ADD COLUMN IF NOT EXISTS generate_reasoning_effort text NOT NULL DEFAULT '';
-ALTER TABLE users ADD COLUMN IF NOT EXISTS quiz_reasoning_mode text NOT NULL DEFAULT '';
-ALTER TABLE users ADD COLUMN IF NOT EXISTS quiz_reasoning_effort text NOT NULL DEFAULT '';
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'users_reasoning_mode_check'
-  ) THEN
-    ALTER TABLE users ADD CONSTRAINT users_reasoning_mode_check CHECK (
-      chat_reasoning_mode IN ('', 'off', 'on')
-      AND generate_reasoning_mode IN ('', 'off', 'on')
-      AND quiz_reasoning_mode IN ('', 'off', 'on')
-    );
-  END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'users_reasoning_effort_check'
-  ) THEN
-    ALTER TABLE users ADD CONSTRAINT users_reasoning_effort_check CHECK (
-      chat_reasoning_effort IN ('', 'low', 'medium', 'high', 'xhigh', 'max')
-      AND generate_reasoning_effort IN ('', 'low', 'medium', 'high', 'xhigh', 'max')
-      AND quiz_reasoning_effort IN ('', 'low', 'medium', 'high', 'xhigh', 'max')
-    );
-  END IF;
-END $$;
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_reasoning_mode_check;
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_reasoning_effort_check;
+ALTER TABLE users DROP COLUMN IF EXISTS chat_reasoning_mode;
+ALTER TABLE users DROP COLUMN IF EXISTS chat_reasoning_effort;
+ALTER TABLE users DROP COLUMN IF EXISTS generate_reasoning_mode;
+ALTER TABLE users DROP COLUMN IF EXISTS generate_reasoning_effort;
+ALTER TABLE users DROP COLUMN IF EXISTS quiz_reasoning_mode;
+ALTER TABLE users DROP COLUMN IF EXISTS quiz_reasoning_effort;
+-- Per (user, model, surface). Switching models must not reuse another
+-- model's effort: DeepSeek has no medium, Opus does.
+CREATE TABLE IF NOT EXISTS user_model_reasoning (
+  user_id    text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  model_key  text NOT NULL,
+  surface    text NOT NULL,
+  mode       text NOT NULL DEFAULT '',
+  effort     text NOT NULL DEFAULT '',
+  PRIMARY KEY (user_id, model_key, surface),
+  CONSTRAINT user_model_reasoning_surface_check CHECK (
+    surface IN ('chat', 'generate', 'quiz')
+  ),
+  CONSTRAINT user_model_reasoning_mode_check CHECK (
+    mode IN ('', 'off', 'on')
+  ),
+  CONSTRAINT user_model_reasoning_effort_check CHECK (
+    effort IN ('', 'low', 'medium', 'high', 'xhigh', 'max')
+  )
+);
 -- Invite resolution looks users up by email, so live accounts must be unique on
 -- it. Tombstones are excluded: a scrubbed row holds no email, and a deleted
 -- account must not block the address from being used again.
@@ -1318,6 +1300,69 @@ $$;
 -- user_llm_credentials, never here.
 -- ============================================================================
 
+-- LLM rows (chat/generate/editor/quiz/ingest) must name defaultMode, a
+-- non-empty efforts list, and a defaultEffort in that list. Embedding and
+-- vision rows must omit reasoning. The ops grid collects these as named
+-- fields; this check is what refuses a forgotten default when someone
+-- inserts via psql before that grid ships.
+CREATE OR REPLACE FUNCTION model_configs_reasoning_ok(surfaces text[], params jsonb)
+RETURNS boolean
+LANGUAGE plpgsql
+IMMUTABLE
+AS $$
+DECLARE
+  reasoning jsonb;
+  efforts jsonb;
+  default_effort text;
+  default_mode text;
+  style text;
+  item text;
+  has_llm boolean;
+BEGIN
+  has_llm := surfaces && ARRAY['chat','generate','editor','quiz','ingest']::text[];
+  reasoning := params -> 'reasoning';
+  IF NOT has_llm THEN
+    RETURN reasoning IS NULL;
+  END IF;
+  IF reasoning IS NULL OR jsonb_typeof(reasoning) <> 'object' THEN
+    RETURN FALSE;
+  END IF;
+  default_mode := reasoning ->> 'defaultMode';
+  default_effort := reasoning ->> 'defaultEffort';
+  efforts := reasoning -> 'efforts';
+  style := reasoning ->> 'style';
+  IF default_mode IS NULL OR default_mode NOT IN ('on', 'off') THEN
+    RETURN FALSE;
+  END IF;
+  IF jsonb_typeof(reasoning -> 'canDisable') <> 'boolean' THEN
+    RETURN FALSE;
+  END IF;
+  IF jsonb_typeof(efforts) <> 'array' OR jsonb_array_length(efforts) < 1 THEN
+    RETURN FALSE;
+  END IF;
+  FOR item IN SELECT jsonb_array_elements_text(efforts)
+  LOOP
+    IF item NOT IN ('low', 'medium', 'high', 'xhigh', 'max') THEN
+      RETURN FALSE;
+    END IF;
+  END LOOP;
+  IF default_effort IS NULL OR default_effort = '' THEN
+    RETURN FALSE;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1
+      FROM jsonb_array_elements_text(efforts) AS e(v)
+     WHERE e.v = default_effort
+  ) THEN
+    RETURN FALSE;
+  END IF;
+  IF style IS NOT NULL AND style <> '' AND style NOT IN ('adaptive', 'budget') THEN
+    RETURN FALSE;
+  END IF;
+  RETURN TRUE;
+END;
+$$;
+
 CREATE TABLE IF NOT EXISTS model_configs (
   model_key                    text NOT NULL,
   version                      int  NOT NULL,
@@ -1391,6 +1436,9 @@ CREATE TABLE IF NOT EXISTS model_configs (
       AND micros_per_input_token > 0
       AND micros_per_output_token > 0
     )
+  ),
+  CONSTRAINT model_configs_reasoning_check CHECK (
+    model_configs_reasoning_ok(surfaces, params)
   )
 );
 ALTER TABLE model_configs ADD COLUMN IF NOT EXISTS auth_mode text NOT NULL DEFAULT 'platform';
@@ -1443,6 +1491,13 @@ BEGIN
         AND micros_per_input_token > 0
         AND micros_per_output_token > 0
       )
+    );
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'model_configs_reasoning_check'
+  ) THEN
+    ALTER TABLE model_configs ADD CONSTRAINT model_configs_reasoning_check CHECK (
+      model_configs_reasoning_ok(surfaces, params)
     );
   END IF;
   IF EXISTS (
@@ -1583,14 +1638,14 @@ INSERT INTO model_configs (
   ('deepseek-flash', 1, 'DeepSeek Flash', 'deepseek',
    'https://api.deepseek.com', 'deepseek-v4-flash',
    'platform_or_user', 1000000,
-   '{"temperature": 0.3, "reasoning": {"canDisable": true, "efforts": ["low", "high", "max"], "defaultMode": "off", "defaultEffort": "high"}, "modalities": {"vision": false, "pdf": false}}'::jsonb,
+   '{"temperature": 0.3, "reasoning": {"canDisable": true, "efforts": ["low", "high", "max"], "defaultMode": "off", "defaultEffort": "max"}, "modalities": {"vision": false, "pdf": false}}'::jsonb,
    ARRAY['chat','generate','editor','quiz','ingest'],
    250, 1000, true,
    ARRAY['chat','generate','editor','quiz','ingest']),
   ('deepseek-pro', 1, 'DeepSeek Pro', 'deepseek',
    'https://api.deepseek.com', 'deepseek-v4-pro',
    'platform_or_user', 1000000,
-   '{"temperature": 0.3, "reasoning": {"canDisable": true, "efforts": ["low", "high", "max"], "defaultMode": "off", "defaultEffort": "high"}, "modalities": {"vision": false, "pdf": false}}'::jsonb,
+   '{"temperature": 0.3, "reasoning": {"canDisable": true, "efforts": ["low", "high", "max"], "defaultMode": "off", "defaultEffort": "max"}, "modalities": {"vision": false, "pdf": false}}'::jsonb,
    ARRAY['chat','generate','quiz'],
    775, 3100, true,
    ARRAY[]::text[]),
@@ -1676,7 +1731,7 @@ ON CONFLICT (model_key, version) DO NOTHING;
 UPDATE model_configs SET
   auth_mode = 'platform_or_user',
   context_window_tokens = 1000000,
-  params = '{"temperature": 0.3, "reasoning": {"canDisable": true, "efforts": ["low", "high", "max"], "defaultMode": "off", "defaultEffort": "high"}, "modalities": {"vision": false, "pdf": false}}'::jsonb
+  params = '{"temperature": 0.3, "reasoning": {"canDisable": true, "efforts": ["low", "high", "max"], "defaultMode": "off", "defaultEffort": "max"}, "modalities": {"vision": false, "pdf": false}}'::jsonb
 WHERE model_key IN ('deepseek-flash', 'deepseek-pro') AND version = 1;
 
 -- Per-user provider keys for BYOK rows. One key unlocks every catalog model

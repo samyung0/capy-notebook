@@ -62,7 +62,9 @@ def uid(prefix: str) -> str:
 
 def claim_job(cur, leases: dict[str, int]) -> dict[str, Any] | None:
     """Claim one due pending job atomically (FOR UPDATE SKIP LOCKED)."""
-    ingest_lease = int(leases.get("ingest") or 180)
+    # The lease is job policy (pipeline/jobs.py). A fallback here would be a
+    # second copy of it that silently wins whenever the policy is edited.
+    ingest_lease = int(leases["ingest"])
     cur.execute(
         """
         UPDATE jobs SET
@@ -223,17 +225,17 @@ def reclaim_expired_leases(
                 "DELETE FROM rag_contents WHERE claim_job_id = %s AND status = 'processing'",
                 (job_id,),
             )
-        cap = int(max_attempts.get(job_type) or max_attempts.get("ingest") or 3)
+        cap = max_attempts.get(job_type)
         note = (error or "lease expired").strip() or "lease expired"
         if "lease expired" not in note:
             note = f"{note}; lease expired"
         outcome = "failed"
-        if attempts >= cap:
+        if not job_type or cap is None:
+            set_job(cur, job_id, "failed", f"unknown job type {job_type!r}"[:500])
+        elif attempts >= cap:
             set_job(cur, job_id, "failed", note[:500])
         else:
-            base = int(
-                backoff_base_s.get(job_type) or backoff_base_s.get("ingest") or 30
-            )
+            base = int(backoff_base_s[job_type])
             outcome = requeue_job(
                 cur,
                 job_id=job_id,

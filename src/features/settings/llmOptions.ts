@@ -21,11 +21,11 @@ export function effectiveReasoning(
   if (nextMode !== 'on' && nextMode !== 'off') nextMode = spec.defaultMode;
   if (!spec.canDisable) nextMode = 'on';
   if (nextMode === 'off') return { effort: '', mode: 'off' };
-  let nextEffort = effort || spec.defaultEffort;
+  let nextEffort = effort;
   if (!spec.efforts.includes(nextEffort)) {
     nextEffort = spec.efforts.includes(spec.defaultEffort)
       ? spec.defaultEffort
-      : (spec.efforts[0] ?? '');
+      : '';
   }
   return { effort: nextEffort, mode: 'on' };
 }

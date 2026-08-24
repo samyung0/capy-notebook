@@ -12,8 +12,8 @@ export interface CreateMaterialReq {
   readonly $schema?: string;
   /** Versioned Plate document */
   content?: Envelope;
-  /** Material kind; defaults to note */
-  kind?: MaterialKind;
+  /** Material kind */
+  kind: MaterialKind;
   /** @nullable */
   scopeChapters?: string[] | null;
   /** @nullable */

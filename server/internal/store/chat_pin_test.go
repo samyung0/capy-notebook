@@ -370,3 +370,53 @@ func TestSetModelPrefsRejectsLockedUserKey(t *testing.T) {
 		t.Fatalf("locked byok: %v", err)
 	}
 }
+
+func TestSetModelPrefsReasoningIsPerModel(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	on := "on"
+	max := "max"
+	high := "high"
+	medium := "medium"
+	flash := "deepseek-flash"
+	pro := "deepseek-pro"
+
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{
+		ChatReasoningMode: &on, ChatReasoningEffort: &max,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{
+		ChatReasoningEffort: &medium,
+	}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("medium on deepseek: %v", err)
+	}
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModelKey: &pro}); err != nil {
+		t.Fatal(err)
+	}
+	prefs, err := s.UserLLMPrefs(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mode, effort := prefs.Reasoning(SurfaceChat)
+	if mode != "" || effort != "" {
+		t.Fatalf("pro inherited flash prefs: %s %s", mode, effort)
+	}
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{
+		ChatReasoningMode: &on, ChatReasoningEffort: &high,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModelKey: &flash}); err != nil {
+		t.Fatal(err)
+	}
+	prefs, err = s.UserLLMPrefs(ctx, userID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mode, effort = prefs.Reasoning(SurfaceChat)
+	if mode != "on" || effort != "max" {
+		t.Fatalf("flash prefs lost: %s %s", mode, effort)
+	}
+}

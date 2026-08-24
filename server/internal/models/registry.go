@@ -134,6 +134,15 @@ func (c Config) UsesUserKey(hasCred bool) bool {
 	}
 }
 
+var knownReasoningEfforts = map[string]struct{}{
+	"low": {}, "medium": {}, "high": {}, "xhigh": {}, "max": {},
+}
+
+func IsKnownReasoningEffort(effort string) bool {
+	_, ok := knownReasoningEfforts[effort]
+	return ok
+}
+
 type ReasoningSpec struct {
 	CanDisable    bool
 	Efforts       []string
@@ -143,16 +152,15 @@ type ReasoningSpec struct {
 }
 
 func (c Config) Reasoning() ReasoningSpec {
-	spec := ReasoningSpec{
-		DefaultMode:   "off",
-		DefaultEffort: "medium",
-	}
+	spec := ReasoningSpec{CanDisable: true}
 	raw, ok := c.Params["reasoning"]
 	if !ok {
+		spec.DefaultMode = "off"
 		return spec
 	}
 	obj, ok := raw.(map[string]any)
 	if !ok {
+		spec.DefaultMode = "off"
 		return spec
 	}
 	if v, ok := obj["canDisable"].(bool); ok {
@@ -180,8 +188,10 @@ func (c Config) Reasoning() ReasoningSpec {
 	return spec
 }
 
-// ResolveReasoning applies a user override, then the catalog default, then
-// clamps to what this row actually accepts.
+// ResolveReasoning applies a user override, then the catalog default.
+// An effort that this row does not list falls back to defaultEffort when
+// that value is listed. Mode on with no usable effort returns empty
+// effort rather than inventing medium or the first listed value.
 func (c Config) ResolveReasoning(mode, effort string) (string, string) {
 	spec := c.Reasoning()
 	if mode == "" {
@@ -199,13 +209,83 @@ func (c Config) ResolveReasoning(mode, effort string) (string, string) {
 	if effort == "" {
 		effort = spec.DefaultEffort
 	}
-	if !containsString(spec.Efforts, effort) {
-		effort = spec.DefaultEffort
-		if !containsString(spec.Efforts, effort) && len(spec.Efforts) > 0 {
-			effort = spec.Efforts[0]
+	if containsString(spec.Efforts, effort) {
+		return mode, effort
+	}
+	if spec.DefaultEffort != "" && containsString(spec.Efforts, spec.DefaultEffort) {
+		return mode, spec.DefaultEffort
+	}
+	return mode, ""
+}
+
+// ValidateCatalogReasoning is the Go form of model_configs_reasoning_check.
+// Ops should call this in the drawer; Postgres still refuses a bad insert.
+func ValidateCatalogReasoning(surfaces []string, params map[string]any) error {
+	hasLLM := false
+	for _, surface := range surfaces {
+		switch surface {
+		case SurfaceChat, SurfaceGenerate, SurfaceEditor, SurfaceQuiz, SurfaceIngest:
+			hasLLM = true
 		}
 	}
-	return mode, effort
+	raw, hasReasoning := params["reasoning"]
+	if !hasLLM {
+		if hasReasoning {
+			return fmt.Errorf("embedding/vision rows must omit reasoning")
+		}
+		return nil
+	}
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return fmt.Errorf("llm rows require params.reasoning")
+	}
+	mode, _ := obj["defaultMode"].(string)
+	if mode != "on" && mode != "off" {
+		return fmt.Errorf("reasoning.defaultMode must be on or off")
+	}
+	if _, ok := obj["canDisable"].(bool); !ok {
+		return fmt.Errorf("reasoning.canDisable must be a boolean")
+	}
+	efforts := reasoningEfforts(obj["efforts"])
+	if len(efforts) == 0 {
+		return fmt.Errorf("reasoning.efforts must be a non-empty list")
+	}
+	for _, item := range efforts {
+		if !IsKnownReasoningEffort(item) {
+			return fmt.Errorf("unknown reasoning effort %q", item)
+		}
+	}
+	defaultEffort, _ := obj["defaultEffort"].(string)
+	if defaultEffort == "" || !containsString(efforts, defaultEffort) {
+		return fmt.Errorf("reasoning.defaultEffort must be one of this row's efforts")
+	}
+	if style, _ := obj["style"].(string); style != "" && style != "adaptive" && style != "budget" {
+		return fmt.Errorf("reasoning.style must be adaptive or budget")
+	}
+	return nil
+}
+
+func reasoningEfforts(raw any) []string {
+	switch list := raw.(type) {
+	case []any:
+		out := make([]string, 0, len(list))
+		for _, item := range list {
+			if s, ok := item.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	case []string:
+		out := make([]string, 0, len(list))
+		for _, item := range list {
+			if item != "" {
+				out = append(out, item)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func containsString(list []string, want string) bool {
