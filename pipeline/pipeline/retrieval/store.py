@@ -908,6 +908,52 @@ async def read_file_range(
         return [dict(row) for row in await cur.fetchall()]
 
 
+async def validate_source_refs(
+    workspace_id: str, refs: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Keep checkpoint refs whose file still belongs to this workspace."""
+    if not refs:
+        return []
+    file_ids = [str(ref.get("fileId") or "") for ref in refs if ref.get("fileId")]
+    chunk_ids = [str(ref.get("chunkId") or "") for ref in refs if ref.get("chunkId")]
+    if not file_ids:
+        return []
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT f.id
+              FROM files f
+             WHERE f.workspace_id = %s AND f.id = ANY(%s)
+            """,
+            (workspace_id, file_ids),
+        )
+        allowed = {row["id"] for row in await cur.fetchall()}
+        live_chunks: set[str] = set()
+        if chunk_ids:
+            cur = await conn.execute(
+                """
+                SELECT c.id
+                  FROM rag_chunks c
+                  JOIN rag_file_contents fc ON fc.content_id = c.content_id
+                  JOIN files f ON f.id = fc.file_id
+                 WHERE f.workspace_id = %s AND c.id = ANY(%s)
+                """,
+                (workspace_id, chunk_ids),
+            )
+            live_chunks = {row["id"] for row in await cur.fetchall()}
+    out: list[dict[str, Any]] = []
+    for ref in refs:
+        file_id = str(ref.get("fileId") or "")
+        chunk_id = str(ref.get("chunkId") or "")
+        if file_id not in allowed:
+            continue
+        if chunk_id and chunk_id not in live_chunks:
+            continue
+        out.append(ref)
+    return out
+
+
 def decode_regions(value: Any) -> list[dict[str, Any]]:
     if isinstance(value, list):
         return value

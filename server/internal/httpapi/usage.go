@@ -31,7 +31,11 @@ type pipeUsage struct {
 	EmbedTokens int64 `json:"embedTokens,omitempty"`
 	// Calls is how many provider round trips the request made, kept for
 	// diagnosing agent loops that run longer than expected.
-	Calls int `json:"calls,omitempty"`
+	Calls            int    `json:"calls,omitempty"`
+	CachedReadTokens int64  `json:"cachedReadTokens,omitempty"`
+	CacheWriteTokens int64  `json:"cacheWriteTokens,omitempty"`
+	ReasoningTokens  int64  `json:"reasoningTokens,omitempty"`
+	CacheAnomaly     string `json:"cacheAnomaly,omitempty"`
 }
 
 func (u pipeUsage) empty() bool {
@@ -47,9 +51,22 @@ func (u pipeUsage) events(actorUserID, workspaceID, surface string, llm, embed s
 	}
 	var out []store.UsageEvent
 	if u.InputTokens > 0 || u.OutputTokens > 0 {
-		credits := store.CreditsForTokens(llm, store.KindLLM, u.InputTokens, u.OutputTokens)
+		credits := store.CreditsForTokens(llm, store.KindLLM, u.InputTokens, u.OutputTokens, u.CachedReadTokens)
 		if paidBy == modelsPaidByUser {
 			credits = 0
+		}
+		meta := map[string]any{"calls": u.Calls, "paidBy": paidBy}
+		if u.CachedReadTokens > 0 {
+			meta["cachedReadTokens"] = u.CachedReadTokens
+		}
+		if u.CacheWriteTokens > 0 {
+			meta["cacheWriteTokens"] = u.CacheWriteTokens
+		}
+		if u.ReasoningTokens > 0 {
+			meta["reasoningTokens"] = u.ReasoningTokens
+		}
+		if u.CacheAnomaly != "" {
+			meta["cacheAnomaly"] = u.CacheAnomaly
 		}
 		out = append(out, store.UsageEvent{
 			ActorUserID:  actorUserID,
@@ -64,7 +81,7 @@ func (u pipeUsage) events(actorUserID, workspaceID, surface string, llm, embed s
 			OutputTokens: u.OutputTokens,
 			Unit:         "tokens",
 			CreditMicros: credits,
-			Metadata:     map[string]any{"calls": u.Calls, "paidBy": paidBy},
+			Metadata:     meta,
 		})
 	}
 	if u.EmbedTokens > 0 {

@@ -205,14 +205,17 @@ in the pipeline requires an exact `(key, version)` for every surface, and a pin
 or preference that cannot be loaded fails the request (`model_unavailable`) or
 the job. There is no Flash fallback.
 
-Per-model credit multipliers live on the config row. The 1x reference is DeepSeek
-Flash (250 / 1000 micros per input/output token). There is no USD estimate on
-`model_configs` or `usage_events`. `RatesFromConfig` and `credits_for_tokens`
-multiply the row as written. A 0 stays 0. Nothing fills Flash rates or a
-50-micros embedding default. Credit micros may be 0 only on `auth_mode='user_key'`
-rows (`model_configs_credit_rates_check`). Platform chat/generate/editor/quiz/
-ingest/vision rows need both micros > 0. Embedding needs input > 0; output may
-be 0.
+Per-model credit multipliers live on the config row as three rates: input,
+cached-read input, and output. The 1x reference is DeepSeek Flash (250 / 25 /
+1000). There is no USD estimate on `model_configs` or `usage_events`.
+`RatesFromConfig` and `credits_for_tokens` compute
+`(input-cached)*input + cached*cache + output*output`. A 0 stays 0. Missing or
+unproven cache details charge all reported input at the input rate and do not
+fail the request. Cache writes are ordinary input under the three-rate design.
+Credit micros may be 0 only on `auth_mode='user_key'` rows
+(`model_configs_credit_rates_check`). Platform chat/generate/editor/quiz/
+ingest/vision rows need input, cached-read, and output all > 0. Embedding needs
+input > 0; cached-read and output may be 0.
 
 ### Tables
 
@@ -220,7 +223,7 @@ be 0.
 | --- | --- |
 | `usage_events` | append-only source of truth; corrections are new rows |
 | `user_credits` | the counter the gate locks; monthly period resets lazily on first read |
-| `credit_reservations` | open holds, swept on expiry |
+| `credit_reservations` | open request or turn sessions, swept on expiry |
 | `usage_daily` | pre-aggregated for the operator dashboard |
 | `usage_rollup_state` | watermark so the rollup resumes instead of recomputing |
 
@@ -235,17 +238,21 @@ month by `kind` and `surface` and returns recent `usage_events` rows. It does
 ledger by up to a minute. The page shows credits, tokens, `model_key`, and
 `paidBy`. It does not show USD.
 
-### Begin → settle
+### Begin, settle each call, close
 
 ```
-begin(lease)  →  model calls  →  settle(measured)
-                              ↘  release()      (failed before spending)
-                              ↘  sweep          (crashed; LLM expires at 30 min)
+begin(session)  →  provider call  →  settle(call id, measured usage)
+                                  →  provider call  →  settle(...)
+                →  close session
+                ↘  release()      (failed before spending)
+                ↘  sweep          (crashed; LLM expires at 30 min)
 ```
 
-A lease is a 0-amount `credit_reservations` row, not a credit hold. Chat,
-generate, editor, and quiz share `ConcurrentLLMLeases` (5). The gate is
-`used >= limit` plus that cap. BYOK skips the LLM lease.
+A session is a 0-amount `credit_reservations` row, not a credit hold. Platform
+chat, generate, editor, and quiz share `ConcurrentLLMLeases` (5). The gate is
+`used >= limit` plus that cap. BYOK chat has a session for idempotent usage
+events but does not consume a concurrency slot. Other BYOK routes skip the
+LLM lease.
 
 Ingest is a separate reservation (`surface='ingest'`), cap 20 per actor across
 every workspace (`ConcurrentIngestLeases`). `BeginSpend` does not count ingest
@@ -260,9 +267,20 @@ limit. The 21st enqueue fails with `too_many_ingest_leases`, distinct from
 Query embeddings are recorded at zero credits, so those calls cost the actor
 nothing to start. Ingest embeddings still bill through the worker.
 
-**A stream abandoned before its `done` event settles at zero.** Undercharging a
-user for an answer they never saw is the right side to err on, and
-reconciliation finds the gap.
+Chat settles a completed provider call before the agent starts another one.
+Client disconnects therefore keep usage that already reached the callback.
+A receipt for a call already in flight may settle after Go closes or releases
+the turn, but the response never authorizes another call.
+Each call event copies the original turn trace id from the reservation, so a
+detached or late callback remains correlated with the initiating request.
+A provider call that never returns terminal usage records a zero-token event.
+A process crash between provider success and the callback can still undercharge.
+Python retries a failed callback with the same call id. If no retry confirms the
+settlement, the turn stops because Python cannot safely choose tools for another
+call without the exhausted-credit result.
+Go requires a terminal `done` event; an upstream EOF before it marks the
+assistant response as an error rather than finalizing a partial stream as
+complete.
 
 ### Where tokens are captured
 
@@ -271,12 +289,27 @@ provider. That makes it the only place capture is needed, and the only place a
 missing capture can hide — a new provider call added elsewhere is invisible and
 silently free.
 
-A contextvar accumulator (`obs.Usage`) aggregates across every call a request
-makes, because the unit of billing is the request: one chat turn is an agent
-loop of several completions. Query embeddings travel in the same envelope and
-are written at **zero credits**. The product absorbs that cost. The usage row
-still carries the workspace embedding pin so the event is labeled. Chat and
-generate call `resolveEmbedding` before `BeginSpend`. `EmbeddingRates` fails
+A contextvar accumulator (`obs.Usage`) still aggregates request telemetry and
+the one-shot generate, editor, and quiz envelopes. Chat also binds a
+`RequestAccounting` context. `models.py` posts each completed provider call to
+the gateway before returning it to the agent loop. The callback carries a
+stable call id, call purpose, normalized cache fields, and measured tokens.
+`usage_events` has one row per call, and
+`(reservation_id, provider_call_id)` rejects duplicate settlement.
+A retry with identical usage returns the prior decision. Reusing the call id
+with different usage returns a conflict instead of silently accepting it.
+Provider SDK automatic retries are disabled, so one call id represents one
+outbound provider attempt. A future explicit provider retry must use a new call
+id; retrying only the settlement callback keeps the original id.
+The response says whether the call exhausted credits and whether one terminal
+call remains. The session authorizes that tools-disabled terminal call without
+another `BeginSpend` gate, so it may overspend. After the terminal call settles,
+the session rejects a second terminal call.
+
+Query embeddings use the same callback and are written at **zero credits**.
+The product absorbs that cost. The usage row still carries the workspace
+embedding pin so the event is labeled. Chat and generate call
+`resolveEmbedding` before opening spend. `EmbeddingRates` fails
 closed on a nil registry, empty workspace, query miss, empty pin, catalog miss,
 or a row that is not embedding. There is no `DefaultEmbeddingRates`. A miss is
 `model_unavailable`. Editor, quiz, and `/complete/stream` pass empty embed
@@ -330,8 +363,9 @@ The pipeline uses the same rows via `pipeline/pipeline/registry.py`. There is no
 mirrored rate table in `db.py`.
 
 Rates are deliberately not derived from provider invoices. Provider prices move
-and are quoted in units not visible at the call site (cached input, reasoning
-tokens); deriving user charges from them would let a supplier price change
+and are quoted in units the product does not copy (supplier cache prices,
+reasoning tokens). Cache-read tokens are billed from the catalog rate, not the
+invoice. Deriving user charges from invoices would let a supplier price change
 silently reprice the product. Drift is found by comparing the ledger to provider
 dashboards, not by deriving one from the other.
 
@@ -361,14 +395,15 @@ limits hold across replicas — the in-process counters it replaces only ever
 worked with one.
 
 **Route classes** (`middleware.go`): request cost across this API varies by four
-orders of magnitude. Listing workspaces touches one index; a chat turn runs an
-agent loop of up to four model calls. AI routes (`/chat/stream`, `/generate`,
-`/ai/command`) are 200/hour with burst 15, plus a 15/minute
-short-window guard so a scripted loop trips immediately. Cheap editor routes
-(`/complete/stream`, `/ai/copilot`) have their own 120/minute class so typing
-in the note does not consume the chat allowance. Upload routes carry a tighter
-budget *on top of* the general one. Credits remain the money bound; these
-limits only stop abuse patterns.
+orders of magnitude. Listing workspaces touches one index. A chat turn is
+capped at 12 planning responses and 12 accepted tool calls. Provider completion,
+compaction, embedding, and cumulative input counts are telemetry. AI routes
+(`/chat/stream`, `/generate`, `/ai/command`) are 200/hour with burst 15, plus
+a 15/minute short-window guard so a scripted loop trips immediately. Cheap
+editor routes (`/complete/stream`, `/ai/copilot`) have their own 120/minute
+class so typing in the note does not consume the chat allowance. Upload
+routes carry a tighter budget on top of the general one. Credits remain the
+money bound; these limits only stop abuse patterns.
 
 **Never limited:** `/webhooks/*`. Stripe and Clerk deliver subscription and
 identity changes there, and a 429 becomes billing state that silently drifts.
@@ -395,6 +430,33 @@ second through a handful of fixed users.
 deliberately **no API that grants it**. Rows are inserted by hand against the
 database. An escalation path reachable from the product would make every bug in
 the product a path to everyone's data.
+
+The standalone service at `ops.evonotes.com` adds two identity gates before
+that membership check. Cloudflare Access signs the edge assertion, which the
+origin verifies against the team JWKS with issuer and audience checks. Clerk
+then verifies the product identity. The Clerk subject must match an `operators`
+row, and each accepted session calls `touch_operator_seen`. Access and Clerk
+remain independent gates; their email addresses do not have to match.
+
+Operator membership does not override product account locks. Deleted,
+suspended, and deletion-pending users are denied even while an `operators` row
+remains. Over-quota grace and frozen states retain ops access because they are
+storage restrictions, not identity revocations.
+
+Routine reads use `evo_ops`. That role has no access to message bodies, file
+bodies, email payloads, job payloads, or usage metadata. `evo_ops_auth` can
+only execute the `touch_operator_seen` security-definer function.
+`evo_ops_registry` is opened lazily after server-side `admin` authorization for
+one full-draft registry Save. Browser sessions never receive database
+credentials. Startup opens a short-lived registry connection and validates all
+three role contracts. Broad owner/gateway credentials, customer-content reads,
+direct auth-role table access, and registry DELETE privileges fail startup.
+
+Dashboard aggregates and charts read `usage_daily`. The health screen's
+24-hour completed-assistant anti-join is the one bounded `usage_events` check.
+`messages_completed_assistant_idx` narrows the completed-turn side and
+`usage_events_trace_idx` makes each missing-ledger probe a trace lookup. The ops
+schema test requires both indexes.
 
 ---
 
@@ -456,3 +518,10 @@ the likelihood grew every time the registry was reconfigured.
 | `RATE_LIMIT_DISABLED` | gateway | forced true under `APP_ENV=e2e` |
 | `RATE_LIMIT_AI_PER_HOUR` | gateway | overrides the default 200; 15/min burst and editor 120/min are code-only |
 | `SENTRY_DSN_GATEWAY` / `_RETRIEVAL` / `_WORKER` / `_COLLABORATION` | compose | mapped onto each process's `SENTRY_DSN` |
+| `SENTRY_DSN_OPS` / `VITE_SENTRY_DSN_OPS` | ops | separate operator-service project; empty disables |
+| `OPS_DATABASE_URL` | ops | `evo_ops` read role |
+| `OPS_AUTH_DATABASE_URL` | ops | `evo_ops_auth`; execute-only last-seen update |
+| `OPS_REGISTRY_DATABASE_URL` | ops | lazy `evo_ops_registry` writer; admin Save only |
+| `OPS_CF_ACCESS_ISSUER` / `_AUDIENCE` | ops | required Cloudflare Access verification values |
+| `OPS_ACCESS_DISABLED` / `OPS_AUTH_DISABLED` | ops | fail-closed defaults; bypass requires explicit unsafe development mode |
+| `OPS_UNSAFE_DEVELOPMENT` | ops | allows owner DSNs/auth bypasses only when `APP_ENV=development`; false by default |

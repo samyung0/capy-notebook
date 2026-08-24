@@ -43,10 +43,11 @@ const (
 // TokenRates is the credit multiplier for one resolved model config.
 // Zeros stay zeros; they are not filled with the Flash 1x reference.
 type TokenRates struct {
-	MicrosPerInputToken  int64
-	MicrosPerOutputToken int64
-	ModelKey             string
-	ModelVersion         int
+	MicrosPerInputToken       int64
+	MicrosPerOutputToken      int64
+	MicrosPerCachedInputToken int64
+	ModelKey                  string
+	ModelVersion              int
 }
 
 // EmbeddingRates is the catalog row the workspace is pinned to. Query
@@ -86,27 +87,35 @@ func (s *Store) EmbeddingRates(ctx context.Context, workspaceID string) (TokenRa
 
 func RatesFromConfig(cfg models.Config) TokenRates {
 	return TokenRates{
-		MicrosPerInputToken:  cfg.MicrosPerInputToken,
-		MicrosPerOutputToken: cfg.MicrosPerOutputToken,
-		ModelKey:             cfg.Key,
-		ModelVersion:         cfg.Version,
+		MicrosPerInputToken:       cfg.MicrosPerInputToken,
+		MicrosPerOutputToken:      cfg.MicrosPerOutputToken,
+		MicrosPerCachedInputToken: cfg.MicrosPerCachedInputToken,
+		ModelKey:                  cfg.Key,
+		ModelVersion:              cfg.Version,
 	}
 }
 
-// CreditsForTokens prices a completion from the given rates. Embeddings use
-// the input rate for both sides because they have no output. Zero rates stay
-// zero; this does not invent Flash or embedding fills.
-func CreditsForTokens(rates TokenRates, kind string, inputTokens, outputTokens int64) int64 {
-	if kind == KindEmbedding {
-		return (inputTokens + outputTokens) * rates.MicrosPerInputToken
+// CreditsForTokens prices a completion from the given rates:
+// (input-cached)*input + cached*cache + output*output.
+// Invalid cached counts (negative or greater than input) are charged as
+// ordinary input. Embeddings use the input rate for leftover output tokens.
+// Zero rates stay zero; this does not invent Flash or embedding fills.
+func CreditsForTokens(rates TokenRates, kind string, inputTokens, outputTokens, cachedRead int64) int64 {
+	cached := cachedRead
+	if cached < 0 || cached > inputTokens {
+		cached = 0
 	}
-	return inputTokens*rates.MicrosPerInputToken + outputTokens*rates.MicrosPerOutputToken
+	uncached := inputTokens - cached
+	if kind == KindEmbedding {
+		return uncached*rates.MicrosPerInputToken + cached*rates.MicrosPerCachedInputToken + outputTokens*rates.MicrosPerInputToken
+	}
+	return uncached*rates.MicrosPerInputToken + cached*rates.MicrosPerCachedInputToken + outputTokens*rates.MicrosPerOutputToken
 }
 
 // CreditsForCaption prices one vision call, with the per-token component on
 // top of the fixed floor.
 func CreditsForCaption(rates TokenRates, inputTokens, outputTokens int64) int64 {
-	return microsPerCaptionCall + CreditsForTokens(rates, KindLLM, inputTokens, outputTokens)
+	return microsPerCaptionCall + CreditsForTokens(rates, KindLLM, inputTokens, outputTokens, 0)
 }
 
 func CreditsForGPU(gpuMillis int64) int64 {

@@ -56,6 +56,7 @@ class ModelConfig:
     surfaces: tuple[str, ...] = ()
     micros_per_input_token: int = 0
     micros_per_output_token: int = 0
+    micros_per_cached_input_token: int = 0
     enabled: bool = True
     is_default_for: tuple[str, ...] = ()
     auth_mode: str = AUTH_PLATFORM
@@ -128,7 +129,8 @@ _select_cols = """
                     SELECT model_key, version, display_name, provider_slug, base_url,
                            provider_model_id, params, surfaces,
                            micros_per_input_token, micros_per_output_token,
-                           enabled, is_default_for, auth_mode, context_window_tokens
+                           enabled, is_default_for, auth_mode, context_window_tokens,
+                           micros_per_cached_input_token
                       FROM model_configs
 """
 
@@ -299,6 +301,14 @@ class Registry:
         return spec
 
 
+def _cached_rate_from_row(row: tuple[Any, ...]) -> int:
+    if len(row) <= 14 or row[14] is None:
+        raise RegistryError(
+            f"{row[0]} v{row[1]} is missing micros_per_cached_input_token"
+        )
+    return int(row[14])
+
+
 def _from_row(row: tuple[Any, ...]) -> ModelConfig:
     params = row[6] or {}
     if not isinstance(params, dict):
@@ -322,6 +332,7 @@ def _from_row(row: tuple[Any, ...]) -> ModelConfig:
         is_default_for=defaults,
         auth_mode=str(auth_mode),
         context_window_tokens=window,
+        micros_per_cached_input_token=_cached_rate_from_row(row),
     )
 
 
@@ -346,6 +357,7 @@ def bootstrap_llm(provider_model_id: str) -> ModelConfig:
         ),
         micros_per_input_token=250,
         micros_per_output_token=1000,
+        micros_per_cached_input_token=25,
     )
 
 
@@ -447,12 +459,24 @@ def extra_headers_for(spec: ModelConfig) -> dict[str, str]:
 
 
 def credits_for_tokens(
-    spec: ModelConfig, kind: str, input_tokens: int, output_tokens: int
+    spec: ModelConfig,
+    kind: str,
+    input_tokens: int,
+    output_tokens: int,
+    cached_read_tokens: int = 0,
 ) -> int:
+    cached = cached_read_tokens
+    if cached < 0 or cached > input_tokens:
+        cached = 0
+    uncached = input_tokens - cached
     if kind == "embedding":
-        return (input_tokens + output_tokens) * spec.micros_per_input_token
+        return (
+            input_tokens * spec.micros_per_input_token
+            + output_tokens * spec.micros_per_input_token
+        )
     return (
-        input_tokens * spec.micros_per_input_token
+        uncached * spec.micros_per_input_token
+        + cached * spec.micros_per_cached_input_token
         + output_tokens * spec.micros_per_output_token
     )
 

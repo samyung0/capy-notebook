@@ -51,6 +51,26 @@ func (a *api) beginSpend(
 	return &spend{api: a, id: id}, nil
 }
 
+func (a *api) beginProviderSession(
+	ctx context.Context,
+	actorUserID, workspaceID, surface, paidBy string,
+	llm, embedding store.TokenRates,
+) (*spend, error) {
+	id, err := a.s.BeginProviderSession(
+		ctx,
+		actorUserID,
+		workspaceID,
+		surface,
+		paidBy,
+		llm,
+		embedding,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return &spend{api: a, id: id}, nil
+}
+
 // settle records what was actually consumed and closes the reservation.
 //
 // It runs on a detached context because the most common settlement happens

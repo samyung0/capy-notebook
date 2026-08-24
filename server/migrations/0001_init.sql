@@ -769,7 +769,26 @@ CREATE TABLE IF NOT EXISTS messages (
   metadata        jsonb NOT NULL DEFAULT '{}',       -- RAG citations, generation_id, usage
   created_at      timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS messages_conv_idx ON messages(conversation_id, created_at);
+DROP INDEX IF EXISTS messages_conv_idx;
+CREATE INDEX IF NOT EXISTS messages_conv_idx ON messages(conversation_id, created_at, id);
+CREATE INDEX IF NOT EXISTS messages_completed_assistant_idx
+  ON messages(created_at DESC)
+  WHERE role = 'assistant' AND status = 'complete';
+
+-- Latest rolling summary for one conversation. through_message_id is the last
+-- completed assistant row folded into summary. A compare-and-set write must
+-- not move that pin backwards when two tabs race.
+CREATE TABLE IF NOT EXISTS conversation_compactions (
+  conversation_id     text PRIMARY KEY REFERENCES conversations(id) ON DELETE CASCADE,
+  through_message_id  text NOT NULL REFERENCES messages(id),
+  summary             text NOT NULL,
+  source_refs         jsonb NOT NULL DEFAULT '[]'::jsonb,
+  model_key           text NOT NULL,
+  model_version       int  NOT NULL,
+  estimated_tokens    int  NOT NULL DEFAULT 0,
+  created_at          timestamptz NOT NULL DEFAULT now(),
+  updated_at          timestamptz NOT NULL DEFAULT now()
+);
 
 -- ============================================================================
 -- Auth/billing plumbing and the async job queue
@@ -949,7 +968,8 @@ CREATE INDEX IF NOT EXISTS rag_chunks_search_idx ON rag_chunks USING gin(search)
 -- model gets rag_chunk_vectors_<key>_<version>, even at 2560-d.
 --
 -- Adding a model means a new table here, a new allowlist entry in
--- pipeline/pipeline/retrieval/store.py and server/internal/store/queries.go,
+-- pipeline/pipeline/retrieval/store.py and
+-- server/internal/embeddingpins/allowlist.go,
 -- and the table name listed on that catalog row's params.vector_table.
 -- Removing a table is not supported: there is no reindex job
 -- (see openwiki/agentic-retrieval.md).
@@ -1382,6 +1402,10 @@ CREATE TABLE IF NOT EXISTS model_configs (
   -- micros is the 1x reference (one credit per 1k output tokens of Flash).
   micros_per_input_token       bigint NOT NULL,
   micros_per_output_token      bigint NOT NULL,
+  -- Cache-read credit rate. Nullable in CREATE so existing DBs can add the
+  -- column, backfill explicit product values, then SET NOT NULL. Never
+  -- DEFAULT 0: that would make old platform cache hits free.
+  micros_per_cached_input_token bigint,
   -- Chat/generate/editor/quiz/ingest/vision may flip this to retire a version.
   -- Embedding rows may not: protect_embedding_model_configs refuses
   -- enabled=false, DELETE, stripping or adding the embedding surface, and
@@ -1429,11 +1453,13 @@ CREATE TABLE IF NOT EXISTS model_configs (
     OR (
       'embedding' = ANY(surfaces)
       AND micros_per_input_token > 0
+      AND micros_per_cached_input_token >= 0
       AND micros_per_output_token >= 0
     )
     OR (
       NOT ('embedding' = ANY(surfaces))
       AND micros_per_input_token > 0
+      AND micros_per_cached_input_token > 0
       AND micros_per_output_token > 0
     )
   ),
@@ -1443,6 +1469,7 @@ CREATE TABLE IF NOT EXISTS model_configs (
 );
 ALTER TABLE model_configs ADD COLUMN IF NOT EXISTS auth_mode text NOT NULL DEFAULT 'platform';
 ALTER TABLE model_configs ADD COLUMN IF NOT EXISTS context_window_tokens int NOT NULL DEFAULT 50000;
+ALTER TABLE model_configs ADD COLUMN IF NOT EXISTS micros_per_cached_input_token bigint;
 ALTER TABLE model_configs DROP COLUMN IF EXISTS usd_micros_per_input_token;
 ALTER TABLE model_configs DROP COLUMN IF EXISTS usd_micros_per_output_token;
 DO $$
@@ -1476,23 +1503,7 @@ BEGIN
       NOT ('embedding' = ANY(surfaces)) OR enabled
     );
   END IF;
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'model_configs_credit_rates_check'
-  ) THEN
-    ALTER TABLE model_configs ADD CONSTRAINT model_configs_credit_rates_check CHECK (
-      auth_mode = 'user_key'
-      OR (
-        'embedding' = ANY(surfaces)
-        AND micros_per_input_token > 0
-        AND micros_per_output_token >= 0
-      )
-      OR (
-        NOT ('embedding' = ANY(surfaces))
-        AND micros_per_input_token > 0
-        AND micros_per_output_token > 0
-      )
-    );
-  END IF;
+  ALTER TABLE model_configs DROP CONSTRAINT IF EXISTS model_configs_credit_rates_check;
   IF NOT EXISTS (
     SELECT 1 FROM pg_constraint WHERE conname = 'model_configs_reasoning_check'
   ) THEN
@@ -1633,88 +1644,89 @@ INSERT INTO model_registry_state (id, version) VALUES (true, 1)
 INSERT INTO model_configs (
   model_key, version, display_name, provider_slug, base_url, provider_model_id,
   auth_mode, context_window_tokens, params, surfaces,
-  micros_per_input_token, micros_per_output_token, enabled, is_default_for
+  micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
+  enabled, is_default_for
 ) VALUES
   ('deepseek-flash', 1, 'DeepSeek Flash', 'deepseek',
    'https://api.deepseek.com', 'deepseek-v4-flash',
    'platform_or_user', 1000000,
    '{"temperature": 0.3, "reasoning": {"canDisable": true, "efforts": ["low", "high", "max"], "defaultMode": "off", "defaultEffort": "max"}, "modalities": {"vision": false, "pdf": false}}'::jsonb,
    ARRAY['chat','generate','editor','quiz','ingest'],
-   250, 1000, true,
+   250, 1000, 25, true,
    ARRAY['chat','generate','editor','quiz','ingest']),
   ('deepseek-pro', 1, 'DeepSeek Pro', 'deepseek',
    'https://api.deepseek.com', 'deepseek-v4-pro',
    'platform_or_user', 1000000,
    '{"temperature": 0.3, "reasoning": {"canDisable": true, "efforts": ["low", "high", "max"], "defaultMode": "off", "defaultEffort": "max"}, "modalities": {"vision": false, "pdf": false}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   775, 3100, true,
+   775, 3100, 78, true,
    ARRAY[]::text[]),
   ('gpt-5.6-sol', 1, 'GPT-5.6 Sol', 'openai',
    'https://api.openai.com/v1', 'gpt-5.6-sol',
    'user_key', 400000,
    '{"reasoning": {"canDisable": true, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "medium"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, true, ARRAY[]::text[]),
+   0, 0, 0, true, ARRAY[]::text[]),
   ('gpt-5.6-terra', 1, 'GPT-5.6 Terra', 'openai',
    'https://api.openai.com/v1', 'gpt-5.6-terra',
    'user_key', 400000,
    '{"reasoning": {"canDisable": true, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "medium"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, true, ARRAY[]::text[]),
+   0, 0, 0, true, ARRAY[]::text[]),
   ('gpt-5.6-luna', 1, 'GPT-5.6 Luna', 'openai',
    'https://api.openai.com/v1', 'gpt-5.6-luna',
    'user_key', 400000,
    '{"reasoning": {"canDisable": true, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "medium"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, true, ARRAY[]::text[]),
+   0, 0, 0, true, ARRAY[]::text[]),
   ('claude-opus-5', 1, 'Claude Opus 5', 'anthropic',
    'https://api.anthropic.com/v1', 'claude-opus-5',
    'user_key', 1000000,
    '{"reasoning": {"canDisable": false, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "high", "style": "adaptive"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, true, ARRAY[]::text[]),
+   0, 0, 0, true, ARRAY[]::text[]),
   ('claude-opus-4-8', 1, 'Claude Opus 4.8', 'anthropic',
    'https://api.anthropic.com/v1', 'claude-opus-4-8',
    'user_key', 1000000,
    '{"reasoning": {"canDisable": false, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "high", "style": "adaptive"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, true, ARRAY[]::text[]),
+   0, 0, 0, true, ARRAY[]::text[]),
   ('claude-opus-4-7', 1, 'Claude Opus 4.7', 'anthropic',
    'https://api.anthropic.com/v1', 'claude-opus-4-7',
    'user_key', 1000000,
    '{"reasoning": {"canDisable": false, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "high", "style": "adaptive"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, true, ARRAY[]::text[]),
+   0, 0, 0, true, ARRAY[]::text[]),
   ('claude-sonnet-5', 1, 'Claude Sonnet 5', 'anthropic',
    'https://api.anthropic.com/v1', 'claude-sonnet-5',
    'user_key', 1000000,
    '{"reasoning": {"canDisable": false, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "high", "style": "adaptive"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, true, ARRAY[]::text[]),
+   0, 0, 0, true, ARRAY[]::text[]),
   ('claude-sonnet-4-6', 1, 'Claude Sonnet 4.6', 'anthropic',
    'https://api.anthropic.com/v1', 'claude-sonnet-4-6',
    'user_key', 1000000,
    '{"reasoning": {"canDisable": false, "efforts": ["low", "medium", "high", "xhigh"], "defaultMode": "on", "defaultEffort": "high", "style": "adaptive"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, true, ARRAY[]::text[]),
+   0, 0, 0, true, ARRAY[]::text[]),
   ('claude-sonnet-4-5', 1, 'Claude Sonnet 4.5', 'anthropic',
    'https://api.anthropic.com/v1', 'claude-sonnet-4-5',
    'user_key', 200000,
    '{"reasoning": {"canDisable": true, "efforts": ["low", "medium", "high"], "defaultMode": "off", "defaultEffort": "medium", "style": "budget"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, true, ARRAY[]::text[]),
+   0, 0, 0, true, ARRAY[]::text[]),
   ('claude-haiku-4-5', 1, 'Claude Haiku 4.5', 'anthropic',
    'https://api.anthropic.com/v1', 'claude-haiku-4-5',
    'user_key', 200000,
    '{"reasoning": {"canDisable": true, "efforts": ["low", "medium", "high"], "defaultMode": "off", "defaultEffort": "medium", "style": "budget"}, "modalities": {"vision": true, "pdf": true}}'::jsonb,
    ARRAY['chat','generate','quiz'],
-   0, 0, true, ARRAY[]::text[]),
+   0, 0, 0, true, ARRAY[]::text[]),
   ('qwen-embed', 1, 'Qwen3 Embedding 4B', 'openrouter',
    'https://openrouter.ai/api/v1', 'qwen/qwen3-embedding-4b',
    'platform', 0,
    '{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}'::jsonb,
    ARRAY['embedding'],
-   50, 50, true,
+   50, 50, 0, true,
    ARRAY['embedding']),
   ('gemini-flash-lite', 1, 'Gemini Flash Lite', 'google',
    'https://generativelanguage.googleapis.com/v1beta/openai/',
@@ -1722,9 +1734,48 @@ INSERT INTO model_configs (
    'platform', 0,
    '{"temperature": 0.2}'::jsonb,
    ARRAY['vision'],
-   250, 1000, true,
+   250, 1000, 250, true,
    ARRAY['vision'])
 ON CONFLICT (model_key, version) DO NOTHING;
+
+-- Explicit cache-read rates. Backfill every existing row before the column
+-- becomes NOT NULL. A default of 0 would make platform cache hits free.
+-- Bump the registry version only when this run actually filled a NULL rate.
+WITH backfill AS (
+  UPDATE model_configs SET micros_per_cached_input_token = CASE
+    WHEN model_key = 'deepseek-flash' THEN 25
+    WHEN model_key = 'deepseek-pro' THEN 78
+    WHEN auth_mode = 'user_key' THEN 0
+    WHEN 'embedding' = ANY(surfaces) THEN 0
+    ELSE micros_per_input_token
+  END
+  WHERE micros_per_cached_input_token IS NULL
+  RETURNING 1
+)
+UPDATE model_registry_state
+   SET version = version + 1, updated_at = now()
+ WHERE id = true
+   AND EXISTS (SELECT 1 FROM backfill);
+
+ALTER TABLE model_configs
+  ALTER COLUMN micros_per_cached_input_token SET NOT NULL;
+
+ALTER TABLE model_configs DROP CONSTRAINT IF EXISTS model_configs_credit_rates_check;
+ALTER TABLE model_configs ADD CONSTRAINT model_configs_credit_rates_check CHECK (
+  auth_mode = 'user_key'
+  OR (
+    'embedding' = ANY(surfaces)
+    AND micros_per_input_token > 0
+    AND micros_per_cached_input_token >= 0
+    AND micros_per_output_token >= 0
+  )
+  OR (
+    NOT ('embedding' = ANY(surfaces))
+    AND micros_per_input_token > 0
+    AND micros_per_cached_input_token > 0
+    AND micros_per_output_token > 0
+  )
+);
 
 -- Existing local DBs already have the v1 DeepSeek rows from an earlier seed.
 -- Bring those two rows onto the new auth/window/reasoning shape.
@@ -1788,16 +1839,22 @@ CREATE TABLE IF NOT EXISTS usage_events (
   credit_micros  bigint NOT NULL DEFAULT 0,
   -- Reservation this settles, when the spend was gated in advance.
   reservation_id text,
+  -- Stable within one spend session. Callback retries reuse this id.
+  provider_call_id text,
   metadata       jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at     timestamptz NOT NULL DEFAULT now()
 );
 ALTER TABLE usage_events DROP COLUMN IF EXISTS cost_micro_usd;
+ALTER TABLE usage_events ADD COLUMN IF NOT EXISTS provider_call_id text;
 CREATE INDEX IF NOT EXISTS usage_events_actor_idx
   ON usage_events(actor_user_id, created_at DESC);
 CREATE INDEX IF NOT EXISTS usage_events_trace_idx
   ON usage_events(trace_id) WHERE trace_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS usage_events_rollup_idx
   ON usage_events(created_at, kind);
+CREATE UNIQUE INDEX IF NOT EXISTS usage_events_provider_call_idx
+  ON usage_events(reservation_id, provider_call_id)
+  WHERE reservation_id IS NOT NULL AND provider_call_id IS NOT NULL;
 
 -- The counter the spend gate locks. period_start makes the monthly allowance
 -- reset lazily on first read of a new month rather than needing a cron that
@@ -1821,12 +1878,28 @@ CREATE TABLE IF NOT EXISTS credit_reservations (
   trace_id       text,
   surface        text NOT NULL DEFAULT 'system',
   amount_micros  bigint NOT NULL,
+  paid_by        text NOT NULL DEFAULT 'platform'
+    CHECK (paid_by IN ('platform', 'user')),
+  llm_model_key  text NOT NULL DEFAULT '',
+  llm_model_version int NOT NULL DEFAULT 0,
+  embedding_model_key text NOT NULL DEFAULT '',
+  embedding_model_version int NOT NULL DEFAULT 0,
+  credits_exhausted_at timestamptz,
+  terminal_call_id text,
   status         text NOT NULL DEFAULT 'open'
     CHECK (status IN ('open', 'settled', 'released')),
   created_at     timestamptz NOT NULL DEFAULT now(),
   expires_at     timestamptz NOT NULL,
   settled_at     timestamptz
 );
+ALTER TABLE credit_reservations
+  ADD COLUMN IF NOT EXISTS paid_by text NOT NULL DEFAULT 'platform',
+  ADD COLUMN IF NOT EXISTS llm_model_key text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS llm_model_version int NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS embedding_model_key text NOT NULL DEFAULT '',
+  ADD COLUMN IF NOT EXISTS embedding_model_version int NOT NULL DEFAULT 0,
+  ADD COLUMN IF NOT EXISTS credits_exhausted_at timestamptz,
+  ADD COLUMN IF NOT EXISTS terminal_call_id text;
 CREATE INDEX IF NOT EXISTS credit_reservations_open_idx
   ON credit_reservations(expires_at) WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS credit_reservations_actor_idx
@@ -1861,6 +1934,15 @@ CREATE TABLE IF NOT EXISTS usage_rollup_state (
 );
 INSERT INTO usage_rollup_state (id) VALUES (true) ON CONFLICT (id) DO NOTHING;
 
+-- The ops health check needs the assistant trace id, not message content or
+-- citation/activity metadata. Keep the read role off messages entirely.
+CREATE OR REPLACE VIEW ops_completed_assistant_messages AS
+SELECT id,
+       NULLIF(metadata->>'traceId', '') AS trace_id,
+       created_at
+FROM messages
+WHERE role = 'assistant' AND status = 'complete';
+
 -- ============================================================================
 -- Operator access (internal ops dashboard)
 -- ============================================================================
@@ -1876,6 +1958,18 @@ CREATE TABLE IF NOT EXISTS operators (
   created_at   timestamptz NOT NULL DEFAULT now(),
   last_seen_at timestamptz
 );
+
+CREATE OR REPLACE FUNCTION touch_operator_seen(p_user_id text)
+RETURNS void
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+  UPDATE operators
+     SET last_seen_at = now()
+   WHERE user_id = p_user_id;
+$$;
+REVOKE ALL ON FUNCTION touch_operator_seen(text) FROM PUBLIC;
 
 CREATE OR REPLACE FUNCTION set_file_storage_owner()
 RETURNS trigger

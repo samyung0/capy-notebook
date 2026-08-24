@@ -148,6 +148,7 @@
   "workspace_back": "Workspaces",
   "chat_placeholder": "Ask about your sources…",
   "chat_grounded": "Answers grounded in this workspace's sources · GraphRAG",
+  "chat_planning_next_step": "Planning next step",
   "generate_title": "Make stuff happen",
   "generate_summary": "Summary",
   "generate_flashcards": "Flashcards",

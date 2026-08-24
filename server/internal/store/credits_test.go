@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/evonotes/server/internal/models"
+	"github.com/evonotes/server/internal/obs"
 )
 
 func newCreditsTestUser(t *testing.T, s *Store) string {
@@ -111,6 +112,221 @@ func TestSettleCreditsTwiceDoesNotDoubleCharge(t *testing.T) {
 	}
 	if n := eventCount(t, s, userID, id); n != 1 {
 		t.Fatalf("ledger rows = %d, want 1", n)
+	}
+}
+
+func TestProviderSessionSettlesEachCallOnceAndAllowsOneTerminalCall(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	userID := newCreditsTestUser(t, s)
+	limit := CreditLimitMicros(PlanFree)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros)
+		VALUES ($1, $2)`, userID, limit-1); err != nil {
+		t.Fatal(err)
+	}
+	llmCfg, err := reg.Get(ctx, "deepseek-flash", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	llm := RatesFromConfig(llmCfg)
+	embed := TokenRates{ModelKey: "qwen-embed", ModelVersion: 1}
+	sessionID, err := s.BeginProviderSession(
+		ctx,
+		userID,
+		"",
+		SurfaceChat,
+		models.PaidByPlatform,
+		llm,
+		embed,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	first := ProviderCallUsage{
+		CallID:      "pc_1",
+		Kind:        KindLLM,
+		Purpose:     "agent",
+		Provider:    "deepseek",
+		Model:       "deepseek-v4-flash",
+		InputTokens: 1,
+	}
+	settlement, err := s.SettleProviderCall(ctx, sessionID, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settlement.CreditsExhausted || !settlement.TerminalCallAllowed {
+		t.Fatalf("first settlement = %#v", settlement)
+	}
+	used := mustBalance(t, s, userID).UsedMicros
+	duplicate, err := s.SettleProviderCall(ctx, sessionID, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !duplicate.Duplicate || mustBalance(t, s, userID).UsedMicros != used {
+		t.Fatalf("duplicate settlement = %#v", duplicate)
+	}
+
+	embedding, err := s.SettleProviderCall(ctx, sessionID, ProviderCallUsage{
+		CallID:      "pc_embed",
+		Kind:        KindEmbedding,
+		Purpose:     "embedding",
+		Provider:    "openrouter",
+		Model:       "qwen/qwen3-embedding-4b",
+		InputTokens: 20,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !embedding.CreditsExhausted || !embedding.TerminalCallAllowed {
+		t.Fatalf("embedding settlement = %#v", embedding)
+	}
+	if mustBalance(t, s, userID).UsedMicros != used {
+		t.Fatal("query embedding changed actor credits")
+	}
+
+	terminal, err := s.SettleProviderCall(ctx, sessionID, ProviderCallUsage{
+		CallID:       "pc_terminal",
+		Kind:         KindLLM,
+		Purpose:      "terminal",
+		Provider:     "deepseek",
+		Model:        "deepseek-v4-flash",
+		OutputTokens: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !terminal.CreditsExhausted || terminal.TerminalCallAllowed {
+		t.Fatalf("terminal settlement = %#v", terminal)
+	}
+	_, err = s.SettleProviderCall(ctx, sessionID, ProviderCallUsage{
+		CallID:  "pc_terminal_2",
+		Kind:    KindLLM,
+		Purpose: "terminal",
+	})
+	if !errors.Is(err, ErrTerminalCallAlreadyUsed) {
+		t.Fatalf("second terminal settlement: %v", err)
+	}
+	if err := s.SettleCredits(ctx, sessionID); err != nil {
+		t.Fatal(err)
+	}
+	if n := eventCount(t, s, userID, sessionID); n != 3 {
+		t.Fatalf("provider call rows = %d, want 3", n)
+	}
+}
+
+func TestUserKeyProviderSessionRecordsZeroCreditCallsPastPlatformLimit(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	limit := CreditLimitMicros(PlanFree)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros)
+		VALUES ($1, $2)`, userID, limit); err != nil {
+		t.Fatal(err)
+	}
+	sessionID, err := s.BeginProviderSession(
+		ctx,
+		userID,
+		"",
+		SurfaceChat,
+		models.PaidByUser,
+		TokenRates{ModelKey: "gpt-byok", ModelVersion: 1},
+		TokenRates{ModelKey: "qwen-embed", ModelVersion: 1},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settlement, err := s.SettleProviderCall(ctx, sessionID, ProviderCallUsage{
+		CallID:      "pc_byok",
+		Kind:        KindLLM,
+		Purpose:     "agent",
+		InputTokens: 100,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settlement.CreditsExhausted || settlement.TerminalCallAllowed {
+		t.Fatalf("BYOK settlement = %#v", settlement)
+	}
+	if got := mustBalance(t, s, userID).UsedMicros; got != limit {
+		t.Fatalf("BYOK changed credits: %d", got)
+	}
+}
+
+func TestClosedProviderSessionAcceptsLateReceiptWithoutContinuation(t *testing.T) {
+	s := openAccessTestStore(t)
+	const traceID = "0123456789abcdef0123456789abcdef"
+	ctx := obs.WithTrace(context.Background(), traceID, "0123456789abcdef")
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	userID := newCreditsTestUser(t, s)
+	limit := CreditLimitMicros(PlanFree)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros)
+		VALUES ($1, $2)`, userID, limit-1); err != nil {
+		t.Fatal(err)
+	}
+	llmCfg, err := reg.Get(ctx, "deepseek-flash", 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID, err := s.BeginProviderSession(
+		ctx,
+		userID,
+		"",
+		SurfaceChat,
+		models.PaidByPlatform,
+		RatesFromConfig(llmCfg),
+		TokenRates{ModelKey: "qwen-embed", ModelVersion: 1},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ReleaseCredits(ctx, sessionID); err != nil {
+		t.Fatal(err)
+	}
+	call := ProviderCallUsage{
+		CallID:      "pc_late",
+		Kind:        KindLLM,
+		Purpose:     "agent",
+		Provider:    "deepseek",
+		Model:       "deepseek-v4-flash",
+		InputTokens: 1,
+	}
+	settlement, err := s.SettleProviderCall(ctx, sessionID, call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settlement.CreditsExhausted || settlement.TerminalCallAllowed {
+		t.Fatalf("late settlement = %#v", settlement)
+	}
+	duplicate, err := s.SettleProviderCall(ctx, sessionID, call)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !duplicate.Duplicate || duplicate.TerminalCallAllowed {
+		t.Fatalf("late duplicate = %#v", duplicate)
+	}
+	if n := eventCount(t, s, userID, sessionID); n != 1 {
+		t.Fatalf("late provider call rows = %d, want 1", n)
+	}
+	var recordedTrace string
+	if err := s.pool.QueryRow(ctx, `
+		SELECT COALESCE(trace_id, '') FROM usage_events
+		WHERE reservation_id=$1 AND provider_call_id=$2`,
+		sessionID, call.CallID,
+	).Scan(&recordedTrace); err != nil {
+		t.Fatal(err)
+	}
+	if recordedTrace != traceID {
+		t.Fatalf("late receipt trace = %q, want %q", recordedTrace, traceID)
 	}
 }
 

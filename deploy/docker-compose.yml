@@ -15,8 +15,9 @@
 # API keys (DeepSeek/OpenRouter/Google/Whisper), and a deployed Modal parse URL.
 # Set them in deploy/.env (see .env.example) or the shell environment.
 #
-# Only `server` (:8080) and `collaboration` (:1234) should be public. Retrieval
-# (:8001), the worker, Postgres and Redis stay on the private network.
+# Only `server` (:8080), `collaboration` (:1234), and the Access-protected
+# `ops` service (:8082) have hostname routes. Retrieval (:8001), the worker,
+# Postgres and Redis stay on the private network.
 
 # Shared by every process that reports errors. LOG_FORMAT / LOG_LEVEL are
 # omitted on purpose: an empty string from compose interpolation would override
@@ -145,6 +146,50 @@ services:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+
+  ops:
+    profiles:
+      - ops
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile
+      args:
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-}
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN_OPS:-}
+        VITE_RELEASE_SHA: ${RELEASE_SHA:-}
+    environment:
+      <<: *observability
+      OPS_ADDR: ":8082"
+      OPS_STATIC_DIR: /app/static
+      OPS_DATABASE_URL: ${OPS_DATABASE_URL:-}
+      OPS_AUTH_DATABASE_URL: ${OPS_AUTH_DATABASE_URL:-}
+      OPS_REGISTRY_DATABASE_URL: ${OPS_REGISTRY_DATABASE_URL:-}
+      OPS_CF_ACCESS_ISSUER: ${OPS_CF_ACCESS_ISSUER:-}
+      OPS_CF_ACCESS_AUDIENCE: ${OPS_CF_ACCESS_AUDIENCE:-}
+      OPS_ACCESS_DISABLED: ${OPS_ACCESS_DISABLED:-false}
+      OPS_AUTH_DISABLED: ${OPS_AUTH_DISABLED:-false}
+      OPS_UNSAFE_DEVELOPMENT: ${OPS_UNSAFE_DEVELOPMENT:-false}
+      OPS_DEV_USER_ID: ${OPS_DEV_USER_ID:-u_1}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
+      SENTRY_DSN: ${SENTRY_DSN_OPS:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+    expose:
+      - "8082"
+    ports:
+      - "127.0.0.1:8082:8082"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8082/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    depends_on:
+      db:
         condition: service_healthy
 
   worker:

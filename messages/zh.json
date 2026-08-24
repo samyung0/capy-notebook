@@ -145,6 +145,7 @@
   "workspace_back": "工作区",
   "chat_placeholder": "向你的来源提问…",
   "chat_grounded": "回答基于本工作区的来源 · GraphRAG",
+  "chat_planning_next_step": "正在规划下一步",
   "generate_title": "开始创作",
   "generate_summary": "摘要",
   "generate_flashcards": "记忆卡",

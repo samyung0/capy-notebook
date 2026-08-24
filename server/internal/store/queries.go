@@ -11,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/evonotes/server/internal/copytext"
+	"github.com/evonotes/server/internal/embeddingpins"
 	"github.com/evonotes/server/internal/materialdoc"
 	"github.com/evonotes/server/internal/models"
 )
@@ -269,21 +270,12 @@ type workspaceEmbedding struct {
 	Dim int
 }
 
-// vectorTables mirrors _VECTOR_TABLES in pipeline/pipeline/retrieval/store.py.
-// One table per embedding pin, not per width: two 2560-d models do not share
-// an index. rag_chunk_vectors_2560 is the historical name for qwen-embed v1.
-var vectorTables = map[models.Pin]string{
-	{Key: "qwen-embed", Version: 1}: "rag_chunk_vectors_2560",
-}
+var vectorTableForPin = embeddingpins.VectorTable
 
 // vectorTable is looked up rather than formatted, because the result is
 // interpolated into SQL: only pins the schema actually has can reach a query.
 func vectorTable(pin models.Pin) (string, error) {
-	table, ok := vectorTables[pin]
-	if !ok {
-		return "", fmt.Errorf("no vector table for %s v%d", pin.Key, pin.Version)
-	}
-	return table, nil
+	return vectorTableForPin(pin)
 }
 
 // newWorkspaceEmbedding resolves the embedding model a new workspace will keep
@@ -962,6 +954,9 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 		mt.Title, json.RawMessage(mt.Content), mt.ChapterID, mt.ScopeChapters,
 		mt.ScopeFileNames, mt.Privacy, mt.Color, metrics.NodeCount, metrics.MaxDepth, creatorID)
 	if err != nil {
+		if uniqueConstraintName(err) == "materials_pkey" {
+			return Material{}, ErrMaterialIDTaken
+		}
 		if isUniqueViolation(err) {
 			return Material{}, ErrTitleTaken
 		}
@@ -1581,7 +1576,7 @@ func (s *Store) GetDeck(ctx context.Context, id string) (Deck, error) {
 // card, matching the frontend constructor. An omitted workspace id creates a
 // truly standalone deck owned directly by the user.
 func (s *Store) CreateDeck(ctx context.Context, userID, name string, color UserColor, wsID string) (Deck, error) {
-	return s.CreateDeckWithCards(ctx, userID, name, color, wsID, nil)
+	return s.CreateDeckWithCards(ctx, userID, name, color, wsID, nil, "")
 }
 
 // CreateDeckWithCards persists the complete authored deck in one material
@@ -1600,6 +1595,7 @@ func (s *Store) CreateDeckWithCards(
 	color UserColor,
 	wsID string,
 	cardValues [][2]string,
+	id string,
 ) (Deck, error) {
 	var wsName string
 	if wsID != "" {
@@ -1631,7 +1627,7 @@ func (s *Store) CreateDeckWithCards(
 		return Deck{}, err
 	}
 	mt, err := s.CreateMaterial(ctx, Material{
-		CreatedBy: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: "flashcards",
+		ID: id, CreatedBy: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: "flashcards",
 		Title: name, Content: content, Color: color,
 	})
 	if err != nil {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/evonotes/server/internal/models"
 	"github.com/evonotes/server/internal/obs"
 )
 
@@ -48,6 +49,11 @@ var ErrTooManyLLMLeases = errors.New("too many llm leases")
 // pending or running ingest jobs. Distinct from too-many-llm-leases and from
 // credits exhausted.
 var ErrTooManyIngestLeases = errors.New("too many ingest leases")
+
+var ErrProviderSessionClosed = errors.New("provider session closed")
+var ErrProviderCallConflict = errors.New("provider call id reused with different usage")
+var ErrTerminalCallNotAllowed = errors.New("terminal provider call not allowed")
+var ErrTerminalCallAlreadyUsed = errors.New("terminal provider call already used")
 
 // ConcurrentLLMLeases caps unsettled platform-paid model calls per actor.
 // Worst-case overshoot is this many in-flight settlements. BYOK does not take
@@ -124,22 +130,43 @@ type UsageReport struct {
 // Units carries everything that is not a token (GPU milliseconds, bytes, mail
 // count) so a single ledger covers every resource.
 type UsageEvent struct {
-	TraceID       string
-	ActorUserID   string
-	WorkspaceID   string
-	Kind          string
-	Surface       string
-	Provider      string
-	Model         string
-	InputTokens   int64
-	OutputTokens  int64
-	Units         int64
-	Unit          string
-	CreditMicros  int64
-	ModelKey      string
-	ModelVersion  int
-	ReservationID string
-	Metadata      map[string]any
+	TraceID        string
+	ActorUserID    string
+	WorkspaceID    string
+	Kind           string
+	Surface        string
+	Provider       string
+	Model          string
+	InputTokens    int64
+	OutputTokens   int64
+	Units          int64
+	Unit           string
+	CreditMicros   int64
+	ModelKey       string
+	ModelVersion   int
+	ReservationID  string
+	ProviderCallID string
+	Metadata       map[string]any
+}
+
+type ProviderCallUsage struct {
+	CallID           string
+	Kind             string
+	Purpose          string
+	Provider         string
+	Model            string
+	InputTokens      int64
+	OutputTokens     int64
+	CachedReadTokens int64
+	CacheWriteTokens int64
+	ReasoningTokens  int64
+	CacheAnomaly     string
+}
+
+type ProviderCallSettlement struct {
+	CreditsExhausted    bool
+	TerminalCallAllowed bool
+	Duplicate           bool
 }
 
 // Usage kinds and surfaces. Kept as constants because they are the grouping
@@ -323,8 +350,8 @@ func (s *Store) BeginSpend(
 	if err := tx.QueryRow(ctx, `
 		SELECT count(*) FROM credit_reservations
 		 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
-		   AND surface <> $2`,
-		actorUserID, SurfaceIngest).Scan(&open); err != nil {
+		   AND surface <> $2 AND paid_by = $3`,
+		actorUserID, SurfaceIngest, models.PaidByPlatform).Scan(&open); err != nil {
 		return "", err
 	}
 	if open >= ConcurrentLLMLeases {
@@ -349,6 +376,277 @@ func (s *Store) BeginSpend(
 		return "", err
 	}
 	return id, nil
+}
+
+func (s *Store) BeginProviderSession(
+	ctx context.Context,
+	actorUserID, workspaceID, surface, paidBy string,
+	llm, embedding TokenRates,
+) (string, error) {
+	if actorUserID == "" {
+		return "", ErrNotFound
+	}
+	if paidBy != models.PaidByPlatform && paidBy != models.PaidByUser {
+		return "", fmt.Errorf("invalid paid_by %q", paidBy)
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if paidBy == models.PaidByPlatform {
+		usage, err := s.lockedCreditUsageTx(ctx, tx, actorUserID)
+		if err != nil {
+			return "", err
+		}
+		if usage.UsedMicros >= usage.LimitMicros {
+			return "", &CreditsExhaustedError{
+				UserID:         actorUserID,
+				UsedMicros:     usage.UsedMicros,
+				ReservedMicros: usage.ReservedMicros,
+				LimitMicros:    usage.LimitMicros,
+				PlanTier:       usage.PlanTier,
+			}
+		}
+		var open int64
+		if err := tx.QueryRow(ctx, `
+			SELECT count(*) FROM credit_reservations
+			 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
+			   AND surface <> $2 AND paid_by = $3`,
+			actorUserID, SurfaceIngest, models.PaidByPlatform).Scan(&open); err != nil {
+			return "", err
+		}
+		if open >= ConcurrentLLMLeases {
+			return "", ErrTooManyLLMLeases
+		}
+	}
+
+	id := uid("cr")
+	var wsID *string
+	if workspaceID != "" {
+		wsID = &workspaceID
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO credit_reservations
+			(id, actor_user_id, workspace_id, trace_id, surface, amount_micros,
+			 paid_by, llm_model_key, llm_model_version,
+			 embedding_model_key, embedding_model_version, expires_at)
+		VALUES ($1,$2,$3,$4,$5,0,$6,$7,$8,$9,$10,
+		        now() + ($11 * interval '1 millisecond'))`,
+		id, actorUserID, wsID, nullString(obs.TraceID(ctx)), surface, paidBy,
+		llm.ModelKey, llm.ModelVersion, embedding.ModelKey, embedding.ModelVersion,
+		reservationTTL.Milliseconds(),
+	); err != nil {
+		return "", err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return "", err
+	}
+	return id, nil
+}
+
+func (s *Store) SettleProviderCall(
+	ctx context.Context,
+	sessionID string,
+	call ProviderCallUsage,
+) (ProviderCallSettlement, error) {
+	var out ProviderCallSettlement
+	if sessionID == "" || call.CallID == "" {
+		return out, fmt.Errorf("session id and provider call id are required")
+	}
+	if call.Kind != KindLLM && call.Kind != KindEmbedding {
+		return out, fmt.Errorf("invalid provider call kind %q", call.Kind)
+	}
+	if call.InputTokens < 0 || call.OutputTokens < 0 || call.CachedReadTokens < 0 ||
+		call.CacheWriteTokens < 0 || call.ReasoningTokens < 0 {
+		return out, fmt.Errorf("provider usage cannot be negative")
+	}
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return out, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	var (
+		actorUserID, workspaceID, surface, paidBy string
+		traceID                                   string
+		llmKey, embeddingKey                      string
+		llmVersion, embeddingVersion              int
+		status                                    string
+		exhaustedAt                               *time.Time
+		terminalCallID                            *string
+	)
+	err = tx.QueryRow(ctx, `
+		SELECT actor_user_id, COALESCE(workspace_id, ''), surface, paid_by,
+		       COALESCE(trace_id, ''),
+		       llm_model_key, llm_model_version,
+		       embedding_model_key, embedding_model_version,
+		       status, credits_exhausted_at, terminal_call_id
+		FROM credit_reservations WHERE id = $1 FOR UPDATE`, sessionID).
+		Scan(
+			&actorUserID, &workspaceID, &surface, &paidBy,
+			&traceID,
+			&llmKey, &llmVersion, &embeddingKey, &embeddingVersion,
+			&status, &exhaustedAt, &terminalCallID,
+		)
+	if isNoRows(err) {
+		return out, ErrNotFound
+	}
+	if err != nil {
+		return out, err
+	}
+
+	var duplicate bool
+	if err := tx.QueryRow(ctx, `
+		SELECT EXISTS(
+		  SELECT 1 FROM usage_events
+		  WHERE reservation_id = $1 AND provider_call_id = $2
+		)`, sessionID, call.CallID).Scan(&duplicate); err != nil {
+		return out, err
+	}
+	if duplicate {
+		var recorded ProviderCallUsage
+		if err := tx.QueryRow(ctx, `
+			SELECT kind, COALESCE(metadata->>'purpose', ''), provider, model,
+			       input_tokens, output_tokens,
+			       COALESCE((metadata->>'cachedReadTokens')::bigint, 0),
+			       COALESCE((metadata->>'cacheWriteTokens')::bigint, 0),
+			       COALESCE((metadata->>'reasoningTokens')::bigint, 0),
+			       COALESCE(metadata->>'cacheAnomaly', '')
+			FROM usage_events
+			WHERE reservation_id = $1 AND provider_call_id = $2`,
+			sessionID, call.CallID,
+		).Scan(
+			&recorded.Kind, &recorded.Purpose, &recorded.Provider, &recorded.Model,
+			&recorded.InputTokens, &recorded.OutputTokens,
+			&recorded.CachedReadTokens, &recorded.CacheWriteTokens,
+			&recorded.ReasoningTokens, &recorded.CacheAnomaly,
+		); err != nil {
+			return out, err
+		}
+		recorded.CallID = call.CallID
+		if recorded != call {
+			return out, ErrProviderCallConflict
+		}
+		out.CreditsExhausted = paidBy == models.PaidByPlatform && exhaustedAt != nil
+		out.TerminalCallAllowed = status == "open" && out.CreditsExhausted &&
+			(terminalCallID == nil || *terminalCallID == "")
+		out.Duplicate = true
+		return out, tx.Commit(ctx)
+	}
+	if status != "open" && status != "settled" && status != "released" {
+		return out, ErrProviderSessionClosed
+	}
+
+	if call.Purpose == "terminal" && (call.Kind != KindLLM || exhaustedAt == nil) {
+		return out, ErrTerminalCallNotAllowed
+	}
+	if call.Kind == KindLLM && exhaustedAt != nil {
+		if terminalCallID != nil && *terminalCallID != "" && *terminalCallID != call.CallID {
+			return out, ErrTerminalCallAlreadyUsed
+		}
+		terminalCallID = &call.CallID
+	}
+
+	rates := TokenRates{}
+	modelKey, modelVersion := llmKey, llmVersion
+	if call.Kind == KindEmbedding {
+		modelKey, modelVersion = embeddingKey, embeddingVersion
+	} else if paidBy == models.PaidByPlatform {
+		if s.registry == nil {
+			return out, fmt.Errorf("%w: registry not configured", ErrModelUnavailable)
+		}
+		cfg, err := s.registry.Get(ctx, llmKey, llmVersion)
+		if err != nil {
+			return out, fmt.Errorf("%w: %v", ErrModelUnavailable, err)
+		}
+		rates = RatesFromConfig(cfg)
+	}
+
+	credits := int64(0)
+	if call.Kind == KindLLM && paidBy == models.PaidByPlatform {
+		credits = CreditsForTokens(
+			rates,
+			KindLLM,
+			call.InputTokens,
+			call.OutputTokens,
+			call.CachedReadTokens,
+		)
+	}
+	meta := map[string]any{
+		"callId":  call.CallID,
+		"purpose": call.Purpose,
+		"paidBy":  paidBy,
+	}
+	if call.CachedReadTokens > 0 {
+		meta["cachedReadTokens"] = call.CachedReadTokens
+	}
+	if call.CacheWriteTokens > 0 {
+		meta["cacheWriteTokens"] = call.CacheWriteTokens
+	}
+	if call.ReasoningTokens > 0 {
+		meta["reasoningTokens"] = call.ReasoningTokens
+	}
+	if call.CacheAnomaly != "" {
+		meta["cacheAnomaly"] = call.CacheAnomaly
+	}
+	if call.InputTokens == 0 && call.OutputTokens == 0 {
+		meta["usageMissing"] = true
+	}
+	event := UsageEvent{
+		TraceID:        traceID,
+		ActorUserID:    actorUserID,
+		WorkspaceID:    workspaceID,
+		Kind:           call.Kind,
+		Surface:        surface,
+		Provider:       call.Provider,
+		Model:          call.Model,
+		InputTokens:    call.InputTokens,
+		OutputTokens:   call.OutputTokens,
+		Unit:           "tokens",
+		CreditMicros:   credits,
+		ModelKey:       modelKey,
+		ModelVersion:   modelVersion,
+		ReservationID:  sessionID,
+		ProviderCallID: call.CallID,
+		Metadata:       meta,
+	}
+	if err := insertUsageEventTx(ctx, tx, event); err != nil {
+		return out, err
+	}
+
+	if paidBy == models.PaidByPlatform {
+		balance, err := s.lockedCreditUsageTx(ctx, tx, actorUserID)
+		if err != nil {
+			return out, err
+		}
+		used := balance.UsedMicros + credits
+		if _, err := tx.Exec(ctx, `UPDATE user_credits
+			SET used_micros = $2, updated_at = now()
+			WHERE user_id = $1`, actorUserID, used); err != nil {
+			return out, err
+		}
+		out.CreditsExhausted = used >= balance.LimitMicros
+		if out.CreditsExhausted && exhaustedAt == nil {
+			if _, err := tx.Exec(ctx, `UPDATE credit_reservations
+				SET credits_exhausted_at = now() WHERE id = $1`, sessionID); err != nil {
+				return out, err
+			}
+			now := time.Now()
+			exhaustedAt = &now
+		}
+	}
+	if terminalCallID != nil && *terminalCallID != "" {
+		if _, err := tx.Exec(ctx, `UPDATE credit_reservations
+			SET terminal_call_id = $2 WHERE id = $1`, sessionID, *terminalCallID); err != nil {
+			return out, err
+		}
+	}
+	out.TerminalCallAllowed = status == "open" && out.CreditsExhausted &&
+		(terminalCallID == nil || *terminalCallID == "")
+	return out, tx.Commit(ctx)
 }
 
 // IngestSlots is this actor's ingest concurrency remaining, across every
@@ -752,12 +1050,14 @@ func insertUsageEventTx(ctx context.Context, tx pgx.Tx, ev UsageEvent) error {
 		INSERT INTO usage_events
 			(trace_id, actor_user_id, workspace_id, kind, surface, provider, model,
 			 model_key, model_version,
-			 input_tokens, output_tokens, units, unit, credit_micros, reservation_id, metadata)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)`,
+			 input_tokens, output_tokens, units, unit, credit_micros,
+			 reservation_id, provider_call_id, metadata)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
 		nullString(ev.TraceID), ev.ActorUserID, wsID, ev.Kind, ev.Surface,
 		ev.Provider, ev.Model, ev.ModelKey, ev.ModelVersion,
 		ev.InputTokens, ev.OutputTokens, ev.Units, ev.Unit,
-		ev.CreditMicros, nullString(ev.ReservationID), ev.Metadata,
+		ev.CreditMicros, nullString(ev.ReservationID), nullString(ev.ProviderCallID),
+		ev.Metadata,
 	)
 	return err
 }

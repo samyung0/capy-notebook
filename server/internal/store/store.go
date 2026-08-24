@@ -58,6 +58,14 @@ var ErrForbidden = errors.New("forbidden")
 // title (case-insensitive, trimmed). Standalone materials are not in this set.
 var ErrTitleTaken = errors.New("material title already used in this workspace")
 
+// ErrMaterialIDTaken means INSERT hit materials_pkey. The caller looks up
+// the row and either returns the original or reports ErrMaterialConflict.
+var ErrMaterialIDTaken = errors.New("material id already exists")
+
+// ErrMaterialConflict means the same material id was reused with a different
+// workspace, actor, kind, or payload.
+var ErrMaterialConflict = errors.New("material id already used with a different payload")
+
 // ErrAuthorityUnavailable means an initialized Y.Doc could not be mutated
 // through the collaboration authority. Callers must fail closed with 503.
 var ErrAuthorityUnavailable = errors.New("collaboration authority unavailable")
@@ -97,6 +105,13 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 		pool:              pool,
 		collaborationHTTP: &http.Client{Timeout: 20 * time.Second},
 	}, nil
+}
+
+func NewWithPool(pool *pgxpool.Pool) *Store {
+	return &Store{
+		pool:              pool,
+		collaborationHTTP: &http.Client{Timeout: 20 * time.Second},
+	}
 }
 
 func (s *Store) Close() { s.pool.Close() }
@@ -147,4 +162,12 @@ func isNoRows(err error) bool { return errors.Is(err, pgx.ErrNoRows) }
 func isUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+
+func uniqueConstraintName(err error) string {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+		return pgErr.ConstraintName
+	}
+	return ""
 }

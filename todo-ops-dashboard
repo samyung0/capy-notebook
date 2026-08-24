@@ -1,6 +1,6 @@
 # Internal operator dashboard — spec
 
-A separate small app, outside `src/`, on its own hostname (`ops.abcd.com`),
+A separate small app, outside `src/`, on its own hostname (`ops.evonotes.com`),
 reading the same Postgres. Clean slate: none of the main app's Tailwind /
 Radix / Base UI setup comes along.
 
@@ -19,14 +19,15 @@ it can read every user's workspace names, file names, and chat volume. Design
 accordingly:
 
 - **Read-only database role for v1 charts.** Not the gateway's credentials. The
-  `evo_ops` role in the runbook grants `SELECT` on eight tables and nothing
-  else. If the app is compromised, the blast radius is disclosure, not
-  destruction.
+  `evo_ops` role in the runbook grants only the tables and safe columns the
+  screens query. If the app is compromised, the blast radius is disclosure,
+  not destruction. A separate execute-only role updates operator last-seen
+  timestamps.
 - **The one exception is the model-registry grid (§6).** That screen is why
-  `operators.role = 'admin'` exists. It needs a *second* DB role with a
+  `operators.role = 'admin'` exists. It needs a separate DB role with a
   tight write grant (not the gateway role, not `evo_ops`). Viewer sessions
-  must not even be issued that credential. Until §6 ships, there are still
-  **no mutation endpoints**.
+  must not even be issued that credential. Outside §6 there are **no mutation
+  endpoints**.
 - **No customer content.** Show workspace *names* and file *names* if needed for
   support, never material bodies, chat messages, or note content. If a support
   workflow needs that, it needs consent, not a dashboard.
@@ -58,7 +59,7 @@ read-only everywhere else. Membership is still granted only by hand.
 
 Two independent gates, either of which alone stops an attacker:
 
-1. **Cloudflare Access** on `ops.abcd.com`, restricted to a named email list or
+1. **Cloudflare Access** on `ops.evonotes.com`, restricted to a named email list or
    your Google Workspace. This runs at the edge — the app is never reachable
    without passing it, so an auth bug in the app is not exploitable from the
    internet. Access injects a signed `Cf-Access-Jwt-Assertion` header; verify it
@@ -184,7 +185,7 @@ Reached by searching email or user id. For support tickets.
 
 ## 5. Deployment
 
-- Own container in `deploy/docker-compose.yml`, behind `ops.abcd.com`.
+- Own container in `deploy/docker-compose.yml`, behind `ops.evonotes.com`.
 - `DATABASE_URL` uses the `evo_ops` read-only role.
 - Registry writes (§6) use a separate `DATABASE_URL` / role, only loaded for
   `admin` sessions. Grant `INSERT`/`UPDATE` on `model_configs`,
@@ -196,12 +197,11 @@ Reached by searching email or user id. For support tickets.
   not mix with product errors.
 
 
-## 6. Model registry grid (replaces `modelctl`) — not built yet
+## 6. Model registry grid (replaces `modelctl`)
 
 The product gateway has **no HTTP write path** for the registry on purpose.
 `server/cmd/modelctl` is gone. Operators edit the mapping here, then press
-**Save** once. Until this ships, the seeded `model_configs` rows are the
-registry; changing them is `psql`.
+**Save** once. The seeded `model_configs` rows remain the initial registry.
 
 ### 6.1 What the operator sees
 
@@ -231,7 +231,7 @@ A matrix:
   the live default the gateway/pipeline poll.
 
 Clicking a filled cell opens the config: `display_name`, `provider_slug`,
-`base_url`, `provider_model_id`, `params`, credit micros, USD micros,
+`base_url`, `provider_model_id`, `params`, credit micros for input / cached-read / output,
 `enabled`, `surfaces`, created_at. On embedding rows `enabled`,
 `provider_model_id`, and `params` are read-only. `base_url` and
 `provider_slug` stay editable so the same weights can move host. Show
@@ -364,8 +364,10 @@ draft so a batch cannot leave the registry empty:
 - Do not disable, delete, clear, or rewrite `provider_model_id` /
   `params` on an embedding cell, and do not run deprecate against a key
   that serves `embedding`.
-- Two admins saving at once: lock `model_configs` (and remapped users)
-  in the transaction; bump is the cache invalidation.
+- Two admins saving at once: lock `model_registry_state FOR UPDATE`, compare
+  `expectedVersion`, and use a serializable transaction. Do not take a
+  table-level `model_configs` lock; the registry role intentionally has only
+  scoped column writes. The state-row bump is the cache invalidation.
 
 Draft validation in the UI should catch most of this before the request
 leaves the browser. The transaction is the source of truth.
@@ -391,8 +393,8 @@ before disable so that window does not exist.
 ### 6.5 Product API stays read-only
 
 `GET /api/models` and `PATCH /api/me/models` are the user picker. Do not
-add registry writes to the gateway. Ops is a separate app, admin-only,
-own write role. A compromised session on `app.abcd.com` must not be able
+add registry writes to the gateway. Ops is a separate, admin-only app with its
+own write role. A compromised session on `app.evonotes.com` must not be able
 to retarget everyone's default model.
 
 ### 6.6 Implementation notes (when building)
@@ -402,14 +404,26 @@ to retarget everyone's default model.
   `model_configs` / `model_registry_state`).
 - Local dirty state; Save is one POST of the full grid (or a list of cell
   ops). Partial autosave will race and skip deprecate.
-- Adding a **new row** (new user-facing key) is "add catalog config + fill
-  cells", not a separate CLI.
+- Adding a **new non-embedding row** (new user-facing key) is "add catalog
+  config + fill cells", not a separate CLI. New embedding pins are shipped by
+  schema/code deployment; the dashboard may only move the embedding default to
+  a fully valid pre-shipped row after acknowledgement.
 - `server/internal/models` and `pipeline/pipeline/registry.py` already
   poll `model_registry_state` every 30s. Save only needs to bump.
 - Tests belong next to the ops write handler, not a resurrected CLI.
   Cover: version bump (disable old, insert new, prefs unchanged) for
-  chat/generate/editor only, last chat cell of a key requires fallback +
+  chat/generate/editor and quiz where supported, last surface cell of a key requires fallback +
   remap + mail, refuse Save that drops a surface default, never DELETE
   `model_configs`, refuse disable/delete/strip/rewrite of any embedding
-  row, and allow inserting a second same-width embedding row as a new
-  key.
+  row, and allow an acknowledged default move to a pre-shipped,
+  allowlisted same-width embedding row with a new key.
+
+Implementation status: the standalone TanStack Router/shadcn dashboard, Go ops
+service, three database-role contracts, Cloudflare Access and Clerk gates,
+operator lifecycle checks, read screens, registry transaction, embedding
+allowlist validation, deployment wiring, and CI-backed Postgres tests are
+implemented. The exact least-privilege registry role is exercised by integration
+tests that both complete Save and prove DELETE/customer-content reads fail.
+Save serialization uses the serializable transaction plus
+`model_registry_state FOR UPDATE`; it requires no table-level `model_configs`
+lock or write grant.

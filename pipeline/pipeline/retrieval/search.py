@@ -72,6 +72,7 @@ class Passage:
     def as_citation(self) -> dict[str, Any]:
         citation: dict[str, Any] = {
             "fileId": self.file_id,
+            "chunkId": self.chunk_id,
             "fileName": self.file_name,
             "snippet": (self.hit_text or self.text)[:400],
         }

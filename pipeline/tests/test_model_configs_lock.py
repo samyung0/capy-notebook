@@ -8,7 +8,9 @@ retargeted. Two rows cannot claim the same is_default_for surface.
 
 from __future__ import annotations
 
+import re
 import secrets
+from pathlib import Path
 
 import pytest
 
@@ -18,6 +20,28 @@ _CHAT_PARAMS = (
     '{"reasoning":{"canDisable":true,"efforts":["low","high","max"],'
     '"defaultMode":"off","defaultEffort":"max"}}'
 )
+
+
+def test_python_embedding_allowlist_matches_go():
+    from pipeline.retrieval.store import _VECTOR_TABLES
+
+    source = (
+        Path(__file__).parents[2]
+        / "server"
+        / "internal"
+        / "embeddingpins"
+        / "allowlist.go"
+    ).read_text(encoding="utf-8")
+    go_tables = {
+        (key, int(version)): table
+        for key, version, table in re.findall(
+            r'\{Key: "([^"]+)", Version: (\d+)\}: \{\s*'
+            r'VectorTable: "([^"]+)"',
+            source,
+        )
+    }
+    assert go_tables
+    assert _VECTOR_TABLES == go_tables
 
 
 def test_embedding_rows_are_frozen(_test_infra):
@@ -64,13 +88,13 @@ def test_embedding_rows_are_frozen(_test_infra):
                     model_key, version, display_name, provider_slug, base_url,
                     provider_model_id, params, surfaces,
                     micros_per_input_token, micros_per_output_token,
-                    enabled, is_default_for
+                    micros_per_cached_input_token, enabled, is_default_for
                 ) VALUES (
                     'ghost-embed', 1, 'Ghost', 'openrouter', 'https://example.test',
                     'ghost',
                     '{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}'::jsonb,
                     ARRAY['embedding'],
-                    50, 50, false, ARRAY[]::text[])
+                    50, 50, 0, false, ARRAY[]::text[])
                 """
             )
 
@@ -81,11 +105,11 @@ def test_embedding_rows_are_frozen(_test_infra):
                 model_key, version, display_name, provider_slug, base_url,
                 provider_model_id, params, surfaces,
                 micros_per_input_token, micros_per_output_token,
-                enabled, is_default_for
+                micros_per_cached_input_token, enabled, is_default_for
             ) VALUES (
                 %s, 1, 'Chat Disable', 'deepseek', 'https://example.test',
                 'chat-disable', %s::jsonb, ARRAY['chat'],
-                250, 1000, true, ARRAY[]::text[])
+                250, 1000, 250, true, ARRAY[]::text[])
             """,
             (chat_key, _CHAT_PARAMS),
         )
@@ -115,13 +139,13 @@ def test_embedding_rows_are_frozen(_test_infra):
                 model_key, version, display_name, provider_slug, base_url,
                 provider_model_id, params, surfaces,
                 micros_per_input_token, micros_per_output_token,
-                enabled, is_default_for
+                micros_per_cached_input_token, enabled, is_default_for
             ) VALUES (
                 %s, 1, 'Lock Embed', 'openrouter', 'https://example.test',
                 'other-2560',
                 '{"dimensions": 2560, "vector_table": "rag_chunk_vectors_other_1"}'::jsonb,
                 ARRAY['embedding'],
-                50, 50, true, ARRAY[]::text[])
+                50, 50, 0, true, ARRAY[]::text[])
             """,
             (embed_key,),
         )
@@ -157,11 +181,11 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
                     model_key, version, display_name, provider_slug, base_url,
                     provider_model_id, params, surfaces,
                     micros_per_input_token, micros_per_output_token,
-                    auth_mode, enabled, is_default_for
+                    micros_per_cached_input_token, auth_mode, enabled, is_default_for
                 ) VALUES (
                     %s, 1, 'Zero Platform', 'deepseek', 'https://example.test',
                     'zero-platform', %s::jsonb, ARRAY['chat'],
-                    0, 0, 'platform', true, ARRAY[]::text[])
+                    0, 0, 0, 'platform', true, ARRAY[]::text[])
                 """,
                 (bad, _CHAT_PARAMS),
             )
@@ -172,11 +196,11 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
                 model_key, version, display_name, provider_slug, base_url,
                 provider_model_id, params, surfaces,
                 micros_per_input_token, micros_per_output_token,
-                auth_mode, enabled, is_default_for
+                micros_per_cached_input_token, auth_mode, enabled, is_default_for
             ) VALUES (
                 %s, 1, 'Zero BYOK', 'openai', 'https://example.test',
                 'zero-byok', %s::jsonb, ARRAY['chat'],
-                0, 0, 'user_key', true, ARRAY[]::text[])
+                0, 0, 0, 'user_key', true, ARRAY[]::text[])
             """,
             (byok, _CHAT_PARAMS),
         )
@@ -190,11 +214,11 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
                     model_key, version, display_name, provider_slug, base_url,
                     provider_model_id, params, surfaces,
                     micros_per_input_token, micros_per_output_token,
-                    auth_mode, enabled, is_default_for
+                    micros_per_cached_input_token, auth_mode, enabled, is_default_for
                 ) VALUES (
                     %s, 1, 'Zero Hybrid', 'deepseek', 'https://example.test',
                     'zero-hybrid', %s::jsonb, ARRAY['chat'],
-                    0, 0, 'platform_or_user', true, ARRAY[]::text[])
+                    0, 0, 0, 'platform_or_user', true, ARRAY[]::text[])
                 """,
                 (hybrid, _CHAT_PARAMS),
             )
@@ -206,11 +230,11 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
                     model_key, version, display_name, provider_slug, base_url,
                     provider_model_id, params, surfaces,
                     micros_per_input_token, micros_per_output_token,
-                    auth_mode, enabled, is_default_for
+                    micros_per_cached_input_token, auth_mode, enabled, is_default_for
                 ) VALUES (
                     %s, 1, 'Zero Vision', 'google', 'https://example.test',
                     'zero-vision', '{}'::jsonb, ARRAY['vision'],
-                    0, 0, 'platform', true, ARRAY[]::text[])
+                    0, 0, 0, 'platform', true, ARRAY[]::text[])
                 """,
                 (vision,),
             )
@@ -222,13 +246,13 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
                     model_key, version, display_name, provider_slug, base_url,
                     provider_model_id, params, surfaces,
                     micros_per_input_token, micros_per_output_token,
-                    auth_mode, enabled, is_default_for
+                    micros_per_cached_input_token, auth_mode, enabled, is_default_for
                 ) VALUES (
                     %s, 1, 'Embed In0', 'openrouter', 'https://example.test',
                     'embed-in0',
                     '{"dimensions": 2560, "vector_table": "rag_chunk_vectors_in0"}'::jsonb,
                     ARRAY['embedding'],
-                    0, 0, 'platform', true, ARRAY[]::text[])
+                    0, 0, 0, 'platform', true, ARRAY[]::text[])
                 """,
                 (embed_in0,),
             )
@@ -239,13 +263,13 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
                 model_key, version, display_name, provider_slug, base_url,
                 provider_model_id, params, surfaces,
                 micros_per_input_token, micros_per_output_token,
-                auth_mode, enabled, is_default_for
+                micros_per_cached_input_token, auth_mode, enabled, is_default_for
             ) VALUES (
                 %s, 1, 'Embed Out0', 'openrouter', 'https://example.test',
                 'embed-out0',
                 '{"dimensions": 2560, "vector_table": "rag_chunk_vectors_out0"}'::jsonb,
                 ARRAY['embedding'],
-                50, 0, 'platform', true, ARRAY[]::text[])
+                50, 0, 0, 'platform', true, ARRAY[]::text[])
             """,
             (embed,),
         )
@@ -267,11 +291,11 @@ def test_llm_rows_require_catalog_reasoning(_test_infra):
                     model_key, version, display_name, provider_slug, base_url,
                     provider_model_id, params, surfaces,
                     micros_per_input_token, micros_per_output_token,
-                    enabled, is_default_for
+                    micros_per_cached_input_token, enabled, is_default_for
                 ) VALUES (
                     %s, 1, 'No Reason', 'deepseek', 'https://example.test',
                     'no-reason', '{}'::jsonb, ARRAY['chat'],
-                    250, 1000, true, ARRAY[]::text[])
+                    250, 1000, 250, true, ARRAY[]::text[])
                 """,
                 (missing,),
             )
@@ -283,13 +307,13 @@ def test_llm_rows_require_catalog_reasoning(_test_infra):
                     model_key, version, display_name, provider_slug, base_url,
                     provider_model_id, params, surfaces,
                     micros_per_input_token, micros_per_output_token,
-                    enabled, is_default_for
+                    micros_per_cached_input_token, enabled, is_default_for
                 ) VALUES (
                     %s, 1, 'Wrong Default', 'deepseek', 'https://example.test',
                     'wrong-default',
                     '{"reasoning":{"canDisable":true,"efforts":["low","high","max"],"defaultMode":"off","defaultEffort":"medium"}}'::jsonb,
                     ARRAY['chat'],
-                    250, 1000, true, ARRAY[]::text[])
+                    250, 1000, 250, true, ARRAY[]::text[])
                 """,
                 (wrong_default,),
             )
@@ -301,13 +325,13 @@ def test_llm_rows_require_catalog_reasoning(_test_infra):
                     model_key, version, display_name, provider_slug, base_url,
                     provider_model_id, params, surfaces,
                     micros_per_input_token, micros_per_output_token,
-                    enabled, is_default_for
+                    micros_per_cached_input_token, enabled, is_default_for
                 ) VALUES (
                     %s, 1, 'Embed Reason', 'openrouter', 'https://example.test',
                     'embed-reason',
                     '{"dimensions": 2560, "vector_table": "rag_chunk_vectors_reason", "reasoning":{"canDisable":true,"efforts":["low"],"defaultMode":"off","defaultEffort":"low"}}'::jsonb,
                     ARRAY['embedding'],
-                    50, 50, true, ARRAY[]::text[])
+                    50, 50, 0, true, ARRAY[]::text[])
                 """,
                 (embed_reason,),
             )

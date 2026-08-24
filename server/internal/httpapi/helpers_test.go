@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/evonotes/server/internal/models"
+	"github.com/evonotes/server/internal/pipeline"
 	"github.com/evonotes/server/internal/store"
 )
 
@@ -162,7 +164,9 @@ func TestRandID(t *testing.T) {
 	if len(id) != len("f_")+10 { // 5 bytes hex-encoded = 10 chars
 		t.Fatalf("randID length = %d, want %d (%q)", len(id), len("f_")+10, id)
 	}
-	if randID("x") == randID("x") {
+	first := randID("x")
+	second := randID("x")
+	if first == second {
 		t.Errorf("randID should not collide on consecutive calls")
 	}
 }
@@ -181,18 +185,43 @@ func TestRelayChatNilPipeDoesNotInventTokens(t *testing.T) {
 	var n int
 	err := a.relayChat(
 		context.Background(),
-		"u",
+		"",
 		store.Conversation{ID: "c", WorkspaceID: "w"},
 		resolvedLLM{},
+		"cr_1",
 		"hello?",
-		func(string) { n++ },
-		func(pipeChatEvent) {},
+		"m1",
+		store.ConversationPrompt{},
+		func(pipeChatEvent) { n++ },
 	)
 	if !errors.Is(err, errAIUnavailable) {
 		t.Fatalf("err = %v", err)
 	}
 	if n != 0 {
 		t.Fatalf("emitted %d tokens", n)
+	}
+}
+
+func TestRelayChatRejectsEOFBeforeDone(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = io.WriteString(w, "data: {\"type\":\"phase\",\"phase\":\"planning\"}\n\n")
+	}))
+	defer upstream.Close()
+	a := &api{pipe: pipeline.New(upstream.URL, "")}
+	err := a.relayChat(
+		context.Background(),
+		"",
+		store.Conversation{ID: "c", WorkspaceID: "w"},
+		resolvedLLM{},
+		"cr_1",
+		"hello?",
+		"m1",
+		store.ConversationPrompt{},
+		func(pipeChatEvent) {},
+	)
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("err = %v, want unexpected EOF", err)
 	}
 }
 

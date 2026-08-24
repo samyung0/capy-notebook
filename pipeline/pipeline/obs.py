@@ -252,9 +252,9 @@ def bind_error_context() -> None:
 class Usage:
     """Token accounting for one request, aggregated across every provider call.
 
-    The unit of billing is the request, not the provider round trip: a chat turn
-    runs an agent loop of several completions plus embeddings, and the user
-    asked one question. Aggregating here means the gateway settles once.
+    One-shot routes send this aggregate to the gateway for settlement. Chat
+    also keeps it for turn telemetry, while retrieval.accounting settles each
+    provider call before the agent continues.
     """
 
     provider: str = ""
@@ -263,33 +263,56 @@ class Usage:
     output_tokens: int = 0
     embed_tokens: int = 0
     calls: int = 0
+    cached_read_tokens: int = 0
+    cache_write_tokens: int = 0
+    reasoning_tokens: int = 0
+    cache_anomaly: str = ""
     # Per-model breakdown, kept for diagnosing which step in an agent loop is
     # actually expensive. Not used for billing.
     by_model: dict[str, dict[str, int]] = field(default_factory=dict)
 
     def add_completion(
-        self, provider: str, model: str, input_tokens: int, output_tokens: int
+        self,
+        provider: str,
+        model: str,
+        input_tokens: int,
+        output_tokens: int,
+        *,
+        cached_read_tokens: int = 0,
+        cache_write_tokens: int = 0,
+        reasoning_tokens: int = 0,
+        cache_anomaly: str = "",
     ) -> None:
         self.provider = self.provider or provider
         self.model = self.model or model
         self.input_tokens += input_tokens
         self.output_tokens += output_tokens
+        self.cached_read_tokens += cached_read_tokens
+        self.cache_write_tokens += cache_write_tokens
+        self.reasoning_tokens += reasoning_tokens
+        if cache_anomaly and not self.cache_anomaly:
+            self.cache_anomaly = cache_anomaly
         self.calls += 1
-        bucket = self.by_model.setdefault(model, {"input": 0, "output": 0, "calls": 0})
+        bucket = self.by_model.setdefault(
+            model, {"input": 0, "output": 0, "calls": 0, "cached": 0}
+        )
         bucket["input"] += input_tokens
         bucket["output"] += output_tokens
         bucket["calls"] += 1
+        bucket["cached"] += cached_read_tokens
 
     def add_embedding(self, provider: str, model: str, tokens: int) -> None:
         self.embed_tokens += tokens
         self.calls += 1
-        bucket = self.by_model.setdefault(model, {"input": 0, "output": 0, "calls": 0})
+        bucket = self.by_model.setdefault(
+            model, {"input": 0, "output": 0, "calls": 0, "cached": 0}
+        )
         bucket["input"] += tokens
         bucket["calls"] += 1
 
     def as_dict(self) -> dict[str, Any]:
         """Wire shape consumed by the gateway. Keys match Go's pipeUsage."""
-        return {
+        payload: dict[str, Any] = {
             "provider": self.provider,
             "model": self.model,
             "inputTokens": self.input_tokens,
@@ -297,6 +320,15 @@ class Usage:
             "embedTokens": self.embed_tokens,
             "calls": self.calls,
         }
+        if self.cached_read_tokens:
+            payload["cachedReadTokens"] = self.cached_read_tokens
+        if self.cache_write_tokens:
+            payload["cacheWriteTokens"] = self.cache_write_tokens
+        if self.reasoning_tokens:
+            payload["reasoningTokens"] = self.reasoning_tokens
+        if self.cache_anomaly:
+            payload["cacheAnomaly"] = self.cache_anomaly
+        return payload
 
     def is_empty(self) -> bool:
         return not (self.input_tokens or self.output_tokens or self.embed_tokens)
@@ -339,6 +371,32 @@ def current_usage() -> Usage | None:
     return _usage.get()
 
 
+def record_normalized(
+    provider: str,
+    model: str,
+    input_tokens: int,
+    output_tokens: int,
+    *,
+    cached_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
+    reasoning_tokens: int = 0,
+    cache_anomaly: str = "",
+) -> None:
+    usage = _usage.get()
+    if usage is None:
+        return
+    usage.add_completion(
+        provider,
+        model,
+        input_tokens,
+        output_tokens,
+        cached_read_tokens=cached_read_tokens,
+        cache_write_tokens=cache_write_tokens,
+        reasoning_tokens=reasoning_tokens,
+        cache_anomaly=cache_anomaly,
+    )
+
+
 def record_completion(provider: str, model: str, response: Any) -> None:
     """Fold a provider response's usage block into the request accumulator.
 
@@ -350,13 +408,22 @@ def record_completion(provider: str, model: str, response: Any) -> None:
     if usage is None:
         return
     block = getattr(response, "usage", None)
+    if block is None and isinstance(response, dict):
+        block = response.get("usage")
     if block is None:
         return
+    from .retrieval.usage_extract import extract_usage
+
+    parsed = extract_usage(block, provider=provider)
     usage.add_completion(
         provider,
         model,
-        int(getattr(block, "prompt_tokens", 0) or 0),
-        int(getattr(block, "completion_tokens", 0) or 0),
+        parsed.input_tokens,
+        parsed.output_tokens,
+        cached_read_tokens=parsed.cached_read_tokens,
+        cache_write_tokens=parsed.cache_write_tokens,
+        reasoning_tokens=parsed.reasoning_tokens,
+        cache_anomaly=parsed.anomaly,
     )
 
 
@@ -382,11 +449,20 @@ def record_stream_chunk(provider: str, model: str, chunk: Any) -> None:
     if usage is None:
         return
     block = getattr(chunk, "usage", None)
+    if block is None and isinstance(chunk, dict):
+        block = chunk.get("usage")
     if block is None:
         return
+    from .retrieval.usage_extract import extract_usage
+
+    parsed = extract_usage(block, provider=provider)
     usage.add_completion(
         provider,
         model,
-        int(getattr(block, "prompt_tokens", 0) or 0),
-        int(getattr(block, "completion_tokens", 0) or 0),
+        parsed.input_tokens,
+        parsed.output_tokens,
+        cached_read_tokens=parsed.cached_read_tokens,
+        cache_write_tokens=parsed.cache_write_tokens,
+        reasoning_tokens=parsed.reasoning_tokens,
+        cache_anomaly=parsed.anomaly,
     )

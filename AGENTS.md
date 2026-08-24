@@ -12,9 +12,10 @@ Read these only when the task touches that domain. Prefer the listed file over g
 | Trace ids, structured logging, Sentry/PostHog wiring, LLM + GPU metering (`usage_events`, credits reserve/settle), rate limiting, operator access                     | `[observability-metering.md](openwiki/observability-metering.md)`                             |
 | Manual setup outside this repo: DNS, Cloudflare rules (including Coolify tunnels), origin lockdown, B2 bucket/CORS/lifecycle, Sentry, PostHog, Modal, operator grants | `[deployment-runbook.md](openwiki/deployment-runbook.md)`                                     |
 | How to run pipeline cassette tests and their disposable Postgres/Redis setup                                                                                          | `[pipeline-tests.md](openwiki/pipeline-tests.md)`                                             |
+| Editor Playwright budgets, the manual `Editor perf` workflow, snapshot compare vs last successful run                                                                 | `[editor-perf.md](openwiki/editor-perf.md)`                                                   |
 | Inventory of Vitest / Go / Python / Playwright / Cloudflare tests with one-line descriptions                                                                          | `[test-catalog.md](openwiki/test-catalog.md)`                                                 |
 
-Cross-links: plate-editor defers structural ACL to authorization; authorization defers accounting internals to storage-quota; agentic-retrieval defers material quota/authz to authorization and test infra to pipeline-tests; observability-metering owns the second budget (inference/GPU) and defers byte accounting to storage-quota.
+Cross-links: plate-editor defers structural ACL to authorization and editor perf checkpoints to editor-perf; authorization defers accounting internals to storage-quota; agentic-retrieval defers material quota/authz to authorization and test infra to pipeline-tests; observability-metering owns the second budget (inference/GPU) and defers byte accounting to storage-quota. editor-perf defers file inventory to test-catalog and save-cycle render rules to plate-editor.
 
 ## Getting Started
 

@@ -21,6 +21,7 @@
 
 import type {
   AttemptDetail as GenAttemptDetail,
+  Citation as GenCitation,
   Comment as GenComment,
   CreateAttemptReq as GenCreateAttemptReq,
   CreateCardReq as GenCreateCardReq,
@@ -33,6 +34,7 @@ import type {
   File as GenFile,
   Material as GenMaterial,
   MaterialRevision as GenMaterialRevision,
+  Message as GenMessage,
   PublicQuiz as GenPublicQuiz,
   Quiz as GenQuiz,
   SearchResult as GenSearchResult,
@@ -234,25 +236,44 @@ export type UpdateWorkspaceMemberReq = Omit<
    from the generated spec. ChatMessage is the UI-facing turn: the generated
    Message shape with role/status narrowed to unions and an optional client-only
    `pending` flag while a temp (pre-persisted) row streams. */
-export type {
-  Citation,
-  Conversation,
-  Message as WireMessage,
-} from './gen/model';
+export type { Conversation } from './gen/model';
+
+export type Citation = GenCitation & { chunkId?: string };
+
+export type ActivityBlock =
+  | { id: string; kind: 'narration'; text: string }
+  | {
+      callId: string;
+      detail?: string;
+      id: string;
+      kind: 'tool';
+      name: string;
+      status: 'running' | 'success' | 'refused';
+    };
+
+export type WireMessage = Omit<GenMessage, 'citations'> & {
+  activity?: ActivityBlock[];
+  citations?: Citation[] | null;
+};
 
 export type ChatRole = 'user' | 'assistant' | 'system';
 export type ChatStatus = 'streaming' | 'complete' | 'aborted' | 'error';
+export type ChatPhase = 'planning' | 'running_tools' | 'answering';
 
 export interface ChatMessage {
-  citations?: import('./gen/model').Citation[];
+  activity?: ActivityBlock[];
+  citations?: Citation[];
   content: string;
   conversationId?: string;
   createdAt?: string;
+  currentBlockId?: string;
+  currentBlockText?: string;
   error?: string;
   id: string;
   modelDisplayName?: string;
   modelKey?: string;
   modelVersion?: number;
+  phase?: ChatPhase;
   role: ChatRole;
   status: ChatStatus;
 }

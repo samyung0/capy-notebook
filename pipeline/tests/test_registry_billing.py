@@ -50,6 +50,25 @@ def test_credits_for_tokens_keeps_zeros():
     assert credits_for_tokens(embed, "embedding", 1000, 0) == 0
 
 
+def test_embedding_credits_ignore_cached_rate():
+    embed = _spec(
+        model_key="qwen-embed",
+        surfaces=("embedding",),
+        micros_per_input_token=10,
+        micros_per_cached_input_token=1,
+    )
+    assert credits_for_tokens(embed, "embedding", 1000, 0, 400) == 1000 * 10
+
+
+def test_credits_discount_only_valid_cache_reads():
+    flash = _spec(micros_per_cached_input_token=25)
+    full = credits_for_tokens(flash, "llm", 1000, 100)
+    discounted = credits_for_tokens(flash, "llm", 1000, 100, 200)
+    assert discounted == 800 * 250 + 200 * 25 + 100 * 1000
+    assert discounted < full
+    assert credits_for_tokens(flash, "llm", 1000, 0, 5000) == 1000 * 250
+
+
 def test_credits_differ_by_model():
     flash = _spec()
     pro = _spec(

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/evonotes/server/internal/models"
+	"github.com/evonotes/server/internal/obs"
 )
 
 // Conversation is a workspace-scoped chat thread. Grounding for its messages
@@ -22,16 +23,17 @@ type Conversation struct {
 // (streaming -> complete | aborted | error). Citations are the RAG sources the
 // assistant grounded its answer on (persisted in the metadata jsonb column).
 type Message struct {
-	ID               string     `json:"id"`
-	ConversationID   string     `json:"conversationId"`
-	Role             string     `json:"role"`
-	Content          string     `json:"content"`
-	Status           string     `json:"status"`
-	Citations        []Citation `json:"citations,omitempty"`
-	CreatedAt        time.Time  `json:"createdAt"`
-	ModelKey         string     `json:"modelKey,omitempty"`
-	ModelVersion     int        `json:"modelVersion,omitempty"`
-	ModelDisplayName string     `json:"modelDisplayName,omitempty"`
+	ID               string          `json:"id"`
+	ConversationID   string          `json:"conversationId"`
+	Role             string          `json:"role"`
+	Content          string          `json:"content"`
+	Status           string          `json:"status"`
+	Citations        []Citation      `json:"citations,omitempty"`
+	Activity         []ActivityBlock `json:"activity,omitempty"`
+	CreatedAt        time.Time       `json:"createdAt"`
+	ModelKey         string          `json:"modelKey,omitempty"`
+	ModelVersion     int             `json:"modelVersion,omitempty"`
+	ModelDisplayName string          `json:"modelDisplayName,omitempty"`
 }
 
 // Citation is one retrieved source behind an assistant message. FileID is a
@@ -42,11 +44,43 @@ type Message struct {
 // with no layout).
 type Citation struct {
 	FileID    string   `json:"fileId"`
+	ChunkID   string   `json:"chunkId,omitempty"`
 	FileName  string   `json:"fileName"`
 	Snippet   string   `json:"snippet"`
 	PageStart *int     `json:"pageStart,omitempty"`
 	PageEnd   *int     `json:"pageEnd,omitempty"`
 	Regions   []Region `json:"regions,omitempty"`
+}
+
+// ActivityBlock is one completed narration or tool-display item persisted on
+// the assistant row. It is shown in the UI and never sent back as LLM history.
+type ActivityBlock struct {
+	ID     string `json:"id"`
+	Kind   string `json:"kind"`
+	Text   string `json:"text,omitempty"`
+	CallID string `json:"callId,omitempty"`
+	Name   string `json:"name,omitempty"`
+	Detail string `json:"detail,omitempty"`
+	Status string `json:"status,omitempty"`
+}
+
+const historySafetyCap = 200
+
+// ConversationCheckpoint is the rolling summary pin for one conversation.
+type ConversationCheckpoint struct {
+	ThroughMessageID string          `json:"throughMessageId"`
+	Summary          string          `json:"summary"`
+	SourceRefs       json.RawMessage `json:"sourceRefs,omitempty"`
+	ModelKey         string          `json:"modelKey"`
+	ModelVersion     int             `json:"modelVersion"`
+	EstimatedTokens  int             `json:"estimatedTokens"`
+}
+
+// ConversationPrompt is prior context for one turn: optional checkpoint plus
+// the completed tail after that pin. It never includes the current question.
+type ConversationPrompt struct {
+	Checkpoint *ConversationCheckpoint `json:"checkpoint,omitempty"`
+	History    []Message               `json:"history"`
 }
 
 // Region locates one source block inside its page. Stored and shipped ahead of
@@ -61,11 +95,13 @@ type Region struct {
 
 // msgMetadata is the on-disk (jsonb) shape of a message's metadata column.
 type msgMetadata struct {
-	Citations        []Citation `json:"citations,omitempty"`
-	GenerationID     string     `json:"generationId,omitempty"`
-	ModelKey         string     `json:"modelKey,omitempty"`
-	ModelVersion     int        `json:"modelVersion,omitempty"`
-	ModelDisplayName string     `json:"modelDisplayName,omitempty"`
+	Citations        []Citation      `json:"citations,omitempty"`
+	Activity         []ActivityBlock `json:"activity,omitempty"`
+	GenerationID     string          `json:"generationId,omitempty"`
+	TraceID          string          `json:"traceId,omitempty"`
+	ModelKey         string          `json:"modelKey,omitempty"`
+	ModelVersion     int             `json:"modelVersion,omitempty"`
+	ModelDisplayName string          `json:"modelDisplayName,omitempty"`
 }
 
 /* --------------------------------------------------------- conversations */
@@ -174,7 +210,7 @@ func (s *Store) ListMessages(ctx context.Context, userID, convID string) ([]Mess
 		`SELECT id, conversation_id, role, content, status, metadata, created_at
 		   FROM messages
 		  WHERE conversation_id=$1 AND status <> 'streaming'
-		  ORDER BY created_at`, convID)
+		  ORDER BY created_at, id`, convID)
 	if err != nil {
 		return nil, err
 	}
@@ -191,6 +227,7 @@ func (s *Store) ListMessages(ctx context.Context, userID, convID string) ([]Mess
 		var meta msgMetadata
 		_ = json.Unmarshal(raw, &meta)
 		m.Citations = meta.Citations
+		m.Activity = meta.Activity
 		m.ModelKey = meta.ModelKey
 		m.ModelVersion = meta.ModelVersion
 		m.ModelDisplayName = meta.ModelDisplayName
@@ -227,6 +264,7 @@ func (s *Store) StartAssistantMessage(ctx context.Context, convID string, cfg mo
 		ModelKey:         cfg.Key,
 		ModelVersion:     cfg.Version,
 		ModelDisplayName: cfg.DisplayName,
+		TraceID:          obs.TraceID(ctx),
 	})
 	var m Message
 	err := s.pool.QueryRow(ctx,
@@ -248,8 +286,8 @@ func (s *Store) StartAssistantMessage(ctx context.Context, convID string, cfg mo
 // (complete | aborted | error), token count and citations for an assistant row.
 // Uses a fresh context so persistence still succeeds when the request context
 // was cancelled by a client disconnect.
-func (s *Store) FinalizeAssistantMessage(ctx context.Context, msgID, content, status string, tokenCount int, citations []Citation, generationID string) error {
-	meta, _ := json.Marshal(msgMetadata{Citations: citations, GenerationID: generationID})
+func (s *Store) FinalizeAssistantMessage(ctx context.Context, msgID, content, status string, tokenCount int, citations []Citation, generationID string, activity []ActivityBlock) error {
+	meta, _ := json.Marshal(msgMetadata{Citations: citations, GenerationID: generationID, Activity: activity})
 	var tc *int
 	if tokenCount > 0 {
 		tc = &tokenCount
@@ -262,28 +300,90 @@ func (s *Store) FinalizeAssistantMessage(ctx context.Context, msgID, content, st
 	return err
 }
 
-// ConversationHistory returns prior completed turns as ordered role/content
-// pairs for prompting the LLM (excludes the just-inserted streaming assistant
-// row and any orphaned streaming rows).
-func (s *Store) ConversationHistory(ctx context.Context, convID string, limit int) ([]Message, error) {
-	rows, err := s.pool.Query(ctx,
-		`SELECT id, conversation_id, role, content, status, created_at FROM (
-		   SELECT id, conversation_id, role, content, status, created_at
-		     FROM messages
-		    WHERE conversation_id=$1 AND status='complete'
-		    ORDER BY created_at DESC LIMIT $2
-		 ) t ORDER BY created_at`, convID, limit)
+// ConversationPrompt loads the rolling checkpoint (if any) and the completed
+// tail after that pin. Call this before inserting the current user row so the
+// question is not sent twice.
+func (s *Store) ConversationPrompt(ctx context.Context, convID string) (ConversationPrompt, error) {
+	var (
+		cp        ConversationCheckpoint
+		refs      []byte
+		throughID *string
+	)
+	err := s.pool.QueryRow(ctx, `
+		SELECT through_message_id, summary, source_refs, model_key, model_version, estimated_tokens
+		  FROM conversation_compactions WHERE conversation_id=$1`, convID).
+		Scan(&cp.ThroughMessageID, &cp.Summary, &refs, &cp.ModelKey, &cp.ModelVersion, &cp.EstimatedTokens)
+	switch {
+	case err == nil:
+		cp.SourceRefs = refs
+		throughID = &cp.ThroughMessageID
+	case !isNoRows(err):
+		return ConversationPrompt{}, err
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT id, conversation_id, role, content, status, metadata, created_at FROM (
+		  SELECT id, conversation_id, role, content, status, metadata, created_at
+		    FROM messages
+		   WHERE conversation_id=$1 AND status='complete'
+		     AND ($2::text IS NULL OR (created_at, id) > (
+		          SELECT created_at, id FROM messages WHERE id=$2
+		        ))
+		   ORDER BY created_at DESC, id DESC
+		   LIMIT $3
+		) t ORDER BY created_at, id`, convID, throughID, historySafetyCap)
 	if err != nil {
-		return nil, err
+		return ConversationPrompt{}, err
 	}
 	defer rows.Close()
-	out := make([]Message, 0)
+	history := make([]Message, 0)
 	for rows.Next() {
-		var m Message
-		if err := rows.Scan(&m.ID, &m.ConversationID, &m.Role, &m.Content, &m.Status, &m.CreatedAt); err != nil {
-			return nil, err
+		var (
+			m   Message
+			raw []byte
+		)
+		if err := rows.Scan(&m.ID, &m.ConversationID, &m.Role, &m.Content, &m.Status, &raw, &m.CreatedAt); err != nil {
+			return ConversationPrompt{}, err
 		}
-		out = append(out, m)
+		var meta msgMetadata
+		_ = json.Unmarshal(raw, &meta)
+		m.Citations = meta.Citations
+		history = append(history, m)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return ConversationPrompt{}, err
+	}
+	out := ConversationPrompt{History: history}
+	if throughID != nil {
+		out.Checkpoint = &cp
+	}
+	return out, nil
+}
+
+// PersistCheckpoint writes or advances the rolling pin. A later pin wins; an
+// earlier one is ignored so two tabs cannot move the conversation backwards.
+func (s *Store) PersistCheckpoint(ctx context.Context, convID string, cp ConversationCheckpoint) error {
+	refs := cp.SourceRefs
+	if len(refs) == 0 {
+		refs = []byte("[]")
+	}
+	_, err := s.pool.Exec(ctx, `
+		INSERT INTO conversation_compactions (
+		  conversation_id, through_message_id, summary, source_refs,
+		  model_key, model_version, estimated_tokens
+		) VALUES ($1,$2,$3,$4,$5,$6,$7)
+		ON CONFLICT (conversation_id) DO UPDATE SET
+		  through_message_id = EXCLUDED.through_message_id,
+		  summary = EXCLUDED.summary,
+		  source_refs = EXCLUDED.source_refs,
+		  model_key = EXCLUDED.model_key,
+		  model_version = EXCLUDED.model_version,
+		  estimated_tokens = EXCLUDED.estimated_tokens,
+		  updated_at = now()
+		WHERE (
+		  SELECT (m.created_at, m.id) FROM messages m WHERE m.id = EXCLUDED.through_message_id
+		) > (
+		  SELECT (m.created_at, m.id) FROM messages m WHERE m.id = conversation_compactions.through_message_id
+		)`,
+		convID, cp.ThroughMessageID, cp.Summary, refs, cp.ModelKey, cp.ModelVersion, cp.EstimatedTokens)
+	return err
 }

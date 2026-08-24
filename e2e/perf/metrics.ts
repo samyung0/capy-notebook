@@ -1,3 +1,5 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import type { CDPSession, Page, TestInfo } from '@playwright/test';
 
 /** CPU slowdown applied while measuring (not during page load). 4x roughly
@@ -271,4 +273,10 @@ export async function reportMetrics(
   const body = JSON.stringify(data, null, 2);
   console.log(`[perf] ${name} (cpu x${CPU_RATE}):\n${body}`);
   await testInfo.attach(name, { body, contentType: 'application/json' });
+
+  const snapshotDir = process.env.PERF_SNAPSHOT_DIR;
+  if (snapshotDir) {
+    await mkdir(snapshotDir, { recursive: true });
+    await writeFile(path.join(snapshotDir, `${name}.json`), body, 'utf8');
+  }
 }

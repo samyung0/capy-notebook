@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from 'react';
 import { streamChat } from '@/api/chatStream';
 import { qk } from '@/api/client';
 import type {
+  ActivityBlock,
   ChatMessage,
   ChatRole,
   ChatStatus,
@@ -11,27 +12,36 @@ import type {
 import { m } from '@/i18n';
 
 /** Map a persisted wire message onto the UI turn shape (narrowing role/status). */
-export function toChatMessage(m: WireMessage): ChatMessage {
+export function toChatMessage(row: WireMessage): ChatMessage {
   return {
-    citations: m.citations ?? undefined,
-    content: m.content,
-    conversationId: m.conversationId,
-    createdAt: m.createdAt,
-    id: m.id,
-    modelDisplayName: m.modelDisplayName ?? undefined,
-    modelKey: m.modelKey ?? undefined,
-    modelVersion: m.modelVersion ?? undefined,
-    role: m.role as ChatRole,
-    status: m.status as ChatStatus,
+    activity: row.activity ?? undefined,
+    citations: row.citations ?? undefined,
+    content: row.content,
+    conversationId: row.conversationId,
+    createdAt: row.createdAt,
+    id: row.id,
+    modelDisplayName: row.modelDisplayName ?? undefined,
+    modelKey: row.modelKey ?? undefined,
+    modelVersion: row.modelVersion ?? undefined,
+    role: row.role as ChatRole,
+    status: row.status as ChatStatus,
   };
 }
 
 const tempId = () =>
   `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
+/** Later citation events win. Equal versions still apply so a retry can replace. */
+export function shouldApplyCitations(
+  version: number,
+  applied: number
+): boolean {
+  return version >= applied;
+}
+
 /**
  * Client state machine for a single active conversation. Holds the message list,
- * drives the SSE stream, and tracks the in-flight assistant turn so tokens land
+ * drives the SSE stream, and tracks the in-flight assistant turn so blocks land
  * on the right bubble. Abort propagates through the fetch signal to the gateway.
  */
 export function useChatStream(workspaceId: string) {
@@ -42,10 +52,11 @@ export function useChatStream(workspaceId: string) {
   const abortRef = useRef<AbortController | null>(null);
 
   const patch = useCallback((id: string, up: Partial<ChatMessage>) => {
-    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, ...up } : m)));
+    setMessages((prev) =>
+      prev.map((msg) => (msg.id === id ? { ...msg, ...up } : msg))
+    );
   }, []);
 
-  /** Replace local state with a loaded conversation (history) or a blank thread. */
   const hydrate = useCallback(
     (convId: string | null, history: ChatMessage[]) => {
       setConversationId(convId);
@@ -76,12 +87,15 @@ export function useChatStream(workspaceId: string) {
       const placeholderId = tempId();
       let currentId = placeholderId;
       let terminal = false;
+      let citationVersion = -1;
       setMessages((prev) => [
         ...prev,
         userMsg,
         {
+          activity: [],
           content: '',
           id: placeholderId,
+          phase: 'planning',
           role: 'assistant',
           status: 'streaming',
         },
@@ -95,8 +109,10 @@ export function useChatStream(workspaceId: string) {
         if (terminal || ac.signal.aborted) return;
         terminal = true;
         setMessages((prev) =>
-          prev.map((m) =>
-            m.id === currentId ? { ...m, error: message, status: 'error' } : m
+          prev.map((msg) =>
+            msg.id === currentId
+              ? { ...msg, error: message, status: 'error' }
+              : msg
           )
         );
       };
@@ -106,13 +122,65 @@ export function useChatStream(workspaceId: string) {
           workspaceId,
           { conversationId: conversationId ?? undefined, text: trimmed },
           {
-            onCitations: (c) => patch(currentId, { citations: c }),
+            onBlockDelta: (blockId, delta) =>
+              setMessages((prev) =>
+                prev.map((msg) =>
+                  msg.id === currentId && msg.currentBlockId === blockId
+                    ? {
+                        ...msg,
+                        currentBlockText: (msg.currentBlockText ?? '') + delta,
+                      }
+                    : msg
+                )
+              ),
+            onBlockEnd: (blockId, kind) =>
+              setMessages((prev) =>
+                prev.map((msg) => {
+                  if (msg.id !== currentId || msg.currentBlockId !== blockId) {
+                    return msg;
+                  }
+                  const text = msg.currentBlockText ?? '';
+                  if (kind === 'answer') {
+                    return {
+                      ...msg,
+                      content: text,
+                      currentBlockId: undefined,
+                      currentBlockText: '',
+                    };
+                  }
+                  const activity: ActivityBlock[] = [
+                    ...(msg.activity ?? []),
+                    { id: blockId, kind: 'narration', text },
+                  ];
+                  return {
+                    ...msg,
+                    activity,
+                    currentBlockId: undefined,
+                    currentBlockText: '',
+                  };
+                })
+              ),
+            onBlockStart: (blockId) =>
+              patch(currentId, {
+                currentBlockId: blockId,
+                currentBlockText: '',
+              }),
+            onCitations: (citations, version) => {
+              if (!shouldApplyCitations(version, citationVersion)) return;
+              citationVersion = version;
+              patch(currentId, { citations });
+            },
             onDone: ({ status }) => {
               if (terminal) return;
               terminal = true;
-              patch(currentId, { status });
+              patch(currentId, {
+                currentBlockId: undefined,
+                currentBlockText: '',
+                status,
+              });
             },
             onError: fail,
+            onPhase: (phase) => patch(currentId, { phase }),
             onStart: ({
               messageId,
               conversationId: cid,
@@ -123,25 +191,56 @@ export function useChatStream(workspaceId: string) {
               currentId = messageId;
               setConversationId(cid);
               setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === placeholderId
+                prev.map((msg) =>
+                  msg.id === placeholderId
                     ? {
-                        ...m,
+                        ...msg,
                         conversationId: cid,
                         id: messageId,
                         modelDisplayName,
                         modelKey,
                         modelVersion,
                       }
-                    : m
+                    : msg
                 )
               );
             },
-            onToken: (t) =>
+            onToolEnd: (callId, status) =>
               setMessages((prev) =>
-                prev.map((m) =>
-                  m.id === currentId ? { ...m, content: m.content + t } : m
-                )
+                prev.map((msg) => {
+                  if (msg.id !== currentId) return msg;
+                  return {
+                    ...msg,
+                    activity: (msg.activity ?? []).map((block) =>
+                      block.kind === 'tool' && block.callId === callId
+                        ? { ...block, status }
+                        : block
+                    ),
+                  };
+                })
+              ),
+            onToolStart: (callId, name, detail) =>
+              setMessages((prev) =>
+                prev.map((msg) => {
+                  if (msg.id !== currentId) return msg;
+                  const activity = [...(msg.activity ?? [])];
+                  if (
+                    !activity.some(
+                      (block) =>
+                        block.kind === 'tool' && block.callId === callId
+                    )
+                  ) {
+                    activity.push({
+                      callId,
+                      detail,
+                      id: callId,
+                      kind: 'tool',
+                      name,
+                      status: 'running',
+                    });
+                  }
+                  return { ...msg, activity };
+                })
               ),
           },
           ac.signal
@@ -152,7 +251,6 @@ export function useChatStream(workspaceId: string) {
       } catch (error) {
         fail(error instanceof Error ? error.message : m.chat_failed());
       } finally {
-        // Aborted streams finalize server-side as 'aborted'; reflect it locally.
         if (ac.signal.aborted) patch(currentId, { status: 'aborted' });
         setStreaming(false);
         if (abortRef.current === ac) abortRef.current = null;

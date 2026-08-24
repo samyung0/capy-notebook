@@ -313,7 +313,7 @@ func (a *api) persistDeck(ctx context.Context, userID, wsID, title string, cards
 		return nil, errGenerateEmpty
 	}
 	deck, err := a.s.CreateDeckWithCards(
-		ctx, userID, title, "green", wsID, cards,
+		ctx, userID, title, "green", wsID, cards, "",
 	)
 	if err != nil {
 		return nil, err

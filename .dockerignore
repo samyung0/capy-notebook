@@ -1,0 +1,12 @@
+.git
+.audit
+.cursor
+**/.env
+**/.env.*
+!**/.env.example
+**/.pytest_cache
+**/.ruff_cache
+**/.venv
+**/__pycache__
+**/dist
+**/node_modules

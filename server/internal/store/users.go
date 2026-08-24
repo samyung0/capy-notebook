@@ -96,7 +96,7 @@ type ModelPrefsPatch struct {
 // configs that advertise the surface. user_key rows also need a credential.
 // Quiz also accepts a browser: prefix for in-tab GGUFs.
 func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPrefsPatch) error {
-	for _, pref := range []struct {
+	prefs := []struct {
 		key     *string
 		surface string
 	}{
@@ -104,7 +104,8 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 		{patch.GenerateModelKey, SurfaceGenerate},
 		{patch.EditorModelKey, SurfaceEditor},
 		{patch.QuizModelKey, SurfaceQuiz},
-	} {
+	}
+	for _, pref := range prefs {
 		if pref.key == nil {
 			continue
 		}
@@ -117,9 +118,6 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 			}
 			continue
 		}
-		if err := s.assertModelKey(ctx, userID, *pref.key, pref.surface); err != nil {
-			return err
-		}
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -130,13 +128,21 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 	var current UserLLMPrefs
 	if err := tx.QueryRow(ctx, `
 		SELECT chat_model_key, generate_model_key, editor_model_key, quiz_model_key
-		  FROM users WHERE id=$1`, userID).Scan(
+		  FROM users WHERE id=$1 FOR UPDATE`, userID).Scan(
 		&current.ChatModelKey, &current.GenerateModelKey, &current.EditorModelKey, &current.QuizModelKey,
 	); err != nil {
 		if isNoRows(err) {
 			return ErrNotFound
 		}
 		return err
+	}
+	for _, pref := range prefs {
+		if pref.key == nil || IsBrowserQuizKey(*pref.key) {
+			continue
+		}
+		if err := s.assertModelKey(ctx, tx, userID, *pref.key, pref.surface); err != nil {
+			return err
+		}
 	}
 	deref := func(p *string) string {
 		if p == nil {
@@ -256,9 +262,9 @@ func containsEffort(list []string, want string) bool {
 	return false
 }
 
-func (s *Store) assertModelKey(ctx context.Context, userID, key, surface string) error {
+func (s *Store) assertModelKey(ctx context.Context, q rowQueryer, userID, key, surface string) error {
 	var authMode, provider string
-	err := s.pool.QueryRow(ctx, `
+	err := q.QueryRow(ctx, `
 		SELECT auth_mode, provider_slug FROM model_configs
 		 WHERE model_key=$1 AND enabled AND $2 = ANY(surfaces)
 		 ORDER BY version DESC LIMIT 1`, key, surface).Scan(&authMode, &provider)

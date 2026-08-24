@@ -1,0 +1,85 @@
+name: Editor perf
+
+on:
+  workflow_dispatch:
+
+jobs:
+  perf:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          cache: pnpm
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run e2e:install
+      - name: Capture runner CPU
+        run: |
+          cpu_model="$(grep -m1 '^model name' /proc/cpuinfo | cut -d: -f2- | xargs)"
+          echo "PERF_CPU_MODEL=$cpu_model" >> "$GITHUB_ENV"
+      - name: Capture Playwright version
+        run: |
+          playwright_version="$(pnpm exec playwright --version)"
+          echo "PERF_CHROMIUM=$playwright_version" >> "$GITHUB_ENV"
+      - name: Run editor performance budgets
+        id: perf
+        continue-on-error: true
+        run: pnpm perf
+        env:
+          PERF_CPU: 4
+          PERF_SNAPSHOT_DIR: e2e/perf/.results
+      - name: Assemble performance snapshot
+        if: always()
+        run: pnpm exec tsx e2e/perf/compare-cli.ts assemble e2e/perf/.results perf-snapshot.json
+        env:
+          PERF_CPU: 4
+      - name: Upload failed Playwright artifacts
+        if: always() && steps.perf.outcome == 'failure'
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: ignore
+          name: playwright-perf-artifacts
+          path: |
+            playwright-report-perf/
+            test-results/
+          retention-days: 7
+      - name: Find previous successful run
+        id: baseline
+        if: always()
+        continue-on-error: true
+        run: |
+          run_id="$(gh run list --repo "$GITHUB_REPOSITORY" --workflow=perf.yml --status=success --limit=1 --json databaseId --jq '.[0].databaseId // empty')"
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+      - name: Download previous snapshot
+        if: always() && steps.baseline.outputs.run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          name: perf-snapshot
+          path: baseline
+          run-id: ${{ steps.baseline.outputs.run_id }}
+      - name: Write performance comparison
+        if: always()
+        continue-on-error: true
+        run: pnpm exec tsx e2e/perf/compare-cli.ts compare perf-snapshot.json baseline/perf-snapshot.json >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload performance snapshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: error
+          name: perf-snapshot
+          path: perf-snapshot.json
+          retention-days: 90
+      - name: Enforce absolute performance budgets
+        if: always() && steps.perf.outcome == 'failure'
+        run: exit 1

@@ -13,8 +13,9 @@ Code-side configuration lives in `observability-metering.md` §9.
 ## 1. DNS & hostnames
 
 The SPA is static. The Go gateway, the Hocuspocus sidecar, the Python
-retrieval service, and the ingest worker are **not** one process. Only two of
-them should have public DNS.
+retrieval service, the ingest worker, and the operator dashboard are separate
+processes. Three services have public hostnames. Cloudflare Access protects the
+operator hostname before traffic reaches its origin.
 
 | Hostname | Serves | Public DNS | Proxied |
 | --- | --- | --- | --- |
@@ -23,7 +24,7 @@ them should have public DNS.
 | `www.abcd.com` | redirect to apex | yes | yes |
 | `api.abcd.com` | Go gateway (`server`, :8080) | yes | yes |
 | `collab.abcd.com` | Hocuspocus WebSocket (`collaboration`, :1234) | yes | yes |
-| `ops.abcd.com` | operator dashboard, later | yes, later | yes |
+| `ops.evonotes.com` | Go ops API + static dashboard (`ops`, :8082) | yes | yes, Access required |
 | retrieval :8001 | Python chat/generate | **no** | — |
 | ingest worker | Modal parse + embed | **no** | — |
 | Postgres / Redis | — | **no** | — |
@@ -82,6 +83,7 @@ or Caddy on the host; the tunnel should hit that proxy and let it route by
 | --- | --- | --- |
 | `api.abcd.com` | `http://localhost:80` (or `http://coolify-proxy:80` if `cloudflared` is a container on the `coolify` network) | `http://api.abcd.com` on the **server** service |
 | `collab.abcd.com` | same `:80` | `http://collab.abcd.com` on **collaboration** |
+| `ops.evonotes.com` | same `:80` | `http://ops.evonotes.com` on **ops** |
 | retrieval, worker, db, redis | none | no domain |
 
 Details that are easy to get wrong:
@@ -89,6 +91,10 @@ Details that are easy to get wrong:
 - Run `cloudflared` as a **Coolify service** (or systemd on the host), not as a
   service in `deploy/docker-compose.yml`. A compose restart must not drop every
   hostname on the server.
+- Enable the compose `ops` profile in Coolify (`COMPOSE_PROFILES=ops`). Set the
+  `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_SENTRY_DSN_OPS`, and `RELEASE_SHA` build
+  values before the first image build. Runtime-only changes do not rebuild the
+  static dashboard.
 - Enter Coolify domains as **`http://`**. Cloudflare terminates TLS. `https://`
   here makes Traefik request Let's Encrypt and usually 301-loops.
 - App env vars still use `https://` / `wss://` — those are what browsers, Clerk,
@@ -103,6 +109,11 @@ Details that are easy to get wrong:
   itself is not subject to the 100s orange-cloud proxy timeout; Traefik still
   is.
 
+In the tunnel's Public Hostnames page, add `ops.evonotes.com` with service
+`http://localhost:80`, or the Coolify proxy address from the table. Cloudflare
+creates the proxied CNAME to the tunnel. Do not also create an A or AAAA record
+for `ops.evonotes.com`.
+
 ### 1.2 Bare docker compose + Tunnel
 
 On a host running `deploy/docker-compose.yml` without Coolify's proxy,
@@ -110,12 +121,15 @@ On a host running `deploy/docker-compose.yml` without Coolify's proxy,
 records; do **not** also point A records at the VPS IP.
 
 ```
-api.abcd.com    →  http://localhost:8080     (the `server` container)
-collab.abcd.com →  http://localhost:1234     (the `collaboration` container)
+api.abcd.com     → http://localhost:8080  (the `server` container)
+collab.abcd.com  → http://localhost:1234  (the `collaboration` container)
+ops.evonotes.com → http://localhost:8082  (the `ops` container)
 ```
 
 SSL/TLS **Full (strict)** is appropriate here if the origin speaks TLS.
-Leave :8001, Postgres and Redis unpublished. This is the origin lockdown in §3.
+Leave :8001, Postgres and Redis unpublished. Bind :8082 to localhost as shown
+in compose so the tunnel can reach it but the internet cannot bypass Access.
+This is the origin lockdown in §3.
 
 ### 1.3 A/AAAA instead of a tunnel
 
@@ -130,8 +144,9 @@ token.
 
 Same values whether Coolify, bare compose, or A records. Coolify domain fields
 are `http://`; these vars stay `https://` / `wss://`. Copy the rest from
-`deploy/.env.example` (Clerk, Stripe, four Sentry DSNs, provider keys). `RATE_LIMIT_AI_PER_HOUR` defaults to
-200; the 15/minute AI burst and 120/minute editor class are not env-overridable.
+`deploy/.env.example` (Clerk, Stripe, Sentry DSNs, provider keys).
+`RATE_LIMIT_AI_PER_HOUR` defaults to 200; the 15/minute AI burst and
+120/minute editor class are not env-overridable.
 
 Gateway env once those hostnames exist:
 
@@ -142,10 +157,52 @@ COLLABORATION_URL=wss://collab.abcd.com
 COLLABORATION_ALLOWED_ORIGINS=https://abcd.com
 ```
 
-Clerk: allowed origins + redirect URLs = `https://abcd.com` (and `www` if you
-use it); webhook `https://api.abcd.com/webhooks/clerk`. Stripe webhook
-`https://api.abcd.com/webhooks/stripe`. B2 CORS `allowedOrigins` is the SPA
-origin, not `api.`.
+Ops uses one read role, one execute-only session role, and opens the registry
+writer only after the application has authorized an `admin`:
+
+```
+OPS_DATABASE_URL=postgres://evo_ops:<password>@<private-postgres-host>:5432/evo?sslmode=require
+OPS_AUTH_DATABASE_URL=postgres://evo_ops_auth:<password>@<private-postgres-host>:5432/evo?sslmode=require
+OPS_REGISTRY_DATABASE_URL=postgres://evo_ops_registry:<password>@<private-postgres-host>:5432/evo?sslmode=require
+OPS_CF_ACCESS_ISSUER=https://<team-name>.cloudflareaccess.com
+OPS_CF_ACCESS_AUDIENCE=<Access application AUD>
+OPS_ACCESS_DISABLED=false
+OPS_AUTH_DISABLED=false
+OPS_UNSAFE_DEVELOPMENT=false
+```
+
+`OPS_REGISTRY_DATABASE_URL` is stored as configuration at startup but its pool
+is opened lazily by the admin-only Save handler. Viewer requests are rejected
+before that credential is used.
+
+Use `db` as the Postgres host only when the ops container shares the compose
+network with `db`. A managed database must use its private hostname. Do not add
+a public Postgres DNS record or a Coolify domain. The ops process does not run
+migrations and must never receive the database owner URL. Deploy the gateway
+migration first, then start ops.
+
+Startup verifies all three database sessions against their privilege contracts.
+It rejects superusers, owner sessions with broad writes, inherited roles,
+customer-content reads, direct operator-table access on the auth session, and
+`model_configs` DELETE on the registry session. Missing required column grants
+also stop startup. Local owner URLs are accepted only with
+`APP_ENV=development` and `OPS_UNSAFE_DEVELOPMENT=true`. Auth bypasses also
+require their individual `OPS_ACCESS_DISABLED=true` or
+`OPS_AUTH_DISABLED=true` switch. None of these unsafe settings is accepted
+outside development.
+
+Set `VITE_CLERK_PUBLISHABLE_KEY` at image build time and `CLERK_SECRET_KEY` at
+runtime. They must belong to the same Clerk instance as the product. Start the
+service with the compose `ops` profile. Do not set any database URL in browser
+build arguments.
+
+In Clerk, add `https://ops.evonotes.com` to the production instance's allowed
+origins and redirect URLs. Keep `https://abcd.com` and `https://www.abcd.com`
+if the product uses both. Do not create a second Clerk instance: the Clerk
+subject must continue to match `users.id` and `operators.user_id`. The Clerk
+webhook remains `https://api.abcd.com/webhooks/clerk`; ops does not accept
+webhooks. Stripe remains `https://api.abcd.com/webhooks/stripe`. B2 CORS
+`allowedOrigins` is the SPA origin, not `api.` or `ops.`.
 
 ---
 
@@ -182,9 +239,61 @@ Skip all security rules for:
 **Do not enable Bot Fight Mode.** It cannot be skipped per-path, so it
 challenges webhook deliveries, which cannot solve a JavaScript challenge.
 
-**Cache rules:** bypass cache for `api.abcd.com` and `collab.abcd.com` entirely.
-A cached SSE or WebSocket response breaks streaming in ways that look like an
-application bug.
+**Cache rules:** bypass cache for `api.abcd.com`, `collab.abcd.com`, and
+`ops.evonotes.com` entirely. A cached SSE or WebSocket response breaks
+streaming. Cached operator responses can disclose one operator's data to
+another.
+
+For `ops.evonotes.com`, add a response-header rule with
+`Cache-Control: private, no-store` and
+`X-Robots-Tag: noindex, nofollow, noarchive`. Keep the dashboard's HTML
+`robots` meta tag too. These headers prevent accidental cache and search
+indexing; they are not access controls.
+
+### 2.1 Cloudflare Access for ops
+
+Create a self-hosted Access application for `https://ops.evonotes.com/*`.
+Use an Allow policy that names each operator email, or a company identity
+provider group that contains only operators. Do not use `Emails ending in` for
+a mixed-use domain, and do not add a Bypass or Everyone policy. A short session
+duration, such as eight hours, limits a forgotten browser session.
+
+Copy the application audience tag from the Access application's overview into
+`OPS_CF_ACCESS_AUDIENCE`. Copy the Zero Trust team domain, for example
+`acme.cloudflareaccess.com`, and use it as the issuer:
+
+```
+team domain:          acme.cloudflareaccess.com
+OPS_CF_ACCESS_ISSUER: https://acme.cloudflareaccess.com
+```
+
+The service derives the JWKS URL as
+`https://acme.cloudflareaccess.com/cdn-cgi/access/certs`.
+The audience is application-specific. The team domain is account-specific.
+Using the account id, zone id, application name, or hostname in either field
+causes every request to fail JWT verification.
+
+Access is the first gate, not the application identity. The ops service verifies
+the signed `Cf-Access-Jwt-Assertion` against the remote JWKS, including issuer,
+audience, and time claims. It then verifies Clerk and checks the `operators`
+table. A request must pass all three checks.
+
+The Access identity and Clerk identity are intentionally independent. Access
+decides who may reach the origin. Clerk supplies the product user id checked
+against `operators`. Their email addresses are not required to match, so either
+gate can be revoked without coupling the two identity systems.
+
+Keep the Access application in front of static files and `/api/*`. Do not
+add a bypass policy for `/healthz` at Cloudflare. Docker calls the health route
+on the private container network. The public hostname still requires Access.
+
+Test both failure paths before granting an operator row:
+
+1. An email outside the Access policy must stop at Cloudflare.
+2. An allowed Access identity without a Clerk session must receive `401`.
+3. A valid Clerk user missing from `operators` must receive `403`.
+4. A `viewer` must receive `403` from registry Save without opening the writer
+   database pool.
 
 **Timeouts:** the default 100 s orange-cloud proxy read timeout will cut long
 chat streams and Modal parse waits. A Cloudflare Tunnel is not subject to it.
@@ -281,11 +390,12 @@ delete a live creator's `rag_contents` row.
 
 ## 5. Sentry
 
-1. Create **four** projects: `gateway` (Go), `retrieval` (Python),
-   `collaboration` (Node), `spa` (React). Separate projects keep alert routing
-   and quotas per service.
-2. Set `SENTRY_DSN` per service and `VITE_SENTRY_DSN` for the SPA. The SPA DSN
-   is public and belongs to a browser-only project.
+1. Add `ops` as the fifth compose-service project beside `gateway`,
+   `retrieval`, `worker`, and `collaboration`. Keep the existing SPA browser
+   project separate. Operator failures must not share product alert rules.
+2. Set `SENTRY_DSN_OPS` for the Go process and `VITE_SENTRY_DSN_OPS` for the
+   ops browser build. A browser DSN is public. It must never contain a server
+   auth token.
 3. Set `RELEASE_SHA` / `VITE_RELEASE_SHA` in CI, and upload SPA source maps —
    without them every browser stack trace is minified and useless.
 4. Set an **inbound filter** for `AbortError` as a second line of defence
@@ -323,29 +433,156 @@ delete a live creator's `rag_contents` row.
 
 ## 8. Database
 
-1. Apply migrations (automatic on gateway boot with `MIGRATE=true`).
-2. **Grant operator access by hand.** There is no API for this by design:
+1. Apply migrations through the gateway (`MIGRATE=true`) before deploying ops.
+   The ops service does not run migrations.
+2. **Grant operator access by hand.** Have the operator sign in to the product
+   once so `users.id` exists. Copy their Clerk user id, then use a database
+   owner session:
 
    ```sql
    INSERT INTO operators (user_id, role, note)
-   VALUES ('user_2abc...', 'admin', 'founder');
+   VALUES ('user_2abc...', 'admin', 'initial operator');
    ```
 
-   The id is the Clerk user id, which must already exist in `users` — sign in
-   through the product once first.
-3. Create a **read-only role** for the operator dashboard:
+   Use `viewer` unless the person must save registry changes. Revoke access with
+   `DELETE FROM operators WHERE user_id='user_2abc...'`. There is no operator
+   membership API by design.
+3. Create three roles with independent random passwords. The grants name every
+   readable column. In particular, none of these roles can read `messages`, file
+   `content` or blob paths, job `payload`, email recipients or `payload`, or
+   `usage_events.metadata`:
 
    ```sql
-   CREATE ROLE evo_ops LOGIN PASSWORD '...';
-   GRANT CONNECT ON DATABASE evo TO evo_ops;
-   GRANT USAGE ON SCHEMA public TO evo_ops;
-   GRANT SELECT ON usage_daily, usage_events, user_credits, credit_reservations,
-                   user_storage, users, workspaces, operators,
-                   model_configs, model_registry_state TO evo_ops;
+   CREATE ROLE evo_ops LOGIN NOINHERIT PASSWORD '<read-password>';
+   CREATE ROLE evo_ops_auth LOGIN NOINHERIT PASSWORD '<auth-password>';
+   CREATE ROLE evo_ops_registry LOGIN NOINHERIT PASSWORD '<registry-password>';
+
+   GRANT CONNECT ON DATABASE evo
+     TO evo_ops, evo_ops_auth, evo_ops_registry;
+   REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+   REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA public
+     REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
+   GRANT USAGE ON SCHEMA public
+     TO evo_ops, evo_ops_auth, evo_ops_registry;
+
+   GRANT SELECT (
+     day, actor_user_id, kind, surface, provider, model,
+     events, input_tokens, output_tokens, units, credit_micros
+   ) ON usage_daily TO evo_ops;
+   GRANT SELECT (
+     user_id, period_start, used_micros, reserved_micros
+   ) ON user_credits TO evo_ops;
+   GRANT SELECT (
+     status, expires_at, settled_at
+   ) ON credit_reservations TO evo_ops;
+   GRANT SELECT (
+     user_id, used_bytes, reserved_bytes
+   ) ON user_storage TO evo_ops;
+   GRANT SELECT (
+     user_id, delta_bytes
+   ) ON user_storage_deltas TO evo_ops;
+   GRANT SELECT (
+     id, name, email, plan_tier, deletion_requested_at, purge_after,
+     deleted_at, suspended_at, suspended_reason, created_at
+   ) ON users TO evo_ops;
+   GRANT SELECT (user_id, current_period_end)
+     ON user_subscriptions TO evo_ops;
+   GRANT SELECT (
+     id, user_id, name, embedding_model_key, embedding_model_version,
+     embedding_dim, last_accessed_at
+   ) ON workspaces TO evo_ops;
+   GRANT SELECT (user_id, role) ON operators TO evo_ops;
+   GRANT SELECT (
+     model_key, version, display_name, provider_slug, base_url,
+     provider_model_id, auth_mode, context_window_tokens, params, surfaces,
+     micros_per_input_token, micros_per_cached_input_token,
+     micros_per_output_token, enabled, is_default_for, created_at
+   ) ON model_configs TO evo_ops;
+   GRANT SELECT (id, version, updated_at) ON model_registry_state TO evo_ops;
+   GRANT SELECT (id, last_run_at) ON usage_rollup_state TO evo_ops;
+   GRANT SELECT ON ops_completed_assistant_messages TO evo_ops;
+   GRANT SELECT (id, workspace_id)
+     ON files TO evo_ops;
+   GRANT SELECT (
+     status, locked_at, lease_expires_at, updated_at
+   ) ON jobs TO evo_ops;
+   GRANT SELECT (
+     status, updated_at
+   ) ON email_outbox TO evo_ops;
+   GRANT SELECT (
+     trace_id, actor_user_id, kind, surface, provider, model,
+     model_key, model_version, input_tokens, output_tokens, units, unit,
+     credit_micros, created_at
+   ) ON usage_events TO evo_ops;
+
+   GRANT EXECUTE ON FUNCTION touch_operator_seen(text) TO evo_ops_auth;
+
+   GRANT SELECT (
+     model_key, version, display_name, provider_slug, base_url,
+     provider_model_id, auth_mode, context_window_tokens, params, surfaces,
+     micros_per_input_token, micros_per_cached_input_token,
+     micros_per_output_token, enabled, is_default_for, created_at
+   ) ON model_configs TO evo_ops_registry;
+   GRANT SELECT (id, version, updated_at)
+     ON model_registry_state TO evo_ops_registry;
+   GRANT SELECT (
+     id, embedding_model_key, embedding_model_version, embedding_dim
+   ) ON workspaces TO evo_ops_registry;
+   GRANT SELECT (
+     id, email, locale, chat_model_key, generate_model_key,
+     editor_model_key, quiz_model_key
+   ) ON users TO evo_ops_registry;
+   GRANT SELECT (
+     user_id, email_workspace_invite, email_membership, email_billing
+   ) ON notification_prefs TO evo_ops_registry;
+   GRANT SELECT (
+     id, user_id, kind, data, href, workspace_id, workspace_invite_id,
+     at, read_at
+   ) ON notifications TO evo_ops_registry;
+   GRANT SELECT (idempotency_key) ON email_outbox TO evo_ops_registry;
+
+   GRANT INSERT (
+     model_key, version, display_name, provider_slug, base_url,
+     provider_model_id, auth_mode, context_window_tokens, params, surfaces,
+     micros_per_input_token, micros_per_cached_input_token,
+     micros_per_output_token, enabled, is_default_for
+   ) ON model_configs TO evo_ops_registry;
+   GRANT UPDATE (
+     provider_slug, base_url, enabled, is_default_for
+   ) ON model_configs TO evo_ops_registry;
+   GRANT UPDATE (version, updated_at)
+     ON model_registry_state TO evo_ops_registry;
+   GRANT UPDATE (
+     chat_model_key, generate_model_key, editor_model_key, quiz_model_key,
+     updated_at
+   ) ON users TO evo_ops_registry;
+   GRANT INSERT (
+     id, user_id, kind, data, href, workspace_id, workspace_invite_id, at
+   ) ON notifications TO evo_ops_registry;
+   GRANT INSERT (
+     id, user_id, to_email, template, locale, payload, idempotency_key
+   ) ON email_outbox TO evo_ops_registry;
    ```
 
-   The dashboard is the least-hardened thing that will ever touch this
-   database; it should not be able to write to it.
+   `ops_completed_assistant_messages` exposes only an id, trace id, and
+   timestamp. Do not replace that view grant with `SELECT` on `messages`.
+   `touch_operator_seen` is `SECURITY DEFINER`; it is the auth role's only
+   privilege beyond connecting and schema usage. Do not grant `UPDATE` on
+   `operators`, `DELETE` on `model_configs`, schema creation, sequence access,
+   or generic
+   `ALL TABLES IN SCHEMA` privileges.
+
+   PostgreSQL grants function execution to `PUBLIC` by default. The two
+   `REVOKE EXECUTE` statements above close that path for existing and future
+   functions. Database owners keep their implicit privileges. If another
+   production service uses a non-owner database role, grant that role the exact
+   functions it calls before applying the global revoke.
+
+4. Put the three URLs in the matching `OPS_*_DATABASE_URL` variables. Restart
+   ops, verify `current_user` through all three pools, and check that no role
+   belongs to a broader role. A viewer registry Save must fail before the
+   application uses `OPS_REGISTRY_DATABASE_URL`.
 
 ---
 
@@ -354,6 +591,11 @@ delete a live creator's `rag_contents` row.
 Most surfaces are safe to retarget from the ops dashboard: chat, generate,
 editor, ingest and vision all resolve a pin per request or per job, so a new
 default applies to the next one and everything in flight keeps what it had.
+
+The first dashboard version deliberately disallows aliases: a grid row key must
+equal every catalog pin's `model_key`. Each surface cell may still select a
+different immutable version of that key. This keeps stable user preferences
+without adding a second hidden key namespace.
 
 Embedding is not one of those, and neither is deleting any row.
 
@@ -407,10 +649,14 @@ Embedding rows are the ones the database will actually reject a delete of.
 | Same `trace_id` searched in Sentry and in gateway logs | both return the request |
 | `SELECT * FROM credit_reservations WHERE status='open' AND expires_at < now()` | empty after a minute (sweeper is running) |
 | `SELECT * FROM usage_daily` | populated within 5 minutes (rollup is running) |
+| `curl -sI https://ops.evonotes.com` without Access credentials | Cloudflare Access login or denial, never the app |
+| Sign in through Access + Clerk as a user absent from `operators` | `403` from the ops service |
+| Sign in as an operator with `role='viewer'`, then submit registry Save | `403`; registry writer pool remains unopened |
+| `curl -sI http://127.0.0.1:8082/healthz` on the host | `200`; :8082 is not reachable from another host |
 | Fire >200 AI requests in an hour, or 16 in a minute | `429` with `code: "ai_rate_limited"` |
 | Open 6 platform-paid AI calls at once | 6th returns `429 too_many_streams` |
 | Hit the origin IP directly | connection refused |
-| Coolify: `ss`/`docker ps` shows `:8080`/`:1234` bound on `0.0.0.0` | wrong — only Traefik `:80` (tunnel target) should be public |
+| Coolify: `ss`/`docker ps` shows `:8080`/`:1234`/`:8082` bound on `0.0.0.0` | wrong: only Traefik `:80` should be public |
 
 If `usage_events` stays empty while chat works, the usual cause is a streamed
 completion without `stream_options={"include_usage": True}` — the request

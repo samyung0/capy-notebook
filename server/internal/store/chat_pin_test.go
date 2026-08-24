@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/evonotes/server/internal/models"
 )
@@ -38,7 +39,7 @@ func TestAssistantMessagePinsTheResolvedChatModel(t *testing.T) {
 	if assistant.ModelKey != cfg.Key || assistant.ModelVersion != cfg.Version {
 		t.Fatalf("start dropped the pin: %#v", assistant)
 	}
-	if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "hi", "complete", 1, nil, ""); err != nil {
+	if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "hi", "complete", 1, nil, "", nil); err != nil {
 		t.Fatal(err)
 	}
 	msgs, err := s.ListMessages(ctx, userID, conv.ID)
@@ -191,8 +192,14 @@ func TestCreateWorkspacePinsLiveEmbeddingDefault(t *testing.T) {
 
 	altKey := "alt-embed-" + first.ID
 	altPin := models.Pin{Key: altKey, Version: 1}
-	vectorTables[altPin] = "rag_chunk_vectors_2560"
-	t.Cleanup(func() { delete(vectorTables, altPin) })
+	originalVectorTableForPin := vectorTableForPin
+	vectorTableForPin = func(pin models.Pin) (string, error) {
+		if pin == altPin {
+			return "rag_chunk_vectors_2560", nil
+		}
+		return originalVectorTableForPin(pin)
+	}
+	t.Cleanup(func() { vectorTableForPin = originalVectorTableForPin })
 
 	if _, err := s.pool.Exec(ctx, `
 		UPDATE model_configs SET is_default_for='{}'
@@ -203,10 +210,10 @@ func TestCreateWorkspacePinsLiveEmbeddingDefault(t *testing.T) {
 		INSERT INTO model_configs (
 			model_key, version, display_name, provider_slug, base_url, provider_model_id,
 			params, surfaces, micros_per_input_token, micros_per_output_token,
-			enabled, is_default_for
+			micros_per_cached_input_token, enabled, is_default_for
 		) VALUES ($1, 1, 'Alt Embed', 'openrouter', 'https://example.test', 'alt-embed',
 			'{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}'::jsonb,
-			ARRAY['embedding'], 99, 99, true, ARRAY['embedding'])`, altKey); err != nil {
+			ARRAY['embedding'], 99, 99, 0, true, ARRAY['embedding'])`, altKey); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx, `
@@ -310,6 +317,75 @@ func TestSetModelPrefsRejectsEmpty(t *testing.T) {
 		}); !errors.Is(err, ErrModelKeyRequired) {
 			t.Fatalf("%s: got %v", surface, err)
 		}
+	}
+}
+
+func TestSetModelPrefsRevalidatesAfterWaitingForUserLock(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	key := "prefs-race-" + uid("m")
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO model_configs (
+			model_key, version, display_name, provider_slug, base_url, provider_model_id,
+			auth_mode, context_window_tokens, params, surfaces,
+			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
+			enabled, is_default_for
+		)
+		SELECT $1, 1, $1, provider_slug, base_url, provider_model_id,
+		       auth_mode, context_window_tokens, params, ARRAY['chat']::text[],
+		       micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
+		       true, ARRAY[]::text[]
+		  FROM model_configs
+		 WHERE model_key='deepseek-pro' AND version=1`, key); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.pool.Exec(context.Background(), `DELETE FROM model_configs WHERE model_key=$1`, key)
+	})
+
+	blocker, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer blocker.Rollback(ctx)
+	if _, err := blocker.Exec(ctx, `SELECT id FROM users WHERE id=$1 FOR UPDATE`, userID); err != nil {
+		t.Fatal(err)
+	}
+
+	result := make(chan error, 1)
+	go func() {
+		result <- s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModelKey: &key})
+	}()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		var waiting bool
+		if err := s.pool.QueryRow(ctx, `
+			SELECT EXISTS (
+				SELECT 1 FROM pg_stat_activity
+				 WHERE wait_event_type='Lock'
+				   AND query LIKE '%chat_model_key%generate_model_key%FOR UPDATE%'
+			)`).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("preference update did not wait for the user lock")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if _, err := s.pool.Exec(ctx, `UPDATE model_configs SET enabled=false WHERE model_key=$1`, key); err != nil {
+		t.Fatal(err)
+	}
+	if err := blocker.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-result; !errors.Is(err, ErrNotFound) {
+		t.Fatalf("stale model preference: got %v", err)
 	}
 }
 

@@ -310,7 +310,8 @@ validation and are not rendered.
   full re-render; and save/footer state must not reach `NoteEditorContent`,
   which is memoized for that reason. `e2e/perf/editor.perf.ts` guards this with
   a save-cycle blocking budget, and `saveCycleProfile.perf.ts` attributes a
-  regression to functions.
+  regression to functions. How to run those specs and the manual GitHub Actions
+  checkpoint is in [editor-perf.md](../editor-perf.md).
 - Remote cursor decorations must match Slate paths structurally (not
   dot-joined path strings). Shared-link editors may be absent from the
   workspace member directory, so cursor labels fall back to the authenticated

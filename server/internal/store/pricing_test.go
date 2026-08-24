@@ -10,8 +10,8 @@ func TestCreditsForTokensDifferByModel(t *testing.T) {
 	flash := TokenRates{MicrosPerInputToken: 250, MicrosPerOutputToken: 1000, ModelKey: "deepseek-flash", ModelVersion: 1}
 	pro := TokenRates{MicrosPerInputToken: 775, MicrosPerOutputToken: 3100, ModelKey: "deepseek-pro", ModelVersion: 1}
 	in, out := int64(1_000), int64(1_000)
-	flashC := CreditsForTokens(flash, KindLLM, in, out)
-	proC := CreditsForTokens(pro, KindLLM, in, out)
+	flashC := CreditsForTokens(flash, KindLLM, in, out, 0)
+	proC := CreditsForTokens(pro, KindLLM, in, out, 0)
 	if flashC != 1_250_000 {
 		t.Fatalf("flash credits = %d", flashC)
 	}
@@ -31,11 +31,23 @@ func TestRatesFromConfigKeepsZeros(t *testing.T) {
 }
 
 func TestCreditsForTokensKeepsZeros(t *testing.T) {
-	if n := CreditsForTokens(TokenRates{}, KindLLM, 1000, 1000); n != 0 {
+	if n := CreditsForTokens(TokenRates{}, KindLLM, 1000, 1000, 0); n != 0 {
 		t.Fatalf("llm zeros filled: %d", n)
 	}
-	if n := CreditsForTokens(TokenRates{}, KindEmbedding, 1000, 0); n != 0 {
+	if n := CreditsForTokens(TokenRates{}, KindEmbedding, 1000, 0, 0); n != 0 {
 		t.Fatalf("embed zeros filled: %d", n)
+	}
+}
+
+func TestCreditsForTokensDiscountsProvenCacheReads(t *testing.T) {
+	rates := TokenRates{MicrosPerInputToken: 250, MicrosPerOutputToken: 1000, MicrosPerCachedInputToken: 25}
+	// 800 uncached * 250 + 200 cached * 25 + 100 output * 1000
+	got := CreditsForTokens(rates, KindLLM, 1000, 100, 200)
+	if got != 800*250+200*25+100*1000 {
+		t.Fatalf("cached credits = %d", got)
+	}
+	if invalid := CreditsForTokens(rates, KindLLM, 1000, 0, 2000); invalid != 1000*250 {
+		t.Fatalf("invalid cache must charge full input: %d", invalid)
 	}
 }
 

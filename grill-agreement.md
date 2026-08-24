@@ -75,7 +75,11 @@ Keep the Postgres `jobs` table. Today that is ingest: jsonb of ids and options, 
 
 **Reindex.** A workspace pins `embedding_model_key` for life. There is no job that re-embeds a corpus, and there must not be a per-file re-embed path either: once one upload can rewrite vectors in place, every later change inherits that cost. Parked on purpose. Retargeting the default only affects new workspaces. An embedding `model_configs` row can never be disabled, deleted, or rewritten onto a different model (Postgres refuses). Same width is a new row and a new vector table. If you ever build a cutover, it needs progress, credit reservation, and a rewrite of that pin's vector table + `rag_contents` + workspace pins per content, while search is blocked or stale.
 
-**Ops dashboard.** Spec is `todo-ops-dashboard`: `ops.abcd.com`, read-only `evo_ops`, Cloudflare Access plus Clerk, charts from `usage_daily` never `usage_events`. Parked because there is no production ledger to chart. Building it now is decorating an empty kitchen. The model-registry grid (admin write role) waits with it; until then registry edits stay `psql`.
+**Ops dashboard.** Spec is `todo-ops-dashboard`. The standalone
+`ops.evonotes.com` service uses Cloudflare Access plus Clerk and operator
+membership. Aggregate charts read `usage_daily`, never `usage_events`. Routine
+sessions use the read role. Admin registry Save uses its own tightly granted
+writer and keeps the product gateway read-only.
 
 **Elasticsearch.** `.todo` low-priority “elastic search?” Hybrid search is Postgres `tsvector` + `pgvector` + RRF. ES would be a second index, sync, and ops bill. Parked until the current search is wrong in a way friends can name, or corpus size makes `tsvector` hurt. Chapter filter stays soft-steered; that is a data-model limit (one entity, many files), not an ES feature.
 

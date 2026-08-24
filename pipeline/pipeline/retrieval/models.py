@@ -22,6 +22,13 @@ from openai import AsyncOpenAI, AuthenticationError, PermissionDeniedError
 from .. import obs, registry
 from ..config import ProviderCfg, cfg
 from ..registry import ModelConfig
+from . import accounting
+from .stream import (
+    AssembledResponse,
+    ChatCompletionsAssembler,
+    OpenAIResponsesAssembler,
+)
+from .usage_extract import extract_usage
 
 log = logging.getLogger("evo.models")
 
@@ -103,6 +110,7 @@ def client(
             api_key=provider.api_key or "missing",
             base_url=provider.base_url or None,
             timeout=cfg.provider_timeout_s,
+            max_retries=0,
             default_headers=extra_headers or None,
         )
         _clients[key] = existing
@@ -163,7 +171,7 @@ def _apply_reasoning(
     slug = spec.provider_slug
     if slug == "openai":
         # GPT-5.3+ Chat Completions reject function tools unless effort is none.
-        # The final streamed answer has no tools and still uses the user setting.
+        # complete() still uses this path. The chat agent uses /v1/responses.
         if kwargs.get("tools"):
             effort = "none"
         elif mode != "off":
@@ -283,10 +291,19 @@ async def embed(texts: list[str], *, spec: ModelConfig) -> list[list[float]]:
     dim = spec.embedding_dim
     for start in range(0, len(texts), cfg.embedding_batch):
         batch = texts[start : start + cfg.embedding_batch]
+        call_id = accounting.new_call_id()
         resp = await api.embeddings.create(
             model=spec.provider_model_id, input=batch, dimensions=dim
         )
         obs.record_embedding(spec.provider_slug, spec.provider_model_id, resp)
+        block = getattr(resp, "usage", None)
+        await accounting.settle(
+            call_id=call_id,
+            kind=accounting.KIND_EMBEDDING,
+            purpose=accounting.KIND_EMBEDDING,
+            spec=spec,
+            usage=extract_usage(block, provider=spec.provider_slug),
+        )
         ordered = sorted(resp.data, key=lambda d: d.index)
         for item in ordered:
             vector = list(item.embedding)
@@ -309,6 +326,7 @@ async def complete(
     response_format: dict[str, Any] | None = None,
     max_tokens: int | None = None,
     reasoning: bool | None = None,
+    call_purpose: str = "llm",
 ) -> Any:
     """One chat completion, returning the raw message (may carry tool calls)."""
     spec = _as_spec(model)
@@ -326,11 +344,19 @@ async def complete(
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
     _apply_reasoning(spec, kwargs, reasoning=reasoning)
+    call_id = accounting.new_call_id()
     try:
         resp = await api.chat.completions.create(**kwargs)
     except Exception as exc:  # noqa: BLE001 - provider errors become UserKeyError
         _raise_user_key(exc)
     obs.record_completion(spec.provider_slug, spec.provider_model_id, resp)
+    await accounting.settle(
+        call_id=call_id,
+        kind=accounting.KIND_LLM,
+        purpose=call_purpose,
+        spec=spec,
+        usage=extract_usage(getattr(resp, "usage", None), provider=spec.provider_slug),
+    )
     return resp.choices[0].message if resp.choices else None
 
 
@@ -341,6 +367,7 @@ async def complete_response(
     temperature: float | None = None,
     max_tokens: int | None = None,
     reasoning: bool | None = None,
+    call_purpose: str = "llm",
 ) -> Any:
     """Like complete, but returns the full response so callers can read usage."""
     spec = _as_spec(model)
@@ -353,11 +380,19 @@ async def complete_response(
     if max_tokens is not None:
         kwargs["max_tokens"] = max_tokens
     _apply_reasoning(spec, kwargs, reasoning=reasoning)
+    call_id = accounting.new_call_id()
     try:
         resp = await api.chat.completions.create(**kwargs)
     except Exception as exc:  # noqa: BLE001 - provider errors become UserKeyError
         _raise_user_key(exc)
     obs.record_completion(spec.provider_slug, spec.provider_model_id, resp)
+    await accounting.settle(
+        call_id=call_id,
+        kind=accounting.KIND_LLM,
+        purpose=call_purpose,
+        spec=spec,
+        usage=extract_usage(getattr(resp, "usage", None), provider=spec.provider_slug),
+    )
     return resp
 
 
@@ -368,6 +403,7 @@ async def complete_text(
     temperature: float | None = None,
     max_tokens: int | None = None,
     reasoning: bool | None = None,
+    call_purpose: str = "llm",
 ) -> str:
     message = await complete(
         messages,
@@ -375,8 +411,200 @@ async def complete_text(
         temperature=temperature,
         max_tokens=max_tokens,
         reasoning=reasoning,
+        call_purpose=call_purpose,
     )
     return (getattr(message, "content", "") or "").strip()
+
+
+def _flat_tools(schemas: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for schema in schemas or []:
+        fn = schema.get("function") or schema
+        out.append(
+            {
+                "type": "function",
+                "name": fn.get("name"),
+                "description": fn.get("description") or "",
+                "parameters": fn.get("parameters")
+                or {"type": "object", "properties": {}},
+            }
+        )
+    return out
+
+
+def provider_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop private keys the loop tags onto rows before they reach a provider."""
+    out: list[dict[str, Any]] = []
+    drop = {"_kind", "citations", "id"}
+    for message in messages:
+        out.append(
+            {
+                k: v
+                for k, v in message.items()
+                if k not in drop and not str(k).startswith("_")
+            }
+        )
+    return out
+
+
+def messages_to_responses_input(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for message in messages:
+        role = message.get("role")
+        if message.get("output_items"):
+            items.extend(message["output_items"])
+            has_text = any(
+                str(item.get("type") or "") in ("message", "output_text")
+                or item.get("role") == "assistant"
+                for item in message["output_items"]
+            )
+            if message.get("content") and not has_text:
+                items.append({"role": "assistant", "content": message["content"]})
+            continue
+        if role == "tool":
+            items.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": message.get("tool_call_id"),
+                    "output": message.get("content") or "",
+                }
+            )
+            continue
+        if role == "assistant" and message.get("tool_calls"):
+            content = message.get("content") or ""
+            if content:
+                items.append({"role": "assistant", "content": content})
+            for call in message["tool_calls"]:
+                fn = call.get("function") or {}
+                items.append(
+                    {
+                        "type": "function_call",
+                        "call_id": call.get("id"),
+                        "name": fn.get("name"),
+                        "arguments": fn.get("arguments") or "",
+                    }
+                )
+            continue
+        if role in ("system", "user", "assistant"):
+            items.append({"role": role, "content": message.get("content") or ""})
+    return items
+
+
+def _openai_responses_reasoning(
+    spec: ModelConfig, reasoning: bool | None
+) -> dict[str, Any]:
+    if reasoning is False:
+        return {"effort": "none"}
+    mode = _resolve_reasoning_mode(spec)
+    effort = _effort_for(spec, registry.current_request_llm().reasoning_effort)
+    if mode == "off":
+        return {"effort": "none"}
+    if not effort:
+        raise registry.RegistryError(
+            f"{spec.model_key} v{spec.version} reasoning is on but "
+            "the catalog lists no usable effort"
+        )
+    return {"effort": effort}
+
+
+async def stream_agent_response(
+    messages: list[dict[str, Any]],
+    *,
+    model: str | ModelConfig,
+    tools: list[dict[str, Any]] | None = None,
+    temperature: float | None = None,
+    on_event: Any | None = None,
+    call_purpose: str = accounting.PURPOSE_AGENT,
+) -> AssembledResponse:
+    """Stream one tool-capable model response into a normalized assembly."""
+    spec = _as_spec(model)
+    api = client_for(spec)
+    call_id = accounting.new_call_id()
+    if spec.provider_slug == "openai":
+        assembled = await _stream_openai_responses(api, spec, messages, tools, on_event)
+    else:
+        assembled = await _stream_chat_tools(
+            api, spec, messages, tools, temperature, on_event
+        )
+    obs.record_normalized(
+        spec.provider_slug,
+        spec.provider_model_id,
+        assembled.usage.input_tokens,
+        assembled.usage.output_tokens,
+        cached_read_tokens=assembled.usage.cached_read_tokens,
+        cache_write_tokens=assembled.usage.cache_write_tokens,
+        reasoning_tokens=assembled.usage.reasoning_tokens,
+        cache_anomaly=assembled.usage.anomaly,
+    )
+    await accounting.settle(
+        call_id=call_id,
+        kind=accounting.KIND_LLM,
+        purpose=call_purpose,
+        spec=spec,
+        usage=assembled.usage,
+    )
+    return assembled
+
+
+async def _stream_openai_responses(
+    api: Any,
+    spec: ModelConfig,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None,
+    on_event: Any | None,
+) -> AssembledResponse:
+    kwargs: dict[str, Any] = {
+        "model": spec.provider_model_id,
+        "input": messages_to_responses_input(provider_messages(messages)),
+        "store": False,
+        "stream": True,
+        "include": ["reasoning.encrypted_content"],
+        "reasoning": _openai_responses_reasoning(spec, None),
+    }
+    if tools:
+        kwargs["tools"] = _flat_tools(tools)
+        kwargs["tool_choice"] = "auto"
+    assembler = OpenAIResponsesAssembler()
+    try:
+        stream = await api.responses.create(**kwargs)
+        async for event in stream:
+            for item in assembler.push(event):
+                if on_event is not None:
+                    on_event(item)
+    except Exception as exc:  # noqa: BLE001
+        _raise_user_key(exc)
+    return assembler.finish()
+
+
+async def _stream_chat_tools(
+    api: Any,
+    spec: ModelConfig,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None,
+    temperature: float | None,
+    on_event: Any | None,
+) -> AssembledResponse:
+    kwargs: dict[str, Any] = {
+        "model": spec.provider_model_id,
+        "messages": provider_messages(messages),
+        "temperature": spec.temperature() if temperature is None else temperature,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+    if tools:
+        kwargs["tools"] = tools
+        kwargs["tool_choice"] = "auto"
+    _apply_reasoning(spec, kwargs)
+    assembler = ChatCompletionsAssembler(spec.provider_slug)
+    try:
+        stream = await api.chat.completions.create(**kwargs)
+        async for chunk in stream:
+            for item in assembler.push(chunk):
+                if on_event is not None:
+                    on_event(item)
+    except Exception as exc:  # noqa: BLE001
+        _raise_user_key(exc)
+    return assembler.finish()
 
 
 async def stream_text(

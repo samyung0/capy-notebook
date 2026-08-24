@@ -72,6 +72,7 @@ playwright-report/
 playwright-report-editor/
 playwright-report-perf/
 test-results/
+e2e/perf/.results/
 blob-report/
 playwright/.cache/
 

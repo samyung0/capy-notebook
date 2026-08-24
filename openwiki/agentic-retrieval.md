@@ -423,24 +423,70 @@ substitute for a knowledge-graph edge.
 
 Streaming chat (`POST /chat/stream` via the Go gateway):
 
+One user send creates one assistant row. `messages.content` is the final answer
+only. Completed narration and tool-display blocks live in `messages.metadata`
+and are not sent back as LLM history.
+
 1. Go authenticates, reads `users.locale` and `users.chat_model_key`, resolves
-   that key to a `model_configs` row (`ratesForSurface`), reserves credits from
-   those rates, stamps `{modelKey, modelVersion}` on the assistant message, and
-   relays that exact pair to the retrieval service with history and locale.
-   Locale and model are server-owned (never browser fields). Settings changes
-   apply to the next message. A missing preference or unresolvable pin fails
-   the turn as `model_unavailable`. Ingest/index prompts stay English.
-2. The agent **primes** with one retrieval before the model is asked anything —
-   a question about the user's sources almost always needs them, and making the
-   model ask wastes a round.
-3. Capped tool loop (`EVO_AGENT_MAX_STEPS`, default 12). The final round drops
-   tools entirely so the turn cannot end on another tool call with no answer.
-4. Before each completion, the transcript is compacted if it has reached 90%
-   of the pinned model's `context_window_tokens`: keep the system prompt and
-   the last turns (tool call + result stay together), summarize the middle,
-   then clip if still over.
-5. SSE events: `tool` (progress), `citations` (once, before tokens), `token`,
-   `done` (or `error` with `invalid_key` / `key_failed` when a user key fails).
+   that key to a `model_configs` row (`ratesForSurface`), opens one turn-scoped
+   spend session, stamps `{modelKey, modelVersion}` on the assistant message, and
+   loads checkpoint-plus-tail history **before** inserting the current user
+   row. Python receives `query` once, plus `assistantMessageId` and the optional
+   rolling checkpoint. Locale and model are server-owned. A missing preference
+   or unresolvable pin fails the turn as `model_unavailable`.
+2. The agent **primes** with one retrieval before the model is asked anything.
+   That search is emitted as `tool_start` / `tool_end` (`callId=prime`) and the
+   first versioned citation list.
+3. Every tool-capable model response is streamed. Text that arrives with tool
+   calls is a narration block. The first completed response with text and no
+   tools is the persisted answer. There is no unconditional second answer
+   completion. Workload caps are 12 planning responses, 4 tools per response,
+   and 12 tools per turn. Completion, compaction, query-embedding, and cumulative
+   input counts remain telemetry. They do not stop a turn.
+4. Independent reads in one response run concurrently (max 4, at most 2
+   `search_workspace`). Any mutating call keeps that whole response serial.
+   Citation numbers are assigned after the batch, in original call order, and
+   are answer-local. A versioned `citations` event follows each batch.
+5. Rolling conversation checkpoints (`conversation_compactions`) are separate
+   from live request compaction. A checkpoint folds old cross-message history
+   and persists in Go with compare-and-set so a pin cannot move backwards.
+   Before every agent model call, live compaction measures the current history,
+   tool results, and active tool schemas against the pinned model's
+   `input_budget`. It summarizes old complete groups at 90% and clips as a
+   deterministic fallback. OpenAI replay items after the current user message
+   stay intact unless the fallback must drop encrypted reasoning to fit.
+   Terminal calls after credit exhaustion use only the deterministic fallback,
+   because another summary completion would consume the one allowed call.
+   Cross-message history is ordered by `(created_at, id)` and has a 200-message
+   transport safety cap.
+6. Python settles every provider call through
+   `POST /api/internal/provider-calls` before the agent chooses its next action.
+   The turn spend session remains open, so this does not take another
+   concurrency slot. `(sessionId, callId)` makes callback retries idempotent.
+   Query embeddings use the same protocol at zero actor credits. BYOK LLM calls
+   also write zero-credit rows. If an LLM call exhausts platform credits and
+   emitted tools, the agent runs every accepted emitted tool, then makes one
+   tools-disabled terminal call. That call may overspend and closes the loop.
+   Internal material creation does not recheck inference credits, because that
+   would reject an accepted tool emitted by the call that caused exhaustion;
+   editor authorization and storage quota checks still apply.
+7. OpenAI planning uses `POST /v1/responses` with `store=false` and replays
+   encrypted reasoning items inside the current tool loop. DeepSeek and
+   Anthropic stay on Chat Completions-compatible paths. Raw chain-of-thought
+   is never streamed to the browser. The user's reasoning policy applies to
+   every agent model response.
+8. SSE events: `phase` (`planning` | `running_tools` | `answering`),
+   `block_start` / `block_delta` / `block_end` (`narration` | `answer`),
+   `tool_start` / `tool_end`, versioned `citations`, `done` | `error`.
+   Checkpoint events stay on the Python→Go hop. The browser may show
+   "Planning next step" after ~400ms when waiting on the next provider
+   response with no active text or tool.
+
+`generate_material` mints a deterministic `mat_` id from
+`sha256(assistantMessageId + "\\n" + toolCallId)`, looks up that id before
+quota, retries POST, then GET. Same-id replay returns the original row. A
+confirmed 404 is a normal tool failure. An uncertain GET fails the turn
+without appending a failed tool result.
 
 ### Tools
 
@@ -451,7 +497,7 @@ Streaming chat (`POST /chat/stream` via the Go gateway):
 | `describe_documents` | none | Detailed summaries for up to eight files; scope-intersected |
 | `read_document` | none | Sequential chunks by index |
 | `related_concepts` | none | Co-mention bridge |
-| `generate_material` | yes | POST to Go `/api/internal/materials` |
+| `generate_material` | yes | POST/GET Go `/api/internal/materials` with a deterministic id |
 
 Read tools hit Postgres directly. Anything that creates a material goes through
 the gateway with `X-Pipeline-Secret`, so authz, quota, and the materials model

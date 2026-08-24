@@ -14,6 +14,7 @@ at the top of each section.
 | Suite | Command |
 | --- | --- |
 | Frontend Vitest | `pnpm test` |
+| Ops dashboard Vitest | `pnpm --filter @evo-notes/ops test` |
 | Collaboration Vitest | `pnpm test:collaboration` |
 | Go server | `pnpm test:go` |
 | Python pipeline | `pnpm test:pipeline` / offline: `pnpm test:pipeline:offline` |
@@ -23,7 +24,7 @@ at the top of each section.
 
 ---
 
-## Frontend Vitest (`src/`)
+## Frontend Vitest (`src/`, `e2e/perf/`)
 
 ### API
 
@@ -66,6 +67,12 @@ at the top of each section.
 | [`src/features/notes/tocHeadings.test.ts`](../src/features/notes/tocHeadings.test.ts) | Incremental heading scan: nested paths, stable array identity for unrelated edits, and path recomputation after insert/remove. |
 | [`src/features/notes/youtube.test.ts`](../src/features/notes/youtube.test.ts) | Accepts watch/short/embed YouTube URLs and rejects malformed non-YouTube ones. |
 
+### Performance snapshots
+
+| File | About |
+| --- | --- |
+| [`e2e/perf/snapshot.test.ts`](../e2e/perf/snapshot.test.ts) | First-run reports, warn-only same-workflow deltas, CPU-model warnings, and exclusion of noisy context metrics from relative comparison. |
+
 ### Quizzes / workspace
 
 | File | About |
@@ -76,11 +83,22 @@ at the top of each section.
 | [`src/features/files/fileUtils.test.ts`](../src/features/files/fileUtils.test.ts) | `fileIsIngesting` treats pending and processing as in-flight, ready/failed as idle. |
 | [`src/features/dashboard/recentItems.test.ts`](../src/features/dashboard/recentItems.test.ts) | Merges files and materials by created time and caps the dashboard recent list. |
 | [`src/features/workspace/access.test.ts`](../src/features/workspace/access.test.ts) | Workspace access helpers for read-only viewers, editors, and owner-only share. |
+| [`src/features/workspace/useChatStream.test.ts`](../src/features/workspace/useChatStream.test.ts) | Citation SSE versions apply only when the new version is greater or equal. |
 | [`src/features/workspace/generateTitle.test.ts`](../src/features/workspace/generateTitle.test.ts) | Numbered generate-file defaults skip taken names; empty/overlong/duplicate titles are rejected. |
 | [`src/features/workspace/sourceUpload.test.ts`](../src/features/workspace/sourceUpload.test.ts) | Source-upload extension/parser policy from server limits (10 MB mock cap), image-caption availability per mode, byte-weighted progress, picker cap at workspace room (not the per-request 20), ingest-wave split, chunking, beforeunload only while unsent, concurrency pool, and 429 backoff. |
 | [`src/features/settings/settingsSearch.test.ts`](../src/features/settings/settingsSearch.test.ts) | Settings `?tab=` keeps general/llm/subscription and defaults anything else to general. |
 | [`src/features/settings/llmOptions.test.ts`](../src/features/settings/llmOptions.test.ts) | Model dropdown sort (available first, locked last), empty stored prefs resolving to catalog `off`, invalid stored effort using catalog `defaultEffort`, and no invented effort when `defaultEffort` is missing. |
 | [`src/features/billing/format.test.ts`](../src/features/billing/format.test.ts) | Storage/credit formatters and reserved spend counting toward the usage meter. |
+
+---
+
+## Ops dashboard Vitest (`ops/src/`)
+
+| File | About |
+| --- | --- |
+| [`ops/src/api.test.ts`](../ops/src/api.test.ts) | Clerk bearer headers, missing-session refusal, response-schema rejection, and empty real-data collections. |
+| [`ops/src/registry-domain.test.ts`](../ops/src/registry-domain.test.ts) | Full-grid draft assembly, default/deprecation checks, embedding immutability and acknowledgement, reasoning validation, and immutable version targets. |
+| [`ops/src/router.test.ts`](../ops/src/router.test.ts) | Standalone dashboard route inventory, including the admin registry route. |
 
 ---
 
@@ -113,6 +131,12 @@ at the top of each section.
 | [`server/internal/sourceupload/rules_test.go`](../server/internal/sourceupload/rules_test.go) | Source kind-from-name map, upload validation (10/30 MB plan caps), unknown parse modes including retired `accurate`, caption-flag normalization, and policy list parsing. |
 | [`server/internal/integrations/oauth_test.go`](../server/internal/integrations/oauth_test.go) | Graph item URL uses `/me/drive` or `/drives/{id}`, and import `driveIds` must match `fileIds`. |
 | [`server/internal/models/registry_test.go`](../server/internal/models/registry_test.go) | Load-on-miss of an unseen `(key, version)`, a miss that never degrades to the current default, ResolveUser requiring a non-empty enabled preference, `EmbeddingDim` rejecting a config that declares no width, one default per surface, embedding rows refusing disable/delete/surface-strip/identity rewrite while a new same-width embedding row can insert and chat rows can still retarget or disable, BYOK availability routing, thinking/effort falling back to catalog `defaultEffort` only, empty `efforts` / missing `defaultEffort` not inventing a value, a missing reasoning block staying `off`, `ValidateCatalogReasoning` matching the SQL check, and Postgres refusing a chat row without reasoning or with `defaultEffort` outside `efforts`. |
+| [`server/internal/ops/access_test.go`](../server/internal/ops/access_test.go) | Cloudflare Access signature, issuer, audience, expiry, JWKS, and health-only middleware bypass. |
+| [`server/internal/ops/config_test.go`](../server/internal/ops/config_test.go) | Ops authentication stays fail closed by default; bypass and owner-DSN mode require an explicit development-only unsafe opt-in. |
+| [`server/internal/ops/http_test.go`](../server/internal/ops/http_test.go) | Viewer registry-write refusal before writer lookup, no-store/noindex headers, stale-save snapshots, and safe Postgres registry validation errors. |
+| [`server/internal/ops/privileges_test.go`](../server/internal/ops/privileges_test.go) | Exact production read/auth/registry login grants pass startup contracts; the registry role completes Save while DELETE and customer-content reads fail. |
+| [`server/internal/ops/read_store_test.go`](../server/internal/ops/read_store_test.go) | Overview, indexed usage-health anti-join, bounded user search/workspaces, user detail, and cost queries execute against production schema; account-locked operators are denied while over-quota operators remain allowed. |
+| [`server/internal/ops/registry_test.go`](../server/internal/ops/registry_test.go) | Serializable version insertion/old disable without preference drift across chat/generate/editor/quiz, all-surface deprecation remap and exact idempotent notices, stale snapshots, defaults, aliases, database error mapping, embedding immutability, allowlist/table validation, endpoint-only moves, and acknowledged default retarget to a pre-shipped same-width row. |
 
 ### HTTP API
 
@@ -123,7 +147,9 @@ at the top of each section.
 | [`server/internal/httpapi/ai_plate_test.go`](../server/internal/httpapi/ai_plate_test.go) | Plate command/copilot request validation and AI data-stream copy/malformed/done checks. |
 | [`server/internal/httpapi/editor_assets_test.go`](../server/internal/httpapi/editor_assets_test.go) | Editor asset metadata validation, signatures, and object keys not using original filenames. |
 | [`server/internal/httpapi/email_unsubscribe_test.go`](../server/internal/httpapi/email_unsubscribe_test.go) | GET unsubscribe is read-only and does not mutate preferences. |
-| [`server/internal/httpapi/helpers_test.go`](../server/internal/httpapi/helpers_test.go) | Kind/content-type helpers, random IDs, account-locale fallback, generate title trimming, query embeddings settling 0 credits (BYOK and platform) without inventing default embed or Flash rates, empty paidBy staying empty, resolveEmbedding failing closed without a store, nil-pipe chat handshake errors instead of a placeholder, and `ErrTooManyIngestLeases` mapping to 429 `too_many_ingest_leases`. |
+| [`server/internal/httpapi/internal_materials_test.go`](../server/internal/httpapi/internal_materials_test.go) | Internal material tools still run after inference exhaustion, POST lookup-before-create replay, same-id payload mismatch 409, concurrent same-id convergence, and GET requiring workspace/actor with a 404 on workspace mismatch. |
+| [`server/internal/httpapi/provider_calls_test.go`](../server/internal/httpapi/provider_calls_test.go) | Internal provider-call settlement requires the pipeline secret, deduplicates identical callback retries, and rejects a call id replayed with different usage. |
+| [`server/internal/httpapi/helpers_test.go`](../server/internal/httpapi/helpers_test.go) | Kind/content-type helpers, random IDs, account-locale fallback, generate title trimming, query embeddings settling 0 credits (BYOK and platform) without inventing default embed or Flash rates, empty paidBy staying empty, resolveEmbedding failing closed without a store, nil-pipe and premature-EOF chat errors instead of invented completion, and `ErrTooManyIngestLeases` mapping to 429 `too_many_ingest_leases`. |
 | [`server/internal/httpapi/llm_credentials_test.go`](../server/internal/httpapi/llm_credentials_test.go) | Pipeline 400 bodies map `invalid_key` / `key_failed` onto store errors, including FastAPI `{detail:{code}}` wrappers, and 502 `generate_empty` maps onto a distinct persist-nothing error. |
 | [`server/internal/httpapi/pipeline_unavailable_test.go`](../server/internal/httpapi/pipeline_unavailable_test.go) | Chat and generate fail with `ai_unavailable` when the retrieval client is missing or the handshake returns a non-key HTTP error, and never stream the old placeholder. Empty quiz/deck/mermaid payloads and a pipeline `generate_empty` body are 502, not persisted stubs. |
 | [`server/internal/httpapi/huma_collaboration_test.go`](../server/internal/httpapi/huma_collaboration_test.go) | OpenAPI collab contracts, material content decode on read / omit on update, invite/access metadata. |
@@ -149,10 +175,10 @@ at the top of each section.
 | [`server/internal/store/files_cap_test.go`](../server/internal/store/files_cap_test.go) | Per-workspace 100-file cap, pending upload sessions occupying slots, expired sessions not occupying slots, per-request batch cap of 20, `filesLimit` on the workspace payload. |
 | [`server/internal/store/collaboration_owner_test.go`](../server/internal/store/collaboration_owner_test.go) | Collab writes follow storage owner; active editors cannot grow over-quota materials. |
 | [`server/internal/store/contracts_test.go`](../server/internal/store/contracts_test.go) | Role/share/invite/comment/material JSON contracts and stable card-ID rewrite map. |
-| [`server/internal/store/credits_test.go`](../server/internal/store/credits_test.go) | Credit begin/settle, settle idempotency, reject at used=limit, concurrent LLM lease cap, per-actor ingest lease cap of 20 independent of LLM slots, settle/release freeing ingest slots, ingest refuse at used=limit, 24h orphan ingest sweep, CreateSourceWithJob writing reservationId and taking a slot (store-only files do not; a registry-less enqueue rolls back with no leftover lease), monthly rollover, billing credit counters, and actor-scoped usage report grouping. |
+| [`server/internal/store/credits_test.go`](../server/internal/store/credits_test.go) | Credit begin/settle, settle idempotency, per-call chat settlement dedupe, exhaustion response, zero-credit query embeddings, one terminal overspend call, late receipts after turn closure without continuation, BYOK past the platform limit, concurrent LLM lease cap, ingest leases, monthly rollover, billing counters, and actor-scoped usage grouping. |
 | [`server/internal/store/chat_pin_test.go`](../server/internal/store/chat_pin_test.go) | Assistant message pin survives finalize; ingest job payload carries actor + ingest/vision pins and refuses to build without either an actor or a registry; a clone inherits the source workspace's embedding pin; CreateWorkspace snapshots the live embedding default and embedding rates stay on the workspace pin after a retarget; EmbeddingRates fails closed on an empty or unknown pin; empty chat/generate/editor/quiz prefs rejected; browser quiz keys store without a registry row; new users get registry defaults; locked BYOK keys are rejected; reasoning prefs are stored per model so DeepSeek rejects `medium` and switching to Pro does not inherit Flash's effort. |
 | [`server/internal/store/llm_credentials_test.go`](../server/internal/store/llm_credentials_test.go) | Credential key parse accepts hex/base64 only (raw 32-byte ASCII rejected), AES-GCM encrypt/decrypt round trip, and account purge deleting `user_llm_credentials`. |
-| [`server/internal/store/pricing_test.go`](../server/internal/store/pricing_test.go) | Same token counts on two models produce different credit micros; RatesFromConfig and CreditsForTokens keep zeros; EmbeddingRates fails without a registry. |
+| [`server/internal/store/pricing_test.go`](../server/internal/store/pricing_test.go) | Same token counts on two models produce different credit micros; RatesFromConfig and CreditsForTokens keep zeros; proven cache reads discount at the cached-read rate; invalid cache counts charge full input; EmbeddingRates fails without a registry. |
 | [`server/internal/store/material_revisions_test.go`](../server/internal/store/material_revisions_test.go) | Daily version overwrite, UTC rollover, tier retention, and downgrade pruning. |
 | [`server/internal/store/notifications_test.go`](../server/internal/store/notifications_test.go) | Notification recipient scoping, email outbox/leases, and category disable atomicity. |
 | [`server/internal/store/schedule_scope_test.go`](../server/internal/store/schedule_scope_test.go) | Label/task/event patches and deletes only touch the caller's own rows; label delete unlinks its events. |
@@ -173,7 +199,8 @@ See also [`pipeline-tests.md`](pipeline-tests.md) for disposable Postgres/Redis 
 | [`pipeline/tests/test_ai_adapter.py`](../pipeline/tests/test_ai_adapter.py) | Plate AI prompt/context bounding, ignores browser provider knobs, rejects oversized context, JSON fence parsing, and generate/comment omit an output token cap. |
 | [`pipeline/tests/test_chunking.py`](../pipeline/tests/test_chunking.py) | Heading breadcrumbs, page/bbox regions, table/equation/figure handling, `chart` blocks indexed like images via `chart_caption`, page furniture dropped silently while unrecognised block types are logged, oversized-block splitting, CJK bigram tokenizer, CJK-aware token estimate, malformed bbox coordinates skipped rather than crashing the job. |
 | [`pipeline/tests/test_generate.py`](../pipeline/tests/test_generate.py) | Cassette: even scope coverage, file filtering, and flashcard/quiz JSON surviving into the runner shape. |
-| [`pipeline/tests/test_agent.py`](../pipeline/tests/test_agent.py) | Offline: agent primes with a search, citations emit before tokens, the last tool round drops tools, a mid-loop tool call runs before the streamed answer, and `done` carries usage. |
+| [`pipeline/tests/test_agent.py`](../pipeline/tests/test_agent.py) | Offline: live streamed blocks, prime + answer, narration then answer, concurrent reads, serial mutations, tool caps, uncapped search-embedding and completion telemetry, cumulative input not stripping tools, exhausted-credit tool execution followed by one terminal call, checkpoint rewrite, citations, sanitized errors, and deterministic material retries. |
+| [`pipeline/tests/test_call_accounting.py`](../pipeline/tests/test_call_accounting.py) | Offline: provider settlement retries reuse one call id, propagate cache usage, return exhausted and terminal-call state, and stay inactive outside chat. |
 | [`pipeline/tests/test_ingest_query.py`](../pipeline/tests/test_ingest_query.py) | Cassette: index → search → grounded cited answer, re-index convergence, scope confinement, cross-document concepts, cascade teardown. |
 | [`pipeline/tests/test_figures.py`](../pipeline/tests/test_figures.py) | Offline: line diagrams surviving the flatness filters, recurring page furniture dropped by perceptual hash, bbox and duplicate handling, `chart` blocks selected and labelled from `chart_caption`, caption cache keyed by `source_sha256` (not parse route or blob path), prompt carrying the page but not the uploader's file name, and the context preamble present only when there is context to introduce. |
 | [`pipeline/tests/test_ingest_worker.py`](../pipeline/tests/test_ingest_worker.py) | Offline: parse-mode → route selection (`fast` only; retired `accurate`/`advanced` are terminal), txt/md/json bypassing the parser, parse zip recorded before captioning, captions reaching the chunker, the source hash coming from the bytes rather than the uploader-settable checksum header, missing model pins failing terminally, a database error during pin read propagating as retryable, a missing ingest payload field or blank job type failing terminally, a full GPU queue putting the job back without spending an attempt (workspace embedding pin stubbed so donor lookup stays off Postgres), and text kinds not taking a parse slot. |
@@ -182,15 +209,17 @@ See also [`pipeline-tests.md`](pipeline-tests.md) for disposable Postgres/Redis 
 | [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py) | Artifact addressing/caching keyed by source sha256, endpoint and version, unknown *and missing* parse routes rejected rather than read as `fast`, rejection of traversal, checksum, version and source mismatches, corrupt-cache recovery, and empty env treated as unset. |
 | [`pipeline/tests/test_marker_adapt.py`](../pipeline/tests/test_marker_adapt.py) | Marker JSON → content_list (heading depth, bbox scale including RapidOCR numpy polygons, skip running headers, figure crops), scan-vs-figure probe, image-object bounds, dropping full-page scan rasters, RapidOCR merge skipping duplicate lines, `txt` parse skipping the OCR lane. |
 | [`pipeline/tests/test_quiz_grade.py`](../pipeline/tests/test_quiz_grade.py) | Offline: open-answer judge prompt includes rubrics; parse snaps 0 / 0.5 / 1. |
-| [`pipeline/tests/test_registry_billing.py`](../pipeline/tests/test_registry_billing.py) | Per-model credits, zeros stay zeros with no `or 50` fill, registry miss never falls back, no surface (chat, generate, editor, quiz, ingest, embedding, vision) resolves its own default in place of a pin, ingest job pins stick after a default change, claim-time owner/actor matrix including a job with no actor, ingest bills the actor and settles the reservation, a terminal fail releases the reservation. |
-| [`pipeline/tests/test_provider_byok.py`](../pipeline/tests/test_provider_byok.py) | Unknown slugs never fall through to DeepSeek env, user-key rows require a request secret, `paid_by=user` without a decryptable key does not use the platform DeepSeek key, platform and embedding rows ignore a bound user key, embedding credentials follow the embedding env rather than provider slug, client cache distinguishes full secrets, Anthropic version header, input budget follows the catalog window, OpenAI reasoning kwargs, GPT tool calls force `reasoning_effort=none`, quiz grade stays at 80 tokens, `reasoning=False` disables thinking even when the catalog cannot, OpenAI mode-on with no catalog efforts raises, empty request effort uses the catalog default, Anthropic budget mode-on with no effort or an unmapped effort raises, `xhigh`/`max` map to 32768/65536, and BYOK provider errors classify as `invalid_key` or `key_failed`. |
-| [`pipeline/tests/test_compact.py`](../pipeline/tests/test_compact.py) | Short chat history is left alone, tool-call tails are not split, and an over-budget transcript is summarized with the last turn kept verbatim. |
+| [`pipeline/tests/test_registry_billing.py`](../pipeline/tests/test_registry_billing.py) | Per-model credits including cached-read discounts, embedding rows ignore the cached-read rate, zeros stay zeros with no `or 50` fill, registry miss never falls back, no surface (chat, generate, editor, quiz, ingest, embedding, vision) resolves its own default in place of a pin, ingest job pins stick after a default change, claim-time owner/actor matrix including a job with no actor, ingest bills the actor and settles the reservation, a terminal fail releases the reservation. |
+| [`pipeline/tests/test_provider_byok.py`](../pipeline/tests/test_provider_byok.py) | Unknown slugs never fall through to DeepSeek env, user-key rows require a request secret, `paid_by=user` without a decryptable key does not use the platform DeepSeek key, platform and embedding rows ignore a bound user key, embedding credentials follow the embedding env rather than provider slug, client cache distinguishes full secrets, hidden provider retries are disabled, Anthropic version header, input budget follows the catalog window, OpenAI reasoning kwargs, GPT tool calls force `reasoning_effort=none`, quiz grade stays at 80 tokens, `reasoning=False` disables thinking even when the catalog cannot, OpenAI mode-on with no catalog efforts raises, empty request effort uses the catalog default, Anthropic budget mode-on with no effort or an unmapped effort raises, `xhigh`/`max` map to 32768/65536, and BYOK provider errors classify as `invalid_key` or `key_failed`. |
+| [`pipeline/tests/test_compact.py`](../pipeline/tests/test_compact.py) | Short history stays intact, tool groups stay joined, compact triggers at 90% of the pinned input budget, tool schemas reserve input space, compaction and checkpoint model requests are themselves bounded, OpenAI live replay is protected when possible, checkpoint summaries retain source refs, and terminal preparation clips without another model call. |
+| [`pipeline/tests/test_stream_assembly.py`](../pipeline/tests/test_stream_assembly.py) | Offline: Chat Completions partial tool arguments and multi-call assembly; OpenAI Responses encrypted reasoning request/replay, item-id dedupe, no synthesized message item, incomplete/failed status, and terminal usage. |
+| [`pipeline/tests/test_usage_extract.py`](../pipeline/tests/test_usage_extract.py) | Offline: DeepSeek and OpenAI inclusive cache reads discount; missing, oversized, or unproven cache shapes charge full input. |
 | [`pipeline/tests/test_credentials.py`](../pipeline/tests/test_credentials.py) | Credential key parse accepts hex/base64 only, AES-GCM decrypt round-trips, and inbound retrieval rejects a missing or mismatched `X-Pipeline-Secret`. |
 | [`pipeline/tests/test_retrieval_helpers.py`](../pipeline/tests/test_retrieval_helpers.py) | Tool scope narrowing, stable citation numbering, per-file diversity cap, JSON extraction and question normalization (legacy `difficulty` dropped, not mapped), empty generate replies rejected instead of stubbed, two-tier file summaries retrying instead of storing a permanent blank, summary/concept prompts excluding the uploader's file name, and Qwen3 query-embed instruct prefix (workspace pin only; lexical terms stay raw). |
 | [`pipeline/tests/test_locale.py`](../pipeline/tests/test_locale.py) | Account locale on chat/generate/editor prompts; continue-writing does not force UI language; ingest is out of scope. |
 | [`pipeline/tests/test_jobs.py`](../pipeline/tests/test_jobs.py) | Retryable vs terminal errors, capacity-wait is not a failure, backoff, missing/unknown job types are terminal, and per-type attempt budget. |
 | [`pipeline/tests/test_store_sql.py`](../pipeline/tests/test_store_sql.py) | Docker (no model calls): hybrid search halves, CJK recall, scoping, canonical duplicate ownership/deletion, concept co-mention, two-tier content summaries on the workspace outline, cascades, job `not_before`/requeue/lease reclaim, capacity yield not spending an attempt, only the claiming attempt writing its outcome, content-claim ownership (a waiter cannot refresh or drop the creator's claim, and never returns a claim it does not own), steal refused while the owner job's lease is live and allowed once it expires or the job is done, `replace_content_chunks` raising when the claim moved, finishing a deleted file leaving the job `done` with no notification, donor copy across workspaces, donor copy without vectors when pins differ, donor lookup prefers a matching embedding pin over a newer mismatch, artifact GC skips in-flight jobs. |
-| [`pipeline/tests/test_model_configs_lock.py`](../pipeline/tests/test_model_configs_lock.py) | Docker: embedding `model_configs` rows refuse disable, delete, surface-strip, identity rewrite, and a disabled insert; a new same-width embedding row can insert and move `base_url` but cannot steal `is_default_for`; chat rows can still retarget or disable; `model_configs_credit_rates_check` allows BYOK 0,0 and embed input>0/output 0, and rejects platform, platform_or_user, and vision 0,0 plus embedding input 0; LLM rows without `params.reasoning` or with `defaultEffort` outside `efforts` are refused, and embedding rows may not carry reasoning. |
+| [`pipeline/tests/test_model_configs_lock.py`](../pipeline/tests/test_model_configs_lock.py) | Docker: Python's vector-table allowlist matches the canonical Go package; embedding rows refuse disable, delete, surface-strip, identity rewrite, and a disabled insert; a new same-width row can insert and move `base_url` but cannot steal the default; chat rows can still retarget or disable; credit-rate and reasoning constraints stay locked. |
 
 ---
 
@@ -232,7 +261,7 @@ MSW + Vite only (`pnpm e2e:editor`); no Docker.
 
 ## Playwright perf (`e2e/perf/`)
 
-MSW + Vite (`pnpm perf`). 6 cases total: 4 budget specs always run; 2 diagnostic V8 profiles are skipped unless `PERF_PROFILE=1`. Budgets are regression tripwires under CPU throttle, not UX targets.
+MSW + Vite (`pnpm perf`). 6 cases total: 4 budget specs always run; 2 diagnostic V8 profiles are skipped unless `PERF_PROFILE=1`. Budgets are regression tripwires under CPU throttle, not UX targets. How to run the suite, what the GHA snapshot compare does, and why deltas stay warn-only: [editor-perf.md](editor-perf.md).
 
 | File | About |
 | --- | --- |
@@ -240,7 +269,9 @@ MSW + Vite (`pnpm perf`). 6 cases total: 4 budget specs always run; 2 diagnostic
 | [`e2e/perf/saveCycleProfile.perf.ts`](../e2e/perf/saveCycleProfile.perf.ts) | 1 case, opt-in (`PERF_PROFILE=1`): V8 CPU profile of the near-limit save cycle (diagnostic, no budget assert). |
 | [`e2e/perf/typingProfile.perf.ts`](../e2e/perf/typingProfile.perf.ts) | 1 case, opt-in (`PERF_PROFILE=1`): V8 CPU profile of idle, heading typing, and body typing with per-suspect attribution (diagnostic, no budget assert). |
 
-Supporting (not tests): [`e2e/perf/metrics.ts`](../e2e/perf/metrics.ts) instrumentation helpers and
+Supporting (not tests): [`e2e/perf/metrics.ts`](../e2e/perf/metrics.ts) instrumentation and per-case snapshot output,
+[`e2e/perf/snapshot.ts`](../e2e/perf/snapshot.ts) typed assembly/comparison,
+[`e2e/perf/compare-cli.ts`](../e2e/perf/compare-cli.ts) workflow adapter, and
 [`e2e/perf/cpuProfile.ts`](../e2e/perf/cpuProfile.ts) profile capture/attribution shared by the two diagnostics.
 
 ---

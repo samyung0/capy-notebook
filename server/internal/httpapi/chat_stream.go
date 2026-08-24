@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -24,34 +25,39 @@ type chatStreamReq struct {
 	Text           string `json:"text"`
 }
 
-// pipeChatEvent is one event line emitted by the Python retrieval service's
-// /chat/stream (and re-emitted to the browser). Type is one of:
-// token | tool | citations | done | error.
-//
-// tool events are progress only ("searching…", "created a quiz"): the agent's
-// tool calls are executed inside the retrieval service, and anything with a
-// side effect goes through /api/internal/* so this gateway still owns authz.
+// pipeChatEvent is one event line from the Python retrieval service.
+// Type is one of: phase | block_start | block_delta | block_end | tool_start |
+// tool_end | citations | checkpoint | done | error.
 type pipeChatEvent struct {
-	Type         string           `json:"type"`
-	Text         string           `json:"text,omitempty"`
-	Tool         string           `json:"tool,omitempty"`
-	Detail       string           `json:"detail,omitempty"`
-	Citations    []store.Citation `json:"citations,omitempty"`
-	TokenCount   int              `json:"tokenCount,omitempty"`
-	GenerationID string           `json:"generationId,omitempty"`
-	Message      string           `json:"message,omitempty"`
-	Code         string           `json:"code,omitempty"`
-	// Usage arrives on the done event, aggregated across every provider call
-	// the turn made. A stream that is aborted mid-answer never reaches done, so
-	// its reservation settles at zero and expires — undercharging a user whose
-	// answer they never saw is the right side to err on.
-	Usage pipeUsage `json:"usage,omitempty"`
+	Type             string                `json:"type"`
+	Phase            string                `json:"phase,omitempty"`
+	BlockID          string                `json:"blockId,omitempty"`
+	Kind             string                `json:"kind,omitempty"`
+	Text             string                `json:"text,omitempty"`
+	CallID           string                `json:"callId,omitempty"`
+	Name             string                `json:"name,omitempty"`
+	Detail           string                `json:"detail,omitempty"`
+	Status           string                `json:"status,omitempty"`
+	Citations        []store.Citation      `json:"citations,omitempty"`
+	Version          int                   `json:"version,omitempty"`
+	TokenCount       int                   `json:"tokenCount,omitempty"`
+	GenerationID     string                `json:"generationId,omitempty"`
+	Message          string                `json:"message,omitempty"`
+	Code             string                `json:"code,omitempty"`
+	Usage            pipeUsage             `json:"usage,omitempty"`
+	Activity         []store.ActivityBlock `json:"activity,omitempty"`
+	Answer           string                `json:"answer,omitempty"`
+	ThroughMessageID string                `json:"throughMessageId,omitempty"`
+	Summary          string                `json:"summary,omitempty"`
+	SourceRefs       json.RawMessage       `json:"sourceRefs,omitempty"`
+	ModelKey         string                `json:"modelKey,omitempty"`
+	ModelVersion     int                   `json:"modelVersion,omitempty"`
+	EstimatedTokens  int                   `json:"estimatedTokens,omitempty"`
 }
 
-// chatStream is the main streaming chat endpoint. It persists the user turn,
-// reserves an assistant row, relays the Python token stream to the browser over
-// SSE while accumulating the answer, and finalizes the assistant row on
-// completion or client abort. See ChatFeature.md for the end-to-end flow.
+// chatStream persists the user turn, reserves an assistant row, relays the
+// Python activity stream, and finalizes one assistant row. messages.content
+// is the final answer only.
 func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	wsID := id(r)
 	if !a.assertWS(w, r, wsID) {
@@ -86,7 +92,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	cfg, llmRates := llm.Cfg, llm.Rates
+	cfg := llm.Cfg
 
 	conv, err := a.resolveConversation(ctx, userID, wsID, req.ConversationID)
 	if err != nil {
@@ -100,14 +106,29 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	charge, err := a.beginSpend(ctx, userID, wsID, store.SurfaceChat, llm.PaidBy)
+	charge, err := a.beginProviderSession(
+		ctx,
+		userID,
+		wsID,
+		store.SurfaceChat,
+		llm.PaidBy,
+		llm.Rates,
+		embed.Rates,
+	)
 	if err != nil {
 		a.fail(w, err)
 		return
 	}
 	defer charge.release(ctx)
 
-	// Persist the user turn, then auto-title a fresh thread from it.
+	// History must be loaded before the current user row so Python sees the
+	// question once, as `query`.
+	prompt, err := a.s.ConversationPrompt(ctx, conv.ID)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+
 	if _, err := a.s.AddUserMessage(ctx, conv.ID, req.Text); err != nil {
 		a.fail(w, err)
 		return
@@ -116,7 +137,6 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		_ = a.s.RenameConversation(ctx, userID, conv.ID, titleFrom(req.Text))
 	}
 
-	// Reserve the assistant row so an aborted stream is always tracked.
 	assistant, err := a.s.StartAssistantMessage(ctx, conv.ID, cfg)
 	if err != nil {
 		a.fail(w, err)
@@ -144,35 +164,68 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	})
 
 	var (
-		builder   strings.Builder
-		citations []store.Citation
-		genID     string
-		tokens    int
-		usage     pipeUsage
+		currentText strings.Builder
+		answer      strings.Builder
+		citations   []store.Citation
+		activity    []store.ActivityBlock
+		genID       string
+		tokens      int
+		usage       pipeUsage
 	)
-	onToken := func(t string) {
-		builder.WriteString(t)
-		send(pipeChatEvent{Type: "token", Text: t})
-	}
 
-	streamErr := a.relayChat(ctx, userID, conv, llm, req.Text, onToken, func(ev pipeChatEvent) {
+	streamErr := a.relayChat(ctx, userID, conv, llm, charge.id, req.Text, assistant.ID, prompt, func(ev pipeChatEvent) {
 		switch ev.Type {
+		case "checkpoint":
+			cpCtx, cpCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := a.s.PersistCheckpoint(cpCtx, conv.ID, store.ConversationCheckpoint{
+				ThroughMessageID: ev.ThroughMessageID,
+				Summary:          ev.Summary,
+				SourceRefs:       ev.SourceRefs,
+				ModelKey:         ev.ModelKey,
+				ModelVersion:     ev.ModelVersion,
+				EstimatedTokens:  ev.EstimatedTokens,
+			}); err != nil {
+				log.Printf("persist checkpoint conv=%s: %v", conv.ID, err)
+			}
+			cpCancel()
+		case "block_start":
+			currentText.Reset()
+			send(ev)
+		case "block_delta":
+			currentText.WriteString(ev.Text)
+			send(ev)
+		case "block_end":
+			if ev.Kind == "answer" {
+				answer.Reset()
+				answer.WriteString(currentText.String())
+			}
+			send(ev)
 		case "citations":
 			citations = ev.Citations
-			send(pipeChatEvent{Type: "citations", Citations: citations})
-		case "tool":
-			send(pipeChatEvent{Type: "tool", Tool: ev.Tool, Detail: ev.Detail})
-		case "done":
+			send(ev)
+		case "phase", "tool_start", "tool_end":
+			send(ev)
+		case "done", "error":
+			if !ev.Usage.empty() {
+				usage = ev.Usage
+			}
 			if ev.TokenCount > 0 {
 				tokens = ev.TokenCount
 			}
+			if ev.Type != "done" {
+				break
+			}
+			if ev.Answer != "" {
+				answer.Reset()
+				answer.WriteString(ev.Answer)
+			}
+			if len(ev.Activity) > 0 {
+				activity = ev.Activity
+			}
 			genID = ev.GenerationID
-			usage = ev.Usage
 		}
 	})
 
-	// Persist with a detached context: the request context is already cancelled
-	// on a client disconnect, but we still want the partial answer saved.
 	saveCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -183,13 +236,15 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	case streamErr != nil:
 		status = "error"
 	}
+	if status == "aborted" && answer.Len() == 0 && currentText.Len() > 0 {
+		answer.WriteString(currentText.String())
+	}
 	if tokens == 0 {
 		tokens = int(usage.InputTokens + usage.OutputTokens)
 	}
-	_ = a.s.FinalizeAssistantMessage(saveCtx, assistant.ID, builder.String(), status, tokens, citations, genID)
-	charge.settle(saveCtx, usage.events(userID, conv.WorkspaceID, store.SurfaceChat, llmRates, embed.Rates, llm.PaidBy)...)
+	_ = a.s.FinalizeAssistantMessage(saveCtx, assistant.ID, answer.String(), status, tokens, citations, genID, activity)
+	charge.settle(saveCtx)
 
-	// Best-effort final event; the client may already be gone on abort.
 	if ctx.Err() == nil {
 		if streamErr != nil {
 			if code, msg, ok := llmKeyPayload(streamErr); ok {
@@ -197,15 +252,13 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 			} else if errors.Is(streamErr, errAIUnavailable) {
 				send(pipeChatEvent{Type: "error", Code: "ai_unavailable", Message: errAIUnavailable.Error()})
 			} else {
-				send(pipeChatEvent{Type: "error", Message: streamErr.Error()})
+				send(pipeChatEvent{Type: "error", Code: "agent_failed", Message: errAgentFailed.Error()})
 			}
 		}
 		send(map[string]any{"type": "done", "status": status, "tokenCount": tokens, "generationId": genID})
 	}
 }
 
-// resolveConversation returns the target conversation, creating one when no id
-// was supplied. An explicit id must belong to the user and the same workspace.
 func (a *api) resolveConversation(ctx context.Context, userID, wsID, convID string) (store.Conversation, error) {
 	if convID == "" {
 		return a.s.CreateConversation(ctx, userID, wsID, "")
@@ -220,23 +273,43 @@ func (a *api) resolveConversation(ctx context.Context, userID, wsID, convID stri
 	return conv, nil
 }
 
-// relayChat streams the grounded answer from the Python retrieval service,
-// invoking onToken for each text chunk and onEvent for citations/done. A
-// missing client or a failed handshake is an error; the caller marks the
-// turn failed instead of inventing tokens.
-func (a *api) relayChat(ctx context.Context, userID string, conv store.Conversation, llm resolvedLLM, query string, onToken func(string), onEvent func(pipeChatEvent)) error {
+func (a *api) relayChat(
+	ctx context.Context,
+	userID string,
+	conv store.Conversation,
+	llm resolvedLLM,
+	spendSessionID string,
+	query, assistantID string,
+	prompt store.ConversationPrompt,
+	onEvent func(pipeChatEvent),
+) error {
 	if a.pipe == nil {
 		return errAIUnavailable
 	}
 
-	history := a.historyForPrompt(ctx, conv.ID)
-	// userId travels with the request so tools with side effects can name the
-	// actor when they call back into /api/internal/*; the gateway re-checks the
-	// workspace role there rather than trusting the agent.
+	history := make([]map[string]any, 0, len(prompt.History))
+	for _, m := range prompt.History {
+		row := map[string]any{
+			"id":      m.ID,
+			"role":    m.Role,
+			"content": m.Content,
+		}
+		if len(m.Citations) > 0 {
+			row["citations"] = m.Citations
+		}
+		history = append(history, row)
+	}
 	body := map[string]any{
-		"query": query, "workspaceId": conv.WorkspaceID, "userId": userID,
-		"history": history,
-		"locale":  a.userLocale(ctx, userID),
+		"query":              query,
+		"workspaceId":        conv.WorkspaceID,
+		"userId":             userID,
+		"history":            history,
+		"assistantMessageId": assistantID,
+		"spendSessionId":     spendSessionID,
+		"locale":             a.userLocale(ctx, userID),
+	}
+	if prompt.Checkpoint != nil {
+		body["checkpoint"] = prompt.Checkpoint
 	}
 	llm.attach(body)
 	rc, err := a.pipe.PostStream(ctx, "/chat/stream", body)
@@ -249,6 +322,7 @@ func (a *api) relayChat(ctx context.Context, userID string, conv store.Conversat
 	defer rc.Close()
 
 	reader := bufio.NewReader(rc)
+	sawDone := false
 	for {
 		line, err := reader.ReadString('\n')
 		if line != "" {
@@ -261,41 +335,34 @@ func (a *api) relayChat(ctx context.Context, userID string, conv store.Conversat
 				if json.Unmarshal([]byte(payload), &ev) != nil {
 					continue
 				}
-				switch ev.Type {
-				case "token":
-					onToken(ev.Text)
-				case "error":
+				if ev.Type == "error" {
+					onEvent(ev)
 					if mapped := keyErrorFromEvent(ev.Code, ev.Message); mapped != nil {
 						return mapped
 					}
-				default:
-					onEvent(ev)
+					return errAgentFailed
 				}
+				if ev.Type == "done" {
+					sawDone = true
+				}
+				onEvent(ev)
 			}
 		}
 		if err != nil {
-			if err == io.EOF || ctx.Err() != nil {
+			if ctx.Err() != nil {
 				return nil
+			}
+			if err == io.EOF && sawDone {
+				return nil
+			}
+			if err == io.EOF {
+				return io.ErrUnexpectedEOF
 			}
 			return err
 		}
 	}
 }
 
-// historyForPrompt returns prior turns as OpenAI-style role/content pairs.
-func (a *api) historyForPrompt(ctx context.Context, convID string) []map[string]string {
-	msgs, err := a.s.ConversationHistory(ctx, convID, 20)
-	if err != nil {
-		return nil
-	}
-	out := make([]map[string]string, 0, len(msgs))
-	for _, m := range msgs {
-		out = append(out, map[string]string{"role": m.Role, "content": m.Content})
-	}
-	return out
-}
-
-// titleFrom derives a short conversation title from the first user message.
 func titleFrom(text string) string {
 	text = strings.TrimSpace(strings.ReplaceAll(text, "\n", " "))
 	const max = 60

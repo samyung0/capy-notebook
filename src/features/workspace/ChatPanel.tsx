@@ -2,7 +2,12 @@ import type React from 'react';
 import { useEffect, useRef, useState } from 'react';
 import { Streamdown } from 'streamdown';
 import { useConversations, useMessages } from '@/api/hooks';
-import type { ChatMessage, Citation, UserColor } from '@/api/types';
+import type {
+  ActivityBlock,
+  ChatMessage,
+  Citation,
+  UserColor,
+} from '@/api/types';
 import { Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
@@ -14,6 +19,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/Tooltip';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { userColorPairDark } from '@/lib/userColor';
 import { toChatMessage, useChatStream } from './useChatStream';
 
@@ -48,11 +54,70 @@ function Citations({
             title={c.snippet}
             type="button"
           >
+            <span className="opacity-70">[{i + 1}]</span>
             <Icon name="files" size={12} /> {c.fileName}
             {page && <span className="opacity-70">{page}</span>}
           </button>
         );
       })}
+    </div>
+  );
+}
+
+function PlanningHint({ visible }: { visible: boolean }) {
+  const [show, setShow] = useState(false);
+  useEffect(() => {
+    if (!visible) {
+      setShow(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setShow(true), 400);
+    return () => window.clearTimeout(timer);
+  }, [visible]);
+  if (!show) return null;
+  return (
+    <p className="text-fg-muted text-sm italic">
+      {m.chat_planning_next_step()}
+    </p>
+  );
+}
+
+function ActivityList({ blocks }: { blocks: ActivityBlock[] }) {
+  if (!blocks.length) return null;
+  return (
+    <div className="mb-2 flex flex-col gap-2">
+      {blocks.map((block) =>
+        block.kind === 'narration' ? (
+          <div
+            className="streamdown-body text-fg-muted text-sm [&_p]:my-1"
+            key={block.id}
+          >
+            <Streamdown className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+              {block.text}
+            </Streamdown>
+          </div>
+        ) : (
+          <div
+            className={cn(
+              'inline-flex w-fit items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px]',
+              block.status === 'refused'
+                ? 'bg-tint-error text-solid-error'
+                : 'bg-page text-fg-muted'
+            )}
+            key={block.id}
+          >
+            {block.status === 'running' ? (
+              <Spinner />
+            ) : (
+              <Icon name="search" size={12} />
+            )}
+            <span>{block.name}</span>
+            {block.detail ? (
+              <span className="opacity-70">{block.detail}</span>
+            ) : null}
+          </div>
+        )
+      )}
     </div>
   );
 }
@@ -66,12 +131,36 @@ function AssistantBubble({
   streaming: boolean;
   onOpenCitation?: (fileId: string, page?: number) => void;
 }) {
-  const empty = !msg.content;
+  const runningTool = msg.activity?.some(
+    (block) => block.kind === 'tool' && block.status === 'running'
+  );
+  const waiting =
+    streaming &&
+    msg.status === 'streaming' &&
+    msg.phase !== 'running_tools' &&
+    msg.phase !== 'answering' &&
+    !msg.currentBlockText &&
+    !runningTool;
+  const draft =
+    msg.phase === 'answering' || msg.currentBlockId
+      ? msg.currentBlockText
+      : undefined;
+  const answer = msg.content || draft || '';
+  const empty = !answer && !msg.activity?.length && !waiting;
   return (
     <div className="mr-auto max-w-[92%] px-3.5 py-2.5">
-      {empty && streaming && msg.status === 'streaming' ? (
+      <ActivityList blocks={msg.activity ?? []} />
+      {msg.currentBlockText && msg.phase !== 'answering' && !msg.content ? (
+        <div className="streamdown-body mb-2 text-fg-muted text-sm [&_p]:my-1">
+          <Streamdown className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+            {msg.currentBlockText}
+          </Streamdown>
+        </div>
+      ) : null}
+      <PlanningHint visible={!!waiting} />
+      {empty && streaming && msg.status === 'streaming' && !waiting ? (
         <Spinner />
-      ) : msg.content ? (
+      ) : answer ? (
         <div className="streamdown-body max-w-none [&_p]:my-1.5 [&_pre]:my-2">
           <Streamdown
             className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
@@ -88,7 +177,7 @@ function AssistantBubble({
               ),
             }}
           >
-            {msg.content}
+            {answer}
           </Streamdown>
         </div>
       ) : null}

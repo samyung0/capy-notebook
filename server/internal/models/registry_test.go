@@ -40,9 +40,9 @@ func TestGetLoadsPinnedVersionOnMissAndNeverFallsBack(t *testing.T) {
 		INSERT INTO model_configs (
 			model_key, version, display_name, provider_slug, base_url, provider_model_id,
 			params, surfaces, micros_per_input_token, micros_per_output_token,
-			enabled, is_default_for
+			micros_per_cached_input_token, enabled, is_default_for
 		) VALUES ($1, 7, 'Miss Test', 'deepseek', 'https://example.test', 'miss-model',
-			$2::jsonb, ARRAY['chat'], 250, 1000, true, ARRAY[]::text[])`, key, testLLMParams)
+			$2::jsonb, ARRAY['chat'], 250, 1000, 250, true, ARRAY[]::text[])`, key, testLLMParams)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,9 +89,9 @@ func TestOldVersionStaysResolvableAfterNewerDefault(t *testing.T) {
 		INSERT INTO model_configs (
 			model_key, version, display_name, provider_slug, base_url, provider_model_id,
 			params, surfaces, micros_per_input_token, micros_per_output_token,
-			enabled, is_default_for
+			micros_per_cached_input_token, enabled, is_default_for
 		) VALUES ('deepseek-flash', 2, 'Flash v2', 'deepseek', 'https://example.test', 'flash-v2',
-			$1::jsonb, ARRAY['chat','generate','editor','ingest'], 250, 1000, true, ARRAY['chat'])`, testLLMParams)
+			$1::jsonb, ARRAY['chat','generate','editor','ingest'], 250, 1000, 250, true, ARRAY['chat'])`, testLLMParams)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,11 +180,11 @@ func TestEmbeddingRowsAreFrozen(t *testing.T) {
 		INSERT INTO model_configs (
 			model_key, version, display_name, provider_slug, base_url, provider_model_id,
 			params, surfaces, micros_per_input_token, micros_per_output_token,
-			enabled, is_default_for
+			micros_per_cached_input_token, enabled, is_default_for
 		) VALUES (
 			'ghost-embed', 1, 'Ghost', 'openrouter', 'https://example.test', 'ghost',
 			'{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}'::jsonb,
-			ARRAY['embedding'], 50, 50, false,
+			ARRAY['embedding'], 50, 50, 0, false,
 			ARRAY[]::text[])`)
 	if err == nil {
 		t.Fatal("inserted a disabled embedding row")
@@ -195,9 +195,9 @@ func TestEmbeddingRowsAreFrozen(t *testing.T) {
 		INSERT INTO model_configs (
 			model_key, version, display_name, provider_slug, base_url, provider_model_id,
 			params, surfaces, micros_per_input_token, micros_per_output_token,
-			enabled, is_default_for
+			micros_per_cached_input_token, enabled, is_default_for
 		) VALUES ($1, 1, 'Chat Disable', 'deepseek', 'https://example.test', 'chat-disable',
-			$2::jsonb, ARRAY['chat'], 250, 1000, true, ARRAY[]::text[])`, key, testLLMParams)
+			$2::jsonb, ARRAY['chat'], 250, 1000, 250, true, ARRAY[]::text[])`, key, testLLMParams)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,10 +232,10 @@ func TestEmbeddingRowsAreFrozen(t *testing.T) {
 		INSERT INTO model_configs (
 			model_key, version, display_name, provider_slug, base_url, provider_model_id,
 			params, surfaces, micros_per_input_token, micros_per_output_token,
-			enabled, is_default_for
+			micros_per_cached_input_token, enabled, is_default_for
 		) VALUES ($1, 1, 'Lock Embed', 'openrouter', 'https://example.test', 'other-2560',
 			'{"dimensions": 2560, "vector_table": "rag_chunk_vectors_other_1"}'::jsonb,
-			ARRAY['embedding'], 50, 50, true,
+			ARRAY['embedding'], 50, 50, 0, true,
 			ARRAY[]::text[])`, embedKey)
 	if err != nil {
 		t.Fatalf("a new same-width embedding row must insert: %v", err)
@@ -271,9 +271,9 @@ func TestOneDefaultPerSurface(t *testing.T) {
 		INSERT INTO model_configs (
 			model_key, version, display_name, provider_slug, base_url, provider_model_id,
 			params, surfaces, micros_per_input_token, micros_per_output_token,
-			enabled, is_default_for
+			micros_per_cached_input_token, enabled, is_default_for
 		) VALUES ($1, 1, 'Dup', 'deepseek', 'https://example.test', 'dup',
-			$2::jsonb, ARRAY['chat'], 250, 1000, true, ARRAY['chat'])`, key, testLLMParams)
+			$2::jsonb, ARRAY['chat'], 250, 1000, 250, true, ARRAY['chat'])`, key, testLLMParams)
 	if err == nil {
 		t.Fatal("two chat defaults")
 	}
@@ -424,9 +424,9 @@ func TestCatalogRefusesBrokenReasoning(t *testing.T) {
 		INSERT INTO model_configs (
 			model_key, version, display_name, provider_slug, base_url, provider_model_id,
 			params, surfaces, micros_per_input_token, micros_per_output_token,
-			enabled, is_default_for
+			micros_per_cached_input_token, enabled, is_default_for
 		) VALUES ($1, 1, 'Bad', 'deepseek', 'https://example.test', 'bad',
-			'{}'::jsonb, ARRAY['chat'], 250, 1000, true, ARRAY[]::text[])`, key)
+			'{}'::jsonb, ARRAY['chat'], 250, 1000, 250, true, ARRAY[]::text[])`, key)
 	if err == nil {
 		t.Fatal("chat row without reasoning")
 	}
@@ -434,10 +434,10 @@ func TestCatalogRefusesBrokenReasoning(t *testing.T) {
 		INSERT INTO model_configs (
 			model_key, version, display_name, provider_slug, base_url, provider_model_id,
 			params, surfaces, micros_per_input_token, micros_per_output_token,
-			enabled, is_default_for
+			micros_per_cached_input_token, enabled, is_default_for
 		) VALUES ($1, 1, 'Bad Default', 'deepseek', 'https://example.test', 'bad-default',
 			'{"reasoning":{"canDisable":true,"efforts":["low","high","max"],"defaultMode":"off","defaultEffort":"medium"}}'::jsonb,
-			ARRAY['chat'], 250, 1000, true, ARRAY[]::text[])`, key)
+			ARRAY['chat'], 250, 1000, 250, true, ARRAY[]::text[])`, key)
 	if err == nil {
 		t.Fatal("defaultEffort not in efforts")
 	}

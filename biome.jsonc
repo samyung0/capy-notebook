@@ -120,6 +120,16 @@
   },
   "overrides": [
     {
+      "includes": ["ops/src/components/ui/**"],
+      "linter": {
+        "rules": {
+          "suspicious": {
+            "noReactForwardRef": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": ["e2e/**", "src/mocks/**", "playwright.config.ts"],
       "linter": {
         "rules": {

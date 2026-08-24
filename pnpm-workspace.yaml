@@ -1,6 +1,7 @@
 packages:
   - .
   - collaboration
+  - ops
 
 injectWorkspacePackages: true
 

@@ -132,6 +132,15 @@ def test_client_cache_uses_full_key():
     retrieval_models._clients.clear()
 
 
+def test_provider_client_disables_hidden_retries():
+    retrieval_models._clients.clear()
+    provider = retrieval_models.client(
+        ProviderCfg("sk-accounted-call", "https://api.openai.com/v1")
+    )
+    assert provider.max_retries == 0
+    retrieval_models._clients.clear()
+
+
 def test_anthropic_headers():
     spec = _spec(provider_slug="anthropic")
     assert extra_headers_for(spec)["anthropic-version"] == "2023-06-01"

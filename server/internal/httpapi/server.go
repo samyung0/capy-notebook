@@ -187,6 +187,8 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Post("/api/workspaces/{id}/ai/copilot", a.aiCopilot)
 	if cfg.PipelineSecret != "" {
 		r.Post("/api/internal/materials", a.internalCreateMaterial)
+		r.Get("/api/internal/materials/{materialId}", a.internalGetMaterial)
+		r.Post("/api/internal/provider-calls", a.internalSettleProviderCall)
 	}
 	r.Get("/api/files/{id}/raw", a.getFileRaw)
 
@@ -210,6 +212,10 @@ func decode(r *http.Request, v any) error { return json.NewDecoder(r.Body).Decod
 // the miss so an outage does not look like a finished turn.
 var errAIUnavailable = errors.New("AI service is unavailable")
 
+// errAgentFailed is a sanitized client-facing chat failure. Provider and
+// store detail stay in logs and Sentry, not in the SSE payload.
+var errAgentFailed = errors.New("the chat agent hit an internal error")
+
 // errGenerateEmpty is a 200-shaped pipeline miss: the model ran, but the
 // reply could not become a material. Distinct from errAIUnavailable so a
 // blank mindmap is not reported as the retrieval process being down.
@@ -231,6 +237,13 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusUnprocessableEntity, map[string]string{
 			"code":    "model_unavailable",
 			"message": "LLM model not available",
+		})
+		return
+	}
+	if errors.Is(err, store.ErrMaterialConflict) || errors.Is(err, store.ErrMaterialIDTaken) {
+		writeJSON(w, http.StatusConflict, map[string]string{
+			"code":    "material_conflict",
+			"message": "a material with this id already exists with a different payload",
 		})
 		return
 	}

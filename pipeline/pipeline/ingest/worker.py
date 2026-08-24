@@ -456,7 +456,11 @@ def _charge_ingest(
                             output_tokens=out,
                             unit="tokens",
                             credit_micros=registry.credits_for_tokens(
-                                spec, "llm", inp, out
+                                spec,
+                                "llm",
+                                inp,
+                                out,
+                                int(bucket.get("cached") or 0),
                             ),
                             reservation_id=reservation_id,
                             trace_id=trace,
@@ -480,7 +484,11 @@ def _charge_ingest(
                         output_tokens=usage.output_tokens,
                         unit="tokens",
                         credit_micros=registry.credits_for_tokens(
-                            ingest, "llm", usage.input_tokens, usage.output_tokens
+                            ingest,
+                            "llm",
+                            usage.input_tokens,
+                            usage.output_tokens,
+                            getattr(usage, "cached_read_tokens", 0),
                         ),
                         reservation_id=reservation_id,
                         trace_id=trace,

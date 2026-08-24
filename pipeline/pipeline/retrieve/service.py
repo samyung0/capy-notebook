@@ -21,7 +21,7 @@ from pydantic import BaseModel, Field
 
 from .. import obs, registry, use_compatible_event_loop
 from ..config import cfg
-from ..retrieval import models, store, workflows
+from ..retrieval import accounting, models, store, workflows
 from ..retrieval.agent import run_agent
 from ..retrieval.chunking import clip_to_tokens
 from ..retrieval.locale import response_language_rule, rewrite_language_rule
@@ -140,6 +140,9 @@ class ChatStreamReq(LLMPin):
     model: str | None = None  # ignored; pin is modelKey + configVersion
     # Prior turns as OpenAI-style role/content pairs, sent to the LLM only.
     history: list[dict] | None = None
+    checkpoint: dict | None = None
+    assistantMessageId: str | None = None
+    spendSessionId: str
     # Account locale from the gateway (users.locale). Do not trust a browser field.
     locale: str | None = None
 
@@ -209,18 +212,22 @@ def healthz():
 
 async def _chat_events(req: ChatStreamReq, request: Request):
     _bind_llm(req)
+    accounting_token = None
     ctx = ToolContext(
         workspace_id=req.workspaceId,
         user_id=req.userId or "",
         file_ids=list(req.fileIds or []),
+        assistant_message_id=req.assistantMessageId or "",
     )
     try:
+        accounting_token = accounting.bind(req.spendSessionId)
         async for event in run_agent(
             query=req.query,
             ctx=ctx,
             history=req.history,
             model=models.resolve_query_model(req.modelKey, req.configVersion),
             locale=req.locale,
+            checkpoint=req.checkpoint,
         ):
             if await request.is_disconnected():
                 break
@@ -230,6 +237,9 @@ async def _chat_events(req: ChatStreamReq, request: Request):
     except Exception as exc:
         log.exception("chat stream failed")
         yield _sse({"type": "error", "message": str(exc)})
+    finally:
+        if accounting_token is not None:
+            accounting.reset(accounting_token)
 
 
 @app.post("/chat/stream")

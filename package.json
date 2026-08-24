@@ -124,7 +124,7 @@
     "fmt:go": "cd server && go fmt ./...",
     "fmt:py": "uv --native-tls run --with ruff ruff format pipeline && uv --native-tls run --with ruff ruff check --fix pipeline",
     "typecheck": "tsc -b --noEmit",
-    "test": "vitest run --dir src",
+    "test": "vitest run --dir src && vitest run --dir e2e/perf",
     "test:collaboration": "vitest run --dir collaboration",
     "test:pipeline": "uv run --extra test pytest",
     "test:pipeline:offline": "uv run --extra test pytest -q -m \"not cassette and not integration\"",
