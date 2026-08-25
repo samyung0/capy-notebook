@@ -69,9 +69,11 @@ export default defineConfig({
   reporter: [['list'], ['html', { open: 'never' }]],
   retries: process.env.CI ? 1 : 0,
   testDir: path.join(root, 'e2e'),
-  // The editor feature matrix runs against MSW (no Docker) with its own
-  // config: e2e/editor/playwright.editor.config.ts (pnpm e2e:editor).
-  testIgnore: ['**/editor/**'],
+  // Sharing/error specs only. The editor matrix and editor-perf suites have
+  // their own configs (pnpm e2e:editor / pnpm perf). e2e/perf also holds
+  // Vitest files (*.test.ts) that Playwright's default matcher would load.
+  testIgnore: ['**/editor/**', '**/perf/**'],
+  testMatch: '**/*.spec.ts',
   timeout: 60_000,
   use: {
     baseURL,
