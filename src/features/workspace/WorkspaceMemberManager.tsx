@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/Select';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
+import { track } from '@/lib/observability';
 
 function roleOptions(): Array<{ value: AssignableRole; label: string }> {
   return [
@@ -80,6 +81,7 @@ export function WorkspaceMemberManager({
         identifier: v.identifier.trim(),
         role: v.role,
       });
+      track('collaborator_invited', { role: v.role });
       reset({ identifier: '', role: v.role });
       userToast({
         description: m.members_invite_sent_body(),

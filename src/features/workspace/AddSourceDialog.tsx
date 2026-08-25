@@ -55,6 +55,7 @@ import {
   assertMsalConfigured,
   clearPickerAuth,
 } from '@/lib/msalPickerAuth';
+import { trackQuotaBlocked } from '@/lib/observability';
 import {
   type ImportSourceRef,
   isPickerConsentBlocked,
@@ -606,6 +607,7 @@ function UploadFiles({
     }
     setFiles(failed);
     const fileToast = fileLimitToast(sawError);
+    trackQuotaBlocked(sawError, 'upload');
     userToast({
       description: isCreditsExhaustedError(sawError)
         ? m.error_credits_body()
@@ -898,6 +900,7 @@ function ImportFiles({
 
   function handleImportError(error: unknown) {
     const fileToast = fileLimitToast(error);
+    trackQuotaBlocked(error, 'upload');
     userToast({
       description: isCreditsExhaustedError(error)
         ? m.error_credits_body()

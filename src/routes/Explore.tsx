@@ -17,6 +17,7 @@ import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
+import { trackItemCloned } from '@/lib/observability';
 import { userColorPair } from '@/lib/userColor';
 
 export default function Explore() {
@@ -84,11 +85,13 @@ export default function Explore() {
                       iconLeft="plus"
                       onClick={() =>
                         cloneWorkspace(w.id, {
-                          onSuccess: ({ workspace }) =>
+                          onSuccess: ({ workspace }) => {
+                            trackItemCloned('workspace');
                             navigate({
                               params: { workspaceId: workspace.id },
                               to: '/workspaces/$workspaceId',
-                            }),
+                            });
+                          },
                         })
                       }
                       size="sm"
@@ -125,11 +128,12 @@ export default function Explore() {
                   iconLeft="plus"
                   onClick={() =>
                     cloneQuiz(q.id, {
-                      onSuccess: (copy) =>
+                      onSuccess: (copy) => {
                         navigate({
                           params: { quizId: copy.id },
                           to: '/quizzes/$quizId/attempt',
-                        }),
+                        });
+                      },
                     })
                   }
                   size="sm"
@@ -164,11 +168,12 @@ export default function Explore() {
                   iconLeft="plus"
                   onClick={() =>
                     cloneDeck(deck.id, {
-                      onSuccess: (copy) =>
+                      onSuccess: (copy) => {
                         navigate({
                           params: { deckId: copy.id },
                           to: '/flashcards/$deckId',
-                        }),
+                        });
+                      },
                     })
                   }
                   size="sm"

@@ -33,6 +33,7 @@ import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { llmKeyUserMessage } from '@/lib/errors';
+import { track } from '@/lib/observability';
 import { applyAiPreview, setAiPreview, useAiPreview } from './aiPreviewState';
 
 interface AiAction {
@@ -176,6 +177,9 @@ export function AiMenu() {
     options: { toolName?: AiAction['toolName']; mode?: AiAction['mode'] } = {}
   ) => {
     if (!prompt.trim() || loading) return;
+    track('editor_ai_used', {
+      mode: options.mode === 'insert' ? 'continue' : 'command',
+    });
     const savedSelection = editor.getOption(AIChatPlugin, 'chatSelection');
     const selectedBlocks = editor
       .getApi(BlockSelectionPlugin)

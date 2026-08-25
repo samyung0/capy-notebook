@@ -8,7 +8,16 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
+import {
+  durationBucket,
+  failureReason,
+  ingestFailReason,
+  ingestStageCode,
+  ingestTracker,
+  sizeBucket,
+} from '@/lib/analytics';
 import { NOTIFICATION_PAGE_SIZE } from '@/lib/const';
+import { track, trackItemCloned } from '@/lib/observability';
 import { USE_MSW } from './auth';
 import { API_BASE, api, qk } from './client';
 import {
@@ -902,8 +911,36 @@ function patchFileInCache(
 }
 
 // MSW has no SSE channel, so fake the progress animation client-side in dev.
+function trackIngestTerminal(
+  qc: QueryClient,
+  wsId: string,
+  fileId: string,
+  status: 'ready' | 'failed',
+  stage?: unknown
+) {
+  const taken = ingestTracker.takeTerminal(fileId, status);
+  if (!taken) return;
+  const list = qc.getQueryData<SourceFile[]>(qk.files(wsId));
+  const file = list?.find((entry) => entry.id === fileId);
+  const kind = file?.kind ?? 'unknown';
+  if (status === 'ready') {
+    track('source_ingest_completed', {
+      durationBucket: durationBucket(taken.durationMs),
+      indexed: file?.indexed === true,
+      kind,
+    });
+    return;
+  }
+  track('source_ingest_failed', {
+    kind,
+    reason: ingestFailReason(stage),
+    stage: ingestStageCode(stage),
+  });
+}
+
 function simulateMswProgress(qc: QueryClient, wsId: string, fileId: string) {
   let pct = 0;
+  ingestTracker.markStart(fileId);
   const timer = setInterval(() => {
     pct = Math.min(100, pct + 20);
     patchFileInCache(qc, wsId, fileId, {
@@ -919,6 +956,7 @@ function simulateMswProgress(qc: QueryClient, wsId: string, fileId: string) {
         ingestPct: 100,
         status: 'ready',
       });
+      trackIngestTerminal(qc, wsId, fileId, 'ready', 'done');
     }
   }, 450);
 }
@@ -999,7 +1037,13 @@ export function useUploadSource(wsId: string) {
           );
         });
     },
-    onSuccess: (file) => {
+    onSuccess: (file, vars) => {
+      track('source_uploaded', {
+        kind: vars.kind,
+        parseMode: vars.parseMode ?? 'fast',
+        sizeBucket: sizeBucket(vars.file.size),
+      });
+      ingestTracker.markStart(file.id);
       // Insert immediately so the row (with its progress bar) shows up at once.
       qc.setQueryData<SourceFile[]>(qk.files(wsId), (prev) => {
         const next = prev ? [...prev] : [];
@@ -1013,6 +1057,9 @@ export function useUploadSource(wsId: string) {
         return next;
       });
       qc.invalidateQueries({ queryKey: qk.chapters(wsId) });
+      if (file.status === 'ready') {
+        trackIngestTerminal(qc, wsId, file.id, 'ready', 'done');
+      }
       if (USE_MSW) simulateMswProgress(qc, wsId, file.id);
     },
   });
@@ -1071,8 +1118,12 @@ export function useIngestProgress(wsId: string, enabled = true) {
           if (typeof value.indexed === 'boolean') {
             patch.indexed = value.indexed;
           }
+          if (status === 'pending' || status === 'processing') {
+            ingestTracker.markStart(value.fileId);
+          }
           patchFileInCache(qc, wsId, value.fileId, patch);
           if (status === 'ready' || status === 'failed') {
+            trackIngestTerminal(qc, wsId, value.fileId, status, value.stage);
             qc.invalidateQueries({ queryKey: qk.files(wsId) });
             qc.invalidateQueries({ queryKey: qk.file(value.fileId) });
           }
@@ -1137,7 +1188,14 @@ export function useGenerate(wsId: string) {
   return useMutation({
     mutationFn: (opts: GenerateOptions) =>
       api.post<unknown>(`/workspaces/${wsId}/generate`, opts),
-    onSuccess: async () => {
+    onError: (error, opts) => {
+      track('material_generate_failed', {
+        kind: opts.kind,
+        reason: failureReason(error),
+      });
+    },
+    onSuccess: async (_data, opts) => {
+      track('material_generated', { kind: opts.kind, workspaceId: wsId });
       await Promise.all([
         qc.invalidateQueries({ queryKey: qk.quizzes }),
         qc.invalidateQueries({ queryKey: qk.decks }),
@@ -1191,6 +1249,7 @@ export function useCreateNote(wsId: string) {
         ...input,
       }),
     onSuccess: (mt) => {
+      track('note_created', { workspaceId: wsId });
       qc.invalidateQueries({ queryKey: qk.materials(wsId) });
       qc.setQueryData(qk.material(mt.id), mt);
     },
@@ -1294,6 +1353,7 @@ export function useAcceptWorkspaceInvite() {
         `/workspace-invites/${encodeURIComponent(token)}/accept`
       ),
     onSuccess: (member) => {
+      track('invite_accepted', { role: member.role });
       qc.invalidateQueries({ queryKey: ['workspaces'] });
       qc.invalidateQueries({ queryKey: qk.workspace(member.workspaceId) });
       qc.invalidateQueries({
@@ -1897,6 +1957,7 @@ export function useCloneQuiz(options?: MutationUiOptions) {
     meta: mutationMeta(options),
     mutationFn: (id: string) => api.post<Quiz>(`/quizzes/${id}/clone`),
     onSuccess: () => {
+      trackItemCloned('quiz');
       qc.invalidateQueries({ queryKey: qk.quizzes });
       qc.invalidateQueries({ queryKey: qk.exploreQuizzes });
       invalidateAllMaterials(qc);
@@ -1911,6 +1972,7 @@ export function useCloneDeck(options?: MutationUiOptions) {
     meta: mutationMeta(options),
     mutationFn: (id: string) => api.post<Deck>(`/decks/${id}/clone`),
     onSuccess: () => {
+      trackItemCloned('deck');
       qc.invalidateQueries({ queryKey: qk.decks });
       qc.invalidateQueries({ queryKey: qk.exploreDecks });
       invalidateAllMaterials(qc);

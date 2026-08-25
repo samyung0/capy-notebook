@@ -10,6 +10,12 @@
  */
 
 import * as Sentry from '@sentry/react';
+import {
+  cloneSourceFromPath,
+  identityKey,
+  pageviewPath,
+  quotaBlockedProps,
+} from '@/lib/analytics';
 
 const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN as string | undefined;
 const POSTHOG_KEY = import.meta.env.VITE_POSTHOG_KEY as string | undefined;
@@ -43,7 +49,14 @@ export function initErrorReporting(): void {
   });
 }
 
+let lastIdentityKey: string | undefined;
+let lastPageviewPath: string | undefined;
+
 export function identifyUser(userId: string | null, email?: string): void {
+  const key = identityKey(userId, email);
+  if (lastIdentityKey === key) return;
+  lastIdentityKey = key;
+
   if (SENTRY_DSN) {
     Sentry.setUser(userId ? { id: userId } : null);
   }
@@ -129,7 +142,46 @@ export type AnalyticsEvent =
   | { name: 'share_link_created'; props: { visibility: string } }
   | { name: 'collaborator_invited'; props: { role: string } }
   | { name: 'quota_blocked'; props: { code: string; surface: string } }
-  | { name: 'subscription_checkout_started'; props: { tier: string } };
+  | { name: 'subscription_checkout_started'; props: { tier: string } }
+  | { name: 'note_created'; props: { workspaceId: string } }
+  | {
+      name: 'deck_study_finished';
+      props: { cardCountBucket: string; source: 'app' | 'share' };
+    }
+  | {
+      name: 'item_cloned';
+      props: {
+        kind: 'workspace' | 'quiz' | 'deck';
+        source: 'share' | 'explore' | 'app';
+      };
+    }
+  | { name: 'invite_accepted'; props: { role: string } }
+  | {
+      name: 'source_ingest_failed';
+      props: { kind: string; stage: string; reason: string };
+    };
+
+const _analyticsEventNames: Record<AnalyticsEvent['name'], true> = {
+  chat_turn_completed: true,
+  chat_turn_sent: true,
+  collaborator_invited: true,
+  deck_study_finished: true,
+  editor_ai_used: true,
+  invite_accepted: true,
+  item_cloned: true,
+  material_generate_failed: true,
+  material_generated: true,
+  note_created: true,
+  quiz_attempt_finished: true,
+  quota_blocked: true,
+  share_link_created: true,
+  source_ingest_completed: true,
+  source_ingest_failed: true,
+  source_uploaded: true,
+  subscription_checkout_started: true,
+  workspace_created: true,
+};
+void _analyticsEventNames;
 
 export function track<E extends AnalyticsEvent>(
   name: E['name'],
@@ -139,9 +191,27 @@ export function track<E extends AnalyticsEvent>(
 }
 
 export function trackPageView(path: string): void {
+  const next = pageviewPath(path);
+  if (lastPageviewPath === next) return;
+  lastPageviewPath = next;
   void posthog().then((client) =>
-    client?.capture('$pageview', { $current_url: path })
+    client?.capture('$pageview', { $current_url: next })
   );
+}
+
+export function trackQuotaBlocked(error: unknown, surface: string): void {
+  const props = quotaBlockedProps(error, surface);
+  if (!props) return;
+  track('quota_blocked', props);
+}
+
+export function trackItemCloned(
+  kind: 'workspace' | 'quiz' | 'deck',
+  pathname = typeof window === 'undefined' ? '' : window.location.pathname
+): void {
+  const source = cloneSourceFromPath(pathname);
+  if (!source) return;
+  track('item_cloned', { kind, source });
 }
 
 /**

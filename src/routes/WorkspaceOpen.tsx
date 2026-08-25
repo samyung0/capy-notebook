@@ -73,6 +73,7 @@ import { StorageOwnerBanner } from '@/features/workspace/StorageOwnerBanner';
 import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';
 import { cn } from '@/lib/cn';
+import { trackItemCloned } from '@/lib/observability';
 import { userColorPair } from '@/lib/userColor';
 
 const GENERATING_MATERIAL: Record<
@@ -476,6 +477,7 @@ export default function WorkspaceOpen() {
                   cloneWorkspace(workspaceId, {
                     onError: (err) => toastCloneError(err, 'workspace'),
                     onSuccess: ({ workspace }) => {
+                      trackItemCloned('workspace');
                       userToast({
                         title: m.workspace_cloned(),
                         variant: 'success',

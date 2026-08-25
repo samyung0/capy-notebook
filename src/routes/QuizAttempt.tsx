@@ -25,8 +25,10 @@ import {
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { gradeAttemptQuestions } from '@/features/quizzes/scoreAttempt';
 import { m } from '@/i18n';
+import { scoreBucket } from '@/lib/analytics';
 import { toastCloneError, toastSignInRequired } from '@/lib/authToasts';
 import { describeError, llmKeyUserMessage } from '@/lib/errors';
+import { track } from '@/lib/observability';
 
 export default function QuizAttempt() {
   const params = useParams({ strict: false });
@@ -131,6 +133,8 @@ export default function QuizAttempt() {
         workspaceId: quiz.workspaceId,
       });
       setGraded(result);
+      const pct = result.max > 0 ? (result.awarded / result.max) * 100 : 0;
+      track('quiz_attempt_finished', { scoreBucket: scoreBucket(pct) });
       const wrong = result.questions.filter((qq) => {
         const s = scoreQuestion(qq, answers[qq.id]);
         return s.awarded < s.max;
@@ -267,11 +271,12 @@ export default function QuizAttempt() {
               onClick={() =>
                 cloneQuiz(quizId, {
                   onError: (err) => toastCloneError(err, 'quiz'),
-                  onSuccess: (copy) =>
+                  onSuccess: (copy) => {
                     navigate({
                       params: { quizId: copy.id },
                       to: '/quizzes/$quizId/attempt',
-                    }),
+                    });
+                  },
                 })
               }
               size="sm"

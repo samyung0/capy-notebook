@@ -112,23 +112,83 @@ flow through these services.
 
 ## 4. Product analytics (PostHog)
 
-`src/lib/observability.ts`. Loaded lazily, allowed to fail silently, and
-**never** the source of truth for anything a user is charged for — a meaningful
-share of users block it.
+`src/lib/observability.ts` loads PostHog lazily and lets it fail silently.
+PostHog is never the source of truth for anything a user is charged for. A
+meaningful share of users block it. Billing lives in `usage_events`.
 
-`autocapture` is off. The failure mode of product analytics is twelve spellings
-of the same event across eighteen months, at which point no funnel can be built
-retroactively. Events are a closed TypeScript union, named
-`object_verb_past_tense`, with flat low-cardinality properties usable as
-breakdowns. Adding an event means adding a variant to `AnalyticsEvent`.
+There is no server-side PostHog SDK. The backend already writes
+`usage_events` (transactional, complete) and structured logs (unsampled). A
+third, lossy copy would only create a fourth number that disagrees with the
+other three.
 
-Session replay is on **only for sessions that errored**, with text masked and
-media blocked.
+`autocapture` stays off. PostHog session replay stays off. Sentry owns
+error-only replay. See section 3.
 
-There is deliberately no server-side PostHog SDK. Everything the backend would
-report is either already in `usage_events` (which is transactional and complete)
-or in the structured logs (which are not sampled). A third, lossy copy would
-only create a fourth number that disagrees with the other three.
+The failure mode of product analytics is twelve spellings of the same event
+across eighteen months, at which point no funnel can be built retroactively.
+Events are a closed TypeScript union, named `object_verb_past_tense`, with
+flat low-cardinality properties usable as breakdowns. Adding an event means
+adding a variant to `AnalyticsEvent` and a `track` call site. Never put titles,
+prompts, or note content in properties. Workspace and material ids are fine.
+
+`src/lib/analytics.ts` holds the pure helpers (buckets, path, ingest once-per
+file, quota gate) so unit tests do not import Sentry or PostHog.
+
+### Identify and pageviews
+
+`src/components/app/AnalyticsRoot.tsx` is the only owner of both.
+
+Identify runs after Clerk `useAuth` and `useUser` are loaded, or after MSW
+`useMe` succeeds. The SPA passes the user id and, when it already has it, the
+email. It does not fetch email only for analytics. Logout and a failed `/me`
+call `identifyUser(null)`.
+
+`identifyUser` is idempotent on `(userId, email)`. PostHog `identify` gets
+`{ email }` when email is present. Sentry `setUser` is id-only. There are no
+person properties (`plan`, locale, or otherwise). `send_default_pii` stays
+off on Sentry.
+
+Pageviews fire once per parameterized TanStack route pattern
+(`match.fullPath`), with search stripped. Raw UUID paths are not sent.
+
+### Event catalog
+
+| Event | When it fires |
+| --- | --- |
+| `workspace_created` | Sidebar create succeeds. `source` is always `sidebar`. |
+| `source_uploaded` | `useUploadSource` succeeds. |
+| `source_ingest_completed` | File reaches `ready`, including store-only (`indexed: false`). Once per file. |
+| `source_ingest_failed` | File reaches `failed`. `reason` is a short code, never the SSE message. |
+| `chat_turn_sent` and `chat_turn_completed` | `useChatStream.send`. `hasScope` is `false`. Completed fires once for ok, error, or abort. |
+| `material_generated` / `material_generate_failed` | `useGenerate` success or error. |
+| `editor_ai_used` | Plate AI menu submit. `continue` vs typed or other actions (`command`). Prompt is not sent. |
+| `quiz_attempt_finished` | Grade succeeds, even if persist 401s. |
+| `share_link_created` | Visibility becomes `link` or `public`. |
+| `collaborator_invited` | Invite create succeeds. |
+| `quota_blocked` | User-visible quota or credits block on mutation, clone, or upload. |
+| `subscription_checkout_started` | Checkout returns a `url`, before redirect. |
+| `note_created` | `useCreateNote` succeeds. |
+| `deck_study_finished` | Session queue empties after `sessionTotal > 0`. Once per session. |
+| `item_cloned` | Clone succeeds. `source` is `share`, `explore`, or `app` (`/quizzes`, `/flashcards`, and their child routes). Workspace clones still fire only from share or explore call sites. |
+| `invite_accepted` | `useAcceptWorkspaceInvite` succeeds. |
+
+Buckets live in `src/lib/analytics.ts`. Size is bytes. Duration is
+milliseconds. Score is 0 to 100 percent. Card count does not fire for an empty
+session.
+
+### Funnels
+
+Activation is `workspace_created` → `source_uploaded` →
+`source_ingest_completed` with `indexed` true → first of `chat_turn_sent`,
+`note_created`, or `deck_study_finished`.
+
+Retention is weekly first-time `$pageview`, returning on `$pageview`.
+
+Paywall is `quota_blocked` → `subscription_checkout_started`. That chart is
+not created in PostHog. Read it from the event stream when you need it.
+
+`featureEnabled` / PostHog flags stay unused. Compile-time `src/lib/features.ts`
+remains the gate.
 
 ---
 

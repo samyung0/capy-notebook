@@ -1,5 +1,5 @@
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { isApiError } from '@/api/client';
 import {
   useCards,
@@ -22,8 +22,10 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { CardEditModal } from '@/features/flashcards/CardEditModal';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { m } from '@/i18n';
+import { cardCountBucket, deckStudySource } from '@/lib/analytics';
 import { toastCloneError } from '@/lib/authToasts';
 import { cn } from '@/lib/cn';
+import { track } from '@/lib/observability';
 import {
   isDue,
   isKnown,
@@ -75,6 +77,7 @@ export default function DeckStudy() {
 
   const [queue, setQueue] = useState<string[] | null>(null);
   const [sessionTotal, setSessionTotal] = useState(0);
+  const studyFinished = useRef(false);
   const [flipped, setFlipped] = useState(false);
   const [editing, setEditing] = useState<Flashcard | 'new' | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
@@ -93,10 +96,21 @@ export default function DeckStudy() {
   }, [cards, queue, dueIds]);
 
   function startSession(ids: string[]) {
+    studyFinished.current = false;
     setQueue(ids);
     setSessionTotal(ids.length);
     setFlipped(false);
   }
+
+  useEffect(() => {
+    if (!queue || queue.length > 0 || sessionTotal === 0) return;
+    if (studyFinished.current) return;
+    studyFinished.current = true;
+    track('deck_study_finished', {
+      cardCountBucket: cardCountBucket(sessionTotal),
+      source: deckStudySource(window.location.pathname),
+    });
+  }, [queue, sessionTotal]);
 
   if (deckFetchStatus === 'paused' || cardsFetchStatus === 'paused') {
     return (
@@ -188,11 +202,12 @@ export default function DeckStudy() {
           onClick={() =>
             cloneDeck(deckId, {
               onError: (err) => toastCloneError(err, 'deck'),
-              onSuccess: (copy) =>
+              onSuccess: (copy) => {
                 navigate({
                   params: { deckId: copy.id },
                   to: '/flashcards/$deckId',
-                }),
+                });
+              },
             })
           }
           size="sm"

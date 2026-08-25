@@ -19,6 +19,7 @@ import { WorkspaceCard } from '@/components/ui/WorkspaceCard';
 import { WorkspaceFormCreateDialog } from '@/features/workspace/WorkspaceFormCreateDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { track } from '@/lib/observability';
 import { type USER_COLORS, USER_COLORS_DISPLAY } from '@/lib/userColor';
 
 const SORTS = [
@@ -217,7 +218,10 @@ export default function Workspaces() {
       </div>
       {createOpen && (
         <WorkspaceFormCreateDialog
-          onSubmit={(v) => createWorkspace(v)}
+          onSubmit={async (v) => {
+            await createWorkspace(v);
+            track('workspace_created', { source: 'sidebar' });
+          }}
           open
           setOpen={setCreateOpen}
           workspace={{ color: 'graphite', name: '', tags: [] }}

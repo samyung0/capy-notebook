@@ -38,6 +38,7 @@ import {
   workspacesQuery,
 } from '@/api/hooks';
 import { queryClient } from '@/api/queryClient';
+import { AnalyticsRoot } from '@/components/app/AnalyticsRoot';
 import {
   RouteErrorComponent,
   RouteNotFoundComponent,
@@ -65,6 +66,7 @@ type Loader = (args: {
 const rootRoute = createRootRouteWithContext<RouterContext>()({
   component: () => (
     <>
+      <AnalyticsRoot />
       <Outlet />
       <TanStackRouterDevtools />
     </>

@@ -10,6 +10,7 @@ import type {
   WireMessage,
 } from '@/api/types';
 import { m } from '@/i18n';
+import { track } from '@/lib/observability';
 
 /** Map a persisted wire message onto the UI turn shape (narrowing role/status). */
 export function toChatMessage(row: WireMessage): ChatMessage {
@@ -88,6 +89,18 @@ export function useChatStream(workspaceId: string) {
       let currentId = placeholderId;
       let terminal = false;
       let citationVersion = -1;
+      let citations = 0;
+      let completed = false;
+      const complete = (status: string) => {
+        if (completed) return;
+        completed = true;
+        track('chat_turn_completed', {
+          citations,
+          status,
+          workspaceId,
+        });
+      };
+      track('chat_turn_sent', { hasScope: false, workspaceId });
       setMessages((prev) => [
         ...prev,
         userMsg,
@@ -108,6 +121,7 @@ export function useChatStream(workspaceId: string) {
       const fail = (message: string) => {
         if (terminal || ac.signal.aborted) return;
         terminal = true;
+        complete('error');
         setMessages((prev) =>
           prev.map((msg) =>
             msg.id === currentId
@@ -165,14 +179,16 @@ export function useChatStream(workspaceId: string) {
                 currentBlockId: blockId,
                 currentBlockText: '',
               }),
-            onCitations: (citations, version) => {
+            onCitations: (next, version) => {
               if (!shouldApplyCitations(version, citationVersion)) return;
               citationVersion = version;
-              patch(currentId, { citations });
+              citations = next.length;
+              patch(currentId, { citations: next });
             },
             onDone: ({ status }) => {
               if (terminal) return;
               terminal = true;
+              complete(status);
               patch(currentId, {
                 currentBlockId: undefined,
                 currentBlockText: '',
@@ -251,7 +267,10 @@ export function useChatStream(workspaceId: string) {
       } catch (error) {
         fail(error instanceof Error ? error.message : m.chat_failed());
       } finally {
-        if (ac.signal.aborted) patch(currentId, { status: 'aborted' });
+        if (ac.signal.aborted) {
+          complete('aborted');
+          patch(currentId, { status: 'aborted' });
+        }
         setStreaming(false);
         if (abortRef.current === ac) abortRef.current = null;
         void qc.invalidateQueries({ queryKey: qk.conversations(workspaceId) });

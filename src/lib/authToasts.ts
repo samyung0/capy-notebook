@@ -1,6 +1,7 @@
 import { isApiError, isStorageQuotaError } from '@/api/client';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
+import { trackQuotaBlocked } from '@/lib/observability';
 
 /** Safe same-origin return path for post-auth redirect. */
 export function signInHref(
@@ -16,6 +17,7 @@ export function toastCloneError(
   kind: 'workspace' | 'quiz' | 'deck'
 ) {
   if (isStorageQuotaError(err)) {
+    trackQuotaBlocked(err, 'clone');
     userToast({
       description: m.clone_quota_body(),
       title: m.clone_quota_title(),

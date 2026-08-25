@@ -38,6 +38,12 @@ at the top of each section.
 | [`src/lib/onedrivePicker.test.ts`](../src/lib/onedrivePicker.test.ts) | OneDrive picker host from `/me/drive`, personal vs work scopes, `event.origin` allowlist, pick payload to import `fileIds`/`driveIds`, tenant-consent vs user-cancel mapping, and Google Picker env fail-closed. |
 | [`src/mocks/scenarios.test.ts`](../src/mocks/scenarios.test.ts) | Validates unique development error scenarios, runtime-handler mappings, and Huma coded error envelopes. |
 
+### Lib
+
+| File | About |
+| --- | --- |
+| [`src/lib/analytics.test.ts`](../src/lib/analytics.test.ts) | Closed `AnalyticsEvent` union exhaustiveness, size/duration/score/card buckets, parameterized pageview paths, clone/study source, ingest once-per-file, and quota-only `quota_blocked` props. |
+
 ### Materials
 
 | File | About |

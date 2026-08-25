@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/Button';
 import { storageLimitLabel } from '@/features/billing/format';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { track } from '@/lib/observability';
 
 const STORAGE_LIMITS = {
   free: 100 * 1024 * 1024,
@@ -107,6 +108,7 @@ export function SubscriptionTab() {
     setBusy(tier);
     try {
       const { url } = await checkout(tier);
+      track('subscription_checkout_started', { tier });
       window.location.href = url;
     } finally {
       setBusy(null);
