@@ -1,94 +1,61 @@
-import {
-  ClerkLoaded,
-  ClerkLoading,
-  ClerkProvider,
-  SignIn,
-  useAuth,
-} from '@clerk/react';
+import { ClerkProvider } from '@clerk/react';
 import * as Sentry from '@sentry/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { RouterProvider } from '@tanstack/react-router';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Skeleton } from './components/ui/skeleton';
-import { router } from './router';
-import './styles.css';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { router } from '@/router';
+import '@/styles.css';
 
-const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
-const rootElement = document.getElementById('root');
 const sentryDsn = import.meta.env.VITE_SENTRY_DSN;
-if (typeof sentryDsn === 'string' && sentryDsn.trim() !== '') {
+if (sentryDsn) {
   Sentry.init({
     dsn: sentryDsn,
     environment: import.meta.env.MODE,
-    release: import.meta.env.VITE_RELEASE_SHA,
-    sendDefaultPii: false,
+    release: import.meta.env.VITE_APP_RELEASE,
   });
 }
+
 const queryClient = new QueryClient({
   defaultOptions: {
+    mutations: {
+      retry: false,
+    },
     queries: {
+      refetchOnWindowFocus: false,
       retry: 1,
-      staleTime: 10_000,
     },
   },
 });
 
-function AuthenticatedRoot() {
-  const { isSignedIn } = useAuth();
-  if (!isSignedIn) {
-    return (
-      <main className="grid min-h-screen place-items-center p-4">
-        <SignIn routing="hash" />
-      </main>
-    );
-  }
-  return (
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-    </QueryClientProvider>
-  );
+const container = document.getElementById('root');
+if (!container) {
+  throw new Error('The app root element is missing.');
 }
 
-if (!rootElement) {
-  throw new Error('Missing #root element.');
-}
+const publishableKey = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
-const root = createRoot(rootElement);
-
-if (typeof publishableKey !== 'string' || publishableKey.trim() === '') {
-  root.render(
-    <main className="grid min-h-screen place-items-center p-6">
-      <div className="max-w-lg rounded-xl border bg-card p-6 shadow-sm">
-        <h1 className="font-semibold text-xl">
-          Ops authentication is not configured
-        </h1>
-        <p className="mt-2 text-muted-foreground text-sm">
-          Set VITE_CLERK_PUBLISHABLE_KEY before building this standalone app.
-        </p>
-      </div>
-    </main>
-  );
-} else {
-  root.render(
-    <StrictMode>
+createRoot(container).render(
+  <StrictMode>
+    {publishableKey ? (
       <ClerkProvider publishableKey={publishableKey}>
-        <ClerkLoading>
-          <main
-            aria-label="Loading authentication"
-            className="grid min-h-screen place-items-center"
-            role="status"
-          >
-            <div className="space-y-3">
-              <Skeleton className="mx-auto size-12 rounded-xl" />
-              <Skeleton className="h-5 w-56" />
-            </div>
-          </main>
-        </ClerkLoading>
-        <ClerkLoaded>
-          <AuthenticatedRoot />
-        </ClerkLoaded>
+        <QueryClientProvider client={queryClient}>
+          <TooltipProvider>
+            <RouterProvider router={router} />
+          </TooltipProvider>
+        </QueryClientProvider>
       </ClerkProvider>
-    </StrictMode>
-  );
-}
+    ) : (
+      <main className="grid min-h-dvh place-items-center p-6">
+        <div className="max-w-md rounded-lg border bg-card p-6 shadow-sm">
+          <h1 className="font-semibold text-lg">Clerk is not configured</h1>
+          <p className="mt-2 text-muted-foreground text-sm">
+            Set VITE_CLERK_PUBLISHABLE_KEY before starting the operator
+            dashboard.
+          </p>
+        </div>
+      </main>
+    )}
+  </StrictMode>
+);

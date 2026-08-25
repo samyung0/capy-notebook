@@ -97,8 +97,7 @@ at the top of each section.
 | File | About |
 | --- | --- |
 | [`ops/src/api.test.ts`](../ops/src/api.test.ts) | Clerk bearer headers, missing-session refusal, response-schema rejection, and empty real-data collections. |
-| [`ops/src/registry-domain.test.ts`](../ops/src/registry-domain.test.ts) | Full-grid draft assembly, default/deprecation checks, embedding immutability and acknowledgement, reasoning validation, and immutable version targets. |
-| [`ops/src/router.test.ts`](../ops/src/router.test.ts) | Standalone dashboard route inventory, including the admin registry route. |
+| [`ops/src/registry-domain.test.ts`](../ops/src/registry-domain.test.ts) | Active registry assembly, default/deprecation checks, embedding acknowledgement, and immutable draft state. |
 
 ---
 

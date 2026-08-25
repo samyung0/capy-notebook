@@ -1,51 +1,36 @@
 import { describe, expect, it } from 'vitest';
-import type { CatalogConfig, Registry, Surface } from './api';
+import type { CatalogConfig, Registry } from './api';
 import {
-  cellId,
-  deriveRegistryDraft,
-  validateRegistryDraft,
+  assembleRegistryRequest,
+  cloneCatalogToDraft,
+  createRegistryState,
+  registryReducer,
 } from './registry-domain';
 
 function config(
   modelKey: string,
-  surfaces: Surface[],
-  defaults: Surface[],
-  version = 1
-): CatalogConfig & {
-  credentialEnv: string;
-  credentialConfigured: boolean;
-} {
-  const embedding = surfaces.includes('embedding');
+  surfaces: CatalogConfig['surfaces'],
+  defaults: CatalogConfig['isDefaultFor']
+): CatalogConfig {
   return {
     authMode: 'platform',
-    baseUrl: 'https://provider.example/v1',
-    contextWindowTokens: embedding ? 0 : 128_000,
+    baseUrl: 'https://models.example.test',
+    contextWindowTokens: 128_000,
     createdAt: '2026-08-24T12:00:00Z',
-    credentialConfigured: true,
-    credentialEnv: 'PROVIDER_API_KEY',
     displayName: modelKey,
-    embeddingDefaultEligible: embedding,
+    embeddingDefaultEligible: surfaces.includes('embedding'),
     embeddingValidationError: '',
     enabled: true,
     isDefaultFor: defaults,
-    microsPerCachedInputToken: embedding ? 0 : 1,
-    microsPerInputToken: 1,
-    microsPerOutputToken: embedding ? 0 : 1,
+    microsPerCachedInputToken: 1,
+    microsPerInputToken: 2,
+    microsPerOutputToken: 6,
     modelKey,
-    params: embedding
-      ? { dimensions: 2560, vector_table: `vectors_${modelKey}` }
-      : {
-          reasoning: {
-            canDisable: true,
-            defaultEffort: 'medium',
-            defaultMode: 'on',
-            efforts: ['low', 'medium', 'high'],
-          },
-        },
-    providerModelId: `${modelKey}-provider`,
-    providerSlug: 'provider',
+    params: {},
+    providerModelId: modelKey,
+    providerSlug: 'test-provider',
     surfaces,
-    version,
+    version: 1,
   };
 }
 
@@ -53,160 +38,138 @@ function registry(): Registry {
   return {
     aliasesAllowed: false,
     configs: [
-      config('chat-a', ['chat'], ['chat']),
-      config('chat-b', ['chat'], []),
-      config('embed-a', ['embedding'], ['embedding']),
-      config('embed-b', ['embedding'], []),
+      config('alpha', ['chat', 'embedding'], ['chat', 'embedding']),
+      config('beta', ['chat', 'embedding'], []),
     ],
     embeddingWorkspaceCounts: [
-      { count: 12, dim: 2560, modelKey: 'embed-a', version: 1 },
+      { count: 12, dim: 1536, modelKey: 'alpha', version: 1 },
     ],
+    providerCredentials: [
+      {
+        configured: true,
+        environment: 'TEST_API_KEY',
+        providerSlug: 'test-provider',
+      },
+    ],
+    revision: 7,
     surfaces: ['chat', 'embedding'],
-    version: 7,
   };
 }
 
-describe('registry grid validation', () => {
-  it('derives each cell independently from the latest enabled pin', () => {
-    const source = registry();
-    source.configs.push(config('chat-a', ['quiz'], [], 2));
-    source.surfaces.push('quiz');
-    const draft = deriveRegistryDraft(source);
-
-    expect(draft.cells.get(cellId('chat-a', 'chat'))?.target).toEqual({
-      kind: 'existing',
-      modelKey: 'chat-a',
-      version: 1,
+describe('registry reducer', () => {
+  it('moves defaults without mutating the prior state', () => {
+    const initial = createRegistryState(registry());
+    const changed = registryReducer(initial, {
+      rowKey: 'beta',
+      surface: 'chat',
+      type: 'set-default',
     });
-    expect(draft.cells.get(cellId('chat-a', 'quiz'))?.target).toEqual({
-      kind: 'existing',
-      modelKey: 'chat-a',
-      version: 2,
+
+    expect(initial.cells.get('alpha\u0000chat')?.isDefault).toBe(true);
+    expect(changed.cells.get('alpha\u0000chat')?.isDefault).toBe(false);
+    expect(changed.cells.get('beta\u0000chat')?.isDefault).toBe(true);
+  });
+});
+
+describe('registry request assembly', () => {
+  it('assembles exact cells and only assigned drafts', () => {
+    const snapshot = registry();
+    let state = createRegistryState(snapshot);
+    const draft = cloneCatalogToDraft(snapshot.configs[0], 'draft-alpha');
+    state = registryReducer(state, { draft, type: 'upsert-draft' });
+    state = registryReducer(state, {
+      cell: {
+        isDefault: true,
+        rowKey: 'alpha',
+        surface: 'chat',
+        target: { draftId: draft.id, kind: 'draft' },
+      },
+      type: 'set-cell',
+    });
+    state = registryReducer(state, {
+      cell: {
+        isDefault: true,
+        rowKey: 'alpha',
+        surface: 'embedding',
+        target: { draftId: draft.id, kind: 'draft' },
+      },
+      type: 'set-cell',
+    });
+    state = registryReducer(state, {
+      checked: true,
+      type: 'acknowledge-embedding',
+    });
+
+    const assembled = assembleRegistryRequest(snapshot, state);
+    expect(assembled.valid).toBe(true);
+    if (!assembled.valid) {
+      return;
+    }
+    expect(assembled.request).toMatchObject({
+      acknowledgeEmbeddingRetarget: true,
+      active: [
+        {
+          defaultFor: ['chat', 'embedding'],
+          modelKey: 'alpha',
+          surfaces: ['chat', 'embedding'],
+        },
+        {
+          defaultFor: [],
+          modelKey: 'beta',
+          surfaces: ['chat', 'embedding'],
+        },
+      ],
+      fallbacks: [],
+      revision: 7,
     });
   });
 
-  it('requires a fallback when a preference cell is retired', () => {
-    const source = registry();
-    const draft = deriveRegistryDraft(source);
-    draft.cells.delete(cellId('chat-a', 'chat'));
-    const chatB = draft.cells.get(cellId('chat-b', 'chat'));
-    if (!chatB) {
-      throw new Error('fixture is missing chat-b');
-    }
-    chatB.isDefault = true;
-
-    const invalid = validateRegistryDraft({
-      draft,
-      embeddingAcknowledged: false,
-      registry: source,
+  it('requires a fallback when clearing a preference cell', () => {
+    const snapshot = registry();
+    let state = createRegistryState(snapshot);
+    state = registryReducer(state, {
+      rowKey: 'alpha',
+      surface: 'chat',
+      type: 'clear-cell',
     });
-    expect(invalid.valid).toBe(false);
-    if (!invalid.valid) {
-      expect(invalid.issues.map((issue) => issue.code)).toContain(
-        'deprecation'
+    state = registryReducer(state, {
+      rowKey: 'beta',
+      surface: 'chat',
+      type: 'set-default',
+    });
+    const missing = assembleRegistryRequest(snapshot, state);
+    expect(missing.valid).toBe(false);
+
+    state = registryReducer(state, {
+      fallbackKey: 'beta',
+      modelKey: 'alpha',
+      surface: 'chat',
+      type: 'set-deprecation',
+    });
+    const complete = assembleRegistryRequest(snapshot, state);
+    expect(complete.valid).toBe(true);
+    if (complete.valid) {
+      expect(complete.request.fallbacks).toEqual([
+        { fromKey: 'alpha', surface: 'chat', toKey: 'beta' },
+      ]);
+    }
+  });
+
+  it('blocks embedding changes until acknowledged', () => {
+    const snapshot = registry();
+    let state = createRegistryState(snapshot);
+    state = registryReducer(state, {
+      rowKey: 'beta',
+      surface: 'embedding',
+      type: 'set-default',
+    });
+
+    const blocked = assembleRegistryRequest(snapshot, state);
+    expect(blocked.valid).toBe(false);
+    if (!blocked.valid) {
+      expect(blocked.issues.map((issue) => issue.code)).toContain(
+        'embedding-acknowledgement'
       );
-    }
-
-    draft.deprecations.set(cellId('chat-a', 'chat'), 'chat-b');
-    const valid = validateRegistryDraft({
-      draft,
-      embeddingAcknowledged: false,
-      registry: source,
-    });
-    expect(valid.valid).toBe(true);
-  });
-
-  it('hard-refuses embedding removal and draft assignment', () => {
-    const source = registry();
-    const removed = deriveRegistryDraft(source);
-    removed.cells.delete(cellId('embed-a', 'embedding'));
-    const result = validateRegistryDraft({
-      draft: removed,
-      embeddingAcknowledged: true,
-      registry: source,
-    });
-    expect(result.valid).toBe(false);
-    if (!result.valid) {
-      expect(result.issues.map((issue) => issue.code)).toContain('embedding');
-    }
-  });
-
-  it('requires acknowledgement when the embedding default moves', () => {
-    const source = registry();
-    const draft = deriveRegistryDraft(source);
-    const oldDefault = draft.cells.get(cellId('embed-a', 'embedding'));
-    const newDefault = draft.cells.get(cellId('embed-b', 'embedding'));
-    if (!oldDefault || !newDefault) {
-      throw new Error('fixture embedding cells are missing');
-    }
-    oldDefault.isDefault = false;
-    newDefault.isDefault = true;
-
-    const result = validateRegistryDraft({
-      draft,
-      embeddingAcknowledged: false,
-      registry: source,
-    });
-    expect(result.valid).toBe(false);
-    if (!result.valid) {
-      expect(result.issues.map((issue) => issue.code)).toContain(
-        'embedding_acknowledgement'
-      );
-    }
-    expect(
-      validateRegistryDraft({
-        draft,
-        embeddingAcknowledged: true,
-        registry: source,
-      }).valid
-    ).toBe(true);
-  });
-
-  it('refuses an embedding target rejected by the server allowlist', () => {
-    const source = registry();
-    const rejected = source.configs.find((item) => item.modelKey === 'embed-b');
-    if (!rejected) {
-      throw new Error('fixture embedding target is missing');
-    }
-    rejected.embeddingDefaultEligible = false;
-    rejected.embeddingValidationError =
-      'Embedding pin has no deployed vector table.';
-    const draft = deriveRegistryDraft(source);
-    const oldDefault = draft.cells.get(cellId('embed-a', 'embedding'));
-    const newDefault = draft.cells.get(cellId('embed-b', 'embedding'));
-    if (!oldDefault || !newDefault) {
-      throw new Error('fixture embedding cells are missing');
-    }
-    oldDefault.isDefault = false;
-    newDefault.isDefault = true;
-
-    const result = validateRegistryDraft({
-      draft,
-      embeddingAcknowledged: true,
-      registry: source,
-    });
-    expect(result.valid).toBe(false);
-    if (!result.valid) {
-      expect(result.issues).toContainEqual({
-        code: 'embedding',
-        message: 'Embedding pin has no deployed vector table.',
-      });
-    }
-  });
-
-  it('keeps the draft base version when polling sees a newer registry', () => {
-    const source = registry();
-    const draft = deriveRegistryDraft(source);
-    source.version = 8;
-
-    const result = validateRegistryDraft({
-      draft,
-      embeddingAcknowledged: false,
-      registry: source,
-    });
-    expect(result.valid).toBe(true);
-    if (result.valid) {
-      expect(result.request.expectedVersion).toBe(7);
     }
   });
 });

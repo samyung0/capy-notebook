@@ -27,13 +27,6 @@ export const costGroupSchema = z.enum([
   'provider',
   'model',
 ]);
-export const reasoningSchema = z.object({
-  canDisable: z.boolean(),
-  defaultEffort: z.enum(['low', 'medium', 'high', 'xhigh', 'max']),
-  defaultMode: z.enum(['on', 'off']),
-  efforts: z.array(z.enum(['low', 'medium', 'high', 'xhigh', 'max'])).min(1),
-  style: z.enum(['adaptive', 'budget']).optional(),
-});
 
 const usagePointSchema = z.object({
   creditMicros: countSchema,
@@ -42,8 +35,6 @@ const usagePointSchema = z.object({
 });
 
 export const sessionSchema = z.object({
-  email: z.string().optional(),
-  name: z.string().optional(),
   role: z.enum(['viewer', 'admin']),
   userId: z.string().min(1),
 });
@@ -86,23 +77,24 @@ export const healthSchema = z.object({
   expiredReservations: countSchema,
   reservationRatio24h: z.object({
     released: countSchema,
-    releaseRate: z.number().nonnegative().optional(),
+    releaseRate: z.number().nonnegative(),
     settled: countSchema,
   }),
   rollupLastRunAt: dateTimeSchema.nullable(),
-  rollupStale: z.boolean().optional(),
+  rollupStale: z.boolean(),
   stuckJobs: countSchema,
   usageMissing24h: countSchema,
 });
 
-const userSearchResultSchema = z.object({
-  accountState: z.string().optional(),
-  email: z.string(),
-  name: z.string(),
-  planTier: z.string(),
-  userId: z.string(),
-});
-export const userSearchSchema = z.array(userSearchResultSchema);
+export const userSearchSchema = z.array(
+  z.object({
+    accountState: z.string(),
+    email: z.string(),
+    name: z.string(),
+    planTier: z.string(),
+    userId: z.string(),
+  })
+);
 
 export const userDetailSchema = z.object({
   accountState: z.string(),
@@ -115,26 +107,24 @@ export const userDetailSchema = z.object({
   email: z.string(),
   name: z.string(),
   planTier: z.string(),
-  recentUsage: z
-    .array(
-      z.object({
-        createdAt: dateTimeSchema,
-        creditMicros: countSchema,
-        inputTokens: countSchema,
-        kind: z.string(),
-        metadata: jsonObjectSchema,
-        model: z.string(),
-        modelKey: z.string(),
-        modelVersion: countSchema,
-        outputTokens: countSchema,
-        provider: z.string(),
-        surface: z.string(),
-        traceId: z.string(),
-        unit: z.string(),
-        units: countSchema,
-      })
-    )
-    .max(50),
+  recentUsage: z.array(
+    z.object({
+      createdAt: dateTimeSchema,
+      creditMicros: countSchema,
+      inputTokens: countSchema,
+      kind: z.string(),
+      metadata: z.unknown(),
+      model: z.string(),
+      modelKey: z.string(),
+      modelVersion: countSchema,
+      outputTokens: countSchema,
+      provider: z.string(),
+      surface: z.string(),
+      traceId: z.string(),
+      unit: z.string(),
+      units: countSchema,
+    })
+  ),
   storage: z.object({
     limitBytes: countSchema,
     reservedBytes: countSchema,
@@ -186,87 +176,71 @@ export const catalogConfigSchema = z.object({
 
 export const registrySchema = z.object({
   aliasesAllowed: z.boolean(),
-  configs: z.array(
-    catalogConfigSchema.extend({
-      credentialConfigured: z.boolean(),
-      credentialEnv: z.string(),
-    })
-  ),
+  configs: z.array(catalogConfigSchema),
   embeddingWorkspaceCounts: z.array(
     z.object({
       count: countSchema,
-      dim: z.number().int().nonnegative(),
+      dim: z.number().int().positive(),
       modelKey: z.string(),
       version: z.number().int().positive(),
     })
   ),
+  providerCredentials: z.array(
+    z.object({
+      configured: z.boolean(),
+      environment: z.string(),
+      providerSlug: z.string(),
+    })
+  ),
+  revision: countSchema,
   surfaces: z.array(surfaceSchema),
-  version: countSchema,
 });
 
-const cellTargetSchema = z.discriminatedUnion('kind', [
-  z.object({
-    kind: z.literal('existing'),
-    modelKey: z.string().min(1),
-    version: z.number().int().positive(),
-  }),
-  z.object({
-    draftId: z.string().min(1),
-    kind: z.literal('draft'),
-  }),
-]);
+export const draftConfigSchema = z.object({
+  authMode: authModeSchema,
+  baseUrl: z.string(),
+  contextWindowTokens: countSchema,
+  displayName: z.string().min(1),
+  id: z.string().min(1),
+  microsPerCachedInputToken: countSchema,
+  microsPerInputToken: countSchema,
+  microsPerOutputToken: countSchema,
+  modelKey: z.string().min(1),
+  params: jsonObjectSchema,
+  providerModelId: z.string().min(1),
+  providerSlug: z.string().min(1),
+});
 
-export const draftConfigSchema = catalogConfigSchema
-  .omit({
-    createdAt: true,
-    embeddingDefaultEligible: true,
-    embeddingValidationError: true,
-    enabled: true,
-    isDefaultFor: true,
-    surfaces: true,
-    version: true,
+const activeConfigSchema = draftConfigSchema
+  .omit({ id: true })
+  .extend({
+    defaultFor: z.array(surfaceSchema),
+    rates: z.object({
+      cachedInputMicros: countSchema,
+      inputMicros: countSchema,
+      outputMicros: countSchema,
+    }),
+    surfaces: z.array(surfaceSchema).min(1),
   })
-  .extend({ id: z.string().min(1) });
+  .omit({
+    microsPerCachedInputToken: true,
+    microsPerInputToken: true,
+    microsPerOutputToken: true,
+  });
 
 export const registrySaveRequestSchema = z.object({
-  cells: z.array(
+  acknowledgeEmbeddingRetarget: z.boolean(),
+  active: z.array(activeConfigSchema),
+  fallbacks: z.array(
     z.object({
-      isDefault: z.boolean(),
-      rowKey: z.string().min(1),
+      fromKey: z.string().min(1),
       surface: surfaceSchema,
-      target: cellTargetSchema,
+      toKey: z.string().min(1),
     })
   ),
-  deprecations: z.array(
-    z.object({
-      fallbackKey: z.string().min(1),
-      modelKey: z.string().min(1),
-      surface: surfaceSchema,
-    })
-  ),
-  drafts: z.array(draftConfigSchema),
-  embeddingAcknowledged: z.boolean(),
-  embeddingUpdates: z.array(
-    z.object({
-      baseUrl: z.url({ protocol: /^https$/ }),
-      modelKey: z.string().min(1),
-      providerSlug: z.string().min(1),
-      version: z.number().int().positive(),
-    })
-  ),
-  expectedVersion: countSchema,
+  revision: countSchema,
 });
-
-const registrySaveResultSchema = z.object({
-  disabledRows: countSchema,
-  insertedRows: countSchema,
-  notifications: countSchema,
-  remappedUsers: countSchema,
-  version: countSchema,
-});
-
 const apiErrorSchema = z.object({
-  current: registrySchema.optional(),
   error: z.string().optional(),
   message: z.string().optional(),
 });
@@ -274,7 +248,7 @@ const apiErrorSchema = z.object({
 export type Session = z.infer<typeof sessionSchema>;
 export type Overview = z.infer<typeof overviewSchema>;
 export type Health = z.infer<typeof healthSchema>;
-export type UserSearchResult = z.infer<typeof userSearchResultSchema>;
+export type UserSearchResult = z.infer<typeof userSearchSchema>[number];
 export type UserDetail = z.infer<typeof userDetailSchema>;
 export type CostGroup = z.infer<typeof costGroupSchema>;
 export type CostRow = z.infer<typeof costRowsSchema>[number];
@@ -283,18 +257,13 @@ export type CatalogConfig = z.infer<typeof catalogConfigSchema>;
 export type Registry = z.infer<typeof registrySchema>;
 export type DraftConfig = z.infer<typeof draftConfigSchema>;
 export type RegistrySaveRequest = z.infer<typeof registrySaveRequestSchema>;
-export type CellTarget = RegistrySaveRequest['cells'][number]['target'];
-export type JsonObject = z.infer<typeof jsonObjectSchema>;
-export type Reasoning = z.infer<typeof reasoningSchema>;
 
 export class OpsApiError extends Error {
-  readonly currentRegistry: Registry | undefined;
   readonly status: number;
 
-  constructor(status: number, message: string, currentRegistry?: Registry) {
+  constructor(status: number, message: string) {
     super(message);
     this.name = 'OpsApiError';
-    this.currentRegistry = currentRegistry;
     this.status = status;
   }
 }
@@ -304,24 +273,17 @@ type ApiOptions = {
   fetcher?: typeof fetch;
 };
 
-type ParsedApiError = {
-  currentRegistry?: Registry;
-  message: string;
-};
-
-async function parseApiError(response: Response): Promise<ParsedApiError> {
+async function errorMessage(response: Response): Promise<string> {
   const payload: unknown = await response.json().catch(() => null);
   const parsed = apiErrorSchema.safeParse(payload);
   if (parsed.success) {
-    return {
-      currentRegistry: parsed.data.current,
-      message:
-        parsed.data.message ??
-        parsed.data.error ??
-        `Request failed with status ${response.status}`,
-    };
+    return (
+      parsed.data.message ??
+      parsed.data.error ??
+      `Request failed with status ${response.status}`
+    );
   }
-  return { message: `Request failed with status ${response.status}` };
+  return `Request failed with status ${response.status}`;
 }
 
 export function createOpsApi({ getToken, fetcher = fetch }: ApiOptions) {
@@ -339,14 +301,9 @@ export function createOpsApi({ getToken, fetcher = fetch }: ApiOptions) {
     if (init?.body !== undefined) {
       headers.set('Content-Type', 'application/json');
     }
-    const response = await fetcher(`/api${path}`, { ...init, headers });
+    const response = await fetcher(`/api/ops${path}`, { ...init, headers });
     if (!response.ok) {
-      const parsedError = await parseApiError(response);
-      throw new OpsApiError(
-        response.status,
-        parsedError.message,
-        parsedError.currentRegistry
-      );
+      throw new OpsApiError(response.status, await errorMessage(response));
     }
     const payload: unknown = await response.json();
     const parsed = schema.safeParse(payload);
@@ -360,25 +317,23 @@ export function createOpsApi({ getToken, fetcher = fetch }: ApiOptions) {
   }
 
   return {
-    costs: (from: string, to: string, groupBy: CostGroup) =>
-      request(
-        `/costs?${new URLSearchParams({ from, groupBy, to })}`,
-        costRowsSchema
-      ),
+    costs: (from: string, to: string, groupBy: CostGroup) => {
+      const search = new URLSearchParams({ from, groupBy, to });
+      return request(`/costs?${search}`, costRowsSchema);
+    },
     health: () => request('/health', healthSchema),
-    overview: (days: number) =>
-      request(
-        `/overview?${new URLSearchParams({ days: String(days) })}`,
-        overviewSchema
-      ),
+    overview: () => request('/overview', overviewSchema),
     registry: () => request('/registry', registrySchema),
     saveRegistry: (body: RegistrySaveRequest) =>
-      request('/registry/save', registrySaveResultSchema, {
+      request('/registry/save', registrySchema, {
         body: JSON.stringify(body),
         method: 'POST',
       }),
     searchUsers: (query: string) =>
-      request(`/users?${new URLSearchParams({ q: query })}`, userSearchSchema),
+      request(
+        `/users/search?${new URLSearchParams({ q: query })}`,
+        userSearchSchema
+      ),
     session: () => request('/session', sessionSchema),
     user: (userId: string) =>
       request(`/users/${encodeURIComponent(userId)}`, userDetailSchema),

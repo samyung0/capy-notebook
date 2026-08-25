@@ -6,6 +6,16 @@ import { defineConfig, loadEnv } from 'vite';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   return {
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            clerk: ['@clerk/react'],
+            tanstack: ['@tanstack/react-query', '@tanstack/react-router'],
+          },
+        },
+      },
+    },
     plugins: [react(), tailwindcss()],
     resolve: {
       alias: {

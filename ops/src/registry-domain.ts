@@ -1,36 +1,14 @@
-import {
-  type CellTarget,
-  type DraftConfig,
-  draftConfigSchema,
-  type Registry,
-  type RegistrySaveRequest,
-  reasoningSchema,
-  type Surface,
+import type {
+  CatalogConfig,
+  DraftConfig,
+  Registry,
+  RegistrySaveRequest,
+  Surface,
 } from './api';
 
-export const matrixSurfaces: Surface[] = [
-  'chat',
-  'generate',
-  'editor',
-  'quiz',
-  'ingest',
-  'embedding',
-  'vision',
-];
-
-const preferenceSurfaces = new Set<Surface>([
-  'chat',
-  'generate',
-  'editor',
-  'quiz',
-]);
-const reasoningSurfaces = new Set<Surface>([
-  'chat',
-  'generate',
-  'editor',
-  'quiz',
-  'ingest',
-]);
+export type CellTarget =
+  | { kind: 'catalog'; modelKey: string; version: number }
+  | { kind: 'draft'; draftId: string };
 
 export type RegistryCell = {
   rowKey: string;
@@ -39,371 +17,412 @@ export type RegistryCell = {
   isDefault: boolean;
 };
 
-export type RegistryDraft = {
-  baseVersion: number;
+export type RegistryState = {
+  expectedVersion: number;
+  surfaces: Surface[];
+  rows: string[];
   cells: Map<string, RegistryCell>;
+  originalCells: Map<string, RegistryCell>;
   drafts: Map<string, DraftConfig>;
   deprecations: Map<string, string>;
-  embeddingUpdates: Map<
-    string,
-    RegistrySaveRequest['embeddingUpdates'][number]
-  >;
+  embeddingAcknowledged: boolean;
+  dirty: boolean;
 };
+
+export type RegistryAction =
+  | { type: 'set-cell'; cell: RegistryCell }
+  | { type: 'clear-cell'; rowKey: string; surface: Surface }
+  | { type: 'set-default'; rowKey: string; surface: Surface }
+  | { type: 'upsert-draft'; draft: DraftConfig }
+  | {
+      type: 'set-deprecation';
+      modelKey: string;
+      surface: Surface;
+      fallbackKey: string;
+    }
+  | { type: 'acknowledge-embedding'; checked: boolean }
+  | { type: 'reset'; registry: Registry };
 
 export type RegistryIssue = {
   code:
-    | 'default'
-    | 'deprecation'
-    | 'draft'
-    | 'embedding'
-    | 'embedding_acknowledgement';
+    | 'aliases'
+    | 'missing-default'
+    | 'missing-fallback'
+    | 'embedding-acknowledgement'
+    | 'draft-not-used';
   message: string;
+  rowKey?: string;
+  surface?: Surface;
 };
 
-export type RegistryValidation =
-  | { valid: true; request: RegistrySaveRequest; embeddingRetargeted: boolean }
-  | { valid: false; issues: RegistryIssue[]; embeddingRetargeted: boolean };
+export type RequestAssembly =
+  | { valid: true; request: RegistrySaveRequest; embeddingChanged: boolean }
+  | { valid: false; issues: RegistryIssue[]; embeddingChanged: boolean };
 
 export function cellId(rowKey: string, surface: Surface): string {
   return `${rowKey}\u0000${surface}`;
 }
 
-export function targetId(target: CellTarget): string {
-  return target.kind === 'existing'
-    ? `existing:${target.modelKey}:${target.version}`
-    : `draft:${target.draftId}`;
+function deprecationId(modelKey: string, surface: Surface): string {
+  return `${modelKey}\u0000${surface}`;
 }
 
-export function deriveRegistryDraft(registry: Registry): RegistryDraft {
+function copyCell(cell: RegistryCell): RegistryCell {
+  return { ...cell, target: { ...cell.target } };
+}
+
+function initialCells(registry: Registry): Map<string, RegistryCell> {
   const cells = new Map<string, RegistryCell>();
-  for (const config of registry.configs) {
-    if (!config.enabled) {
-      continue;
-    }
+  const enabled = registry.configs
+    .filter((config) => config.enabled)
+    .sort((left, right) => left.version - right.version);
+
+  for (const config of enabled) {
     for (const surface of config.surfaces) {
-      const id = cellId(config.modelKey, surface);
-      const current = cells.get(id);
-      if (
-        current?.target.kind === 'existing' &&
-        current.target.version >= config.version
-      ) {
-        continue;
-      }
-      cells.set(id, {
+      const cell: RegistryCell = {
         isDefault: config.isDefaultFor.includes(surface),
         rowKey: config.modelKey,
         surface,
         target: {
-          kind: 'existing',
+          kind: 'catalog',
           modelKey: config.modelKey,
           version: config.version,
         },
-      });
+      };
+      cells.set(cellId(cell.rowKey, surface), cell);
     }
   }
+  return cells;
+}
+
+export function createRegistryState(registry: Registry): RegistryState {
+  const cells = initialCells(registry);
   return {
-    baseVersion: registry.version,
     cells,
     deprecations: new Map(),
+    dirty: false,
     drafts: new Map(),
-    embeddingUpdates: new Map(),
+    embeddingAcknowledged: false,
+    expectedVersion: registry.revision,
+    originalCells: new Map(
+      [...cells].map(([id, cell]) => [id, copyCell(cell)])
+    ),
+    rows: [
+      ...new Set(registry.configs.map((config) => config.modelKey)),
+    ].sort(),
+    surfaces: registry.surfaces,
   };
 }
 
-export function defaultFor(
-  cells: Iterable<RegistryCell>,
-  surface: Surface
-): RegistryCell | undefined {
-  for (const cell of cells) {
-    if (cell.surface === surface && cell.isDefault) {
-      return cell;
+export function registryReducer(
+  state: RegistryState,
+  action: RegistryAction
+): RegistryState {
+  if (action.type === 'reset') {
+    return createRegistryState(action.registry);
+  }
+  if (action.type === 'acknowledge-embedding') {
+    return {
+      ...state,
+      dirty: true,
+      embeddingAcknowledged: action.checked,
+    };
+  }
+  if (action.type === 'set-deprecation') {
+    const deprecations = new Map(state.deprecations);
+    const id = deprecationId(action.modelKey, action.surface);
+    if (action.fallbackKey) {
+      deprecations.set(id, action.fallbackKey);
+    } else {
+      deprecations.delete(id);
+    }
+    return { ...state, deprecations, dirty: true };
+  }
+  if (action.type === 'upsert-draft') {
+    const drafts = new Map(state.drafts);
+    drafts.set(action.draft.id, {
+      ...action.draft,
+      params: { ...action.draft.params },
+    });
+    return {
+      ...state,
+      dirty: true,
+      drafts,
+      rows: [...new Set([...state.rows, action.draft.modelKey])].sort(),
+    };
+  }
+
+  const cells = new Map(state.cells);
+  if (action.type === 'clear-cell') {
+    const id = cellId(action.rowKey, action.surface);
+    if (!cells.has(id)) {
+      return state;
+    }
+    cells.delete(id);
+    return { ...state, cells, dirty: true };
+  }
+  if (action.type === 'set-cell') {
+    cells.set(
+      cellId(action.cell.rowKey, action.cell.surface),
+      copyCell(action.cell)
+    );
+    return { ...state, cells, dirty: true };
+  }
+
+  const selectedId = cellId(action.rowKey, action.surface);
+  const selected = cells.get(selectedId);
+  if (!selected) {
+    return state;
+  }
+  for (const [id, cell] of cells) {
+    if (cell.surface === action.surface && cell.isDefault) {
+      cells.set(id, { ...cell, isDefault: false });
     }
   }
+  cells.set(selectedId, { ...selected, isDefault: true });
+  return { ...state, cells, dirty: true };
 }
 
 function sameTarget(left: CellTarget, right: CellTarget): boolean {
   if (left.kind !== right.kind) {
     return false;
   }
-  if (left.kind === 'draft' && right.kind === 'draft') {
-    return left.draftId === right.draftId;
+  if (left.kind === 'draft') {
+    return right.kind === 'draft' && left.draftId === right.draftId;
   }
-  if (left.kind === 'existing' && right.kind === 'existing') {
-    return left.modelKey === right.modelKey && left.version === right.version;
-  }
-  return false;
+  return (
+    right.kind === 'catalog' &&
+    left.modelKey === right.modelKey &&
+    left.version === right.version
+  );
 }
 
-export function registryDraftChanged(
-  registry: Registry,
-  draft: RegistryDraft
-): boolean {
-  if (
-    draft.drafts.size > 0 ||
-    draft.deprecations.size > 0 ||
-    draft.embeddingUpdates.size > 0
-  ) {
+export function embeddingChanged(state: RegistryState): boolean {
+  const original = [...state.originalCells.values()].filter(
+    (cell) => cell.surface === 'embedding'
+  );
+  const current = [...state.cells.values()].filter(
+    (cell) => cell.surface === 'embedding'
+  );
+  if (original.length !== current.length) {
     return true;
   }
-  const original = deriveRegistryDraft(registry).cells;
-  if (original.size !== draft.cells.size) {
-    return true;
-  }
-  for (const [id, cell] of draft.cells) {
-    const before = original.get(id);
-    if (
-      !before ||
-      before.isDefault !== cell.isDefault ||
-      !sameTarget(before.target, cell.target)
-    ) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function targetLabel(target: CellTarget): string {
-  return target.kind === 'existing'
-    ? `${target.modelKey}@${target.version}`
-    : `draft ${target.draftId}`;
-}
-
-function validateDraftConfig(
-  config: DraftConfig,
-  surfaces: Set<Surface>
-): RegistryIssue[] {
-  const issues: RegistryIssue[] = [];
-  if (!draftConfigSchema.safeParse(config).success) {
-    issues.push({
-      code: 'draft',
-      message: `${config.modelKey || config.id} has incomplete model fields.`,
-    });
-    return issues;
-  }
-  if (
-    !URL.canParse(config.baseUrl) ||
-    new URL(config.baseUrl).protocol !== 'https:'
-  ) {
-    issues.push({
-      code: 'draft',
-      message: `${config.modelKey} needs an absolute HTTPS base URL.`,
-    });
-  }
-  if (config.authMode === 'user_key') {
-    if (
-      config.microsPerInputToken !== 0 ||
-      config.microsPerCachedInputToken !== 0 ||
-      config.microsPerOutputToken !== 0
-    ) {
-      issues.push({
-        code: 'draft',
-        message: `${config.modelKey} uses customer keys, so platform rates must be zero.`,
-      });
-    }
-  } else if (
-    config.microsPerInputToken <= 0 ||
-    config.microsPerCachedInputToken <= 0 ||
-    config.microsPerOutputToken <= 0
-  ) {
-    issues.push({
-      code: 'draft',
-      message: `${config.modelKey} needs positive platform input/output rates.`,
-    });
-  }
-  if ([...surfaces].some((surface) => reasoningSurfaces.has(surface))) {
-    const reasoning = reasoningSchema.safeParse(config.params.reasoning);
-    if (
-      !reasoning.success ||
-      !reasoning.data.efforts.includes(reasoning.data.defaultEffort)
-    ) {
-      issues.push({
-        code: 'draft',
-        message: `${config.modelKey} needs valid named reasoning settings.`,
-      });
-    }
-  }
-  return issues;
-}
-
-function originalEmbeddingChanged(
-  registry: Registry,
-  draft: RegistryDraft
-): RegistryIssue[] {
-  const issues: RegistryIssue[] = [];
-  const original = deriveRegistryDraft(registry).cells;
-  for (const [id, before] of original) {
-    if (before.surface !== 'embedding') {
-      continue;
-    }
-    const after = draft.cells.get(id);
-    if (!after || !sameTarget(before.target, after.target)) {
-      issues.push({
-        code: 'embedding',
-        message: `${before.rowKey} embedding cannot be cleared, replaced, or rewritten.`,
-      });
-    }
-  }
-  for (const cell of draft.cells.values()) {
-    if (cell.surface === 'embedding' && cell.target.kind === 'draft') {
-      issues.push({
-        code: 'embedding',
-        message:
-          'New embedding models require a schema deployment and cannot be saved here.',
-      });
-    }
-  }
-  return issues;
-}
-
-export function validateRegistryDraft({
-  registry,
-  draft,
-  embeddingAcknowledged,
-}: {
-  registry: Registry;
-  draft: RegistryDraft;
-  embeddingAcknowledged: boolean;
-}): RegistryValidation {
-  const issues: RegistryIssue[] = [];
-  for (const surface of registry.surfaces) {
-    const defaults = [...draft.cells.values()].filter(
-      (cell) => cell.surface === surface && cell.isDefault
+  return original.some((cell) => {
+    const desired = state.cells.get(cellId(cell.rowKey, cell.surface));
+    return (
+      !desired ||
+      desired.isDefault !== cell.isDefault ||
+      !sameTarget(desired.target, cell.target)
     );
-    if (defaults.length !== 1) {
+  });
+}
+
+export function removedPreferenceCells(state: RegistryState): RegistryCell[] {
+  const preferenceSurfaces = new Set<Surface>([
+    'chat',
+    'generate',
+    'editor',
+    'quiz',
+  ]);
+  return [...state.originalCells.values()].filter(
+    (cell) =>
+      preferenceSurfaces.has(cell.surface) &&
+      !state.cells.has(cellId(cell.rowKey, cell.surface))
+  );
+}
+
+export function targetForRow(
+  registry: Registry,
+  state: RegistryState,
+  rowKey: string
+): CellTarget | undefined {
+  const draft = [...state.drafts.values()].find(
+    (candidate) => candidate.modelKey === rowKey
+  );
+  if (draft) {
+    return { draftId: draft.id, kind: 'draft' };
+  }
+  const latest = registry.configs
+    .filter((config) => config.modelKey === rowKey)
+    .sort((left, right) => right.version - left.version)[0];
+  return latest
+    ? { kind: 'catalog', modelKey: latest.modelKey, version: latest.version }
+    : undefined;
+}
+
+export function cloneCatalogToDraft(
+  config: CatalogConfig,
+  id: string
+): DraftConfig {
+  return {
+    authMode: config.authMode,
+    baseUrl: config.baseUrl,
+    contextWindowTokens: config.contextWindowTokens,
+    displayName: config.displayName,
+    id,
+    microsPerCachedInputToken: config.microsPerCachedInputToken,
+    microsPerInputToken: config.microsPerInputToken,
+    microsPerOutputToken: config.microsPerOutputToken,
+    modelKey: config.modelKey,
+    params: { ...config.params },
+    providerModelId: config.providerModelId,
+    providerSlug: config.providerSlug,
+  };
+}
+
+export function assembleRegistryRequest(
+  registry: Registry,
+  state: RegistryState
+): RequestAssembly {
+  const issues: RegistryIssue[] = [];
+  if (registry.aliasesAllowed) {
+    issues.push({
+      code: 'aliases',
+      message: 'This dashboard does not support model aliases.',
+    });
+  }
+
+  for (const surface of state.surfaces) {
+    const cells = [...state.cells.values()].filter(
+      (cell) => cell.surface === surface
+    );
+    if (cells.filter((cell) => cell.isDefault).length !== 1) {
       issues.push({
-        code: 'default',
-        message: `${surface} needs exactly one default cell.`,
+        code: 'missing-default',
+        message: `${surface} needs exactly one default.`,
+        surface,
       });
     }
   }
 
-  const original = deriveRegistryDraft(registry).cells;
-  for (const [id, before] of original) {
-    if (!preferenceSurfaces.has(before.surface) || draft.cells.has(id)) {
-      continue;
-    }
-    const fallback = draft.deprecations.get(id);
-    const fallbackCell = fallback
-      ? draft.cells.get(cellId(fallback, before.surface))
+  const deprecations: Array<{
+    modelKey: string;
+    surface: Surface;
+    fallbackKey: string;
+  }> = [];
+  for (const removed of removedPreferenceCells(state)) {
+    const fallbackKey = state.deprecations.get(
+      deprecationId(removed.rowKey, removed.surface)
+    );
+    const fallbackCell = fallbackKey
+      ? state.cells.get(cellId(fallbackKey, removed.surface))
       : undefined;
-    if (!fallback || fallback === before.rowKey || !fallbackCell) {
+    if (!fallbackKey || !fallbackCell || fallbackKey === removed.rowKey) {
       issues.push({
-        code: 'deprecation',
-        message: `Retiring ${before.rowKey} from ${before.surface} needs a served fallback.`,
+        code: 'missing-fallback',
+        message: `Choose a ${removed.surface} fallback for ${removed.rowKey}.`,
+        rowKey: removed.rowKey,
+        surface: removed.surface,
       });
-    }
-  }
-
-  const surfacesByDraft = new Map<string, Set<Surface>>();
-  for (const cell of draft.cells.values()) {
-    if (cell.target.kind !== 'draft') {
       continue;
     }
-    const surfaces = surfacesByDraft.get(cell.target.draftId) ?? new Set();
-    surfaces.add(cell.surface);
-    surfacesByDraft.set(cell.target.draftId, surfaces);
-    const config = draft.drafts.get(cell.target.draftId);
-    if (!config || config.modelKey !== cell.rowKey) {
-      issues.push({
-        code: 'draft',
-        message: `${cell.rowKey}/${cell.surface} points at a missing draft.`,
-      });
-    }
-  }
-  for (const [id, config] of draft.drafts) {
-    const surfaces = surfacesByDraft.get(id);
-    if (!surfaces || surfaces.size === 0) {
-      continue;
-    }
-    issues.push(...validateDraftConfig(config, surfaces));
-  }
-  issues.push(...originalEmbeddingChanged(registry, draft));
-  for (const update of draft.embeddingUpdates.values()) {
-    const source = registry.configs.find(
-      (config) =>
-        config.modelKey === update.modelKey &&
-        config.version === update.version &&
-        config.enabled &&
-        config.surfaces.includes('embedding')
-    );
-    if (
-      !source ||
-      update.providerSlug.trim() === '' ||
-      !URL.canParse(update.baseUrl) ||
-      new URL(update.baseUrl).protocol !== 'https:'
-    ) {
-      issues.push({
-        code: 'embedding',
-        message: `${update.modelKey}@${update.version} needs a valid provider and HTTPS base URL.`,
-      });
-    }
-  }
-
-  const beforeDefault = defaultFor(original.values(), 'embedding');
-  const afterDefault = defaultFor(draft.cells.values(), 'embedding');
-  const afterDefaultTarget = afterDefault?.target;
-  if (afterDefaultTarget?.kind === 'existing') {
-    const targetConfig = registry.configs.find(
-      (config) =>
-        config.modelKey === afterDefaultTarget.modelKey &&
-        config.version === afterDefaultTarget.version
-    );
-    if (!targetConfig?.embeddingDefaultEligible) {
-      issues.push({
-        code: 'embedding',
-        message:
-          targetConfig?.embeddingValidationError ||
-          `${targetLabel(afterDefaultTarget)} is not ready to become the embedding default.`,
-      });
-    }
-  }
-  const embeddingRetargeted =
-    beforeDefault !== undefined &&
-    afterDefault !== undefined &&
-    !sameTarget(beforeDefault.target, afterDefault.target);
-  if (embeddingRetargeted && !embeddingAcknowledged) {
-    issues.push({
-      code: 'embedding_acknowledgement',
-      message: 'Embedding default changes require explicit acknowledgement.',
+    deprecations.push({
+      fallbackKey,
+      modelKey: removed.rowKey,
+      surface: removed.surface,
     });
   }
-  if (issues.length > 0) {
-    return { embeddingRetargeted, issues, valid: false };
-  }
 
-  const usedDrafts = new Set(
-    [...draft.cells.values()]
+  const usedDraftIds = new Set(
+    [...state.cells.values()]
       .filter((cell) => cell.target.kind === 'draft')
       .map((cell) => (cell.target.kind === 'draft' ? cell.target.draftId : ''))
   );
+  for (const draft of state.drafts.values()) {
+    if (!usedDraftIds.has(draft.id)) {
+      issues.push({
+        code: 'draft-not-used',
+        message: `${draft.modelKey} draft is not assigned to a surface.`,
+        rowKey: draft.modelKey,
+      });
+    }
+  }
+
+  const changedEmbedding = embeddingChanged(state);
+  if (changedEmbedding && !state.embeddingAcknowledged) {
+    issues.push({
+      code: 'embedding-acknowledgement',
+      message: 'Acknowledge the embedding re-indexing impact before saving.',
+      surface: 'embedding',
+    });
+  }
+  if (issues.length > 0) {
+    return { embeddingChanged: changedEmbedding, issues, valid: false };
+  }
+
+  const active: RegistrySaveRequest['active'] = [];
+  for (const rowKey of state.rows) {
+    const rowCells = [...state.cells.values()].filter(
+      (cell) => cell.rowKey === rowKey
+    );
+    if (rowCells.length === 0) {
+      continue;
+    }
+    const target = rowCells[0]?.target;
+    if (!target || rowCells.some((cell) => !sameTarget(cell.target, target))) {
+      issues.push({
+        code: 'draft-not-used',
+        message: `${rowKey} must use one configuration across all surfaces.`,
+        rowKey,
+      });
+      continue;
+    }
+    const source =
+      target?.kind === 'draft'
+        ? state.drafts.get(target.draftId)
+        : registry.configs.find(
+            (config) =>
+              config.modelKey === target?.modelKey &&
+              config.version === target.version
+          );
+    if (!source) {
+      issues.push({
+        code: 'draft-not-used',
+        message: `${rowKey} has no usable configuration.`,
+        rowKey,
+      });
+      continue;
+    }
+    active.push({
+      authMode: source.authMode,
+      baseUrl: source.baseUrl,
+      contextWindowTokens: source.contextWindowTokens,
+      defaultFor: rowCells
+        .filter((cell) => cell.isDefault)
+        .map((cell) => cell.surface),
+      displayName: source.displayName,
+      modelKey: source.modelKey,
+      params: { ...source.params },
+      providerModelId: source.providerModelId,
+      providerSlug: source.providerSlug,
+      rates: {
+        cachedInputMicros: source.microsPerCachedInputToken,
+        inputMicros: source.microsPerInputToken,
+        outputMicros: source.microsPerOutputToken,
+      },
+      surfaces: rowCells.map((cell) => cell.surface),
+    });
+  }
+  if (issues.length > 0) {
+    return { embeddingChanged: changedEmbedding, issues, valid: false };
+  }
+
   return {
-    embeddingRetargeted,
+    embeddingChanged: changedEmbedding,
     request: {
-      cells: [...draft.cells.values()],
-      deprecations: [...draft.deprecations.entries()].map(
-        ([id, fallbackKey]) => {
-          const before = original.get(id);
-          if (!before) {
-            throw new Error(`Missing original registry cell ${id}.`);
-          }
-          return {
-            fallbackKey,
-            modelKey: before.rowKey,
-            surface: before.surface,
-          };
-        }
-      ),
-      drafts: [...draft.drafts.entries()]
-        .filter(([id]) => usedDrafts.has(id))
-        .map(([, config]) => config),
-      embeddingAcknowledged,
-      embeddingUpdates: [...draft.embeddingUpdates.values()],
-      expectedVersion: draft.baseVersion,
+      acknowledgeEmbeddingRetarget: state.embeddingAcknowledged,
+      active,
+      fallbacks: deprecations.map((item) => ({
+        fromKey: item.modelKey,
+        surface: item.surface,
+        toKey: item.fallbackKey,
+      })),
+      revision: state.expectedVersion,
     },
     valid: true,
   };
 }
 
-export function formatTarget(target: CellTarget): string {
-  return targetLabel(target);
+export function canMutateRegistry(role: 'viewer' | 'admin'): boolean {
+  return role === 'admin';
 }
