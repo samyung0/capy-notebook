@@ -163,7 +163,7 @@ at the top of each section.
 
 | File | About |
 | --- | --- |
-| [`server/internal/materialdoc/document_test.go`](../server/internal/materialdoc/document_test.go) | Quiz/flashcard round-trips including open questions and points, ID rewrite, JSON escaping, validation (including rejection of `fill`), YouTube/diagram, write limits. |
+| [`server/internal/materialdoc/document_test.go`](../server/internal/materialdoc/document_test.go) | Quiz/flashcard round-trips including open questions and points, ID rewrite, JSON escaping, validation (including rejection of `fill`), YouTube/diagram, write limits, and generator replay comparing extracted note/mermaid payload rather than reminted block ids. |
 
 ### Store
 

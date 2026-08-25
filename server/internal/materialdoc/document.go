@@ -972,6 +972,45 @@ func ExtractFlashcards(raw string) ([]Card, error) {
 	return cards, nil
 }
 
+func ExtractNoteText(raw string) (string, error) {
+	doc, err := Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	var text strings.Builder
+	for _, node := range doc.Value {
+		text.WriteString(nodeText(node))
+	}
+	return text.String(), nil
+}
+
+func IncomingNoteText(content string) string {
+	if text, err := ExtractNoteText(content); err == nil {
+		return text
+	}
+	return content
+}
+
+func ExtractMermaidSource(raw string) (string, error) {
+	doc, err := Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	node := find(doc.Value, "mermaid")
+	if node == nil {
+		return "", fmt.Errorf("%w: mermaid element is required", ErrInvalid)
+	}
+	source, _ := node["source"].(string)
+	return source, nil
+}
+
+func IncomingMermaidSource(content string) string {
+	if source, err := ExtractMermaidSource(content); err == nil {
+		return source
+	}
+	return fenced(content, "mermaid")
+}
+
 func ReplaceQuiz(raw string, questions json.RawMessage, timeLimit *int) (string, error) {
 	replacement, err := QuizDocument("", questions, timeLimit)
 	if err != nil {

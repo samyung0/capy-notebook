@@ -251,12 +251,18 @@ func materialReplayMatches(mt store.Material, req internalMaterialReq) bool {
 			}
 		}
 		return true
-	default:
-		got, err := materialdoc.FromLegacyMarkdown(req.Kind, mt.Title, req.Content)
+	case "mindmap", "diagram":
+		got, err := materialdoc.ExtractMermaidSource(mt.Content)
 		if err != nil {
 			return false
 		}
-		return got == mt.Content
+		return got == materialdoc.IncomingMermaidSource(req.Content)
+	default:
+		got, err := materialdoc.ExtractNoteText(mt.Content)
+		if err != nil {
+			return false
+		}
+		return got == materialdoc.IncomingNoteText(req.Content)
 	}
 }
 

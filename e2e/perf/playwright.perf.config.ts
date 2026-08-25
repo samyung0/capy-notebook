@@ -52,9 +52,8 @@ export default defineConfig({
     env: {
       ...process.env,
       VITE_CLERK_PUBLISHABLE_KEY: '',
-      // The near-limit fixture is the shared ~2MB load-test note.
+      // Both perf notes: the ~2MB load-test fixture and mat_perf_small.
       VITE_LOAD_TEST_SEED: 'true',
-      // Adds the small baseline note to the mock db.
       VITE_USE_MSW: 'true',
     },
     reuseExistingServer: true,

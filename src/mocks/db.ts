@@ -52,7 +52,12 @@ import {
 } from './editorSeed';
 import { seedNotes } from './noteContent';
 import { buildBiologyLoadTestValue } from './noteContent/loadTest';
-import { PERF_LARGE_NOTE, PERF_WORKSPACE_ID } from './perfSeed';
+import {
+  buildSmallPerfDocument,
+  PERF_LARGE_NOTE,
+  PERF_SMALL_NOTE,
+  PERF_WORKSPACE_ID,
+} from './perfSeed';
 
 export const uid = (p = 'id') =>
   `${p}_${Math.random().toString(36).slice(2, 9)}`;
@@ -1388,7 +1393,7 @@ if (import.meta.env.VITE_E2E_EDITOR_SEED === 'true') {
   );
 }
 
-/* ---------------- ~2MB biology load-test note (opt-in) ---------------- */
+/* ---------------- editor perf fixtures (opt-in) ---------------- */
 if (import.meta.env.VITE_LOAD_TEST_SEED === 'true') {
   materials.push(
     makeMaterial({
@@ -1403,6 +1408,23 @@ if (import.meta.env.VITE_LOAD_TEST_SEED === 'true') {
       scopeChapters: [],
       scopeFileNames: [],
       title: PERF_LARGE_NOTE.title,
+      workspaceId: PERF_WORKSPACE_ID,
+      workspaceName: 'Biology 101',
+    }),
+    makeMaterial({
+      capabilities: ownerCapabilities,
+      chapterId: null,
+      content: createMaterialDocument(
+        buildSmallPerfDocument().value as MaterialValue
+      ),
+      createdAt: days(0),
+      id: PERF_SMALL_NOTE.id,
+      kind: 'note',
+      privacy: 'private',
+      role: 'owner',
+      scopeChapters: [],
+      scopeFileNames: [],
+      title: PERF_SMALL_NOTE.title,
       workspaceId: PERF_WORKSPACE_ID,
       workspaceName: 'Biology 101',
     })

@@ -310,6 +310,45 @@ func TestDiagramContract(t *testing.T) {
 	}
 }
 
+func TestGeneratorReplayIgnoresMintedIDs(t *testing.T) {
+	first, err := FromLegacyMarkdown("note", "Replay", "alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := FromLegacyMarkdown("note", "Replay", "alpha")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first == second {
+		t.Fatal("wrapping the same markdown twice should mint different block ids")
+	}
+	got, err := ExtractNoteText(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != IncomingNoteText("alpha") || got != IncomingNoteText(second) {
+		t.Fatalf("note replay text = %q", got)
+	}
+	if IncomingNoteText("beta") == got {
+		t.Fatal("note mismatch should not compare equal")
+	}
+
+	diagram, err := FromLegacyMarkdown("diagram", "Flow", "```mermaid\nflowchart LR\nA-->B\n```")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := ExtractMermaidSource(diagram)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source != IncomingMermaidSource("```mermaid\nflowchart LR\nA-->B\n```") {
+		t.Fatalf("mermaid replay source = %q", source)
+	}
+	if IncomingMermaidSource("```mermaid\nflowchart LR\nA-->C\n```") == source {
+		t.Fatal("mermaid mismatch should not compare equal")
+	}
+}
+
 // overLimitEnvelope builds a document whose node count is past MaxNodes.
 func overLimitEnvelope() Envelope {
 	value := make([]map[string]any, 0, MaxNodes)
