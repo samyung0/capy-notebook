@@ -11,14 +11,35 @@ from __future__ import annotations
 import io
 import json
 import os
+import resource
+import subprocess
 import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-PARSE_METHOD = "ocr"
+PARSE_METHOD = "selective_rapidocr"
 FAST_MODE = "fast"
+
+MARKER_ONLY = "marker_only"
+SELECTIVE_RAPIDOCR = "selective_rapidocr"
+ALL_RAPIDOCR = "all_rapidocr"
+_PARSE_METHOD_ALIASES = {
+    "txt": MARKER_ONLY,
+    "ocr": SELECTIVE_RAPIDOCR,
+    "auto": SELECTIVE_RAPIDOCR,
+}
+_OFFICE_SUFFIXES = {".docx", ".pptx", ".xlsx"}
+_DIRECT_SUFFIXES = {
+    ".pdf",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".tif",
+    ".tiff",
+}
 
 _MODELS: dict[str, Any] | None = None
 _OCR: Any = None
@@ -55,14 +76,18 @@ def parse_document(data: bytes, name: str, parse_method: str) -> dict:
     Returning an error envelope lets the caller meter a parse that failed after
     it had already consumed CPU.
     """
-    started = time.process_time_ns()
+    started = time.perf_counter_ns()
+    cpu_started = _cpu_time_ns()
+    io_started = _process_io_bytes()
     probes: list[Any] = []
     flagged: list[int] = []
     try:
+        normalized_data, normalized_name, source_format = normalize_document(data, name)
         from scan_pages import probe_pages
 
-        probes = probe_pages(data)
-        flagged = [probe.page_idx for probe in probes if probe.needs_ocr]
+        probes = probe_pages(normalized_data)
+        method = normalize_parse_method(parse_method)
+        flagged = _ocr_page_indices(probes, method)
         if _MODELS is None:
             init_worker()
         converter = _marker_converter(
@@ -72,16 +97,130 @@ def parse_document(data: bytes, name: str, parse_method: str) -> dict:
             models=dict(_MODELS),
         )
         result = parse_fast(
-            _Document(data, name, parse_method), converter, probes=probes
+            _Document(normalized_data, normalized_name, method),
+            converter,
+            probes=probes,
+            ocr_page_indices=flagged,
         )
+        result["_source_format"] = source_format
     except Exception as exc:  # noqa: BLE001 - parent needs measured failure data
         result = {"_worker_error": f"{type(exc).__name__}: {exc}"}
     result["_page_count"] = len(probes)
     result["_ocr_pages"] = flagged
-    result["_worker_cpu_ms"] = max(
-        0, round((time.process_time_ns() - started) / 1_000_000)
+    io_finished = _process_io_bytes()
+    result["_worker_cpu_ms"] = max(0, round((_cpu_time_ns() - cpu_started) / 1_000_000))
+    result["_worker_wall_ms"] = max(
+        0, round((time.perf_counter_ns() - started) / 1_000_000)
     )
+    result["_worker_io_read_bytes"] = max(0, io_finished[0] - io_started[0])
+    result["_worker_io_write_bytes"] = max(0, io_finished[1] - io_started[1])
+    result.update(_process_memory())
     return result
+
+
+def normalize_parse_method(value: str) -> str:
+    method = (value or PARSE_METHOD).strip().lower()
+    method = _PARSE_METHOD_ALIASES.get(method, method)
+    if method not in {MARKER_ONLY, SELECTIVE_RAPIDOCR, ALL_RAPIDOCR}:
+        raise ValueError(f"unsupported parse method {value!r}")
+    return method
+
+
+def _ocr_page_indices(probes: list[Any], method: str) -> list[int]:
+    if method == MARKER_ONLY:
+        return []
+    if method == ALL_RAPIDOCR:
+        return [probe.page_idx for probe in probes]
+    return [probe.page_idx for probe in probes if probe.needs_ocr]
+
+
+def normalize_document(data: bytes, name: str) -> tuple[bytes, str, str]:
+    """Convert supported Office inputs to PDF before probing and parsing.
+
+    A single paginated representation keeps page numbers identical for Marker,
+    RapidOCR, citations, and benchmark rendering. Legacy binary Office formats
+    are deliberately rejected; accepting them would add a second, weakly tested
+    conversion path.
+    """
+    suffix = Path(name).suffix.lower()
+    if not suffix and data.lstrip().startswith(b"%PDF"):
+        suffix = ".pdf"
+    if suffix in _DIRECT_SUFFIXES:
+        return data, name or f"document{suffix}", suffix.lstrip(".")
+    if suffix not in _OFFICE_SUFFIXES:
+        raise ValueError(
+            "supported formats are PDF, PNG, JPEG, WebP, TIFF, DOCX, PPTX, and XLSX"
+        )
+
+    timeout = max(30, int(os.environ.get("EVO_OFFICE_CONVERT_TIMEOUT", "180")))
+    with tempfile.TemporaryDirectory(prefix="evo_office_") as tmp_name:
+        tmp = Path(tmp_name)
+        source = tmp / f"source{suffix}"
+        source.write_bytes(data)
+        completed = subprocess.run(
+            [
+                "/usr/bin/soffice",
+                "--headless",
+                "--nologo",
+                "--nodefault",
+                "--nolockcheck",
+                "--nofirststartwizard",
+                "--convert-to",
+                "pdf",
+                "--outdir",
+                str(tmp),
+                str(source),
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        rendered = tmp / "source.pdf"
+        if completed.returncode != 0 or not rendered.is_file():
+            detail = (
+                completed.stderr or completed.stdout or "conversion failed"
+            ).strip()
+            raise RuntimeError(
+                f"LibreOffice could not convert {suffix}: {detail[:500]}"
+            )
+        return (
+            rendered.read_bytes(),
+            f"{Path(name).stem or 'document'}.pdf",
+            suffix.lstrip("."),
+        )
+
+
+def _cpu_time_ns() -> int:
+    own = resource.getrusage(resource.RUSAGE_SELF)
+    children = resource.getrusage(resource.RUSAGE_CHILDREN)
+    seconds = own.ru_utime + own.ru_stime + children.ru_utime + children.ru_stime
+    return round(seconds * 1_000_000_000)
+
+
+def _process_io_bytes() -> tuple[int, int]:
+    try:
+        fields = {}
+        with open("/proc/self/io", encoding="ascii") as handle:
+            for line in handle:
+                key, value = line.split(":", 1)
+                fields[key] = int(value.strip())
+        return fields.get("read_bytes", 0), fields.get("write_bytes", 0)
+    except (OSError, ValueError):
+        return 0, 0
+
+
+def _process_memory() -> dict[str, int]:
+    try:
+        import psutil
+
+        info = psutil.Process().memory_full_info()
+        return {
+            "_worker_rss_bytes": max(0, int(info.rss)),
+            "_worker_pss_bytes": max(0, int(getattr(info, "pss", 0))),
+        }
+    except (ImportError, OSError):
+        return {"_worker_rss_bytes": 0, "_worker_pss_bytes": 0}
 
 
 def _marker_converter(mode: str, *, disable_ocr: bool, force_ocr: bool, models: dict):
@@ -272,16 +411,22 @@ def parse_fast(
     _ocr_engine: Any = None,
     *,
     probes: list[Any] | None = None,
+    ocr_page_indices: list[int] | None = None,
 ) -> dict:
     from marker_adapt import content_list_to_md, drop_scan_rasters, merge_ocr_lines
     from scan_pages import probe_pages
 
     result = _run_marker(converter, document.data, document.name)
-    if (document.parse_method or PARSE_METHOD) == "txt":
+    method = normalize_parse_method(document.parse_method)
+    if method == MARKER_ONLY:
         return result
     if probes is None:
         probes = probe_pages(document.data)
-    flagged = [p.page_idx for p in probes if p.needs_ocr]
+    flagged = (
+        list(ocr_page_indices)
+        if ocr_page_indices is not None
+        else _ocr_page_indices(probes, method)
+    )
     print(
         "fast probe: "
         + ", ".join(

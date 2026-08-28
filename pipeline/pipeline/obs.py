@@ -341,16 +341,25 @@ _usage: contextvars.ContextVar[Usage | None] = contextvars.ContextVar(
 
 @dataclass
 class ParseUsage:
-    """Measured work for one Modal parse attempt.
+    """Measured work for one persistent-parser attempt.
 
-    Page counts determine the charge. CPU and elapsed time are operational
-    telemetry, not billing inputs, because several jobs can share a container.
+    Page counts determine the charge. Every other field is operational
+    telemetry: it can change capacity decisions, but never user billing.
     """
 
     pages: int = 0
     ocr_pages: int = 0
     cpu_milliseconds: int = 0
     elapsed_milliseconds: int = 0
+    queue_milliseconds: int = 0
+    download_milliseconds: int = 0
+    upload_milliseconds: int = 0
+    worker_rss_bytes: int = 0
+    worker_pss_bytes: int = 0
+    io_read_bytes: int = 0
+    io_write_bytes: int = 0
+    method: str = ""
+    source_format: str = ""
 
     def is_empty(self) -> bool:
         return not (
@@ -377,6 +386,15 @@ def record_parse_usage(
     ocr_pages: int,
     cpu_milliseconds: int,
     elapsed_milliseconds: int,
+    queue_milliseconds: int = 0,
+    download_milliseconds: int = 0,
+    upload_milliseconds: int = 0,
+    worker_rss_bytes: int = 0,
+    worker_pss_bytes: int = 0,
+    io_read_bytes: int = 0,
+    io_write_bytes: int = 0,
+    method: str = "",
+    source_format: str = "",
 ) -> None:
     pages = max(0, int(pages))
     ocr_pages = min(pages, max(0, int(ocr_pages)))
@@ -388,6 +406,22 @@ def record_parse_usage(
             cpu_milliseconds=current.cpu_milliseconds + max(0, int(cpu_milliseconds)),
             elapsed_milliseconds=current.elapsed_milliseconds
             + max(0, int(elapsed_milliseconds)),
+            queue_milliseconds=current.queue_milliseconds
+            + max(0, int(queue_milliseconds)),
+            download_milliseconds=current.download_milliseconds
+            + max(0, int(download_milliseconds)),
+            upload_milliseconds=current.upload_milliseconds
+            + max(0, int(upload_milliseconds)),
+            worker_rss_bytes=max(
+                current.worker_rss_bytes, max(0, int(worker_rss_bytes))
+            ),
+            worker_pss_bytes=max(
+                current.worker_pss_bytes, max(0, int(worker_pss_bytes))
+            ),
+            io_read_bytes=current.io_read_bytes + max(0, int(io_read_bytes)),
+            io_write_bytes=current.io_write_bytes + max(0, int(io_write_bytes)),
+            method=method or current.method,
+            source_format=source_format or current.source_format,
         )
     )
 

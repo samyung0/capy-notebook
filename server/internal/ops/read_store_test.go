@@ -27,6 +27,9 @@ func TestReadStoreQueriesMatchTheProductionSchema(t *testing.T) {
 	if _, err := read.Health(ctx, 30); err != nil {
 		t.Fatalf("health: %v", err)
 	}
+	if _, err := read.ParserMetrics(ctx, 24); err != nil {
+		t.Fatalf("parser metrics: %v", err)
+	}
 	if _, err := read.Reconciliation(ctx); err != nil {
 		t.Fatalf("reconciliation: %v", err)
 	}
@@ -58,6 +61,7 @@ func TestReadStoreQueriesMatchTheProductionSchema(t *testing.T) {
 		WHERE schemaname='public'
 		  AND indexname IN (
 			'usage_events_trace_idx',
+			'parse_host_samples_sampled_brin_idx',
 			'messages_ops_assistant_idx',
 			'provider_calls_reservation_idx',
 			'provider_calls_context_idx',
@@ -66,8 +70,8 @@ func TestReadStoreQueriesMatchTheProductionSchema(t *testing.T) {
 	).Scan(&healthIndexes); err != nil {
 		t.Fatal(err)
 	}
-	if healthIndexes != 5 {
-		t.Fatalf("usage health indexes = %d, want 5", healthIndexes)
+	if healthIndexes != 6 {
+		t.Fatalf("usage health indexes = %d, want 6", healthIndexes)
 	}
 }
 

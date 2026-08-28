@@ -11,6 +11,8 @@ drops a page of words. The second one is worse, so the probe leans toward OCR.
 
 from __future__ import annotations
 
+import re
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
@@ -38,12 +40,20 @@ class PageProbe:
     image_coverage: float
     needs_ocr: bool
     reason: str
+    alnum_ratio: float = 1.0
+    replacement_chars: int = 0
 
 
-def page_needs_ocr(chars: int, image_coverage: float) -> tuple[bool, str]:
+def page_needs_ocr(
+    chars: int, image_coverage: float, text: str = ""
+) -> tuple[bool, str]:
     """Decide from two cheap numbers. Coverage is clamped to 0..1."""
     chars = max(0, int(chars))
     coverage = min(max(float(image_coverage), 0.0), 1.0)
+
+    quality_reason = _text_quality_reason(text)
+    if quality_reason:
+        return True, quality_reason
 
     # Lots of extractable text: this is a digital page. A large figure on it is
     # still just a figure — do not OCR the photo.
@@ -63,8 +73,10 @@ def page_needs_ocr(chars: int, image_coverage: float) -> tuple[bool, str]:
 
 def job_needs_rapidocr(probes: list[PageProbe], parse_method: str) -> bool:
     """True when this document should take the slow OCR lane, not the digital lane."""
-    if (parse_method or "ocr") == "txt":
+    if (parse_method or "selective_rapidocr") in {"txt", "marker_only"}:
         return False
+    if parse_method == "all_rapidocr":
+        return bool(probes)
     return any(page.needs_ocr for page in probes)
 
 
@@ -95,10 +107,22 @@ def probe_pages(data: bytes) -> list[PageProbe]:
 def _probe_one(page: Any, index: int, image_type: int) -> PageProbe:
     width, height = _page_size(page)
     area = max(width * height, 1.0)
-    chars = _page_chars(page)
+    text = _page_text(page)
+    chars = len(text.strip())
     coverage = min(_image_area(page, image_type) / area, 1.0)
-    needs, reason = page_needs_ocr(chars, coverage)
-    return PageProbe(index, chars, round(coverage, 4), needs, reason)
+    needs, reason = page_needs_ocr(chars, coverage, text)
+    visible = [char for char in text if not char.isspace()]
+    alnum = sum(char.isalnum() for char in visible)
+    alnum_ratio = alnum / len(visible) if visible else 0.0
+    return PageProbe(
+        index,
+        chars,
+        round(coverage, 4),
+        needs,
+        reason,
+        round(alnum_ratio, 4),
+        text.count("\ufffd"),
+    )
 
 
 def _page_size(page: Any) -> tuple[float, float]:
@@ -109,7 +133,7 @@ def _page_size(page: Any) -> tuple[float, float]:
     return float(page.get_width()), float(page.get_height())
 
 
-def _page_chars(page: Any) -> int:
+def _page_text(page: Any) -> str:
     textpage = page.get_textpage()
     try:
         for name in ("get_text_range", "get_text_bounded"):
@@ -119,12 +143,38 @@ def _page_chars(page: Any) -> int:
                     text = getter() or ""
                 except TypeError:
                     text = getter(0) or ""
-                return len(str(text).strip())
-        return 0
+                return str(text)
+        return ""
     finally:
         closer = getattr(textpage, "close", None)
         if callable(closer):
             closer()
+
+
+def _text_quality_reason(text: str) -> str:
+    """Flag damaged native text layers even when they contain many glyphs."""
+    if not text:
+        return ""
+    visible = [char for char in text if not char.isspace()]
+    if not visible:
+        return ""
+    if "\ufffd" in text:
+        return "replacement_chars"
+    controls = sum(
+        unicodedata.category(char) == "Cc" and char not in "\n\r\t" for char in text
+    )
+    if controls / max(len(text), 1) >= 0.01:
+        return "control_chars"
+    if len(visible) >= 100:
+        alnum_ratio = sum(char.isalnum() for char in visible) / len(visible)
+        if alnum_ratio < 0.30:
+            return "low_alnum"
+    words = re.findall(r"\S+", text)
+    if len(words) >= 24:
+        single = sum(len(word.strip(".,;:!?()[]{}")) == 1 for word in words)
+        if single / len(words) >= 0.40:
+            return "broken_spacing"
+    return ""
 
 
 def _image_area(page: Any, image_type: int) -> float:

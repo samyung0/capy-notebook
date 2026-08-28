@@ -81,6 +81,45 @@ type JobCounters struct {
 	Failed24h int64 `json:"failed24h"`
 }
 
+type ParserHostSample struct {
+	SampledAt         time.Time `json:"sampledAt"`
+	HostID            string    `json:"hostId"`
+	ActiveJobs        int64     `json:"activeJobs"`
+	QueuedJobs        int64     `json:"queuedJobs"`
+	CPUPercent        float64   `json:"cpuPercent"`
+	Load1             float64   `json:"load1"`
+	MemoryUsedBytes   int64     `json:"memoryUsedBytes"`
+	MemoryTotalBytes  int64     `json:"memoryTotalBytes"`
+	SwapUsedBytes     int64     `json:"swapUsedBytes"`
+	ParserMemoryBytes int64     `json:"parserMemoryBytes"`
+	ParserPSSBytes    int64     `json:"parserPssBytes"`
+	NetworkRXBytes    int64     `json:"networkRxBytes"`
+	NetworkTXBytes    int64     `json:"networkTxBytes"`
+}
+
+type ParserAttemptSummary struct {
+	Attempts                  int64   `json:"attempts"`
+	Pages                     int64   `json:"pages"`
+	OCRPages                  int64   `json:"ocrPages"`
+	CPUMilliseconds           int64   `json:"cpuMilliseconds"`
+	ElapsedMilliseconds       int64   `json:"elapsedMilliseconds"`
+	QueueMilliseconds         int64   `json:"queueMilliseconds"`
+	DownloadMilliseconds      int64   `json:"downloadMilliseconds"`
+	UploadMilliseconds        int64   `json:"uploadMilliseconds"`
+	PeakWorkerRSSBytes        int64   `json:"peakWorkerRssBytes"`
+	PeakWorkerPSSBytes        int64   `json:"peakWorkerPssBytes"`
+	IOReadBytes               int64   `json:"ioReadBytes"`
+	IOWriteBytes              int64   `json:"ioWriteBytes"`
+	AverageAttributedCPUCores float64 `json:"averageAttributedCpuCores"`
+}
+
+type ParserMetrics struct {
+	Hours    int                  `json:"hours"`
+	Attempts ParserAttemptSummary `json:"attempts"`
+	Samples  []ParserHostSample   `json:"samples"`
+	DataAsOf time.Time            `json:"dataAsOf"`
+}
+
 type Overview struct {
 	TodayCredits       int64         `json:"todayCredits"`
 	MonthCredits       int64         `json:"monthCredits"`

@@ -209,6 +209,15 @@ def _finish_ok(
             ocr_pages=usage.ocr_pages,
             cpu_milliseconds=usage.cpu_milliseconds,
             elapsed_milliseconds=usage.elapsed_milliseconds,
+            queue_milliseconds=usage.queue_milliseconds,
+            download_milliseconds=usage.download_milliseconds,
+            upload_milliseconds=usage.upload_milliseconds,
+            worker_rss_bytes=usage.worker_rss_bytes,
+            worker_pss_bytes=usage.worker_pss_bytes,
+            io_read_bytes=usage.io_read_bytes,
+            io_write_bytes=usage.io_write_bytes,
+            method=usage.method,
+            source_format=usage.source_format,
         )
         raise
     try:
@@ -456,13 +465,20 @@ def _record_parse_usage_tx(
         workspace_id=workspace_id,
         kind="parse",
         surface="ingest",
-        provider="modal",
+        provider="netcup-vm",
         units=usage.pages,
         unit="pages",
         parse_pages=usage.pages,
         parse_ocr_pages=usage.ocr_pages,
         parse_cpu_milliseconds=usage.cpu_milliseconds,
         parse_elapsed_milliseconds=usage.elapsed_milliseconds,
+        parse_queue_milliseconds=usage.queue_milliseconds,
+        parse_download_milliseconds=usage.download_milliseconds,
+        parse_upload_milliseconds=usage.upload_milliseconds,
+        parse_worker_rss_bytes=usage.worker_rss_bytes,
+        parse_worker_pss_bytes=usage.worker_pss_bytes,
+        parse_io_read_bytes=usage.io_read_bytes,
+        parse_io_write_bytes=usage.io_write_bytes,
         credit_micros=db.credits_for_parse_pages(usage.pages, usage.ocr_pages),
         reservation_id=reservation_id,
         idempotency_key=f"parse:{job_id}:{attempt}",
@@ -472,6 +488,8 @@ def _record_parse_usage_tx(
             "jobId": job_id,
             "attempt": attempt,
             "outcome": outcome,
+            "parseMethod": usage.method,
+            "sourceFormat": usage.source_format,
             "digitalPageRateMicros": db.DIGITAL_PARSE_PAGE_CREDIT_MICROS,
             "ocrPageRateMicros": db.OCR_PARSE_PAGE_CREDIT_MICROS,
         },
@@ -513,6 +531,15 @@ def _record_parse_attempt(
             ocr_pages=usage.ocr_pages,
             cpu_milliseconds=usage.cpu_milliseconds,
             elapsed_milliseconds=usage.elapsed_milliseconds,
+            queue_milliseconds=usage.queue_milliseconds,
+            download_milliseconds=usage.download_milliseconds,
+            upload_milliseconds=usage.upload_milliseconds,
+            worker_rss_bytes=usage.worker_rss_bytes,
+            worker_pss_bytes=usage.worker_pss_bytes,
+            io_read_bytes=usage.io_read_bytes,
+            io_write_bytes=usage.io_write_bytes,
+            method=usage.method,
+            source_format=usage.source_format,
         )
         raise
 
@@ -1043,7 +1070,7 @@ async def main_async() -> None:
     # of them.
     log.info(
         "worker up — parse=%s",
-        cfg.modal_fast_parse_url or "(unset)",
+        cfg.parser_url or "(unset)",
     )
 
     last_sweep = 0.0

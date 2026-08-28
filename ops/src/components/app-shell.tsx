@@ -5,6 +5,7 @@ import {
   Activity,
   BarChart3,
   ClipboardList,
+  Cpu,
   Gauge,
   Menu,
   RefreshCw,
@@ -30,6 +31,7 @@ import { cn } from '@/lib/utils';
 const navItems = [
   { icon: Gauge, label: 'Overview', permission: null, to: '/' },
   { icon: Activity, label: 'Health', permission: null, to: '/health' },
+  { icon: Cpu, label: 'Parser VM', permission: null, to: '/parser' },
   {
     icon: ClipboardList,
     label: 'Reconciliation',

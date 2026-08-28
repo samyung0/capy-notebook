@@ -119,7 +119,10 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 			thinking, catalog_provider_slug, catalog_model_slug, model_version,
 			input_tokens, output_tokens, units, unit,
 			parse_pages, parse_ocr_pages, parse_cpu_milliseconds,
-			parse_elapsed_milliseconds, credit_micros,
+			parse_elapsed_milliseconds, parse_queue_milliseconds,
+			parse_download_milliseconds, parse_upload_milliseconds,
+			parse_worker_rss_bytes, parse_worker_pss_bytes,
+			parse_io_read_bytes, parse_io_write_bytes, credit_micros,
 			reservation_id, provider_call_id, created_at
 		) ON usage_events TO %s;
 		GRANT SELECT ON ops_assistant_turns TO %s;
@@ -132,7 +135,10 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 			thinking, catalog_provider_slug, catalog_model_slug, model_version,
 			input_tokens, output_tokens, units, unit,
 			parse_pages, parse_ocr_pages, parse_cpu_milliseconds,
-			parse_elapsed_milliseconds, credit_micros,
+			parse_elapsed_milliseconds, parse_queue_milliseconds,
+			parse_download_milliseconds, parse_upload_milliseconds,
+			parse_worker_rss_bytes, parse_worker_pss_bytes,
+			parse_io_read_bytes, parse_io_write_bytes, credit_micros,
 			reservation_id, provider_call_id, created_at
 		) ON usage_events TO %s;
 
@@ -202,6 +208,16 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		adminIdent, adminIdent, adminIdent, adminIdent,
 		adminIdent, adminIdent, adminIdent,
 	)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := owner.Exec(ctx, fmt.Sprintf(`
+		GRANT SELECT (
+			sampled_at, host_id, active_jobs, queued_jobs, cpu_percent, load_1,
+			memory_total_bytes, memory_used_bytes, swap_used_bytes,
+			parser_memory_bytes, parser_pss_bytes,
+			network_rx_bytes, network_tx_bytes
+		) ON parse_host_samples TO %s;
+	`, readIdent)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := owner.Exec(ctx, fmt.Sprintf(`

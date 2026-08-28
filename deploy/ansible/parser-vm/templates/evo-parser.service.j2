@@ -1,0 +1,20 @@
+[Unit]
+Description=Evo Notes parser and ingest workers
+Requires=docker.service{% if parser_configure_wireguard | default(true) %} wg-quick@{{ parser_wireguard_interface }}.service{% endif %}
+After=docker.service network-online.target{% if parser_configure_wireguard | default(true) %} wg-quick@{{ parser_wireguard_interface }}.service{% endif %}
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User={{ parser_service_user }}
+Group={{ parser_service_user }}
+WorkingDirectory={{ parser_repo_dir }}
+Environment=COMPOSE_PROJECT_NAME=evo-parser
+ExecStart=/usr/bin/docker compose --env-file {{ parser_env_path }} -f {{ parser_compose_file }} up -d --build --remove-orphans
+ExecStop=/usr/bin/docker compose --env-file {{ parser_env_path }} -f {{ parser_compose_file }} down
+TimeoutStartSec=3600
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target

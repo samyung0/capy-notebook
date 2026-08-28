@@ -1,0 +1,10 @@
+fastapi[standard]>=0.110,<1
+marker-pdf[full]>=2.0,<3
+onnxruntime>=1.19,<2
+pillow>=10,<13
+psutil>=6,<8
+pypdfium2>=5.9,<6
+python-multipart>=0.0.9,<1
+rapidocr>=3.9,<4
+requests>=2.31,<3
+uvicorn[standard]>=0.29,<1

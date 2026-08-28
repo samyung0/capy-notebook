@@ -1656,6 +1656,13 @@ CREATE TABLE IF NOT EXISTS usage_events (
   parse_ocr_pages            bigint NOT NULL DEFAULT 0,
   parse_cpu_milliseconds     bigint NOT NULL DEFAULT 0,
   parse_elapsed_milliseconds bigint NOT NULL DEFAULT 0,
+  parse_queue_milliseconds   bigint NOT NULL DEFAULT 0,
+  parse_download_milliseconds bigint NOT NULL DEFAULT 0,
+  parse_upload_milliseconds  bigint NOT NULL DEFAULT 0,
+  parse_worker_rss_bytes     bigint NOT NULL DEFAULT 0,
+  parse_worker_pss_bytes     bigint NOT NULL DEFAULT 0,
+  parse_io_read_bytes        bigint NOT NULL DEFAULT 0,
+  parse_io_write_bytes       bigint NOT NULL DEFAULT 0,
   -- Internal credits, in millionths, so tier allowances stay integers.
   credit_micros  bigint NOT NULL DEFAULT 0,
   -- Reservation this settles, when the spend was gated in advance.
@@ -1672,6 +1679,13 @@ CREATE TABLE IF NOT EXISTS usage_events (
     AND parse_ocr_pages <= parse_pages
     AND parse_cpu_milliseconds >= 0
     AND parse_elapsed_milliseconds >= 0
+    AND parse_queue_milliseconds >= 0
+    AND parse_download_milliseconds >= 0
+    AND parse_upload_milliseconds >= 0
+    AND parse_worker_rss_bytes >= 0
+    AND parse_worker_pss_bytes >= 0
+    AND parse_io_read_bytes >= 0
+    AND parse_io_write_bytes >= 0
   )
 );
 CREATE INDEX IF NOT EXISTS usage_events_actor_idx
@@ -1685,6 +1699,41 @@ CREATE UNIQUE INDEX IF NOT EXISTS usage_events_provider_call_idx
   WHERE reservation_id IS NOT NULL AND provider_call_id IS NOT NULL;
 CREATE UNIQUE INDEX IF NOT EXISTS usage_events_idempotency_idx
   ON usage_events(idempotency_key) WHERE idempotency_key IS NOT NULL;
+
+-- Permanent, compact host telemetry for parser capacity analysis. The sampler
+-- writes every five seconds while jobs are active and every sixty seconds when
+-- idle. It deliberately carries no file, user, or document identifiers.
+CREATE TABLE IF NOT EXISTS parse_host_samples (
+  sampled_at          timestamptz NOT NULL DEFAULT now(),
+  host_id             text NOT NULL,
+  active_jobs         smallint NOT NULL DEFAULT 0,
+  queued_jobs         smallint NOT NULL DEFAULT 0,
+  cpu_percent         real NOT NULL DEFAULT 0,
+  load_1              real NOT NULL DEFAULT 0,
+  memory_total_bytes  bigint NOT NULL DEFAULT 0,
+  memory_used_bytes   bigint NOT NULL DEFAULT 0,
+  memory_available_bytes bigint NOT NULL DEFAULT 0,
+  swap_used_bytes     bigint NOT NULL DEFAULT 0,
+  disk_read_bytes     bigint NOT NULL DEFAULT 0,
+  disk_write_bytes    bigint NOT NULL DEFAULT 0,
+  network_rx_bytes    bigint NOT NULL DEFAULT 0,
+  network_tx_bytes    bigint NOT NULL DEFAULT 0,
+  parser_memory_bytes bigint NOT NULL DEFAULT 0,
+  parser_pss_bytes    bigint NOT NULL DEFAULT 0,
+  CONSTRAINT parse_host_samples_identity UNIQUE (host_id, sampled_at),
+  CONSTRAINT parse_host_samples_values_check CHECK (
+    active_jobs >= 0 AND queued_jobs >= 0
+    AND cpu_percent >= 0 AND cpu_percent <= 100
+    AND load_1 >= 0
+    AND memory_total_bytes >= 0 AND memory_used_bytes >= 0
+    AND memory_available_bytes >= 0 AND swap_used_bytes >= 0
+    AND disk_read_bytes >= 0 AND disk_write_bytes >= 0
+    AND network_rx_bytes >= 0 AND network_tx_bytes >= 0
+    AND parser_memory_bytes >= 0 AND parser_pss_bytes >= 0
+  )
+);
+CREATE INDEX IF NOT EXISTS parse_host_samples_sampled_brin_idx
+  ON parse_host_samples USING brin(sampled_at);
 
 -- The counter the spend gate locks. period_start makes the monthly allowance
 -- reset lazily on first read of a new month rather than needing a cron that

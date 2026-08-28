@@ -126,20 +126,20 @@ class _Resp:
 
 
 @pytest.fixture
-def modal_urls(monkeypatch):
+def parser_urls(monkeypatch):
     monkeypatch.setattr(
-        modal_parser.cfg, "modal_fast_parse_url", "https://fast.modal.test/file_parse"
+        modal_parser.cfg, "parser_url", "http://10.77.0.2:8090/file_parse"
     )
 
 
-def test_a_cache_hit_never_calls_modal(monkeypatch, modal_urls):
+def test_a_cache_hit_never_calls_remote_parser(monkeypatch, parser_urls):
     key, fingerprint = modal_parser.artifact_identity(_descriptor())
     monkeypatch.setattr(
         modal_parser.blobstore, "object_info", lambda _k: {"size": 10, "etag": "e"}
     )
 
     def _explode(*_a, **_k):
-        raise AssertionError("modal must not be called on a cache hit")
+        raise AssertionError("parser must not be called on a cache hit")
 
     monkeypatch.setattr(modal_parser.requests, "post", _explode)
 
@@ -150,10 +150,10 @@ def test_a_cache_hit_never_calls_modal(monkeypatch, modal_urls):
     assert artifact["cached"] is True
 
 
-def test_missing_modal_url_is_a_configuration_error(monkeypatch):
-    monkeypatch.setattr(modal_parser.cfg, "modal_fast_parse_url", "")
+def test_missing_parser_url_is_a_configuration_error(monkeypatch):
+    monkeypatch.setattr(modal_parser.cfg, "parser_url", "")
 
-    with pytest.raises(modal_parser.ModalParseError, match="MODAL_FAST_PARSE_URL"):
+    with pytest.raises(modal_parser.ModalParseError, match="PARSER_URL"):
         modal_parser._request_artifact(_descriptor(), "doc.pdf")
 
 
@@ -173,24 +173,24 @@ def _stub_presign(monkeypatch, response) -> list[dict]:
     return calls
 
 
-def test_the_request_uses_the_fast_endpoint_and_version(monkeypatch, modal_urls):
+def test_the_request_uses_the_fast_endpoint_and_version(monkeypatch, parser_urls):
     key, _ = modal_parser.artifact_identity(_descriptor())
     calls = _stub_presign(monkeypatch, _Resp(200, {"artifact": {"key": key}}))
 
     modal_parser._request_artifact(_descriptor(), "d.pdf")
 
-    assert calls[0]["url"] == "https://fast.modal.test/file_parse"
+    assert calls[0]["url"] == "http://10.77.0.2:8090/file_parse"
     assert calls[0]["json"]["parser_version"] == FAST_VERSION
 
 
-def test_http_error_is_wrapped(monkeypatch, modal_urls):
+def test_http_error_is_wrapped(monkeypatch, parser_urls):
     _stub_presign(monkeypatch, _Resp(500, text="boom"))
 
-    with pytest.raises(modal_parser.ModalParseError, match="modal parse 500"):
+    with pytest.raises(modal_parser.ModalParseError, match="remote parse 500"):
         modal_parser._request_artifact(_descriptor(), "doc.pdf")
 
 
-def test_success_records_page_and_child_cpu_measurement(monkeypatch, modal_urls):
+def test_success_records_page_and_child_cpu_measurement(monkeypatch, parser_urls):
     key, _ = modal_parser.artifact_identity(_descriptor())
     measured: list[dict] = []
     monkeypatch.setattr(
@@ -208,23 +208,27 @@ def test_success_records_page_and_child_cpu_measurement(monkeypatch, modal_urls)
                 "_ocr_page_count": 1,
                 "_worker_cpu_ms": 3200,
                 "_server_parse_ms": 4100,
+                "_queue_ms": 250,
+                "_worker_pss_bytes": 1234,
+                "_parse_method": "all_rapidocr",
+                "_source_format": "pdf",
             },
         ),
     )
 
     modal_parser._request_artifact(_descriptor(), "doc.pdf")
 
-    assert measured == [
-        {
-            "pages": 4,
-            "ocr_pages": 1,
-            "cpu_milliseconds": 3200,
-            "elapsed_milliseconds": 4100,
-        }
-    ]
+    assert measured[0]["pages"] == 4
+    assert measured[0]["ocr_pages"] == 1
+    assert measured[0]["cpu_milliseconds"] == 3200
+    assert measured[0]["elapsed_milliseconds"] == 4100
+    assert measured[0]["queue_milliseconds"] == 250
+    assert measured[0]["worker_pss_bytes"] == 1234
+    assert measured[0]["method"] == "all_rapidocr"
+    assert measured[0]["source_format"] == "pdf"
 
 
-def test_failed_parse_records_measurement_before_raising(monkeypatch, modal_urls):
+def test_failed_parse_records_measurement_before_raising(monkeypatch, parser_urls):
     measured: list[dict] = []
     monkeypatch.setattr(
         modal_parser.obs,
@@ -253,7 +257,7 @@ def test_failed_parse_records_measurement_before_raising(monkeypatch, modal_urls
     assert measured[0]["cpu_milliseconds"] == 900
 
 
-def test_failed_parse_records_cpu_without_inventing_a_page(monkeypatch, modal_urls):
+def test_failed_parse_records_cpu_without_inventing_a_page(monkeypatch, parser_urls):
     measured: list[dict] = []
     monkeypatch.setattr(
         modal_parser.obs,
@@ -277,17 +281,13 @@ def test_failed_parse_records_cpu_without_inventing_a_page(monkeypatch, modal_ur
     with pytest.raises(modal_parser.ModalParseError, match="page probing failed"):
         modal_parser._request_artifact(_descriptor(), "broken.pdf")
 
-    assert measured == [
-        {
-            "pages": 0,
-            "ocr_pages": 0,
-            "cpu_milliseconds": 90,
-            "elapsed_milliseconds": 120,
-        }
-    ]
+    assert measured[0]["pages"] == 0
+    assert measured[0]["ocr_pages"] == 0
+    assert measured[0]["cpu_milliseconds"] == 90
+    assert measured[0]["elapsed_milliseconds"] == 120
 
 
-def test_a_mismatched_artifact_key_is_rejected(monkeypatch, modal_urls):
+def test_a_mismatched_artifact_key_is_rejected(monkeypatch, parser_urls):
     """The key is derived locally; a service returning a different one is either
     misconfigured or writing somewhere we would never read."""
     _stub_presign(

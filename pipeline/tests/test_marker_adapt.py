@@ -191,6 +191,23 @@ def test_merge_ocr_lines_skips_text_marker_already_has():
     assert texts == ["Glycolysis Step 1", "It Ain't Always Glucose!"]
 
 
+def test_merge_ocr_lines_keeps_repeated_text_in_different_rows():
+    ocr = {
+        0: [
+            {"text": "Repeated timetable row", "bbox": [10, 10, 900, 30]},
+            {"text": "Repeated timetable row", "bbox": [10, 50, 900, 70]},
+            {"text": "Repeated timetable row", "bbox": [10, 50, 900, 70]},
+        ]
+    }
+
+    merged = merge_ocr_lines([], ocr)
+
+    assert [item["bbox"] for item in merged] == [
+        [10, 10, 900, 30],
+        [10, 50, 900, 70],
+    ]
+
+
 def test_object_bounds_uses_get_bounds_instead_of_crashing():
     class _Obj:
         def get_bounds(self):

@@ -30,7 +30,7 @@ browser  →  Go gateway  →  Python retrieval  →  provider
 | Go gateway | continues or mints | `server/internal/obs/trace.go` |
 | Go → pipeline | injects | `obs.Inject` in `internal/pipeline/client.go` |
 | Python | continues | `pipeline/pipeline/obs.py` middleware |
-| Python → Modal | injects | `obs.outbound_headers()` in `parse/modal_parser.py` |
+| Python → parser VM | injects | `obs.outbound_headers()` in `parse/modal_parser.py` |
 | Ingest worker | mints per job | `ingest/worker.py` claim loop |
 
 The gateway echoes it as `X-Request-Id`, so a user can quote the id from a
@@ -310,6 +310,7 @@ input > 0; cached-read and output may be 0.
 | `user_credits` | the counter the gate locks; monthly period resets lazily on first read |
 | `provider_sessions` | request or ingest sessions; owns the concurrency lease, per-session credit reservation, and pinned provider configuration, swept on expiry |
 | `provider_calls` | one row inserted before each provider attempt; records lifecycle, measured usage, and numeric-only context composition telemetry |
+| `parse_host_samples` | permanent 5-second-active / 60-second-idle numeric host samples; contains no file, user, path, or document identity |
 
 Shape mirrors `backend-storage-quota.md` on purpose: hot-path ledger, counter
 row for the gate to lock, reconcile pass for drift.
@@ -499,20 +500,22 @@ two rates: 31 credits for a digital page or 52 credits for a page routed through
 RapidOCR. The OCR rate replaces the digital rate. It is not a surcharge added
 on top.
 
-The rates use a deliberately conservative one-page cold-job scenario. Modal's
-6 physical cores and 12 GiB cost $0.00010524 per active container second at the
-pricing used for this policy. The benchmark measured 1.10 warm digital pages per
-second and a worst OCR page of 42 seconds. With a 60-second cold start, the raw
-cost is about $0.00641 for a digital page and $0.01083 for the slowest OCR page.
-Applying the previous product policy of 0.5 credit per parse second gives 30.45
-and 51.45 credits, rounded upward to 31 and 52. Supplier prices do not update
-these constants automatically.
+The 31/52 rates remain the provisional user policy during the VM benchmark.
+They must be reviewed after measured throughput is available against the fixed
+€20.20 monthly VM cost; a deployment change does not silently reprice users.
 
-Modal also returns `parse_cpu_milliseconds`, measured with
-`time.process_time_ns()` inside the dedicated Marker child, and
-`parse_elapsed_milliseconds`, measured around the in-container parse. These are
-telemetry only. Page counts determine the charge, so jobs sharing a six-input
-container do not divide shared container time or bill each other's work.
+The persistent parser returns attributable child-process CPU, wall time, queue
+time, B2 download/upload time, current RSS/PSS, and I/O bytes. CPU includes the
+LibreOffice child used to normalize DOCX/PPTX/XLSX. Those fields are operational
+telemetry only. Page counts determine the charge.
+
+Host saturation is separate. `pipeline.parse.host_sampler` reads host `/proc`,
+polls parser admission counts, and writes compact typed rows every five seconds
+while active and every sixty seconds while idle. Raw samples are kept
+permanently and the Ops API groups them into one-minute buckets. Shared Marker
+layout-server CPU cannot be assigned honestly to one concurrent job, so the
+dashboard shows attributable job CPU, parser memory, and whole-host CPU/memory
+as distinct series.
 
 ### Pricing is policy
 
@@ -523,9 +526,9 @@ mirrored rate table in `db.py`.
 LLM rates are deliberately not derived from provider invoices. Provider prices
 move and are quoted in units the product does not copy, including supplier cache
 prices and reasoning tokens. Cache-read tokens are billed from the catalog
-rate, not the invoice. The two fixed parse page rates were calibrated once from
-Modal pricing and the local benchmark above. They change only in code, with a
-new policy review and tests.
+rate, not the invoice. The two fixed parse page rates were calibrated from the
+former Modal deployment. They change only in code, with a new policy review and
+tests after the VM benchmark is accepted.
 
 ### Background workers
 
@@ -660,7 +663,7 @@ the primary billing identity; the transport-observed provider/model is shown as
 secondary diagnostic data.
 
 The header's refresh button refetches all active Ops GET queries. It never
-calls an LLM provider, Modal, or Stripe and it never starts reconciliation.
+calls an LLM provider, the parser, or Stripe and it never starts reconciliation.
 Every mounted Ops query polls its database-backed endpoint every 30 seconds,
 including overview, health, user lookup, user detail, usage reports, registry,
 audit history, and reconciliation. Hidden routes do not keep polling. LLM usage
@@ -688,15 +691,12 @@ a statement timeout as a final guardrail.
 
 Worth knowing before trusting a dashboard:
 
-- **Modal queue wait and cold start.** The measured CPU and elapsed fields do
-  not include queue wait or cold start. The flat page rate includes a
-  conservative 60-second cold-start allowance instead.
-- **CPU outside the Marker child.** `parse_cpu_milliseconds` measures the child
-  that owns one document. Shared layout helper work and container setup remain
-  visible only in Modal metrics. They do not affect the page charge.
-- **A lost Modal response.** A measured parser exception returns its page and
+- **Exact shared-CPU attribution.** `parse_cpu_milliseconds` measures the child
+  that owns one document, including Office-converter children. Shared layout
+  helper work appears in host saturation, not in a guessed per-job split.
+- **A lost parser response.** A measured parser exception returns its page and
   CPU receipt and is charged before the job retries. If the network loses the
-  whole response after Modal did work, the pipeline has no receipt to record.
+  whole response after the parser did work, the pipeline has no receipt to record.
 - **Provider-side retries.** A provider that retries internally bills once and
   reports once; a client-side retry in `caption_image` bills twice and reports
   twice, correctly.

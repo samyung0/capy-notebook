@@ -515,6 +515,13 @@ def record_usage_event(
     parse_ocr_pages: int = 0,
     parse_cpu_milliseconds: int = 0,
     parse_elapsed_milliseconds: int = 0,
+    parse_queue_milliseconds: int = 0,
+    parse_download_milliseconds: int = 0,
+    parse_upload_milliseconds: int = 0,
+    parse_worker_rss_bytes: int = 0,
+    parse_worker_pss_bytes: int = 0,
+    parse_io_read_bytes: int = 0,
+    parse_io_write_bytes: int = 0,
     credit_micros: int = 0,
     reservation_id: str = "",
     provider_call_id: str = "",
@@ -537,9 +544,13 @@ def record_usage_event(
              catalog_provider_slug, catalog_model_slug, model_version,
              input_tokens, output_tokens, units, unit, parse_pages,
              parse_ocr_pages, parse_cpu_milliseconds,
-             parse_elapsed_milliseconds, credit_micros, reservation_id,
-             provider_call_id, idempotency_key, metadata)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+             parse_elapsed_milliseconds, parse_queue_milliseconds,
+             parse_download_milliseconds, parse_upload_milliseconds,
+             parse_worker_rss_bytes, parse_worker_pss_bytes,
+             parse_io_read_bytes, parse_io_write_bytes,
+             credit_micros, reservation_id, provider_call_id,
+             idempotency_key, metadata)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL
         DO NOTHING
         RETURNING id
@@ -563,6 +574,13 @@ def record_usage_event(
             parse_ocr_pages,
             parse_cpu_milliseconds,
             parse_elapsed_milliseconds,
+            parse_queue_milliseconds,
+            parse_download_milliseconds,
+            parse_upload_milliseconds,
+            parse_worker_rss_bytes,
+            parse_worker_pss_bytes,
+            parse_io_read_bytes,
+            parse_io_write_bytes,
             credit_micros,
             reservation_id or None,
             provider_call_id or None,

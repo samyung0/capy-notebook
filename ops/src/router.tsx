@@ -27,6 +27,9 @@ const OverviewPage = lazy(() =>
     default: module.OverviewPage,
   }))
 );
+const ParserPage = lazy(() =>
+  import('@/pages/parser').then((module) => ({ default: module.ParserPage }))
+);
 const ReconciliationPage = lazy(() =>
   import('@/pages/reconciliation').then((module) => ({
     default: module.ReconciliationPage,
@@ -185,6 +188,15 @@ const healthRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: '/health',
 });
+const parserRoute = createRoute({
+  component: () => (
+    <PageBoundary>
+      <ParserPage />
+    </PageBoundary>
+  ),
+  getParentRoute: () => authenticatedRoute,
+  path: '/parser',
+});
 const reconciliationRoute = createRoute({
   component: () => (
     <PageBoundary>
@@ -237,6 +249,7 @@ const routeTree = rootRoute.addChildren([
   authenticatedRoute.addChildren([
     overviewRoute,
     healthRoute,
+    parserRoute,
     reconciliationRoute,
     usersRoute,
     userDetailRoute,

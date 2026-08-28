@@ -18,13 +18,15 @@ and [backend-storage-quota.md](backend-storage-quota.md).
 
 ## Architecture
 
-Two Python processes share one Postgres schema owned by Go migrations
+The Python services share one Postgres schema owned by Go migrations
 (`server/migrations/0001_init.sql`):
 
 | Process | Entry | Role |
 | --- | --- | --- |
 | Ingest worker | `python -m pipeline.ingest.worker` | Claims jobs, parses, chunks, embeds, writes a two-tier file summary, extracts concepts. Horizontally scalable (`WORKER_REPLICAS`); each replica runs one job at a time |
 | Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/quiz-grade`, `/plate-ai/*` over the same index |
+| Parser service | `uvicorn parser-vm/app.py` | Persistent Marker/RapidOCR service on the dedicated VM; normalizes modern Office formats through LibreOffice |
+| Host sampler | `python -m pipeline.parse.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
 
 The Go gateway is the public face: it authenticates the user, proxies chat and
 generate to the retrieval service, and owns material persistence (including the
@@ -37,7 +39,7 @@ provider keys stay ciphertext on that hop; retrieval decrypts them with
 flowchart LR
   Upload[Upload / move file] --> Jobs[(jobs)]
   Jobs --> Worker[Ingest worker]
-  Worker --> Parse[Modal Marker parse]
+  Worker --> Parse[Netcup Marker + RapidOCR]
   Parse --> Caption[Figure filter + caption]
   Caption --> Chunk[Heading-aware chunker]
   Chunk --> Index[Embed + file summary + concepts]
@@ -200,7 +202,7 @@ Controlled by `parseMode` on the job payload:
 
 | Mode | Parser | Output | Page model |
 | --- | --- | --- | --- |
-| `fast` (default) | Modal Marker hybrid + RapidOCR on scanned pages | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
+| `fast` (default) | Persistent VM Marker + generous selective RapidOCR | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
 | `none` | — | Blob stored, not indexed | — |
 | txt / md / json kinds | Direct B2 read | Markdown | No |
 
@@ -212,23 +214,23 @@ Marker runs with RapidOCR only on pages the scan probe flags.
 Each successful or measured failed attempt reports its total pages, OCR pages,
 dedicated Marker-child CPU milliseconds, and in-container elapsed milliseconds.
 Billing uses the page counts, 31 credits per digital page and 52 credits per OCR
-page. CPU time is diagnostic because several jobs can share one Modal container.
+page. CPU time is diagnostic because jobs share the VM and layout service.
 
 ### Parse capacity
 
-Modal will not open an unbounded pile of CPU boxes. Caps live in
-`modal/parse_common.py` and must match `EVO_PARSE_FAST_SLOTS`:
+The fixed VM accepts a bounded outer queue and applies a second, resource-aware
+admission limit inside the parser. `EVO_PARSE_SLOTS` must match the outer cap:
 
-| Route | Boxes | Jobs per box | Fleet cap | Idle window |
+| Route | Host | Marker processes | Parser admission | Outer cap |
 | --- | --- | --- | --- | --- |
-| fast | 12 | 6 digital / 2 OCR | 72 HTTP, ~24 OCR | 30s |
+| fast | one 8-core / 16 GiB VM | 6 | 6 digital / 2 OCR-heavy | 8 HTTP |
 
 A new upload lands `files.status=pending` with a `jobs` row still `pending`.
 The worker only flips the file to `processing` once it is actually running
-(and, for Modal parse, once it holds a Redis parse slot). If every slot is
+(and, for VM parse, once it holds a Redis parse slot). If every slot is
 taken, the job is put back to `pending` without spending an attempt, and the
 UI keeps showing a wait. Redis down fails *open*: the call still goes to
-Modal, and `max_containers` is the last brake.
+the parser, whose semaphores are the final brake.
 
 Each ingest replica still runs one job at a time, so `WORKER_REPLICAS` is how
 many jobs leave the pending queue at once. Do not set it above the parse cap
@@ -607,7 +609,7 @@ job and pipeline `/workspace/delete` endpoint are gone.
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
-| Parse | `MODAL_FAST_PARSE_URL` | Marker app `evo-mineru-fast` |
+| Parse | `PARSER_URL`, `PARSER_TOKEN`, `EVO_PARSE_METHOD` | Persistent Netcup service. Modes are `marker_only`, `selective_rapidocr`, and `all_rapidocr`; each mode participates in the artifact fingerprint. The old `MODAL_*` names are rollback aliases only. |
 | Chunk size | `EVO_CHUNK_*` | Character budgets, not tokens |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
 | Search | `EVO_SEARCH_CANDIDATES`, `EVO_SEARCH_TOP_K`, `EVO_SEARCH_PER_FILE_CAP` | |

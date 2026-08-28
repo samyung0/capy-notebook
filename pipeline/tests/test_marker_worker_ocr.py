@@ -13,11 +13,59 @@ MODAL_DIR = REPO_ROOT / "modal"
 if str(MODAL_DIR) not in sys.path:
     sys.path.insert(0, str(MODAL_DIR))
 
-from marker_worker import _page_lines
+from marker_worker import (
+    ALL_RAPIDOCR,
+    MARKER_ONLY,
+    SELECTIVE_RAPIDOCR,
+    _ocr_page_indices,
+    _page_lines,
+    normalize_document,
+    normalize_parse_method,
+)
 
 
 class _FakeImage:
     size = (100, 80)
+
+
+def test_parse_modes_are_explicit_with_legacy_aliases() -> None:
+    assert normalize_parse_method("txt") == MARKER_ONLY
+    assert normalize_parse_method("ocr") == SELECTIVE_RAPIDOCR
+    assert normalize_parse_method(ALL_RAPIDOCR) == ALL_RAPIDOCR
+    with pytest.raises(ValueError, match="unsupported parse method"):
+        normalize_parse_method("surprise")
+
+
+def test_all_page_ocr_selects_every_normalized_page() -> None:
+    probes = [
+        SimpleNamespace(page_idx=0, needs_ocr=False),
+        SimpleNamespace(page_idx=1, needs_ocr=True),
+    ]
+    assert _ocr_page_indices(probes, MARKER_ONLY) == []
+    assert _ocr_page_indices(probes, SELECTIVE_RAPIDOCR) == [1]
+    assert _ocr_page_indices(probes, ALL_RAPIDOCR) == [0, 1]
+
+
+def test_office_is_normalized_to_one_paginated_pdf(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _convert(command, **_kwargs):
+        outdir = Path(command[command.index("--outdir") + 1])
+        (outdir / "source.pdf").write_bytes(b"%PDF-converted")
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr("marker_worker.subprocess.run", _convert)
+
+    data, name, source_format = normalize_document(b"office", "lesson.pptx")
+
+    assert data == b"%PDF-converted"
+    assert name == "lesson.pdf"
+    assert source_format == "pptx"
+
+
+def test_legacy_office_formats_are_rejected() -> None:
+    with pytest.raises(ValueError, match="supported formats"):
+        normalize_document(b"legacy", "lesson.ppt")
 
 
 def test_page_lines_lazy_loads_local_engine(monkeypatch: pytest.MonkeyPatch) -> None:

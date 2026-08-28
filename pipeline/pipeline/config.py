@@ -70,21 +70,30 @@ class Config:
     # the worker (and its job lease) until the process is killed.
     provider_timeout_s: float = float(_env("EVO_PROVIDER_TIMEOUT_S", "120"))
 
-    # ---- Modal parse service ---------------------------------------------
-    # One CPU endpoint: Marker with OCR off, RapidOCR (PP-OCRv6) on pages the
-    # scan probe flags.
-    modal_fast_parse_url: str = _env("MODAL_FAST_PARSE_URL", "")
-    modal_parse_token: str = _env("MODAL_PARSE_TOKEN", "")
-    # The endpoint may hold a request behind other documents sharing the
-    # container (6 digital at once, 2 if RapidOCR is in play), so the client
-    # timeout has to cover queueing, not just parsing.
-    modal_parse_timeout: int = int(_env("MODAL_PARSE_TIMEOUT", "900"))
-    # Must match modal/parse_common.py: max_containers × max_inputs. Extra jobs
-    # wait in Postgres with file status pending instead of opening more boxes.
-    parse_fast_slots: int = int(_env("EVO_PARSE_FAST_SLOTS", "72"))
-    # ``ocr`` runs RapidOCR on scanned/thin pages; ``txt`` skips it.
-    # Kept in the artifact fingerprint.
-    parse_method: str = _env("EVO_PARSE_METHOD", "ocr")  # ocr | auto | txt
+    # ---- persistent parse service ----------------------------------------
+    # In production the ingest worker and parser both run on the Netcup VM.
+    # The old MODAL_* names remain read-only fallbacks so a checkout of this
+    # branch can be rolled back without editing secrets first.
+    parser_url: str = _env("PARSER_URL", _env("MODAL_FAST_PARSE_URL", ""))
+    parser_token: str = _env("PARSER_TOKEN", _env("MODAL_PARSE_TOKEN", ""))
+    # Includes queue time behind the measured two-job OCR-heavy lane.
+    parser_timeout: int = int(
+        _env("PARSER_TIMEOUT", _env("MODAL_PARSE_TIMEOUT", "1800"))
+    )
+    # Up to eight ingest workers may queue a parse. The parser independently
+    # admits six Marker-only/selective digital jobs or two OCR-heavy jobs.
+    parse_fast_slots: int = int(
+        _env("EVO_PARSE_SLOTS", _env("EVO_PARSE_FAST_SLOTS", "8"))
+    )
+    # Part of the parse artifact fingerprint. Never silently fall back between
+    # these modes: their output and resource profile are intentionally distinct.
+    parse_method: str = _env("EVO_PARSE_METHOD", "selective_rapidocr")
+
+    # Compatibility attributes for code outside this repository that has not
+    # moved to the provider-neutral names yet.
+    modal_fast_parse_url: str = parser_url
+    modal_parse_token: str = parser_token
+    modal_parse_timeout: int = parser_timeout
 
     # ---- chunking ---------------------------------------------------------
     # Target size in characters, not tokens: the boundary decisions here are

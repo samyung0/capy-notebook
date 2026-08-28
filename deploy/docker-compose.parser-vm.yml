@@ -1,0 +1,118 @@
+# Netcup parser/ingest stack. Run only on the dedicated parser VM.
+# Host networking is intentional: the parser binds to its WireGuard address,
+# while the sampler reads host /proc counters and reaches the same private URL.
+
+x-pipeline-env: &pipeline-env
+  APP_ENV: production
+  RELEASE_SHA: ${RELEASE_SHA:-}
+  LOG_FORMAT: json
+  DATABASE_URL: ${DATABASE_URL:?set the private WireGuard Postgres URL}
+  REDIS_URL: ${REDIS_URL:?set the private WireGuard Redis URL}
+  B2_ENDPOINT: ${B2_ENDPOINT:?set B2_ENDPOINT}
+  B2_REGION: ${B2_REGION:?set B2_REGION}
+  B2_BUCKET: ${B2_BUCKET:?set B2_BUCKET}
+  B2_KEY_ID: ${B2_KEY_ID:?set B2_KEY_ID}
+  B2_APP_KEY: ${B2_APP_KEY:?set B2_APP_KEY}
+  PARSER_URL: http://${PARSER_BIND_ADDRESS:?set the WireGuard bind address}:8090/file_parse
+  PARSER_TOKEN: ${PARSER_TOKEN:?set PARSER_TOKEN}
+  PARSER_TIMEOUT: ${PARSER_TIMEOUT:-1800}
+  EVO_PARSE_SLOTS: ${EVO_PARSE_SLOTS:-8}
+  EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-selective_rapidocr}
+  SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+
+services:
+  parser:
+    build:
+      context: ..
+      dockerfile: parser-vm/Dockerfile
+    network_mode: host
+    environment:
+      PARSER_TOKEN: ${PARSER_TOKEN:?set PARSER_TOKEN}
+      EVO_MARKER_WORKERS: ${EVO_MARKER_WORKERS:-6}
+      EVO_DIGITAL_CONCURRENCY: ${EVO_DIGITAL_CONCURRENCY:-6}
+      EVO_OCR_CONCURRENCY: ${EVO_OCR_CONCURRENCY:-2}
+      EVO_OFFICE_CONVERT_TIMEOUT: ${EVO_OFFICE_CONVERT_TIMEOUT:-180}
+    command:
+      [
+        "uvicorn",
+        "app:app",
+        "--app-dir",
+        "/app/parser-vm",
+        "--host",
+        "${PARSER_BIND_ADDRESS:?set the WireGuard bind address}",
+        "--port",
+        "8090",
+        "--workers",
+        "1",
+      ]
+    volumes:
+      - parser_models:/models
+    mem_limit: 14g
+    cpus: 8.0
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "--fail",
+          "--silent",
+          "http://${PARSER_BIND_ADDRESS:?set the WireGuard bind address}:8090/healthz",
+        ]
+      interval: 15s
+      timeout: 5s
+      start_period: 15m
+      retries: 8
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: pipeline/Dockerfile
+    network_mode: host
+    environment:
+      <<: *pipeline-env
+      SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
+      EVO_CAPTION_CONCURRENCY: ${EVO_CAPTION_CONCURRENCY:-8}
+      EVO_CAPTION_MAX_EDGE: ${EVO_CAPTION_MAX_EDGE:-1280}
+      EVO_CAPTION_VERSION: ${EVO_CAPTION_VERSION:-v1}
+      EVO_CAPTION_CACHE_TTL_DAYS: ${EVO_CAPTION_CACHE_TTL_DAYS:-90}
+      EVO_PARSE_ZIP_TTL_HOURS: ${EVO_PARSE_ZIP_TTL_HOURS:-6}
+    command: ["python", "-m", "pipeline.ingest.worker"]
+    deploy:
+      mode: replicated
+      replicas: ${WORKER_REPLICAS:-8}
+    depends_on:
+      parser:
+        condition: service_healthy
+    restart: unless-stopped
+
+  host-sampler:
+    build:
+      context: ..
+      dockerfile: pipeline/Dockerfile
+    network_mode: host
+    read_only: true
+    environment:
+      <<: *pipeline-env
+      EVO_HOST_PROC: /host/proc
+      EVO_PARSE_HOST_ID: ${EVO_PARSE_HOST_ID:-netcup-parser-1}
+      EVO_HOST_SAMPLE_ACTIVE_SECONDS: ${EVO_HOST_SAMPLE_ACTIVE_SECONDS:-5}
+      EVO_HOST_SAMPLE_IDLE_SECONDS: ${EVO_HOST_SAMPLE_IDLE_SECONDS:-60}
+      PARSER_HEALTH_URL: http://${PARSER_BIND_ADDRESS:?set the WireGuard bind address}:8090/healthz
+    volumes:
+      - /proc:/host/proc:ro
+    command: ["python", "-m", "pipeline.parse.host_sampler"]
+    depends_on:
+      parser:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  parser_models:

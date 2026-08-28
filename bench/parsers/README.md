@@ -8,11 +8,35 @@ Yo. This little dojo exists to answer one question with numbers instead of vibes
 
 It benchmarks **Marker v2** and **Docling** against the contract that
 `retrieval/chunking.py` and `parse/figures.py` already depend on, with
-**MinerU-on-CPU as the control** so every number has something to beat. Accuracy is
-_not_ scored here — published olmOCR-bench numbers cover that, and re-scoring it
-honestly needs ground truth we do not have. What this measures is the part no
-public benchmark can tell you: throughput on a box you'd actually rent, and
-whether headings, tables and bounding boxes come out the other side.
+**MinerU-on-CPU as the control** so every number has something to beat.
+`run_bench.py` is the historical backend comparison and does not score accuracy.
+
+The Netcup cutover uses `accuracy_report.py`. It calls the production VM endpoint
+in all three modes, renders source pages, overlays returned bounding boxes,
+places extracted text beside each page, checks trusted native text and explicit
+visual canaries, and runs the agreed 1/2/4/6/8 concurrency sweep:
+
+```sh
+python accuracy_report.py \
+  --url http://10.77.0.2:8090/file_parse \
+  --docs docs \
+  --canaries canaries.example.json \
+  --sweep 1,2,4,6,8 \
+  --out out/netcup
+```
+
+It writes `report.html` for visual review and `report.json` for the decision
+record. A mode is rejected if it loses most of a healthy native-text page,
+misses a required canary, drops too many bounding boxes, duplicates large
+amounts of text, degrades a native table, or makes all-page OCR substantially
+slower without meaningful recovery. Smaller OCR inaccuracies remain visible in
+the side-by-side report and do not automatically reject a mode.
+
+`build_office_fixtures.py docs` creates the deterministic DOCX, PPTX, and XLSX
+canaries used by the VM smoke run. The measured Netcup decision record is
+[`netcup-2026-08-28.md`](netcup-2026-08-28.md): generous selective OCR won;
+all-page OCR was rejected on native and mixed documents because it recovered no
+additional text while taking 84–127% longer.
 
 ## Read this before you trust a number
 

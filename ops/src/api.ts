@@ -143,6 +143,43 @@ export const healthSchema = z.object({
   turnsMissingApplied24h: countSchema,
 });
 
+export const parserMetricsSchema = z.object({
+  attempts: z.object({
+    attempts: countSchema,
+    averageAttributedCpuCores: z.number().nonnegative(),
+    cpuMilliseconds: countSchema,
+    downloadMilliseconds: countSchema,
+    elapsedMilliseconds: countSchema,
+    ioReadBytes: countSchema,
+    ioWriteBytes: countSchema,
+    ocrPages: countSchema,
+    pages: countSchema,
+    peakWorkerPssBytes: countSchema,
+    peakWorkerRssBytes: countSchema,
+    queueMilliseconds: countSchema,
+    uploadMilliseconds: countSchema,
+  }),
+  dataAsOf: dateTimeSchema,
+  hours: z.number().int().min(1).max(168),
+  samples: z.array(
+    z.object({
+      activeJobs: countSchema,
+      cpuPercent: z.number().min(0).max(100),
+      hostId: z.string(),
+      load1: z.number().nonnegative(),
+      memoryTotalBytes: countSchema,
+      memoryUsedBytes: countSchema,
+      networkRxBytes: countSchema,
+      networkTxBytes: countSchema,
+      parserMemoryBytes: countSchema,
+      parserPssBytes: countSchema,
+      queuedJobs: countSchema,
+      sampledAt: dateTimeSchema,
+      swapUsedBytes: countSchema,
+    })
+  ),
+});
+
 const reconciliationReportSchema = z.object({
   actorUserId: z.string(),
   createdAt: dateTimeSchema,
@@ -430,6 +467,7 @@ export const eliteLLMProviderPageSchema = z.object({
 export type Session = z.infer<typeof sessionSchema>;
 export type Overview = z.infer<typeof overviewSchema>;
 export type Health = z.infer<typeof healthSchema>;
+export type ParserMetrics = z.infer<typeof parserMetricsSchema>;
 export type ReconciliationStatus = z.infer<typeof reconciliationStatusSchema>;
 export type ReconciliationRequest = z.infer<typeof reconciliationRequestSchema>;
 export type OperatorAuditEvent = z.infer<typeof operatorAuditEventSchema>;
@@ -530,6 +568,11 @@ export function createOpsApi({ getToken, fetcher = fetch }: ApiOptions) {
     },
     health: () => request('/health', healthSchema),
     overview: () => request('/overview', overviewSchema),
+    parserMetrics: (hours = 24) =>
+      request(
+        `/parser?${new URLSearchParams({ hours: String(hours) })}`,
+        parserMetricsSchema
+      ),
     providers: () => request('/providers', eliteLLMProviderPageSchema),
     reconciliation: () =>
       request('/reconciliation', reconciliationStatusSchema),

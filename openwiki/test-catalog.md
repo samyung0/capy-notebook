@@ -237,14 +237,15 @@ at the top of each section.
 | [`pipeline/tests/test_credentials.py`](../pipeline/tests/test_credentials.py)               | Credential encryption and pipeline-secret checks.                         |
 | [`pipeline/tests/test_elitellm.py`](../pipeline/tests/test_elitellm.py)                     | Provider request shaping and thinking settings.                           |
 | [`pipeline/tests/test_figures.py`](../pipeline/tests/test_figures.py)                       | Figure selection, deduplication, captioning, and caching.                 |
+| [`pipeline/tests/test_host_sampler.py`](../pipeline/tests/test_host_sampler.py)             | Host `/proc` CPU, memory, disk, network, and parser-health sampling without a live VM. |
 | [`pipeline/tests/test_generate.py`](../pipeline/tests/test_generate.py)                     | Cassette coverage for single-shot flashcard and quiz generation, even document coverage, and filtering. |
 | [`pipeline/tests/test_ingest_query.py`](../pipeline/tests/test_ingest_query.py)             | Cassette coverage for ingest, search, citations, and teardown.            |
 | [`pipeline/tests/test_ingest_worker.py`](../pipeline/tests/test_ingest_worker.py)           | Ingest routing, required actor/reservation/model pins, retries, capacity handling, and local per-call accounting binding. |
 | [`pipeline/tests/test_jobs.py`](../pipeline/tests/test_jobs.py)                             | Job retry, backoff, and attempt limits.                                   |
 | [`pipeline/tests/test_locale.py`](../pipeline/tests/test_locale.py)                         | Locale propagation to chat and Plate AI prompts.                          |
 | [`pipeline/tests/test_marker_adapt.py`](../pipeline/tests/test_marker_adapt.py)             | Marker output conversion, image filtering, and OCR merging.               |
-| [`pipeline/tests/test_marker_worker_ocr.py`](../pipeline/tests/test_marker_worker_ocr.py)   | Lazy RapidOCR loading plus child-process CPU, page, OCR-page, and failure receipts. |
-| [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py)             | Parser artifact validation, caching, route checks, and success/failure measurement capture. |
+| [`pipeline/tests/test_marker_worker_ocr.py`](../pipeline/tests/test_marker_worker_ocr.py)   | Explicit OCR modes, Office-to-PDF normalization, lazy RapidOCR, and child-process resource/failure receipts. |
+| [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py)             | Provider-neutral parser artifact validation, caching, route checks, and full success/failure measurement capture. |
 | [`pipeline/tests/test_model_configs_lock.py`](../pipeline/tests/test_model_configs_lock.py) | Database rules that protect model configuration rows.                     |
 | [`pipeline/tests/test_model_replay.py`](../pipeline/tests/test_model_replay.py)             | Replay-only two-turn streaming checks for every certified provider/model cassette. |
 | [`pipeline/tests/test_model_replay_cert.py`](../pipeline/tests/test_model_replay_cert.py)   | Provider/model-list selection, certified-slug retention, forced replay mode, metadata-free manifest entries, interruption/failure rollback, and agentic-loop Go embed updates. |

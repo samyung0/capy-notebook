@@ -1,12 +1,13 @@
-"""Cap concurrent Modal parse calls so we never open more boxes than we pay for.
+"""Cap concurrent calls admitted to the persistent parser VM.
 
-Fast: 12 containers × 6 in-flight = 72 (OCR-heavy jobs still share a lane of 2
-inside each box).
+Eight ingest workers may queue HTTP calls. The parser owns the resource-aware
+admission policy inside that boundary: two OCR-heavy jobs, or up to six
+digital jobs, until benchmarks justify changing it.
 
-The ingest worker takes a slot only for the Modal HTTP call. When every slot
+The ingest worker takes a slot only for the parser HTTP call. When every slot
 is taken, the job goes back to ``pending`` and the file stays ``pending`` so
 the user sees a wait, not a stuck parse. Redis is the scoreboard; if Redis is
-down we let the call through and Modal's ``max_containers`` is the backstop.
+down we let the call through and the parser's own semaphores are the backstop.
 """
 
 from __future__ import annotations
@@ -62,7 +63,7 @@ def _key(route: str) -> str:
 
 
 def try_acquire(route: str, job_id: str) -> bool:
-    """True if this job may call Modal now. Fail-open if Redis is unreachable."""
+    """True if this job may call the parser now. Fail-open if Redis is unreachable."""
     try:
         allowed = _redis().eval(
             _LUA_ACQUIRE,

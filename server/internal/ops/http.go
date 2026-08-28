@@ -54,6 +54,22 @@ func NewHandler(
 			value, err := read.Health(r.Context(), config.StuckJobMinutes)
 			respond(w, value, err)
 		})
+		api.Get("/parser", func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := requirePermission(w, r, PermReadAll); !ok {
+				return
+			}
+			hours := 24
+			if raw := r.URL.Query().Get("hours"); raw != "" {
+				value, err := strconv.Atoi(raw)
+				if err != nil {
+					respond(w, nil, validation("hours must be an integer"))
+					return
+				}
+				hours = value
+			}
+			value, err := read.ParserMetrics(r.Context(), hours)
+			respond(w, value, err)
+		})
 		api.Get("/reconciliation", func(w http.ResponseWriter, r *http.Request) {
 			if _, ok := requirePermission(w, r, PermReadAll); !ok {
 				return

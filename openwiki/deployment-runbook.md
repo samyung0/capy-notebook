@@ -581,18 +581,43 @@ delete a live creator's `rag_contents` row.
 
 ---
 
-## 7. Modal
+## 7. Dedicated parser VM
 
-1. Set `modal_parse_token` and keep the parse endpoints authenticated. An
-   unauthenticated parse endpoint is a free bill for whoever finds it.
-2. Deploy the parse app: `pnpm run deploy:modal`. Point
-   `MODAL_FAST_PARSE_URL` at
-   `https://<workspace>--evo-mineru-fast.modal.run`. The old
-   `evo-mineru-accurate` app can be stopped.
-3. Set a **spend limit** on the workspace. A parse loop on a malformed document
-   is the most expensive failure mode in the system.
-4. Optionally enable Modal's OpenTelemetry export for queue wait and cold start
-   — the two numbers the ledger cannot see.
+The Netcup VM runs the ingest workers, parser, and host sampler. Uploaded bytes
+move from the Cloudflare relay to B2 and from B2 to this VM; they do not traverse
+the Go application process.
+
+1. Build a point-to-point WireGuard service network between the app host
+   (`10.77.0.1/32`) and parser VM (`10.77.0.2/32`). Netcup's
+   [community WireGuard guide](https://community.netcup.com/en/tutorials/how-to-setup-wireguard-ubuntu)
+   covers the provider-specific setup and applies to Debian. Do not add a
+   default route, DNS override, NAT, or forwarding: this tunnel carries only
+   parser HTTP, Postgres, and Redis.
+2. On the app host, set `EVO_PRIVATE_BIND_ADDRESS=10.77.0.1` before deploying
+   this branch. `deploy/docker-compose.prod.yml` then publishes Postgres and
+   Redis only on WireGuard. The default is loopback, never the public interface.
+3. Copy `deploy/ansible/parser-vm/inventory.example.yml` to the ignored
+   `inventory.yml`, encrypt it with Ansible Vault, and follow that directory's
+   README. The first pass keeps password SSH enabled. Verify key login in a
+   second terminal before setting `parser_harden_ssh: true`.
+4. Store the values from `deploy/parser-vm.env.example` in encrypted
+   `parser_env`. The parser binds only to `PARSER_BIND_ADDRESS`; its bearer token
+   remains defense in depth. The measured default is generous selective OCR.
+   Initial limits are eight queued HTTP requests, six digital Marker slots, and
+   two OCR-heavy slots. All-page OCR remains an explicit benchmark/retry mode.
+5. Apply the app migration before starting `host-sampler`, because it writes
+   `parse_host_samples`. Start `evo-parser.service`, wait for model warmup, and
+   verify `/healthz` through WireGuard. No parser port may listen on the public
+   address.
+6. Run `bench/parsers/accuracy_report.py` across representative PDF, image,
+   DOCX, PPTX, and XLSX inputs in all three modes. Review every rejected row and
+   the rendered page comparisons. Run the 1/2/4/6/8 sweep; production remains
+   at two OCR-heavy jobs unless four preserves at least 3 GiB headroom, uses
+   no swap, and materially improves throughput.
+7. Disable the app host's `legacy-modal-worker` profile only after a real ingest
+   succeeds from the VM. Main retains the Modal deployment. Rollback stops
+   `evo-parser.service`, redeploys `main`, and re-enables its worker; different
+   parser versions and mode fingerprints prevent artifact confusion.
 
 ---
 

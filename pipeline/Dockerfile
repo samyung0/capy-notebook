@@ -1,6 +1,7 @@
 # Pipeline image — ingest worker or retrieval service (compose overrides
-# `command`). CPU Marker and RapidOCR parsing run on Modal, so this image does
-# not include those parser models. Build from the repository root so uv can copy the lockfile.
+# `command`). CPU Marker and RapidOCR run in the separate persistent parser
+# image, so this image does not include those models. Build from the repository
+# root so uv can copy the lockfile.
 FROM python:3.11-slim
 COPY --from=ghcr.io/astral-sh/uv:0.8.22 /uv /uvx /bin/
 

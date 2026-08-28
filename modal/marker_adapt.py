@@ -257,6 +257,17 @@ def _bbox_area(bbox: list[float] | None) -> float:
     return abs(bbox[2] - bbox[0]) * abs(bbox[3] - bbox[1])
 
 
+def _bbox_overlap_ratio(left: list[float] | None, right: list[float] | None) -> float:
+    """Return intersection area as a fraction of the smaller rectangle."""
+    if not left or len(left) != 4 or not right or len(right) != 4:
+        return 0.0
+    x1, y1 = max(left[0], right[0]), max(left[1], right[1])
+    x2, y2 = min(left[2], right[2]), min(left[3], right[3])
+    intersection = max(0.0, x2 - x1) * max(0.0, y2 - y1)
+    smaller = min(_bbox_area(left), _bbox_area(right))
+    return intersection / smaller if smaller else 0.0
+
+
 def drop_scan_rasters(
     content_list: list[dict[str, Any]], ocr_pages: set[int]
 ) -> list[dict[str, Any]]:
@@ -293,7 +304,7 @@ def merge_ocr_lines(
     if not ocr_pages:
         return content_list
 
-    existing: dict[int, set[str]] = {}
+    existing: dict[int, list[tuple[str, list[float] | None]]] = {}
     for item in content_list:
         page = item.get("page_idx")
         if not isinstance(page, int):
@@ -309,11 +320,11 @@ def merge_ocr_lines(
         )
         norm = _norm_line(html_to_text(blob) if "<" in blob else blob)
         if norm:
-            existing.setdefault(page, set()).add(norm)
+            existing.setdefault(page, []).append((norm, item.get("bbox")))
 
     extra: list[dict[str, Any]] = []
     for page, lines in ocr_pages.items():
-        known = existing.setdefault(page, set())
+        known = existing.setdefault(page, [])
         for line in lines:
             text = str(line.get("text") or "").strip()
             if not text:
@@ -321,15 +332,25 @@ def merge_ocr_lines(
             norm = _norm_line(text)
             if not norm:
                 continue
-            if any(norm == k or norm in k or k in norm for k in known if k):
+            bbox = line.get("bbox")
+            if any(
+                (norm == known_text or norm in known_text or known_text in norm)
+                and (
+                    not bbox
+                    or not known_bbox
+                    or _bbox_overlap_ratio(bbox, known_bbox) >= 0.65
+                )
+                for known_text, known_bbox in known
+                if known_text
+            ):
                 continue
-            known.add(norm)
+            known.append((norm, bbox))
             extra.append(
                 {
                     "type": "text",
                     "text": text,
                     "page_idx": page,
-                    "bbox": line.get("bbox"),
+                    "bbox": bbox,
                 }
             )
 

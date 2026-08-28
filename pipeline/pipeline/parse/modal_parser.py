@@ -1,4 +1,4 @@
-"""Client for the Modal-hosted parse service.
+"""Client for the persistent remote parse service.
 
 The service never receives document bytes from this process: it is handed a
 presigned GET for the source and a presigned PUT for the result, and it streams
@@ -7,8 +7,9 @@ between them. What comes back is a zip containing ``content_list.json``
 it extracted. That block list is what makes page-accurate citations and figure
 captioning possible.
 
-The live route is Marker fast with OCR off, plus RapidOCR (PP-OCRv6) on
-scanned pages. Unknown parse modes fail.
+The live route supports Marker-only, selective RapidOCR, and all-page
+RapidOCR. Unknown parse modes fail and each mode has a separate artifact
+fingerprint.
 
 Artifacts are addressed by a fingerprint over (source object, etag, size, parse
 options, route, parser version). Re-ingesting the same document — a retry, a
@@ -44,13 +45,11 @@ ROUTE_FAST = "fast"
 # Must match the constants in modal/parse_common.py: the service rejects a request
 # whose parser_version it does not serve, so a version bump on either side fails
 # loudly instead of writing a bundle nobody can read back.
-PARSER_VERSIONS = {
-    ROUTE_FAST: "marker-2-hybrid-v1",
-}
+PARSER_VERSIONS = {ROUTE_FAST: "marker-2-vm-hybrid-v2"}
 
 
 class ModalParseError(RuntimeError):
-    pass
+    """Compatibility name for a remote parser contract failure."""
 
 
 def _record_measurement(payload: object) -> None:
@@ -67,6 +66,15 @@ def _record_measurement(payload: object) -> None:
         ocr_pages=ocr_pages,
         cpu_milliseconds=cpu_milliseconds,
         elapsed_milliseconds=elapsed_milliseconds,
+        queue_milliseconds=max(0, int(payload.get("_queue_ms") or 0)),
+        download_milliseconds=max(0, int(payload.get("_download_ms") or 0)),
+        upload_milliseconds=max(0, int(payload.get("_upload_ms") or 0)),
+        worker_rss_bytes=max(0, int(payload.get("_worker_rss_bytes") or 0)),
+        worker_pss_bytes=max(0, int(payload.get("_worker_pss_bytes") or 0)),
+        io_read_bytes=max(0, int(payload.get("_worker_io_read_bytes") or 0)),
+        io_write_bytes=max(0, int(payload.get("_worker_io_write_bytes") or 0)),
+        method=str(payload.get("_parse_method") or ""),
+        source_format=str(payload.get("_source_format") or ""),
     )
 
 
@@ -87,9 +95,9 @@ def _route(descriptor: Mapping[str, Any]) -> str:
 
 
 def _endpoint() -> str:
-    url = cfg.modal_fast_parse_url
+    url = cfg.parser_url
     if not url:
-        raise ModalParseError("MODAL_FAST_PARSE_URL is not configured")
+        raise ModalParseError("PARSER_URL is not configured")
     return url
 
 
@@ -140,11 +148,10 @@ def _request_artifact(
         }
 
     headers = {"Content-Type": "application/json"}
-    # Forward the trace so Modal's function logs, which are exported separately
-    # from ours, can be lined up with the ingest job that invoked them.
+    # Forward the trace so parser logs can be lined up with the ingest job.
     headers.update(obs.outbound_headers())
-    if cfg.modal_parse_token:
-        headers["Authorization"] = f"Bearer {cfg.modal_parse_token}"
+    if cfg.parser_token:
+        headers["Authorization"] = f"Bearer {cfg.parser_token}"
     resp = requests.post(
         endpoint,
         headers=headers,
@@ -158,7 +165,7 @@ def _request_artifact(
             "parser_version": version,
             "source_fingerprint": fingerprint,
         },
-        timeout=cfg.modal_parse_timeout,
+        timeout=cfg.parser_timeout,
     )
     try:
         payload = resp.json()
@@ -167,18 +174,18 @@ def _request_artifact(
     _record_measurement(payload)
     if resp.status_code >= 300:
         detail = payload.get("detail") if isinstance(payload, dict) else resp.text[:500]
-        raise ModalParseError(f"modal parse {resp.status_code}: {detail}")
+        raise ModalParseError(f"remote parse {resp.status_code}: {detail}")
     if not isinstance(payload, dict):
-        raise ModalParseError("modal returned an invalid JSON response")
+        raise ModalParseError("parser returned an invalid JSON response")
     artifact = payload.get("artifact") or {}
     if artifact.get("key") != artifact_key:
-        raise ModalParseError("modal returned an unexpected artifact key")
+        raise ModalParseError("parser returned an unexpected artifact key")
     artifact["fingerprint"] = fingerprint
     # Wall time remains useful for latency. The charge uses page counts, and
     # _worker_cpu_ms is the dedicated Marker child process's actual CPU time.
     parse_seconds = payload.get("_server_parse_s")
     log.info(
-        "modal published %s parse artifact key=%s bytes=%s parse_s=%s cpu_ms=%s pages=%s ocr_pages=%s",
+        "parser published %s artifact key=%s bytes=%s parse_s=%s cpu_ms=%s pages=%s ocr_pages=%s queue_ms=%s",
         route,
         artifact_key,
         artifact.get("size"),
@@ -186,6 +193,7 @@ def _request_artifact(
         payload.get("_worker_cpu_ms"),
         payload.get("_page_count"),
         payload.get("_ocr_page_count"),
+        payload.get("_queue_ms"),
     )
     return artifact
 

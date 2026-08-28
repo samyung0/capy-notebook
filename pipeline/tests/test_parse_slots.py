@@ -1,4 +1,4 @@
-"""Offline tests for the Modal parse-slot gate (no Redis)."""
+"""Offline tests for the persistent parser slot gate (no Redis)."""
 
 from __future__ import annotations
 
@@ -13,5 +13,5 @@ def test_a_dead_redis_lets_the_parse_through(monkeypatch):
     assert slots.try_acquire("fast", "job_1") is True
 
 
-def test_slot_caps_match_the_modal_boxes():
-    assert slots.cap_for("fast") == 72
+def test_slot_cap_matches_the_vm_outer_queue():
+    assert slots.cap_for("fast") == 8

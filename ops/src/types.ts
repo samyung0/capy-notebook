@@ -10,6 +10,7 @@ export type {
   OperatorAuditPage,
   OpsApi,
   Overview,
+  ParserMetrics,
   ReconciliationStatus,
   Registry,
   RegistrySaveRequest,

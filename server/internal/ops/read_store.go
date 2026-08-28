@@ -221,6 +221,79 @@ func (s *ReadStore) overview(ctx context.Context) (Overview, error) {
 	return out, err
 }
 
+func (s *ReadStore) ParserMetrics(ctx context.Context, hours int) (ParserMetrics, error) {
+	out := ParserMetrics{
+		Hours:    hours,
+		Samples:  []ParserHostSample{},
+		DataAsOf: time.Now().UTC(),
+	}
+	if hours < 1 || hours > 24*7 {
+		return out, validation("parser metrics range must be between 1 and 168 hours")
+	}
+	err := s.db.QueryRow(ctx, `
+		SELECT count(*)::bigint,
+		       COALESCE(sum(parse_pages), 0)::bigint,
+		       COALESCE(sum(parse_ocr_pages), 0)::bigint,
+		       COALESCE(sum(parse_cpu_milliseconds), 0)::bigint,
+		       COALESCE(sum(parse_elapsed_milliseconds), 0)::bigint,
+		       COALESCE(sum(parse_queue_milliseconds), 0)::bigint,
+		       COALESCE(sum(parse_download_milliseconds), 0)::bigint,
+		       COALESCE(sum(parse_upload_milliseconds), 0)::bigint,
+		       COALESCE(max(parse_worker_rss_bytes), 0)::bigint,
+		       COALESCE(max(parse_worker_pss_bytes), 0)::bigint,
+		       COALESCE(sum(parse_io_read_bytes), 0)::bigint,
+		       COALESCE(sum(parse_io_write_bytes), 0)::bigint
+		FROM usage_events
+		WHERE kind = 'parse' AND created_at >= now() - make_interval(hours => $1)
+	`, hours).Scan(
+		&out.Attempts.Attempts, &out.Attempts.Pages, &out.Attempts.OCRPages,
+		&out.Attempts.CPUMilliseconds, &out.Attempts.ElapsedMilliseconds,
+		&out.Attempts.QueueMilliseconds, &out.Attempts.DownloadMilliseconds,
+		&out.Attempts.UploadMilliseconds, &out.Attempts.PeakWorkerRSSBytes,
+		&out.Attempts.PeakWorkerPSSBytes, &out.Attempts.IOReadBytes,
+		&out.Attempts.IOWriteBytes,
+	)
+	if err != nil {
+		return out, err
+	}
+	if out.Attempts.ElapsedMilliseconds > 0 {
+		out.Attempts.AverageAttributedCPUCores = float64(out.Attempts.CPUMilliseconds) /
+			float64(out.Attempts.ElapsedMilliseconds)
+	}
+	rows, err := s.db.Query(ctx, `
+		SELECT date_bin('1 minute', sampled_at, timestamptz '1970-01-01') AS bucket,
+		       host_id, max(active_jobs)::bigint, max(queued_jobs)::bigint,
+		       avg(cpu_percent)::float8, avg(load_1)::float8,
+		       avg(memory_used_bytes)::bigint, max(memory_total_bytes)::bigint,
+		       max(swap_used_bytes)::bigint, max(parser_memory_bytes)::bigint,
+		       max(parser_pss_bytes)::bigint, max(network_rx_bytes)::bigint,
+		       max(network_tx_bytes)::bigint
+		FROM parse_host_samples
+		WHERE sampled_at >= now() - make_interval(hours => $1)
+		GROUP BY bucket, host_id
+		ORDER BY bucket, host_id
+	`, hours)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sample ParserHostSample
+		if err := rows.Scan(
+			&sample.SampledAt, &sample.HostID, &sample.ActiveJobs,
+			&sample.QueuedJobs, &sample.CPUPercent, &sample.Load1,
+			&sample.MemoryUsedBytes, &sample.MemoryTotalBytes,
+			&sample.SwapUsedBytes, &sample.ParserMemoryBytes,
+			&sample.ParserPSSBytes, &sample.NetworkRXBytes,
+			&sample.NetworkTXBytes,
+		); err != nil {
+			return out, err
+		}
+		out.Samples = append(out.Samples, sample)
+	}
+	return out, rows.Err()
+}
+
 func (s *ReadStore) usageSeries(
 	ctx context.Context,
 	dimension string,
