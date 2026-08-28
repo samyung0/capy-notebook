@@ -35,6 +35,7 @@ def platform_api_key(provider_slug: str) -> str:
 
 class Config:
     # ---- shared infra -----------------------------------------------------
+    release_sha: str = _env("RELEASE_SHA", "dev")
     dsn: str = _env(
         "DATABASE_URL", "postgres://evo:evo@localhost:5432/evo?sslmode=disable"
     )
@@ -78,8 +79,15 @@ class Config:
     parser_token: str = _env("PARSER_TOKEN", _env("MODAL_PARSE_TOKEN", ""))
     # Includes queue time behind the measured two-job OCR-heavy lane.
     parser_timeout: int = int(
-        _env("PARSER_TIMEOUT", _env("MODAL_PARSE_TIMEOUT", "1800"))
+        _env("PARSER_TIMEOUT", _env("MODAL_PARSE_TIMEOUT", "2400"))
     )
+    # These are deliberately separate deadlines. A parser call must finish
+    # before its Redis admission lease, both presigned URLs must remain valid
+    # through the final B2 upload, and the ingest job needs time afterwards for
+    # captions, embeddings, and its billing receipt.
+    parser_slot_ttl: int = int(_env("PARSER_SLOT_TTL", str(parser_timeout + 300)))
+    parser_presign_ttl: int = int(_env("PARSER_PRESIGN_TTL", str(parser_timeout + 600)))
+    ingest_timeout: int = int(_env("EVO_INGEST_TIMEOUT", "3600"))
     # Up to eight ingest workers may queue a parse. The parser independently
     # admits four Marker-only/selective digital jobs or two OCR-heavy jobs.
     parse_fast_slots: int = int(
@@ -143,3 +151,14 @@ class Config:
 
 
 cfg = Config()
+
+if not (
+    cfg.parser_timeout < cfg.parser_slot_ttl
+    and cfg.parser_timeout < cfg.parser_presign_ttl
+    and cfg.parser_presign_ttl < cfg.ingest_timeout
+    and cfg.parser_slot_ttl < cfg.ingest_timeout
+):
+    raise ValueError(
+        "parse time budgets must satisfy parser timeout < slot/presign TTLs "
+        "< ingest timeout"
+    )

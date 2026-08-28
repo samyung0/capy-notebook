@@ -15,8 +15,8 @@ User={{ parser_service_user }}
 Group={{ parser_service_user }}
 WorkingDirectory={{ parser_repo_dir }}
 Environment=COMPOSE_PROJECT_NAME=evo-parser
-ExecStart=/usr/bin/docker compose --env-file {{ parser_env_path }} -f {{ parser_compose_file }} up -d --build --remove-orphans
-ExecStop=/usr/bin/docker compose --env-file {{ parser_env_path }} -f {{ parser_compose_file }} down
+ExecStart=/usr/bin/docker compose --env-file {{ parser_env_path }} --env-file {{ parser_release_env_path }} -f {{ parser_compose_file }} up -d --build --remove-orphans
+ExecStop=/usr/bin/docker compose --env-file {{ parser_env_path }} --env-file {{ parser_release_env_path }} -f {{ parser_compose_file }} down
 TimeoutStartSec=3600
 TimeoutStopSec=180
 

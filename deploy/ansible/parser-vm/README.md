@@ -15,7 +15,10 @@ private addresses.
    `ansible-vault encrypt inventory.yml`.
 2. Add the app host WireGuard public key and public `host:51820` endpoint.
 3. Put `parser_env` in the encrypted inventory using the keys from
-   `deploy/parser-vm.env.example`. Do not put the root password in a file.
+   `deploy/parser-vm.env.example`. Set `parser_repo_version` to the exact full
+   release SHA; the playbook writes the matching non-secret `release.env` and
+   rejects branch names or a duplicate `RELEASE_SHA` secret. Do not put the
+   root password in a file.
 4. Install the pinned collection and run the first pass with SSH password
    authentication:
 
@@ -37,6 +40,16 @@ values are present; the production service will not start before then.
 The playbook intentionally does not retain host samples: `parse_host_samples`
 is permanent. If storage ever becomes material, downsample or partition it as a
 separate, explicit decision rather than silently deleting operational history.
+
+## Release promotion
+
+Configure the production GitHub environment with `PARSER_VM_HOST`, optional
+`PARSER_VM_USER` / `PARSER_VM_SSH_PORT`, and the secrets
+`PARSER_VM_SSH_PRIVATE_KEY` and `PARSER_VM_KNOWN_HOSTS`. The deployment workflow
+checks out and warms the parser at the approved SHA while ingest is paused,
+runs the matching app migration/deployment, then activates worker and sampler
+images carrying that same revision label. `/healthz.release_sha` is checked
+before the application deployment begins.
 
 ## Rollback
 

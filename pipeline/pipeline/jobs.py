@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .config import cfg
+
 
 class RetryableError(Exception):
     """The worker should re-pend this job against its attempt budget."""
@@ -37,11 +39,16 @@ class JobPolicy:
     lease_s: int
 
 
-# Ingest timeout sits above MODAL_PARSE_TIMEOUT (900s) plus captioning and
-# embed. A timeout that kills a legitimate parse wastes CPU work already in
-# flight. The B2 zip is only recorded after Marker returns.
+# The whole job outlives the parser request and its presigned URLs. This leaves
+# a ten-minute post-parse budget at the defaults for captions, embeddings, and
+# recording the usage receipt.
 POLICIES: dict[str, JobPolicy] = {
-    "ingest": JobPolicy(max_attempts=3, backoff_base_s=30, timeout_s=1800, lease_s=180),
+    "ingest": JobPolicy(
+        max_attempts=3,
+        backoff_base_s=30,
+        timeout_s=cfg.ingest_timeout,
+        lease_s=180,
+    ),
 }
 
 # After this long a waiter starts trying to steal a processing rag_contents

@@ -42,10 +42,10 @@ ARTIFACT_SCHEMA = "evo-mineru-bundle-v1"
 
 ROUTE_FAST = "fast"
 
-# Must match the constants in modal/parse_common.py: the service rejects a request
-# whose parser_version it does not serve, so a version bump on either side fails
-# loudly instead of writing a bundle nobody can read back.
-PARSER_VERSIONS = {ROUTE_FAST: "marker-2-vm-hybrid-v2"}
+# Must match parser-vm/app.py. The implementation generation and exact release
+# SHA form one identity, so rebuilt parser output cannot masquerade as an older
+# artifact even when the source and parse mode are unchanged.
+PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "marker-2-vm-hybrid-v3"}
 
 
 class ModalParseError(RuntimeError):
@@ -80,9 +80,10 @@ def _record_measurement(payload: object) -> None:
 
 def parser_version(route: str) -> str:
     try:
-        return PARSER_VERSIONS[route]
+        implementation = PARSER_IMPLEMENTATIONS[route]
     except KeyError:
         raise ModalParseError(f"unknown parse route {route!r}") from None
+    return f"{implementation}+{cfg.release_sha}"
 
 
 def _route(descriptor: Mapping[str, Any]) -> str:
@@ -156,8 +157,14 @@ def _request_artifact(
         endpoint,
         headers=headers,
         json={
-            "source_url": blobstore.presign_get(str(descriptor["blob_path"])),
-            "output_url": blobstore.presign_put(artifact_key, "application/zip"),
+            "source_url": blobstore.presign_get(
+                str(descriptor["blob_path"]), expires=cfg.parser_presign_ttl
+            ),
+            "output_url": blobstore.presign_put(
+                artifact_key,
+                "application/zip",
+                expires=cfg.parser_presign_ttl,
+            ),
             "output_key": artifact_key,
             "filename": upload_name,
             "parse_method": cfg.parse_method,

@@ -506,7 +506,7 @@ They must be reviewed after measured throughput is available against the fixed
 
 The persistent parser returns attributable child-process CPU, wall time, queue
 time, B2 download/upload time, current RSS/PSS, and I/O bytes. CPU includes the
-LibreOffice child used to normalize DOCX/PPTX/XLSX. Those fields are operational
+LibreOffice child used to normalize DOC/DOCX, PPT/PPTX, and XLS/XLSX. Those fields are operational
 telemetry only. Page counts determine the charge.
 
 Host saturation is separate. `pipeline.parse.host_sampler` reads host `/proc`,

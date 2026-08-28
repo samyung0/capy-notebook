@@ -12,4 +12,5 @@ all:
       # Repository access and production secrets belong in an Ansible Vault,
       # not this file. See README.md.
       parser_repo_url: CHANGE_ME
-      parser_repo_version: codex/netcup-parser-vm
+      # Production checkouts are detached at the same full SHA as the app.
+      parser_repo_version: 0000000000000000000000000000000000000000

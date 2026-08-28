@@ -103,7 +103,7 @@ async def test_the_parse_mode_selects_the_route(parse_stub):
     _, _, _, version = await _run("fast")
 
     assert parse_stub["descriptor"]["route"] == modal_parser.ROUTE_FAST
-    assert version == modal_parser.PARSER_VERSIONS[modal_parser.ROUTE_FAST]
+    assert version == modal_parser.parser_version(modal_parser.ROUTE_FAST)
 
 
 @pytest.mark.parametrize("parse_mode", ["accurate", "advanced"])

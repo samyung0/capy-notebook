@@ -602,22 +602,26 @@ the Go application process.
    WireGuard. The default bind address is loopback, never the public interface.
 3. Copy `deploy/ansible/parser-vm/inventory.example.yml` to the ignored
    `inventory.yml`, encrypt it with Ansible Vault, and follow that directory's
-   README. The first pass keeps password SSH enabled. Verify key login in a
-   second terminal before setting `parser_harden_ssh: true`.
+   README. Set `parser_repo_version` to the same full Git SHA being promoted;
+   branch names are rejected. The first pass keeps password SSH enabled. Verify
+   key login in a second terminal before setting `parser_harden_ssh: true`.
 4. Store the values from `deploy/parser-vm.env.example` in encrypted
    `parser_env`. The parser binds only to `PARSER_BIND_ADDRESS`; its bearer token
    remains defense in depth. The measured default is generous selective OCR.
    Initial limits are eight queued HTTP requests, four digital Marker slots, and
-   two OCR-heavy slots. All-page OCR remains an explicit benchmark/retry mode.
+   two OCR-heavy slots. The default time hierarchy is a 40-minute parser request,
+   45-minute Redis slot, 50-minute presigned URL, and 60-minute ingest job; the
+   process rejects contradictory overrides. All-page OCR remains an explicit
+   benchmark/retry mode.
 5. Apply the app migration before starting `host-sampler`, because it writes
    `parse_host_samples`. Start `evo-parser.service`, wait for model warmup, and
-   verify `/healthz` through WireGuard. No parser port may listen on the public
-   address.
+   verify `/healthz` through WireGuard. Its `release_sha` must equal the app's
+   deployed revision. No parser port may listen on the public address.
 6. Run `bench/parsers/accuracy_report.py` across representative PDF, image,
-   DOCX, PPTX, and XLSX inputs in all three modes. Review every rejected row and
-   the rendered page comparisons. Run the 1/2/4/6/8 sweep; production remains
-   at two OCR-heavy jobs unless four preserves at least 3 GiB headroom, uses
-   no swap, and materially improves throughput.
+   DOC/DOCX, PPT/PPTX, and XLS/XLSX inputs in all three modes. Review every
+   rejected row and the rendered page comparisons. Run the 1/2/4/6/8 sweep;
+   production remains at two OCR-heavy jobs unless four preserves at least 3
+   GiB headroom, uses no swap, and materially improves throughput.
 7. Disable the app host's `legacy-modal-worker` profile only after a real ingest
    succeeds from the VM. Main retains the Modal deployment. Rollback stops
    `evo-parser.service`, redeploys `main`, and re-enables its worker; different
@@ -744,9 +748,17 @@ the Go application process.
      thinking, catalog_provider_slug, catalog_model_slug, model_version,
      input_tokens, output_tokens, units, unit,
      parse_pages, parse_ocr_pages, parse_cpu_milliseconds,
-     parse_elapsed_milliseconds,
+     parse_elapsed_milliseconds, parse_queue_milliseconds,
+     parse_download_milliseconds, parse_upload_milliseconds,
+     parse_worker_rss_bytes, parse_worker_pss_bytes,
+     parse_io_read_bytes, parse_io_write_bytes,
      credit_micros, reservation_id, provider_call_id, created_at
    ) ON usage_events TO evo_ops;
+   GRANT SELECT (
+     sampled_at, host_id, active_jobs, queued_jobs, cpu_percent, load_1,
+     memory_total_bytes, memory_used_bytes, swap_used_bytes,
+     parser_memory_bytes, parser_pss_bytes, network_rx_bytes, network_tx_bytes
+   ) ON parse_host_samples TO evo_ops;
 
    GRANT EXECUTE ON FUNCTION touch_operator_seen(text) TO evo_ops;
    GRANT EXECUTE ON FUNCTION request_reconciliation(text, text, text)

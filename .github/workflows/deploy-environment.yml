@@ -44,6 +44,28 @@ jobs:
             echo "Checked-out revision does not match deployment input" >&2
             exit 1
           }
+      - name: Configure parser VM release access
+        if: inputs.environment_name == 'production'
+        env:
+          PARSER_VM_HOST: ${{ vars.PARSER_VM_HOST }}
+          PARSER_VM_KNOWN_HOSTS: ${{ secrets.PARSER_VM_KNOWN_HOSTS }}
+          PARSER_VM_SSH_PRIVATE_KEY: ${{ secrets.PARSER_VM_SSH_PRIVATE_KEY }}
+        run: |
+          [[ -n "$PARSER_VM_HOST" ]] || { echo "PARSER_VM_HOST is required" >&2; exit 1; }
+          [[ -n "$PARSER_VM_KNOWN_HOSTS" ]] || { echo "PARSER_VM_KNOWN_HOSTS is required" >&2; exit 1; }
+          [[ -n "$PARSER_VM_SSH_PRIVATE_KEY" ]] || { echo "PARSER_VM_SSH_PRIVATE_KEY is required" >&2; exit 1; }
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$PARSER_VM_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$PARSER_VM_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          chmod 600 "$HOME/.ssh/known_hosts" "$HOME/.ssh/id_ed25519"
+      - name: Prepare the matching parser revision and pause ingest
+        if: inputs.environment_name == 'production'
+        env:
+          DEPLOY_REVISION: ${{ inputs.revision }}
+          PARSER_VM_HOST: ${{ vars.PARSER_VM_HOST }}
+          PARSER_VM_SSH_PORT: ${{ vars.PARSER_VM_SSH_PORT || '22' }}
+          PARSER_VM_USER: ${{ vars.PARSER_VM_USER || 'evo-parser' }}
+        run: scripts/deploy/parser-vm-release.sh prepare
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v6
         with:
@@ -83,6 +105,14 @@ jobs:
           COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
           DEPLOY_REVISION: ${{ inputs.revision }}
         run: scripts/deploy/coolify-deploy.sh
+      - name: Activate matching parser VM workers after migrations
+        if: inputs.environment_name == 'production'
+        env:
+          DEPLOY_REVISION: ${{ inputs.revision }}
+          PARSER_VM_HOST: ${{ vars.PARSER_VM_HOST }}
+          PARSER_VM_SSH_PORT: ${{ vars.PARSER_VM_SSH_PORT || '22' }}
+          PARSER_VM_USER: ${{ vars.PARSER_VM_USER || 'evo-parser' }}
+        run: scripts/deploy/parser-vm-release.sh activate
       - name: Deploy the matching SPA revision to Cloudflare Pages
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

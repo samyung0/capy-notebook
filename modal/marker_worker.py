@@ -30,7 +30,8 @@ _PARSE_METHOD_ALIASES = {
     "ocr": SELECTIVE_RAPIDOCR,
     "auto": SELECTIVE_RAPIDOCR,
 }
-_OFFICE_SUFFIXES = {".docx", ".pptx", ".xlsx"}
+OFFICE_SUFFIXES = frozenset({".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"})
+_NORMALIZED_IMAGE_SUFFIXES = {".bmp", ".gif", ".jp2"}
 _DIRECT_SUFFIXES = {
     ".pdf",
     ".png",
@@ -135,21 +136,24 @@ def _ocr_page_indices(probes: list[Any], method: str) -> list[int]:
 
 
 def normalize_document(data: bytes, name: str) -> tuple[bytes, str, str]:
-    """Convert supported Office inputs to PDF before probing and parsing.
+    """Convert supported inputs to Marker's stable PDF/PNG representations.
 
     A single paginated representation keeps page numbers identical for Marker,
-    RapidOCR, citations, and benchmark rendering. Legacy binary Office formats
-    are deliberately rejected; accepting them would add a second, weakly tested
-    conversion path.
+    RapidOCR, citations, and benchmark rendering. LibreOffice handles both the
+    OOXML and legacy binary Office families. Pillow turns the remaining image
+    types into a single PNG page before Marker sees them.
     """
     suffix = Path(name).suffix.lower()
     if not suffix and data.lstrip().startswith(b"%PDF"):
         suffix = ".pdf"
     if suffix in _DIRECT_SUFFIXES:
         return data, name or f"document{suffix}", suffix.lstrip(".")
-    if suffix not in _OFFICE_SUFFIXES:
+    if suffix in _NORMALIZED_IMAGE_SUFFIXES:
+        return _normalize_image(data, name, suffix)
+    if suffix not in OFFICE_SUFFIXES:
         raise ValueError(
-            "supported formats are PDF, PNG, JPEG, WebP, TIFF, DOCX, PPTX, and XLSX"
+            "supported formats are PDF, PNG, JPEG, WebP, TIFF, BMP, GIF, JP2, "
+            "DOC, DOCX, PPT, PPTX, XLS, and XLSX"
         )
 
     timeout = max(30, int(os.environ.get("EVO_OFFICE_CONVERT_TIMEOUT", "180")))
@@ -189,6 +193,23 @@ def normalize_document(data: bytes, name: str) -> tuple[bytes, str, str]:
             f"{Path(name).stem or 'document'}.pdf",
             suffix.lstrip("."),
         )
+
+
+def _normalize_image(data: bytes, name: str, suffix: str) -> tuple[bytes, str, str]:
+    from PIL import Image
+
+    with Image.open(io.BytesIO(data)) as image:
+        image.seek(0)
+        rgba = image.convert("RGBA")
+        flattened = Image.new("RGBA", rgba.size, "white")
+        flattened.alpha_composite(rgba)
+        output = io.BytesIO()
+        flattened.convert("RGB").save(output, format="PNG")
+    return (
+        output.getvalue(),
+        f"{Path(name).stem or 'document'}.png",
+        suffix.lstrip("."),
+    )
 
 
 def _cpu_time_ns() -> int:

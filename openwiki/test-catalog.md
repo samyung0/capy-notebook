@@ -244,12 +244,14 @@ at the top of each section.
 | [`pipeline/tests/test_jobs.py`](../pipeline/tests/test_jobs.py)                             | Job retry, backoff, and attempt limits.                                   |
 | [`pipeline/tests/test_locale.py`](../pipeline/tests/test_locale.py)                         | Locale propagation to chat and Plate AI prompts.                          |
 | [`pipeline/tests/test_marker_adapt.py`](../pipeline/tests/test_marker_adapt.py)             | Marker output conversion, image filtering, and OCR merging.               |
-| [`pipeline/tests/test_marker_worker_ocr.py`](../pipeline/tests/test_marker_worker_ocr.py)   | Explicit OCR modes, Office-to-PDF normalization, lazy RapidOCR, and child-process resource/failure receipts. |
-| [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py)             | Provider-neutral parser artifact validation, caching, route checks, and full success/failure measurement capture. |
+| [`pipeline/tests/test_marker_worker_ocr.py`](../pipeline/tests/test_marker_worker_ocr.py)   | Explicit OCR modes, modern/legacy Office-to-PDF and extra-image-to-PNG normalization, lazy RapidOCR, and child-process resource/failure receipts. |
+| [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py)             | Provider-neutral parser artifact validation, release-derived identity, presigned URL budgets, caching, route checks, and full success/failure measurement capture. |
 | [`pipeline/tests/test_model_configs_lock.py`](../pipeline/tests/test_model_configs_lock.py) | Database rules that protect model configuration rows.                     |
 | [`pipeline/tests/test_model_replay.py`](../pipeline/tests/test_model_replay.py)             | Replay-only two-turn streaming checks for every certified provider/model cassette. |
 | [`pipeline/tests/test_model_replay_cert.py`](../pipeline/tests/test_model_replay_cert.py)   | Provider/model-list selection, certified-slug retention, forced replay mode, metadata-free manifest entries, interruption/failure rollback, and agentic-loop Go embed updates. |
 | [`pipeline/tests/test_parse_slots.py`](../pipeline/tests/test_parse_slots.py)               | Redis parse-slot limits and fail-open behavior.                           |
+| [`pipeline/tests/test_parse_time_budgets.py`](../pipeline/tests/test_parse_time_budgets.py) | Parser request, slot, presigned URL, and whole-ingest deadline ordering.  |
+| [`pipeline/tests/test_parser_vm_app.py`](../pipeline/tests/test_parser_vm_app.py)           | Parser retries with the same artifact fingerprint share one in-flight parse/upload. |
 | [`pipeline/tests/test_pool_shutdown.py`](../pipeline/tests/test_pool_shutdown.py)           | Shutdown of stuck parser worker processes.                                |
 | [`pipeline/tests/test_provider_byok.py`](../pipeline/tests/test_provider_byok.py)           | BYOK resolution, isolation, and error handling.                           |
 | [`pipeline/tests/test_quiz_grade.py`](../pipeline/tests/test_quiz_grade.py)                 | Open-answer quiz scoring and result parsing.                              |

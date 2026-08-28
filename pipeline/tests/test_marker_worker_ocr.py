@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -63,9 +64,38 @@ def test_office_is_normalized_to_one_paginated_pdf(
     assert source_format == "pptx"
 
 
-def test_legacy_office_formats_are_rejected() -> None:
-    with pytest.raises(ValueError, match="supported formats"):
-        normalize_document(b"legacy", "lesson.ppt")
+@pytest.mark.parametrize("extension", ["doc", "ppt", "xls"])
+def test_legacy_office_formats_use_the_libreoffice_path(
+    monkeypatch: pytest.MonkeyPatch, extension: str
+) -> None:
+    def _convert(command, **_kwargs):
+        outdir = Path(command[command.index("--outdir") + 1])
+        (outdir / "source.pdf").write_bytes(b"%PDF-legacy")
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr("marker_worker.subprocess.run", _convert)
+
+    data, name, source_format = normalize_document(b"legacy", f"lesson.{extension}")
+
+    assert data == b"%PDF-legacy"
+    assert name == "lesson.pdf"
+    assert source_format == extension
+
+
+@pytest.mark.parametrize("extension", ["bmp", "gif", "jp2"])
+def test_additional_images_are_normalized_to_png(extension: str) -> None:
+    from PIL import Image
+
+    source = io.BytesIO()
+    Image.new("RGB", (3, 2), "red").save(source, format="BMP")
+
+    data, name, source_format = normalize_document(
+        source.getvalue(), f"diagram.{extension}"
+    )
+
+    assert data.startswith(b"\x89PNG")
+    assert name == "diagram.png"
+    assert source_format == extension
 
 
 def test_page_lines_lazy_loads_local_engine(monkeypatch: pytest.MonkeyPatch) -> None:

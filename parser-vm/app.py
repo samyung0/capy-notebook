@@ -15,12 +15,14 @@ import io
 import json
 import multiprocessing as mp
 import os
+import re
 import time
 import zipfile
 from collections.abc import AsyncIterator
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any
 from urllib.parse import urlparse
 
@@ -30,6 +32,7 @@ from fastapi.responses import JSONResponse
 from marker_worker import (
     ALL_RAPIDOCR,
     MARKER_ONLY,
+    OFFICE_SUFFIXES,
     SELECTIVE_RAPIDOCR,
     init_worker,
     normalize_parse_method,
@@ -38,7 +41,34 @@ from marker_worker import (
 )
 
 ARTIFACT_SCHEMA = "evo-mineru-bundle-v1"
-PARSER_VERSION = "marker-2-vm-hybrid-v2"
+PARSER_IMPLEMENTATION = "marker-2-vm-hybrid-v3"
+RELEASE_SHA = os.environ.get("RELEASE_SHA", "dev").strip() or "dev"
+if os.environ.get("APP_ENV") == "production" and not re.fullmatch(
+    r"[0-9a-f]{40}", RELEASE_SHA
+):
+    raise RuntimeError("production parser RELEASE_SHA must be a full lowercase Git SHA")
+PARSER_VERSION = f"{PARSER_IMPLEMENTATION}+{RELEASE_SHA}"
+
+
+def _dependency_versions() -> dict[str, str]:
+    packages = (
+        "marker-pdf",
+        "rapidocr",
+        "onnxruntime",
+        "pypdfium2",
+        "pillow",
+        "torch",
+    )
+    versions: dict[str, str] = {}
+    for package in packages:
+        try:
+            versions[package] = version(package)
+        except PackageNotFoundError:
+            versions[package] = "missing"
+    return versions
+
+
+PARSER_DEPENDENCIES = _dependency_versions()
 MAX_SOURCE_BYTES = int(os.environ.get("EVO_MAX_SOURCE_BYTES", str(100 << 20)))
 MARKER_WORKERS = max(1, int(os.environ.get("EVO_MARKER_WORKERS", "6")))
 DIGITAL_SLOTS = max(1, int(os.environ.get("EVO_DIGITAL_CONCURRENCY", "4")))
@@ -139,7 +169,7 @@ class ParserRuntime:
         if method == MARKER_ONLY:
             return False
         suffix = os.path.splitext(document.name)[1].lower()
-        if suffix in {".docx", ".pptx", ".xlsx"}:
+        if suffix in OFFICE_SUFFIXES:
             return True
         from scan_pages import job_needs_rapidocr, probe_pages
 
@@ -149,6 +179,8 @@ class ParserRuntime:
 
 
 runtime = ParserRuntime()
+_artifact_tasks: dict[str, asyncio.Task[tuple[dict[str, Any], int]]] = {}
+_artifact_tasks_lock = asyncio.Lock()
 
 
 @asynccontextmanager
@@ -302,6 +334,9 @@ async def healthz() -> dict[str, Any]:
         "ok": runtime.pool is not None,
         "uptime_s": round(time.monotonic() - runtime.started_at, 3),
         "parser_version": PARSER_VERSION,
+        "parser_implementation": PARSER_IMPLEMENTATION,
+        "release_sha": RELEASE_SHA,
+        "dependencies": PARSER_DEPENDENCIES,
         "supported_methods": [MARKER_ONLY, SELECTIVE_RAPIDOCR, ALL_RAPIDOCR],
         "supported_formats": [
             "pdf",
@@ -311,8 +346,14 @@ async def healthz() -> dict[str, Any]:
             "webp",
             "tif",
             "tiff",
+            "bmp",
+            "gif",
+            "jp2",
+            "doc",
             "docx",
+            "ppt",
             "pptx",
+            "xls",
             "xlsx",
         ],
         "marker_workers": MARKER_WORKERS,
@@ -357,8 +398,6 @@ async def _artifact_parse(body: dict[str, Any]) -> JSONResponse:
     source_url = str(body.get("source_url") or "")
     output_url = str(body.get("output_url") or "")
     output_key = str(body.get("output_key") or "")
-    name = str(body.get("filename") or "document")
-    method = str(body.get("parse_method") or SELECTIVE_RAPIDOCR)
     fingerprint = str(body.get("source_fingerprint") or "")
     if (
         body.get("artifact_schema") != ARTIFACT_SCHEMA
@@ -370,6 +409,44 @@ async def _artifact_parse(body: dict[str, Any]) -> JSONResponse:
     ):
         return JSONResponse({"detail": "invalid artifact request"}, status_code=400)
 
+    task = await _artifact_task(fingerprint, body)
+    payload, status_code = await asyncio.shield(task)
+    return JSONResponse(payload, status_code=status_code)
+
+
+async def _artifact_task(
+    fingerprint: str, body: dict[str, Any]
+) -> asyncio.Task[tuple[dict[str, Any], int]]:
+    """Share one parse/upload across client timeouts and their retries."""
+    async with _artifact_tasks_lock:
+        task = _artifact_tasks.get(fingerprint)
+        if task is None:
+            task = asyncio.create_task(_produce_artifact(dict(body)))
+            _artifact_tasks[fingerprint] = task
+            task.add_done_callback(
+                lambda finished: asyncio.create_task(
+                    _forget_artifact_task(fingerprint, finished)
+                )
+            )
+        return task
+
+
+async def _forget_artifact_task(
+    fingerprint: str, task: asyncio.Task[tuple[dict[str, Any], int]]
+) -> None:
+    async with _artifact_tasks_lock:
+        if _artifact_tasks.get(fingerprint) is task:
+            _artifact_tasks.pop(fingerprint, None)
+
+
+async def _produce_artifact(body: dict[str, Any]) -> tuple[dict[str, Any], int]:
+    source_url = str(body["source_url"])
+    output_url = str(body["output_url"])
+    output_key = str(body["output_key"])
+    name = str(body.get("filename") or "document")
+    method = str(body.get("parse_method") or SELECTIVE_RAPIDOCR)
+    fingerprint = str(body["source_fingerprint"])
+
     measurements: dict[str, Any] = {}
     download_ms = upload_ms = 0
     try:
@@ -380,9 +457,7 @@ async def _artifact_parse(body: dict[str, Any]) -> JSONResponse:
         source.raise_for_status()
         download_ms = round((time.perf_counter() - started) * 1000)
         if len(source.content) > MAX_SOURCE_BYTES:
-            return JSONResponse(
-                {"detail": "source exceeds size limit"}, status_code=413
-            )
+            return {"detail": "source exceeds size limit"}, 413
         result, measurements = await _run(Document(source.content, name, method))
         bundle = await asyncio.to_thread(_bundle_bytes, result, fingerprint)
         digest = hashlib.sha256(bundle).hexdigest()
@@ -398,18 +473,12 @@ async def _artifact_parse(body: dict[str, Any]) -> JSONResponse:
         upload_ms = round((time.perf_counter() - started) * 1000)
     except ParseFailure as exc:
         measurements = exc.measurements
-        return JSONResponse(
-            {"detail": f"remote parse failed: {exc}", **measurements},
-            status_code=500,
-        )
+        return {"detail": f"remote parse failed: {exc}", **measurements}, 500
     except Exception as exc:  # noqa: BLE001 - API returns a bounded diagnostic
-        return JSONResponse(
-            {"detail": f"remote parse failed: {exc}", **measurements},
-            status_code=500,
-        )
+        return {"detail": f"remote parse failed: {exc}", **measurements}, 500
     measurements["_download_ms"] = max(0, download_ms)
     measurements["_upload_ms"] = max(0, upload_ms)
-    return JSONResponse(
+    return (
         {
             "artifact": {
                 "key": output_key,
@@ -421,5 +490,6 @@ async def _artifact_parse(body: dict[str, Any]) -> JSONResponse:
             },
             "_server_parse_s": round(measurements["_server_parse_ms"] / 1000, 3),
             **measurements,
-        }
+        },
+        200,
     )

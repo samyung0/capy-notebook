@@ -1,7 +1,7 @@
 """Cap concurrent calls admitted to the persistent parser VM.
 
 Eight ingest workers may queue HTTP calls. The parser owns the resource-aware
-admission policy inside that boundary: two OCR-heavy jobs, or up to six
+admission policy inside that boundary: two OCR-heavy jobs, or up to four
 digital jobs, until benchmarks justify changing it.
 
 The ingest worker takes a slot only for the parser HTTP call. When every slot
@@ -21,7 +21,6 @@ from ..config import cfg
 
 log = logging.getLogger("evo.parse.slots")
 
-HOLD_TTL_S = 1800
 YIELD_BACKOFF_S = 2
 
 _LUA_ACQUIRE = """
@@ -72,7 +71,7 @@ def try_acquire(route: str, job_id: str) -> bool:
             job_id,
             cap_for(route),
             time.time(),
-            HOLD_TTL_S,
+            cfg.parser_slot_ttl,
         )
         return bool(int(allowed))
     except Exception:

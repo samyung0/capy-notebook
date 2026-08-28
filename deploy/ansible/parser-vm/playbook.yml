@@ -6,11 +6,20 @@
     parser_service_user: evo-parser
     parser_repo_dir: /opt/evo-parser/app
     parser_env_path: /etc/evo-parser/parser.env
+    parser_release_env_path: /opt/evo-parser/release.env
     parser_compose_file: deploy/docker-compose.parser-vm.yml
     parser_wireguard_interface: wg0
     parser_wireguard_listen_port: 51820
 
   pre_tasks:
+    - name: Refuse a mutable parser revision
+      ansible.builtin.assert:
+        that:
+          - parser_repo_version | default('') is match('^[0-9a-f]{40}$')
+          - "'RELEASE_SHA' not in (parser_env | default({}))"
+        fail_msg: Use the app release's full Git SHA; RELEASE_SHA is managed separately.
+      when: parser_repo_url != 'CHANGE_ME'
+
     - name: Refuse incomplete WireGuard configuration
       ansible.builtin.assert:
         that:
@@ -156,14 +165,32 @@
           APT::Periodic::Update-Package-Lists "1";
           APT::Periodic::Unattended-Upgrade "1";
 
-    - name: Check out the parser branch
+    - name: Check out the exact parser release
       ansible.builtin.git:
         repo: "{{ parser_repo_url }}"
         dest: "{{ parser_repo_dir }}"
         version: "{{ parser_repo_version }}"
         update: true
         force: false
+      register: parser_checkout
       become_user: "{{ parser_service_user }}"
+      when: parser_repo_url != 'CHANGE_ME'
+      notify: Restart parser stack
+
+    - name: Verify the parser checkout revision
+      ansible.builtin.assert:
+        that:
+          - parser_checkout.after == parser_repo_version
+        fail_msg: Parser checkout does not match the requested release SHA.
+      when: parser_repo_url != 'CHANGE_ME'
+
+    - name: Write the immutable parser release identity
+      ansible.builtin.copy:
+        dest: "{{ parser_release_env_path }}"
+        owner: "{{ parser_service_user }}"
+        group: "{{ parser_service_user }}"
+        mode: "0640"
+        content: "RELEASE_SHA={{ parser_repo_version }}\n"
       when: parser_repo_url != 'CHANGE_ME'
       notify: Restart parser stack
 

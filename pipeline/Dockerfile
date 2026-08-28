@@ -5,8 +5,12 @@
 FROM python:3.11-slim
 COPY --from=ghcr.io/astral-sh/uv:0.8.22 /uv /uvx /bin/
 
+ARG RELEASE_SHA=dev
+LABEL org.opencontainers.image.revision=$RELEASE_SHA
+
 WORKDIR /app
 ENV PYTHONUNBUFFERED=1
+ENV RELEASE_SHA=$RELEASE_SHA
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 

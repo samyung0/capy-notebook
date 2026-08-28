@@ -25,7 +25,7 @@ The Python services share one Postgres schema owned by Go migrations
 | --- | --- | --- |
 | Ingest worker | `python -m pipeline.ingest.worker` | Claims jobs, parses, chunks, embeds, writes a two-tier file summary, extracts concepts. Horizontally scalable (`WORKER_REPLICAS`); each replica runs one job at a time |
 | Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/quiz-grade`, `/plate-ai/*` over the same index |
-| Parser service | `uvicorn parser-vm/app.py` | Persistent Marker/RapidOCR service on the dedicated VM; normalizes modern Office formats through LibreOffice |
+| Parser service | `uvicorn parser-vm/app.py` | Persistent Marker/RapidOCR service on the dedicated VM; normalizes OOXML and legacy Office through LibreOffice and BMP/GIF/JP2 through Pillow |
 | Host sampler | `python -m pipeline.parse.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
 
 The Go gateway is the public face: it authenticates the user, proxies chat and
@@ -609,7 +609,7 @@ job and pipeline `/workspace/delete` endpoint are gone.
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
-| Parse | `PARSER_URL`, `PARSER_TOKEN`, `EVO_PARSE_METHOD` | Persistent Netcup service. Modes are `marker_only`, `selective_rapidocr`, and `all_rapidocr`; each mode participates in the artifact fingerprint. The old `MODAL_*` names are rollback aliases only. |
+| Parse | `PARSER_URL`, `PARSER_TOKEN`, `EVO_PARSE_METHOD`, `RELEASE_SHA` | Persistent Netcup service. Modes are `marker_only`, `selective_rapidocr`, and `all_rapidocr`; mode plus the exact release-derived parser version participates in the artifact fingerprint. The old `MODAL_*` names are rollback aliases only. |
 | Chunk size | `EVO_CHUNK_*` | Character budgets, not tokens |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
 | Search | `EVO_SEARCH_CANDIDATES`, `EVO_SEARCH_TOP_K`, `EVO_SEARCH_PER_FILE_CAP` | |

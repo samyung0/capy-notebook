@@ -4,7 +4,7 @@
 
 x-pipeline-env: &pipeline-env
   APP_ENV: production
-  RELEASE_SHA: ${RELEASE_SHA:-}
+  RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
   LOG_FORMAT: json
   DATABASE_URL: ${DATABASE_URL:?set the private WireGuard Postgres URL}
   REDIS_URL: ${REDIS_URL:?set the private WireGuard Redis URL}
@@ -15,7 +15,10 @@ x-pipeline-env: &pipeline-env
   B2_APP_KEY: ${B2_APP_KEY:?set B2_APP_KEY}
   PARSER_URL: http://${PARSER_BIND_ADDRESS:?set the WireGuard bind address}:8090/file_parse
   PARSER_TOKEN: ${PARSER_TOKEN:?set PARSER_TOKEN}
-  PARSER_TIMEOUT: ${PARSER_TIMEOUT:-1800}
+  PARSER_TIMEOUT: ${PARSER_TIMEOUT:-2400}
+  PARSER_SLOT_TTL: ${PARSER_SLOT_TTL:-2700}
+  PARSER_PRESIGN_TTL: ${PARSER_PRESIGN_TTL:-3000}
+  EVO_INGEST_TIMEOUT: ${EVO_INGEST_TIMEOUT:-3600}
   EVO_PARSE_SLOTS: ${EVO_PARSE_SLOTS:-8}
   EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-selective_rapidocr}
   SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
@@ -25,8 +28,13 @@ services:
     build:
       context: ..
       dockerfile: parser-vm/Dockerfile
+      args:
+        RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
     network_mode: host
     environment:
+      APP_ENV: production
+      RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
+      PARSER_BIND_ADDRESS: ${PARSER_BIND_ADDRESS:?set the WireGuard bind address}
       PARSER_TOKEN: ${PARSER_TOKEN:?set PARSER_TOKEN}
       EVO_MARKER_WORKERS: ${EVO_MARKER_WORKERS:-6}
       EVO_DIGITAL_CONCURRENCY: ${EVO_DIGITAL_CONCURRENCY:-4}
@@ -69,6 +77,8 @@ services:
     build:
       context: ..
       dockerfile: pipeline/Dockerfile
+      args:
+        RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
     network_mode: host
     environment:
       <<: *pipeline-env
@@ -98,6 +108,8 @@ services:
     build:
       context: ..
       dockerfile: pipeline/Dockerfile
+      args:
+        RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
     network_mode: host
     read_only: true
     environment:

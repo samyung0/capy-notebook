@@ -1,4 +1,10 @@
-FROM python:3.11-slim-bookworm
+FROM python:3.11.13-slim-bookworm@sha256:86adf8dbadc3d6e82ee5dd2c74bec2e1c2467cdad47886280501df722372d2e1
+
+ARG RELEASE_SHA
+RUN test "$(printf %s "$RELEASE_SHA" | wc -c)" -eq 40 \
+    && ! printf %s "$RELEASE_SHA" | grep -q '[^0-9a-f]'
+
+LABEL org.opencontainers.image.revision=$RELEASE_SHA
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -14,8 +20,10 @@ ENV PYTHONUNBUFFERED=1 \
     CUDA_VISIBLE_DEVICES="" \
     OMP_NUM_THREADS=2 \
     MKL_NUM_THREADS=2 \
+    RELEASE_SHA=$RELEASE_SHA \
     PYTHONPATH=/app/modal:/app/parser-vm
 
+COPY parser-vm/debian.sources /etc/apt/sources.list.d/debian.sources
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         curl \
@@ -23,6 +31,7 @@ RUN apt-get update \
         libgl1 \
         libglib2.0-0 \
         libgomp1 \
+        libopenjp2-7 \
         libreoffice-calc \
         libreoffice-impress \
         libreoffice-writer \
@@ -30,11 +39,9 @@ RUN apt-get update \
 
 WORKDIR /app
 COPY parser-vm/requirements.txt ./parser-vm/requirements.txt
-RUN pip install --no-cache-dir \
-        --index-url https://download.pytorch.org/whl/cpu \
-        torch==2.13.0+cpu \
-        torchvision==0.28.0+cpu
-RUN pip install --no-cache-dir -r parser-vm/requirements.txt
+RUN pip install --no-cache-dir --require-hashes \
+        --extra-index-url https://download.pytorch.org/whl/cpu \
+        -r parser-vm/requirements.txt
 
 COPY modal/marker_adapt.py modal/marker_worker.py modal/scan_pages.py ./modal/
 COPY parser-vm/app.py ./parser-vm/app.py

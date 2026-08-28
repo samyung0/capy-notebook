@@ -18,7 +18,7 @@ import pytest
 
 from pipeline.parse import modal_parser
 
-FAST_VERSION = modal_parser.PARSER_VERSIONS[modal_parser.ROUTE_FAST]
+FAST_VERSION = modal_parser.parser_version(modal_parser.ROUTE_FAST)
 
 
 def _descriptor(**overrides) -> dict:
@@ -99,6 +99,16 @@ def test_parse_method_participates_in_the_fingerprint(monkeypatch):
     assert before != after
 
 
+def test_release_sha_participates_in_parser_and_artifact_identity(monkeypatch):
+    _, before = modal_parser.artifact_identity(_descriptor())
+    monkeypatch.setattr(modal_parser.cfg, "release_sha", "b" * 40)
+    version = modal_parser.parser_version(modal_parser.ROUTE_FAST)
+    _, after = modal_parser.artifact_identity(_descriptor())
+
+    assert version.endswith("+" + "b" * 40)
+    assert before != after
+
+
 def test_an_unknown_route_is_rejected():
     with pytest.raises(modal_parser.ModalParseError, match="unknown parse route"):
         modal_parser.artifact_identity(_descriptor(route="turbo"))
@@ -160,9 +170,15 @@ def test_missing_parser_url_is_a_configuration_error(monkeypatch):
 def _stub_presign(monkeypatch, response) -> list[dict]:
     calls: list[dict] = []
     monkeypatch.setattr(modal_parser.blobstore, "object_info", lambda _k: None)
-    monkeypatch.setattr(modal_parser.blobstore, "presign_get", lambda _k: "https://get")
     monkeypatch.setattr(
-        modal_parser.blobstore, "presign_put", lambda _k, _t: "https://put"
+        modal_parser.blobstore,
+        "presign_get",
+        lambda _k, *, expires: f"https://get/{expires}",
+    )
+    monkeypatch.setattr(
+        modal_parser.blobstore,
+        "presign_put",
+        lambda _k, _t, *, expires: f"https://put/{expires}",
     )
 
     def _post(url, **kwargs):
@@ -181,6 +197,13 @@ def test_the_request_uses_the_fast_endpoint_and_version(monkeypatch, parser_urls
 
     assert calls[0]["url"] == "http://10.77.0.2:8090/file_parse"
     assert calls[0]["json"]["parser_version"] == FAST_VERSION
+    assert calls[0]["json"]["source_url"].endswith(
+        f"/{modal_parser.cfg.parser_presign_ttl}"
+    )
+    assert calls[0]["json"]["output_url"].endswith(
+        f"/{modal_parser.cfg.parser_presign_ttl}"
+    )
+    assert calls[0]["timeout"] == modal_parser.cfg.parser_timeout
 
 
 def test_http_error_is_wrapped(monkeypatch, parser_urls):
