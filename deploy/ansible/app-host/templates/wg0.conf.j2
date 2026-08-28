@@ -1,0 +1,10 @@
+[Interface]
+Address = {{ app_wireguard_address }}
+ListenPort = {{ app_wireguard_listen_port }}
+PrivateKey = {{ app_wireguard_private_key_file.content | b64decode | trim }}
+
+[Peer]
+PublicKey = {{ app_wireguard_peer_public_key }}
+Endpoint = {{ app_wireguard_peer_endpoint }}
+AllowedIPs = {{ app_wireguard_peer_address }}
+PersistentKeepalive = 25

@@ -7,8 +7,8 @@ all:
       parser_wireguard_peer_address: 10.77.0.1/32
       parser_configure_wireguard: true
       # Public key and public endpoint of the app/Coolify host's WireGuard peer.
-      parser_wireguard_peer_public_key: CHANGE_ME
-      parser_wireguard_peer_endpoint: CHANGE_ME:51820
+      parser_wireguard_peer_public_key: QOs40Fn+XJVjpu8Ucsa6iY6s4lCIjAcGxcT5bDa8yB4=
+      parser_wireguard_peer_endpoint: 49.12.219.255:51820
       # Repository access and production secrets belong in an Ansible Vault,
       # not this file. See README.md.
       parser_repo_url: CHANGE_ME

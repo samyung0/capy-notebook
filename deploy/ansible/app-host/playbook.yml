@@ -1,0 +1,113 @@
+---
+- name: Configure the Coolify app host service link
+  hosts: all
+  become: true
+  vars:
+    app_wireguard_interface: wg0
+    app_wireguard_listen_port: 51820
+    app_wireguard_service_ports:
+      - "55432"
+      - "6379"
+
+  pre_tasks:
+    - name: Refuse incomplete WireGuard configuration
+      ansible.builtin.assert:
+        that:
+          - app_wireguard_peer_public_key | default('') | length > 20
+          - app_wireguard_peer_endpoint | default('') is match('^[^:]+:[0-9]+$')
+          - app_wireguard_peer_public_ip | default('') is match('^[0-9.]+$')
+          - app_wireguard_address | default('') is match('^[0-9.]+/[0-9]+$')
+          - app_wireguard_peer_address | default('') is match('^[0-9.]+/[0-9]+$')
+        fail_msg: Fill the WireGuard peer values in inventory.yml first.
+
+  tasks:
+    - name: Install WireGuard
+      ansible.builtin.apt:
+        name: wireguard
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create the WireGuard configuration directory
+      ansible.builtin.file:
+        path: /etc/wireguard
+        state: directory
+        owner: root
+        group: root
+        mode: "0700"
+
+    - name: Check for an existing WireGuard private key
+      ansible.builtin.stat:
+        path: /etc/wireguard/privatekey
+      register: app_wireguard_private_key_stat
+
+    - name: Create the WireGuard private key once
+      ansible.builtin.shell:
+        cmd: umask 077 && wg genkey > /etc/wireguard/privatekey
+        creates: /etc/wireguard/privatekey
+      no_log: true
+
+    - name: Read the WireGuard private key
+      ansible.builtin.slurp:
+        src: /etc/wireguard/privatekey
+      register: app_wireguard_private_key_file
+      no_log: true
+      when: app_wireguard_private_key_stat.stat.exists or not ansible_check_mode
+
+    - name: Configure the private service link
+      ansible.builtin.template:
+        src: wg0.conf.j2
+        dest: "/etc/wireguard/{{ app_wireguard_interface }}.conf"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+      notify: Restart WireGuard
+      when: app_wireguard_private_key_stat.stat.exists or not ansible_check_mode
+
+    - name: Allow WireGuard only from the parser VM
+      community.general.ufw:
+        rule: allow
+        direction: in
+        proto: udp
+        from_ip: "{{ app_wireguard_peer_public_ip }}"
+        to_port: "{{ app_wireguard_listen_port }}"
+        comment: Evo parser private service link
+
+    - name: Allow parser access to private app services
+      community.general.ufw:
+        rule: allow
+        direction: in
+        interface: "{{ app_wireguard_interface }}"
+        proto: tcp
+        from_ip: "{{ app_wireguard_peer_address | regex_replace('/.*$', '') }}"
+        to_ip: "{{ app_wireguard_address | regex_replace('/.*$', '') }}"
+        to_port: "{{ item }}"
+        comment: Evo parser private app service
+      loop: "{{ app_wireguard_service_ports }}"
+
+    - name: Enable the private service link
+      ansible.builtin.systemd_service:
+        name: "wg-quick@{{ app_wireguard_interface }}"
+        enabled: true
+        state: started
+      when: app_wireguard_private_key_stat.stat.exists or not ansible_check_mode
+
+    - name: Read the app host WireGuard public key
+      ansible.builtin.shell:
+        cmd: wg pubkey < /etc/wireguard/privatekey
+      register: app_wireguard_public_key
+      changed_when: false
+      check_mode: false
+      when: app_wireguard_private_key_stat.stat.exists or not ansible_check_mode
+
+    - name: Show the public key for the parser peer
+      ansible.builtin.debug:
+        msg: "App host WireGuard public key: {{ app_wireguard_public_key.stdout }}"
+      when: app_wireguard_private_key_stat.stat.exists or not ansible_check_mode
+
+  handlers:
+    - name: Restart WireGuard
+      ansible.builtin.systemd_service:
+        name: "wg-quick@{{ app_wireguard_interface }}"
+        state: restarted

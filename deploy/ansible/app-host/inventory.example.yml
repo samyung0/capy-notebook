@@ -1,0 +1,11 @@
+all:
+  hosts:
+    coolify-app-1:
+      ansible_host: 49.12.219.255
+      ansible_user: root
+      ansible_ssh_private_key_file: ~/.ssh/id_ed25519_evo_coolify
+      app_wireguard_address: 10.77.0.1/32
+      app_wireguard_peer_address: 10.77.0.2/32
+      app_wireguard_peer_public_key: +HwtvH4qTmS+BHao9n/55LhpnrNGr0TAMaHAfilkTyo=
+      app_wireguard_peer_endpoint: 159.195.61.195:51820
+      app_wireguard_peer_public_ip: 159.195.61.195

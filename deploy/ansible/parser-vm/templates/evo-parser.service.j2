@@ -1,8 +1,12 @@
 [Unit]
 Description=Evo Notes parser and ingest workers
-Requires=docker.service{% if parser_configure_wireguard | default(true) %} wg-quick@{{ parser_wireguard_interface }}.service{% endif %}
-After=docker.service network-online.target{% if parser_configure_wireguard | default(true) %} wg-quick@{{ parser_wireguard_interface }}.service{% endif %}
+Requires=docker.service
+After=docker.service network-online.target
 Wants=network-online.target
+{% if parser_configure_wireguard | default(true) %}
+Requires=wg-quick@{{ parser_wireguard_interface }}.service
+After=wg-quick@{{ parser_wireguard_interface }}.service
+{% endif %}
 
 [Service]
 Type=oneshot

@@ -587,15 +587,20 @@ The Netcup VM runs the ingest workers, parser, and host sampler. Uploaded bytes
 move from the Cloudflare relay to B2 and from B2 to this VM; they do not traverse
 the Go application process.
 
-1. Build a point-to-point WireGuard service network between the app host
-   (`10.77.0.1/32`) and parser VM (`10.77.0.2/32`). Netcup's
+1. Apply `deploy/ansible/app-host/playbook.yml` to build the app side of the
+   point-to-point WireGuard service network, then put its displayed public key
+   in the parser inventory. The app host uses `10.77.0.1/32` and the parser VM
+   uses `10.77.0.2/32`. Netcup's
    [community WireGuard guide](https://community.netcup.com/en/tutorials/how-to-setup-wireguard-ubuntu)
    covers the provider-specific setup and applies to Debian. Do not add a
    default route, DNS override, NAT, or forwarding: this tunnel carries only
    parser HTTP, Postgres, and Redis.
-2. On the app host, set `EVO_PRIVATE_BIND_ADDRESS=10.77.0.1` before deploying
-   this branch. `deploy/docker-compose.prod.yml` then publishes Postgres and
-   Redis only on WireGuard. The default is loopback, never the public interface.
+2. On the app host, set `EVO_PRIVATE_BIND_ADDRESS=10.77.0.1` and
+   `EVO_PRIVATE_POSTGRES_PORT=55432` before deploying this branch. The alternate
+   host port avoids the native PostgreSQL instance already using port 5432;
+   containers still use `db:5432`. `deploy/docker-compose.prod.yml` publishes
+   Evo Postgres and Redis only on WireGuard. The default bind address is
+   loopback, never the public interface.
 3. Copy `deploy/ansible/parser-vm/inventory.example.yml` to the ignored
    `inventory.yml`, encrypt it with Ansible Vault, and follow that directory's
    README. The first pass keeps password SSH enabled. Verify key login in a
