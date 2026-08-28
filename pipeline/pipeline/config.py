@@ -81,7 +81,7 @@ class Config:
         _env("PARSER_TIMEOUT", _env("MODAL_PARSE_TIMEOUT", "1800"))
     )
     # Up to eight ingest workers may queue a parse. The parser independently
-    # admits six Marker-only/selective digital jobs or two OCR-heavy jobs.
+    # admits four Marker-only/selective digital jobs or two OCR-heavy jobs.
     parse_fast_slots: int = int(
         _env("EVO_PARSE_SLOTS", _env("EVO_PARSE_FAST_SLOTS", "8"))
     )

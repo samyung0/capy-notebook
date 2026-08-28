@@ -41,7 +41,7 @@ ARTIFACT_SCHEMA = "evo-mineru-bundle-v1"
 PARSER_VERSION = "marker-2-vm-hybrid-v2"
 MAX_SOURCE_BYTES = int(os.environ.get("EVO_MAX_SOURCE_BYTES", str(100 << 20)))
 MARKER_WORKERS = max(1, int(os.environ.get("EVO_MARKER_WORKERS", "6")))
-DIGITAL_SLOTS = max(1, int(os.environ.get("EVO_DIGITAL_CONCURRENCY", "6")))
+DIGITAL_SLOTS = max(1, int(os.environ.get("EVO_DIGITAL_CONCURRENCY", "4")))
 OCR_SLOTS = max(1, int(os.environ.get("EVO_OCR_CONCURRENCY", "2")))
 HTTP_TIMEOUT = (
     max(1, int(os.environ.get("EVO_B2_CONNECT_TIMEOUT", "30"))),

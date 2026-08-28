@@ -603,7 +603,7 @@ the Go application process.
 4. Store the values from `deploy/parser-vm.env.example` in encrypted
    `parser_env`. The parser binds only to `PARSER_BIND_ADDRESS`; its bearer token
    remains defense in depth. The measured default is generous selective OCR.
-   Initial limits are eight queued HTTP requests, six digital Marker slots, and
+   Initial limits are eight queued HTTP requests, four digital Marker slots, and
    two OCR-heavy slots. All-page OCR remains an explicit benchmark/retry mode.
 5. Apply the app migration before starting `host-sampler`, because it writes
    `parse_host_samples`. Start `evo-parser.service`, wait for model warmup, and
