@@ -6,7 +6,7 @@
     app_wireguard_interface: wg0
     app_wireguard_listen_port: 51820
     app_wireguard_service_ports:
-      - "55432"
+      - "5432"
       - "6379"
 
   pre_tasks:
@@ -74,6 +74,51 @@
         to_port: "{{ app_wireguard_listen_port }}"
         comment: Evo parser private service link
 
+    - name: Stop the unused native PostgreSQL cluster
+      ansible.builtin.systemd_service:
+        name: postgresql@16-main
+        enabled: false
+        state: stopped
+      when: app_retire_native_postgresql | default(false)
+
+    - name: Prevent the old PostgreSQL cluster from starting automatically
+      ansible.builtin.copy:
+        dest: /etc/postgresql/16/main/start.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          manual
+        backup: true
+      when: app_retire_native_postgresql | default(false)
+      notify: Reload systemd
+
+    - name: Disable the unused native PostgreSQL service
+      ansible.builtin.systemd_service:
+        name: postgresql
+        enabled: false
+        state: stopped
+      when: app_retire_native_postgresql | default(false)
+
+    - name: Remove public PostgreSQL access
+      community.general.ufw:
+        rule: allow
+        port: "5432"
+        proto: tcp
+        delete: true
+      when: app_retire_native_postgresql | default(false)
+
+    - name: Remove the obsolete alternate PostgreSQL port
+      community.general.ufw:
+        rule: allow
+        direction: in
+        interface: "{{ app_wireguard_interface }}"
+        proto: tcp
+        from_ip: "{{ app_wireguard_peer_address | regex_replace('/.*$', '') }}"
+        to_ip: "{{ app_wireguard_address | regex_replace('/.*$', '') }}"
+        to_port: "55432"
+        delete: true
+
     - name: Allow parser access to private app services
       community.general.ufw:
         rule: allow
@@ -107,6 +152,10 @@
       when: app_wireguard_private_key_stat.stat.exists or not ansible_check_mode
 
   handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
     - name: Restart WireGuard
       ansible.builtin.systemd_service:
         name: "wg-quick@{{ app_wireguard_interface }}"

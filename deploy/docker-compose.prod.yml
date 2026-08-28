@@ -41,7 +41,7 @@ services:
     volumes:
       - evo_pgdata:/var/lib/postgresql/data
     ports:
-      - "${EVO_PRIVATE_BIND_ADDRESS:-127.0.0.1}:${EVO_PRIVATE_POSTGRES_PORT:-5432}:5432"
+      - "${EVO_PRIVATE_BIND_ADDRESS:-127.0.0.1}:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U evo -d evo"]
       interval: 5s

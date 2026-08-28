@@ -595,12 +595,11 @@ the Go application process.
    covers the provider-specific setup and applies to Debian. Do not add a
    default route, DNS override, NAT, or forwarding: this tunnel carries only
    parser HTTP, Postgres, and Redis.
-2. On the app host, set `EVO_PRIVATE_BIND_ADDRESS=10.77.0.1` and
-   `EVO_PRIVATE_POSTGRES_PORT=55432` before deploying this branch. The alternate
-   host port avoids the native PostgreSQL instance already using port 5432;
-   containers still use `db:5432`. `deploy/docker-compose.prod.yml` publishes
-   Evo Postgres and Redis only on WireGuard. The default bind address is
-   loopback, never the public interface.
+2. On the app host, set `EVO_PRIVATE_BIND_ADDRESS=10.77.0.1` before deploying
+   this branch. The app-host playbook stops the confirmed-unused native
+   PostgreSQL cluster but preserves its files under `/var/lib/postgresql`.
+   `deploy/docker-compose.prod.yml` publishes Evo Postgres and Redis only on
+   WireGuard. The default bind address is loopback, never the public interface.
 3. Copy `deploy/ansible/parser-vm/inventory.example.yml` to the ignored
    `inventory.yml`, encrypt it with Ansible Vault, and follow that directory's
    README. The first pass keeps password SSH enabled. Verify key login in a

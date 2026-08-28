@@ -9,9 +9,12 @@ The link uses `10.77.0.1/32` on the app host and `10.77.0.2/32` on the parser
 VM. `AllowedIPs` contains only the peer address. The playbook does not add a
 default route, DNS setting, forwarding, or NAT.
 
-The firewall admits the Netcup peer to the future Evo PostgreSQL host port
-`55432` and Redis port `6379` on `wg0`. PostgreSQL uses a non-default host port
-because an unrelated native PostgreSQL service already owns host port `5432`.
+The firewall admits the Netcup peer to the future Evo PostgreSQL port `5432`
+and Redis port `6379` on `wg0`. This host sets
+`app_retire_native_postgresql: true` because its old `private-gallery` and
+`scout` databases are confirmed leftovers. The playbook stops and disables
+that native PostgreSQL cluster and removes its public UFW rule. It preserves
+the old database files under `/var/lib/postgresql` for manual recovery.
 
 1. Copy `inventory.example.yml` to the ignored `inventory.yml`.
 2. Install the pinned collection with
@@ -22,6 +25,5 @@ because an unrelated native PostgreSQL service already owns host port `5432`.
 5. Verify `ping 10.77.0.2` from the app host and `ping 10.77.0.1` from the
    parser VM before binding any database or parser service to the link.
 
-Public PostgreSQL exposure is deliberately outside this playbook. Restricting
-port 5432 requires a separate change after confirming the existing
-`private-gallery` and `scout` clients no longer need public access.
+Keep `app_retire_native_postgresql` false on hosts where native PostgreSQL is
+still in use.

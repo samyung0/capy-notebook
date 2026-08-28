@@ -9,3 +9,5 @@ all:
       app_wireguard_peer_public_key: +HwtvH4qTmS+BHao9n/55LhpnrNGr0TAMaHAfilkTyo=
       app_wireguard_peer_endpoint: 159.195.61.195:51820
       app_wireguard_peer_public_ip: 159.195.61.195
+      # This host's native PostgreSQL databases are confirmed leftovers.
+      app_retire_native_postgresql: true
