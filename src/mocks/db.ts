@@ -144,26 +144,35 @@ function dateAt(dayOffset: number, hour: number, minute = 0): string {
 }
 
 export const user: User = {
-  chatModelKey: 'deepseek-flash',
+  chatModel: {
+    modelSlug: 'deepseek-v4-flash-vision-exp',
+    providerSlug: 'deepseek',
+  },
   classLabel: 'Grade 11 · Science',
-  editorModelKey: 'deepseek-flash',
+  editorModel: {
+    modelSlug: 'deepseek-v4-flash-vision-exp',
+    providerSlug: 'deepseek',
+  },
   email: 'kate@evonotes.app',
-  generateModelKey: 'deepseek-flash',
+  generateModel: {
+    modelSlug: 'deepseek-v4-flash-vision-exp',
+    providerSlug: 'deepseek',
+  },
   id: 'u_1',
   locale: 'en',
   name: 'Kate Malone',
   planTier: 'pro',
-  quizModelKey: 'deepseek-flash',
+  quizModel: {
+    modelSlug: 'deepseek-v4-flash-vision-exp',
+    providerSlug: 'deepseek',
+  },
   streak: 0,
   subscriptionStatus: 'active',
 };
 
 export const llmCredentials: Record<string, string> = {};
 
-export const userReasoning: Record<
-  string,
-  Record<string, { effort: string; mode: string }>
-> = {};
+export const userThinking: Record<string, Record<string, string>> = {};
 
 export const workspaces: Workspace[] = [
   {
@@ -1239,8 +1248,9 @@ export const chatMessages: WireMessage[] = [
     createdAt: days(1),
     id: 'm_seed2',
     modelDisplayName: 'DeepSeek Flash',
-    modelKey: 'deepseek-flash',
+    modelSlug: 'deepseek-v4-flash-vision-exp',
     modelVersion: 1,
+    providerSlug: 'deepseek',
     role: 'assistant',
     status: 'complete',
   },

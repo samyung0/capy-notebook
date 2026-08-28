@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
+import type { Health } from '@/api';
 import { useOpsApp } from '@/app-context';
 import {
   ErrorState,
+  FreshnessNote,
   MetricCard,
   PageHeader,
   PageLoading,
@@ -13,14 +15,93 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { formatCount, formatDateTime, percent } from '@/format';
+
+type TurnRow = Health['activeTurns'][number];
+
+function TurnTable({
+  description,
+  empty,
+  rows,
+  title,
+}: {
+  description: string;
+  empty: string;
+  rows: TurnRow[];
+  title: string;
+}) {
+  return (
+    <Card className="shadow-sm">
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {rows.length === 0 ? (
+          <p className="text-muted-foreground text-sm">{empty}</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Started</TableHead>
+                <TableHead>User / trace</TableHead>
+                <TableHead>Turn</TableHead>
+                <TableHead>Reservation</TableHead>
+                <TableHead>Latest call</TableHead>
+                <TableHead className="text-right">
+                  Applied / open / abandoned
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((row) => (
+                <TableRow key={row.messageId}>
+                  <TableCell className="whitespace-nowrap">
+                    {formatDateTime(row.startedAt)}
+                  </TableCell>
+                  <TableCell>
+                    <span className="block font-mono text-xs">
+                      {row.userId}
+                    </span>
+                    <span className="block max-w-56 truncate font-mono text-muted-foreground text-xs">
+                      {row.traceId || 'No trace'}
+                    </span>
+                  </TableCell>
+                  <TableCell>{row.status}</TableCell>
+                  <TableCell>
+                    {row.reservationStatus || 'Missing'}
+                    {row.surface ? ` · ${row.surface}` : ''}
+                  </TableCell>
+                  <TableCell>
+                    {row.latestCallStatus || 'No call'}
+                    {row.latestCallPurpose ? ` · ${row.latestCallPurpose}` : ''}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {row.appliedCalls} / {row.openCalls} / {row.abandonedCalls}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
 
 export function HealthPage() {
   const { api } = useOpsApp();
   const { data, error, isPending, refetch } = useQuery({
     queryFn: api.health,
     queryKey: ['health'],
-    refetchInterval: 30_000,
   });
 
   if (isPending) {
@@ -36,7 +117,12 @@ export function HealthPage() {
   return (
     <>
       <PageHeader
-        description="Billing integrity, background work, and delivery checks. Refreshes every 30 seconds."
+        actions={
+          <FreshnessNote>
+            Live database checks, refreshed every 30 seconds.
+          </FreshnessNote>
+        }
+        description={`Billing integrity, turn lifecycle, background work, and delivery checks. Data as of ${formatDateTime(data.dataAsOf)}.`}
         title="System health"
       />
 
@@ -51,10 +137,9 @@ export function HealthPage() {
           value={formatCount(data.expiredReservations)}
         />
         <MetricCard
-          detail={data.rollupStale ? 'Missing or stale' : 'Current'}
-          label="Rollup staleness"
-          tone={data.rollupStale ? 'danger' : 'success'}
-          value={data.rollupStale ? 'Stale' : 'Current'}
+          detail="Streaming with an open, unexpired reservation"
+          label="Active turns"
+          value={formatCount(data.activeTurns.length)}
         />
         <MetricCard
           detail="Running past the configured threshold"
@@ -69,10 +154,28 @@ export function HealthPage() {
           value={formatCount(data.emailFailures24h)}
         />
         <MetricCard
-          detail="Assistant turns without a usage event, last 24 hours"
-          label="Unbilled assistant turns"
-          tone={data.usageMissing24h > 0 ? 'danger' : 'success'}
-          value={formatCount(data.usageMissing24h)}
+          detail="Completed turns without an applied LLM call, last 24 hours"
+          label="Missing applied calls"
+          tone={data.turnsMissingApplied24h > 0 ? 'danger' : 'success'}
+          value={formatCount(data.turnsMissingApplied24h)}
+        />
+        <MetricCard
+          detail="Applied calls without their atomic ledger row, last 24 hours"
+          label="Settlement invariant"
+          tone={data.appliedWithoutUsage24h > 0 ? 'danger' : 'success'}
+          value={formatCount(data.appliedWithoutUsage24h)}
+        />
+        <MetricCard
+          detail="LLM or embedding usage without its provider-call row, last 24 hours"
+          label="Unlinked provider usage"
+          tone={data.providerUsageWithoutCall24h > 0 ? 'danger' : 'success'}
+          value={formatCount(data.providerUsageWithoutCall24h)}
+        />
+        <MetricCard
+          detail="Provider calls still open after two minutes"
+          label="Stale open calls"
+          tone={data.staleOpenCalls > 0 ? 'warning' : 'success'}
+          value={formatCount(data.staleOpenCalls)}
         />
         <MetricCard
           detail={`${formatCount(data.reservationRatio24h.released)} released of ${formatCount(reservationTotal)}`}
@@ -84,22 +187,104 @@ export function HealthPage() {
           }
           value={`${percent(data.reservationRatio24h.settled, reservationTotal)} / ${percent(data.reservationRatio24h.released, reservationTotal)}`}
         />
+        <MetricCard
+          detail="Streaming turns outside a healthy active lifecycle"
+          label="Stale turns"
+          tone={data.staleTurns.length > 0 ? 'danger' : 'success'}
+          value={formatCount(data.staleTurns.length)}
+        />
       </section>
+
+      <TurnTable
+        description="Streaming turns with an open, unexpired reservation. Open provider calls are shown separately when they become stale."
+        empty="No active turns."
+        rows={data.activeTurns}
+        title="Active turns"
+      />
+
+      <TurnTable
+        description="Streaming messages with a stale age, missing reservation, expired reservation, or closed reservation. Latest 50."
+        empty="No stale or incomplete turns."
+        rows={data.staleTurns}
+        title="Stale and incomplete turns"
+      />
+
+      <TurnTable
+        description="Assistant turns that ended with error or aborted status in the last 24 hours. Latest 50."
+        empty="No failed or aborted turns."
+        rows={data.failedTurns}
+        title="Failed and aborted turns"
+      />
 
       <Card className="shadow-sm">
         <CardHeader>
-          <CardTitle>Usage rollup</CardTitle>
+          <CardTitle>Abandoned provider attempts</CardTitle>
           <CardDescription>
-            The daily rollup should complete once per UTC day.
+            Failed provider attempts from the last 24 hours. A completed turn
+            means a later attempt recovered.
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-          <span className="text-muted-foreground text-sm">
-            Last completed run
-          </span>
-          <span className="font-medium tabular-nums">
-            {formatDateTime(data.rollupLastRunAt)}
-          </span>
+        <CardContent>
+          {data.abandonedCalls.length === 0 ? (
+            <p className="text-muted-foreground text-sm">No abandoned calls.</p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Opened</TableHead>
+                  <TableHead>User / trace</TableHead>
+                  <TableHead>Purpose</TableHead>
+                  <TableHead>Turn outcome</TableHead>
+                  <TableHead>Reservation</TableHead>
+                  <TableHead className="text-right">Context estimate</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {data.abandonedCalls.map((row) => (
+                  <TableRow key={row.callId}>
+                    <TableCell className="whitespace-nowrap">
+                      {formatDateTime(row.openedAt)}
+                    </TableCell>
+                    <TableCell>
+                      <span className="block font-mono text-xs">
+                        {row.userId}
+                      </span>
+                      <span className="block max-w-56 truncate font-mono text-muted-foreground text-xs">
+                        {row.traceId || 'No trace'}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      {row.purpose}
+                      {row.thinking ? ` · ${row.thinking}` : ''}
+                    </TableCell>
+                    <TableCell>{row.turnStatus || 'No turn'}</TableCell>
+                    <TableCell>
+                      {row.reservationStatus} · {row.surface}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {row.contextTotalTokens > 0 ? (
+                        <span
+                          title={`${row.contextCountingMethod} v${row.contextCountingVersion}; system / tools / conversation`}
+                        >
+                          <span className="block">
+                            {formatCount(row.contextSystemTokens)} /{' '}
+                            {formatCount(row.contextToolTokens)} /{' '}
+                            {formatCount(row.contextConversationTokens)}
+                          </span>
+                          <span className="block text-muted-foreground text-xs">
+                            {formatCount(row.contextTotalTokens)} of{' '}
+                            {formatCount(row.contextWindowTokens)} tokens
+                          </span>
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </>

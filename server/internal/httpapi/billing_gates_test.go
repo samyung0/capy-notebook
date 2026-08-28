@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/evonotes/server/internal/httpapi"
 	"github.com/evonotes/server/internal/models"
 	"github.com/evonotes/server/internal/store"
+	"github.com/evonotes/server/internal/testdb"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -29,10 +29,7 @@ type billingFixture struct {
 
 func openBilling(t *testing.T) billingFixture {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
+	dsn := testdb.URL(t)
 	ctx := context.Background()
 	st, err := store.New(ctx, dsn)
 	if err != nil {
@@ -83,19 +80,29 @@ func openBilling(t *testing.T) billingFixture {
 	}
 }
 
-func exhaustCredits(t *testing.T, pool *pgxpool.Pool, userID string) {
+func setCreditCounters(t *testing.T, pool *pgxpool.Pool, userID string, used, reserved int64) {
 	t.Helper()
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO user_credits (user_id, used_micros, reserved_micros, period_start)
-		VALUES ($1, $2, 0, date_trunc('month', timezone('utc', now()))::date)
+		VALUES ($1, $2, $3, date_trunc('month', timezone('utc', now()))::date)
 		ON CONFLICT (user_id) DO UPDATE
 		  SET used_micros = EXCLUDED.used_micros,
-		      reserved_micros = 0,
+		      reserved_micros = EXCLUDED.reserved_micros,
 		      period_start = EXCLUDED.period_start`,
-		userID, store.CreditLimitMicros(store.PlanFree))
+		userID, used, reserved)
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+func exhaustCredits(t *testing.T, pool *pgxpool.Pool, userID string) {
+	t.Helper()
+	setCreditCounters(t, pool, userID, store.CreditLimitMicros(store.PlanFree), 0)
+}
+
+func reserveCreditsToLimit(t *testing.T, pool *pgxpool.Pool, userID string) {
+	t.Helper()
+	setCreditCounters(t, pool, userID, 0, store.CreditLimitMicros(store.PlanFree))
 }
 
 func errorCode(t *testing.T, rec *httptest.ResponseRecorder) string {
@@ -115,9 +122,8 @@ func errorCode(t *testing.T, rec *httptest.ResponseRecorder) string {
 	return rec.Body.String()
 }
 
-func TestCreditsExhaustedOnChatGenerateEditor(t *testing.T) {
-	fx := openBilling(t)
-	exhaustCredits(t, fx.pool, fx.actorID)
+func assertInteractiveCreditsForbidden(t *testing.T, fx billingFixture) {
+	t.Helper()
 	ws := fx.workspaceID
 
 	chat := doReq(t, fx.handler, http.MethodPost, "/api/workspaces/"+ws+"/chat/stream", fx.actorID,
@@ -132,12 +138,6 @@ func TestCreditsExhaustedOnChatGenerateEditor(t *testing.T) {
 		t.Fatalf("generate: %d %s", gen.Code, gen.Body.String())
 	}
 
-	complete := doReq(t, fx.handler, http.MethodPost, "/api/workspaces/"+ws+"/complete/stream", fx.actorID,
-		map[string]any{"mode": "command", "prompt": "rewrite"})
-	if complete.Code != http.StatusForbidden || errorCode(t, complete) != "llm_credits_exhausted" {
-		t.Fatalf("complete: %d %s", complete.Code, complete.Body.String())
-	}
-
 	copilot := doReq(t, fx.handler, http.MethodPost, "/api/workspaces/"+ws+"/ai/copilot", fx.actorID,
 		map[string]any{"prompt": "continue this sentence."})
 	if copilot.Code != http.StatusForbidden || errorCode(t, copilot) != "llm_credits_exhausted" {
@@ -149,11 +149,28 @@ func TestCreditsExhaustedOnChatGenerateEditor(t *testing.T) {
 			"messages": []any{map[string]any{
 				"role": "user", "parts": []any{map[string]any{"type": "text", "text": "summarize"}},
 			}},
-			"ctx": map[string]any{"children": []any{}},
+			"ctx": map[string]any{
+				"children": []any{map[string]any{
+					"type": "p", "children": []any{map[string]any{"text": "Draft"}},
+				}},
+				"toolName": "generate",
+			},
 		})
 	if command.Code != http.StatusForbidden || errorCode(t, command) != "llm_credits_exhausted" {
 		t.Fatalf("command: %d %s", command.Code, command.Body.String())
 	}
+}
+
+func TestCreditsExhaustedOnChatGenerateEditor(t *testing.T) {
+	fx := openBilling(t)
+	exhaustCredits(t, fx.pool, fx.actorID)
+	assertInteractiveCreditsForbidden(t, fx)
+}
+
+func TestCreditsExhaustedWhenReservedAtLimit(t *testing.T) {
+	fx := openBilling(t)
+	reserveCreditsToLimit(t, fx.pool, fx.actorID)
+	assertInteractiveCreditsForbidden(t, fx)
 }
 
 func TestChatStreamIgnoresClientModelAndStampsTheAssistantMessage(t *testing.T) {
@@ -173,20 +190,21 @@ func TestChatStreamIgnoresClientModelAndStampsTheAssistantMessage(t *testing.T) 
 	}
 
 	ctx := context.Background()
-	var key string
+	var providerSlug, modelSlug string
 	var version int
 	err := fx.pool.QueryRow(ctx, `
-		SELECT metadata->>'modelKey', (metadata->>'modelVersion')::int
+		SELECT metadata->>'providerSlug', metadata->>'modelSlug',
+		       (metadata->>'modelVersion')::int
 		  FROM messages
 		 WHERE role = 'assistant'
-		 ORDER BY created_at DESC LIMIT 1`).Scan(&key, &version)
+		 ORDER BY created_at DESC LIMIT 1`).Scan(&providerSlug, &modelSlug, &version)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if key == "" || version <= 0 {
-		t.Fatalf("assistant unpinned: %s v%d", key, version)
+	if providerSlug == "" || modelSlug == "" || version <= 0 {
+		t.Fatalf("assistant unpinned: %s/%s v%d", providerSlug, modelSlug, version)
 	}
-	if key == "deepseek-pro" {
+	if modelSlug == "deepseek-pro" {
 		t.Fatal("client-supplied model overrode the pin")
 	}
 }

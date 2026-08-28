@@ -5,13 +5,13 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ModelOption } from './modelOption.ts';
+import type { Ref } from './ref.ts';
 
 export interface ModelsResponse {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  defaultKey: string;
+  defaultModel: Ref;
   models: ModelOption[];
-  selectedKey: string;
-  selectedReasoningEffort: string;
-  selectedReasoningMode: string;
+  selectedModel: Ref;
+  selectedThinking: string;
 }

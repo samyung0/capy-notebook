@@ -339,11 +339,27 @@ _usage: contextvars.ContextVar[Usage | None] = contextvars.ContextVar(
 )
 
 
-# GPU time is tracked separately from tokens because it is reported by Modal in
-# the parse response rather than by a model provider, and it is by far the most
-# expensive thing a single upload triggers.
-_gpu_millis: contextvars.ContextVar[int] = contextvars.ContextVar(
-    "gpu_millis", default=0
+@dataclass
+class ParseUsage:
+    """Measured work for one Modal parse attempt.
+
+    Page counts determine the charge. CPU and elapsed time are operational
+    telemetry, not billing inputs, because several jobs can share a container.
+    """
+
+    pages: int = 0
+    ocr_pages: int = 0
+    cpu_milliseconds: int = 0
+    elapsed_milliseconds: int = 0
+
+    def is_empty(self) -> bool:
+        return not (
+            self.pages > 0 or self.cpu_milliseconds > 0 or self.elapsed_milliseconds > 0
+        )
+
+
+_parse_usage: contextvars.ContextVar[ParseUsage | None] = contextvars.ContextVar(
+    "parse_usage", default=None
 )
 
 
@@ -351,19 +367,35 @@ def start_usage() -> Usage:
     """Begin accumulating for the current request and return the accumulator."""
     usage = Usage()
     _usage.set(usage)
-    _gpu_millis.set(0)
+    _parse_usage.set(ParseUsage())
     return usage
 
 
-def record_gpu_millis(millis: int) -> None:
-    if millis > 0:
-        _gpu_millis.set(_gpu_millis.get() + int(millis))
+def record_parse_usage(
+    *,
+    pages: int,
+    ocr_pages: int,
+    cpu_milliseconds: int,
+    elapsed_milliseconds: int,
+) -> None:
+    pages = max(0, int(pages))
+    ocr_pages = min(pages, max(0, int(ocr_pages)))
+    current = _parse_usage.get() or ParseUsage()
+    _parse_usage.set(
+        ParseUsage(
+            pages=current.pages + pages,
+            ocr_pages=current.ocr_pages + ocr_pages,
+            cpu_milliseconds=current.cpu_milliseconds + max(0, int(cpu_milliseconds)),
+            elapsed_milliseconds=current.elapsed_milliseconds
+            + max(0, int(elapsed_milliseconds)),
+        )
+    )
 
 
-def take_gpu_millis() -> int:
-    """Read and reset accumulated GPU time, so a settle cannot double-charge."""
-    value = _gpu_millis.get()
-    _gpu_millis.set(0)
+def take_parse_usage() -> ParseUsage:
+    """Read and reset parse work, so one attempt cannot be charged twice."""
+    value = _parse_usage.get() or ParseUsage()
+    _parse_usage.set(ParseUsage())
     return value
 
 

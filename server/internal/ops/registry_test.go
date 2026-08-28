@@ -36,7 +36,7 @@ func openRegistryTestTx(t *testing.T) (*RegistryStore, pgx.Tx) {
 
 func gridRequest(snapshot RegistrySnapshot) gridSaveRequest {
 	type cellKey struct {
-		key     string
+		model   models.Ref
 		surface string
 	}
 	live := map[cellKey]CatalogConfig{}
@@ -45,7 +45,7 @@ func gridRequest(snapshot RegistrySnapshot) gridSaveRequest {
 			continue
 		}
 		for _, surface := range config.Surfaces {
-			key := cellKey{key: config.ModelKey, surface: surface}
+			key := cellKey{model: config.Ref(), surface: surface}
 			current, ok := live[key]
 			if !ok || config.Version > current.Version {
 				live[key] = config
@@ -55,21 +55,21 @@ func gridRequest(snapshot RegistrySnapshot) gridSaveRequest {
 	request := gridSaveRequest{ExpectedVersion: snapshot.Version}
 	for key, config := range live {
 		request.Cells = append(request.Cells, GridCell{
-			RowKey:  key.key,
+			Row:     key.model,
 			Surface: key.surface,
 			Target: CellTarget{
-				Kind:     "catalog",
-				ModelKey: config.ModelKey,
-				Version:  config.Version,
+				Kind:    "catalog",
+				Model:   config.Ref(),
+				Version: config.Version,
 			},
 			IsDefault: contains(config.IsDefaultFor, key.surface),
 		})
 	}
 	sort.Slice(request.Cells, func(i, j int) bool {
-		if request.Cells[i].RowKey == request.Cells[j].RowKey {
+		if request.Cells[i].Row == request.Cells[j].Row {
 			return request.Cells[i].Surface < request.Cells[j].Surface
 		}
-		return request.Cells[i].RowKey < request.Cells[j].RowKey
+		return request.Cells[i].Row.String() < request.Cells[j].Row.String()
 	})
 	return request
 }
@@ -77,13 +77,15 @@ func gridRequest(snapshot RegistrySnapshot) gridSaveRequest {
 func draftFromConfig(id string, config CatalogConfig) gridDraft {
 	return gridDraft{
 		ID:                        id,
-		ModelKey:                  config.ModelKey,
-		DisplayName:               config.DisplayName,
+		ProviderName:              config.ProviderName,
+		ModelName:                 config.ModelName,
 		ProviderSlug:              config.ProviderSlug,
-		BaseURL:                   config.BaseURL,
-		ProviderModelID:           config.ProviderModelID,
-		AuthMode:                  config.AuthMode,
+		ModelSlug:                 config.ModelSlug,
+		PlatformEnabled:           config.PlatformEnabled,
+		ByokEnabled:               config.ByokEnabled,
 		ContextWindowTokens:       config.ContextWindowTokens,
+		ThinkingLevels:            append([]string(nil), config.ThinkingLevels...),
+		DefaultThinking:           config.DefaultThinking,
 		Params:                    append(json.RawMessage(nil), config.Params...),
 		MicrosPerInputToken:       config.MicrosPerInputToken,
 		MicrosPerCachedInputToken: config.MicrosPerCachedInputToken,
@@ -91,16 +93,16 @@ func draftFromConfig(id string, config CatalogConfig) gridDraft {
 	}
 }
 
-func configByKey(t *testing.T, snapshot RegistrySnapshot, key string) CatalogConfig {
+func configByRef(t *testing.T, snapshot RegistrySnapshot, ref models.Ref) CatalogConfig {
 	t.Helper()
 	var found CatalogConfig
 	for _, config := range snapshot.Configs {
-		if config.ModelKey == key && config.Enabled && config.Version > found.Version {
+		if config.Ref() == ref && config.Enabled && config.Version > found.Version {
 			found = config
 		}
 	}
-	if found.ModelKey == "" {
-		t.Fatalf("enabled config %q not found", key)
+	if found.Ref().Zero() {
+		t.Fatalf("enabled config %q not found", ref)
 	}
 	return found
 }
@@ -113,12 +115,13 @@ func TestRegistrySaveInsertsVersionAndDisablesOldWithoutChangingPreferences(t *t
 		t.Fatal(err)
 	}
 	request := gridRequest(snapshot)
-	current := configByKey(t, snapshot, "deepseek-flash")
+	request.ActorID = "ops-user"
+	current := configByRef(t, snapshot, models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"})
 	draft := draftFromConfig("edited-flash", current)
-	draft.BaseURL = "https://ops-test.invalid/v1"
+	draft.ModelName = "Flash edited"
 	request.Drafts = []gridDraft{draft}
 	for index := range request.Cells {
-		if request.Cells[index].Target.ModelKey == current.ModelKey &&
+		if request.Cells[index].Target.Model == current.Ref() &&
 			request.Cells[index].Target.Version == current.Version {
 			request.Cells[index].Target = CellTarget{
 				Kind:    "draft",
@@ -126,13 +129,16 @@ func TestRegistrySaveInsertsVersionAndDisablesOldWithoutChangingPreferences(t *t
 			}
 		}
 	}
-	var beforePreferences [4]string
+	var beforePreferences [8]string
 	if err := tx.QueryRow(ctx,
-		`SELECT chat_model_key, generate_model_key, editor_model_key, quiz_model_key
+		`SELECT chat_model_provider_slug, chat_model_slug,
+			generate_model_provider_slug, generate_model_slug,
+			editor_model_provider_slug, editor_model_slug,
+			quiz_model_provider_slug, quiz_model_slug
 		 FROM users WHERE id='u_1'`,
 	).Scan(
-		&beforePreferences[0], &beforePreferences[1],
-		&beforePreferences[2], &beforePreferences[3],
+		&beforePreferences[0], &beforePreferences[1], &beforePreferences[2], &beforePreferences[3],
+		&beforePreferences[4], &beforePreferences[5], &beforePreferences[6], &beforePreferences[7],
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -147,8 +153,8 @@ func TestRegistrySaveInsertsVersionAndDisablesOldWithoutChangingPreferences(t *t
 	var oldSurfaces []string
 	if err := tx.QueryRow(ctx, `
 		SELECT enabled, surfaces FROM model_configs
-		WHERE model_key=$1 AND version=$2`,
-		current.ModelKey, current.Version,
+		WHERE provider_slug=$1 AND model_slug=$2 AND version=$3`,
+		current.ProviderSlug, current.ModelSlug, current.Version,
 	).Scan(&oldEnabled, &oldSurfaces); err != nil {
 		t.Fatal(err)
 	}
@@ -161,12 +167,30 @@ func TestRegistrySaveInsertsVersionAndDisablesOldWithoutChangingPreferences(t *t
 	var newVersion int
 	if err := tx.QueryRow(ctx, `
 		SELECT max(version) FROM model_configs
-		WHERE model_key=$1 AND enabled`, current.ModelKey,
+		WHERE provider_slug=$1 AND model_slug=$2 AND enabled`, current.ProviderSlug, current.ModelSlug,
 	).Scan(&newVersion); err != nil {
 		t.Fatal(err)
 	}
 	if newVersion <= current.Version {
 		t.Fatalf("new version was not inserted: %d", newVersion)
+	}
+	var createdBy, updatedBy, oldUpdatedBy string
+	if err := tx.QueryRow(ctx, `
+		SELECT created_by, updated_by FROM model_configs
+		WHERE provider_slug=$1 AND model_slug=$2 AND version=$3`,
+		current.ProviderSlug, current.ModelSlug, newVersion,
+	).Scan(&createdBy, &updatedBy); err != nil {
+		t.Fatal(err)
+	}
+	if err := tx.QueryRow(ctx, `
+		SELECT updated_by FROM model_configs
+		WHERE provider_slug=$1 AND model_slug=$2 AND version=$3`,
+		current.ProviderSlug, current.ModelSlug, current.Version,
+	).Scan(&oldUpdatedBy); err != nil {
+		t.Fatal(err)
+	}
+	if createdBy != "ops-user" || updatedBy != "ops-user" || oldUpdatedBy != "ops-user" {
+		t.Fatalf("audit actors = new %q/%q old %q", createdBy, updatedBy, oldUpdatedBy)
 	}
 	for _, surface := range snapshot.Surfaces {
 		var defaults int
@@ -180,13 +204,16 @@ func TestRegistrySaveInsertsVersionAndDisablesOldWithoutChangingPreferences(t *t
 			t.Fatalf("surface %s has %d defaults after Save", surface, defaults)
 		}
 	}
-	var afterPreferences [4]string
+	var afterPreferences [8]string
 	if err := tx.QueryRow(ctx,
-		`SELECT chat_model_key, generate_model_key, editor_model_key, quiz_model_key
+		`SELECT chat_model_provider_slug, chat_model_slug,
+			generate_model_provider_slug, generate_model_slug,
+			editor_model_provider_slug, editor_model_slug,
+			quiz_model_provider_slug, quiz_model_slug
 		 FROM users WHERE id='u_1'`,
 	).Scan(
-		&afterPreferences[0], &afterPreferences[1],
-		&afterPreferences[2], &afterPreferences[3],
+		&afterPreferences[0], &afterPreferences[1], &afterPreferences[2], &afterPreferences[3],
+		&afterPreferences[4], &afterPreferences[5], &afterPreferences[6], &afterPreferences[7],
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +225,51 @@ func TestRegistrySaveInsertsVersionAndDisablesOldWithoutChangingPreferences(t *t
 	}
 }
 
-func TestRegistrySaveRequiresFallbackThenRemapsAndNotifies(t *testing.T) {
+func TestRegistrySavePreservesAuditFieldsOnUnchangedRows(t *testing.T) {
+	registry, tx := openRegistryTestTx(t)
+	ctx := context.Background()
+	snapshot, err := snapshotFrom(ctx, tx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unchanged := configByRef(t, snapshot, models.Ref{
+		ProviderSlug: "deepseek",
+		ModelSlug:    "deepseek-v4-flash-vision-exp",
+	})
+	var beforeUpdatedAt time.Time
+	var beforeUpdatedBy string
+	if err := tx.QueryRow(ctx, `
+		SELECT updated_at, updated_by FROM model_configs
+		WHERE provider_slug=$1 AND model_slug=$2 AND version=$3`,
+		unchanged.ProviderSlug, unchanged.ModelSlug, unchanged.Version,
+	).Scan(&beforeUpdatedAt, &beforeUpdatedBy); err != nil {
+		t.Fatal(err)
+	}
+
+	request := gridRequest(snapshot)
+	request.ActorID = "unrelated-operator"
+	if _, err := registry.saveTx(ctx, tx, request); err != nil {
+		t.Fatal(err)
+	}
+
+	var afterUpdatedAt time.Time
+	var afterUpdatedBy string
+	if err := tx.QueryRow(ctx, `
+		SELECT updated_at, updated_by FROM model_configs
+		WHERE provider_slug=$1 AND model_slug=$2 AND version=$3`,
+		unchanged.ProviderSlug, unchanged.ModelSlug, unchanged.Version,
+	).Scan(&afterUpdatedAt, &afterUpdatedBy); err != nil {
+		t.Fatal(err)
+	}
+	if !afterUpdatedAt.Equal(beforeUpdatedAt) || afterUpdatedBy != beforeUpdatedBy {
+		t.Fatalf(
+			"unchanged audit fields = %s/%q, want %s/%q",
+			afterUpdatedAt, afterUpdatedBy, beforeUpdatedAt, beforeUpdatedBy,
+		)
+	}
+}
+
+func TestRegistrySaveRemapsRemovedPrefToDefault(t *testing.T) {
 	registry, tx := openRegistryTestTx(t)
 	ctx := context.Background()
 	snapshot, err := snapshotFrom(ctx, tx)
@@ -206,27 +277,20 @@ func TestRegistrySaveRequiresFallbackThenRemapsAndNotifies(t *testing.T) {
 		t.Fatal(err)
 	}
 	request := gridRequest(snapshot)
+	proRef := models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-pro"}
 	filtered := request.Cells[:0]
 	for _, cell := range request.Cells {
-		if cell.RowKey == "deepseek-pro" && cell.Surface == "chat" {
+		if cell.Row == proRef && cell.Surface == "chat" {
 			continue
 		}
 		filtered = append(filtered, cell)
 	}
 	request.Cells = filtered
-	if _, _, _, err := compileGrid(request, snapshot); !IsValidation(err) {
-		t.Fatalf("expected missing fallback validation, got %v", err)
-	}
-	request.Deprecations = []DeprecationFallback{{
-		ModelKey:    "deepseek-pro",
-		Surface:     "chat",
-		FallbackKey: "deepseek-flash",
-	}}
 	userID := "ops_registry_" + time.Now().UTC().Format("150405000000")
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO users (id, name, email, chat_model_key)
-		VALUES ($1, 'Ops Registry Test', $2, 'deepseek-pro')`,
-		userID, userID+"@example.test",
+		INSERT INTO users (id, name, email, chat_model_provider_slug, chat_model_slug)
+		VALUES ($1, 'Ops Registry Test', $2, $3, $4)`,
+		userID, userID+"@example.test", proRef.ProviderSlug, proRef.ModelSlug,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -234,48 +298,26 @@ func TestRegistrySaveRequiresFallbackThenRemapsAndNotifies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.RemappedUsers != 1 || result.Notifications != 1 {
-		t.Fatalf("unexpected deprecation result: %+v", result)
+	if result.RemappedUsers != 1 {
+		t.Fatalf("unexpected remap result: %+v", result)
 	}
-	var preference string
+	var preference models.Ref
 	if err := tx.QueryRow(ctx,
-		`SELECT chat_model_key FROM users WHERE id=$1`, userID,
-	).Scan(&preference); err != nil {
+		`SELECT chat_model_provider_slug, chat_model_slug FROM users WHERE id=$1`, userID,
+	).Scan(&preference.ProviderSlug, &preference.ModelSlug); err != nil {
 		t.Fatal(err)
 	}
-	if preference != "deepseek-flash" {
+	if preference != (models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}) {
 		t.Fatalf("preference was not remapped: %q", preference)
 	}
-	var template, idempotencyKey string
-	var payload json.RawMessage
-	if err := tx.QueryRow(ctx, `
-		SELECT template, idempotency_key, payload
-		FROM email_outbox WHERE user_id=$1`,
-		userID,
-	).Scan(&template, &idempotencyKey, &payload); err != nil {
+	var emails int
+	if err := tx.QueryRow(ctx,
+		`SELECT count(*) FROM email_outbox WHERE user_id=$1`, userID,
+	).Scan(&emails); err != nil {
 		t.Fatal(err)
 	}
-	if template != "model-deprecated" {
-		t.Fatalf("wrong email template: %q", template)
-	}
-	expectedKey := "model-deprecated:deepseek-pro:deepseek-flash:" + userID
-	if idempotencyKey != expectedKey {
-		t.Fatalf("idempotency key = %q, want %q", idempotencyKey, expectedKey)
-	}
-	var data map[string]string
-	if err := json.Unmarshal(payload, &data); err != nil {
-		t.Fatal(err)
-	}
-	for key, expected := range map[string]string{
-		"code":     "model_deprecated",
-		"fromKey":  "deepseek-pro",
-		"fromName": "DeepSeek Pro",
-		"toKey":    "deepseek-flash",
-		"toName":   "DeepSeek Flash",
-	} {
-		if data[key] != expected {
-			t.Fatalf("notification data %s = %q, want %q", key, data[key], expected)
-		}
+	if emails != 0 {
+		t.Fatalf("remap must not send mail, got %d", emails)
 	}
 }
 
@@ -283,29 +325,33 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 	registry, tx := openRegistryTestTx(t)
 	ctx := context.Background()
 	suffix := time.Now().UTC().Format("150405000000")
-	modelKey := "retired-" + suffix
+	retiredRef := models.Ref{ProviderSlug: "deepseek", ModelSlug: "retired-" + suffix}
 	userID := "ops_all_prefs_" + suffix
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO model_configs (
-			model_key, version, display_name, provider_slug, base_url,
-			provider_model_id, auth_mode, context_window_tokens, params,
+			version, provider_name, model_name, provider_slug, model_slug,
+			platform_enabled, byok_enabled, context_window_tokens,
+			thinking_levels, default_thinking, params,
 			surfaces, micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for
 		) VALUES (
-			$1, 1, 'Retired Model', 'deepseek', 'https://example.test',
-			'retired-model', 'platform', 100000,
-			'{"reasoning":{"canDisable":true,"efforts":["low"],"defaultMode":"off","defaultEffort":"low"}}',
+			1, 'Retired', 'Model', $1, $2,
+			true, false, 100000,
+			ARRAY['instant']::text[], 'instant', '{}'::jsonb,
 			ARRAY['chat','generate','editor','quiz'], 1, 1, 1, true, '{}'
-		)`, modelKey,
+		)`, retiredRef.ProviderSlug, retiredRef.ModelSlug,
 	); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO users (
-			id, name, email, chat_model_key, generate_model_key,
-			editor_model_key, quiz_model_key
-		) VALUES ($2, 'All Prefs', $3, $1, $1, $1, $1)`,
-		modelKey, userID, userID+"@example.test",
+			id, name, email,
+			chat_model_provider_slug, chat_model_slug,
+			generate_model_provider_slug, generate_model_slug,
+			editor_model_provider_slug, editor_model_slug,
+			quiz_model_provider_slug, quiz_model_slug
+		) VALUES ($1, 'All Prefs', $2, $3, $4, $3, $4, $3, $4, $3, $4)`,
+		userID, userID+"@example.test", retiredRef.ProviderSlug, retiredRef.ModelSlug,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -316,11 +362,7 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 	request := gridRequest(snapshot)
 	filtered := request.Cells[:0]
 	for _, cell := range request.Cells {
-		if cell.RowKey == modelKey {
-			request.Deprecations = append(request.Deprecations, DeprecationFallback{
-				ModelKey: modelKey, Surface: cell.Surface,
-				FallbackKey: "deepseek-flash",
-			})
+		if cell.Row == retiredRef {
 			continue
 		}
 		filtered = append(filtered, cell)
@@ -330,27 +372,32 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.RemappedUsers != 4 || result.Notifications != 1 ||
-		result.DisabledRows < 1 {
-		t.Fatalf("unexpected all-surface deprecation result: %+v", result)
+	if result.RemappedUsers != 4 || result.DisabledRows < 1 {
+		t.Fatalf("unexpected all-surface remap result: %+v", result)
 	}
-	var preferences [4]string
+	var preferences [4]models.Ref
 	if err := tx.QueryRow(ctx, `
-		SELECT chat_model_key, generate_model_key, editor_model_key, quiz_model_key
+		SELECT chat_model_provider_slug, chat_model_slug,
+			generate_model_provider_slug, generate_model_slug,
+			editor_model_provider_slug, editor_model_slug,
+			quiz_model_provider_slug, quiz_model_slug
 		FROM users WHERE id=$1`, userID,
 	).Scan(
-		&preferences[0], &preferences[1], &preferences[2], &preferences[3],
+		&preferences[0].ProviderSlug, &preferences[0].ModelSlug,
+		&preferences[1].ProviderSlug, &preferences[1].ModelSlug,
+		&preferences[2].ProviderSlug, &preferences[2].ModelSlug,
+		&preferences[3].ProviderSlug, &preferences[3].ModelSlug,
 	); err != nil {
 		t.Fatal(err)
 	}
 	for index, preference := range preferences {
-		if preference != "deepseek-flash" {
-			t.Fatalf("preference %d = %q, want deepseek-flash", index, preference)
+		if preference != (models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}) {
+			t.Fatalf("preference %d = %q, want flash", index, preference)
 		}
 	}
 	var enabled bool
 	if err := tx.QueryRow(ctx,
-		`SELECT enabled FROM model_configs WHERE model_key=$1`, modelKey,
+		`SELECT enabled FROM model_configs WHERE provider_slug=$1 AND model_slug=$2`, retiredRef.ProviderSlug, retiredRef.ModelSlug,
 	).Scan(&enabled); err != nil {
 		t.Fatal(err)
 	}
@@ -358,21 +405,13 @@ func TestRegistrySaveRemapsEveryUserPreferenceAndDisablesRetiredRows(t *testing.
 		t.Fatal("retired model row remained enabled")
 	}
 	var emailCount int
-	var idempotencyKey string
 	if err := tx.QueryRow(ctx, `
-		SELECT count(*), min(idempotency_key)
-		FROM email_outbox WHERE user_id=$1`, userID,
-	).Scan(&emailCount, &idempotencyKey); err != nil {
+		SELECT count(*) FROM email_outbox WHERE user_id=$1`, userID,
+	).Scan(&emailCount); err != nil {
 		t.Fatal(err)
 	}
-	if emailCount != 1 {
-		t.Fatalf("deprecation email count = %d, want idempotent 1", emailCount)
-	}
-	expectedKey := fmt.Sprintf(
-		"model-deprecated:%s:deepseek-flash:%s", modelKey, userID,
-	)
-	if idempotencyKey != expectedKey {
-		t.Fatalf("idempotency key = %q, want %q", idempotencyKey, expectedKey)
+	if emailCount != 0 {
+		t.Fatalf("remap must not send mail, got %d", emailCount)
 	}
 }
 
@@ -402,17 +441,14 @@ func TestRegistrySaveRejectsStaleVersionWithCurrentSnapshot(t *testing.T) {
 func TestRegistryCompileRefusesMissingDefaultAliasAndEmbeddingRewrite(t *testing.T) {
 	snapshot := RegistrySnapshot{
 		Version:  1,
-		Surfaces: append([]string(nil), Surfaces...),
+		Surfaces: models.AllSurfaces(),
 		Configs: []CatalogConfig{{
-			ModelKey:     "embed-model",
-			Version:      1,
-			Enabled:      true,
-			Surfaces:     []string{"embedding"},
-			IsDefaultFor: []string{"embedding"},
+			ProviderSlug: "embedtest", ModelSlug: "embed-model",
+			Version: 1, Enabled: true, Surfaces: []string{"embedding"}, IsDefaultFor: []string{"embedding"},
 		}},
 	}
 	request := gridRequest(snapshot)
-	request.Cells[0].RowKey = "alias-key"
+	request.Cells[0].Row = models.Ref{ProviderSlug: "embedtest", ModelSlug: "alias"}
 	if _, _, _, err := compileGrid(request, snapshot); !IsValidation(err) {
 		t.Fatalf("expected alias validation, got %v", err)
 	}
@@ -428,10 +464,13 @@ func TestRegistryCompileRefusesMissingDefaultAliasAndEmbeddingRewrite(t *testing
 	}
 	request = gridRequest(snapshot)
 	request.Drafts = []gridDraft{{
-		ID: "new-embedding", ModelKey: "new-embedding",
-		DisplayName: "New Embedding", ProviderSlug: "openrouter",
-		BaseURL: "https://example.test", ProviderModelID: "new-embedding",
-		AuthMode: "platform", Params: json.RawMessage(
+		ID:              "new-embedding",
+		ProviderName:    "New",
+		ModelName:       "Embedding",
+		ProviderSlug:    "openrouter",
+		ModelSlug:       "qwen/qwen3-embedding-8b",
+		PlatformEnabled: true,
+		Params: json.RawMessage(
 			`{"dimensions":2560,"vector_table":"rag_chunk_vectors_new"}`,
 		),
 		MicrosPerInputToken: 1,
@@ -444,12 +483,13 @@ func TestRegistryCompileRefusesMissingDefaultAliasAndEmbeddingRewrite(t *testing
 	}
 }
 
-func TestActiveDraftCompilesEmbeddingEndpointMoveInPlace(t *testing.T) {
+func TestActiveDraftRejectsEmbeddingHopChange(t *testing.T) {
 	t.Parallel()
 	current := CatalogConfig{
-		ModelKey: "qwen-embed", Version: 1, DisplayName: "Qwen Embed",
-		ProviderSlug: "openrouter", BaseURL: "https://old.example/v1",
-		ProviderModelID: "qwen/qwen3-embedding-4b", AuthMode: "platform",
+		Version: 1, ProviderName: "Qwen", ModelName: "Embed",
+		ProviderSlug:        "openrouter",
+		ModelSlug:           models.SeededHopEmbedSlug,
+		PlatformEnabled:     true,
 		ContextWindowTokens: 8192,
 		Params: json.RawMessage(
 			`{"dimensions":2560,"vector_table":"rag_chunk_vectors_2560"}`,
@@ -461,25 +501,19 @@ func TestActiveDraftCompilesEmbeddingEndpointMoveInPlace(t *testing.T) {
 	request := RegistrySaveRequest{
 		Revision: 7,
 		Active: []DraftConfig{{
-			ModelKey: current.ModelKey, DisplayName: current.DisplayName,
-			ProviderSlug: "moved-provider", BaseURL: "https://new.example/v1",
-			ProviderModelID: current.ProviderModelID, AuthMode: current.AuthMode,
+			ProviderSlug: current.ProviderSlug, ProviderName: current.ProviderName,
+			ModelName: current.ModelName,
+			ModelSlug: "deepseek-v4-flash", PlatformEnabled: current.PlatformEnabled,
 			ContextWindowTokens: current.ContextWindowTokens, Params: current.Params,
 			Surfaces: current.Surfaces, DefaultFor: current.IsDefaultFor,
 			Rates: CreditRates{InputMicros: current.MicrosPerInputToken},
 		}},
 	}
-	grid, err := activeToGrid(request, RegistrySnapshot{
+	_, err := activeToGrid(request, RegistrySnapshot{
 		Version: 7, Configs: []CatalogConfig{current},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(grid.Drafts) != 0 || len(grid.EmbeddingUpdates) != 1 {
-		t.Fatalf("embedding endpoint compiled as immutable draft: %+v", grid)
-	}
-	if len(grid.Cells) != 1 || grid.Cells[0].Target.Kind != "existing" {
-		t.Fatalf("embedding cell target = %+v, want existing row", grid.Cells)
+	if !IsValidation(err) {
+		t.Fatalf("embedding hop change = %v, want validation", err)
 	}
 }
 
@@ -487,7 +521,8 @@ func TestEmbeddingDefaultEligibilityRefusesInvalidPinsAndTables(t *testing.T) {
 	_, tx := openRegistryTestTx(t)
 	ctx := context.Background()
 	base := CatalogConfig{
-		ModelKey: "qwen-embed", Version: 1, Enabled: true,
+		ProviderSlug: "openrouter", ModelSlug: models.SeededHopEmbedSlug,
+		Version: 1, Enabled: true,
 		Surfaces: []string{models.SurfaceEmbedding},
 		Params: json.RawMessage(
 			`{"dimensions":2560,"vector_table":"rag_chunk_vectors_2560"}`,
@@ -506,13 +541,13 @@ func TestEmbeddingDefaultEligibilityRefusesInvalidPinsAndTables(t *testing.T) {
 	}
 
 	notAllowed := base
-	notAllowed.ModelKey = "not-allowed"
+	notAllowed.ProviderSlug = "other"
 	eligible, reason, err = embeddingEligibility(ctx, tx, notAllowed)
 	if err != nil || eligible || !containsText(reason, "allowlist") {
 		t.Fatalf("non-allowlisted eligibility = %v, %q, %v", eligible, reason, err)
 	}
 
-	missingTablePin := models.Pin{Key: "missing-table", Version: 1}
+	missingTablePin := models.Pin{Ref: models.Ref{ProviderSlug: "embedtest", ModelSlug: "missing-table"}, Version: 1}
 	originalLookup := embeddingPinLookup
 	embeddingPinLookup = func(pin models.Pin) (embeddingpins.Spec, bool) {
 		if pin == missingTablePin {
@@ -525,7 +560,8 @@ func TestEmbeddingDefaultEligibilityRefusesInvalidPinsAndTables(t *testing.T) {
 	}
 	t.Cleanup(func() { embeddingPinLookup = originalLookup })
 	missingTable := base
-	missingTable.ModelKey = missingTablePin.Key
+	missingTable.ProviderSlug = missingTablePin.ProviderSlug
+	missingTable.ModelSlug = missingTablePin.ModelSlug
 	missingTable.Params = json.RawMessage(
 		`{"dimensions":2560,"vector_table":"rag_chunk_vectors_missing_ops"}`,
 	)
@@ -539,9 +575,9 @@ func TestRegistrySaveMovesEmbeddingDefaultOnlyToPreShippedAllowedRow(t *testing.
 	registry, tx := openRegistryTestTx(t)
 	ctx := context.Background()
 	suffix := time.Now().UTC().Format("150405000000")
-	modelKey := "ops-embed-" + suffix
+	modelRef := models.Ref{ProviderSlug: "embedtest", ModelSlug: "ops-embed-" + suffix}
 	table := "rag_chunk_vectors_ops_" + suffix
-	pin := models.Pin{Key: modelKey, Version: 1}
+	pin := models.Pin{Ref: modelRef, Version: 1}
 	originalLookup := embeddingPinLookup
 	embeddingPinLookup = func(candidate models.Pin) (embeddingpins.Spec, bool) {
 		if candidate == pin {
@@ -561,15 +597,16 @@ func TestRegistrySaveMovesEmbeddingDefaultOnlyToPreShippedAllowedRow(t *testing.
 	)
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO model_configs (
-			model_key, version, display_name, provider_slug, base_url,
-			provider_model_id, auth_mode, params, surfaces,
+			version, provider_name, model_name, provider_slug, model_slug,
+			platform_enabled, byok_enabled, context_window_tokens,
+			thinking_levels, default_thinking, params, surfaces,
 			micros_per_input_token, micros_per_cached_input_token,
 			micros_per_output_token, enabled, is_default_for
 		) VALUES (
-			$1, 1, 'Ops Embed', 'openrouter', 'https://example.test',
-			'ops-embed-provider', 'platform', $2::jsonb, ARRAY['embedding'],
+			1, 'Ops', 'Embed', $1, $2,
+			true, false, 0, ARRAY[]::text[], '', $3::jsonb, ARRAY['embedding'],
 			50, 0, 0, true, ARRAY[]::text[]
-		)`, modelKey, params,
+		)`, modelRef.ProviderSlug, modelRef.ModelSlug, params,
 	); err != nil {
 		t.Fatal(err)
 	}
@@ -583,16 +620,12 @@ func TestRegistrySaveMovesEmbeddingDefaultOnlyToPreShippedAllowedRow(t *testing.
 		if cell.Surface != models.SurfaceEmbedding {
 			continue
 		}
-		cell.IsDefault = cell.RowKey == modelKey
+		cell.IsDefault = cell.Row == modelRef
 	}
 	if _, err := registry.saveTx(ctx, tx, request); !IsValidation(err) {
 		t.Fatalf("embedding retarget without acknowledgement = %v", err)
 	}
 	request.EmbeddingAcknowledged = true
-	request.EmbeddingUpdates = []EmbeddingEndpointUpdate{{
-		ModelKey: modelKey, Version: 1,
-		ProviderSlug: "openrouter-moved", BaseURL: "https://moved.example/v1",
-	}}
 	result, err := registry.saveTx(ctx, tx, request)
 	if err != nil {
 		t.Fatal(err)
@@ -601,32 +634,32 @@ func TestRegistrySaveMovesEmbeddingDefaultOnlyToPreShippedAllowedRow(t *testing.
 		t.Fatalf("embedding default move inserted %d rows", result.InsertedRows)
 	}
 	rows, err := tx.Query(ctx, `
-		SELECT model_key, enabled, is_default_for, provider_slug, base_url,
-			provider_model_id, params
+		SELECT provider_slug, model_slug, enabled, is_default_for, params
 		FROM model_configs
-		WHERE model_key IN ('qwen-embed', $1)
-		ORDER BY model_key`, modelKey)
+		WHERE (provider_slug=$1 AND model_slug=$2)
+		   OR (provider_slug=$3 AND model_slug=$4)
+		ORDER BY provider_slug, model_slug`,
+		"openrouter", models.SeededHopEmbedSlug, modelRef.ProviderSlug, modelRef.ModelSlug)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer rows.Close()
-	seen := map[string]CatalogConfig{}
+	seen := map[models.Ref]CatalogConfig{}
 	for rows.Next() {
 		var config CatalogConfig
 		if err := rows.Scan(
-			&config.ModelKey, &config.Enabled, &config.IsDefaultFor,
-			&config.ProviderSlug, &config.BaseURL, &config.ProviderModelID,
-			&config.Params,
+			&config.ProviderSlug, &config.ModelSlug, &config.Enabled,
+			&config.IsDefaultFor, &config.Params,
 		); err != nil {
 			t.Fatal(err)
 		}
-		seen[config.ModelKey] = config
+		seen[config.Ref()] = config
 	}
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	old := seen["qwen-embed"]
-	moved := seen[modelKey]
+	old := seen[models.Ref{ProviderSlug: "openrouter", ModelSlug: models.SeededHopEmbedSlug}]
+	moved := seen[modelRef]
 	if !old.Enabled || !moved.Enabled {
 		t.Fatalf("embedding rows were disabled: old=%v new=%v", old.Enabled, moved.Enabled)
 	}
@@ -635,13 +668,103 @@ func TestRegistrySaveMovesEmbeddingDefaultOnlyToPreShippedAllowedRow(t *testing.
 		t.Fatalf("embedding defaults not moved: old=%v new=%v",
 			old.IsDefaultFor, moved.IsDefaultFor)
 	}
-	if moved.ProviderSlug != "openrouter-moved" ||
-		moved.BaseURL != "https://moved.example/v1" {
-		t.Fatalf("endpoint update not applied: %+v", moved)
-	}
-	if moved.ProviderModelID != "ops-embed-provider" ||
+	if moved.Ref() != modelRef ||
 		!sameJSONTest(moved.Params, json.RawMessage(params)) {
 		t.Fatalf("embedding identity was rewritten: %+v", moved)
+	}
+}
+
+func TestBindEliteLLMDraftRejectsMarketplaceHop(t *testing.T) {
+	draft := gridDraft{
+		ProviderSlug:    "openrouter",
+		ModelSlug:       "deepseek/deepseek-v4-flash",
+		PlatformEnabled: true,
+	}
+	err := bindEliteLLMDraft(&draft, nil)
+	if !IsValidation(err) {
+		t.Fatalf("hop bind = %v, want validation", err)
+	}
+	var coded *ValidationError
+	if !errors.As(err, &coded) || coded.Code != "hop_not_allowed" {
+		t.Fatalf("hop bind = %#v", err)
+	}
+}
+
+func TestBindEliteLLMDraftAllowsFirstPartyAndSeededEmbed(t *testing.T) {
+	t.Setenv("DEEPSEEK_API_KEY", "sk-test")
+	t.Setenv("OPENROUTER_API_KEY", "sk-test")
+	flash := gridDraft{
+		ProviderSlug:    "deepseek",
+		ModelSlug:       "deepseek-v4-flash",
+		PlatformEnabled: true,
+		ByokEnabled:     true,
+		ThinkingLevels:  []string{"instant", "low", "mid", "high", "max"},
+		DefaultThinking: "instant",
+	}
+	if err := bindEliteLLMDraft(&flash, []string{models.SurfaceChat}); err != nil {
+		t.Fatalf("flash bind: %v", err)
+	}
+	embed := gridDraft{
+		ProviderSlug:    models.ProviderOpenRouter,
+		ModelSlug:       models.SeededHopEmbedSlug,
+		PlatformEnabled: true,
+	}
+	if err := bindEliteLLMDraft(&embed, []string{models.SurfaceEmbedding}); err != nil {
+		t.Fatalf("seeded embed bind: %v", err)
+	}
+}
+
+func TestBindEliteLLMDraftRequiresPlatformEnv(t *testing.T) {
+	t.Setenv("DEEPSEEK_API_KEY", "")
+	draft := gridDraft{
+		ProviderSlug:    "deepseek",
+		ModelSlug:       "deepseek-v4-flash",
+		PlatformEnabled: true,
+		ThinkingLevels:  []string{"instant"},
+		DefaultThinking: "instant",
+	}
+	err := bindEliteLLMDraft(&draft, nil)
+	var coded *ValidationError
+	if !errors.As(err, &coded) || coded.Code != "missing_platform_env" {
+		t.Fatalf("missing env bind = %#v", err)
+	}
+}
+
+func TestBindEliteLLMDraftAppliesAgenticLoopSurfacePolicy(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "sk-test")
+	draft := gridDraft{
+		ProviderSlug:    "anthropic",
+		ModelSlug:       "claude-not-certified",
+		PlatformEnabled: true,
+		ThinkingLevels:  []string{"high"},
+		DefaultThinking: "high",
+	}
+	err := bindEliteLLMDraft(&draft, []string{models.SurfaceChat})
+	var coded *ValidationError
+	if !errors.As(err, &coded) || coded.Code != "agentic_loop_not_certified" {
+		t.Fatalf("uncertified agentic-loop bind = %#v", err)
+	}
+	if err := bindEliteLLMDraft(&draft, []string{models.SurfaceChat}); err == nil {
+		t.Fatal("already-on-chat re-save bypassed certification")
+	}
+	if err := bindEliteLLMDraft(&draft, []string{models.SurfaceGenerate}); err != nil {
+		t.Fatalf("non-agentic surface required certification: %v", err)
+	}
+}
+
+func TestBindEliteLLMDraftRejectsSurfaceWithoutImplementedProviderMode(t *testing.T) {
+	t.Setenv("GEMINI_API_KEY", "sk-test")
+	draft := gridDraft{
+		ProviderSlug:    "gemini",
+		ModelSlug:       "gemini-3.1-flash-lite-preview",
+		PlatformEnabled: true,
+		ThinkingLevels:  []string{"instant"},
+		DefaultThinking: "instant",
+	}
+	err := bindEliteLLMDraft(&draft, []string{models.SurfaceChat})
+	var coded *ValidationError
+	if !errors.As(err, &coded) || coded.Code != "unsupported_surface" {
+		t.Fatalf("unsupported provider mode = %#v", err)
 	}
 }
 

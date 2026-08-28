@@ -27,7 +27,7 @@ func TestInternalProviderCallSettlementAuthenticatesAndDeduplicates(t *testing.T
 	t.Cleanup(func() {
 		if sessionID != "" {
 			_, _ = st.Pool().Exec(context.Background(), `DELETE FROM usage_events WHERE reservation_id=$1`, sessionID)
-			_, _ = st.Pool().Exec(context.Background(), `DELETE FROM credit_reservations WHERE id=$1`, sessionID)
+			_, _ = st.Pool().Exec(context.Background(), `DELETE FROM provider_sessions WHERE id=$1`, sessionID)
 		}
 		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
 	})
@@ -37,8 +37,9 @@ func TestInternalProviderCallSettlementAuthenticatesAndDeduplicates(t *testing.T
 		"",
 		store.SurfaceChat,
 		models.PaidByUser,
-		store.TokenRates{ModelKey: "gpt-byok", ModelVersion: 1},
-		store.TokenRates{ModelKey: "qwen-embed", ModelVersion: 1},
+		store.TokenRates{Model: models.Ref{ProviderSlug: "openai", ModelSlug: "gpt-byok"}, ModelVersion: 1},
+		store.TokenRates{Model: models.Ref{ProviderSlug: "openrouter", ModelSlug: "qwen/qwen3-embedding-4b"}, ModelVersion: 1},
+		"",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -48,6 +49,7 @@ func TestInternalProviderCallSettlementAuthenticatesAndDeduplicates(t *testing.T
 		"callId":      "pc_http_1",
 		"kind":        "llm",
 		"purpose":     "agent",
+		"thinking":    "high",
 		"provider":    "openai",
 		"model":       "gpt-test",
 		"inputTokens": 12,
@@ -63,6 +65,14 @@ func TestInternalProviderCallSettlementAuthenticatesAndDeduplicates(t *testing.T
 	)
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthorized status = %d", unauthorized.Code)
+	}
+	if _, err := st.Pool().Exec(ctx, `
+		INSERT INTO provider_calls
+			(id, reservation_id, actor_user_id, kind, purpose, thinking)
+		VALUES ('pc_http_1', $1, $2, $3, 'agent', 'high')`,
+		sessionID, userID, store.KindLLM,
+	); err != nil {
+		t.Fatal(err)
 	}
 	first := doInternal(
 		t,

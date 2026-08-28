@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"encoding/json"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -12,12 +11,12 @@ import (
 	"github.com/evonotes/server/internal/models"
 )
 
-const browserQuizPrefix = "browser:"
+const BrowserProviderSlug = "browser"
 
-// IsBrowserQuizKey is a client-only in-tab GGUF id. Those keys never appear
+// IsBrowserQuizModel is a client-only in-tab GGUF identity. These refs never appear
 // in model_configs; the browser loads the weights itself.
-func IsBrowserQuizKey(key string) bool {
-	return strings.HasPrefix(key, browserQuizPrefix) && key != browserQuizPrefix
+func IsBrowserQuizModel(ref models.Ref) bool {
+	return ref.ProviderSlug == BrowserProviderSlug && ref.ModelSlug != ""
 }
 
 type BillingInfo struct {
@@ -53,11 +52,18 @@ func (s *Store) Me(ctx context.Context, userID string) (User, error) {
 	var u User
 	row := s.pool.QueryRow(ctx, `SELECT id, name, COALESCE(email,''), COALESCE(avatar_url,''),
 		COALESCE(class_label,''), streak, locale,
-		chat_model_key, generate_model_key, editor_model_key, quiz_model_key,
+		chat_model_provider_slug, chat_model_slug,
+		generate_model_provider_slug, generate_model_slug,
+		editor_model_provider_slug, editor_model_slug,
+		quiz_model_provider_slug, quiz_model_slug,
 		plan_tier, subscription_status
 		FROM users WHERE id=$1`, userID)
 	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.AvatarURL, &u.ClassLabel, &u.Streak,
-		&u.Locale, &u.ChatModelKey, &u.GenerateModelKey, &u.EditorModelKey, &u.QuizModelKey,
+		&u.Locale,
+		&u.ChatModel.ProviderSlug, &u.ChatModel.ModelSlug,
+		&u.GenerateModel.ProviderSlug, &u.GenerateModel.ModelSlug,
+		&u.EditorModel.ProviderSlug, &u.EditorModel.ModelSlug,
+		&u.QuizModel.ProviderSlug, &u.QuizModel.ModelSlug,
 		&u.PlanTier, &u.SubscriptionStatus)
 	if isNoRows(err) {
 		return u, ErrNotFound
@@ -75,44 +81,41 @@ func (s *Store) SetLocale(ctx context.Context, userID, locale string) error {
 
 // ModelPrefsPatch updates one or more surface preferences. Nil fields stay.
 type ModelPrefsPatch struct {
-	ChatModelKey            *string
-	GenerateModelKey        *string
-	EditorModelKey          *string
-	QuizModelKey            *string
-	ChatReasoningMode       *string
-	ChatReasoningEffort     *string
-	GenerateReasoningMode   *string
-	GenerateReasoningEffort *string
-	QuizReasoningMode       *string
-	QuizReasoningEffort     *string
+	ChatModel        *models.Ref
+	GenerateModel    *models.Ref
+	EditorModel      *models.Ref
+	QuizModel        *models.Ref
+	ChatThinking     *string
+	GenerateThinking *string
+	QuizThinking     *string
 }
 
 // SetModelPrefs stores the user's chat/generate/editor/quiz preference. Omitted
 // fields are left unchanged so a picker on one surface cannot wipe another.
-// Reasoning mode/effort is stored per (user, model, surface): switching
-// models must not reuse another model's effort. Empty model keys are
-// rejected: every account always has a concrete key, populated from the
-// registry default at insert. Registry keys are validated against enabled
-// configs that advertise the surface. user_key rows also need a credential.
-// Quiz also accepts a browser: prefix for in-tab GGUFs.
+// Thinking is stored per (user, model, surface): switching models must
+// not reuse another model's level. Empty model refs are rejected: every
+// account always has a concrete provider/model pair, populated from the registry
+// default at insert. Model refs are validated against enabled configs that
+// advertise the surface. BYOK-only rows also need a credential. Quiz
+// also accepts the browser provider for in-tab GGUFs.
 func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPrefsPatch) error {
 	prefs := []struct {
-		key     *string
+		ref     *models.Ref
 		surface string
 	}{
-		{patch.ChatModelKey, SurfaceChat},
-		{patch.GenerateModelKey, SurfaceGenerate},
-		{patch.EditorModelKey, SurfaceEditor},
-		{patch.QuizModelKey, SurfaceQuiz},
+		{patch.ChatModel, SurfaceChat},
+		{patch.GenerateModel, SurfaceGenerate},
+		{patch.EditorModel, SurfaceEditor},
+		{patch.QuizModel, SurfaceQuiz},
 	}
 	for _, pref := range prefs {
-		if pref.key == nil {
+		if pref.ref == nil {
 			continue
 		}
-		if *pref.key == "" {
-			return ErrModelKeyRequired
+		if pref.ref.Zero() {
+			return ErrModelRefRequired
 		}
-		if IsBrowserQuizKey(*pref.key) {
+		if IsBrowserQuizModel(*pref.ref) {
 			if pref.surface != SurfaceQuiz {
 				return ErrNotFound
 			}
@@ -127,9 +130,15 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 
 	var current UserLLMPrefs
 	if err := tx.QueryRow(ctx, `
-		SELECT chat_model_key, generate_model_key, editor_model_key, quiz_model_key
+		SELECT chat_model_provider_slug, chat_model_slug,
+		       generate_model_provider_slug, generate_model_slug,
+		       editor_model_provider_slug, editor_model_slug,
+		       quiz_model_provider_slug, quiz_model_slug
 		  FROM users WHERE id=$1 FOR UPDATE`, userID).Scan(
-		&current.ChatModelKey, &current.GenerateModelKey, &current.EditorModelKey, &current.QuizModelKey,
+		&current.ChatModel.ProviderSlug, &current.ChatModel.ModelSlug,
+		&current.GenerateModel.ProviderSlug, &current.GenerateModel.ModelSlug,
+		&current.EditorModel.ProviderSlug, &current.EditorModel.ModelSlug,
+		&current.QuizModel.ProviderSlug, &current.QuizModel.ModelSlug,
 	); err != nil {
 		if isNoRows(err) {
 			return ErrNotFound
@@ -137,144 +146,125 @@ func (s *Store) SetModelPrefs(ctx context.Context, userID string, patch ModelPre
 		return err
 	}
 	for _, pref := range prefs {
-		if pref.key == nil || IsBrowserQuizKey(*pref.key) {
+		if pref.ref == nil || IsBrowserQuizModel(*pref.ref) {
 			continue
 		}
-		if err := s.assertModelKey(ctx, tx, userID, *pref.key, pref.surface); err != nil {
+		if err := s.assertModelRef(ctx, tx, userID, *pref.ref, pref.surface); err != nil {
 			return err
 		}
 	}
-	deref := func(p *string) string {
+	deref := func(p *models.Ref) models.Ref {
 		if p == nil {
-			return ""
+			return models.Ref{}
 		}
 		return *p
 	}
 	if _, err := tx.Exec(ctx, `UPDATE users SET
-		chat_model_key = CASE WHEN $2 THEN $3 ELSE chat_model_key END,
-		generate_model_key = CASE WHEN $4 THEN $5 ELSE generate_model_key END,
-		editor_model_key = CASE WHEN $6 THEN $7 ELSE editor_model_key END,
-		quiz_model_key = CASE WHEN $8 THEN $9 ELSE quiz_model_key END,
+		chat_model_provider_slug = CASE WHEN $2 THEN $3 ELSE chat_model_provider_slug END,
+		chat_model_slug = CASE WHEN $2 THEN $4 ELSE chat_model_slug END,
+		generate_model_provider_slug = CASE WHEN $5 THEN $6 ELSE generate_model_provider_slug END,
+		generate_model_slug = CASE WHEN $5 THEN $7 ELSE generate_model_slug END,
+		editor_model_provider_slug = CASE WHEN $8 THEN $9 ELSE editor_model_provider_slug END,
+		editor_model_slug = CASE WHEN $8 THEN $10 ELSE editor_model_slug END,
+		quiz_model_provider_slug = CASE WHEN $11 THEN $12 ELSE quiz_model_provider_slug END,
+		quiz_model_slug = CASE WHEN $11 THEN $13 ELSE quiz_model_slug END,
 		updated_at = now()
 		WHERE id=$1`, userID,
-		patch.ChatModelKey != nil, deref(patch.ChatModelKey),
-		patch.GenerateModelKey != nil, deref(patch.GenerateModelKey),
-		patch.EditorModelKey != nil, deref(patch.EditorModelKey),
-		patch.QuizModelKey != nil, deref(patch.QuizModelKey)); err != nil {
+		patch.ChatModel != nil, deref(patch.ChatModel).ProviderSlug, deref(patch.ChatModel).ModelSlug,
+		patch.GenerateModel != nil, deref(patch.GenerateModel).ProviderSlug, deref(patch.GenerateModel).ModelSlug,
+		patch.EditorModel != nil, deref(patch.EditorModel).ProviderSlug, deref(patch.EditorModel).ModelSlug,
+		patch.QuizModel != nil, deref(patch.QuizModel).ProviderSlug, deref(patch.QuizModel).ModelSlug); err != nil {
 		return err
 	}
-	chatKey := current.ChatModelKey
-	if patch.ChatModelKey != nil {
-		chatKey = *patch.ChatModelKey
+	chatModel := current.ChatModel
+	if patch.ChatModel != nil {
+		chatModel = *patch.ChatModel
 	}
-	generateKey := current.GenerateModelKey
-	if patch.GenerateModelKey != nil {
-		generateKey = *patch.GenerateModelKey
+	generateModel := current.GenerateModel
+	if patch.GenerateModel != nil {
+		generateModel = *patch.GenerateModel
 	}
-	quizKey := current.QuizModelKey
-	if patch.QuizModelKey != nil {
-		quizKey = *patch.QuizModelKey
+	quizModel := current.QuizModel
+	if patch.QuizModel != nil {
+		quizModel = *patch.QuizModel
 	}
-	if err := upsertModelReasoning(ctx, tx, userID, chatKey, SurfaceChat, patch.ChatReasoningMode, patch.ChatReasoningEffort); err != nil {
+	if err := upsertModelThinking(ctx, tx, userID, chatModel, SurfaceChat, patch.ChatThinking); err != nil {
 		return err
 	}
-	if err := upsertModelReasoning(ctx, tx, userID, generateKey, SurfaceGenerate, patch.GenerateReasoningMode, patch.GenerateReasoningEffort); err != nil {
+	if err := upsertModelThinking(ctx, tx, userID, generateModel, SurfaceGenerate, patch.GenerateThinking); err != nil {
 		return err
 	}
-	if err := upsertModelReasoning(ctx, tx, userID, quizKey, SurfaceQuiz, patch.QuizReasoningMode, patch.QuizReasoningEffort); err != nil {
+	if err := upsertModelThinking(ctx, tx, userID, quizModel, SurfaceQuiz, patch.QuizThinking); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
-func upsertModelReasoning(ctx context.Context, tx pgx.Tx, userID, modelKey, surface string, mode, effort *string) error {
-	if mode == nil && effort == nil {
+func upsertModelThinking(ctx context.Context, tx pgx.Tx, userID string, ref models.Ref, surface string, thinking *string) error {
+	if thinking == nil {
 		return nil
 	}
-	if err := validateReasoningPatch(mode, effort); err != nil {
+	if err := validateThinkingPatch(*thinking); err != nil {
 		return err
 	}
-	if IsBrowserQuizKey(modelKey) {
+	if IsBrowserQuizModel(ref) {
 		return ErrNotFound
 	}
-	if effort != nil && *effort != "" {
-		if err := assertCatalogEffort(ctx, tx, modelKey, surface, *effort); err != nil {
+	if *thinking != "" {
+		if err := assertCatalogThinking(ctx, tx, ref, surface, *thinking); err != nil {
 			return err
 		}
 	}
 	_, err := tx.Exec(ctx, `
-		INSERT INTO user_model_reasoning (user_id, model_key, surface, mode, effort)
+		INSERT INTO user_model_reasoning (user_id, provider_slug, model_slug, surface, thinking)
 		VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (user_id, model_key, surface) DO UPDATE SET
-			mode = CASE WHEN $6 THEN EXCLUDED.mode ELSE user_model_reasoning.mode END,
-			effort = CASE WHEN $7 THEN EXCLUDED.effort ELSE user_model_reasoning.effort END`,
-		userID, modelKey, surface, derefString(mode), derefString(effort),
-		mode != nil, effort != nil)
+		ON CONFLICT (user_id, provider_slug, model_slug, surface) DO UPDATE SET
+			thinking = EXCLUDED.thinking`,
+		userID, ref.ProviderSlug, ref.ModelSlug, surface, *thinking)
 	return err
 }
 
-func derefString(p *string) string {
-	if p == nil {
-		return ""
+func validateThinkingPatch(thinking string) error {
+	if thinking == "" || models.IsKnownThinking(thinking) {
+		return nil
 	}
-	return *p
+	return ErrNotFound
 }
 
-func validateReasoningPatch(mode, effort *string) error {
-	if mode != nil && *mode != "" && *mode != "off" && *mode != "on" {
-		return ErrNotFound
-	}
-	if effort != nil && *effort != "" && !models.IsKnownReasoningEffort(*effort) {
-		return ErrNotFound
-	}
-	return nil
-}
-
-func assertCatalogEffort(ctx context.Context, tx pgx.Tx, key, surface, effort string) error {
-	var params []byte
+func assertCatalogThinking(ctx context.Context, tx pgx.Tx, ref models.Ref, surface, thinking string) error {
+	var levels []string
 	err := tx.QueryRow(ctx, `
-		SELECT params FROM model_configs
-		 WHERE model_key=$1 AND enabled AND $2 = ANY(surfaces)
-		 ORDER BY version DESC LIMIT 1`, key, surface).Scan(&params)
+		SELECT thinking_levels FROM model_configs
+		 WHERE provider_slug=$1 AND model_slug=$2 AND enabled AND $3 = ANY(surfaces)
+		 ORDER BY version DESC LIMIT 1`, ref.ProviderSlug, ref.ModelSlug, surface).Scan(&levels)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	var obj map[string]any
-	if err := json.Unmarshal(params, &obj); err != nil {
-		return err
-	}
-	cfg := models.Config{Params: obj}
-	if !containsEffort(cfg.Reasoning().Efforts, effort) {
-		return ErrNotFound
-	}
-	return nil
-}
-
-func containsEffort(list []string, want string) bool {
-	for _, item := range list {
-		if item == want {
-			return true
+	for _, item := range levels {
+		if item == thinking {
+			return nil
 		}
 	}
-	return false
+	return ErrNotFound
 }
 
-func (s *Store) assertModelKey(ctx context.Context, q rowQueryer, userID, key, surface string) error {
-	var authMode, provider string
+func (s *Store) assertModelRef(ctx context.Context, q rowQueryer, userID string, ref models.Ref, surface string) error {
+	var platformEnabled, byokEnabled bool
+	var provider string
 	err := q.QueryRow(ctx, `
-		SELECT auth_mode, provider_slug FROM model_configs
-		 WHERE model_key=$1 AND enabled AND $2 = ANY(surfaces)
-		 ORDER BY version DESC LIMIT 1`, key, surface).Scan(&authMode, &provider)
+		SELECT platform_enabled, byok_enabled, provider_slug FROM model_configs
+		 WHERE provider_slug=$1 AND model_slug=$2 AND enabled AND $3 = ANY(surfaces)
+		 ORDER BY version DESC LIMIT 1`, ref.ProviderSlug, ref.ModelSlug, surface).Scan(&platformEnabled, &byokEnabled, &provider)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
 	if err != nil {
 		return err
 	}
-	if authMode == models.AuthUserKey {
+	if !platformEnabled && byokEnabled {
 		ok, credErr := s.HasLLMCredential(ctx, userID, provider)
 		if credErr != nil {
 			return credErr
@@ -286,25 +276,31 @@ func (s *Store) assertModelKey(ctx context.Context, q rowQueryer, userID, key, s
 	return nil
 }
 
-type modelSurfaceReasoning struct {
-	Mode   string
-	Effort string
+type UserLLMPrefs struct {
+	ChatModel     models.Ref
+	GenerateModel models.Ref
+	EditorModel   models.Ref
+	QuizModel     models.Ref
+	thinking      map[modelThinkingRef]string
 }
 
-type UserLLMPrefs struct {
-	ChatModelKey     string
-	GenerateModelKey string
-	EditorModelKey   string
-	QuizModelKey     string
-	reasoning        map[string]modelSurfaceReasoning
+type modelThinkingRef struct {
+	models.Ref
+	Surface string
 }
 
 func (s *Store) UserLLMPrefs(ctx context.Context, userID string) (UserLLMPrefs, error) {
 	var p UserLLMPrefs
 	err := s.pool.QueryRow(ctx, `
-		SELECT chat_model_key, generate_model_key, editor_model_key, quiz_model_key
+		SELECT chat_model_provider_slug, chat_model_slug,
+		       generate_model_provider_slug, generate_model_slug,
+		       editor_model_provider_slug, editor_model_slug,
+		       quiz_model_provider_slug, quiz_model_slug
 		  FROM users WHERE id=$1`, userID).Scan(
-		&p.ChatModelKey, &p.GenerateModelKey, &p.EditorModelKey, &p.QuizModelKey,
+		&p.ChatModel.ProviderSlug, &p.ChatModel.ModelSlug,
+		&p.GenerateModel.ProviderSlug, &p.GenerateModel.ModelSlug,
+		&p.EditorModel.ProviderSlug, &p.EditorModel.ModelSlug,
+		&p.QuizModel.ProviderSlug, &p.QuizModel.ModelSlug,
 	)
 	if isNoRows(err) {
 		return p, ErrNotFound
@@ -313,70 +309,64 @@ func (s *Store) UserLLMPrefs(ctx context.Context, userID string) (UserLLMPrefs, 
 		return p, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT model_key, surface, mode, effort
+		SELECT provider_slug, model_slug, surface, thinking
 		  FROM user_model_reasoning WHERE user_id=$1`, userID)
 	if err != nil {
 		return p, err
 	}
 	defer rows.Close()
-	p.reasoning = map[string]modelSurfaceReasoning{}
+	p.thinking = map[modelThinkingRef]string{}
 	for rows.Next() {
-		var modelKey, surface, mode, effort string
-		if err := rows.Scan(&modelKey, &surface, &mode, &effort); err != nil {
+		var ref models.Ref
+		var surface, thinking string
+		if err := rows.Scan(&ref.ProviderSlug, &ref.ModelSlug, &surface, &thinking); err != nil {
 			return p, err
 		}
-		p.reasoning[modelKey+"\x00"+surface] = modelSurfaceReasoning{Mode: mode, Effort: effort}
+		p.thinking[modelThinkingRef{Ref: ref, Surface: surface}] = thinking
 	}
 	return p, rows.Err()
 }
 
-func (p UserLLMPrefs) ModelKey(surface string) string {
+func (p UserLLMPrefs) Model(surface string) models.Ref {
 	switch surface {
 	case SurfaceChat:
-		return p.ChatModelKey
+		return p.ChatModel
 	case SurfaceGenerate:
-		return p.GenerateModelKey
+		return p.GenerateModel
 	case SurfaceEditor:
-		return p.EditorModelKey
+		return p.EditorModel
 	case SurfaceQuiz:
-		return p.QuizModelKey
+		return p.QuizModel
 	}
-	return ""
+	return models.Ref{}
 }
 
-func (p UserLLMPrefs) Reasoning(surface string) (mode, effort string) {
-	key := p.ModelKey(surface)
-	if key == "" || p.reasoning == nil {
-		return "", ""
+func (p UserLLMPrefs) Thinking(surface string) string {
+	ref := p.Model(surface)
+	if ref.Zero() || p.thinking == nil {
+		return ""
 	}
-	got, ok := p.reasoning[key+"\x00"+surface]
-	if !ok {
-		return "", ""
-	}
-	return got.Mode, got.Effort
+	return p.thinking[modelThinkingRef{Ref: ref, Surface: surface}]
 }
 
 // accountModelPrefs is the set written onto a brand-new user row. The registry
-// surface default is the source of truth (ops registry grid); deepseek-flash is
-// only the last resort when this process has no registry (tests that insert
-// users without wiring one).
-func (s *Store) accountModelPrefs(ctx context.Context) (chat, generate, editor, quiz string, err error) {
-	const fallback = "deepseek-flash"
+// surface default is the only source of truth.
+func (s *Store) accountModelPrefs(ctx context.Context) (chat, generate, editor, quiz models.Ref, err error) {
 	if s.registry == nil {
-		return fallback, fallback, fallback, fallback, nil
+		return models.Ref{}, models.Ref{}, models.Ref{}, models.Ref{}, ErrModelUnavailable
 	}
-	keys := make([]string, 0, 4)
+	refs := make([]models.Ref, 0, 4)
 	for _, surface := range []string{models.SurfaceChat, models.SurfaceGenerate, models.SurfaceEditor, models.SurfaceQuiz} {
 		pin, err := s.registry.DefaultPin(surface)
 		if err != nil {
-			return "", "", "", "", err
+			return models.Ref{}, models.Ref{}, models.Ref{}, models.Ref{}, err
 		}
-		if pin.Key == "" {
-			return "", "", "", "", ErrModelUnavailable
+		if pin.Ref.Zero() {
+			return models.Ref{}, models.Ref{}, models.Ref{}, models.Ref{}, ErrModelUnavailable
 		}
-		keys = append(keys, pin.Key)
+		refs = append(refs, pin.Ref)
 	}
-	return keys[0], keys[1], keys[2], keys[3], nil
+	return refs[0], refs[1], refs[2], refs[3], nil
 }
 
 // UpsertUserFromClerk inserts or updates a user. The returned bool is true only
@@ -398,13 +388,17 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 		name = copytext.T(locale, copytext.User)
 	}
 	var created bool
-	chatKey, genKey, editorKey, quizKey, err := s.accountModelPrefs(ctx)
+	chatModel, genModel, editorModel, quizModel, err := s.accountModelPrefs(ctx)
 	if err != nil {
 		return false, err
 	}
 	err = s.pool.QueryRow(ctx, `INSERT INTO users
-			(id, name, email, avatar_url, chat_model_key, generate_model_key, editor_model_key, quiz_model_key)
-		VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8)
+			(id, name, email, avatar_url,
+			 chat_model_provider_slug, chat_model_slug,
+			 generate_model_provider_slug, generate_model_slug,
+			 editor_model_provider_slug, editor_model_slug,
+			 quiz_model_provider_slug, quiz_model_slug)
+			VALUES ($1,$2,NULLIF($3,''),NULLIF($4,''),$5,$6,$7,$8,$9,$10,$11,$12)
 		ON CONFLICT (id) DO UPDATE SET
 			name=EXCLUDED.name,
 			email=EXCLUDED.email,
@@ -412,7 +406,11 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 			updated_at=now()
 		WHERE users.deleted_at IS NULL
 		RETURNING (xmax = 0)`,
-		id, name, email, avatarURL, chatKey, genKey, editorKey, quizKey).Scan(&created)
+		id, name, email, avatarURL,
+		chatModel.ProviderSlug, chatModel.ModelSlug,
+		genModel.ProviderSlug, genModel.ModelSlug,
+		editorModel.ProviderSlug, editorModel.ModelSlug,
+		quizModel.ProviderSlug, quizModel.ModelSlug).Scan(&created)
 	// The WHERE clause suppresses the RETURNING row for a tombstone, which is
 	// not an error: the account exists and stays scrubbed.
 	if isNoRows(err) {

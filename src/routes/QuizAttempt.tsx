@@ -128,8 +128,11 @@ export default function QuizAttempt() {
     setGrading(true);
     try {
       const result = await gradeAttemptQuestions(quiz.questions, answers, {
-        modelKey:
-          me?.quizModelKey || quizModels?.selectedKey || 'deepseek-flash',
+        model: me?.quizModel ??
+          quizModels?.selectedModel ?? {
+            modelSlug: 'deepseek-v4-flash-vision-exp',
+            providerSlug: 'deepseek',
+          },
         workspaceId: quiz.workspaceId,
       });
       setGraded(result);

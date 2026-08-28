@@ -10,8 +10,9 @@ export interface UsageEventView {
   creditMicros: number;
   inputTokens: number;
   kind: string;
-  modelKey: string;
+  modelSlug: string;
   outputTokens: number;
+  providerSlug: string;
   surface: string;
   unit: string;
   units: number;

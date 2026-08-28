@@ -4,9 +4,12 @@
  * Evo Notes API
  * OpenAPI spec version: 0.1.0
  */
+import type { ActivityBlock } from './activityBlock.ts';
 import type { Citation } from './citation.ts';
 
 export interface Message {
+  /** @nullable */
+  activity?: ActivityBlock[] | null;
   /** @nullable */
   citations?: Citation[] | null;
   content: string;
@@ -14,8 +17,9 @@ export interface Message {
   createdAt: string;
   id: string;
   modelDisplayName?: string;
-  modelKey?: string;
+  modelSlug?: string;
   modelVersion?: number;
+  providerSlug?: string;
   role: string;
   status: string;
 }

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/evonotes/server/internal/pipeline"
@@ -49,6 +50,9 @@ func TestGenerateSendsDeclaredDefaultsToThePipeline(t *testing.T) {
 	if got := body["diagramType"]; got != "auto" {
 		t.Errorf("diagramType = %#v, want auto", got)
 	}
+	if got, ok := body["fileIds"].([]any); !ok || len(got) == 0 {
+		t.Errorf("omitted scope did not expand to workspace files: %#v", body["fileIds"])
+	}
 }
 
 // An explicit empty list is a client statement, not an omission, so the default
@@ -73,6 +77,9 @@ func TestGenerateRejectsUnknownScopeIDs(t *testing.T) {
 		"u_editor", unknownFile)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("unknown file = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "invalid or unavailable") {
+		t.Fatalf("unknown file leaked a distinct error: %s", rec.Body.String())
 	}
 
 	unknownChapter := generateBody("quiz", "Unknown chapter")
@@ -104,11 +111,10 @@ func TestMissingTagKindAndModelsSurfaceReturnEmpty(t *testing.T) {
 		t.Fatalf("models status = %d body=%s", models.Code, models.Body.String())
 	}
 	var body struct {
-		Models                  []any  `json:"models"`
-		SelectedKey             string `json:"selectedKey"`
-		DefaultKey              string `json:"defaultKey"`
-		SelectedReasoningMode   string `json:"selectedReasoningMode"`
-		SelectedReasoningEffort string `json:"selectedReasoningEffort"`
+		Models           []any  `json:"models"`
+		SelectedKey      string `json:"selectedKey"`
+		DefaultKey       string `json:"defaultKey"`
+		SelectedThinking string `json:"selectedThinking"`
 	}
 	if err := json.Unmarshal(models.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
@@ -125,13 +131,12 @@ func TestListModelsResolvesEmptyReasoningPrefs(t *testing.T) {
 		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		SelectedReasoningMode   string `json:"selectedReasoningMode"`
-		SelectedReasoningEffort string `json:"selectedReasoningEffort"`
+		SelectedThinking string `json:"selectedThinking"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	if body.SelectedReasoningMode != "off" || body.SelectedReasoningEffort != "" {
-		t.Fatalf("resolved reasoning = %+v, want mode=off effort empty", body)
+	if body.SelectedThinking != "instant" {
+		t.Fatalf("resolved thinking = %+v, want instant", body)
 	}
 }

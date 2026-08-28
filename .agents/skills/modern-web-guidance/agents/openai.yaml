@@ -1,0 +1,6 @@
+interface:
+  display_name: "Modern Web Guidance"
+  short_description: "Modern web development best practices"
+  default_prompt: "Use $modern-web-guidance to search for modern web development best practices."
+policy:
+  allow_implicit_invocation: false

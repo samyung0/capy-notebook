@@ -32,7 +32,7 @@ func (a *api) gradeQuizAnswer(ctx context.Context, in *quizGradeInput) (*quizGra
 	if err != nil {
 		return nil, hErr(err)
 	}
-	if store.IsBrowserQuizKey(me.QuizModelKey) {
+	if store.IsBrowserQuizModel(me.QuizModel) {
 		return nil, huma.Error400BadRequest("cloud quiz model required")
 	}
 	if strings.TrimSpace(in.Body.UserAnswer) == "" {
@@ -50,7 +50,7 @@ func (a *api) gradeQuizAnswer(ctx context.Context, in *quizGradeInput) (*quizGra
 	if err != nil {
 		return nil, hErr(err)
 	}
-	charge, err := a.beginSpend(ctx, actor, wsID, store.SurfaceQuiz, llm.PaidBy)
+	charge, err := a.beginProviderSession(ctx, actor, wsID, store.SurfaceQuiz, llm.PaidBy, llm.Rates, store.TokenRates{}, llm.Thinking)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -60,13 +60,14 @@ func (a *api) gradeQuizAnswer(ctx context.Context, in *quizGradeInput) (*quizGra
 		return nil, huma.Error503ServiceUnavailable("AI service is unavailable")
 	}
 	body := map[string]any{
-		"hints":       in.Body.Hints,
-		"modelAnswer": in.Body.ModelAnswer,
-		"prompt":      in.Body.Prompt,
-		"rubrics":     in.Body.Rubrics,
-		"userAnswer":  in.Body.UserAnswer,
-		"workspaceId": wsID,
-		"locale":      a.userLocale(ctx, actor),
+		"hints":          in.Body.Hints,
+		"modelAnswer":    in.Body.ModelAnswer,
+		"prompt":         in.Body.Prompt,
+		"rubrics":        in.Body.Rubrics,
+		"userAnswer":     in.Body.UserAnswer,
+		"workspaceId":    wsID,
+		"locale":         a.userLocale(ctx, actor),
+		"spendSessionId": charge.id,
 	}
 	llm.attach(body)
 	raw, err := a.pipe.PostRaw(ctx, "/quiz-grade", body)
@@ -76,7 +77,6 @@ func (a *api) gradeQuizAnswer(ctx context.Context, in *quizGradeInput) (*quizGra
 		}
 		return nil, huma.Error503ServiceUnavailable("AI service is unavailable")
 	}
-	usage := usageFrom(raw)
 	var parsed struct {
 		Award  float64 `json:"award"`
 		Reason string  `json:"reason"`
@@ -84,7 +84,7 @@ func (a *api) gradeQuizAnswer(ctx context.Context, in *quizGradeInput) (*quizGra
 	if json.Unmarshal(raw, &parsed) != nil {
 		return nil, huma.Error503ServiceUnavailable("AI service is unavailable")
 	}
-	charge.settle(ctx, usage.events(actor, wsID, store.SurfaceQuiz, llm.Rates, store.TokenRates{}, llm.PaidBy)...)
+	charge.settle(ctx)
 	return &quizGradeOutput{Body: apimodel.QuizGradeResp{
 		Award:  snapGradeAward(parsed.Award),
 		Reason: parsed.Reason,

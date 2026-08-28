@@ -1,0 +1,41 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "evo-drive-import-relay",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-25",
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "queues": {
+    "producers": [
+      {
+        "binding": "IMPORT_QUEUE",
+        "queue": "evo-drive-imports"
+      }
+    ],
+    "consumers": [
+      {
+        "queue": "evo-drive-imports",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_concurrency": 1,
+        "max_retries": 20,
+        "dead_letter_queue": "evo-drive-imports-dlq",
+        "retry_delay": 300
+      },
+      {
+        "queue": "evo-drive-imports-dlq",
+        "max_batch_size": 1,
+        "max_batch_timeout": 1,
+        "max_concurrency": 1,
+        "max_retries": 50,
+        "retry_delay": 300
+      }
+    ]
+  },
+  "vars": {
+    "API_BASE_URL": "https://api.example.com",
+    "IMPORT_DLQ_NAME": "evo-drive-imports-dlq"
+  }
+}

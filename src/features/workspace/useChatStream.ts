@@ -22,8 +22,9 @@ export function toChatMessage(row: WireMessage): ChatMessage {
     createdAt: row.createdAt,
     id: row.id,
     modelDisplayName: row.modelDisplayName ?? undefined,
-    modelKey: row.modelKey ?? undefined,
+    modelSlug: row.modelSlug ?? undefined,
     modelVersion: row.modelVersion ?? undefined,
+    providerSlug: row.providerSlug ?? undefined,
     role: row.role as ChatRole,
     status: row.status as ChatStatus,
   };
@@ -201,7 +202,8 @@ export function useChatStream(workspaceId: string) {
               messageId,
               conversationId: cid,
               modelDisplayName,
-              modelKey,
+              providerSlug,
+              modelSlug,
               modelVersion,
             }) => {
               currentId = messageId;
@@ -214,8 +216,9 @@ export function useChatStream(workspaceId: string) {
                         conversationId: cid,
                         id: messageId,
                         modelDisplayName,
-                        modelKey,
+                        modelSlug,
                         modelVersion,
+                        providerSlug,
                       }
                     : msg
                 )

@@ -34,7 +34,6 @@ var aiSuffixes = []string{
 }
 
 var editorSuffixes = []string{
-	"/complete/stream",
 	"/ai/copilot",
 }
 

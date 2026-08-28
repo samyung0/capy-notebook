@@ -5,27 +5,29 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
 	"reflect"
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/evonotes/server/internal/embeddingpins"
 	"github.com/evonotes/server/internal/models"
-	"github.com/evonotes/server/internal/store"
+	"github.com/evonotes/server/internal/obs"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var modelKeyPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{1,62}$`)
 var providerSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
 var embeddingPinLookup = embeddingpins.Lookup
 
-type ValidationError struct{ Message string }
+type ValidationError struct {
+	Message   string
+	Code      string
+	ModelSlug string
+	Surface   string
+	Reason    string
+}
 
 func (e *ValidationError) Error() string { return e.Message }
 
@@ -36,64 +38,20 @@ func (e *ConflictError) Error() string {
 }
 
 type RegistryStore struct {
-	read     *pgxpool.Pool
-	write    *pgxpool.Pool
-	writeDSN string
-	writeMu  sync.Mutex
+	read  *pgxpool.Pool
+	admin *AdminStore
 }
 
 func NewRegistryStore(read, write *pgxpool.Pool) *RegistryStore {
-	return &RegistryStore{read: read, write: write}
+	return &RegistryStore{read: read, admin: NewAdminStore(write)}
 }
 
-func NewLazyRegistryStore(read *pgxpool.Pool, writeDSN string) *RegistryStore {
-	return &RegistryStore{read: read, writeDSN: strings.TrimSpace(writeDSN)}
+func NewRegistryStoreWithAdmin(read *pgxpool.Pool, admin *AdminStore) *RegistryStore {
+	return &RegistryStore{read: read, admin: admin}
 }
 
 func (s *RegistryStore) WriteConfigured() bool {
-	return s != nil && (s.write != nil || s.writeDSN != "")
-}
-
-func (s *RegistryStore) writer(ctx context.Context) (*pgxpool.Pool, error) {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	if s.write != nil {
-		return s.write, nil
-	}
-	if s.writeDSN == "" {
-		return nil, errors.New("registry writer is not configured")
-	}
-	config, err := pgxpool.ParseConfig(s.writeDSN)
-	if err != nil {
-		return nil, errors.New("registry writer configuration is invalid")
-	}
-	config.MaxConns = 2
-	config.MinConns = 0
-	config.MaxConnLifetime = 30 * time.Minute
-	config.ConnConfig.RuntimeParams["statement_timeout"] = "15000"
-	pool, err := pgxpool.NewWithConfig(ctx, config)
-	if err != nil {
-		return nil, fmt.Errorf("open registry writer: %w", err)
-	}
-	if err := pool.Ping(ctx); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("ping registry writer: %w", err)
-	}
-	if err := ValidateDatabaseRole(ctx, pool, RegistryDatabaseRole); err != nil {
-		pool.Close()
-		return nil, fmt.Errorf("validate registry writer role: %w", err)
-	}
-	s.write = pool
-	return pool, nil
-}
-
-func (s *RegistryStore) Close() {
-	s.writeMu.Lock()
-	defer s.writeMu.Unlock()
-	if s.write != nil && s.writeDSN != "" {
-		s.write.Close()
-		s.write = nil
-	}
+	return s != nil && s.admin != nil && s.admin.Configured()
 }
 
 func (s *RegistryStore) Snapshot(ctx context.Context) (RegistrySnapshot, error) {
@@ -107,7 +65,7 @@ type querier interface {
 
 func snapshotFrom(ctx context.Context, q querier) (RegistrySnapshot, error) {
 	out := RegistrySnapshot{
-		Surfaces:                 append([]string(nil), Surfaces...),
+		Surfaces:                 models.AllSurfaces(),
 		AliasesAllowed:           false,
 		Configs:                  []CatalogConfig{},
 		ProviderCredentials:      []ProviderCredentialAvailability{},
@@ -118,22 +76,24 @@ func snapshotFrom(ctx context.Context, q querier) (RegistrySnapshot, error) {
 		return out, err
 	}
 	rows, err := q.Query(ctx, `
-		SELECT model_key, version, display_name, provider_slug, base_url,
-			provider_model_id, auth_mode, context_window_tokens, params,
+		SELECT version, provider_name, model_name, provider_slug, model_slug,
+			platform_enabled, byok_enabled, context_window_tokens,
+			thinking_levels, default_thinking, params,
 			surfaces, micros_per_input_token, micros_per_cached_input_token,
-			micros_per_output_token, enabled, is_default_for, created_at
-		FROM model_configs ORDER BY model_key, version`)
+			micros_per_output_token, enabled, is_default_for,
+			created_at, updated_at, created_by, updated_by
+		FROM model_configs ORDER BY provider_slug, model_slug, version`)
 	if err != nil {
 		return out, err
 	}
 	for rows.Next() {
 		var c CatalogConfig
-		if err := rows.Scan(&c.ModelKey, &c.Version, &c.DisplayName,
-			&c.ProviderSlug, &c.BaseURL, &c.ProviderModelID, &c.AuthMode,
-			&c.ContextWindowTokens, &c.Params, &c.Surfaces,
+		if err := rows.Scan(&c.Version, &c.ProviderName, &c.ModelName,
+			&c.ProviderSlug, &c.ModelSlug, &c.PlatformEnabled, &c.ByokEnabled,
+			&c.ContextWindowTokens, &c.ThinkingLevels, &c.DefaultThinking, &c.Params, &c.Surfaces,
 			&c.MicrosPerInputToken, &c.MicrosPerCachedInputToken,
 			&c.MicrosPerOutputToken, &c.Enabled, &c.IsDefaultFor,
-			&c.CreatedAt); err != nil {
+			&c.CreatedAt, &c.UpdatedAt, &c.CreatedBy, &c.UpdatedBy); err != nil {
 			rows.Close()
 			return out, err
 		}
@@ -144,23 +104,14 @@ func snapshotFrom(ctx context.Context, q querier) (RegistrySnapshot, error) {
 		return out, err
 	}
 	rows.Close()
-	providerSlugs := make(map[string]bool)
-	for _, config := range out.Configs {
-		providerSlugs[config.ProviderSlug] = true
-	}
-	sortedProviderSlugs := make([]string, 0, len(providerSlugs))
-	for providerSlug := range providerSlugs {
-		sortedProviderSlugs = append(sortedProviderSlugs, providerSlug)
-	}
-	sort.Strings(sortedProviderSlugs)
-	for _, providerSlug := range sortedProviderSlugs {
-		environment := credentialEnv(providerSlug)
+	catalog := models.MustEliteLLMProviders()
+	for _, provider := range catalog.All() {
 		out.ProviderCredentials = append(
 			out.ProviderCredentials,
 			ProviderCredentialAvailability{
-				ProviderSlug: providerSlug,
-				Environment:  environment,
-				Configured:   os.Getenv(environment) != "",
+				ProviderSlug: provider.Slug,
+				Environment:  provider.PlatformEnv,
+				Configured:   os.Getenv(provider.PlatformEnv) != "",
 			},
 		)
 	}
@@ -176,22 +127,23 @@ func snapshotFrom(ctx context.Context, q querier) (RegistrySnapshot, error) {
 		}
 	}
 	rows, err = q.Query(ctx, `
-		SELECT embedding_model_key, embedding_model_version,
+		SELECT embedding_provider_slug, embedding_model_slug, embedding_model_version,
 			COALESCE((SELECT (mc.params->>'dimensions')::int
 				FROM model_configs mc
-				WHERE mc.model_key = w.embedding_model_key
+				WHERE mc.provider_slug = w.embedding_provider_slug
+				  AND mc.model_slug = w.embedding_model_slug
 				  AND mc.version = w.embedding_model_version), 0),
 			count(*)
 		FROM workspaces w
-		GROUP BY embedding_model_key, embedding_model_version
-		ORDER BY embedding_model_key, embedding_model_version`)
+		GROUP BY embedding_provider_slug, embedding_model_slug, embedding_model_version
+		ORDER BY embedding_provider_slug, embedding_model_slug, embedding_model_version`)
 	if err != nil {
 		return out, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var item EmbeddingWorkspaceCount
-		if err := rows.Scan(&item.ModelKey, &item.Version, &item.Dim, &item.Count); err != nil {
+		if err := rows.Scan(&item.ProviderSlug, &item.ModelSlug, &item.Version, &item.Dim, &item.Count); err != nil {
 			return out, err
 		}
 		out.EmbeddingWorkspaceCounts = append(out.EmbeddingWorkspaceCounts, item)
@@ -200,8 +152,7 @@ func snapshotFrom(ctx context.Context, q querier) (RegistrySnapshot, error) {
 }
 
 func credentialEnv(provider string) string {
-	replacer := strings.NewReplacer("-", "_", ".", "_")
-	return strings.ToUpper(replacer.Replace(provider)) + "_API_KEY"
+	return models.MustEliteLLMProviders().CredentialEnv(provider)
 }
 
 type compiledDraft struct {
@@ -212,14 +163,14 @@ type compiledDraft struct {
 }
 
 type CellTarget struct {
-	Kind     string
-	ModelKey string
-	Version  int
-	DraftID  string
+	Kind    string
+	Model   models.Ref
+	Version int
+	DraftID string
 }
 
 type GridCell struct {
-	RowKey    string
+	Row       models.Ref
 	Surface   string
 	Target    CellTarget
 	IsDefault bool
@@ -227,39 +178,31 @@ type GridCell struct {
 
 type gridDraft struct {
 	ID                        string
-	ModelKey                  string
-	DisplayName               string
+	ProviderName              string
+	ModelName                 string
 	ProviderSlug              string
-	BaseURL                   string
-	ProviderModelID           string
-	AuthMode                  string
+	ModelSlug                 string
+	PlatformEnabled           bool
+	ByokEnabled               bool
 	ContextWindowTokens       int
+	ThinkingLevels            []string
+	DefaultThinking           string
 	Params                    json.RawMessage
 	MicrosPerInputToken       int64
 	MicrosPerCachedInputToken int64
 	MicrosPerOutputToken      int64
 }
 
-type DeprecationFallback struct {
-	ModelKey    string
-	Surface     string
-	FallbackKey string
-}
-
-type EmbeddingEndpointUpdate struct {
-	ModelKey     string
-	Version      int
-	ProviderSlug string
-	BaseURL      string
+func (d gridDraft) Ref() models.Ref {
+	return models.Ref{ProviderSlug: d.ProviderSlug, ModelSlug: d.ModelSlug}
 }
 
 type gridSaveRequest struct {
 	ExpectedVersion       int64
 	Cells                 []GridCell
 	Drafts                []gridDraft
-	Deprecations          []DeprecationFallback
-	EmbeddingUpdates      []EmbeddingEndpointUpdate
 	EmbeddingAcknowledged bool
+	ActorID               string
 }
 
 type RegistrySaveResult struct {
@@ -271,8 +214,8 @@ type RegistrySaveResult struct {
 }
 
 type existingTarget struct {
-	ModelKey string
-	Version  int
+	models.Ref
+	Version int
 }
 
 func activeToGrid(req RegistrySaveRequest, current RegistrySnapshot) (gridSaveRequest, error) {
@@ -280,29 +223,22 @@ func activeToGrid(req RegistrySaveRequest, current RegistrySnapshot) (gridSaveRe
 		ExpectedVersion:       req.Revision,
 		EmbeddingAcknowledged: req.AcknowledgeEmbeddingRetarget,
 	}
-	latest := make(map[string]CatalogConfig)
+	latest := make(map[models.Ref]CatalogConfig)
 	for _, config := range current.Configs {
-		if config.Enabled && config.Version > latest[config.ModelKey].Version {
-			latest[config.ModelKey] = config
+		ref := config.Ref()
+		if config.Enabled && config.Version > latest[ref].Version {
+			latest[ref] = config
 		}
 	}
-	seenKeys := make(map[string]bool)
+	seenModels := make(map[models.Ref]bool)
 	for _, draft := range req.Active {
-		if seenKeys[draft.ModelKey] {
-			return grid, validation("active model keys must be unique")
+		ref := models.Ref{ProviderSlug: draft.ProviderSlug, ModelSlug: draft.ModelSlug}
+		if seenModels[ref] {
+			return grid, validation("active provider/model identities must be unique")
 		}
-		seenKeys[draft.ModelKey] = true
-		internal := gridDraft{
-			ID: draft.ModelKey, ModelKey: draft.ModelKey,
-			DisplayName: draft.DisplayName, ProviderSlug: draft.ProviderSlug,
-			BaseURL: draft.BaseURL, ProviderModelID: draft.ProviderModelID,
-			AuthMode: draft.AuthMode, ContextWindowTokens: draft.ContextWindowTokens,
-			Params: draft.Params, MicrosPerInputToken: draft.Rates.InputMicros,
-			MicrosPerCachedInputToken: draft.Rates.CachedInputMicros,
-			MicrosPerOutputToken:      draft.Rates.OutputMicros,
-		}
+		seenModels[ref] = true
 		if len(draft.Surfaces) == 0 {
-			return grid, validation("active config %q needs at least one surface", draft.ModelKey)
+			return grid, validation("active config %s needs at least one surface", ref)
 		}
 		surfaces, err := uniqueSurfaces(draft.Surfaces)
 		if err != nil {
@@ -314,10 +250,25 @@ func activeToGrid(req RegistrySaveRequest, current RegistrySnapshot) (gridSaveRe
 		}
 		for _, surface := range defaults {
 			if !contains(surfaces, surface) {
-				return grid, validation("default %s is not served by %s", surface, draft.ModelKey)
+				return grid, validation("default %s is not served by %s", surface, ref)
 			}
 		}
-		currentConfig, exists := latest[draft.ModelKey]
+		internal := gridDraft{
+			ID:           ref.String(),
+			ProviderName: draft.ProviderName, ModelName: draft.ModelName,
+			ProviderSlug: draft.ProviderSlug, ModelSlug: draft.ModelSlug,
+			PlatformEnabled: draft.PlatformEnabled, ByokEnabled: draft.ByokEnabled,
+			ContextWindowTokens: draft.ContextWindowTokens,
+			ThinkingLevels:      append([]string(nil), draft.ThinkingLevels...),
+			DefaultThinking:     draft.DefaultThinking,
+			Params:              draft.Params, MicrosPerInputToken: draft.Rates.InputMicros,
+			MicrosPerCachedInputToken: draft.Rates.CachedInputMicros,
+			MicrosPerOutputToken:      draft.Rates.OutputMicros,
+		}
+		currentConfig, exists := latest[ref]
+		if err := bindEliteLLMDraft(&internal, surfaces); err != nil {
+			return grid, err
+		}
 		embedding := contains(surfaces, models.SurfaceEmbedding)
 		if embedding {
 			if !exists || !contains(currentConfig.Surfaces, models.SurfaceEmbedding) {
@@ -325,13 +276,6 @@ func activeToGrid(req RegistrySaveRequest, current RegistrySnapshot) (gridSaveRe
 			}
 			if err := validateEmbeddingDraft(currentConfig, internal, surfaces); err != nil {
 				return grid, err
-			}
-			if currentConfig.ProviderSlug != draft.ProviderSlug ||
-				currentConfig.BaseURL != draft.BaseURL {
-				grid.EmbeddingUpdates = append(grid.EmbeddingUpdates, EmbeddingEndpointUpdate{
-					ModelKey: draft.ModelKey, Version: currentConfig.Version,
-					ProviderSlug: draft.ProviderSlug, BaseURL: draft.BaseURL,
-				})
 			}
 		} else {
 			if err := validateDraft(internal); err != nil {
@@ -344,7 +288,7 @@ func activeToGrid(req RegistrySaveRequest, current RegistrySnapshot) (gridSaveRe
 		target := CellTarget{Kind: "draft", DraftID: internal.ID}
 		if embedding || exists && configIdentityMatches(currentConfig, internal) {
 			target = CellTarget{
-				Kind: "existing", ModelKey: currentConfig.ModelKey,
+				Kind: "existing", Model: currentConfig.Ref(),
 				Version: currentConfig.Version,
 			}
 		} else {
@@ -352,39 +296,25 @@ func activeToGrid(req RegistrySaveRequest, current RegistrySnapshot) (gridSaveRe
 		}
 		for _, surface := range surfaces {
 			grid.Cells = append(grid.Cells, GridCell{
-				RowKey: draft.ModelKey, Surface: surface, Target: target,
+				Row: ref, Surface: surface, Target: target,
 				IsDefault: contains(defaults, surface),
 			})
 		}
 	}
 	for _, config := range current.Configs {
 		if config.Enabled && contains(config.Surfaces, models.SurfaceEmbedding) &&
-			!seenKeys[config.ModelKey] {
-			return grid, validation("embedding key %s must remain active", config.ModelKey)
+			!seenModels[config.Ref()] {
+			return grid, validation("embedding model %s must remain active", config.Ref())
 		}
-	}
-	for _, fallback := range req.Fallbacks {
-		grid.Deprecations = append(grid.Deprecations, DeprecationFallback{
-			ModelKey: fallback.FromKey, Surface: fallback.Surface,
-			FallbackKey: fallback.ToKey,
-		})
 	}
 	sort.Slice(grid.Cells, func(i, j int) bool {
-		if grid.Cells[i].RowKey == grid.Cells[j].RowKey {
+		if grid.Cells[i].Row == grid.Cells[j].Row {
 			return grid.Cells[i].Surface < grid.Cells[j].Surface
 		}
-		return grid.Cells[i].RowKey < grid.Cells[j].RowKey
-	})
-	sort.Slice(grid.Deprecations, func(i, j int) bool {
-		left := grid.Deprecations[i]
-		right := grid.Deprecations[j]
-		if left.ModelKey != right.ModelKey {
-			return left.ModelKey < right.ModelKey
+		if grid.Cells[i].Row.ProviderSlug == grid.Cells[j].Row.ProviderSlug {
+			return grid.Cells[i].Row.ModelSlug < grid.Cells[j].Row.ModelSlug
 		}
-		if left.Surface != right.Surface {
-			return left.Surface < right.Surface
-		}
-		return left.FallbackKey < right.FallbackKey
+		return grid.Cells[i].Row.ProviderSlug < grid.Cells[j].Row.ProviderSlug
 	})
 	return grid, nil
 }
@@ -393,7 +323,7 @@ func uniqueSurfaces(values []string) ([]string, error) {
 	seen := make(map[string]bool)
 	out := make([]string, 0, len(values))
 	for _, value := range values {
-		if !contains(Surfaces, value) {
+		if _, known := models.ParseSurface(value); !known {
 			return nil, validation("unknown surface %q", value)
 		}
 		if seen[value] {
@@ -407,12 +337,14 @@ func uniqueSurfaces(values []string) ([]string, error) {
 }
 
 func configIdentityMatches(current CatalogConfig, draft gridDraft) bool {
-	return current.ModelKey == draft.ModelKey &&
-		current.DisplayName == draft.DisplayName &&
+	return current.ProviderName == draft.ProviderName &&
+		current.ModelName == draft.ModelName &&
 		current.ProviderSlug == draft.ProviderSlug &&
-		current.BaseURL == draft.BaseURL &&
-		current.ProviderModelID == draft.ProviderModelID &&
-		current.AuthMode == draft.AuthMode &&
+		current.ModelSlug == draft.ModelSlug &&
+		current.PlatformEnabled == draft.PlatformEnabled &&
+		current.ByokEnabled == draft.ByokEnabled &&
+		sameStringSet(current.ThinkingLevels, draft.ThinkingLevels) &&
+		current.DefaultThinking == draft.DefaultThinking &&
 		current.ContextWindowTokens == draft.ContextWindowTokens &&
 		sameJSON(current.Params, draft.Params) &&
 		current.MicrosPerInputToken == draft.MicrosPerInputToken &&
@@ -426,22 +358,19 @@ func validateEmbeddingDraft(
 	surfaces []string,
 ) error {
 	if !sameStringSet(current.Surfaces, surfaces) ||
-		current.DisplayName != draft.DisplayName ||
-		current.ProviderModelID != draft.ProviderModelID ||
-		current.AuthMode != draft.AuthMode ||
+		current.ProviderName != draft.ProviderName ||
+		current.ModelName != draft.ModelName ||
+		current.ModelSlug != draft.ModelSlug ||
+		current.PlatformEnabled != draft.PlatformEnabled ||
+		current.ByokEnabled != draft.ByokEnabled ||
+		!sameStringSet(current.ThinkingLevels, draft.ThinkingLevels) ||
+		current.DefaultThinking != draft.DefaultThinking ||
 		current.ContextWindowTokens != draft.ContextWindowTokens ||
 		!sameJSON(current.Params, draft.Params) ||
 		current.MicrosPerInputToken != draft.MicrosPerInputToken ||
 		current.MicrosPerCachedInputToken != draft.MicrosPerCachedInputToken ||
 		current.MicrosPerOutputToken != draft.MicrosPerOutputToken {
 		return validation("embedding identity, params, rates, and surfaces are immutable")
-	}
-	if !providerSlugPattern.MatchString(draft.ProviderSlug) {
-		return validation("embedding provider slug is invalid")
-	}
-	parsed, err := url.Parse(draft.BaseURL)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
-		return validation("embedding base URL must be an absolute HTTPS URL")
 	}
 	return nil
 }
@@ -456,17 +385,17 @@ func sameJSON(left, right json.RawMessage) bool {
 func embeddingDefaultChanged(req gridSaveRequest, current RegistrySnapshot) bool {
 	var currentTarget existingTarget
 	for _, config := range current.Configs {
-		if contains(config.IsDefaultFor, "embedding") {
-			currentTarget = existingTarget{ModelKey: config.ModelKey, Version: config.Version}
+		if contains(config.IsDefaultFor, models.SurfaceEmbedding) {
+			currentTarget = existingTarget{Ref: config.Ref(), Version: config.Version}
 			break
 		}
 	}
 	for _, cell := range req.Cells {
-		if cell.Surface != "embedding" || !cell.IsDefault {
+		if cell.Surface != models.SurfaceEmbedding || !cell.IsDefault {
 			continue
 		}
 		return (cell.Target.Kind != "existing" && cell.Target.Kind != "catalog") ||
-			cell.Target.ModelKey != currentTarget.ModelKey ||
+			cell.Target.Model != currentTarget.Ref ||
 			cell.Target.Version != currentTarget.Version
 	}
 	return currentTarget != (existingTarget{})
@@ -477,7 +406,7 @@ func (s *RegistryStore) Save(
 	principal Principal,
 	req RegistrySaveRequest,
 ) (RegistrySnapshot, error) {
-	if principal.Role != RoleAdmin {
+	if !principal.Has(PermWriteRegistry) {
 		return RegistrySnapshot{}, ErrForbidden
 	}
 	current, err := s.Snapshot(ctx)
@@ -488,7 +417,8 @@ func (s *RegistryStore) Save(
 	if err != nil {
 		return RegistrySnapshot{}, err
 	}
-	writer, err := s.writer(ctx)
+	grid.ActorID = principal.UserID
+	writer, err := s.admin.writer(ctx)
 	if err != nil {
 		return RegistrySnapshot{}, err
 	}
@@ -497,8 +427,16 @@ func (s *RegistryStore) Save(
 		return RegistrySnapshot{}, err
 	}
 	defer tx.Rollback(ctx)
-	_, err = s.saveTx(ctx, tx, grid)
+	result, err := s.saveTx(ctx, tx, grid)
 	if err != nil {
+		return RegistrySnapshot{}, err
+	}
+	if _, err := tx.Exec(ctx, `
+		SELECT record_registry_audit($1, $2, $3, $4, $5, $6, $7)`,
+		principal.UserID, req.Revision, result.Version,
+		result.InsertedRows, result.DisabledRows, result.RemappedUsers,
+		obs.TraceID(ctx),
+	); err != nil {
 		return RegistrySnapshot{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
@@ -511,7 +449,10 @@ func (s *RegistryStore) saveGrid(
 	ctx context.Context,
 	req gridSaveRequest,
 ) (RegistrySaveResult, error) {
-	writer, err := s.writer(ctx)
+	if strings.TrimSpace(req.ActorID) == "" {
+		req.ActorID = "system"
+	}
+	writer, err := s.admin.writer(ctx)
 	if err != nil {
 		return RegistrySaveResult{}, err
 	}
@@ -535,6 +476,10 @@ func (s *RegistryStore) saveTx(
 	tx pgx.Tx,
 	req gridSaveRequest,
 ) (RegistrySaveResult, error) {
+	actorID := strings.TrimSpace(req.ActorID)
+	if actorID == "" {
+		actorID = "system"
+	}
 	var version int64
 	if err := tx.QueryRow(ctx, `
 		SELECT version FROM model_registry_state WHERE id = true FOR UPDATE`).
@@ -571,9 +516,6 @@ func (s *RegistryStore) saveTx(
 	if err := validateEmbeddingDefault(ctx, tx, current, defaults); err != nil {
 		return RegistrySaveResult{}, err
 	}
-	if err := applyEmbeddingUpdates(ctx, tx, current, req.EmbeddingUpdates); err != nil {
-		return RegistrySaveResult{}, err
-	}
 	result := RegistrySaveResult{}
 	if _, err := tx.Exec(ctx, `
 		UPDATE model_configs
@@ -585,39 +527,32 @@ func (s *RegistryStore) saveTx(
 		if err := assignDraftVersion(ctx, tx, &drafts[i]); err != nil {
 			return result, err
 		}
-		_, err = tx.Exec(ctx, `
-			INSERT INTO model_configs (
-				model_key, version, display_name, provider_slug, base_url,
-				provider_model_id, auth_mode, context_window_tokens, params,
-				surfaces, micros_per_input_token, micros_per_cached_input_token,
-				micros_per_output_token, enabled, is_default_for
-			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,true,$14)`,
-			drafts[i].ModelKey, drafts[i].Version, drafts[i].DisplayName,
-			drafts[i].ProviderSlug, drafts[i].BaseURL,
-			drafts[i].ProviderModelID, drafts[i].AuthMode,
-			drafts[i].ContextWindowTokens, drafts[i].Params,
-			drafts[i].Surfaces, drafts[i].MicrosPerInputToken,
+		_, err = tx.Exec(ctx, insertModelConfigSQL,
+			drafts[i].Version, drafts[i].ProviderName, drafts[i].ModelName,
+			drafts[i].ProviderSlug, drafts[i].ModelSlug,
+			drafts[i].PlatformEnabled, drafts[i].ByokEnabled,
+			drafts[i].ContextWindowTokens, drafts[i].ThinkingLevels, drafts[i].DefaultThinking,
+			drafts[i].Params, drafts[i].Surfaces, drafts[i].MicrosPerInputToken,
 			drafts[i].MicrosPerCachedInputToken,
-			drafts[i].MicrosPerOutputToken, drafts[i].DefaultFor)
+			drafts[i].MicrosPerOutputToken, drafts[i].DefaultFor, actorID)
 		if err != nil {
 			return result, err
 		}
 		result.InsertedRows++
 	}
-	remapped, notifications, err := applyDeprecations(ctx, tx, req.Deprecations)
-	if err != nil {
-		return result, err
-	}
-	result.RemappedUsers += remapped
-	result.Notifications += notifications
 	disabled, inserted, err := applyExistingTargets(
-		ctx, tx, current, existing, defaults,
+		ctx, tx, current, existing, defaults, actorID,
 	)
 	if err != nil {
 		return result, err
 	}
 	result.DisabledRows += disabled
 	result.InsertedRows += inserted
+	remapped, err := remapPrefsToDefaults(ctx, tx)
+	if err != nil {
+		return result, err
+	}
+	result.RemappedUsers += remapped
 	result.Version = version + 1
 	if _, err := tx.Exec(ctx, `
 		UPDATE model_registry_state
@@ -631,12 +566,20 @@ func compileGrid(
 	req gridSaveRequest,
 	current RegistrySnapshot,
 ) ([]compiledDraft, map[existingTarget][]string, map[string]existingTarget, error) {
+	catalog, err := models.LoadEliteLLMProviders()
+	if err != nil {
+		return nil, nil, nil, err
+	}
 	configs := make(map[existingTarget]CatalogConfig)
 	for _, c := range current.Configs {
-		configs[existingTarget{c.ModelKey, c.Version}] = c
+		configs[existingTarget{Ref: c.Ref(), Version: c.Version}] = c
 	}
 	draftByID := make(map[string]gridDraft)
-	for _, d := range req.Drafts {
+	for i := range req.Drafts {
+		d := req.Drafts[i]
+		if err := bindEliteLLMDraft(&d, nil); err != nil {
+			return nil, nil, nil, err
+		}
 		if err := validateDraft(d); err != nil {
 			return nil, nil, nil, err
 		}
@@ -654,25 +597,32 @@ func compileGrid(
 	defaults := make(map[string]existingTarget)
 	seenCells := make(map[string]bool)
 	for _, cell := range req.Cells {
-		if !contains(Surfaces, cell.Surface) {
+		if _, known := models.ParseSurface(cell.Surface); !known {
 			return nil, nil, nil, validation("unknown surface %q", cell.Surface)
 		}
-		if cell.RowKey == "" {
-			return nil, nil, nil, validation("row key is required")
+		if cell.Row.Zero() {
+			return nil, nil, nil, validation("row model is required")
 		}
-		cellID := cell.RowKey + "\x00" + cell.Surface
+		cellID := cell.Row.ProviderSlug + "\x00" + cell.Row.ModelSlug + "\x00" + cell.Surface
 		if seenCells[cellID] {
-			return nil, nil, nil, validation("duplicate cell for %s/%s", cell.RowKey, cell.Surface)
+			return nil, nil, nil, validation("duplicate cell for %s/%s", cell.Row, cell.Surface)
 		}
 		seenCells[cellID] = true
 		if cell.Target.Kind == "existing" || cell.Target.Kind == "catalog" {
-			key := existingTarget{cell.Target.ModelKey, cell.Target.Version}
+			key := existingTarget{Ref: cell.Target.Model, Version: cell.Target.Version}
 			c, ok := configs[key]
 			if !ok || !c.Enabled {
-				return nil, nil, nil, validation("unknown enabled target %s v%d", key.ModelKey, key.Version)
+				return nil, nil, nil, validation("unknown enabled target %s v%d", key.Ref, key.Version)
 			}
-			if cell.RowKey != key.ModelKey {
-				return nil, nil, nil, validation("aliases are not supported: row key must equal model key")
+			if cell.Row != key.Ref {
+				return nil, nil, nil, validation("aliases are not supported: row model must equal target model")
+			}
+			if cell.Surface == models.SurfaceEmbedding {
+				if !contains(c.Surfaces, models.SurfaceEmbedding) {
+					return nil, nil, nil, validation("new embedding rows require a schema and code deploy")
+				}
+			} else if err := validateProviderSurface(catalog, c.ProviderSlug, c.ModelSlug, cell.Surface); err != nil {
+				return nil, nil, nil, err
 			}
 			existing[key] = appendUnique(existing[key], cell.Surface)
 			if cell.IsDefault {
@@ -686,10 +636,10 @@ func compileGrid(
 			if !ok {
 				return nil, nil, nil, validation("unknown draft %q", cell.Target.DraftID)
 			}
-			if cell.RowKey != d.ModelKey {
-				return nil, nil, nil, validation("aliases are not supported: row key must equal model key")
+			if cell.Row != d.Ref() {
+				return nil, nil, nil, validation("aliases are not supported: row model must equal draft model")
 			}
-			if cell.Surface == "embedding" {
+			if cell.Surface == models.SurfaceEmbedding {
 				return nil, nil, nil, validation("new embedding catalog rows require a schema migration and cannot be created here")
 			}
 			use := draftUses[d.ID]
@@ -703,7 +653,7 @@ func compileGrid(
 					return nil, nil, nil, validation("surface %q has more than one default", cell.Surface)
 				}
 				use.defaults = appendUnique(use.defaults, cell.Surface)
-				defaults[cell.Surface] = existingTarget{ModelKey: d.ModelKey, Version: -1}
+				defaults[cell.Surface] = existingTarget{Ref: d.Ref(), Version: -1}
 			}
 		} else {
 			return nil, nil, nil, validation("cell target kind must be existing or draft")
@@ -723,62 +673,6 @@ func compileGrid(
 	if err := enforceEmbeddingUnchanged(current, existing); err != nil {
 		return nil, nil, nil, err
 	}
-	desiredCells := make(map[string]bool)
-	for _, cell := range req.Cells {
-		desiredCells[cell.RowKey+"\x00"+cell.Surface] = true
-	}
-	requiredDeprecations := make(map[string]bool)
-	for _, config := range current.Configs {
-		if !config.Enabled {
-			continue
-		}
-		for _, surface := range config.Surfaces {
-			if _, userFacing := userPreferenceColumns[surface]; !userFacing {
-				continue
-			}
-			key := config.ModelKey + "\x00" + surface
-			if !desiredCells[key] {
-				requiredDeprecations[key] = true
-			}
-		}
-	}
-	seenDeprecations := make(map[string]bool)
-	for _, deprecation := range req.Deprecations {
-		key := deprecation.ModelKey + "\x00" + deprecation.Surface
-		if seenDeprecations[key] {
-			return nil, nil, nil, validation(
-				"duplicate deprecation for %s/%s",
-				deprecation.ModelKey,
-				deprecation.Surface,
-			)
-		}
-		seenDeprecations[key] = true
-		if !requiredDeprecations[key] {
-			return nil, nil, nil, validation(
-				"%s/%s is not being retired",
-				deprecation.ModelKey,
-				deprecation.Surface,
-			)
-		}
-		if deprecation.FallbackKey == deprecation.ModelKey ||
-			!desiredCells[deprecation.FallbackKey+"\x00"+deprecation.Surface] {
-			return nil, nil, nil, validation(
-				"fallback %s must serve %s in the saved grid",
-				deprecation.FallbackKey,
-				deprecation.Surface,
-			)
-		}
-	}
-	for key := range requiredDeprecations {
-		if !seenDeprecations[key] {
-			parts := strings.Split(key, "\x00")
-			return nil, nil, nil, validation(
-				"retiring %s from %s requires a fallback",
-				parts[0],
-				parts[1],
-			)
-		}
-	}
 	var drafts []compiledDraft
 	for id, use := range draftUses {
 		if len(use.surfaces) == 0 {
@@ -790,8 +684,11 @@ func compileGrid(
 		if use.defaults == nil {
 			use.defaults = []string{}
 		}
-		if d.AuthMode == "user_key" && len(use.defaults) > 0 {
-			return nil, nil, nil, validation("user-key draft %q cannot be a default", d.ID)
+		if !d.PlatformEnabled && len(use.defaults) > 0 {
+			return nil, nil, nil, validation("BYOK-only draft %q cannot be a default", d.ID)
+		}
+		if err := bindEliteLLMDraft(&d, use.surfaces); err != nil {
+			return nil, nil, nil, err
 		}
 		if err := validateConfigForSurfaces(d, use.surfaces); err != nil {
 			return nil, nil, nil, err
@@ -819,14 +716,16 @@ func compileGrid(
 		}
 		drafts = append(drafts, compiledDraft{
 			gridDraft: gridDraft{
-				ID:                        fmt.Sprintf("catalog:%s:%d", target.ModelKey, target.Version),
-				ModelKey:                  config.ModelKey,
-				DisplayName:               config.DisplayName,
+				ID:                        fmt.Sprintf("catalog:%s:%d", target.Ref, target.Version),
+				ProviderName:              config.ProviderName,
+				ModelName:                 config.ModelName,
 				ProviderSlug:              config.ProviderSlug,
-				BaseURL:                   config.BaseURL,
-				ProviderModelID:           config.ProviderModelID,
-				AuthMode:                  config.AuthMode,
+				ModelSlug:                 config.ModelSlug,
+				PlatformEnabled:           config.PlatformEnabled,
+				ByokEnabled:               config.ByokEnabled,
 				ContextWindowTokens:       config.ContextWindowTokens,
+				ThinkingLevels:            append([]string(nil), config.ThinkingLevels...),
+				DefaultThinking:           config.DefaultThinking,
 				Params:                    config.Params,
 				MicrosPerInputToken:       config.MicrosPerInputToken,
 				MicrosPerCachedInputToken: config.MicrosPerCachedInputToken,
@@ -866,7 +765,7 @@ func validateEmbeddingDefault(
 	var config *CatalogConfig
 	for index := range current.Configs {
 		candidate := &current.Configs[index]
-		if candidate.ModelKey == target.ModelKey &&
+		if candidate.Ref() == target.Ref &&
 			candidate.Version == target.Version {
 			config = candidate
 			break
@@ -899,17 +798,17 @@ func embeddingEligibility(
 		params.VectorTable == "" {
 		return false, fmt.Sprintf(
 			"embedding default %s v%d needs params.vector_table",
-			config.ModelKey, config.Version,
+			config.Ref(), config.Version,
 		), nil
 	}
 	spec, allowed := embeddingPinLookup(models.Pin{
-		Key: config.ModelKey, Version: config.Version,
+		Ref: models.Ref{ProviderSlug: config.ProviderSlug, ModelSlug: config.ModelSlug}, Version: config.Version,
 	})
 	if !allowed || spec.VectorTable != params.VectorTable ||
 		spec.Dimensions != params.Dimensions {
 		return false, fmt.Sprintf(
 			"embedding default %s v%d is not in the server vector-table allowlist",
-			config.ModelKey, config.Version,
+			config.Ref(), config.Version,
 		), nil
 	}
 	var tableExists bool
@@ -927,29 +826,26 @@ func embeddingEligibility(
 }
 
 func validateDraft(d gridDraft) error {
-	if d.ID == "" || !modelKeyPattern.MatchString(d.ModelKey) {
-		return validation("draft id and model key are required; model keys use lowercase letters, numbers, and hyphens")
+	if d.ID == "" {
+		return validation("draft id is required")
 	}
-	if strings.TrimSpace(d.DisplayName) == "" || strings.TrimSpace(d.ProviderModelID) == "" {
-		return validation("draft %q needs display name and provider model id", d.ID)
+	if strings.TrimSpace(d.ProviderName) == "" || strings.TrimSpace(d.ModelName) == "" ||
+		strings.TrimSpace(d.ModelSlug) == "" {
+		return validation("draft %q needs provider name, model name, and model slug", d.ID)
 	}
 	if !providerSlugPattern.MatchString(d.ProviderSlug) {
 		return validation("draft %q has an invalid provider slug", d.ID)
 	}
-	if d.AuthMode != "platform" && d.AuthMode != "user_key" && d.AuthMode != "platform_or_user" {
-		return validation("draft %q has an invalid auth mode", d.ID)
+	if !d.PlatformEnabled && !d.ByokEnabled {
+		return validation("draft %q needs platform or BYOK enabled", d.ID)
 	}
-	if d.AuthMode == "user_key" &&
+	if !d.PlatformEnabled &&
 		(d.MicrosPerInputToken != 0 || d.MicrosPerCachedInputToken != 0 || d.MicrosPerOutputToken != 0) {
-		return validation("user-key draft %q must have zero platform credit rates", d.ID)
+		return validation("BYOK-only draft %q must have zero platform credit rates", d.ID)
 	}
-	if d.AuthMode != "user_key" &&
+	if d.PlatformEnabled &&
 		(d.MicrosPerInputToken <= 0 || d.MicrosPerCachedInputToken <= 0 || d.MicrosPerOutputToken <= 0) {
 		return validation("platform draft %q needs positive input, cached-input, and output rates", d.ID)
-	}
-	parsed, err := url.Parse(d.BaseURL)
-	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
-		return validation("draft %q base URL must be an absolute HTTPS URL", d.ID)
 	}
 	var params map[string]any
 	if len(d.Params) == 0 || json.Unmarshal(d.Params, &params) != nil || params == nil {
@@ -959,11 +855,7 @@ func validateDraft(d gridDraft) error {
 }
 
 func validateConfigForSurfaces(d gridDraft, surfaces []string) error {
-	var params map[string]any
-	if err := json.Unmarshal(d.Params, &params); err != nil {
-		return validation("draft %q params must be a JSON object", d.ID)
-	}
-	if err := models.ValidateCatalogReasoning(surfaces, params); err != nil {
+	if err := models.ValidateThinking(surfaces, d.ThinkingLevels, d.DefaultThinking); err != nil {
 		return validation("draft %q: %v", d.ID, err)
 	}
 	for _, surface := range surfaces {
@@ -983,12 +875,12 @@ func enforceEmbeddingUnchanged(
 	existing map[existingTarget][]string,
 ) error {
 	for _, c := range current.Configs {
-		if !c.Enabled || !contains(c.Surfaces, "embedding") {
+		if !c.Enabled || !contains(c.Surfaces, models.SurfaceEmbedding) {
 			continue
 		}
-		target := existingTarget{c.ModelKey, c.Version}
+		target := existingTarget{Ref: c.Ref(), Version: c.Version}
 		surfaces := existing[target]
-		if !contains(surfaces, "embedding") ||
+		if !contains(surfaces, models.SurfaceEmbedding) ||
 			!sameStringSet(surfaces, c.Surfaces) {
 			return validation("embedding rows cannot be removed, disabled, or reassigned")
 		}
@@ -998,51 +890,9 @@ func enforceEmbeddingUnchanged(
 
 func assignDraftVersion(ctx context.Context, tx pgx.Tx, draft *compiledDraft) error {
 	return tx.QueryRow(ctx,
-		`SELECT COALESCE(max(version), 0) + 1 FROM model_configs WHERE model_key = $1`,
-		draft.ModelKey).Scan(&draft.Version)
-}
-
-func applyEmbeddingUpdates(
-	ctx context.Context,
-	tx pgx.Tx,
-	current RegistrySnapshot,
-	updates []EmbeddingEndpointUpdate,
-) error {
-	configs := make(map[existingTarget]CatalogConfig)
-	for _, config := range current.Configs {
-		configs[existingTarget{ModelKey: config.ModelKey, Version: config.Version}] = config
-	}
-	seen := make(map[existingTarget]bool)
-	for _, update := range updates {
-		target := existingTarget{ModelKey: update.ModelKey, Version: update.Version}
-		config, ok := configs[target]
-		if !ok || !config.Enabled || !contains(config.Surfaces, "embedding") {
-			return validation("embedding endpoint target %s v%d is not enabled", update.ModelKey, update.Version)
-		}
-		if seen[target] {
-			return validation("duplicate embedding endpoint update for %s v%d", update.ModelKey, update.Version)
-		}
-		seen[target] = true
-		if !providerSlugPattern.MatchString(update.ProviderSlug) {
-			return validation("embedding endpoint provider slug is invalid")
-		}
-		parsed, err := url.Parse(update.BaseURL)
-		if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
-			return validation("embedding endpoint base URL must be absolute HTTPS")
-		}
-		if _, err := tx.Exec(ctx, `
-			UPDATE model_configs
-			SET provider_slug = $3, base_url = $4
-			WHERE model_key = $1 AND version = $2`,
-			update.ModelKey,
-			update.Version,
-			update.ProviderSlug,
-			update.BaseURL,
-		); err != nil {
-			return err
-		}
-	}
-	return nil
+		`SELECT COALESCE(max(version), 0) + 1 FROM model_configs
+		  WHERE provider_slug = $1 AND model_slug = $2`,
+		draft.ProviderSlug, draft.ModelSlug).Scan(&draft.Version)
 }
 
 func applyExistingTargets(
@@ -1051,6 +901,7 @@ func applyExistingTargets(
 	current RegistrySnapshot,
 	targets map[existingTarget][]string,
 	defaults map[string]existingTarget,
+	actorID string,
 ) (int64, int, error) {
 	var disabled int64
 	inserted := 0
@@ -1058,17 +909,17 @@ func applyExistingTargets(
 		if !c.Enabled {
 			continue
 		}
-		key := existingTarget{c.ModelKey, c.Version}
+		key := existingTarget{Ref: c.Ref(), Version: c.Version}
 		surfaces, selected := targets[key]
 		if !selected {
-			if contains(c.Surfaces, "embedding") {
+			if contains(c.Surfaces, models.SurfaceEmbedding) {
 				continue
 			}
 			tag, err := tx.Exec(ctx, `
-				UPDATE model_configs SET enabled = false, is_default_for = '{}'
-				WHERE model_key = $1 AND version = $2 AND enabled`,
-				c.ModelKey,
-				c.Version,
+				UPDATE model_configs
+				SET enabled = false, is_default_for = '{}', updated_at = now(), updated_by = $4
+				WHERE provider_slug = $1 AND model_slug = $2 AND version = $3 AND enabled`,
+				c.ProviderSlug, c.ModelSlug, c.Version, actorID,
 			)
 			if err != nil {
 				return disabled, inserted, err
@@ -1090,152 +941,116 @@ func applyExistingTargets(
 			var nextVersion int
 			if err := tx.QueryRow(ctx, `
 				SELECT COALESCE(max(version), 0) + 1
-				FROM model_configs WHERE model_key = $1`,
-				c.ModelKey).Scan(&nextVersion); err != nil {
+				FROM model_configs WHERE provider_slug = $1 AND model_slug = $2`,
+				c.ProviderSlug, c.ModelSlug).Scan(&nextVersion); err != nil {
 				return disabled, inserted, err
 			}
-			if _, err := tx.Exec(ctx, `
-				INSERT INTO model_configs (
-					model_key, version, display_name, provider_slug, base_url,
-					provider_model_id, auth_mode, context_window_tokens, params,
-					surfaces, micros_per_input_token,
-					micros_per_cached_input_token, micros_per_output_token,
-					enabled, is_default_for
-				) VALUES (
-					$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,true,$14
-				)`,
-				c.ModelKey, nextVersion, c.DisplayName, c.ProviderSlug,
-				c.BaseURL, c.ProviderModelID, c.AuthMode,
-				c.ContextWindowTokens, c.Params, surfaces,
+			if _, err := tx.Exec(ctx, insertModelConfigSQL,
+				nextVersion, c.ProviderName, c.ModelName, c.ProviderSlug,
+				c.ModelSlug, c.PlatformEnabled, c.ByokEnabled,
+				c.ContextWindowTokens, c.ThinkingLevels, c.DefaultThinking,
+				c.Params, surfaces,
 				c.MicrosPerInputToken, c.MicrosPerCachedInputToken,
-				c.MicrosPerOutputToken, defaultFor); err != nil {
+				c.MicrosPerOutputToken, defaultFor, actorID); err != nil {
 				return disabled, inserted, err
 			}
 			inserted++
 			tag, err := tx.Exec(ctx, `
 				UPDATE model_configs
-				SET enabled = false, is_default_for = '{}'
-				WHERE model_key = $1 AND version = $2 AND enabled`,
-				c.ModelKey, c.Version)
+				SET enabled = false, is_default_for = '{}', updated_at = now(), updated_by = $4
+				WHERE provider_slug = $1 AND model_slug = $2 AND version = $3 AND enabled`,
+				c.ProviderSlug, c.ModelSlug, c.Version, actorID)
 			if err != nil {
 				return disabled, inserted, err
 			}
 			disabled += tag.RowsAffected()
 			continue
 		}
+		if sameStringSet(defaultFor, c.IsDefaultFor) {
+			if len(defaultFor) == 0 {
+				continue
+			}
+			if _, err := tx.Exec(ctx, `
+				UPDATE model_configs
+				SET is_default_for = $4
+				WHERE provider_slug = $1 AND model_slug = $2 AND version = $3`,
+				c.ProviderSlug, c.ModelSlug, c.Version, defaultFor); err != nil {
+				return disabled, inserted, err
+			}
+			continue
+		}
 		if _, err := tx.Exec(ctx, `
 			UPDATE model_configs
-			SET is_default_for = $3
-			WHERE model_key = $1 AND version = $2`,
-			c.ModelKey, c.Version, defaultFor); err != nil {
+			SET is_default_for = $4, updated_at = now(), updated_by = $5
+			WHERE provider_slug = $1 AND model_slug = $2 AND version = $3`,
+			c.ProviderSlug, c.ModelSlug, c.Version, defaultFor, actorID); err != nil {
 			return disabled, inserted, err
 		}
 	}
 	return disabled, inserted, nil
 }
 
-func applyDeprecations(
-	ctx context.Context,
-	tx pgx.Tx,
-	deprecations []DeprecationFallback,
-) (int64, int, error) {
-	deprecations = append([]DeprecationFallback(nil), deprecations...)
-	sort.Slice(deprecations, func(i, j int) bool {
-		if deprecations[i].ModelKey != deprecations[j].ModelKey {
-			return deprecations[i].ModelKey < deprecations[j].ModelKey
-		}
-		if deprecations[i].FallbackKey != deprecations[j].FallbackKey {
-			return deprecations[i].FallbackKey < deprecations[j].FallbackKey
-		}
-		return deprecations[i].Surface < deprecations[j].Surface
-	})
-	type notice struct {
-		userID, email, locale, fromKey, fromName, toKey, toName string
-	}
-	notices := make(map[string]notice)
+const insertModelConfigSQL = `
+	INSERT INTO model_configs (
+		version, provider_name, model_name, provider_slug, model_slug,
+		platform_enabled, byok_enabled, context_window_tokens,
+		thinking_levels, default_thinking, params,
+		surfaces, micros_per_input_token,
+		micros_per_cached_input_token, micros_per_output_token,
+		enabled, is_default_for, created_by, updated_by
+	) VALUES (
+		$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,true,$16,$17,$17
+	)`
+
+func remapPrefsToDefaults(ctx context.Context, tx pgx.Tx) (int64, error) {
 	var remapped int64
-	for _, dep := range deprecations {
-		column, ok := userPreferenceColumns[dep.Surface]
-		if !ok {
-			return 0, 0, validation("surface %q has no user preference to remap", dep.Surface)
-		}
-		if dep.ModelKey == "" || dep.FallbackKey == "" || dep.ModelKey == dep.FallbackKey {
-			return 0, 0, validation("deprecation needs distinct model and fallback keys")
-		}
-		var fromName, toName string
-		if err := tx.QueryRow(ctx, `
-			SELECT display_name FROM model_configs
-			WHERE model_key=$1 ORDER BY version DESC LIMIT 1`,
-			dep.ModelKey).Scan(&fromName); err != nil {
-			return 0, 0, err
-		}
-		if err := tx.QueryRow(ctx, `
-			SELECT display_name FROM model_configs
-			WHERE model_key=$1 AND enabled AND $2=ANY(surfaces)
-			ORDER BY version DESC LIMIT 1`,
-			dep.FallbackKey, dep.Surface).Scan(&toName); err != nil {
+	for surface, columns := range userPreferenceColumns {
+		var defaultRef models.Ref
+		err := tx.QueryRow(ctx, `
+			SELECT provider_slug, model_slug FROM model_configs
+			 WHERE enabled AND $1 = ANY(is_default_for)
+			 ORDER BY version DESC LIMIT 1`, surface).Scan(&defaultRef.ProviderSlug, &defaultRef.ModelSlug)
+		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return 0, 0, validation(
-					"fallback %q is not enabled for %s",
-					dep.FallbackKey, dep.Surface,
-				)
+				return remapped, validation("surface %q needs exactly one default", surface)
 			}
-			return 0, 0, err
+			return remapped, err
 		}
-		rows, err := tx.Query(ctx, fmt.Sprintf(`
-			UPDATE users SET %s=$2, updated_at=now()
-			WHERE %s=$1
-			RETURNING id, COALESCE(email,''), locale`, column, column),
-			dep.ModelKey, dep.FallbackKey)
+		browserGuard := ""
+		if surface == models.SurfaceQuiz {
+			browserGuard = fmt.Sprintf("AND u.%s <> 'browser'", columns.Provider)
+		}
+		tag, err := tx.Exec(ctx, fmt.Sprintf(`
+			UPDATE users u SET %s = $1, %s = $2, updated_at = now()
+			 WHERE (u.%s, u.%s) IS DISTINCT FROM ($1, $2)
+			   %s
+			   AND NOT EXISTS (
+			     SELECT 1 FROM model_configs c
+			      WHERE c.provider_slug = u.%s
+			        AND c.model_slug = u.%s
+			        AND c.enabled
+			        AND $3 = ANY(c.surfaces)
+			        AND (
+			          c.platform_enabled
+			          OR (
+			            c.byok_enabled
+			            AND EXISTS (
+			              SELECT 1 FROM user_llm_credentials k
+			               WHERE k.user_id = u.id
+			                 AND k.provider_slug = c.provider_slug
+			            )
+			          )
+			        )
+			   )`, columns.Provider, columns.Model,
+			columns.Provider, columns.Model, browserGuard,
+			columns.Provider, columns.Model),
+			defaultRef.ProviderSlug, defaultRef.ModelSlug, surface)
 		if err != nil {
-			return 0, 0, err
+			return remapped, err
 		}
-		for rows.Next() {
-			var item notice
-			if err := rows.Scan(&item.userID, &item.email, &item.locale); err != nil {
-				rows.Close()
-				return 0, 0, err
-			}
-			item.fromKey, item.fromName = dep.ModelKey, fromName
-			item.toKey, item.toName = dep.FallbackKey, toName
-			if _, exists := notices[item.userID]; !exists {
-				notices[item.userID] = item
-			}
-			remapped++
-		}
-		if err := rows.Err(); err != nil {
-			rows.Close()
-			return 0, 0, err
-		}
-		rows.Close()
+		remapped += tag.RowsAffected()
 	}
-	userIDs := make([]string, 0, len(notices))
-	for userID := range notices {
-		userIDs = append(userIDs, userID)
-	}
-	sort.Strings(userIDs)
-	for _, userID := range userIDs {
-		item := notices[userID]
-		payload, err := json.Marshal(map[string]string{
-			"code": "model_deprecated", "fromKey": item.fromKey,
-			"fromName": item.fromName, "toKey": item.toKey, "toName": item.toName,
-		})
-		if err != nil {
-			return 0, 0, err
-		}
-		if _, err := store.NotifyTx(ctx, tx, store.NotifyParams{
-			UserID: item.userID, ToEmail: item.email, Locale: item.locale,
-			Kind: store.NotifSystem, Data: payload, Href: "/settings?tab=llm",
-			Template: "model-deprecated", Category: "billing",
-			IdempotencyKey: fmt.Sprintf(
-				"model-deprecated:%s:%s:%s",
-				item.fromKey, item.toKey, item.userID,
-			),
-		}); err != nil {
-			return 0, 0, err
-		}
-	}
-	return remapped, len(userIDs), nil
+	return remapped, nil
 }
 
 func contains(values []string, value string) bool {
@@ -1271,8 +1086,114 @@ func sameStringSet(left, right []string) bool {
 	return true
 }
 
+func listEliteLLMProviders() EliteLLMProviderPage {
+	catalog := models.MustEliteLLMProviders()
+	out := EliteLLMProviderPage{Providers: []EliteLLMProvider{}}
+	for _, provider := range catalog.All() {
+		out.Providers = append(out.Providers, EliteLLMProvider{
+			Slug:        provider.Slug,
+			Name:        provider.Name,
+			Modes:       append([]string(nil), provider.Modes...),
+			BYOK:        provider.BYOK,
+			PlatformEnv: provider.PlatformEnv,
+			Thinking:    append([]string(nil), provider.Thinking...),
+		})
+	}
+	return out
+}
+
 func validation(format string, args ...any) error {
 	return &ValidationError{Message: fmt.Sprintf(format, args...)}
+}
+
+func codedValidation(code, message, modelSlug, surface, reason string) error {
+	return &ValidationError{
+		Code:      code,
+		Message:   message,
+		ModelSlug: modelSlug,
+		Surface:   surface,
+		Reason:    reason,
+	}
+}
+
+func bindEliteLLMDraft(draft *gridDraft, surfaces []string) error {
+	catalog, err := models.LoadEliteLLMProviders()
+	if err != nil {
+		return err
+	}
+	slug := strings.TrimSpace(draft.ProviderSlug)
+	modelSlug := strings.TrimSpace(draft.ModelSlug)
+	if slug == "" || modelSlug == "" {
+		return codedValidation(
+			"unknown_provider",
+			"provider and model slug are required",
+			modelSlug, "", "provider or model slug is empty",
+		)
+	}
+	if !catalog.Known(slug) {
+		return codedValidation(
+			"unknown_provider",
+			fmt.Sprintf("provider %q is not handled by elitellm", slug),
+			modelSlug, "", "provider is not in elitellm_providers.json",
+		)
+	}
+	if allowed, reason := catalog.AllowsModel(slug, modelSlug); !allowed {
+		return codedValidation("hop_not_allowed", reason, modelSlug, "", reason)
+	}
+	if allowed, reason := catalog.AllowsThinking(slug, draft.ThinkingLevels); !allowed {
+		return codedValidation("invalid_thinking", reason, modelSlug, "", reason)
+	}
+	if draft.PlatformEnabled {
+		if ok, reason := catalog.PlatformEnvConfigured(slug); !ok {
+			return codedValidation(
+				"missing_platform_env",
+				fmt.Sprintf("platform path for %s requires %s", slug, catalog.CredentialEnv(slug)),
+				modelSlug, "", reason,
+			)
+		}
+	}
+	if spec, ok := catalog.Lookup(slug); ok && !spec.BYOK && draft.ByokEnabled {
+		return codedValidation(
+			"byok_not_supported",
+			fmt.Sprintf("%s does not support BYOK", slug),
+			modelSlug, "", "provider byok is false",
+		)
+	}
+	for _, surface := range surfaces {
+		if err := validateProviderSurface(catalog, slug, modelSlug, surface); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateProviderSurface(
+	catalog *models.EliteLLMProviders,
+	providerSlug, modelSlug, surface string,
+) error {
+	parsedSurface, known := models.ParseSurface(surface)
+	if !known {
+		return codedValidation(
+			"unsupported_surface",
+			fmt.Sprintf("surface %q is unknown", surface),
+			modelSlug, surface, "surface is not registered",
+		)
+	}
+	if allowed, reason := catalog.AllowsSurface(providerSlug, surface); !allowed {
+		return codedValidation(
+			"unsupported_surface",
+			reason,
+			modelSlug, surface, reason,
+		)
+	}
+	if models.RequiresAgenticLoop(parsedSurface) && !models.AgenticLoopCertified(providerSlug, modelSlug) {
+		return codedValidation(
+			"agentic_loop_not_certified",
+			fmt.Sprintf("%s is not certified for the %s agentic loop", modelSlug, surface),
+			modelSlug, surface, "two-turn streaming replay cassette is missing",
+		)
+	}
+	return nil
 }
 
 func IsValidation(err error) bool {

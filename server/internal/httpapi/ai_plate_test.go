@@ -12,7 +12,10 @@ func TestPlateCommandReqValidation(t *testing.T) {
 			Role:  "user",
 			Parts: []platePart{{Type: "text", Text: "Improve this"}},
 		}},
-		Context: plateContext{Children: []byte(`[{"type":"p","children":[{"text":"Draft"}]}]`)},
+		Context: plateContext{
+			Children: []byte(`[{"type":"p","children":[{"text":"Draft"}]}]`),
+			ToolName: "generate",
+		},
 	}
 	if err := valid.validate(); err != nil {
 		t.Fatalf("valid request rejected: %v", err)
@@ -28,6 +31,12 @@ func TestPlateCommandReqValidation(t *testing.T) {
 	badTool.Context.ToolName = "delete-document"
 	if err := badTool.validate(); err == nil {
 		t.Fatal("unknown tool name was accepted")
+	}
+
+	missingTool := valid
+	missingTool.Context.ToolName = ""
+	if err := missingTool.validate(); err == nil {
+		t.Fatal("missing tool name was accepted")
 	}
 }
 

@@ -7,11 +7,16 @@ import type {
 } from './api';
 
 export type CellTarget =
-  | { kind: 'catalog'; modelKey: string; version: number }
+  | {
+      kind: 'catalog';
+      providerSlug: string;
+      modelSlug: string;
+      version: number;
+    }
   | { kind: 'draft'; draftId: string };
 
 export type RegistryCell = {
-  rowKey: string;
+  rowId: string;
   surface: Surface;
   target: CellTarget;
   isDefault: boolean;
@@ -24,22 +29,15 @@ export type RegistryState = {
   cells: Map<string, RegistryCell>;
   originalCells: Map<string, RegistryCell>;
   drafts: Map<string, DraftConfig>;
-  deprecations: Map<string, string>;
   embeddingAcknowledged: boolean;
   dirty: boolean;
 };
 
 export type RegistryAction =
   | { type: 'set-cell'; cell: RegistryCell }
-  | { type: 'clear-cell'; rowKey: string; surface: Surface }
-  | { type: 'set-default'; rowKey: string; surface: Surface }
+  | { type: 'clear-cell'; rowId: string; surface: Surface }
+  | { type: 'set-default'; rowId: string; surface: Surface }
   | { type: 'upsert-draft'; draft: DraftConfig }
-  | {
-      type: 'set-deprecation';
-      modelKey: string;
-      surface: Surface;
-      fallbackKey: string;
-    }
   | { type: 'acknowledge-embedding'; checked: boolean }
   | { type: 'reset'; registry: Registry };
 
@@ -47,11 +45,10 @@ export type RegistryIssue = {
   code:
     | 'aliases'
     | 'missing-default'
-    | 'missing-fallback'
     | 'embedding-acknowledgement'
     | 'draft-not-used';
   message: string;
-  rowKey?: string;
+  rowId?: string;
   surface?: Surface;
 };
 
@@ -59,12 +56,22 @@ export type RequestAssembly =
   | { valid: true; request: RegistrySaveRequest; embeddingChanged: boolean }
   | { valid: false; issues: RegistryIssue[]; embeddingChanged: boolean };
 
-export function cellId(rowKey: string, surface: Surface): string {
-  return `${rowKey}\u0000${surface}`;
+export function modelRefId(ref: {
+  providerSlug: string;
+  modelSlug: string;
+}): string {
+  return JSON.stringify([ref.providerSlug, ref.modelSlug]);
 }
 
-function deprecationId(modelKey: string, surface: Surface): string {
-  return `${modelKey}\u0000${surface}`;
+export function modelRefLabel(ref: {
+  providerSlug: string;
+  modelSlug: string;
+}): string {
+  return `${ref.providerSlug} / ${ref.modelSlug}`;
+}
+
+export function cellId(rowId: string, surface: Surface): string {
+  return `${rowId}\u0000${surface}`;
 }
 
 function copyCell(cell: RegistryCell): RegistryCell {
@@ -81,15 +88,16 @@ function initialCells(registry: Registry): Map<string, RegistryCell> {
     for (const surface of config.surfaces) {
       const cell: RegistryCell = {
         isDefault: config.isDefaultFor.includes(surface),
-        rowKey: config.modelKey,
+        rowId: modelRefId(config),
         surface,
         target: {
           kind: 'catalog',
-          modelKey: config.modelKey,
+          modelSlug: config.modelSlug,
+          providerSlug: config.providerSlug,
           version: config.version,
         },
       };
-      cells.set(cellId(cell.rowKey, surface), cell);
+      cells.set(cellId(cell.rowId, surface), cell);
     }
   }
   return cells;
@@ -99,7 +107,6 @@ export function createRegistryState(registry: Registry): RegistryState {
   const cells = initialCells(registry);
   return {
     cells,
-    deprecations: new Map(),
     dirty: false,
     drafts: new Map(),
     embeddingAcknowledged: false,
@@ -107,9 +114,7 @@ export function createRegistryState(registry: Registry): RegistryState {
     originalCells: new Map(
       [...cells].map(([id, cell]) => [id, copyCell(cell)])
     ),
-    rows: [
-      ...new Set(registry.configs.map((config) => config.modelKey)),
-    ].sort(),
+    rows: [...new Set(registry.configs.map(modelRefId))].sort(),
     surfaces: registry.surfaces,
   };
 }
@@ -128,16 +133,6 @@ export function registryReducer(
       embeddingAcknowledged: action.checked,
     };
   }
-  if (action.type === 'set-deprecation') {
-    const deprecations = new Map(state.deprecations);
-    const id = deprecationId(action.modelKey, action.surface);
-    if (action.fallbackKey) {
-      deprecations.set(id, action.fallbackKey);
-    } else {
-      deprecations.delete(id);
-    }
-    return { ...state, deprecations, dirty: true };
-  }
   if (action.type === 'upsert-draft') {
     const drafts = new Map(state.drafts);
     drafts.set(action.draft.id, {
@@ -148,13 +143,13 @@ export function registryReducer(
       ...state,
       dirty: true,
       drafts,
-      rows: [...new Set([...state.rows, action.draft.modelKey])].sort(),
+      rows: [...new Set([...state.rows, modelRefId(action.draft)])].sort(),
     };
   }
 
   const cells = new Map(state.cells);
   if (action.type === 'clear-cell') {
-    const id = cellId(action.rowKey, action.surface);
+    const id = cellId(action.rowId, action.surface);
     if (!cells.has(id)) {
       return state;
     }
@@ -163,13 +158,13 @@ export function registryReducer(
   }
   if (action.type === 'set-cell') {
     cells.set(
-      cellId(action.cell.rowKey, action.cell.surface),
+      cellId(action.cell.rowId, action.cell.surface),
       copyCell(action.cell)
     );
     return { ...state, cells, dirty: true };
   }
 
-  const selectedId = cellId(action.rowKey, action.surface);
+  const selectedId = cellId(action.rowId, action.surface);
   const selected = cells.get(selectedId);
   if (!selected) {
     return state;
@@ -192,7 +187,8 @@ function sameTarget(left: CellTarget, right: CellTarget): boolean {
   }
   return (
     right.kind === 'catalog' &&
-    left.modelKey === right.modelKey &&
+    left.providerSlug === right.providerSlug &&
+    left.modelSlug === right.modelSlug &&
     left.version === right.version
   );
 }
@@ -208,7 +204,7 @@ export function embeddingChanged(state: RegistryState): boolean {
     return true;
   }
   return original.some((cell) => {
-    const desired = state.cells.get(cellId(cell.rowKey, cell.surface));
+    const desired = state.cells.get(cellId(cell.rowId, cell.surface));
     return (
       !desired ||
       desired.isDefault !== cell.isDefault ||
@@ -217,36 +213,27 @@ export function embeddingChanged(state: RegistryState): boolean {
   });
 }
 
-export function removedPreferenceCells(state: RegistryState): RegistryCell[] {
-  const preferenceSurfaces = new Set<Surface>([
-    'chat',
-    'generate',
-    'editor',
-    'quiz',
-  ]);
-  return [...state.originalCells.values()].filter(
-    (cell) =>
-      preferenceSurfaces.has(cell.surface) &&
-      !state.cells.has(cellId(cell.rowKey, cell.surface))
-  );
-}
-
 export function targetForRow(
   registry: Registry,
   state: RegistryState,
-  rowKey: string
+  rowId: string
 ): CellTarget | undefined {
   const draft = [...state.drafts.values()].find(
-    (candidate) => candidate.modelKey === rowKey
+    (candidate) => modelRefId(candidate) === rowId
   );
   if (draft) {
     return { draftId: draft.id, kind: 'draft' };
   }
   const latest = registry.configs
-    .filter((config) => config.modelKey === rowKey)
+    .filter((config) => modelRefId(config) === rowId)
     .sort((left, right) => right.version - left.version)[0];
   return latest
-    ? { kind: 'catalog', modelKey: latest.modelKey, version: latest.version }
+    ? {
+        kind: 'catalog',
+        modelSlug: latest.modelSlug,
+        providerSlug: latest.providerSlug,
+        version: latest.version,
+      }
     : undefined;
 }
 
@@ -255,18 +242,39 @@ export function cloneCatalogToDraft(
   id: string
 ): DraftConfig {
   return {
-    authMode: config.authMode,
-    baseUrl: config.baseUrl,
+    byokEnabled: config.byokEnabled,
     contextWindowTokens: config.contextWindowTokens,
-    displayName: config.displayName,
+    defaultThinking: config.defaultThinking,
     id,
     microsPerCachedInputToken: config.microsPerCachedInputToken,
     microsPerInputToken: config.microsPerInputToken,
     microsPerOutputToken: config.microsPerOutputToken,
-    modelKey: config.modelKey,
+    modelName: config.modelName,
+    modelSlug: config.modelSlug,
     params: { ...config.params },
-    providerModelId: config.providerModelId,
+    platformEnabled: config.platformEnabled,
+    providerName: config.providerName,
     providerSlug: config.providerSlug,
+    thinkingLevels: [...config.thinkingLevels],
+  };
+}
+
+export function emptyDraft(id: string): DraftConfig {
+  return {
+    byokEnabled: false,
+    contextWindowTokens: 0,
+    defaultThinking: 'instant',
+    id,
+    microsPerCachedInputToken: 0,
+    microsPerInputToken: 0,
+    microsPerOutputToken: 0,
+    modelName: '',
+    modelSlug: '',
+    params: {},
+    platformEnabled: true,
+    providerName: '',
+    providerSlug: '',
+    thinkingLevels: ['instant'],
   };
 }
 
@@ -295,34 +303,6 @@ export function assembleRegistryRequest(
     }
   }
 
-  const deprecations: Array<{
-    modelKey: string;
-    surface: Surface;
-    fallbackKey: string;
-  }> = [];
-  for (const removed of removedPreferenceCells(state)) {
-    const fallbackKey = state.deprecations.get(
-      deprecationId(removed.rowKey, removed.surface)
-    );
-    const fallbackCell = fallbackKey
-      ? state.cells.get(cellId(fallbackKey, removed.surface))
-      : undefined;
-    if (!fallbackKey || !fallbackCell || fallbackKey === removed.rowKey) {
-      issues.push({
-        code: 'missing-fallback',
-        message: `Choose a ${removed.surface} fallback for ${removed.rowKey}.`,
-        rowKey: removed.rowKey,
-        surface: removed.surface,
-      });
-      continue;
-    }
-    deprecations.push({
-      fallbackKey,
-      modelKey: removed.rowKey,
-      surface: removed.surface,
-    });
-  }
-
   const usedDraftIds = new Set(
     [...state.cells.values()]
       .filter((cell) => cell.target.kind === 'draft')
@@ -332,8 +312,8 @@ export function assembleRegistryRequest(
     if (!usedDraftIds.has(draft.id)) {
       issues.push({
         code: 'draft-not-used',
-        message: `${draft.modelKey} draft is not assigned to a surface.`,
-        rowKey: draft.modelKey,
+        message: `${modelRefLabel(draft)} draft is not assigned to a surface.`,
+        rowId: modelRefId(draft),
       });
     }
   }
@@ -351,9 +331,9 @@ export function assembleRegistryRequest(
   }
 
   const active: RegistrySaveRequest['active'] = [];
-  for (const rowKey of state.rows) {
+  for (const rowId of state.rows) {
     const rowCells = [...state.cells.values()].filter(
-      (cell) => cell.rowKey === rowKey
+      (cell) => cell.rowId === rowId
     );
     if (rowCells.length === 0) {
       continue;
@@ -362,8 +342,8 @@ export function assembleRegistryRequest(
     if (!target || rowCells.some((cell) => !sameTarget(cell.target, target))) {
       issues.push({
         code: 'draft-not-used',
-        message: `${rowKey} must use one configuration across all surfaces.`,
-        rowKey,
+        message: `${rowId} must use one configuration across all surfaces.`,
+        rowId,
       });
       continue;
     }
@@ -372,28 +352,30 @@ export function assembleRegistryRequest(
         ? state.drafts.get(target.draftId)
         : registry.configs.find(
             (config) =>
-              config.modelKey === target?.modelKey &&
+              config.providerSlug === target?.providerSlug &&
+              config.modelSlug === target.modelSlug &&
               config.version === target.version
           );
     if (!source) {
       issues.push({
         code: 'draft-not-used',
-        message: `${rowKey} has no usable configuration.`,
-        rowKey,
+        message: `${rowId} has no usable configuration.`,
+        rowId,
       });
       continue;
     }
     active.push({
-      authMode: source.authMode,
-      baseUrl: source.baseUrl,
+      byokEnabled: source.byokEnabled,
       contextWindowTokens: source.contextWindowTokens,
       defaultFor: rowCells
         .filter((cell) => cell.isDefault)
         .map((cell) => cell.surface),
-      displayName: source.displayName,
-      modelKey: source.modelKey,
+      defaultThinking: source.defaultThinking,
+      modelName: source.modelName,
+      modelSlug: source.modelSlug,
       params: { ...source.params },
-      providerModelId: source.providerModelId,
+      platformEnabled: source.platformEnabled,
+      providerName: source.providerName,
       providerSlug: source.providerSlug,
       rates: {
         cachedInputMicros: source.microsPerCachedInputToken,
@@ -401,6 +383,7 @@ export function assembleRegistryRequest(
         outputMicros: source.microsPerOutputToken,
       },
       surfaces: rowCells.map((cell) => cell.surface),
+      thinkingLevels: [...source.thinkingLevels],
     });
   }
   if (issues.length > 0) {
@@ -412,17 +395,12 @@ export function assembleRegistryRequest(
     request: {
       acknowledgeEmbeddingRetarget: state.embeddingAcknowledged,
       active,
-      fallbacks: deprecations.map((item) => ({
-        fromKey: item.modelKey,
-        surface: item.surface,
-        toKey: item.fallbackKey,
-      })),
       revision: state.expectedVersion,
     },
     valid: true,
   };
 }
 
-export function canMutateRegistry(role: 'viewer' | 'admin'): boolean {
-  return role === 'admin';
+export function canMutateRegistry(permissions: readonly string[]): boolean {
+  return permissions.includes('write_registry');
 }

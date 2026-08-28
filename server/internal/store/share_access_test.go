@@ -3,16 +3,14 @@ package store
 import (
 	"context"
 	"errors"
-	"os"
 	"testing"
+
+	"github.com/evonotes/server/internal/testdb"
 )
 
 func openAccessTestStore(t *testing.T) *Store {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
+	dsn := testdb.URL(t)
 	ctx := context.Background()
 	s, err := New(ctx, dsn)
 	if err != nil {

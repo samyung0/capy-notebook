@@ -32,8 +32,8 @@ function kindLabel(kind: string): string {
       return m.billing_kind_embedding();
     case 'caption':
       return m.billing_kind_caption();
-    case 'parse_gpu':
-      return m.billing_kind_parse_gpu();
+    case 'parse':
+      return m.billing_kind_parse();
     case 'email':
       return m.billing_kind_email();
     default:
@@ -261,7 +261,9 @@ export default function Billing() {
                     <div className="min-w-0">
                       <p className="text-fg">
                         {surfaceLabel(ev.surface)} · {kindLabel(ev.kind)}
-                        {ev.modelKey ? ` · ${ev.modelKey}` : ''}
+                        {ev.modelSlug
+                          ? ` · ${ev.providerSlug}/${ev.modelSlug}`
+                          : ''}
                       </p>
                       <p className="text-fg-muted text-xs">
                         {formatDate(ev.createdAt)}

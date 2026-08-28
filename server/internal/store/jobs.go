@@ -13,9 +13,9 @@ import (
 // CreateSourceWithJob inserts an uploaded file as 'pending' and enqueues an
 // ingest job in the same transaction (Postgres-backed queue; the Python worker
 // claims it with SKIP LOCKED). The file stays pending until a worker actually
-// starts (or a GPU parse slot is free); then it becomes 'processing'. The
+// starts (or a Modal parse slot is free); then it becomes 'processing'. The
 // file's url points at the raw-blob endpoint so the viewer can render it
-// immediately. parseMode selects the GPU parser the worker runs:
+// immediately. parseMode selects the CPU parser the worker runs:
 // 'fast' (Marker + RapidOCR on scans). Unknown names fail validation.
 // Text kinds ignore it and are inserted directly. captionImages asks the
 // worker to describe the figures that parse extracted.
@@ -142,12 +142,12 @@ var ErrIngestUnpinnable = errors.New("ingest cannot be enqueued without an actor
 // and free work: without actorUserId the worker has nobody to charge and settles
 // nothing, and without the pins it would run on its own current defaults and
 // settle at those rates. Enqueueing anyway meant the most expensive path in the
-// product — GPU parse, captions, embeddings, summaries — could run for free, and
+// product — document parsing, captions, embeddings, summaries — could run for free, and
 // the more the registry was reconfigured the likelier that became. Refusing the
 // upload is visible, retryable, and cheap by comparison.
 //
 // The embedding model is not snapshotted here: it belongs to the workspace
-// (workspaces.embedding_model_key), which the worker reads directly. A per-job
+// (the workspace embedding provider/model/version pin), which the worker reads directly. A per-job
 // copy could only ever agree with it or corrupt the workspace's vector space.
 func (s *Store) ingestJobPayload(ctx context.Context, actorUserID string, base map[string]any) ([]byte, error) {
 	if actorUserID == "" {
@@ -162,9 +162,11 @@ func (s *Store) ingestJobPayload(ctx context.Context, actorUserID string, base m
 		obs.CaptureErr(ctx, err, map[string]string{"stage": "ingest_model_pin"})
 		return nil, fmt.Errorf("%w: %v", ErrIngestUnpinnable, err)
 	}
-	base["ingestModelKey"] = ingest.Key
+	base["ingestProviderSlug"] = ingest.ProviderSlug
+	base["ingestModelSlug"] = ingest.ModelSlug
 	base["ingestModelVersion"] = ingest.Version
-	base["visionModelKey"] = vision.Key
+	base["visionProviderSlug"] = vision.ProviderSlug
+	base["visionModelSlug"] = vision.ModelSlug
 	base["visionModelVersion"] = vision.Version
 	return json.Marshal(base)
 }

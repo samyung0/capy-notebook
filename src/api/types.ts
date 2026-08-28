@@ -31,6 +31,7 @@ import type {
   CreateQuizReq as GenCreateQuizReq,
   CreateWorkspaceInviteReq as GenCreateWorkspaceInviteReq,
   Discussion as GenDiscussion,
+  UserModelSurface as GeneratedModelSurface,
   File as GenFile,
   Material as GenMaterial,
   MaterialRevision as GenMaterialRevision,
@@ -57,7 +58,7 @@ import type {
  * user, so they are absent from the query enum the server accepts. Quiz is
  * user-selectable and includes in-tab `browser:` keys that never live in
  * model_configs. */
-export type ModelSurface = 'chat' | 'generate' | 'editor' | 'quiz';
+export type ModelSurface = GeneratedModelSurface;
 export type {
   AccessCapabilities,
   AccountStatus,
@@ -79,28 +80,32 @@ export type {
   DeletionPreflight,
   Event as CalendarEvent,
   Flashcard,
+  ImportSourcesAccepted as SourceImportAcceptedResponse,
   IntegrationsStatus,
   Label,
   LLMCredential,
+  LLMCredentialProvider,
   LLMCredentialsResponse,
   LocaleInputBody,
   MaterialRef,
   MaterialUpdateResult,
   MicrosoftDriveHost,
   ModelOption,
-  ModelReasoning,
   ModelsResponse,
+  ModelThinking,
   Notification as AppNotification,
   NotificationCountOutputBody as NotificationCount,
   NotificationPage,
   NotificationPrefs,
   PublicDeck,
   PublicWorkspace,
+  Ref as ModelRef,
   ReorderChaptersReq,
   ReorderContentReq,
   RequestAccountDeletionReq,
   SaveCanvasReq,
   SetModelPrefsReq,
+  SourceImportStatus,
   SourceUploadPolicy,
   SrsState,
   SubscriptionBlocker,
@@ -142,6 +147,7 @@ export {
   SearchKind,
   ShareRole,
   SubscriptionStatus,
+  Surface,
   UserColor,
   WorkspaceRole,
 } from './gen/model';
@@ -271,9 +277,10 @@ export interface ChatMessage {
   error?: string;
   id: string;
   modelDisplayName?: string;
-  modelKey?: string;
+  modelSlug?: string;
   modelVersion?: number;
   phase?: ChatPhase;
+  providerSlug?: string;
   role: ChatRole;
   status: ChatStatus;
 }

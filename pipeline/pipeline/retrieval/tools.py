@@ -22,6 +22,7 @@ import requests
 
 from ..config import cfg
 from . import store
+from .chunking import clip_to_tokens, estimate_tokens
 from .limits import TurnBudget
 from .search import Passage, search
 
@@ -55,6 +56,7 @@ class ToolContext:
     citations: list[Passage] = field(default_factory=list)
     assistant_message_id: str = ""
     budget: TurnBudget | None = None
+    _scope_outline: dict[str, Any] | None = field(default=None, repr=False)
 
 
 Handler = Callable[[dict[str, Any], ToolContext], Awaitable[ToolResult]]
@@ -70,14 +72,100 @@ class ToolSpec:
     concurrency_class: str
 
 
-def _scoped(ctx: ToolContext, requested: list[str] | None) -> list[str] | None:
-    if not requested:
-        return ctx.file_ids or None
-    if not ctx.file_ids:
-        return requested
-    allowed = set(ctx.file_ids)
-    narrowed = [fid for fid in requested if fid in allowed]
-    return narrowed or ctx.file_ids
+@dataclass(frozen=True)
+class ResolvedScope:
+    file_ids: list[str]
+    file_names: list[str]
+    chapter_ids: list[str]
+    chapter_names: list[str]
+    indexed: bool
+
+
+_INVALID_SCOPE = "The requested scope is invalid or unavailable."
+_MISSING = object()
+
+
+async def _scope_outline(ctx: ToolContext) -> dict[str, Any]:
+    if ctx._scope_outline is None:
+        ctx._scope_outline = await store.workspace_outline(ctx.workspace_id)
+    return ctx._scope_outline
+
+
+def _scope_ids(value: Any) -> list[str] | None:
+    if value is _MISSING:
+        return []
+    if not isinstance(value, list):
+        return None
+    if any(not isinstance(item, str) or not item.strip() for item in value):
+        return None
+    return list(dict.fromkeys(item.strip() for item in value))
+
+
+async def _resolve_scope(
+    ctx: ToolContext,
+    raw_scope: Any = None,
+    *,
+    required_file_ids: bool = False,
+) -> ResolvedScope | ToolResult:
+    if raw_scope is _MISSING:
+        scope: dict[str, Any] = {}
+    elif isinstance(raw_scope, dict):
+        scope = raw_scope
+    else:
+        return _refused(_INVALID_SCOPE)
+    if set(scope) - {"file_ids", "chapter_ids"}:
+        return _refused(_INVALID_SCOPE)
+    file_ids = _scope_ids(scope.get("file_ids", _MISSING))
+    chapter_ids = _scope_ids(scope.get("chapter_ids", _MISSING))
+    if file_ids is None or chapter_ids is None:
+        return _refused(_INVALID_SCOPE)
+    if required_file_ids and not file_ids:
+        return _refused("describe_documents needs at least one file id.")
+
+    outline = await _scope_outline(ctx)
+    files = list(outline.get("files") or [])
+    chapters = list(outline.get("chapters") or [])
+    file_by_id = {str(file["id"]): file for file in files}
+    chapter_by_id = {str(chapter["id"]): chapter for chapter in chapters}
+    if ctx.file_ids and any(file_id not in file_by_id for file_id in ctx.file_ids):
+        return _refused(_INVALID_SCOPE)
+    allowed = set(ctx.file_ids) if ctx.file_ids else set(file_by_id)
+    if any(file_id not in file_by_id or file_id not in allowed for file_id in file_ids):
+        return _refused(_INVALID_SCOPE)
+    if any(chapter_id not in chapter_by_id for chapter_id in chapter_ids):
+        return _refused(_INVALID_SCOPE)
+
+    selected = list(file_ids)
+    seen = set(selected)
+    for chapter_id in chapter_ids:
+        chapter_files = [
+            str(file["id"])
+            for file in files
+            if str(file.get("chapter_id") or "") == chapter_id
+        ]
+        if any(file_id not in allowed for file_id in chapter_files):
+            return _refused(_INVALID_SCOPE)
+        for file_id in chapter_files:
+            if file_id not in seen:
+                seen.add(file_id)
+                selected.append(file_id)
+    if not file_ids and not chapter_ids:
+        selected = [str(file["id"]) for file in files if str(file["id"]) in allowed]
+
+    selected_files = [file_by_id[file_id] for file_id in selected]
+    return ResolvedScope(
+        file_ids=selected,
+        file_names=[str(file.get("name") or "") for file in selected_files],
+        chapter_ids=chapter_ids,
+        chapter_names=[
+            str(chapter_by_id[cid].get("name") or "") for cid in chapter_ids
+        ],
+        indexed=any(int(file.get("chunks") or 0) > 0 for file in selected_files),
+    )
+
+
+async def resolve_current_scope(ctx: ToolContext) -> ResolvedScope | ToolResult:
+    return await _resolve_scope(ctx, _MISSING)
 
 
 def _schema(name: str, description: str, parameters: dict[str, Any]) -> dict[str, Any]:
@@ -107,15 +195,23 @@ def _refused(text: str) -> ToolResult:
 
 
 async def _search_workspace(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    query = str(args.get("query") or "").strip()
-    if not query:
+    query_value = args.get("query")
+    if not isinstance(query_value, str) or not query_value.strip():
         return _refused("search_workspace needs a query.")
+    query = query_value.strip()
+    requested = args.get("file_ids", _MISSING)
+    ids = _scope_ids(requested)
+    if ids is None:
+        return _refused(_INVALID_SCOPE)
+    resolved = await _resolve_scope(ctx, {"file_ids": ids})
+    if isinstance(resolved, ToolResult):
+        return resolved
     if ctx.budget is not None:
         ctx.budget.embedding_calls += 1
     passages = await search(
         workspace_id=ctx.workspace_id,
         query=query,
-        file_ids=_scoped(ctx, args.get("file_ids")),
+        file_ids=resolved.file_ids or None,
     )
     if not passages:
         return _result(
@@ -152,15 +248,19 @@ _DESCRIBE_CAP = 8
 
 
 async def _describe_documents(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    requested = args.get("file_ids")
-    if not isinstance(requested, list):
-        requested = []
-    requested = [str(fid) for fid in requested if fid]
-    scoped = _scoped(ctx, requested or None)
-    if not scoped:
-        return _result("No documents in the current scope.")
-    ids = scoped[:_DESCRIBE_CAP]
-    rows = await store.file_summaries(ids)
+    requested = _scope_ids(args.get("file_ids", _MISSING))
+    if requested is None:
+        return _refused(_INVALID_SCOPE)
+    resolved = await _resolve_scope(
+        ctx,
+        {"file_ids": requested},
+        required_file_ids=True,
+    )
+    if isinstance(resolved, ToolResult):
+        return resolved
+    if len(resolved.file_ids) > _DESCRIBE_CAP:
+        return _refused(f"describe_documents accepts at most {_DESCRIBE_CAP} file ids.")
+    rows = await store.file_summaries(ctx.workspace_id, resolved.file_ids)
     if not rows:
         return _result("No summaries for those documents.")
     lines: list[str] = []
@@ -168,10 +268,6 @@ async def _describe_documents(args: dict[str, Any], ctx: ToolContext) -> ToolRes
         head = f"### {file['name']} (file_id={file['id']})"
         body = file.get("summary") or file.get("descriptor") or "(no summary yet)"
         lines.append(f"{head}\n{body}")
-    if len(scoped) > _DESCRIBE_CAP:
-        lines.append(
-            f"(showing {_DESCRIBE_CAP} of {len(scoped)}; call again for the rest.)"
-        )
     return _result("\n\n".join(lines))
 
 
@@ -185,12 +281,23 @@ def _file_line(file: dict[str, Any]) -> str:
 
 
 async def _read_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    file_id = str(args.get("file_id") or "")
-    if ctx.file_ids and file_id not in ctx.file_ids:
-        return _refused("That document is outside the current scope.")
-    start = max(0, int(args.get("start") or 0))
-    count = min(12, max(1, int(args.get("count") or 4)))
-    rows = await store.read_file_range(file_id=file_id, start=start, count=count)
+    file_id = args.get("file_id")
+    if not isinstance(file_id, str) or not file_id.strip():
+        return _refused("read_document needs a file id.")
+    resolved = await _resolve_scope(ctx, {"file_ids": [file_id.strip()]})
+    if isinstance(resolved, ToolResult):
+        return resolved
+    try:
+        start = max(0, int(args.get("start") or 0))
+        count = min(12, max(1, int(args.get("count") or 4)))
+    except (TypeError, ValueError):
+        return _refused("read_document received an invalid range.")
+    rows = await store.read_file_range(
+        workspace_id=ctx.workspace_id,
+        file_id=resolved.file_ids[0],
+        start=start,
+        count=count,
+    )
     if not rows:
         return _result("No passages at that position.")
     passages = [Passage.from_row(row) for row in rows]
@@ -202,10 +309,15 @@ async def _read_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
 
 async def _related_concepts(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    concept = str(args.get("concept") or "").strip()
-    if not concept:
+    concept_value = args.get("concept")
+    if not isinstance(concept_value, str) or not concept_value.strip():
         return _refused("related_concepts needs a concept.")
-    rows = await store.related_concepts(workspace_id=ctx.workspace_id, name=concept)
+    concept = concept_value.strip()
+    rows = await store.related_concepts(
+        workspace_id=ctx.workspace_id,
+        name=concept,
+        file_ids=ctx.file_ids or None,
+    )
     if not rows:
         return _result(f"'{concept}' is not indexed as a concept in this workspace.")
     return _result(
@@ -242,10 +354,24 @@ async def _generate_material(args: dict[str, Any], ctx: ToolContext) -> ToolResu
         return _refused("Material creation is unavailable in this deployment.")
     if not ctx.assistant_message_id:
         return _refused("Material creation needs the assistant message id.")
-    kind = str(args.get("kind") or "").strip()
+    kind_value = args.get("kind")
+    if not isinstance(kind_value, str) or kind_value not in {
+        "quiz",
+        "flashcards",
+        "mindmap",
+        "diagram",
+        "note",
+    }:
+        return _refused("generate_material needs a supported material kind.")
+    kind = kind_value
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id:
         return _refused("generate_material is missing its tool-call id.")
+    resolved = await _resolve_scope(ctx, args.get("scope", _MISSING))
+    if isinstance(resolved, ToolResult):
+        return resolved
+    if not resolved.indexed:
+        return _refused("The requested scope has no indexed content.")
     mid = material_id(ctx.assistant_message_id, call_id)
     payload = {
         "id": mid,
@@ -256,6 +382,10 @@ async def _generate_material(args: dict[str, Any], ctx: ToolContext) -> ToolResu
         "cards": args.get("cards") or [],
         "questions": args.get("questions") or [],
         "content": args.get("content") or "",
+        "fileIds": resolved.file_ids,
+        "chapterIds": resolved.chapter_ids,
+        "fileNames": resolved.file_names,
+        "chapters": resolved.chapter_names,
     }
 
     last_exc: BaseException | None = None
@@ -421,9 +551,12 @@ _register(
                     "file_ids": {
                         "type": "array",
                         "items": {"type": "string"},
-                        "description": "Documents to describe. Omit to describe the current scope.",
+                        "minItems": 1,
+                        "maxItems": 8,
+                        "description": "One to eight documents to describe.",
                     },
                 },
+                "required": ["file_ids"],
             },
         ),
         handler=_describe_documents,
@@ -514,6 +647,21 @@ _register(
                         "type": "string",
                         "description": "mindmap/diagram/note only; markdown with a mermaid block",
                     },
+                    "scope": {
+                        "type": "object",
+                        "description": "Source scope for the material. Omit or leave empty to use the current chat scope.",
+                        "properties": {
+                            "file_ids": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                            "chapter_ids": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                            },
+                        },
+                        "additionalProperties": False,
+                    },
                 },
                 "required": ["kind"],
             },
@@ -580,6 +728,18 @@ def render_result(result: ToolResult, numbered: list[tuple[int, Passage]]) -> st
         parts.append("\n\n".join(passage.as_context(n) for n, passage in numbered))
     parts.extend(part for part in result.text_parts if part)
     return "\n\n".join(parts) if parts else result.text()
+
+
+TOOL_RESULT_MAX_TOKENS = 8192
+
+
+def limit_tool_result(text: str) -> str:
+    """Bound stored tool output while making truncation visible to the model."""
+    if estimate_tokens(text) <= TOOL_RESULT_MAX_TOKENS:
+        return text
+    marker = "\n\n[Tool output truncated. Narrow the request or continue reading.]"
+    room = max(0, TOOL_RESULT_MAX_TOKENS - estimate_tokens(marker))
+    return clip_to_tokens(text, room) + marker
 
 
 # keep the old name for tests that still import it during the rewrite

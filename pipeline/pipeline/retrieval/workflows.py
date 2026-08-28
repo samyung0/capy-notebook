@@ -20,11 +20,19 @@ from typing import Any
 
 from ..config import cfg
 from . import models, store
-from .chunking import clip_to_tokens, estimate_tokens
+from .chunking import estimate_tokens
 from .locale import response_language_rule
 from .search import Passage
 
 log = logging.getLogger("evo.retrieval.workflows")
+
+
+class InvalidGenerateScope(ValueError):
+    """At least one requested file does not belong to the workspace."""
+
+
+class GenerateNoContent(ValueError):
+    """The resolved generation scope has no indexed passages."""
 
 
 async def gather_context(
@@ -39,10 +47,14 @@ async def gather_context(
     if budget is None:
         budget = cfg.llm_input_budget_tokens
     outline = await store.workspace_outline(workspace_id)
+    known_ids = {str(file["id"]) for file in outline["files"]}
+    requested = list(dict.fromkeys(file_ids or []))
+    if any(file_id not in known_ids for file_id in requested):
+        raise InvalidGenerateScope("The requested scope is invalid or unavailable.")
     files = [
         f
         for f in outline["files"]
-        if (not file_ids or f["id"] in set(file_ids)) and f["chunks"]
+        if (not requested or f["id"] in set(requested)) and f["chunks"]
     ]
     if not files:
         return "", []
@@ -51,7 +63,10 @@ async def gather_context(
     passages: list[Passage] = []
     for file in files:
         rows = await store.read_file_range(
-            file_id=file["id"], start=0, count=max(1, per_file)
+            workspace_id=workspace_id,
+            file_id=file["id"],
+            start=0,
+            count=max(1, per_file),
         )
         passages.extend(Passage.from_row(row) for row in rows)
     body: list[str] = []
@@ -135,7 +150,7 @@ async def produce(
     instruction: str,
     context: str,
     scope: str,
-    model: str | models.ModelConfig,
+    model: models.ModelConfig,
     temperature: float = 0.4,
     locale: str | None = None,
 ) -> str:
@@ -153,63 +168,6 @@ async def produce(
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
         model=model,
         temperature=temperature,
-    )
-
-
-async def produce_mapped(
-    *,
-    instruction: str,
-    passages: list[Passage],
-    scope: str,
-    model: str | models.ModelConfig,
-    combine: str,
-    locale: str | None = None,
-    budget: int | None = None,
-) -> str:
-    """Map-reduce for scopes too large for one context window.
-
-    Only used when the gathered context overflows: each document is summarized
-    against the instruction, then the summaries are combined. It costs more
-    calls, so it is not the default path.
-    """
-    if budget is None:
-        from .. import registry
-
-        if isinstance(model, models.ModelConfig):
-            budget = registry.input_budget(model)
-        else:
-            budget = cfg.llm_input_budget_tokens
-    by_file: dict[str, list[Passage]] = {}
-    for passage in passages:
-        by_file.setdefault(passage.file_id, []).append(passage)
-    partials: list[str] = []
-    for group in by_file.values():
-        context = clip_to_tokens(
-            "\n\n".join(p.as_context(i + 1) for i, p in enumerate(group)),
-            budget,
-        )
-        partials.append(
-            await produce(
-                instruction=instruction,
-                context=context,
-                scope=scope,
-                model=model,
-                locale=locale,
-            )
-        )
-    return await models.complete_text(
-        [
-            {
-                "role": "system",
-                "content": combine + "\n" + response_language_rule(locale),
-            },
-            {
-                "role": "user",
-                "content": clip_to_tokens("\n\n---\n\n".join(partials), budget),
-            },
-        ],
-        model=model,
-        temperature=0.3,
     )
 
 
@@ -248,8 +206,3 @@ def normalize_questions(data: Any) -> list[dict[str, Any]]:
             item["rubrics"] = _wrap_values(item.get("rubrics"))
         questions.append(item)
     return questions
-
-
-def overflows(context: str, passages: list[Passage], budget: int | None = None) -> bool:
-    limit = cfg.llm_input_budget_tokens if budget is None else budget
-    return estimate_tokens(context) >= limit and len({p.file_id for p in passages}) > 1

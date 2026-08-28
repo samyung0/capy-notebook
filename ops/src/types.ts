@@ -1,16 +1,21 @@
 export type {
   CatalogConfig,
   CostGroup,
+  CostReport,
   CostRow,
   DraftConfig,
+  EliteLLMProvider,
   Health,
+  OperatorAuditEvent,
+  OperatorAuditPage,
   OpsApi,
   Overview,
+  ReconciliationStatus,
   Registry,
   RegistrySaveRequest,
   Session,
   Surface,
+  ThinkingLevel,
   UserDetail,
   UserSearchResult,
 } from './api';
-export type AuthMode = 'platform' | 'user_key' | 'platform_or_user';

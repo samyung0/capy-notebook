@@ -360,37 +360,85 @@ func (s *Store) StorageUsage(ctx context.Context, userID string) (StorageUsage, 
 // repaired in its own short transaction, and only ledger rows observed before
 // the authoritative read are removed; a concurrent material update therefore
 // remains for the next pass instead of being lost.
-func (s *Store) ReconcileStorage(ctx context.Context) (int64, error) {
+func (s *Store) ReconcileStorage(
+	ctx context.Context,
+	run ReconcileRun,
+) (scanned int64, repaired int64, errorCount int64, err error) {
 	rows, err := s.pool.Query(ctx, `SELECT id FROM users ORDER BY id`)
 	if err != nil {
-		return 0, err
+		return 0, 0, 0, err
 	}
 	defer rows.Close()
-	var repaired int64
 	for rows.Next() {
 		var userID string
 		if err := rows.Scan(&userID); err != nil {
-			return repaired, err
+			return scanned, repaired, errorCount, err
 		}
+		scanned++
 		tx, err := s.pool.Begin(ctx)
 		if err != nil {
-			return repaired, err
+			return scanned, repaired, errorCount, err
 		}
-		if err := s.reconcileStorageUserTx(ctx, tx, userID); err != nil {
+		changed, err := s.reconcileStorageUserTx(ctx, tx, run, userID)
+		if err != nil {
 			_ = tx.Rollback(ctx)
-			return repaired, err
+			if errors.Is(err, ErrReconciliationLeaseLost) {
+				return scanned, repaired, errorCount, err
+			}
+			errorCount++
+			if reportErr := s.InsertReconciliationReport(
+				ctx,
+				run,
+				"storage_user_error",
+				"user",
+				userID,
+				userID,
+				map[string]any{"outcome": "error", "stage": "reconcile_user"},
+			); reportErr != nil {
+				return scanned, repaired, errorCount, reportErr
+			}
+			continue
 		}
 		if err := tx.Commit(ctx); err != nil {
-			return repaired, err
+			errorCount++
+			if reportErr := s.InsertReconciliationReport(
+				ctx,
+				run,
+				"storage_user_error",
+				"user",
+				userID,
+				userID,
+				map[string]any{"outcome": "error", "stage": "commit_user"},
+			); reportErr != nil {
+				return scanned, repaired, errorCount, reportErr
+			}
+			continue
 		}
-		repaired++
+		if changed {
+			repaired++
+		}
 	}
-	return repaired, rows.Err()
+	return scanned, repaired, errorCount, rows.Err()
 }
 
-func (s *Store) reconcileStorageUserTx(ctx context.Context, tx pgx.Tx, userID string) error {
+func (s *Store) reconcileStorageUserTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	run ReconcileRun,
+	userID string,
+) (bool, error) {
+	if err := assertReconciliationLeaseTx(ctx, tx, run); err != nil {
+		return false, err
+	}
 	if err := s.lockStorageRowTx(ctx, tx, userID); err != nil {
-		return err
+		return false, err
+	}
+	var oldUsed, oldReserved int64
+	if err := tx.QueryRow(ctx, `
+		SELECT used_bytes, reserved_bytes
+		  FROM user_storage WHERE user_id = $1`, userID).
+		Scan(&oldUsed, &oldReserved); err != nil {
+		return false, err
 	}
 	for _, query := range []string{
 		`SELECT id FROM files WHERE user_id=$1 FOR UPDATE`,
@@ -401,25 +449,25 @@ func (s *Store) reconcileStorageUserTx(ctx context.Context, tx pgx.Tx, userID st
 	} {
 		rows, err := tx.Query(ctx, query, userID)
 		if err != nil {
-			return err
+			return false, err
 		}
 		for rows.Next() {
 			var id string
 			if err := rows.Scan(&id); err != nil {
 				rows.Close()
-				return err
+				return false, err
 			}
 		}
 		queryErr := rows.Err()
 		rows.Close()
 		if queryErr != nil {
-			return queryErr
+			return false, queryErr
 		}
 	}
 	var maxDeltaID int64
 	if err := tx.QueryRow(ctx, `SELECT COALESCE(max(id), 0)
 		FROM user_storage_deltas WHERE user_id=$1`, userID).Scan(&maxDeltaID); err != nil {
-		return err
+		return false, err
 	}
 	var used, reserved int64
 	if err := tx.QueryRow(ctx, `SELECT
@@ -431,14 +479,35 @@ func (s *Store) reconcileStorageUserTx(ctx context.Context, tx pgx.Tx, userID st
 		COALESCE((SELECT sum(declared_size) FROM upload_sessions
 			WHERE user_id=$1 AND status='pending' AND expires_at > now()), 0)`,
 		userID).Scan(&used, &reserved); err != nil {
-		return err
+		return false, err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE user_storage
-		SET used_bytes=$2, reserved_bytes=$3, updated_at=now()
-		WHERE user_id=$1`, userID, used, reserved); err != nil {
-		return err
+	changed := oldUsed != used || oldReserved != reserved
+	if changed {
+		if _, err := tx.Exec(ctx, `UPDATE user_storage
+			SET used_bytes=$2, reserved_bytes=$3, updated_at=now()
+			WHERE user_id=$1`, userID, used, reserved); err != nil {
+			return false, err
+		}
+		if err := insertReconciliationReportTx(
+			ctx,
+			tx,
+			run,
+			"storage_counter_drift",
+			"user",
+			userID,
+			userID,
+			map[string]any{
+				"outcome":               "repaired",
+				"previousUsedBytes":     oldUsed,
+				"previousReservedBytes": oldReserved,
+				"repairedUsedBytes":     used,
+				"repairedReservedBytes": reserved,
+			},
+		); err != nil {
+			return false, err
+		}
 	}
 	_, err := tx.Exec(ctx, `DELETE FROM user_storage_deltas
 		WHERE user_id=$1 AND id <= $2`, userID, maxDeltaID)
-	return err
+	return changed, err
 }

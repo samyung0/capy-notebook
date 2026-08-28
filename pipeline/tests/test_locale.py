@@ -21,7 +21,6 @@ from pipeline.retrieve.ai_adapter import (
     build_edit_prompt,
     build_generate_prompt,
 )
-from pipeline.retrieve.service import CompleteReq, _complete_messages
 
 
 def _message(text: str) -> UIMessage:
@@ -33,6 +32,7 @@ def _command(
 ) -> PlateCommandReq:
     return PlateCommandReq(
         workspaceId="ws_1",
+        thinking="instant",
         locale=locale,
         messages=[_message(instruction)],
         ctx=PlateContext(
@@ -86,40 +86,3 @@ def test_edit_prompt_keeps_selection_language():
     prompt = build_edit_prompt(_command(locale="zh", instruction="Make this shorter"))
     assert "keep the selection's language" in prompt
     assert "Write all user-visible prose" not in prompt
-
-
-def test_complete_command_without_context_uses_response_language():
-    messages = _complete_messages(
-        CompleteReq(
-            workspaceId="ws_1", mode="command", prompt="Write a heading", locale="zh"
-        )
-    )
-    assert (
-        "Write all user-visible prose in Simplified Chinese" in messages[0]["content"]
-    )
-
-
-def test_complete_command_with_context_rewrites_in_place():
-    messages = _complete_messages(
-        CompleteReq(
-            workspaceId="ws_1",
-            mode="command",
-            prompt="Fix grammar",
-            context="The cat sat.",
-            locale="zh",
-        )
-    )
-    assert "keep the selection's language" in messages[0]["content"]
-
-
-def test_complete_continue_does_not_force_ui_language():
-    messages = _complete_messages(
-        CompleteReq(
-            workspaceId="ws_1",
-            mode="continue",
-            context="The cat sat on the",
-            locale="zh",
-        )
-    )
-    assert "Simplified Chinese" not in messages[0]["content"]
-    assert "Match the existing tone" in messages[0]["content"]

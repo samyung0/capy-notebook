@@ -8,7 +8,7 @@ import {
   Outlet,
 } from '@tanstack/react-router';
 import { lazy, type ReactNode, Suspense, useMemo } from 'react';
-import { createOpsApi } from '@/api';
+import { createOpsApi, hasPermission } from '@/api';
 import { AppContextProvider, useOpsApp } from '@/app-context';
 import { AppShell } from '@/components/app-shell';
 import { ErrorState, PageLoading } from '@/components/common';
@@ -16,12 +16,20 @@ import { ErrorState, PageLoading } from '@/components/common';
 const CostsPage = lazy(() =>
   import('@/pages/costs').then((module) => ({ default: module.CostsPage }))
 );
+const AuditPage = lazy(() =>
+  import('@/pages/audit').then((module) => ({ default: module.AuditPage }))
+);
 const HealthPage = lazy(() =>
   import('@/pages/health').then((module) => ({ default: module.HealthPage }))
 );
 const OverviewPage = lazy(() =>
   import('@/pages/overview').then((module) => ({
     default: module.OverviewPage,
+  }))
+);
+const ReconciliationPage = lazy(() =>
+  import('@/pages/reconciliation').then((module) => ({
+    default: module.ReconciliationPage,
   }))
 );
 const RegistryPage = lazy(() =>
@@ -139,7 +147,7 @@ function UserDetailRoutePage() {
 
 function RegistryRoutePage() {
   const { session } = useOpsApp();
-  return session.role === 'admin' ? (
+  return hasPermission(session, 'write_registry') ? (
     <PageBoundary>
       <RegistryPage />
     </PageBoundary>
@@ -177,6 +185,15 @@ const healthRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: '/health',
 });
+const reconciliationRoute = createRoute({
+  component: () => (
+    <PageBoundary>
+      <ReconciliationPage />
+    </PageBoundary>
+  ),
+  getParentRoute: () => authenticatedRoute,
+  path: '/reconciliation',
+});
 const usersRoute = createRoute({
   component: () => (
     <PageBoundary>
@@ -200,6 +217,15 @@ const costsRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: '/costs',
 });
+const auditRoute = createRoute({
+  component: () => (
+    <PageBoundary>
+      <AuditPage />
+    </PageBoundary>
+  ),
+  getParentRoute: () => authenticatedRoute,
+  path: '/audit',
+});
 const registryRoute = createRoute({
   component: RegistryRoutePage,
   getParentRoute: () => authenticatedRoute,
@@ -211,9 +237,11 @@ const routeTree = rootRoute.addChildren([
   authenticatedRoute.addChildren([
     overviewRoute,
     healthRoute,
+    reconciliationRoute,
     usersRoute,
     userDetailRoute,
     costsRoute,
+    auditRoute,
     registryRoute,
   ]),
 ]);

@@ -1,0 +1,16 @@
+{
+  "deepseek": {
+    "deepseek-v4-flash": {
+      "cassette": "pipeline/tests/cassettes/replay/deepseek__deepseek_v4_flash.yaml",
+      "test": "pipeline/tests/test_model_replay.py::test_certified_two_turn_replay[deepseek/deepseek-v4-flash]"
+    },
+    "deepseek-v4-flash-vision-exp": {
+      "cassette": "pipeline/tests/cassettes/replay/deepseek__deepseek_v4_flash_vision_exp.yaml",
+      "test": "pipeline/tests/test_model_replay.py::test_certified_two_turn_replay[deepseek/deepseek-v4-flash-vision-exp]"
+    },
+    "deepseek-v4-pro": {
+      "cassette": "pipeline/tests/cassettes/replay/deepseek__deepseek_v4_pro.yaml",
+      "test": "pipeline/tests/test_model_replay.py::test_certified_two_turn_replay[deepseek/deepseek-v4-pro]"
+    }
+  }
+}

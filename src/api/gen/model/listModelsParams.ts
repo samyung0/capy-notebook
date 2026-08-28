@@ -4,8 +4,8 @@
  * Evo Notes API
  * OpenAPI spec version: 0.1.0
  */
-import type { ListModelsSurface } from './listModelsSurface.ts';
+import type { UserModelSurface } from './userModelSurface.ts';
 
 export type ListModelsParams = {
-surface?: ListModelsSurface;
+surface?: UserModelSurface;
 };

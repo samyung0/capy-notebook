@@ -55,7 +55,7 @@ func (a *api) liveSubscriptionBlocker(ctx context.Context, uid string) (*apimode
 	if err != nil || customerID == "" {
 		return nil, err
 	}
-	sub, err := billing.ListActiveSubscription(customerID)
+	subscriptions, err := billing.ListEntitlingSubscriptions(customerID)
 	if err != nil {
 		// Failing closed here would make the account permanently undeletable
 		// during a Stripe outage, so surface it as a blocker the user can retry
@@ -63,15 +63,18 @@ func (a *api) liveSubscriptionBlocker(ctx context.Context, uid string) (*apimode
 		log.Printf("deletion preflight: stripe lookup for %s: %v", uid, err)
 		return &apimodel.SubscriptionBlocker{Unavailable: true}, nil
 	}
-	if sub == nil || sub.CancelAtPeriodEnd {
-		return nil, nil
+	for _, sub := range subscriptions {
+		if sub.CancelAtPeriodEnd {
+			continue
+		}
+		record := billing.SubscriptionRecord(sub, uid, a.cfg.StripePricePro, 0)
+		return &apimodel.SubscriptionBlocker{
+			StripeSubscriptionID: record.StripeSubscriptionID,
+			PlanTier:             string(record.PlanTier),
+			CurrentPeriodEnd:     record.CurrentPeriodEnd,
+		}, nil
 	}
-	record := billing.SubscriptionRecord(sub, uid, a.cfg.StripePricePro, 0)
-	return &apimodel.SubscriptionBlocker{
-		StripeSubscriptionID: record.StripeSubscriptionID,
-		PlanTier:             string(record.PlanTier),
-		CurrentPeriodEnd:     record.CurrentPeriodEnd,
-	}, nil
+	return nil, nil
 }
 
 func (a *api) deletionPreflight(ctx context.Context, _ *struct{}) (*deletionPreflightOutput, error) {

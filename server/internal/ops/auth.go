@@ -8,6 +8,7 @@ import (
 
 	clerk "github.com/clerk/clerk-sdk-go/v2"
 	clerkjwt "github.com/clerk/clerk-sdk-go/v2/jwt"
+	"github.com/evonotes/server/internal/obs"
 	"github.com/evonotes/server/internal/store"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -73,7 +74,15 @@ func (d *databaseOperators) Lookup(ctx context.Context, userID string) (Principa
 		}
 		return Principal{}, err
 	}
-	return Principal{UserID: session.UserID, Role: session.Role}, nil
+	permissions := session.Permissions
+	if permissions == nil {
+		permissions = []string{}
+	}
+	return Principal{
+		UserID:      session.UserID,
+		Role:        session.Role,
+		Permissions: permissions,
+	}, nil
 }
 
 func (d *databaseOperators) Touch(ctx context.Context, userID string) error {
@@ -81,9 +90,11 @@ func (d *databaseOperators) Touch(ctx context.Context, userID string) error {
 }
 
 type Authenticator struct {
-	Cloudflare CloudflareVerifier
-	Clerk      ClerkVerifier
-	Operators  OperatorDirectory
+	Clerk        ClerkVerifier
+	Operators    OperatorDirectory
+	AuthDisabled bool
+	DevUserID    string
+	CaptureError func(context.Context, error, map[string]string)
 }
 
 type principalContextKey struct{}
@@ -95,32 +106,31 @@ func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 
 func (a Authenticator) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" {
+		if r.URL.Path != "/api/ops" && !strings.HasPrefix(r.URL.Path, "/api/ops/") {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if a.Cloudflare == nil || a.Clerk == nil || a.Operators == nil {
+		if a.Operators == nil ||
+			(!a.AuthDisabled && a.Clerk == nil) ||
+			(a.AuthDisabled && strings.TrimSpace(a.DevUserID) == "") {
 			writeError(w, http.StatusServiceUnavailable, "auth_unavailable", "authentication unavailable")
 			return
 		}
-		assertion := strings.TrimSpace(r.Header.Get(AccessJWTHeader))
-		if assertion == "" {
-			writeError(w, http.StatusUnauthorized, "access_denied", "Cloudflare Access token required")
-			return
-		}
-		if _, err := a.Cloudflare.Verify(r.Context(), assertion); err != nil {
-			writeError(w, http.StatusUnauthorized, "access_denied", "Cloudflare Access token rejected")
-			return
-		}
-		bearer, ok := bearerToken(r.Header.Get("Authorization"))
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "unauthorized", "Clerk bearer token required")
-			return
-		}
-		userID, err := a.Clerk.Verify(r.Context(), bearer)
-		if err != nil {
-			writeError(w, http.StatusUnauthorized, "unauthorized", "Clerk bearer token rejected")
-			return
+		var userID string
+		if a.AuthDisabled {
+			userID = strings.TrimSpace(a.DevUserID)
+		} else {
+			bearer, ok := bearerToken(r.Header.Get("Authorization"))
+			if !ok {
+				writeError(w, http.StatusUnauthorized, "unauthorized", "Clerk bearer token required")
+				return
+			}
+			verified, err := a.Clerk.Verify(r.Context(), bearer)
+			if err != nil {
+				writeError(w, http.StatusUnauthorized, "unauthorized", "Clerk bearer token rejected")
+				return
+			}
+			userID = verified
 		}
 		principal, err := a.Operators.Lookup(r.Context(), userID)
 		if errors.Is(err, ErrForbidden) {
@@ -131,11 +141,18 @@ func (a Authenticator) Middleware(next http.Handler) http.Handler {
 			writeError(w, http.StatusInternalServerError, "operator_lookup_failed", "operator lookup failed")
 			return
 		}
-		if err := a.Operators.Touch(r.Context(), userID); err != nil {
-			writeError(w, http.StatusInternalServerError, "last_seen_failed", "operator session update failed")
-			return
+		ctx := obs.WithUser(r.Context(), userID)
+		if err := a.Operators.Touch(ctx, userID); err != nil {
+			capture := a.CaptureError
+			if capture == nil {
+				capture = obs.CaptureErr
+			}
+			capture(ctx, err, map[string]string{
+				"component": "operator_last_seen",
+				"operation": "touch_operator_seen",
+			})
 		}
-		ctx := context.WithValue(r.Context(), principalContextKey{}, principal)
+		ctx = context.WithValue(ctx, principalContextKey{}, principal)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

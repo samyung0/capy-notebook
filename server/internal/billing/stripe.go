@@ -102,26 +102,24 @@ func SubscriptionStatus(stripeStatus stripe.SubscriptionStatus) string {
 	}
 }
 
-func ListActiveSubscription(customerID string) (*stripe.Subscription, error) {
+func ListEntitlingSubscriptions(customerID string) ([]*stripe.Subscription, error) {
+	var out []*stripe.Subscription
 	params := &stripe.SubscriptionListParams{Customer: stripe.String(customerID)}
-	params.Filters.AddFilter("status", "", "active")
-	params.Limit = stripe.Int64(1)
+	params.Filters.AddFilter("status", "", "all")
+	params.Limit = stripe.Int64(100)
 	iter := subscription.List(params)
 	for iter.Next() {
-		return iter.Subscription(), nil
+		switch iter.Subscription().Status {
+		case stripe.SubscriptionStatusActive,
+			stripe.SubscriptionStatusTrialing,
+			stripe.SubscriptionStatusPastDue:
+			out = append(out, iter.Subscription())
+		}
 	}
 	if err := iter.Err(); err != nil {
 		return nil, err
 	}
-	// try trialing
-	params = &stripe.SubscriptionListParams{Customer: stripe.String(customerID)}
-	params.Filters.AddFilter("status", "", "trialing")
-	params.Limit = stripe.Int64(1)
-	iter = subscription.List(params)
-	for iter.Next() {
-		return iter.Subscription(), nil
-	}
-	return nil, iter.Err()
+	return out, nil
 }
 
 // SubscriptionRecord maps a Stripe subscription onto our record. The period

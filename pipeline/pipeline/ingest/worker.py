@@ -3,7 +3,7 @@
 Claims jobs from the Postgres queue and turns uploads into retrievable chunks:
 
 - ``txt`` / ``md`` / ``json`` are read straight from B2 and chunked as markdown.
-  The gateway still labels those jobs ``parseMode=none`` (there is no GPU parse
+  The gateway still labels those jobs ``parseMode=none`` (there is no Modal parse
   route to pick); they are indexed. ``parseMode=none`` on any other kind is
   store-only: the blob is kept, ``indexed=false``.
 - ``parseMode=fast`` parses on Modal with Marker plus PP-OCRv6 on scanned /
@@ -14,8 +14,8 @@ bounding box per block, plus the extracted images — so citations a reader can
 jump to and figures that can be captioned come from the same shape.
 
 Live progress is published to Redis; the Go gateway fans it to the browser over
-SSE. A file is ``pending`` until this worker is actually parsing (and holding a
-GPU slot); extra jobs wait there instead of opening more Modal boxes.
+SSE. A file is ``pending`` until this worker is actually parsing and holds a
+parse slot; extra jobs wait there instead of opening more Modal boxes.
 
 Run: ``python -m pipeline.ingest.worker``
 """
@@ -44,7 +44,7 @@ from ..jobs import (
     policy_for,
 )
 from ..parse import figures, modal_parser, slots
-from ..retrieval import indexing, store
+from ..retrieval import accounting, indexing, store
 from ..retrieval.chunking import (
     CHUNKER_VERSION,
     Chunk,
@@ -69,8 +69,11 @@ _REQUIRED_INGEST_STRINGS = (
     "kind",
     "parseMode",
     "actorUserId",
-    "ingestModelKey",
-    "visionModelKey",
+    "reservationId",
+    "ingestProviderSlug",
+    "ingestModelSlug",
+    "visionProviderSlug",
+    "visionModelSlug",
 )
 _REQUIRED_INGEST_INTS = ("ingestModelVersion", "visionModelVersion")
 _REQUIRED_INGEST_BOOLS = ("captionImages",)
@@ -163,26 +166,51 @@ def _finish_ok(
     notification_code: str = "source_ready",
     indexed: bool = True,
     attempt: int | None = None,
+    actor_user_id: str = "",
+    workspace_id: str = "",
+    reservation_id: str = "",
 ) -> None:
     notification = None
-    with db.connect() as conn:
-        with conn.cursor() as cur:
-            if _lost_claim(cur, job_id, attempt):
-                return
-            db.set_file_status(cur, file_id, "ready")
-            db.set_file_indexed(cur, file_id, indexed)
-            if content_hash is not None:
-                db.set_file_content_hash(cur, file_id, content_hash)
-            if artifact_key:
-                db.set_file_parse_artifact(
+    usage = obs.take_parse_usage()
+    try:
+        with db.connect() as conn:
+            with conn.cursor() as cur:
+                if _lost_claim(cur, job_id, attempt):
+                    return
+                _record_parse_usage_tx(
                     cur,
-                    file_id,
-                    artifact_key,
-                    artifact_fingerprint or "",
-                    artifact_version or "",
+                    usage=usage,
+                    file_id=file_id,
+                    workspace_id=workspace_id,
+                    actor_user_id=actor_user_id,
+                    reservation_id=reservation_id,
+                    job_id=job_id,
+                    attempt=int(attempt or 1),
+                    outcome="succeeded",
                 )
-            db.set_job(cur, job_id, "done")
-        conn.commit()
+                db.settle_credit_reservation(cur, reservation_id)
+                db.set_file_status(cur, file_id, "ready")
+                db.set_file_indexed(cur, file_id, indexed)
+                if content_hash is not None:
+                    db.set_file_content_hash(cur, file_id, content_hash)
+                if artifact_key:
+                    db.set_file_parse_artifact(
+                        cur,
+                        file_id,
+                        artifact_key,
+                        artifact_fingerprint or "",
+                        artifact_version or "",
+                    )
+                db.set_job(cur, job_id, "done")
+            conn.commit()
+    except Exception:
+        obs.record_parse_usage(
+            pages=usage.pages,
+            ocr_pages=usage.ocr_pages,
+            cpu_milliseconds=usage.cpu_milliseconds,
+            elapsed_milliseconds=usage.elapsed_milliseconds,
+        )
+        raise
     try:
         with db.connect() as conn:
             with conn.cursor() as cur:
@@ -215,7 +243,7 @@ def _finish_fail(
                 db.set_file_status(cur, file_id, "failed")
                 db.set_file_indexed(cur, file_id, False)
             db.set_job(cur, job_id, "failed", error[:500])
-            db.release_credit_reservation(cur, reservation_id)
+            db.close_credit_reservation(cur, reservation_id)
         conn.commit()
 
 
@@ -266,7 +294,7 @@ def _notify_ingest_terminal(
             if _lost_claim(cur, job_id, attempt):
                 return
             db.set_job(cur, job_id, "failed", error[:500])
-            db.release_credit_reservation(cur, reservation_id)
+            db.close_credit_reservation(cur, reservation_id)
             conn.commit()
         return
     name = _read_name(file_id)
@@ -296,7 +324,7 @@ def _account_allows_ingest(file_id: str, payload: dict) -> bool:
     leave the owner holding an unindexed file whose bytes they already paid for.
 
     A missing actor is refused rather than waved through. It used to mean "no
-    actor, nothing to check", which let a job parse, caption and embed on GPU
+    actor, nothing to check", which let a job parse, caption and embed
     and against three providers while billing nobody. The gateway will not
     enqueue without one, so reaching here without an actor means the row was
     written around it.
@@ -371,7 +399,7 @@ def _set_file_status(file_id: str, status: str) -> None:
 
 
 def _yield_for_capacity(job: dict, file_id: str, workspace_id: str, name: str) -> None:
-    """Give the GPU slot back to the queue. File stays pending; attempt is undone."""
+    """Give the parse slot back to the queue. File stays pending; attempt is undone."""
     attempt = int(job.get("attempts") or 1)
     with db.connect() as conn, conn.cursor() as cur:
         if _lost_claim(cur, job["id"], attempt):
@@ -408,139 +436,85 @@ def _pipeline_identity(*, kind: str, parse_mode: str, caption_images: bool) -> s
     )
 
 
-def _charge_ingest(
+def _record_parse_usage_tx(
+    cur,
+    *,
+    usage: obs.ParseUsage,
     file_id: str,
     workspace_id: str,
     actor_user_id: str,
-    reservation_id: str = "",
+    reservation_id: str,
+    job_id: str,
+    attempt: int,
+    outcome: str,
 ) -> None:
-    """Settle everything one ingest job spent, billed to the actor.
+    if usage.is_empty():
+        return
+    db.record_usage_event(
+        cur,
+        actor_user_id=actor_user_id,
+        workspace_id=workspace_id,
+        kind="parse",
+        surface="ingest",
+        provider="modal",
+        units=usage.pages,
+        unit="pages",
+        parse_pages=usage.pages,
+        parse_ocr_pages=usage.ocr_pages,
+        parse_cpu_milliseconds=usage.cpu_milliseconds,
+        parse_elapsed_milliseconds=usage.elapsed_milliseconds,
+        credit_micros=db.credits_for_parse_pages(usage.pages, usage.ocr_pages),
+        reservation_id=reservation_id,
+        idempotency_key=f"parse:{job_id}:{attempt}",
+        trace_id=obs.trace_id(),
+        metadata={
+            "fileId": file_id,
+            "jobId": job_id,
+            "attempt": attempt,
+            "outcome": outcome,
+            "digitalPageRateMicros": db.DIGITAL_PARSE_PAGE_CREDIT_MICROS,
+            "ocrPageRateMicros": db.OCR_PARSE_PAGE_CREDIT_MICROS,
+        },
+    )
 
-    Ingest is no longer an owner-billed exception. The payload records who
-    initiated the upload at enqueue time; that is who pays. GPU time is still
-    a flat rate because it is not a model_configs row.
-    """
-    usage = obs.current_usage()
-    gpu_millis = obs.take_gpu_millis()
-    actor = actor_user_id
+
+def _record_parse_attempt(
+    file_id: str,
+    workspace_id: str,
+    actor_user_id: str,
+    reservation_id: str,
+    job_id: str,
+    attempt: int,
+    outcome: str,
+) -> None:
+    """Persist one page-priced parse attempt before changing the job state."""
+    usage = obs.take_parse_usage()
+    if usage.is_empty():
+        return
     try:
         with db.connect() as conn, conn.cursor() as cur:
-            trace = obs.trace_id()
-            if actor and (usage is not None or gpu_millis):
-                ingest = registry.ingest_spec()
-                embed = registry.embedding_spec()
-                vision = registry.vision_spec()
-            if actor and usage is not None:
-                if usage.by_model:
-                    for model_id, bucket in usage.by_model.items():
-                        if model_id == embed.provider_model_id:
-                            continue
-                        spec = (
-                            vision if model_id == vision.provider_model_id else ingest
-                        )
-                        inp = int(bucket.get("input") or 0)
-                        out = int(bucket.get("output") or 0)
-                        if not (inp or out):
-                            continue
-                        db.record_usage_event(
-                            cur,
-                            actor_user_id=actor,
-                            workspace_id=workspace_id,
-                            kind="llm",
-                            surface="ingest",
-                            provider=spec.provider_slug,
-                            model=model_id,
-                            model_key=spec.model_key,
-                            model_version=spec.version,
-                            input_tokens=inp,
-                            output_tokens=out,
-                            unit="tokens",
-                            credit_micros=registry.credits_for_tokens(
-                                spec,
-                                "llm",
-                                inp,
-                                out,
-                                int(bucket.get("cached") or 0),
-                            ),
-                            reservation_id=reservation_id,
-                            trace_id=trace,
-                            metadata={
-                                "fileId": file_id,
-                                "calls": bucket.get("calls", 0),
-                            },
-                        )
-                elif usage.input_tokens or usage.output_tokens:
-                    db.record_usage_event(
-                        cur,
-                        actor_user_id=actor,
-                        workspace_id=workspace_id,
-                        kind="llm",
-                        surface="ingest",
-                        provider=ingest.provider_slug,
-                        model=usage.model,
-                        model_key=ingest.model_key,
-                        model_version=ingest.version,
-                        input_tokens=usage.input_tokens,
-                        output_tokens=usage.output_tokens,
-                        unit="tokens",
-                        credit_micros=registry.credits_for_tokens(
-                            ingest,
-                            "llm",
-                            usage.input_tokens,
-                            usage.output_tokens,
-                            getattr(usage, "cached_read_tokens", 0),
-                        ),
-                        reservation_id=reservation_id,
-                        trace_id=trace,
-                        metadata={"fileId": file_id, "calls": usage.calls},
-                    )
-                embed_tokens = usage.embed_tokens
-                if embed_tokens:
-                    db.record_usage_event(
-                        cur,
-                        actor_user_id=actor,
-                        workspace_id=workspace_id,
-                        kind="embedding",
-                        surface="ingest",
-                        provider=embed.provider_slug,
-                        model=embed.provider_model_id,
-                        model_key=embed.model_key,
-                        model_version=embed.version,
-                        input_tokens=embed_tokens,
-                        unit="tokens",
-                        credit_micros=registry.credits_for_tokens(
-                            embed, "embedding", embed_tokens, 0
-                        ),
-                        reservation_id=reservation_id,
-                        trace_id=trace,
-                        metadata={"fileId": file_id},
-                    )
-            if gpu_millis:
-                db.record_usage_event(
-                    cur,
-                    actor_user_id=actor,
-                    workspace_id=workspace_id,
-                    kind="parse_gpu",
-                    surface="ingest",
-                    provider="modal",
-                    units=gpu_millis,
-                    unit="ms",
-                    credit_micros=db.credits_for_gpu(gpu_millis),
-                    reservation_id=reservation_id,
-                    trace_id=trace,
-                    metadata={"fileId": file_id},
-                )
-            db.settle_credit_reservation(cur, reservation_id)
+            _record_parse_usage_tx(
+                cur,
+                usage=usage,
+                file_id=file_id,
+                workspace_id=workspace_id,
+                actor_user_id=actor_user_id,
+                reservation_id=reservation_id,
+                job_id=job_id,
+                attempt=attempt,
+                outcome=outcome,
+            )
             conn.commit()
-    except Exception as exc:  # noqa: BLE001 - metering must not fail a successful ingest
-        # The file is already indexed. A missed charge is found by reconciliation.
-        obs.capture_error(exc, stage="ingest_charge")
-        try:
-            with db.connect() as conn, conn.cursor() as cur:
-                db.settle_credit_reservation(cur, reservation_id)
-                conn.commit()
-        except Exception as close_exc:  # noqa: BLE001
-            obs.capture_error(close_exc, stage="ingest_lease_settle")
+    except Exception:
+        # Keep the receipt in this context if the database write failed. The job
+        # stays running, so its lease/retry path can try the same idempotency key.
+        obs.record_parse_usage(
+            pages=usage.pages,
+            ocr_pages=usage.ocr_pages,
+            cpu_milliseconds=usage.cpu_milliseconds,
+            elapsed_milliseconds=usage.elapsed_milliseconds,
+        )
+        raise
 
 
 # ------------------------------------------------------------------ parsing
@@ -595,7 +569,7 @@ async def _chunks_for(
                 modal_parser.parse_to_bundle, descriptor, name, raw_dir
             )
         finally:
-            # Free the GPU slot before captioning / indexing; those do not
+            # Free the parse slot before captioning / indexing; those do not
             # occupy a Modal container.
             if held_slot and job_id:
                 await asyncio.to_thread(slots.release, route, job_id)
@@ -697,7 +671,9 @@ async def process_ingest_job(job: dict) -> None:
         ) from exc
 
     registry.set_job_pins(pins)
+    accounting_token = None
     try:
+        accounting_token = accounting.bind_ingest(_reservation_id(payload))
         await _process_ingest_job(
             job, payload, file_id, ws, kind, parse_mode, caption_images
         )
@@ -706,6 +682,8 @@ async def process_ingest_job(job: dict) -> None:
         await asyncio.to_thread(_yield_for_capacity, job, file_id, ws, name)
         raise
     finally:
+        if accounting_token is not None:
+            accounting.reset(accounting_token)
         registry.set_job_pins(None)
 
 
@@ -718,9 +696,10 @@ async def _workspace_embedding_spec(workspace_id: str) -> registry.ModelConfig:
     """
     pin = await store.workspace_embedding_pin(workspace_id)
     return registry.resolve_pinned(
-        pin["embedding_model_key"],
+        pin["embedding_provider_slug"],
+        pin["embedding_model_slug"],
         pin["embedding_model_version"],
-        registry.SURFACE_EMBEDDING,
+        registry.Surface.EMBEDDING,
     )
 
 
@@ -786,7 +765,8 @@ async def _reuse_donor(
     """Copy a ready donor into this workspace. Returns False on a vanished donor."""
     pin = await store.workspace_embedding_pin(ws)
     copy_vectors = (
-        donor.get("embedding_model_key") == pin["embedding_model_key"]
+        donor.get("embedding_provider_slug") == pin["embedding_provider_slug"]
+        and donor.get("embedding_model_slug") == pin["embedding_model_slug"]
         and donor.get("embedding_model_version") == pin["embedding_model_version"]
         and donor.get("embedding_dim") == pin["embedding_dim"]
     )
@@ -821,16 +801,12 @@ async def _reuse_donor(
             None,
             "source_duplicate",
             attempt=attempt,
+            actor_user_id=payload.get("actorUserId") or "",
+            workspace_id=ws,
+            reservation_id=_reservation_id(payload),
         )
         progress.publish(
             ws, file_id, "done", 100, status="ready", message=note, indexed=True
-        )
-        await asyncio.to_thread(
-            _charge_ingest,
-            file_id,
-            ws,
-            payload.get("actorUserId") or "",
-            _reservation_id(payload),
         )
         return True
     copied = await store.copy_content_from_donor(
@@ -876,13 +852,9 @@ async def _reuse_donor(
         None,
         "source_duplicate",
         attempt=attempt,
-    )
-    await asyncio.to_thread(
-        _charge_ingest,
-        file_id,
-        ws,
-        payload.get("actorUserId") or "",
-        _reservation_id(payload),
+        actor_user_id=payload.get("actorUserId") or "",
+        workspace_id=ws,
+        reservation_id=_reservation_id(payload),
     )
     progress.publish(ws, file_id, "done", 100, status="ready", indexed=True)
     log.info("indexed %s from donor: %s", name, result)
@@ -928,16 +900,12 @@ async def _process_ingest_job(
             notification_code="source_stored",
             indexed=False,
             attempt=attempt,
+            actor_user_id=payload.get("actorUserId") or "",
+            workspace_id=ws,
+            reservation_id=_reservation_id(payload),
         )
         progress.publish(
             ws, file_id, "done", 100, status="ready", message=note, indexed=False
-        )
-        await asyncio.to_thread(
-            _charge_ingest,
-            file_id,
-            ws,
-            payload.get("actorUserId") or "",
-            _reservation_id(payload),
         )
         return
 
@@ -956,7 +924,8 @@ async def _process_ingest_job(
     donor = await store.find_ready_donor(
         source_sha256=source_sha256,
         pipeline_identity=identity,
-        embedding_model_key=pin["embedding_model_key"],
+        embedding_provider_slug=pin["embedding_provider_slug"],
+        embedding_model_slug=pin["embedding_model_slug"],
         embedding_model_version=pin["embedding_model_version"],
         embedding_dim=pin["embedding_dim"],
     )
@@ -1020,16 +989,12 @@ async def _process_ingest_job(
             artifact_version,
             "source_duplicate",
             attempt=attempt,
+            actor_user_id=payload.get("actorUserId") or "",
+            workspace_id=ws,
+            reservation_id=_reservation_id(payload),
         )
         progress.publish(
             ws, file_id, "done", 100, status="ready", message=note, indexed=True
-        )
-        await asyncio.to_thread(
-            _charge_ingest,
-            file_id,
-            ws,
-            payload.get("actorUserId") or "",
-            _reservation_id(payload),
         )
         await asyncio.to_thread(_drop_parse_zip, artifact_key, file_id)
         return
@@ -1057,13 +1022,9 @@ async def _process_ingest_job(
         fingerprint,
         artifact_version,
         attempt=attempt,
-    )
-    await asyncio.to_thread(
-        _charge_ingest,
-        file_id,
-        ws,
-        payload.get("actorUserId") or "",
-        _reservation_id(payload),
+        actor_user_id=payload.get("actorUserId") or "",
+        workspace_id=ws,
+        reservation_id=_reservation_id(payload),
     )
     await asyncio.to_thread(_drop_parse_zip, artifact_key, file_id)
     progress.publish(ws, file_id, "done", 100, status="ready", indexed=True)
@@ -1171,6 +1132,17 @@ async def _handle_job_failure(job: dict, exc: BaseException) -> None:
     if isinstance(exc, TimeoutError):
         exc = RetryableError("job exceeded its wall-clock timeout")
     retry = policy is not None and is_retryable(exc) and attempts < policy.max_attempts
+    if job_type == "ingest":
+        await asyncio.to_thread(
+            _record_parse_attempt,
+            str(fid or ""),
+            str(ws or ""),
+            str(payload.get("actorUserId") or ""),
+            _reservation_id(payload),
+            job["id"],
+            attempts,
+            "retrying" if retry else "failed",
+        )
     if retry:
         log.warning("%s job %s failed; retrying: %s", job_type, job["id"], exc)
         outcome = await asyncio.to_thread(_requeue, job, str(exc))

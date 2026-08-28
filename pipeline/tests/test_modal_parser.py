@@ -190,6 +190,103 @@ def test_http_error_is_wrapped(monkeypatch, modal_urls):
         modal_parser._request_artifact(_descriptor(), "doc.pdf")
 
 
+def test_success_records_page_and_child_cpu_measurement(monkeypatch, modal_urls):
+    key, _ = modal_parser.artifact_identity(_descriptor())
+    measured: list[dict] = []
+    monkeypatch.setattr(
+        modal_parser.obs,
+        "record_parse_usage",
+        lambda **values: measured.append(values),
+    )
+    _stub_presign(
+        monkeypatch,
+        _Resp(
+            200,
+            {
+                "artifact": {"key": key},
+                "_page_count": 4,
+                "_ocr_page_count": 1,
+                "_worker_cpu_ms": 3200,
+                "_server_parse_ms": 4100,
+            },
+        ),
+    )
+
+    modal_parser._request_artifact(_descriptor(), "doc.pdf")
+
+    assert measured == [
+        {
+            "pages": 4,
+            "ocr_pages": 1,
+            "cpu_milliseconds": 3200,
+            "elapsed_milliseconds": 4100,
+        }
+    ]
+
+
+def test_failed_parse_records_measurement_before_raising(monkeypatch, modal_urls):
+    measured: list[dict] = []
+    monkeypatch.setattr(
+        modal_parser.obs,
+        "record_parse_usage",
+        lambda **values: measured.append(values),
+    )
+    _stub_presign(
+        monkeypatch,
+        _Resp(
+            500,
+            {
+                "detail": "remote parse failed",
+                "_page_count": 2,
+                "_ocr_page_count": 2,
+                "_worker_cpu_ms": 900,
+                "_server_parse_ms": 1200,
+            },
+        ),
+    )
+
+    with pytest.raises(modal_parser.ModalParseError, match="remote parse failed"):
+        modal_parser._request_artifact(_descriptor(), "doc.pdf")
+
+    assert measured[0]["pages"] == 2
+    assert measured[0]["ocr_pages"] == 2
+    assert measured[0]["cpu_milliseconds"] == 900
+
+
+def test_failed_parse_records_cpu_without_inventing_a_page(monkeypatch, modal_urls):
+    measured: list[dict] = []
+    monkeypatch.setattr(
+        modal_parser.obs,
+        "record_parse_usage",
+        lambda **values: measured.append(values),
+    )
+    _stub_presign(
+        monkeypatch,
+        _Resp(
+            500,
+            {
+                "detail": "page probing failed",
+                "_page_count": 0,
+                "_ocr_page_count": 0,
+                "_worker_cpu_ms": 90,
+                "_server_parse_ms": 120,
+            },
+        ),
+    )
+
+    with pytest.raises(modal_parser.ModalParseError, match="page probing failed"):
+        modal_parser._request_artifact(_descriptor(), "broken.pdf")
+
+    assert measured == [
+        {
+            "pages": 0,
+            "ocr_pages": 0,
+            "cpu_milliseconds": 90,
+            "elapsed_milliseconds": 120,
+        }
+    ]
+
+
 def test_a_mismatched_artifact_key_is_rejected(monkeypatch, modal_urls):
     """The key is derived locally; a service returning a different one is either
     misconfigured or writing somewhere we would never read."""

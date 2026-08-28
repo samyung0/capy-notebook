@@ -1,7 +1,7 @@
 // Package models is the hot-reloadable model registry.
 //
 // Rows in model_configs are immutable and versioned. The cache therefore never
-// evicts a (model_key, version) pair it has loaded. Polling model_registry_state
+// evicts a (provider_slug, model_slug, version) pin it has loaded. Polling model_registry_state
 // only teaches a replica the *current defaults*; a pinned pair this process has
 // never seen is a point read of the table, cached forever afterwards.
 //
@@ -13,8 +13,8 @@
 // to be, so that a 30s poll could not mix vector spaces within one corpus, but
 // that made the model a query was embedded with depend on when the container
 // last booted and left two replicas legitimately disagreeing. The guarantee now
-// comes from pins instead: embedding belongs to the workspace for its lifetime
-// (workspaces.embedding_model_key), and vision is snapshotted onto each ingest
+// comes from pins instead: embedding belongs to the workspace for its lifetime,
+// and vision is snapshotted onto each ingest
 // job at enqueue.
 package models
 
@@ -32,17 +32,7 @@ import (
 	"github.com/evonotes/server/internal/obs"
 )
 
-const PollInterval = 30 * time.Second
-
-const (
-	SurfaceChat      = "chat"
-	SurfaceGenerate  = "generate"
-	SurfaceEditor    = "editor"
-	SurfaceQuiz      = "quiz"
-	SurfaceIngest    = "ingest"
-	SurfaceEmbedding = "embedding"
-	SurfaceVision    = "vision"
-)
+const PollInterval = 10 * time.Minute
 
 const (
 	AuthPlatform       = "platform"
@@ -53,33 +43,47 @@ const (
 )
 
 const modelConfigSelect = `
-		SELECT model_key, version, display_name, provider_slug, base_url, provider_model_id,
-		       auth_mode, context_window_tokens, params, surfaces,
+		SELECT version, provider_name, model_name, provider_slug, model_slug,
+		       platform_enabled, byok_enabled, context_window_tokens,
+		       thinking_levels, default_thinking, params, surfaces,
 		       micros_per_input_token, micros_per_output_token, enabled, is_default_for,
 		       micros_per_cached_input_token
 		  FROM model_configs`
 
 var ErrNotFound = errors.New("model config not found")
 
-// Pin is the (key, version) pair written onto a conversation or job. It is
-// the only identifier a later request is allowed to resolve.
-type Pin struct {
-	Key     string `json:"modelKey"`
-	Version int    `json:"modelVersion"`
+// Ref is the natural identity of one provider model. Keep it structured rather
+// than joining the slugs into an ambiguous string.
+type Ref struct {
+	ProviderSlug string `json:"providerSlug"`
+	ModelSlug    string `json:"modelSlug"`
 }
 
-func (p Pin) Zero() bool { return p.Key == "" || p.Version <= 0 }
+func (r Ref) Zero() bool { return r.ProviderSlug == "" || r.ModelSlug == "" }
+
+func (r Ref) String() string { return r.ProviderSlug + "/" + r.ModelSlug }
+
+// Pin is the provider/model/version tuple written onto a conversation or job. It is
+// the only identifier a later request is allowed to resolve.
+type Pin struct {
+	Ref
+	Version int `json:"modelVersion"`
+}
+
+func (p Pin) Zero() bool { return p.Ref.Zero() || p.Version <= 0 }
 
 // Config is one immutable model_configs row.
 type Config struct {
-	Key                       string
 	Version                   int
-	DisplayName               string
+	ProviderName              string
+	ModelName                 string
 	ProviderSlug              string
-	BaseURL                   string
-	ProviderModelID           string
-	AuthMode                  string
+	ModelSlug                 string
+	PlatformEnabled           bool
+	ByokEnabled               bool
 	ContextWindowTokens       int
+	ThinkingLevels            []string
+	DefaultThinking           string
 	Params                    map[string]any
 	Surfaces                  []string
 	MicrosPerInputToken       int64
@@ -89,7 +93,13 @@ type Config struct {
 	MicrosPerCachedInputToken int64
 }
 
-func (c Config) Pin() Pin { return Pin{Key: c.Key, Version: c.Version} }
+func (c Config) Ref() Ref { return Ref{ProviderSlug: c.ProviderSlug, ModelSlug: c.ModelSlug} }
+
+func (c Config) Pin() Pin { return Pin{Ref: c.Ref(), Version: c.Version} }
+
+func (c Config) DisplayName() string {
+	return JoinModelLabel(c.ProviderName, c.ModelName)
+}
 
 func (c Config) Allows(surface string) bool {
 	for _, s := range c.Surfaces {
@@ -110,184 +120,106 @@ func (c Config) DefaultFor(surface string) bool {
 }
 
 func (c Config) Auth() string {
-	if c.AuthMode == "" {
+	switch {
+	case c.PlatformEnabled && c.ByokEnabled:
+		return AuthPlatformOrUser
+	case c.ByokEnabled:
+		return AuthUserKey
+	default:
 		return AuthPlatform
 	}
-	return c.AuthMode
 }
 
-// Available is whether this user may select the row. Platform and
-// platform_or_user rows are always selectable. user_key rows need a credential.
+// Available is whether this user may select the row. Platform rows are
+// always selectable. BYOK-only rows need a credential.
 func (c Config) Available(hasCred bool) bool {
-	if c.Auth() == AuthUserKey {
-		return hasCred
+	if c.PlatformEnabled {
+		return true
 	}
-	return true
+	return c.ByokEnabled && hasCred
 }
 
 // UsesUserKey is whether a request from this user should call the provider
 // with their credential.
 func (c Config) UsesUserKey(hasCred bool) bool {
-	switch c.Auth() {
-	case AuthUserKey, AuthPlatformOrUser:
-		return hasCred
-	default:
-		return false
-	}
+	return c.ByokEnabled && hasCred
 }
 
-var knownReasoningEfforts = map[string]struct{}{
-	"low": {}, "medium": {}, "high": {}, "xhigh": {}, "max": {},
+const (
+	ThinkingInstant = "instant"
+	ThinkingLow     = "low"
+	ThinkingMid     = "mid"
+	ThinkingHigh    = "high"
+	ThinkingMax     = "max"
+)
+
+var knownThinkingLevels = map[string]struct{}{
+	ThinkingInstant: {},
+	ThinkingLow:     {},
+	ThinkingMid:     {},
+	ThinkingHigh:    {},
+	ThinkingMax:     {},
 }
 
-func IsKnownReasoningEffort(effort string) bool {
-	_, ok := knownReasoningEfforts[effort]
+func IsKnownThinking(level string) bool {
+	_, ok := knownThinkingLevels[level]
 	return ok
 }
 
-type ReasoningSpec struct {
-	CanDisable    bool
-	Efforts       []string
-	DefaultMode   string
-	DefaultEffort string
-	Style         string
-}
-
-func (c Config) Reasoning() ReasoningSpec {
-	spec := ReasoningSpec{CanDisable: true}
-	raw, ok := c.Params["reasoning"]
-	if !ok {
-		spec.DefaultMode = "off"
-		return spec
-	}
-	obj, ok := raw.(map[string]any)
-	if !ok {
-		spec.DefaultMode = "off"
-		return spec
-	}
-	if v, ok := obj["canDisable"].(bool); ok {
-		spec.CanDisable = v
-	}
-	if v, ok := obj["defaultMode"].(string); ok && v != "" {
-		spec.DefaultMode = v
-	}
-	if v, ok := obj["defaultEffort"].(string); ok && v != "" {
-		spec.DefaultEffort = v
-	}
-	if v, ok := obj["style"].(string); ok {
-		spec.Style = v
-	}
-	switch list := obj["efforts"].(type) {
-	case []any:
-		for _, item := range list {
-			if s, ok := item.(string); ok && s != "" {
-				spec.Efforts = append(spec.Efforts, s)
-			}
+func (c Config) ResolveThinking(stored string) (string, error) {
+	if stored == "" {
+		if containsString(c.ThinkingLevels, c.DefaultThinking) {
+			return c.DefaultThinking, nil
 		}
-	case []string:
-		spec.Efforts = append(spec.Efforts, list...)
+		return "", fmt.Errorf("model %s has no valid default thinking", c.Ref())
 	}
-	return spec
+	if containsString(c.ThinkingLevels, stored) {
+		return stored, nil
+	}
+	return "", fmt.Errorf("model %s does not support thinking %q", c.Ref(), stored)
 }
 
-// ResolveReasoning applies a user override, then the catalog default.
-// An effort that this row does not list falls back to defaultEffort when
-// that value is listed. Mode on with no usable effort returns empty
-// effort rather than inventing medium or the first listed value.
-func (c Config) ResolveReasoning(mode, effort string) (string, string) {
-	spec := c.Reasoning()
-	if mode == "" {
-		mode = spec.DefaultMode
-	}
-	if mode != "on" && mode != "off" {
-		mode = spec.DefaultMode
-	}
-	if !spec.CanDisable {
-		mode = "on"
-	}
-	if mode == "off" {
-		return "off", ""
-	}
-	if effort == "" {
-		effort = spec.DefaultEffort
-	}
-	if containsString(spec.Efforts, effort) {
-		return mode, effort
-	}
-	if spec.DefaultEffort != "" && containsString(spec.Efforts, spec.DefaultEffort) {
-		return mode, spec.DefaultEffort
-	}
-	return mode, ""
-}
-
-// ValidateCatalogReasoning is the Go form of model_configs_reasoning_check.
-// Ops should call this in the drawer; Postgres still refuses a bad insert.
-func ValidateCatalogReasoning(surfaces []string, params map[string]any) error {
+func ValidateThinking(surfaces, levels []string, defaultThinking string) error {
 	hasLLM := false
+	hasEditor := false
 	for _, surface := range surfaces {
 		switch surface {
 		case SurfaceChat, SurfaceGenerate, SurfaceEditor, SurfaceQuiz, SurfaceIngest:
 			hasLLM = true
 		}
+		if surface == SurfaceEditor {
+			hasEditor = true
+		}
 	}
-	raw, hasReasoning := params["reasoning"]
 	if !hasLLM {
-		if hasReasoning {
-			return fmt.Errorf("embedding/vision rows must omit reasoning")
+		if len(levels) > 0 || defaultThinking != "" {
+			return fmt.Errorf("embedding/vision rows must omit thinking")
 		}
 		return nil
 	}
-	obj, ok := raw.(map[string]any)
-	if !ok {
-		return fmt.Errorf("llm rows require params.reasoning")
+	if len(levels) == 0 {
+		return fmt.Errorf("llm rows require thinking levels")
 	}
-	mode, _ := obj["defaultMode"].(string)
-	if mode != "on" && mode != "off" {
-		return fmt.Errorf("reasoning.defaultMode must be on or off")
-	}
-	if _, ok := obj["canDisable"].(bool); !ok {
-		return fmt.Errorf("reasoning.canDisable must be a boolean")
-	}
-	efforts := reasoningEfforts(obj["efforts"])
-	if len(efforts) == 0 {
-		return fmt.Errorf("reasoning.efforts must be a non-empty list")
-	}
-	for _, item := range efforts {
-		if !IsKnownReasoningEffort(item) {
-			return fmt.Errorf("unknown reasoning effort %q", item)
+	for _, item := range levels {
+		if !IsKnownThinking(item) {
+			return fmt.Errorf("unknown thinking level %q", item)
 		}
 	}
-	defaultEffort, _ := obj["defaultEffort"].(string)
-	if defaultEffort == "" || !containsString(efforts, defaultEffort) {
-		return fmt.Errorf("reasoning.defaultEffort must be one of this row's efforts")
+	if defaultThinking == "" || !containsString(levels, defaultThinking) {
+		return fmt.Errorf("default thinking must be one of this row's levels")
 	}
-	if style, _ := obj["style"].(string); style != "" && style != "adaptive" && style != "budget" {
-		return fmt.Errorf("reasoning.style must be adaptive or budget")
+	if hasEditor && !containsString(levels, ThinkingInstant) {
+		return fmt.Errorf("editor rows must support instant thinking")
 	}
 	return nil
 }
 
-func reasoningEfforts(raw any) []string {
-	switch list := raw.(type) {
-	case []any:
-		out := make([]string, 0, len(list))
-		for _, item := range list {
-			if s, ok := item.(string); ok && s != "" {
-				out = append(out, s)
-			}
-		}
-		return out
-	case []string:
-		out := make([]string, 0, len(list))
-		for _, item := range list {
-			if item != "" {
-				out = append(out, item)
-			}
-		}
-		return out
-	default:
-		return nil
-	}
+func UsesResponses(providerSlug, thinking string, tools bool) bool {
+	return providerSlug == "openai" && tools && thinking != "" && thinking != ThinkingInstant
+}
+
+func (c Config) UsesResponses(thinking string, tools bool) bool {
+	return UsesResponses(c.ProviderSlug, thinking, tools)
 }
 
 func containsString(list []string, want string) bool {
@@ -320,8 +252,13 @@ func (c Config) ParamFloat(key string, fallback float64) float64 {
 }
 
 type cacheKey struct {
-	key     string
-	version int
+	providerSlug string
+	modelSlug    string
+	version      int
+}
+
+func cacheKeyFor(ref Ref, version int) cacheKey {
+	return cacheKey{providerSlug: ref.ProviderSlug, modelSlug: ref.ModelSlug, version: version}
 }
 
 // Registry caches immutable configs and the current defaults.
@@ -394,7 +331,7 @@ func (r *Registry) refresh(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		byPin[cacheKey{cfg.Key, cfg.Version}] = cfg
+		byPin[cacheKeyFor(cfg.Ref(), cfg.Version)] = cfg
 		if !cfg.Enabled {
 			continue
 		}
@@ -431,16 +368,19 @@ func scanConfig(row rowScanner) (Config, error) {
 		params     []byte
 		surfaces   []string
 		defaultFor []string
+		thinking   []string
 	)
 	err := row.Scan(
-		&c.Key, &c.Version, &c.DisplayName, &c.ProviderSlug, &c.BaseURL, &c.ProviderModelID,
-		&c.AuthMode, &c.ContextWindowTokens,
+		&c.Version, &c.ProviderName, &c.ModelName, &c.ProviderSlug, &c.ModelSlug,
+		&c.PlatformEnabled, &c.ByokEnabled, &c.ContextWindowTokens,
+		&thinking, &c.DefaultThinking,
 		&params, &surfaces, &c.MicrosPerInputToken, &c.MicrosPerOutputToken,
 		&c.Enabled, &defaultFor, &c.MicrosPerCachedInputToken,
 	)
 	if err != nil {
 		return Config{}, err
 	}
+	c.ThinkingLevels = thinking
 	c.Surfaces = surfaces
 	c.IsDefaultFor = defaultFor
 	if len(params) > 0 {
@@ -452,15 +392,15 @@ func scanConfig(row rowScanner) (Config, error) {
 	return c, nil
 }
 
-// Get returns the exact (key, version). Load-on-miss from the table; never
+// Get returns the exact provider/model/version pin. Load-on-miss from the table; never
 // falls back to the current default. Disabled chat/generate rows still
 // resolve so a pinned conversation keeps working. Embedding rows cannot be
 // disabled or rewritten onto a different model: Postgres rejects the write.
-func (r *Registry) Get(ctx context.Context, key string, version int) (Config, error) {
-	if key == "" || version <= 0 {
+func (r *Registry) Get(ctx context.Context, ref Ref, version int) (Config, error) {
+	if ref.Zero() || version <= 0 {
 		return Config{}, ErrNotFound
 	}
-	ck := cacheKey{key, version}
+	ck := cacheKeyFor(ref, version)
 	r.mu.RLock()
 	if cfg, ok := r.byPin[ck]; ok {
 		r.mu.RUnlock()
@@ -468,7 +408,7 @@ func (r *Registry) Get(ctx context.Context, key string, version int) (Config, er
 	}
 	r.mu.RUnlock()
 
-	cfg, err := r.load(ctx, key, version)
+	cfg, err := r.load(ctx, ref, version)
 	if err != nil {
 		return Config{}, err
 	}
@@ -478,12 +418,12 @@ func (r *Registry) Get(ctx context.Context, key string, version int) (Config, er
 	return cfg, nil
 }
 
-func (r *Registry) load(ctx context.Context, key string, version int) (Config, error) {
+func (r *Registry) load(ctx context.Context, ref Ref, version int) (Config, error) {
 	row := r.pool.QueryRow(ctx, modelConfigSelect+`
-		 WHERE model_key=$1 AND version=$2`, key, version)
+		 WHERE provider_slug=$1 AND model_slug=$2 AND version=$3`, ref.ProviderSlug, ref.ModelSlug, version)
 	cfg, err := scanConfig(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Config{}, fmt.Errorf("%w: %s v%d", ErrNotFound, key, version)
+		return Config{}, fmt.Errorf("%w: %s v%d", ErrNotFound, ref, version)
 	}
 	return cfg, err
 }
@@ -506,26 +446,26 @@ func (r *Registry) Default(ctx context.Context, surface string) (Config, error) 
 	if err != nil {
 		return Config{}, err
 	}
-	return r.Get(ctx, pin.Key, pin.Version)
+	return r.Get(ctx, pin.Ref, pin.Version)
 }
 
-// ResolveUser returns the latest enabled config for the user's preferred key
-// on this surface. The preference must be a non-empty key that still resolves;
+// ResolveUser returns the latest enabled config for the user's preferred model
+// on this surface. The preference must be a non-empty ref that still resolves;
 // there is no fallback to the surface default. Account creation snapshots the
-// default onto the user row so a live request always has a concrete key.
-func (r *Registry) ResolveUser(ctx context.Context, prefKey, surface string) (Config, error) {
-	if prefKey == "" {
+// default onto the user row so a live request always has a concrete model ref.
+func (r *Registry) ResolveUser(ctx context.Context, pref Ref, surface string) (Config, error) {
+	if pref.Zero() {
 		return Config{}, fmt.Errorf("%w: empty preference for %s", ErrNotFound, surface)
 	}
-	return r.latestEnabled(ctx, prefKey, surface)
+	return r.latestEnabled(ctx, pref, surface)
 }
 
-func (r *Registry) latestEnabled(ctx context.Context, key, surface string) (Config, error) {
+func (r *Registry) latestEnabled(ctx context.Context, ref Ref, surface string) (Config, error) {
 	r.mu.RLock()
 	var best Config
 	found := false
 	for _, cfg := range r.byPin {
-		if cfg.Key == key && cfg.Enabled && cfg.Allows(surface) {
+		if cfg.Ref() == ref && cfg.Enabled && cfg.Allows(surface) {
 			if !found || cfg.Version > best.Version {
 				best = cfg
 				found = true
@@ -537,17 +477,17 @@ func (r *Registry) latestEnabled(ctx context.Context, key, surface string) (Conf
 		return best, nil
 	}
 	row := r.pool.QueryRow(ctx, modelConfigSelect+`
-		 WHERE model_key=$1 AND enabled AND $2 = ANY(surfaces)
-		 ORDER BY version DESC LIMIT 1`, key, surface)
+		 WHERE provider_slug=$1 AND model_slug=$2 AND enabled AND $3 = ANY(surfaces)
+		 ORDER BY version DESC LIMIT 1`, ref.ProviderSlug, ref.ModelSlug, surface)
 	cfg, err := scanConfig(row)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return Config{}, fmt.Errorf("%w: %s", ErrNotFound, key)
+		return Config{}, fmt.Errorf("%w: %s", ErrNotFound, ref)
 	}
 	if err != nil {
 		return Config{}, err
 	}
 	r.mu.Lock()
-	r.byPin[cacheKey{cfg.Key, cfg.Version}] = cfg
+	r.byPin[cacheKeyFor(cfg.Ref(), cfg.Version)] = cfg
 	r.mu.Unlock()
 	return cfg, nil
 }
@@ -575,24 +515,25 @@ func (r *Registry) SnapshotIngest(ctx context.Context) (ingest, vision Config, e
 func (c Config) EmbeddingDim() (int, error) {
 	dim := int(c.ParamFloat("dimensions", 0))
 	if dim <= 0 {
-		return 0, fmt.Errorf("%w: %s v%d declares no dimensions", ErrNotFound, c.Key, c.Version)
+		return 0, fmt.Errorf("%w: %s v%d declares no dimensions", ErrNotFound, c.Ref(), c.Version)
 	}
 	return dim, nil
 }
 
 // ListEnabled returns enabled configs that advertise surface, newest version
-// per key, for the model picker.
+// per provider/model identity, for the model picker.
 func (r *Registry) ListEnabled(surface string) []Config {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
-	best := map[string]Config{}
+	best := map[Ref]Config{}
 	for _, cfg := range r.byPin {
 		if !cfg.Enabled || !cfg.Allows(surface) {
 			continue
 		}
-		prev, ok := best[cfg.Key]
+		ref := cfg.Ref()
+		prev, ok := best[ref]
 		if !ok || cfg.Version > prev.Version {
-			best[cfg.Key] = cfg
+			best[ref] = cfg
 		}
 	}
 	out := make([]Config, 0, len(best))

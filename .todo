@@ -16,46 +16,36 @@ low priority:
 
 high PRIORITIES:
 
-1. check how search files/chunks work
+1. a path that can get all valid thinking and reasoning effort/adaptive blablabla from litellm 
+auto version bump for litellm? but it may break record/replay test 
+1. store model effort/thinking mode on the provider_cll for information (and fix the credits, table name)
+1. put all plan related usage limit constant in db rows where ops dashboard can update, and go server hot reload every 10 minutes (set the model refresh rate to 10 minutes as well), user side also need to see these numbers so there should be a in memory cache that periodically refreshese these limits and serve them through getters to endpoints/creditLimitMicros/etc
+1. confirm db pool mechanism 
+2. litellm?
+2. after litellm, llm provider calls have rate limits, make a queue for incoming calls? on http request connection lost, remove from queue. if llm call picked up from queue but response never reached client or client disconnected/http request died at that moment -> handle it the same way we handle disconnection: proceed at server and bill accordingly but client sees nothing
+3. import thingy?
+4. llm chat compaction
+5. ops usage dashboard, wtf is going on (cloudflare zero trust, audit logs)
+6. feature flags should allow for A/B testing, current way of env variables do not allow that
+check how search files/chunks work
 2. check pg pool connections setup, esp for llm search
+3. what happens when server restarts? dlq, job queue, pending credit settling, etc basically what lives in the ram vs what lives in db (extreme case: what happens when server shuts down mid transaction)
 3. how to make a summary/description page for workspaces that is seo friendly? use ISR if tanstack router supports it? Only expose endpoint that shows chapters and file names for link shared and public workspaces (for the summary page of workspaces). To retrieve file content/any other info, user must log in first (i.e. viewing/commenting/editing workspace which is on a different page than the summary must require user login to prevent abuse)
 4. make a less crowded UI for workspaces
-5. gate todo and calendar(schedule) behind feature flag, dont release yet, in dashboard replace the right side panels with a recent files panels (click to jump to workspace view mode)
-6. track material generations and display progress bar like how filelistitem does it?
-7. remove time limit for quiz
-8. if copy and pasting markdown, render it directly rather than inside a code block (? what determines if a code block gets inserted or not?)
-9. enable ordering of doucments within chapters with drag and drop (right now it just drops in the chapter)
-10. add icons for common file format
-11. enrich the global searches (in the topinsetbar)
+5. persist quiz attemp in localstorage or some kind of cache, so closing tab or refreshing doesnt lose the progress
+5. track material generations and display progress bar like how filelistitem does it?
+6. remove time limit for quiz
+7. if copy and pasting markdown, render it directly rather than inside a code block (? what determines if a code block gets inserted or not?)
+8. enable ordering of doucments within chapters with drag and drop (right now it just drops in the chapter)
+9.  add icons for common file format
+10. enrich the global searches (in the topinsetbar)
     - workspace names & chapters
     - files and materials names
     - calendar event names
     - tasks title
     - Remove: thinking space (not worked on yet)
-12. enable website mcp for the LLM so users can ask (summarize file page x to xx or how to answer quiz A question 5), curate list of tools available to workspace chat llm/website convo llm (two different set of tools & context provided since workspace can provide more informations)
-13. modularize ai models, let user choose what cloud/local models they want to use for different scenarios:
-    exhaustive list:
-
-- file parsing (operator-only, pinned onto the ingest job at enqueue; not a user choice)
-- workspace chat with llm (done: users.chat_model_key)
-- workspace generate (done: users.generate_model_key)
-- editor ask AI (done: users.editor_model_key, Settings → LLM)
-- website realtime convo llm (TODO: not implemented yet)
-
-3.  I think discussion table is not necessary? move discussion_id, block_id, anchors into comments table, render the discussion blocks if any comment is present on the block_id instead (need to check what purpose the discussion table serves), deleting parent comment should also delete child comment? UI rendering of comments should check for infinite self referencing comment, though shouldnt happen but should be handled
-4.  drag and drop on workspace files tree shows dropping line for both bottom of a file item and top of the next file item but its the same gap between
-
-subscription todo
-
-1. token usages (reconciliation from telementry?)
-2. if subscription expires, it should leave a buffer period for user to move files out of the platform (if account is already deleted (db user record should always preserve and use flags like is_deleted) then dont give buffer period) (since premium users should get more storage space, after that perm delete files )
-3. what is assistant role in AI convo message?
-4. find a better way to structure jobs? use some queues instead of just pg records? it seems veyr vulnerable to attacks if we just store and run the job content in jsonb.
-
-schema todo
-
-1. squash the schemas (not just merge the files, but destructively modify the base sql, no existing servers/data)
-2. why events use array text for label id?
-3. workspaceopen, read only does not have the chat panel, we should scope chat sessions/histories to per user and per workspace so users dont see the chat sessions of other people. then reenable the chat panel (disable generate if read only), conversations user_id doesnt have declared foreign key
-4. remove todo due date for now
-5. ensure that a file record always exist as long as the actual file content is still there (we may need a weekly cleaning job to remove actual files which dont have a file record)
+11. enable website mcp for the LLM so users can ask (summarize file page x to xx or how to answer quiz A question 5), curate list of tools available to workspace chat llm/website convo llm (two different set of tools & context provided since workspace can provide more informations)
+12. drag and drop on workspace files tree shows dropping line for both bottom of a file item and top of the next file item but its the same gap between
+13. llm telementry?
+14. why events use array text for label id?
+15. workspaceopen, read only does not have the chat panel, we should scope chat sessions/histories to per user and per workspace so users dont see the chat sessions of other people. then reenable the chat panel (disable generate if read only), conversations user_id doesnt have declared foreign key

@@ -7,6 +7,7 @@
 import type { Region } from './region.ts';
 
 export interface Citation {
+  chunkId?: string;
   fileId: string;
   fileName: string;
   pageEnd?: number;

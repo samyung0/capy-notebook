@@ -67,6 +67,7 @@ export interface InputProps
   actionCallback?: () => void;
   actionClassName?: string;
   actionIcon?: IconName;
+  actionLabel?: string;
   actionShowIcon?: boolean;
   actionSide?: 'left' | 'right';
   actionSize?: IconButtonProps['size'];
@@ -86,16 +87,19 @@ const InlineAction = ({
   actionVariant,
   actionSize,
   actionClassName,
+  actionLabel,
 }: {
   name: IconName;
   onClick?: () => void;
   actionVariant?: IconButtonProps['variant'];
   actionSize?: IconButtonProps['size'];
   actionClassName?: string;
+  actionLabel?: string;
 }) => (
   <IconButton
     className={actionClassName}
     icon={name}
+    label={actionLabel}
     onClick={onClick}
     size={actionSize}
     variant={actionVariant}
@@ -107,6 +111,7 @@ export function Input({
   rightIcon,
   wrapperClassName,
   actionIcon,
+  actionLabel,
   actionSide = 'right',
   actionCallback,
   actionShowIcon = true,
@@ -131,6 +136,7 @@ export function Input({
       {actionIcon && actionShowIcon && actionSide === 'left' && (
         <InlineAction
           actionClassName={actionClassName}
+          actionLabel={actionLabel}
           actionSize={actionSize}
           actionVariant={actionVariant}
           name={actionIcon}
@@ -142,6 +148,7 @@ export function Input({
       {actionIcon && actionShowIcon && actionSide === 'right' && (
         <InlineAction
           actionClassName={actionClassName}
+          actionLabel={actionLabel}
           actionSize={actionSize}
           actionVariant={actionVariant}
           name={actionIcon}

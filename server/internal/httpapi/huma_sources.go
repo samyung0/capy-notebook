@@ -1,8 +1,9 @@
 package httpapi
 
 import (
-	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -10,12 +11,14 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/evonotes/server/internal/httpapi/apimodel"
 	"github.com/evonotes/server/internal/integrations"
+	"github.com/evonotes/server/internal/obs"
 	"github.com/evonotes/server/internal/sourceupload"
 	"github.com/evonotes/server/internal/store"
 )
@@ -29,7 +32,8 @@ func (a *api) registerSourceUploads(api huma.API) {
 	reg(api, http.MethodGet, "/api/source-upload-policy", "getSourceUploadPolicy", tag, "Get source upload policy", http.StatusOK, a.getSourceUploadPolicy)
 	regWithMaxBody(api, http.MethodPost, "/api/workspaces/{id}/sources/uploads", "createSourceUpload", tag, "Reserve a direct source upload", http.StatusCreated, 64<<10, a.createSourceUpload)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/sources/uploads/{uploadId}/complete", "completeSourceUpload", tag, "Complete a direct source upload", http.StatusCreated, a.completeSourceUpload)
-	reg(api, http.MethodPost, "/api/workspaces/{id}/sources/import", "importSources", tag, "Import sources from a connected drive", http.StatusCreated, a.importSources)
+	reg(api, http.MethodPost, "/api/workspaces/{id}/sources/import", "importSources", tag, "Queue sources from a connected drive", http.StatusAccepted, a.importSources)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/sources/imports/{jobId}", "getSourceImport", tag, "Get source import status", http.StatusOK, a.getSourceImport)
 }
 
 type sourceUploadPolicyInput struct {
@@ -136,8 +140,17 @@ type importSourcesInput struct {
 	Body apimodel.ImportSourcesReq
 }
 
-type sourceFilesOutput struct {
-	Body []apimodel.File `nullable:"false"`
+type sourceImportOutput struct {
+	Body apimodel.ImportSourcesAccepted
+}
+
+type sourceImportStatusInput struct {
+	ID    string `path:"id"`
+	JobID string `path:"jobId"`
+}
+
+type sourceImportStatusOutput struct {
+	Body apimodel.SourceImportStatus
 }
 
 func (a *api) createSourceUpload(ctx context.Context, in *createSourceUploadInput) (*sourceUploadReservationOutput, error) {
@@ -286,21 +299,72 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 	return &sourceFileOutput{Status: http.StatusCreated, Body: res}, nil
 }
 
-func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourceFilesOutput, error) {
+func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourceImportOutput, error) {
 	actor := userID(ctx)
 	wsID := in.ID
 	if err := a.assertWorkspaceEditor(ctx, wsID); err != nil {
 		return nil, hErr(err)
 	}
+	if a.cfg.ImportRelayEnqueueURL == "" || a.cfg.ImportRelaySecret == "" {
+		return nil, huma.Error503ServiceUnavailable("source import relay is not configured")
+	}
 	if len(in.Body.FileIds) == 0 {
 		return nil, huma.Error400BadRequest("provider and fileIds required")
+	}
+	requestID := strings.TrimSpace(in.Body.RequestID)
+	if requestID == "" {
+		requestID = randID("ireq")
 	}
 	refs, err := integrations.ZipImportDriveIDs(in.Body.FileIds, in.Body.DriveIds)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	if err := a.s.AssertWorkspaceFileRoom(ctx, wsID, len(in.Body.FileIds)); err != nil {
+	if len(refs) > store.MaxFilesPerUpload {
+		return nil, hErr(&store.FileLimitExceededError{
+			WorkspaceID: wsID,
+			Requested:   len(refs),
+			Limit:       store.MaxFilesPerUpload,
+			Kind:        "batch",
+		})
+	}
+	if in.Body.ChapterID != nil {
+		chapterWorkspace, err := a.s.ChapterWorkspaceID(ctx, *in.Body.ChapterID)
+		if err != nil || chapterWorkspace != wsID {
+			return nil, huma.Error400BadRequest("chapter does not belong to this workspace")
+		}
+	}
+	if in.Body.Provider != integrations.ProviderGoogle &&
+		in.Body.Provider != integrations.ProviderMicrosoft {
+		return nil, huma.Error400BadRequest("unknown provider")
+	}
+	fingerprintBody, err := json.Marshal(struct {
+		ChapterID *string
+		Provider  string
+		Refs      []integrations.ImportRef
+	}{
+		ChapterID: in.Body.ChapterID,
+		Provider:  in.Body.Provider,
+		Refs:      refs,
+	})
+	if err != nil {
 		return nil, hErr(err)
+	}
+	fingerprint := fmt.Sprintf("%x", sha256.Sum256(fingerprintBody))
+	replayed, complete, err := a.s.BeginSourceImportRequest(
+		ctx, actor, wsID, requestID, fingerprint,
+	)
+	if errors.Is(err, store.ErrImportIdempotencyConflict) {
+		return nil, huma.Error409Conflict("source import request id was reused")
+	}
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if complete {
+		var response apimodel.ImportSourcesAccepted
+		if err := json.Unmarshal(replayed, &response); err != nil {
+			return nil, hErr(err)
+		}
+		return &sourceImportOutput{Body: response}, nil
 	}
 	tok, err := integrations.ClerkAccessToken(ctx, actor, in.Body.Provider)
 	if errors.Is(err, integrations.ErrNotConnected) {
@@ -317,46 +381,181 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 		return nil, huma.Error503ServiceUnavailable("blob store not configured")
 	}
 
-	created := make([]store.File, 0, len(refs))
-	for _, ref := range refs {
-		var data []byte
-		var name string
-		switch in.Body.Provider {
-		case integrations.ProviderGoogle:
-			data, name, err = integrations.DownloadGoogleFile(tok, ref.ID)
-		case integrations.ProviderMicrosoft:
-			data, name, err = integrations.DownloadMicrosoftFile(tok, ref.ID, ref.DriveID)
-		default:
-			return nil, huma.Error400BadRequest("unknown provider")
+	rejected := make([]apimodel.SourceImportRejected, 0)
+	pending := make([]store.NewSourceImport, 0, len(refs))
+	needsCredits := false
+	type metadataResult struct {
+		meta integrations.ImportFileMetadata
+		err  error
+	}
+	metadata := make([]metadataResult, len(refs))
+	metadataSlots := make(chan struct{}, 4)
+	var metadataWait sync.WaitGroup
+	for index, ref := range refs {
+		metadataWait.Add(1)
+		go func() {
+			defer metadataWait.Done()
+			select {
+			case metadataSlots <- struct{}{}:
+				defer func() { <-metadataSlots }()
+			case <-ctx.Done():
+				metadata[index].err = ctx.Err()
+				return
+			}
+			switch in.Body.Provider {
+			case integrations.ProviderGoogle:
+				metadata[index].meta, metadata[index].err =
+					integrations.GetGoogleFileMetadata(ctx, tok, ref.ID)
+			case integrations.ProviderMicrosoft:
+				metadata[index].meta, metadata[index].err =
+					integrations.GetMicrosoftFileMetadata(
+						ctx, tok, ref.ID, ref.DriveID,
+					)
+			}
+		}()
+	}
+	metadataWait.Wait()
+
+	for index, ref := range refs {
+		meta := metadata[index].meta
+		if err := metadata[index].err; err != nil {
+			if ctx.Err() != nil {
+				return nil, hErr(ctx.Err())
+			}
+			if integrations.IsRetryableImportProviderError(err) ||
+				(!errors.Is(err, integrations.ErrImportFileUnavailable) &&
+					!errors.Is(err, integrations.ErrUnsupportedImportFile)) {
+				return nil, huma.Error503ServiceUnavailable(
+					"provider metadata is temporarily unavailable",
+				)
+			}
+			code := "provider_file_unavailable"
+			if errors.Is(err, integrations.ErrUnsupportedImportFile) {
+				code = "unsupported_file"
+			}
+			rejected = append(rejected, apimodel.SourceImportRejected{
+				FileID: ref.ID,
+				Code:   code,
+			})
+			continue
 		}
-		if err != nil {
-			return nil, hErr(err)
+		meta.Name = strings.TrimSpace(meta.Name)
+		if meta.Name == "" || len(meta.Name) > 512 {
+			rejected = append(rejected, apimodel.SourceImportRejected{
+				FileID: ref.ID,
+				Code:   "invalid_name",
+			})
+			continue
 		}
-		kind := integrations.KindFromName(name)
-		mode := defaultParseMode(name, kind)
-		if err := validateParseMode(mode, name, kind, int64(len(data)), maxBytes); err != nil {
-			return nil, huma.Error400BadRequest(err.Error())
+		reservedSize := int64(0)
+		if meta.Size != nil {
+			reservedSize = *meta.Size
+		} else if meta.ExportPDF {
+			reservedSize = min(maxBytes, integrations.GoogleExportMaxBytes())
+		}
+		if reservedSize < 0 || reservedSize > maxBytes {
+			rejected = append(rejected, apimodel.SourceImportRejected{
+				FileID: ref.ID,
+				Code:   "file_too_large",
+			})
+			continue
+		}
+		kind := integrations.KindFromName(meta.Name)
+		mode := defaultParseMode(meta.Name, kind)
+		if err := validateParseMode(mode, meta.Name, kind, reservedSize, maxBytes); err != nil {
+			rejected = append(rejected, apimodel.SourceImportRejected{
+				FileID: ref.ID,
+				Code:   "unsupported_file",
+			})
+			continue
+		}
+		contentType := strings.TrimSpace(meta.MIMEType)
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+		if _, _, err := mime.ParseMediaType(contentType); err != nil ||
+			strings.ContainsAny(contentType, "\r\n") {
+			contentType = "application/octet-stream"
 		}
 		if sourceupload.NeedsIngestJob(kind, mode) {
-			if err := a.s.AssertCreditsAvailable(ctx, actor); err != nil {
-				return nil, hErr(err)
-			}
+			needsCredits = true
 		}
-		blobPath, _, err := a.blob.Put(sourceObjectKey(randID("blob")), bytes.NewReader(data))
-		if err != nil {
-			return nil, hErr(err)
+
+		uploadID := randID("up")
+		jobID := randID("imp")
+		blobID := randID("blob")
+		ext := strings.ToLower(filepath.Ext(meta.Name))
+		if len(ext) > 12 {
+			ext = ""
 		}
-		var f store.File
-		if !sourceupload.NeedsIngestJob(kind, mode) {
-			f, err = a.s.CreateSourceReady(ctx, wsID, actor, name, kind, in.Body.ChapterID, "", int64(len(data)), blobPath)
-		} else {
-			f, _, err = a.s.CreateSourceWithJob(ctx, wsID, actor, name, kind, in.Body.ChapterID, "", int64(len(data)), blobPath, a.parser, a.engine, mode, false)
-		}
-		if err != nil {
-			_ = a.blob.Delete(ctx, blobPath)
-			return nil, hErr(err)
-		}
-		created = append(created, f)
+		pending = append(pending, store.NewSourceImport{
+			JobID: jobID,
+			Upload: store.NewUploadSession{
+				ID: uploadID, WorkspaceID: wsID, CreatedBy: actor,
+				ChapterID:  in.Body.ChapterID,
+				ObjectPath: incomingObjectKey(uploadID, blobID+ext),
+				FinalPath:  sourceObjectKey(blobID + ext),
+				Name:       meta.Name, Kind: kind, ContentType: contentType,
+				DeclaredSize: reservedSize, ParseMode: mode,
+				ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
+			},
+			Provider: in.Body.Provider, ProviderFileID: ref.ID,
+			ProviderDriveID: ref.DriveID, MaxBytes: maxBytes,
+			IdempotencyKey: fmt.Sprintf("%s:%d", requestID, index),
+			TraceID:        obs.TraceID(ctx),
+		})
 	}
-	return &sourceFilesOutput{Body: created}, nil
+	if needsCredits {
+		if err := a.s.AssertCreditsAvailable(ctx, actor); err != nil {
+			return nil, hErr(err)
+		}
+	}
+	created, err := a.s.CreateSourceImports(ctx, pending)
+	if err != nil {
+		return nil, hErr(err)
+	}
+
+	jobs := make([]apimodel.SourceImportAccepted, 0, len(created))
+	for _, job := range created {
+		jobs = append(jobs, apimodel.SourceImportAccepted{
+			JobID: job.ID, UploadID: job.UploadSessionID, Name: job.Name,
+		})
+	}
+	response := apimodel.ImportSourcesAccepted{
+		Jobs: jobs, Rejected: rejected,
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	stored, err := a.s.CompleteSourceImportRequest(
+		ctx, actor, requestID, fingerprint, encoded,
+	)
+	if errors.Is(err, store.ErrImportIdempotencyConflict) {
+		return nil, huma.Error409Conflict("source import request id was reused")
+	}
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if err := json.Unmarshal(stored, &response); err != nil {
+		return nil, hErr(err)
+	}
+	return &sourceImportOutput{Body: response}, nil
+}
+
+func (a *api) getSourceImport(
+	ctx context.Context,
+	in *sourceImportStatusInput,
+) (*sourceImportStatusOutput, error) {
+	if err := a.assertWorkspaceEditor(ctx, in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	job, err := a.s.GetSourceImport(ctx, in.ID, in.JobID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &sourceImportStatusOutput{Body: apimodel.SourceImportStatus{
+		JobID: job.ID, Status: job.Status, Name: job.Name,
+		FileID: job.FileID, ErrorCode: job.LastErrorCode,
+	}}, nil
 }

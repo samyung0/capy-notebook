@@ -10,30 +10,15 @@ import {
 } from '@/components/ui/Select';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { sortModelOptions } from './llmOptions';
+import {
+  joinModelLabel,
+  modelRefValue,
+  optionRef,
+  parseModelRef,
+  sameModel,
+  sortModelOptions,
+} from './llmOptions';
 import { ReasoningControls } from './ReasoningControls';
-
-function modelLabel(key: string, fallback: string): string {
-  switch (key) {
-    case 'deepseek-flash':
-      return m.model_deepseek_flash();
-    case 'deepseek-pro':
-      return m.model_deepseek_pro();
-    default:
-      return fallback;
-  }
-}
-
-function modelDescription(key: string): string {
-  switch (key) {
-    case 'deepseek-flash':
-      return m.model_deepseek_flash_desc();
-    case 'deepseek-pro':
-      return m.model_deepseek_pro_desc();
-    default:
-      return '';
-  }
-}
 
 export function providerLabel(slug: string): string {
   switch (slug) {
@@ -52,7 +37,7 @@ export function ModelOptionLabel({ option }: { option: ModelOption }) {
   return (
     <span className="flex min-w-0 items-center gap-2 pr-6">
       <span className="min-w-0 truncate">
-        {modelLabel(option.key, option.displayName)}
+        {joinModelLabel(option.providerName, option.modelName)}
         {option.isDefault ? ` · ${m.settings_llm_default()}` : ''}
       </span>
       {option.usesUserKey ? (
@@ -74,9 +59,9 @@ const SURFACE_LABEL: Record<CloudSurface, () => string> = {
 };
 
 const PREF_FIELD: Record<CloudSurface, keyof SetModelPrefsReq> = {
-  chat: 'chatModelKey',
-  editor: 'editorModelKey',
-  generate: 'generateModelKey',
+  chat: 'chatModel',
+  editor: 'editorModel',
+  generate: 'generateModel',
 };
 
 /** Preference picker for one surface. Changing it applies to the next request;
@@ -92,17 +77,23 @@ export function ModelPicker({
   const { data } = useModels(surface, { errorBoundary: false });
   const { isPending, mutate } = useSetModelPrefs();
   const models = sortModelOptions(data?.models ?? []);
-  const selected = models.find((option) => option.key === data?.selectedKey);
-  const selectedDescription = selected ? modelDescription(selected.key) : '';
+  const selected = models.find((option) =>
+    sameModel(
+      optionRef(option),
+      data?.selectedModel ?? { modelSlug: '', providerSlug: '' }
+    )
+  );
   return (
     <div className={cn('flex min-w-0 flex-col gap-1.5', className)}>
       <div className="flex min-w-0 flex-wrap items-start gap-2">
         <Select
           disabled={isPending || models.length === 0}
-          onValueChange={(key) => {
-            mutate({ [PREF_FIELD[surface]]: key });
+          onValueChange={(value) => {
+            mutate({ [PREF_FIELD[surface]]: parseModelRef(value) });
           }}
-          value={data?.selectedKey || undefined}
+          value={
+            data?.selectedModel ? modelRefValue(data.selectedModel) : undefined
+          }
         >
           <SelectTrigger
             aria-label={SURFACE_LABEL[surface]()}
@@ -114,26 +105,40 @@ export function ModelPicker({
             {models.map((option) => (
               <SelectItem
                 disabled={!option.available}
-                key={option.key}
+                key={modelRefValue(optionRef(option))}
                 title={
                   option.available
-                    ? modelDescription(option.key) || undefined
+                    ? undefined
                     : m.settings_llm_locked({
                         provider: providerLabel(option.providerSlug),
                       })
                 }
-                value={option.key}
+                value={modelRefValue(optionRef(option))}
               >
                 <ModelOptionLabel option={option} />
               </SelectItem>
             ))}
           </SelectContent>
         </Select>
-        {surface === 'chat' || surface === 'generate' ? (
+        {surface === 'editor' ? (
+          <Select disabled value="instant">
+            <SelectTrigger
+              aria-label={m.settings_llm_thinking()}
+              className="w-30"
+              size="md"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="instant">
+                {m.settings_llm_thinking_instant()}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        ) : surface === 'chat' || surface === 'generate' ? (
           <ReasoningControls
-            effort={data?.selectedReasoningEffort ?? ''}
-            mode={data?.selectedReasoningMode ?? ''}
             selected={selected}
+            stored={data?.selectedThinking ?? ''}
             surface={surface}
           />
         ) : null}
@@ -142,8 +147,6 @@ export function ModelPicker({
         <p className="text-fg-muted text-sm">
           {m.settings_llm_byok_disclaimer()}
         </p>
-      ) : selectedDescription ? (
-        <p className="text-fg-muted text-sm">{selectedDescription}</p>
       ) : null}
     </div>
   );

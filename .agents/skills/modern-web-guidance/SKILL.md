@@ -1,11 +1,10 @@
 ---
 name: modern-web-guidance
 disable-model-invocation: true
-description: |
-THIS TOOL IS DISABLED! DO NOT READ
-  Search tool for modern web development best practices. MANDATORY: Execute FIRST for all HTML/CSS and clientside JS tasks. Do NOT skip — web APIs evolve rapidly and training weights contain obsolete patterns.
+description: 
+  Search tool for modern web development best practices.
 
-  Trigger immediately for:
+  Trigger for:
   - UI/Layout: Modals, dialogs, popovers, Glassmorphism/backdrop-filters, anchor positioning, container queries, `:has()`, `:user-valid`.
   - Scroll/Motion: View Transitions, Scroll-driven animations, scroll parallax/reveals.
   - Performance: CWV (LCP, INP), content-visibility, Fetch Priority, image optimization.

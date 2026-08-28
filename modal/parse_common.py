@@ -427,6 +427,15 @@ def _build_asgi(service: Any, parser_version: str):
         restored = getattr(service, "_restored_monotonic", None)
         return None if restored is None else round(time.perf_counter() - restored, 3)
 
+    def _measurements(result: dict, elapsed_seconds: float) -> dict[str, int]:
+        ocr_pages = result.get("_ocr_pages") or []
+        return {
+            "_page_count": max(0, int(result.get("_page_count") or 0)),
+            "_ocr_page_count": len(ocr_pages) if isinstance(ocr_pages, list) else 0,
+            "_worker_cpu_ms": max(0, int(result.get("_worker_cpu_ms") or 0)),
+            "_server_parse_ms": max(0, round(elapsed_seconds * 1000)),
+        }
+
     async def healthz(_request: Request) -> JSONResponse:
         payload: dict[str, Any] = {
             "ok": True,
@@ -458,6 +467,7 @@ def _build_asgi(service: Any, parser_version: str):
             or not fingerprint
         ):
             return JSONResponse({"detail": "invalid artifact request"}, status_code=400)
+        measurements: dict[str, int] = {}
         try:
             _validate_b2_url(source_url)
             _validate_b2_url(output_url)
@@ -473,6 +483,15 @@ def _build_asgi(service: Any, parser_version: str):
             t0 = time.perf_counter()
             result = await service.parse(_Document(source.content, name, parse_method))
             parse_s = round(time.perf_counter() - t0, 3)
+            measurements = _measurements(result, parse_s)
+            if worker_error := str(result.get("_worker_error") or ""):
+                return JSONResponse(
+                    {
+                        "detail": f"remote parse failed: {worker_error}",
+                        **measurements,
+                    },
+                    status_code=500,
+                )
 
             bundle = await asyncio.to_thread(
                 _bundle_bytes, result, fingerprint, parser_version
@@ -489,7 +508,8 @@ def _build_asgi(service: Any, parser_version: str):
             uploaded.raise_for_status()
         except Exception as e:  # noqa: BLE001
             return JSONResponse(
-                {"detail": f"remote parse failed: {e}"}, status_code=500
+                {"detail": f"remote parse failed: {e}", **measurements},
+                status_code=500,
             )
         return JSONResponse(
             {
@@ -502,6 +522,7 @@ def _build_asgi(service: Any, parser_version: str):
                     "source_fingerprint": fingerprint,
                 },
                 "_server_parse_s": parse_s,
+                **measurements,
                 "_uptime_s": _uptime(),
             }
         )
@@ -526,9 +547,17 @@ def _build_asgi(service: Any, parser_version: str):
         t0 = time.perf_counter()
         try:
             result = await service.parse(_Document(data, name, parse_method))
+            elapsed = time.perf_counter() - t0
+            measurements = _measurements(result, elapsed)
+            if worker_error := str(result.get("_worker_error") or ""):
+                return JSONResponse(
+                    {"detail": f"parse failed: {worker_error}", **measurements},
+                    status_code=500,
+                )
         except Exception as e:  # noqa: BLE001
             return JSONResponse({"detail": f"parse failed: {e}"}, status_code=500)
-        result["_server_parse_s"] = round(time.perf_counter() - t0, 3)
+        result["_server_parse_s"] = round(elapsed, 3)
+        result.update(measurements)
         result["_uptime_s"] = _uptime()
         return JSONResponse(result)
 

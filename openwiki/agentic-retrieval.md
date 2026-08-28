@@ -11,8 +11,8 @@ This page is the workflow contract for the in-house retrieval stack that replace
 LightRAG. Prefer it over guessing from code when changing ingest, search, chat,
 or generate behaviour.
 
-Testing setup lives in [pipeline-tests.md](pipeline-tests.md). Storage quota and
-who may create materials live in
+The pipeline test inventory lives in [test-catalog.md](test-catalog.md). Storage
+quota and who may create materials live in
 [authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md)
 and [backend-storage-quota.md](backend-storage-quota.md).
 
@@ -24,7 +24,7 @@ Two Python processes share one Postgres schema owned by Go migrations
 | Process | Entry | Role |
 | --- | --- | --- |
 | Ingest worker | `python -m pipeline.ingest.worker` | Claims jobs, parses, chunks, embeds, writes a two-tier file summary, extracts concepts. Horizontally scalable (`WORKER_REPLICAS`); each replica runs one job at a time |
-| Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/quiz-grade`, `/complete/stream`, `/plate-ai/*` over the same index |
+| Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/quiz-grade`, `/plate-ai/*` over the same index |
 
 The Go gateway is the public face: it authenticates the user, proxies chat and
 generate to the retrieval service, and owns material persistence (including the
@@ -88,9 +88,9 @@ process resolves; it is a property of the workspace:
 
 | Column | Meaning |
 | --- | --- |
-| `workspaces.embedding_model_key` / `_version` | the space this workspace is in, fixed at creation |
+| `workspaces.embedding_provider_slug` / `embedding_model_slug` / `_version` | the space this workspace is in, fixed at creation |
 | `workspaces.embedding_dim` | its width, which selects the vector table |
-| `rag_contents.embedding_model_key` / `_version` / `_dim` | the model that actually produced the vectors under this content |
+| `rag_contents.embedding_provider_slug` / `embedding_model_slug` / `_version` / `_dim` | the model that actually produced the vectors under this content |
 
 The workspace columns are what ingest and query both read (`ingestJobPayload`
 does *not* snapshot embedding onto the job; the worker installs the workspace's
@@ -102,10 +102,10 @@ disagreement findable instead of leaving it to show up as poor retrieval.
 Retargeting the registry's embedding default therefore applies **only to
 workspaces created afterwards**. Existing workspaces keep resolving the row
 they were pinned to. Embedding rows cannot be disabled, deleted, stripped,
-or rewritten onto a different `provider_model_id` / `params`
+or rewritten onto a different `model_slug` / `params`
 (`protect_embedding_model_configs`). A later model, including another
-2560-d one, is a new catalog row and a new vector table. `base_url` may
-move so the same weights stay reachable.
+2560-d one, is a new catalog row and a new vector table. Changing the
+upstream id means a new exact `model_slug` and a new immutable version.
 
 This replaced a process-start freeze of the embedding default in both the Go
 and Python registries. The freeze stopped a 30-second poll from mixing spaces
@@ -130,10 +130,11 @@ must not share an HNSW index.
 The lexical half of hybrid search (`text`, `indexed_text`, `search`,
 `regions`, pages) does not depend on the model and stays in `rag_chunks`.
 `store.vector_table` in Python and `vectorTable` in Go map
-`(model_key, version)` to a table name from a fixed allowlist, because
+`(provider_slug, model_slug, version)` to a table name from a fixed allowlist, because
 that name is interpolated into SQL.
 
-Adding a model means a new table in `0001_init.sql`, a new allowlist
+Adding a model means a new vector table (in `0001_init.sql` until the first
+kept database exists, then a new numbered migration), a new allowlist
 entry in both languages, and `params.vector_table` on the catalog row.
 Removing a table is not supported.
 
@@ -180,7 +181,8 @@ written only by a claim — and every heartbeat, requeue and terminal transition
 requires the attempt it claimed (`db.claim_is_current`). A run whose claim moved
 on logs and discards its outcome rather than overwriting its successor's row.
 
-Enqueue snapshots `{actorUserId, ingestModelKey, visionModelKey}` (and versions)
+Enqueue snapshots `{actorUserId, ingestProviderSlug, ingestModelSlug,
+visionProviderSlug, visionModelSlug}` (and versions)
 onto the job: the actor who will be billed, and the two model surfaces whose
 defaults are hot-reloadable and could move while the job is queued. Embedding is
 not among them — the worker reads it from the workspace, as above.
@@ -202,11 +204,15 @@ Controlled by `parseMode` on the job payload:
 | `none` | — | Blob stored, not indexed | — |
 | txt / md / json kinds | Direct B2 read | Markdown | No |
 
-`accurate` and `advanced` are retired names: the worker maps them onto `fast`
-so already-queued jobs still parse.
+`accurate` and `advanced` are retired names. The worker rejects them instead of
+silently selecting a parser with different cost and output.
 
 The bundle carries page-accurate citations and the figures captioning needs.
 Marker runs with RapidOCR only on pages the scan probe flags.
+Each successful or measured failed attempt reports its total pages, OCR pages,
+dedicated Marker-child CPU milliseconds, and in-container elapsed milliseconds.
+Billing uses the page counts, 31 credits per digital page and 52 credits per OCR
+page. CPU time is diagnostic because several jobs can share one Modal container.
 
 ### Parse capacity
 
@@ -337,7 +343,7 @@ mid-queue), so nobody's choice is being overridden — but an operator who swaps
 either model and wants the prose regenerated has only the blunt lever below.
 
 A parser/caption/chunker version bump invalidates every donor and re-parses.
-Captions surviving that bump means the re-parse pays GPU but not vision.
+Captions surviving that bump means the re-parse pays the page rate but not vision.
 Delete-and-re-upload with identical parse params also re-parses: there is no
 donor row left. That is the accepted trade for dropping parse zips on success.
 
@@ -353,9 +359,9 @@ donor row left. That is the accepted trade for dropping parse zips on success.
   re-ingest does not leave a stale tail).
 4. One cheap-model call → two-tier content summary (`descriptor` ~50 words plus
   a size-tiered `summary` of ~150/300/500 words); upsert `rag_content_summaries`.
-  Documents larger than `EVO_LLM_INPUT_BUDGET_TOKENS` are map-reduced in chunk
-  groups rather than sampled. A provider failure here retries the job rather
-  than storing a blank: an empty summary would be marked ready, copied to future
+  Documents larger than the pinned ingest model's catalog context window are
+  map-reduced in chunk groups rather than sampled. A provider failure here
+  retries the job rather than storing a blank: an empty summary would be marked ready, copied to future
   donors, and never refilled. `summary_version` is **not** part of
   `pipeline_identity` — a prompt change must not invalidate a parse; it exists
   so a later backfill can find stale prose, including donor copies.
@@ -427,13 +433,16 @@ One user send creates one assistant row. `messages.content` is the final answer
 only. Completed narration and tool-display blocks live in `messages.metadata`
 and are not sent back as LLM history.
 
-1. Go authenticates, reads `users.locale` and `users.chat_model_key`, resolves
+1. Go authenticates, reads `users.locale` and the
+   `users.chat_model_provider_slug` / `users.chat_model_slug` pair, resolves
    that key to a `model_configs` row (`ratesForSurface`), opens one turn-scoped
-   spend session, stamps `{modelKey, modelVersion}` on the assistant message, and
-   loads checkpoint-plus-tail history **before** inserting the current user
+   spend session, stamps `{providerSlug, modelSlug, modelVersion}` on the assistant message, and
+   loads the checkpoint plus all completed history after it **before** inserting the current user
    row. Python receives `query` once, plus `assistantMessageId` and the optional
    rolling checkpoint. Locale and model are server-owned. A missing preference
-   or unresolvable pin fails the turn as `model_unavailable`.
+   or unresolvable pin fails the turn as `model_unavailable`. Go rejects the
+   query before persistence when it exceeds 8,192 estimated tokens or 65,536
+   UTF-8 bytes. The current query is never clipped or summarized.
 2. The agent **primes** with one retrieval before the model is asked anything.
    That search is emitted as `tool_start` / `tool_end` (`callId=prime`) and the
    first versioned citation list.
@@ -449,16 +458,23 @@ and are not sent back as LLM history.
    are answer-local. A versioned `citations` event follows each batch.
 5. Rolling conversation checkpoints (`conversation_compactions`) are separate
    from live request compaction. A checkpoint folds old cross-message history
-   and persists in Go with compare-and-set so a pin cannot move backwards.
-   Before every agent model call, live compaction measures the current history,
-   tool results, and active tool schemas against the pinned model's
-   `input_budget`. It summarizes old complete groups at 90% and clips as a
-   deterministic fallback. OpenAI replay items after the current user message
-   stay intact unless the fallback must drop encrypted reasoning to fit.
-   Terminal calls after credit exhaustion use only the deterministic fallback,
-   because another summary completion would consume the one allowed call.
-   Cross-message history is ordered by `(created_at, id)` and has a 200-message
-   transport safety cap.
+   through the latest completed historical message and persists in Go with
+   compare-and-set so a pin cannot move backwards. The summarizer receives the previous
+   checkpoint, every completed historical message after it, and the exact current query as a
+   relevance guide. It must not answer or summarize the current query. Large
+   histories fold in chronological batches with no message-count cap or prefix
+   clipping. The target is 1,200 to 1,600 tokens with a hard 2,048-token output
+   limit. Empty or oversized output does not advance the checkpoint.
+
+   Before every agent model call, live admission measures the provider-shaped
+   request against the selected model's input budget. The system prompt, tool
+   schemas, current query, priming result, tool arguments and results, and
+   provider continuity items remain exact. Compaction starts only when the
+   request would exceed 100% of the usable input budget after the output reserve
+   and safety margin. There is no 90% trigger and no deterministic clipping
+   fallback. Tool output is capped at 8,192 estimated tokens with a visible
+   truncation marker. If protected context still cannot fit, the turn fails with
+   `context_too_large`.
 6. Python settles every provider call through
    `POST /api/internal/provider-calls` before the agent chooses its next action.
    The turn spend session remains open, so this does not take another
@@ -474,7 +490,13 @@ and are not sent back as LLM history.
    encrypted reasoning items inside the current tool loop. DeepSeek and
    Anthropic stay on Chat Completions-compatible paths. Raw chain-of-thought
    is never streamed to the browser. The user's reasoning policy applies to
-   every agent model response.
+   every agent model response. A provider failure before the first response
+   byte is retried twice on a new call id; the failed attempt is `abandoned`
+   (absorbed, no charge). Any later provider or SSE failure is not retried
+   and the client gets the same generic `agent_failed` error. If the browser
+   disconnects, Python stops writing SSE but finishes the in-flight provider
+   call, settles usage when it arrives, and does not start another planning
+   step.
 8. SSE events: `phase` (`planning` | `running_tools` | `answering`),
    `block_start` / `block_delta` / `block_end` (`narration` | `answer`),
    `tool_start` / `tool_end`, versioned `citations`, `done` | `error`.
@@ -486,40 +508,48 @@ and are not sent back as LLM history.
 `sha256(assistantMessageId + "\\n" + toolCallId)`, looks up that id before
 quota, retries POST, then GET. Same-id replay returns the original row. A
 confirmed 404 is a normal tool failure. An uncertain GET fails the turn
-without appending a failed tool result.
+without appending a failed tool result. Its optional `scope` contains
+`file_ids` and `chapter_ids`. Missing or empty scope means the current chat
+scope. The tool resolves and persists source provenance, cannot widen the chat
+scope, rejects the whole call if any id is invalid or unavailable, and rejects
+a valid scope with no indexed content.
 
 ### Tools
 
 | Tool | Side effects | Notes |
 | --- | --- | --- |
-| `search_workspace` | none | Hybrid search; scope-intersected |
+| `search_workspace` | none | Hybrid search; omitted `file_ids` uses the chat scope; any invalid supplied id rejects the call |
 | `list_sources` | none | Chapters, file names, passage counts, and the short descriptor |
-| `describe_documents` | none | Detailed summaries for up to eight files; scope-intersected |
-| `read_document` | none | Sequential chunks by index |
-| `related_concepts` | none | Co-mention bridge |
-| `generate_material` | yes | POST/GET Go `/api/internal/materials` with a deterministic id |
+| `describe_documents` | none | Detailed summaries for one to eight required file ids; atomic scope validation |
+| `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading |
+| `related_concepts` | none | Co-mention bridge constrained to the chat scope |
+| `generate_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic id |
 
 Read tools hit Postgres directly. Anything that creates a material goes through
 the gateway with `X-Pipeline-Secret`, so authz, quota, and the materials model
 stay in one place. The tool is omitted from the schema when the gateway URL or
 user is unset, or when `userId` is missing.
 
-Citation numbers are stable for the turn across tools: `[3]` means the same
-passage whether it came from search or from reading a document.
+Citation numbers belong to the current answer. Structured citations still map
+the answer to file, page, region, and chunk data for the UI. Checkpoints do not
+persist source references or stable historical citation numbers. A later answer
+retrieves again and emits a new answer-local citation list.
 
 ## Generate workflow
 
 `/generate` is **not** an agent loop. Scope is already known, the output shape
 is fixed, and the gateway must persist a parseable artifact.
 
-1. `gather_context` samples chunks evenly across every document in scope (equal
+1. The gateway resolves file and chapter ids atomically. Omitted file and
+   chapter ids expand to every file in the workspace. One invalid id rejects
+   the request, and a valid scope with no indexed content fails before a model
+   call. `gather_context` samples chunks evenly across every document in scope (equal
    share per file, not proportional to length). The gateway resolves the user's
    **Settings → LLM** generate preference (`ratesForSurface`) and forwards that
    exact pin; the browser `model` field is ignored. An unresolvable preference
    fails as `model_unavailable`.
-2. If the context fits the budget, one `produce` call. If it overflows across
-   multiple files, `produce_mapped` summarizes per document then combines.
-   `produce` appends a language rule from the gateway's `locale` so quiz copy,
+2. One `produce` call receives the bounded, evenly sampled context. There is no
+   unused map-reduce branch. `produce` appends a language rule from the gateway's `locale` so quiz copy,
    flashcard text, and diagram labels match the user's Settings language.
    JSON keys and Mermaid syntax stay English.
 3. Kind-specific normalizers (`extract_json`, `strip_fence`,
@@ -576,14 +606,13 @@ job and pipeline `/workspace/delete` endpoint are gone.
 | Concern | Env | Default / note |
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
-| User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. |
+| User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
 | Parse | `MODAL_FAST_PARSE_URL` | Marker app `evo-mineru-fast` |
 | Chunk size | `EVO_CHUNK_*` | Character budgets, not tokens |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
-| Query model | `EVO_QUERY_MODEL` | Last resort for a call handed a bare model string. Ingest and vision come from the job pin; chat/generate/editor from Settings → LLM via the gateway |
 | Search | `EVO_SEARCH_CANDIDATES`, `EVO_SEARCH_TOP_K`, `EVO_SEARCH_PER_FILE_CAP` | |
 | Agent | `EVO_AGENT_MAX_STEPS` | Default 12. Cap is the design, not a safety valve |
-| LLM input budget | catalog `context_window_tokens`, fallback `EVO_LLM_INPUT_BUDGET_TOKENS` | Per-model window minus 8k for output. Used for file summaries, generate gather/map-reduce, editor/quiz clips, and chat compact. |
+| LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `EVO_LLM_INPUT_BUDGET_TOKENS` only before model selection | Provider calls use the selected model window minus 8k for output, then subtract the greater of the 512-token protocol minimum and the model's calibrated safety margin. Admission uses 100% of what remains. The env value only bounds initial multi-file gathering before a catalog model is selected. |
 | Captions | `EVO_CAPTION_IMAGES`, `EVO_CAPTION_CONCURRENCY`, `EVO_CAPTION_MAX_EDGE`, `EVO_CAPTION_VERSION` | Per file at upload; the env flag is only a fallback |
 | Caption safety valve | `EVO_CAPTION_MAX_PER_FILE` | `0` (uncapped); the filters bound the cost |
 

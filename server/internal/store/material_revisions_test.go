@@ -3,19 +3,16 @@ package store
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
 	"github.com/evonotes/server/internal/materialdoc"
+	"github.com/evonotes/server/internal/testdb"
 )
 
 func openRevisionTestStore(t *testing.T) *Store {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
+	dsn := testdb.URL(t)
 	ctx := context.Background()
 	store, err := New(ctx, dsn)
 	if err != nil {

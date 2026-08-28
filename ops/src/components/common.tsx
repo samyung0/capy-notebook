@@ -1,4 +1,10 @@
-import { AlertTriangle, Inbox, LoaderCircle, RotateCcw } from 'lucide-react';
+import {
+  AlertTriangle,
+  Clock3,
+  Inbox,
+  LoaderCircle,
+  RotateCcw,
+} from 'lucide-react';
 import type { ReactNode } from 'react';
 import { OpsApiError } from '@/api';
 import { Button } from '@/components/ui/button';
@@ -25,6 +31,15 @@ export function PageHeader({
       </div>
       {actions}
     </header>
+  );
+}
+
+export function FreshnessNote({ children }: { children: ReactNode }) {
+  return (
+    <p className="inline-flex max-w-md items-center gap-2 rounded-md border bg-muted/40 px-3 py-2 text-muted-foreground text-xs">
+      <Clock3 aria-hidden="true" className="size-3.5 shrink-0" />
+      <span>{children}</span>
+    </p>
   );
 }
 

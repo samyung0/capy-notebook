@@ -1,0 +1,190 @@
+Drive / OneDrive import via Cloudflare Worker relay
+
+Status: implemented. User uploads already go browser →
+presigned B2 PUT → Go `Head` + finalize. Cloud import now reserves and writes
+an outbox job; the Queue Worker downloads one bounded file and PUTs it through
+a late-minted presign. The origin never holds raw import bytes. Modal remains
+the first process that downloads parseable files after finalization.
+
+This is “Go/Coolify never sees import payloads,” not “only Modal sees files.”
+The Worker still sees bytes. Cloudflare already terminates API TLS.
+
+
+Agreed points
+-------------
+
+- Feasible on Workers Paid. CPU (30s default, up to 5 min) is not the
+  constraint: Drive/B2 `fetch()` wait does not count as CPU. HTTP wall-clock
+  is unlimited while the caller stays connected. Free plan (10 ms CPU) is
+  the wrong plan. Old Bundled/Unbound 10ms/30ms numbers do not apply.
+
+- Keep current caps: 10 MiB free / 30 MiB Pro per file
+  (`sourceupload.SourceMaxBytes`), 20 files per request
+  (`MaxFilesPerUpload`), UI chunks of 3 at concurrency 3. One 30 MiB object
+  fits a 128 MB isolate even if buffered.
+
+- One file per Worker / Queue invocation. Do not put a 20-file wave in one
+  isolate (runtime-update 30s grace is the only Cloudflare wall-clock risk,
+  and sequential batches are the shape that hits it).
+
+- Go fetches Drive/Graph metadata JSON (`size`, name, mime) and rejects
+  oversize *before* enqueueing a Worker. That is not a file download. Do
+  not download on Go to “learn the size.”
+
+- Worker fully downloads one object into one bounded `Uint8Array`, then PUTs
+  that fixed-length body to B2. Workers emits `Content-Length` for the typed
+  array; manually setting the forbidden header does not work.
+
+- Treat the relay as a job. Do not await the Worker on
+  `POST /api/workspaces/{id}/sources/import`. The browser holds that request
+  through the Cloudflare tunnel; a slow Drive transfer eats origin 524
+  (~100s) and Coolify/Traefik idle limits. Today’s sync import already has
+  this problem on a slow wave.
+
+- Reuse the existing upload reservation / complete seam. The Worker is
+  another PUT client, not a new ingest protocol. Do not give the isolate
+  B2 app keys.
+
+- Do not use the Postgres `ingest` job type for the relay. That job is
+  Modal parse and assumes the blob is already in B2.
+
+- `upload_sessions` remains the quota/object reservation. The separate
+  `source_import_jobs` row is the transactional outbox, provider locator,
+  attempt lease, retry state, terminal error, and polling record. A
+  Cloudflare Queue consumer is the runner. `source_import_requests` stores the
+  request fingerprint and complete 202 body so browser retries replay accepted
+  and rejected results without calling the provider again.
+
+- Enqueue an opaque `jobId` only. Provider locators remain in Postgres. Go
+  obtains a fresh provider token at acquire time. The Worker downloads and
+  measures first, then requests a fresh PUT presign immediately before upload.
+  Each attempt gets a different incoming object key, so a stale presigned PUT
+  cannot overwrite the bytes owned by a replacement lease.
+
+- `waitUntil` after a 202 is not a job. It only lasts 30s after disconnect.
+
+- After B2 `Head` succeeds, `FinalizeUploadSession` creates the file and
+  enqueues ingest the way browser uploads already do. Frontend already
+  waits for file terminal *after* the POST; it must not wait on the POST
+  itself for the relay.
+
+- Unknown-size Google exports reserve the smaller of the account cap and
+  Drive's 10 MB export limit. An attempt-bound upload grant atomically settles
+  `declared_size` to the measured bytes (gating any positive delta) before
+  minting the PUT presign. Finalization keeps exact `Head` equality.
+
+
+Pitfalls / risks
+----------------
+
+- Google access token in the Worker. The token can read more than one file, so
+  every control request is timestamped HMAC, attempts have database leases,
+  and authorization is never logged. Microsoft uses Graph's short-lived
+  one-file `@microsoft.graph.downloadUrl`; its broad token stays in Go.
+
+- Google-native Docs/Sheets/Slides have no usable `size`. Export-to-PDF
+  is unknown until it finishes. Those jobs still start; the Worker aborts
+  if the stream exceeds `maxBytes`. Keep that mid-download cap for binary
+  files too (metadata can be stale or wrong).
+
+- `completeSourceUpload` today rejects if `Head` size ≠ `DeclaredSize`.
+  Import cannot keep that exact match for exports. Relax or update
+  declared size from the uploaded object before finalize.
+
+- Trust model. A relay still sees raw bytes. You are moving the trustee
+  from the origin to Cloudflare, which you already use for the tunnel.
+
+- At-least-once Queue delivery. Complete must stay idempotent (completed
+  sessions already short-circuit). A retry after a successful PUT must
+  not create a second file row. The browser sends one request id across HTTP
+  retries, and expired database leases reopen the durable outbox.
+
+- Queue delay vs Clerk token lifetime (~1h) and presign TTL (15 min).
+  Why mint both at run, not enqueue. A long DLQ/retry still needs a
+  fresh token fetch from Clerk via Go.
+
+- Do not create a file row (with a raw URL) before the blob exists.
+  `pending` today means “waiting for ingest,” not “still on Drive.”
+  Overloading it 404s the viewer. Keep the in-flight state on
+  `upload_sessions` (or add a distinct import status if the UI must
+  show a row immediately).
+
+- Inbound Worker request body is capped (~100 MB) and unused here — the
+  job payload is small JSON. Do not send file bytes to the Worker.
+  Do not buffer 20 files in one isolate.
+
+- Caller timeout is still a cap *inside* the consumer: set a per-file
+  budget (minutes), not a whole-batch budget.
+
+
+Suggested implementation
+------------------------
+
+1. Metadata helper (Go)
+
+   Extend the Drive/Graph metadata GET to ask for `size` (and keep
+   name / mimeType). Reject binary files over `sourceMaxBytes` before
+   any session or job is created. Google-apps types skip the size gate
+   and carry `maxBytes` into the job. Leave `DownloadGoogleFile` /
+   `DownloadMicrosoftFile` unused by import once the Worker exists;
+   do not keep a Go download fallback that slurp-buffers.
+
+2. Import POST becomes reserve + enqueue
+
+   Same authz, workspace file room, and credits/ingest-slot checks as
+   today. For each accepted ref: create an `upload_sessions` row
+   (incoming key, declared size from metadata or a safe upper bound for
+   exports) and a `source_import_jobs` row in one transaction. The outbox
+   dispatcher sends only `jobId` and safely tolerates duplicate sends. Return
+   `202` with job ids. Bind retries to a request id before reserving quota. No
+   provider token or presign enters the message.
+
+3. Worker / Queue consumer (one file)
+
+   Authenticate the kick (HMAC or service binding). Ask Go for a
+   short-lived attempt grant: fresh provider download authority plus the
+   session’s maxBytes. Download (export Google-apps to PDF as
+   today). Abort if bytes read exceed maxBytes. PUT to the presign
+   acquired only after measuring the bytes. Do not store B2 app keys on the
+   isolate.
+
+4. Complete
+
+   Worker (or Go, after a small “object is there” callback) runs the
+   existing complete path: `Head`, promote incoming → final, finalize
+   session. `FinalizeUploadSession` itself creates the file and optional ingest
+   job; do not call `CreateSourceWithJob` / `CreateSourceReady` again. Failed
+   and DLQ jobs release the reservation immediately, with the session sweeper
+   as a backstop.
+
+5. Frontend
+
+   `drainImport` must stop treating the import POST as “bytes are in
+   B2.” Poll sessions (or a thin import-job status) until each becomes
+   a file, then keep `waitForFileTerminal` for ingest. Concurrency
+   stays 3; that is enqueue concurrency, not download concurrency on
+   one isolate.
+
+6. Do not do
+
+   Await Worker on the user request. Fire-and-forget HTTP +
+   `waitUntil`. Put OAuth tokens or presigns in the queue. Reuse
+   `jobs.type = 'ingest'` for the relay. Give the Worker B2
+   credentials. Download on Go to measure size. Batch a whole wave
+   into one invocation.
+
+
+Related
+
+- Current import: `server/internal/httpapi/huma_sources.go` (`importSources`)
+- Drive/Graph download: `server/internal/integrations/oauth.go`
+- Clerk token wallet: `server/internal/integrations/clerk.go`
+- Direct upload reserve/complete: `createSourceUpload` /
+  `completeSourceUpload` in `huma_sources.go`; `store/uploads.go`
+- Caps: `sourceupload.SourceMaxBytes`, `store.MaxFilesPerUpload`,
+  `SOURCE_UPLOAD_CONCURRENCY` in `src/features/workspace/sourceUpload.ts`
+- Picker / scopes: `openwiki/deployment-runbook.md` §11
+- Queue Worker: `workers/drive-import-relay`
+- Durable job/outbox: `server/internal/store/source_imports.go`
+- Signed internal protocol: `server/internal/httpapi/internal_import_relay.go`
+- Review canvas: drive-import-worker-relay (session canvases)

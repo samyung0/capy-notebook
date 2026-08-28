@@ -23,9 +23,9 @@ class TerminalError(Exception):
 
 
 class CapacityWait(Exception):
-    """GPU parse slots are full. The job goes back to pending; the file stays pending.
+    """Modal parse slots are full. The job returns to pending.
 
-    Not a failure. Do not spend an attempt and do not mark the file failed.
+    The file stays pending. Do not spend an attempt or mark the file failed.
     """
 
 
@@ -38,8 +38,8 @@ class JobPolicy:
 
 
 # Ingest timeout sits above MODAL_PARSE_TIMEOUT (900s) plus captioning and
-# embed. A timeout that kills a legitimate parse wastes the GPU work already
-# in flight — the B2 zip is only recorded after MinerU returns.
+# embed. A timeout that kills a legitimate parse wastes CPU work already in
+# flight. The B2 zip is only recorded after Marker returns.
 POLICIES: dict[str, JobPolicy] = {
     "ingest": JobPolicy(max_attempts=3, backoff_base_s=30, timeout_s=1800, lease_s=180),
 }

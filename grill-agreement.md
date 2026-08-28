@@ -77,9 +77,10 @@ Keep the Postgres `jobs` table. Today that is ingest: jsonb of ids and options, 
 
 **Ops dashboard.** Spec is `todo-ops-dashboard`. The standalone
 `ops.evonotes.com` service uses Cloudflare Access plus Clerk and operator
-membership. Aggregate charts read `usage_daily`, never `usage_events`. Routine
-sessions use the read role. Admin registry Save uses its own tightly granted
-writer and keeps the product gateway read-only.
+membership. Aggregate charts read the bounded `usage_events` ledger directly;
+the overview response is cached for 30 seconds. Routine sessions use the
+read/auth role. Registry Save and reconciliation requests use one tightly
+granted admin-actions role and keep the product gateway read-only.
 
 **Elasticsearch.** `.todo` low-priority “elastic search?” Hybrid search is Postgres `tsvector` + `pgvector` + RRF. ES would be a second index, sync, and ops bill. Parked until the current search is wrong in a way friends can name, or corpus size makes `tsvector` hurt. Chapter filter stays soft-steered; that is a data-model limit (one entity, many files), not an ES feature.
 

@@ -287,7 +287,7 @@ func vectorTable(pin models.Pin) (string, error) {
 // default only affects workspaces created after the poll picks it up.
 func (s *Store) newWorkspaceEmbedding(ctx context.Context) (workspaceEmbedding, error) {
 	if s.registry == nil {
-		return workspaceEmbedding{Pin: models.Pin{Key: "qwen-embed", Version: 1}, Dim: 2560}, nil
+		return workspaceEmbedding{Pin: models.Pin{Ref: models.Ref{ProviderSlug: "openrouter", ModelSlug: models.SeededHopEmbedSlug}, Version: 1}, Dim: 2560}, nil
 	}
 	cfg, err := s.registry.Default(ctx, models.SurfaceEmbedding)
 	if err != nil {
@@ -327,10 +327,10 @@ func (s *Store) CreateWorkspace(ctx context.Context, userID, name string, color 
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspaces
 			(id, user_id, name, color, privacy, share_role,
-			 embedding_model_key, embedding_model_version, embedding_dim)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+			 embedding_provider_slug, embedding_model_slug, embedding_model_version, embedding_dim)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
 		id, userID, name, color, PrivacyPrivate, ShareViewer,
-		embed.Pin.Key, embed.Pin.Version, embed.Dim); err != nil {
+		embed.Pin.ProviderSlug, embed.Pin.ModelSlug, embed.Pin.Version, embed.Dim); err != nil {
 		return Workspace{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'owner')`,
@@ -1343,7 +1343,7 @@ func quizFromMaterial(mt Material) (Quiz, error) {
 	}
 	return Quiz{
 		ID: mt.ID, Name: mt.Title, WorkspaceID: mt.WorkspaceID, WorkspaceName: mt.WorkspaceName,
-		Chapters: chapters, Questions: questions, CreatedAt: mt.CreatedAt,
+		Chapters: chapters, ScopeFileNames: mt.ScopeFileNames, Questions: questions, CreatedAt: mt.CreatedAt,
 		Privacy: mt.Privacy, TimeLimitMin: timeLimit,
 	}, nil
 }
@@ -1391,7 +1391,7 @@ func (s *Store) CreateQuiz(ctx context.Context, q Quiz) (Quiz, error) {
 	}
 	mt, err := s.CreateMaterial(ctx, Material{
 		ID: q.ID, CreatedBy: q.UserID, WorkspaceID: q.WorkspaceID, WorkspaceName: q.WorkspaceName, Kind: "quiz",
-		Title: q.Name, Content: content, ScopeChapters: q.Chapters, Privacy: q.Privacy,
+		Title: q.Name, Content: content, ScopeChapters: q.Chapters, ScopeFileNames: q.ScopeFileNames, Privacy: q.Privacy,
 	})
 	if err != nil {
 		return Quiz{}, err
@@ -1576,7 +1576,7 @@ func (s *Store) GetDeck(ctx context.Context, id string) (Deck, error) {
 // card, matching the frontend constructor. An omitted workspace id creates a
 // truly standalone deck owned directly by the user.
 func (s *Store) CreateDeck(ctx context.Context, userID, name string, color UserColor, wsID string) (Deck, error) {
-	return s.CreateDeckWithCards(ctx, userID, name, color, wsID, nil, "")
+	return s.CreateDeckWithCards(ctx, userID, name, color, wsID, nil, "", nil, nil)
 }
 
 // CreateDeckWithCards persists the complete authored deck in one material
@@ -1596,6 +1596,7 @@ func (s *Store) CreateDeckWithCards(
 	wsID string,
 	cardValues [][2]string,
 	id string,
+	scopeChapters, scopeFileNames []string,
 ) (Deck, error) {
 	var wsName string
 	if wsID != "" {
@@ -1629,6 +1630,7 @@ func (s *Store) CreateDeckWithCards(
 	mt, err := s.CreateMaterial(ctx, Material{
 		ID: id, CreatedBy: userID, WorkspaceID: wsID, WorkspaceName: wsName, Kind: "flashcards",
 		Title: name, Content: content, Color: color,
+		ScopeChapters: scopeChapters, ScopeFileNames: scopeFileNames,
 	})
 	if err != nil {
 		return Deck{}, err

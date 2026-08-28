@@ -53,6 +53,23 @@ class ModalParseError(RuntimeError):
     pass
 
 
+def _record_measurement(payload: object) -> None:
+    if not isinstance(payload, dict):
+        return
+    pages = max(0, int(payload.get("_page_count") or 0))
+    ocr_pages = max(0, int(payload.get("_ocr_page_count") or 0))
+    cpu_milliseconds = max(0, int(payload.get("_worker_cpu_ms") or 0))
+    elapsed_milliseconds = max(0, int(payload.get("_server_parse_ms") or 0))
+    if not (pages or cpu_milliseconds or elapsed_milliseconds):
+        return
+    obs.record_parse_usage(
+        pages=pages,
+        ocr_pages=ocr_pages,
+        cpu_milliseconds=cpu_milliseconds,
+        elapsed_milliseconds=elapsed_milliseconds,
+    )
+
+
 def parser_version(route: str) -> str:
     try:
         return PARSER_VERSIONS[route]
@@ -143,26 +160,32 @@ def _request_artifact(
         },
         timeout=cfg.modal_parse_timeout,
     )
+    try:
+        payload = resp.json()
+    except (TypeError, ValueError):
+        payload = None
+    _record_measurement(payload)
     if resp.status_code >= 300:
-        raise ModalParseError(f"modal parse {resp.status_code}: {resp.text[:500]}")
-    payload = resp.json()
+        detail = payload.get("detail") if isinstance(payload, dict) else resp.text[:500]
+        raise ModalParseError(f"modal parse {resp.status_code}: {detail}")
+    if not isinstance(payload, dict):
+        raise ModalParseError("modal returned an invalid JSON response")
     artifact = payload.get("artifact") or {}
     if artifact.get("key") != artifact_key:
         raise ModalParseError("modal returned an unexpected artifact key")
     artifact["fingerprint"] = fingerprint
-    # _server_parse_s measures parse wall time inside the container. It excludes
-    # queue wait and cold start, which are only visible from Modal's own
-    # metrics, so this undercounts what Modal actually bills — it is the
-    # attributable share, not the invoice.
+    # Wall time remains useful for latency. The charge uses page counts, and
+    # _worker_cpu_ms is the dedicated Marker child process's actual CPU time.
     parse_seconds = payload.get("_server_parse_s")
-    if isinstance(parse_seconds, (int, float)) and parse_seconds > 0:
-        obs.record_gpu_millis(int(parse_seconds * 1000))
     log.info(
-        "modal published %s parse artifact key=%s bytes=%s parse_s=%s",
+        "modal published %s parse artifact key=%s bytes=%s parse_s=%s cpu_ms=%s pages=%s ocr_pages=%s",
         route,
         artifact_key,
         artifact.get("size"),
         parse_seconds,
+        payload.get("_worker_cpu_ms"),
+        payload.get("_page_count"),
+        payload.get("_ocr_page_count"),
     )
     return artifact
 

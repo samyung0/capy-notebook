@@ -12,6 +12,7 @@ type providerCallReq struct {
 	CallID           string `json:"callId"`
 	Kind             string `json:"kind"`
 	Purpose          string `json:"purpose"`
+	Thinking         string `json:"thinking"`
 	Provider         string `json:"provider"`
 	Model            string `json:"model"`
 	InputTokens      int64  `json:"inputTokens"`
@@ -36,6 +37,7 @@ func (a *api) internalSettleProviderCall(w http.ResponseWriter, r *http.Request)
 		CallID:           req.CallID,
 		Kind:             req.Kind,
 		Purpose:          req.Purpose,
+		Thinking:         req.Thinking,
 		Provider:         req.Provider,
 		Model:            req.Model,
 		InputTokens:      req.InputTokens,
@@ -51,8 +53,7 @@ func (a *api) internalSettleProviderCall(w http.ResponseWriter, r *http.Request)
 	}
 	if errors.Is(err, store.ErrProviderSessionClosed) ||
 		errors.Is(err, store.ErrProviderCallConflict) ||
-		errors.Is(err, store.ErrTerminalCallNotAllowed) ||
-		errors.Is(err, store.ErrTerminalCallAlreadyUsed) {
+		errors.Is(err, store.ErrTerminalCallNotAllowed) {
 		writeJSON(w, http.StatusConflict, map[string]string{"message": err.Error()})
 		return
 	}

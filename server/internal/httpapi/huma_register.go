@@ -44,7 +44,7 @@ func hErr(err error) error {
 	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrForbidden) {
 		return huma.Error404NotFound("not found")
 	}
-	if errors.Is(err, store.ErrModelKeyRequired) {
+	if errors.Is(err, store.ErrModelRefRequired) {
 		return huma.Error400BadRequest("a model preference is required")
 	}
 	if errors.Is(err, store.ErrTooManyLLMLeases) {
@@ -113,6 +113,14 @@ func hErr(err error) error {
 			Title:  http.StatusText(http.StatusBadGateway),
 			Detail: errGenerateEmpty.Error(),
 			Errors: []*huma.ErrorDetail{{Message: "generate_empty"}},
+		}
+	}
+	if errors.Is(err, errScopeNoIndexedContent) {
+		return &huma.ErrorModel{
+			Status: http.StatusBadRequest,
+			Title:  http.StatusText(http.StatusBadRequest),
+			Detail: errScopeNoIndexedContent.Error(),
+			Errors: []*huma.ErrorDetail{{Message: "scope_has_no_indexed_content"}},
 		}
 	}
 	if errors.Is(err, store.ErrAuthorityUnavailable) {

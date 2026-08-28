@@ -16,15 +16,17 @@ Two modes (see ``tests/README.md``):
 
 Both modes need Docker. The retrieval index is owned by the Go schema now, so
 the container is the stock ``pgvector/pgvector:pg16`` image and the fixture
-applies every ``server/migrations/*.sql`` file in name order — the same way
-the gateway's ``Store.Migrate`` does at boot. Nothing in the pipeline creates
-tables.
+applies every numbered ``server/migrations/NNNN_*.sql`` file in name order —
+the same files ``Store.Migrate`` ledgers. Demo seed is not applied; the
+fixture inserts ``u_1`` so workspace rows have a user to reference.
+Nothing in the pipeline creates tables.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 from pathlib import Path
 
@@ -49,25 +51,21 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 # migration), not from env, so only the dimension and the provider base URLs are
 # pinned here.
 os.environ["EMBEDDING_DIM"] = os.environ.get("EMBEDDING_DIM", "2560")
-os.environ["EVO_QUERY_MODEL"] = "deepseek-v4-flash"
-os.environ["EMBEDDING_BASE_URL"] = "https://openrouter.ai/api/v1"
-os.environ["OPENROUTER_BASE_URL"] = "https://openrouter.ai/api/v1"
-os.environ["DEEPSEEK_BASE_URL"] = "https://api.deepseek.com"
-os.environ["GEMINI_BASE_URL"] = (
-    "https://generativelanguage.googleapis.com/v1beta/openai/"
-)
 os.environ["EVO_PARSE_METHOD"] = "auto"
 # One embedding request per file keeps the batch composition stable, which is
 # what the body matcher compares.
 os.environ["EVO_EMBEDDING_BATCH"] = "1000"
 
 # Dummy provider keys for replay (never sent anywhere — VCR intercepts). Real
-# keys come from the exported environment in record mode.
+# keys come from the exported environment in record mode. elitellm reads the
+# platformEnv name from elitellm_providers.json; never write user keys into
+# process env.
 for _k in (
-    "EMBEDDING_API_KEY",
-    "OPENROUTER_API_KEY",
     "DEEPSEEK_API_KEY",
-    "GOOGLE_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+    "OPENAI_API_KEY",
+    "OPENROUTER_API_KEY",
 ):
     os.environ.setdefault(_k, "test-dummy-key")
 
@@ -88,7 +86,12 @@ from pipeline import use_compatible_event_loop
 
 use_compatible_event_loop()
 
-MIGRATIONS = sorted((REPO_ROOT / "server" / "migrations").glob("*.sql"))
+_MIGRATION_NAME = re.compile(r"^\d{4}_.+\.sql$")
+MIGRATIONS = sorted(
+    path
+    for path in (REPO_ROOT / "server" / "migrations").glob("*.sql")
+    if _MIGRATION_NAME.match(path.name)
+)
 
 
 def pytest_runtest_setup(item):
@@ -166,6 +169,14 @@ def _apply_migration(dsn: str) -> None:
     with psycopg.connect(dsn, autocommit=True) as conn:
         for path in MIGRATIONS:
             conn.execute(path.read_text(encoding="utf-8"))
+        # Demo seed is not a migration. Workspace fixtures still need a user.
+        conn.execute(
+            """
+            INSERT INTO users (id, name, email)
+            VALUES ('u_1', 'Pipeline Seed', 'pipeline@evonotes.test')
+            ON CONFLICT (id) DO NOTHING
+            """
+        )
 
 
 @pytest.fixture(scope="session")
@@ -281,13 +292,43 @@ def cassette(request, _test_infra, _vcr):
         yield
 
 
+@pytest.fixture
+def replay_cassette(request, _vcr):
+    """Open the manifest-certified two-turn cassette. Missing files fail."""
+    provider_slug = request.node.callspec.params["provider_slug"]
+    model_id = request.node.callspec.params["model_id"]
+    rel = json.loads(
+        (Path(__file__).parent / "model_replay_certifications.json").read_text()
+    )[provider_slug][model_id]["cassette"]
+    path = REPO_ROOT / rel
+    from pipeline.model_replay_cert import two_turn_cassette_ok
+
+    if not two_turn_cassette_ok(path):
+        if RECORD_MODE == "none":
+            if path.is_file():
+                pytest.fail(f"incomplete two-turn cassette: {rel}")
+            pytest.skip(f"no two-turn cassette yet: {rel}")
+        if path.is_file():
+            path.unlink()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    # once would refuse a second unmatched call on an existing tape. Cert
+    # recording is two turns, so unmatched requests append.
+    record_mode = "new_episodes" if RECORD_MODE != "none" else "none"
+    with _vcr.use_cassette(
+        str(path),
+        record_mode=record_mode,
+        allow_playback_repeats=True,
+    ):
+        yield path
+
+
 # --------------------------------------------------------------------------
 # Live Postgres helpers
 #
 # A workspace per test, deleted on teardown. Every rag_* row cascades from it,
 # so isolation needs no table-by-table cleanup and a leaked row is impossible.
 # --------------------------------------------------------------------------
-_SEED_USER = "u_1"  # created by the migration's development seed
+_SEED_USER = "u_1"  # inserted after numbered migrations; not the demo seed
 
 
 class Workspace:
@@ -363,7 +404,7 @@ def workspace(_test_infra) -> Workspace:
             (workspace_id, _SEED_USER, "Cassette workspace"),
         )
         row = conn.execute(
-            "SELECT embedding_model_key, embedding_model_version FROM workspaces "
+            "SELECT embedding_provider_slug, embedding_model_slug, embedding_model_version FROM workspaces "
             "WHERE id = %s",
             (workspace_id,),
         ).fetchone()
@@ -371,11 +412,11 @@ def workspace(_test_infra) -> Workspace:
     registry.registry.refresh()
     registry.set_job_pins(
         registry.JobPins(
-            ingest=registry.registry.default(registry.SURFACE_INGEST),
+            ingest=registry.registry.default(registry.Surface.INGEST),
             embedding=registry.resolve_pinned(
-                row[0], row[1], registry.SURFACE_EMBEDDING
+                row[0], row[1], row[2], registry.Surface.EMBEDDING
             ),
-            vision=registry.registry.default(registry.SURFACE_VISION),
+            vision=registry.registry.default(registry.Surface.VISION),
         )
     )
     try:

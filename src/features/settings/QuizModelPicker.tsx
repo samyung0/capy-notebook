@@ -18,13 +18,21 @@ import {
   formatBytes,
   isBrowserQuizModel,
 } from '@/features/quizzes/browserModels';
-import { sortModelOptions } from '@/features/settings/llmOptions';
+import {
+  modelRefValue,
+  optionRef,
+  parseModelRef,
+  sameModel,
+  sortModelOptions,
+} from '@/features/settings/llmOptions';
 import {
   ModelOptionLabel,
   providerLabel,
 } from '@/features/settings/ModelPicker';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+
+const browserModelPrefix = /^browser:/;
 
 function SlowIcon() {
   return (
@@ -59,9 +67,16 @@ export function QuizModelPicker({ className }: { className?: string }) {
   const [isolated, setIsolated] = useState<boolean | null>(null);
   const [webgpu, setWebgpu] = useState<boolean | null>(null);
   const cloud = sortModelOptions(data?.models ?? []);
-  const selectedKey = data?.selectedKey || '';
-  const selectedCloud = cloud.find((option) => option.key === selectedKey);
-  const browser = browserQuizModel(selectedKey);
+  const selectedModel = data?.selectedModel;
+  const selectedValue = selectedModel ? modelRefValue(selectedModel) : '';
+  const selectedCloud = selectedModel
+    ? cloud.find((option) => sameModel(optionRef(option), selectedModel))
+    : undefined;
+  const selectedBrowserId =
+    selectedModel?.providerSlug === 'browser'
+      ? `browser:${selectedModel.modelSlug}`
+      : '';
+  const browser = browserQuizModel(selectedBrowserId);
   const selectedWarn = browser
     ? browserModelWarn(browser, { isolated, webgpu })
     : null;
@@ -90,11 +105,11 @@ export function QuizModelPicker({ className }: { className?: string }) {
       <div className="flex min-w-0 flex-wrap items-start gap-2">
         <Select
           disabled={isPending}
-          onValueChange={(key) => {
+          onValueChange={(value) => {
             setDownloadError('');
-            mutate({ quizModelKey: key });
+            mutate({ quizModel: parseModelRef(value) });
           }}
-          value={selectedKey || undefined}
+          value={selectedValue || undefined}
         >
           <SelectTrigger
             aria-label={m.settings_llm_quiz()}
@@ -106,7 +121,7 @@ export function QuizModelPicker({ className }: { className?: string }) {
             {cloud.map((option) => (
               <SelectItem
                 disabled={!option.available}
-                key={option.key}
+                key={modelRefValue(optionRef(option))}
                 title={
                   option.available
                     ? undefined
@@ -114,7 +129,7 @@ export function QuizModelPicker({ className }: { className?: string }) {
                         provider: providerLabel(option.providerSlug),
                       })
                 }
-                value={option.key}
+                value={modelRefValue(optionRef(option))}
               >
                 <ModelOptionLabel option={option} />
               </SelectItem>
@@ -122,7 +137,13 @@ export function QuizModelPicker({ className }: { className?: string }) {
             {BROWSER_QUIZ_MODELS.map((option) => {
               const warn = !!browserModelWarn(option, { isolated, webgpu });
               return (
-                <SelectItem key={option.id} value={option.id}>
+                <SelectItem
+                  key={option.id}
+                  value={modelRefValue({
+                    modelSlug: option.id.replace(browserModelPrefix, ''),
+                    providerSlug: 'browser',
+                  })}
+                >
                   <BrowserOptionLabel model={option} warn={warn} />
                 </SelectItem>
               );
@@ -151,7 +172,7 @@ export function QuizModelPicker({ className }: { className?: string }) {
       {browser ? (
         <p className="text-fg-muted text-sm">{browser.description}</p>
       ) : null}
-      {isBrowserQuizModel(selectedKey) && browser ? (
+      {isBrowserQuizModel(selectedBrowserId) && browser ? (
         <div className="mt-1 flex flex-col items-start gap-1.5">
           <Button
             disabled={downloadPct != null}
@@ -159,7 +180,7 @@ export function QuizModelPicker({ className }: { className?: string }) {
               setDownloadError('');
               setDownloadPct(0);
               void browserLlmHost()
-                .download(selectedKey, ({ loaded, total }) => {
+                .download(selectedBrowserId, ({ loaded, total }) => {
                   if (total) setDownloadPct(Math.round((loaded / total) * 100));
                 })
                 .then(() => setDownloadPct(null))

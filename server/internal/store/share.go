@@ -797,17 +797,17 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 	// back short of a reindex.
 	var srcEmbed workspaceEmbedding
 	if err := tx.QueryRow(ctx,
-		`SELECT embedding_model_key, embedding_model_version, embedding_dim
+		`SELECT embedding_provider_slug, embedding_model_slug, embedding_model_version, embedding_dim
 		   FROM workspaces WHERE id = $1`, srcID,
-	).Scan(&srcEmbed.Pin.Key, &srcEmbed.Pin.Version, &srcEmbed.Dim); err != nil {
+	).Scan(&srcEmbed.Pin.ProviderSlug, &srcEmbed.Pin.ModelSlug, &srcEmbed.Pin.Version, &srcEmbed.Dim); err != nil {
 		return Workspace{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspaces
 			(id, user_id, name, color, privacy,
-			 embedding_model_key, embedding_model_version, embedding_dim)
-		VALUES ($1,$2,$3,$4,'private',$5,$6,$7)`,
+			 embedding_provider_slug, embedding_model_slug, embedding_model_version, embedding_dim)
+		VALUES ($1,$2,$3,$4,'private',$5,$6,$7,$8)`,
 		newID, userID, name, src.Color,
-		srcEmbed.Pin.Key, srcEmbed.Pin.Version, srcEmbed.Dim); err != nil {
+		srcEmbed.Pin.ProviderSlug, srcEmbed.Pin.ModelSlug, srcEmbed.Pin.Version, srcEmbed.Dim); err != nil {
 		return Workspace{}, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'owner')`,
@@ -980,10 +980,10 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, pi
 			if _, err := tx.Exec(ctx, `
 				WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 				INSERT INTO rag_contents (id, workspace_id, content_hash, status,
-					embedding_model_key, embedding_model_version, embedding_dim,
+					embedding_provider_slug, embedding_model_slug, embedding_model_version, embedding_dim,
 					source_sha256, pipeline_identity)
 				SELECT c.new_id, $3, rc.content_hash, rc.status,
-				       rc.embedding_model_key, rc.embedding_model_version, rc.embedding_dim,
+				       rc.embedding_provider_slug, rc.embedding_model_slug, rc.embedding_model_version, rc.embedding_dim,
 				       rc.source_sha256, rc.pipeline_identity
 				FROM rag_contents rc JOIN cmap c ON c.old_id = rc.id`,
 				oldContents, newContents, newID); err != nil {

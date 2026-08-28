@@ -1,8 +1,8 @@
 """Hot-reloadable model registry, mirrored from server/internal/models.
 
-Rows are immutable and versioned. The cache never evicts a (model_key, version)
-pair. Polling ``model_registry_state`` only teaches this process the current
-defaults; a pinned pair it has never seen is a point read of the table.
+Rows are immutable and versioned. The cache never evicts a
+``(provider_slug, model_slug, version)`` pin. Polling ``model_registry_state``
+only teaches this process the current defaults.
 
 Two rules keep a resolved model from drifting away from the one that was priced:
 
@@ -23,50 +23,80 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any
 
-from .config import ProviderCfg, cfg
+from .generated import Surface
 from .store import db
 
 log = logging.getLogger("evo.registry")
 
-POLL_INTERVAL = 30.0
-
-SURFACE_CHAT = "chat"
-SURFACE_GENERATE = "generate"
-SURFACE_EDITOR = "editor"
-SURFACE_QUIZ = "quiz"
-SURFACE_INGEST = "ingest"
-SURFACE_EMBEDDING = "embedding"
-SURFACE_VISION = "vision"
-
+POLL_INTERVAL = 600.0
 
 AUTH_PLATFORM = "platform"
 AUTH_USER_KEY = "user_key"
 AUTH_PLATFORM_OR_USER = "platform_or_user"
 
 
+def join_model_label(provider_name: str, model_name: str) -> str:
+    provider = (provider_name or "").strip()
+    model = (model_name or "").strip()
+    if not provider:
+        return model
+    if not model:
+        return provider
+    return f"{provider} {model}"
+
+
 @dataclass(frozen=True)
 class ModelConfig:
-    model_key: str
     version: int
-    display_name: str
+    provider_name: str
+    model_name: str
     provider_slug: str
-    base_url: str
-    provider_model_id: str
+    model_slug: str
+    platform_enabled: bool = True
+    byok_enabled: bool = False
     params: dict[str, Any] = field(default_factory=dict)
-    surfaces: tuple[str, ...] = ()
+    surfaces: tuple[Surface, ...] = ()
+    thinking_levels: tuple[str, ...] = ()
+    default_thinking: str = ""
     micros_per_input_token: int = 0
     micros_per_output_token: int = 0
     micros_per_cached_input_token: int = 0
     enabled: bool = True
-    is_default_for: tuple[str, ...] = ()
-    auth_mode: str = AUTH_PLATFORM
+    is_default_for: tuple[Surface, ...] = ()
     context_window_tokens: int = 0
 
     @property
-    def pin(self) -> tuple[str, int]:
-        return (self.model_key, self.version)
+    def auth_mode(self) -> str:
+        if self.platform_enabled and self.byok_enabled:
+            return AUTH_PLATFORM_OR_USER
+        if self.byok_enabled:
+            return AUTH_USER_KEY
+        return AUTH_PLATFORM
 
-    def allows(self, surface: str) -> bool:
+    @property
+    def litellm_model_id(self) -> str:
+        return self.model_slug
+
+    def resolve_thinking(self, stored: str) -> str:
+        if not stored:
+            if self.default_thinking in self.thinking_levels:
+                return self.default_thinking
+            raise RegistryError(
+                f"model {self.provider_slug}/{self.model_slug} has no valid "
+                "default thinking"
+            )
+        if stored in self.thinking_levels:
+            return stored
+        raise RegistryError(
+            f"model {self.provider_slug}/{self.model_slug} does not support "
+            f"thinking {stored!r}"
+        )
+
+    @property
+    def pin(self) -> tuple[str, str, int]:
+        return (self.provider_slug, self.model_slug, self.version)
+
+    def allows(self, surface: Surface) -> bool:
         return surface in self.surfaces
 
     @property
@@ -79,7 +109,8 @@ class ModelConfig:
         raw = self.params.get("dimensions")
         if raw is None:
             raise RegistryError(
-                f"embedding model {self.model_key} v{self.version} declares no "
+                f"embedding model {self.provider_slug}/{self.model_slug} "
+                f"v{self.version} declares no "
                 "dimensions"
             )
         return int(raw)
@@ -91,29 +122,16 @@ class ModelConfig:
         except (TypeError, ValueError):
             return fallback
 
-    def reasoning(self) -> dict[str, Any]:
-        raw = self.params.get("reasoning")
-        return raw if isinstance(raw, dict) else {}
+    def api_mode(self) -> str:
+        return "chat_completion"
 
-    def reasoning_style(self) -> str:
-        return str(self.reasoning().get("style") or "")
-
-    def reasoning_efforts(self) -> tuple[str, ...]:
-        raw = self.reasoning().get("efforts") or ()
-        return tuple(str(item) for item in raw if item)
-
-    def reasoning_can_disable(self) -> bool:
-        return bool(self.reasoning().get("canDisable", True))
-
-    def reasoning_default_mode(self) -> str:
-        return str(self.reasoning().get("defaultMode") or "off")
-
-    def reasoning_default_effort(self) -> str:
-        return str(self.reasoning().get("defaultEffort") or "")
+    @property
+    def display_name(self) -> str:
+        return join_model_label(self.provider_name, self.model_name)
 
 
 class RegistryError(RuntimeError):
-    """A pinned (model_key, version) could not be loaded. Never a silent default."""
+    """An exact provider/model/version pin could not be loaded."""
 
 
 @dataclass
@@ -126,10 +144,11 @@ class JobPins:
 _job_pins: ContextVar[JobPins | None] = ContextVar("job_pins", default=None)
 
 _select_cols = """
-                    SELECT model_key, version, display_name, provider_slug, base_url,
-                           provider_model_id, params, surfaces,
+                    SELECT version, provider_name, model_name, provider_slug,
+                           model_slug, platform_enabled, byok_enabled,
+                           params, surfaces, thinking_levels, default_thinking,
                            micros_per_input_token, micros_per_output_token,
-                           enabled, is_default_for, auth_mode, context_window_tokens,
+                           enabled, is_default_for, context_window_tokens,
                            micros_per_cached_input_token
                       FROM model_configs
 """
@@ -140,8 +159,7 @@ class RequestLLM:
     user_id: str = ""
     paid_by: str = ""
     user_api_key: str = ""
-    reasoning_mode: str = ""
-    reasoning_effort: str = ""
+    thinking: str = ""
 
 
 _request_llm: ContextVar[RequestLLM | None] = ContextVar("request_llm", default=None)
@@ -150,8 +168,7 @@ _request_llm: ContextVar[RequestLLM | None] = ContextVar("request_llm", default=
 def bind_request_llm(
     user_id: str | None = None,
     paid_by: str | None = None,
-    reasoning_mode: str | None = None,
-    reasoning_effort: str | None = None,
+    thinking: str | None = None,
     *,
     user_api_key: str | None = None,
 ) -> None:
@@ -160,8 +177,7 @@ def bind_request_llm(
             user_id=(user_id or "").strip(),
             paid_by=(paid_by or "").strip(),
             user_api_key=(user_api_key or "").strip(),
-            reasoning_mode=(reasoning_mode or "").strip(),
-            reasoning_effort=(reasoning_effort or "").strip(),
+            thinking=(thinking or "").strip(),
         )
     )
 
@@ -181,8 +197,8 @@ def current_job_pins() -> JobPins | None:
 class Registry:
     def __init__(self) -> None:
         self._lock = threading.Lock()
-        self._by_pin: dict[tuple[str, int], ModelConfig] = {}
-        self._current: dict[str, tuple[str, int]] = {}
+        self._by_pin: dict[tuple[str, str, int], ModelConfig] = {}
+        self._current: dict[str, tuple[str, str, int]] = {}
         self._rev: int = -1
         self._started = False
 
@@ -191,7 +207,7 @@ class Registry:
         # vision default any more. Freezing them was how this process used to
         # avoid mixing vector spaces, which made the model a query embedded with
         # a function of when the container last booted. Embedding now comes from
-        # workspaces.embedding_model_key and vision from the job pin, so there
+        # the workspace embedding pin and vision from the job pin, so there
         # is nothing left for a poll to corrupt.
         self.refresh()
         with self._lock:
@@ -208,21 +224,21 @@ class Registry:
                         return
                 cur.execute(_select_cols)
                 rows = cur.fetchall()
-        except Exception:  # noqa: BLE001 - first boot falls back to config.py
+        except Exception:  # noqa: BLE001 - retain the last successfully loaded catalog
             if not self._started:
-                log.warning("model registry unavailable; using config.py fallbacks")
+                log.warning("model registry unavailable; no catalog loaded")
             return
 
-        by_pin: dict[tuple[str, int], ModelConfig] = {}
-        current: dict[str, tuple[str, int]] = {}
+        by_pin: dict[tuple[str, str, int], ModelConfig] = {}
+        current: dict[str, tuple[str, str, int]] = {}
         for row in rows:
             spec = _from_row(row)
-            by_pin[(spec.model_key, spec.version)] = spec
+            by_pin[spec.pin] = spec
             if not spec.enabled:
                 continue
             for surface in spec.is_default_for:
                 prev = current.get(surface)
-                if prev is None or spec.version >= prev[1]:
+                if prev is None or spec.version >= prev[2]:
                     current[surface] = spec.pin
 
         with self._lock:
@@ -230,52 +246,62 @@ class Registry:
             self._current.update(current)
             self._rev = rev
 
-    def get(self, key: str, version: int) -> ModelConfig:
-        if not key or version <= 0:
-            raise RegistryError(f"invalid pin {key!r} v{version}")
-        pin = (key, version)
+    def get(self, provider_slug: str, model_slug: str, version: int) -> ModelConfig:
+        if not provider_slug or not model_slug or version <= 0:
+            raise RegistryError(
+                f"invalid pin {provider_slug!r}/{model_slug!r} v{version}"
+            )
+        pin = (provider_slug, model_slug, version)
         with self._lock:
             cached = self._by_pin.get(pin)
         if cached is not None:
             return cached
-        spec = self._load(key, version)
+        spec = self._load(provider_slug, model_slug, version)
         with self._lock:
             self._by_pin[pin] = spec
         return spec
 
-    def _load(self, key: str, version: int) -> ModelConfig:
+    def _load(self, provider_slug: str, model_slug: str, version: int) -> ModelConfig:
         with db.connect() as conn, conn.cursor() as cur:
             cur.execute(
-                _select_cols + " WHERE model_key=%s AND version=%s",
-                (key, version),
+                _select_cols
+                + " WHERE provider_slug=%s AND model_slug=%s AND version=%s",
+                (provider_slug, model_slug, version),
             )
             row = cur.fetchone()
         if not row:
-            raise RegistryError(f"model config not found: {key} v{version}")
+            raise RegistryError(
+                f"model config not found: {provider_slug}/{model_slug} v{version}"
+            )
         return _from_row(row)
 
-    def default_pin(self, surface: str) -> tuple[str, int]:
+    def default_pin(self, surface: Surface) -> tuple[str, str, int]:
         with self._lock:
             pin = self._current.get(surface)
         if not pin:
             raise RegistryError(f"no default for {surface}")
         return pin
 
-    def default(self, surface: str) -> ModelConfig:
-        key, version = self.default_pin(surface)
-        return self.get(key, version)
+    def default(self, surface: Surface) -> ModelConfig:
+        provider_slug, model_slug, version = self.default_pin(surface)
+        return self.get(provider_slug, model_slug, version)
 
-    def resolve_user(self, pref_key: str | None, surface: str) -> ModelConfig:
-        if not pref_key:
+    def resolve_user(
+        self, provider_slug: str | None, model_slug: str | None, surface: Surface
+    ) -> ModelConfig:
+        if not provider_slug or not model_slug:
             raise RegistryError(f"empty preference for {surface}")
-        return self._latest_enabled(pref_key, surface)
+        return self._latest_enabled(provider_slug, model_slug, surface)
 
-    def _latest_enabled(self, key: str, surface: str) -> ModelConfig:
+    def _latest_enabled(
+        self, provider_slug: str, model_slug: str, surface: Surface
+    ) -> ModelConfig:
         with self._lock:
             best: ModelConfig | None = None
             for spec in self._by_pin.values():
                 if (
-                    spec.model_key == key
+                    spec.provider_slug == provider_slug
+                    and spec.model_slug == model_slug
                     and spec.enabled
                     and spec.allows(surface)
                     and (best is None or spec.version > best.version)
@@ -287,14 +313,17 @@ class Registry:
             cur.execute(
                 _select_cols
                 + """
-                 WHERE model_key=%s AND enabled AND %s = ANY(surfaces)
+                 WHERE provider_slug=%s AND model_slug=%s
+                   AND enabled AND %s = ANY(surfaces)
                  ORDER BY version DESC LIMIT 1
                 """,
-                (key, surface),
+                (provider_slug, model_slug, surface),
             )
             row = cur.fetchone()
         if not row:
-            raise RegistryError(f"no enabled {key} for {surface}")
+            raise RegistryError(
+                f"no enabled {provider_slug}/{model_slug} for {surface}"
+            )
         spec = _from_row(row)
         with self._lock:
             self._by_pin[spec.pin] = spec
@@ -302,35 +331,39 @@ class Registry:
 
 
 def _cached_rate_from_row(row: tuple[Any, ...]) -> int:
-    if len(row) <= 14 or row[14] is None:
+    if len(row) <= 16 or row[16] is None:
         raise RegistryError(
-            f"{row[0]} v{row[1]} is missing micros_per_cached_input_token"
+            f"{row[3]}/{row[4]} v{row[0]} is missing micros_per_cached_input_token"
         )
-    return int(row[14])
+    return int(row[16])
+
+
+def _as_dict(raw: Any) -> dict[str, Any]:
+    return raw if isinstance(raw, dict) else {}
 
 
 def _from_row(row: tuple[Any, ...]) -> ModelConfig:
-    params = row[6] or {}
-    if not isinstance(params, dict):
-        params = {}
-    surfaces = tuple(row[7] or ())
-    defaults = tuple(row[11] or ())
-    auth_mode = row[12] if len(row) > 12 and row[12] else AUTH_PLATFORM
-    window = int(row[13]) if len(row) > 13 and row[13] is not None else 0
+    params = _as_dict(row[7])
+    surfaces = tuple(Surface(value) for value in (row[8] or ()))
+    thinking = tuple(row[9] or ())
+    defaults = tuple(Surface(value) for value in (row[14] or ()))
+    window = int(row[15]) if row[15] is not None else 0
     return ModelConfig(
-        model_key=row[0],
-        version=int(row[1]),
-        display_name=row[2],
+        version=int(row[0]),
+        provider_name=str(row[1] or ""),
+        model_name=str(row[2] or ""),
         provider_slug=row[3],
-        base_url=row[4] or "",
-        provider_model_id=row[5],
+        model_slug=str(row[4] or ""),
+        platform_enabled=bool(row[5]),
+        byok_enabled=bool(row[6]),
         params=params,
         surfaces=surfaces,
-        micros_per_input_token=int(row[8]),
-        micros_per_output_token=int(row[9]),
-        enabled=bool(row[10]),
+        thinking_levels=thinking,
+        default_thinking=str(row[10] or ""),
+        micros_per_input_token=int(row[11]),
+        micros_per_output_token=int(row[12]),
+        enabled=bool(row[13]),
         is_default_for=defaults,
-        auth_mode=str(auth_mode),
         context_window_tokens=window,
         micros_per_cached_input_token=_cached_rate_from_row(row),
     )
@@ -339,29 +372,12 @@ def _from_row(row: tuple[Any, ...]) -> ModelConfig:
 registry = Registry()
 
 
-def bootstrap_llm(provider_model_id: str) -> ModelConfig:
-    return ModelConfig(
-        model_key="bootstrap-llm",
-        version=0,
-        display_name="bootstrap",
-        provider_slug="deepseek",
-        base_url=cfg.llm.base_url,
-        provider_model_id=provider_model_id or cfg.query_model,
-        params={"temperature": 0.3},
-        surfaces=(
-            SURFACE_CHAT,
-            SURFACE_GENERATE,
-            SURFACE_EDITOR,
-            SURFACE_QUIZ,
-            SURFACE_INGEST,
-        ),
-        micros_per_input_token=250,
-        micros_per_output_token=1000,
-        micros_per_cached_input_token=25,
-    )
-
-
-def resolve_pinned(key: str | None, version: int | None, surface: str) -> ModelConfig:
+def resolve_pinned(
+    provider_slug: str | None,
+    model_slug: str | None,
+    version: int | None,
+    surface: Surface,
+) -> ModelConfig:
     """Load an exact pin, for every surface without exception.
 
     A missing or unresolvable pin is an error, never the live default. Whoever
@@ -371,9 +387,9 @@ def resolve_pinned(key: str | None, version: int | None, surface: str) -> ModelC
     a default here would run a different model than the one that was priced, and
     nothing would say so.
     """
-    if not key or not version:
+    if not provider_slug or not model_slug or not version:
         raise RegistryError(f"missing pin for {surface}")
-    return registry.get(key, int(version))
+    return registry.get(provider_slug, model_slug, int(version))
 
 
 def ingest_spec() -> ModelConfig:
@@ -387,7 +403,7 @@ def ingest_spec() -> ModelConfig:
 def embedding_spec() -> ModelConfig:
     """The embedding model of the workspace this job belongs to.
 
-    Installed by the worker from ``workspaces.embedding_model_key`` before any
+    Installed by the worker from the workspace embedding pin before any
     indexing runs. Query-time embedding has no job and therefore does not come
     through here — see ``retrieval.search``.
     """
@@ -405,32 +421,39 @@ def vision_spec() -> ModelConfig:
     return pins.vision
 
 
-def provider_cfg_for(spec: ModelConfig) -> ProviderCfg:
-    """Credentials for one catalog row.
+def provider_api_key_for(spec: ModelConfig) -> str:
+    """Return the key elitellm should use for this pin.
 
-    Embedding and vision are platform-only: one env pair each, never a user
-    key. Chat / generate / editor / quiz / ingest use the bound user key when
-    the row allows it, otherwise the DeepSeek platform key.
+    User keys are passed per request and never written to process env.
+    Platform keys come from the elitellm provider env name.
     """
-    base = spec.base_url
-    if spec.allows(SURFACE_EMBEDDING):
-        return ProviderCfg(cfg.embedding.api_key, base or cfg.embedding.base_url)
-    if spec.allows(SURFACE_VISION):
-        return ProviderCfg(cfg.vision.api_key, base or cfg.vision.base_url)
+    from .elitellm.providers import platform_api_key as elitellm_platform_key
+    from .elitellm.providers import platform_env_name
 
     req = current_request_llm()
     if req.paid_by == "user":
         key = req.user_api_key or _load_user_key(req.user_id, spec.provider_slug)
-        if not key or spec.auth_mode not in (AUTH_USER_KEY, AUTH_PLATFORM_OR_USER):
-            raise RegistryError(f"user key required for {spec.model_key}")
-        return ProviderCfg(key, base)
-    if req.user_api_key and spec.auth_mode in (AUTH_USER_KEY, AUTH_PLATFORM_OR_USER):
-        return ProviderCfg(req.user_api_key, base)
-    if spec.auth_mode == AUTH_USER_KEY:
-        raise RegistryError(f"user key required for {spec.model_key}")
-    if spec.provider_slug == "deepseek":
-        return ProviderCfg(cfg.llm.api_key, base or cfg.llm.base_url)
-    raise RegistryError(f"unknown platform provider {spec.provider_slug}")
+        if not key or not spec.byok_enabled:
+            raise RegistryError(
+                f"user key required for {spec.provider_slug}/{spec.model_slug}"
+            )
+        return key
+    if req.user_api_key and spec.byok_enabled and not spec.platform_enabled:
+        return req.user_api_key
+    if spec.byok_enabled and not spec.platform_enabled:
+        raise RegistryError(
+            f"user key required for {spec.provider_slug}/{spec.model_slug}"
+        )
+    try:
+        env_name = platform_env_name(spec.provider_slug)
+        key = elitellm_platform_key(spec.provider_slug)
+    except KeyError as exc:
+        raise RegistryError(f"unknown elitellm provider {spec.provider_slug}") from exc
+    if not key:
+        raise RegistryError(
+            f"missing {env_name} for {spec.provider_slug}/{spec.model_slug}"
+        )
+    return key
 
 
 def _load_user_key(user_id: str, provider_slug: str) -> str:
@@ -445,17 +468,16 @@ def _load_user_key(user_id: str, provider_slug: str) -> str:
 
 
 def context_window(spec: ModelConfig) -> int:
-    return spec.context_window_tokens or cfg.llm_input_budget_tokens
+    if spec.context_window_tokens <= 0:
+        raise RegistryError(
+            f"model {spec.provider_slug}/{spec.model_slug} requires a positive "
+            "context window"
+        )
+    return spec.context_window_tokens
 
 
 def input_budget(spec: ModelConfig) -> int:
     return max(4000, context_window(spec) - 8192)
-
-
-def extra_headers_for(spec: ModelConfig) -> dict[str, str]:
-    if spec.provider_slug == "anthropic":
-        return {"anthropic-version": "2023-06-01"}
-    return {}
 
 
 def credits_for_tokens(
@@ -503,11 +525,16 @@ def pins_from_payload(payload: dict[str, Any], *, embedding: ModelConfig) -> Job
     model it was priced for must not run.
     """
 
-    def load(key_field: str, ver_field: str, surface: str) -> ModelConfig:
-        return resolve_pinned(payload.get(key_field), payload.get(ver_field), surface)
+    def load(prefix: str, surface: Surface) -> ModelConfig:
+        return resolve_pinned(
+            payload.get(f"{prefix}ProviderSlug"),
+            payload.get(f"{prefix}ModelSlug"),
+            payload.get(f"{prefix}ModelVersion"),
+            surface,
+        )
 
     return JobPins(
-        ingest=load("ingestModelKey", "ingestModelVersion", SURFACE_INGEST),
+        ingest=load("ingest", Surface.INGEST),
         embedding=embedding,
-        vision=load("visionModelKey", "visionModelVersion", SURFACE_VISION),
+        vision=load("vision", Surface.VISION),
     )

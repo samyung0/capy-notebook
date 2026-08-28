@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import pytest
 
+from pipeline import registry
 from pipeline.retrieval import indexing, store, workflows
 from pipeline.retrieval.chunking import chunk_markdown
 
@@ -80,7 +81,7 @@ async def test_generate_flashcards_returns_parseable_json(
         ),
         context=context,
         scope="documents photosynthesis.txt",
-        model="deepseek-v4-flash",
+        model=registry.ingest_spec(),
     )
     cards = workflows.extract_json(raw)
 
@@ -104,7 +105,7 @@ async def test_generate_quiz_normalizes_into_the_runner_shape(
         ),
         context=context,
         scope="documents photosynthesis.txt",
-        model="deepseek-v4-flash",
+        model=registry.ingest_spec(),
     )
     questions = workflows.normalize_questions(workflows.extract_json(raw))
 

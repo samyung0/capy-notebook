@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"context"
+	"errors"
 	"testing"
 )
 
@@ -41,6 +42,16 @@ func TestEncryptSecretRoundTrip(t *testing.T) {
 	}
 }
 
+func TestUpsertLLMCredentialRejectsMarketplaceHop(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	s.SetLLMCredentialKey(bytes.Repeat([]byte{7}, 32))
+	userID := newCreditsTestUser(t, s)
+	if err := s.UpsertLLMCredential(ctx, userID, "openrouter", "sk-or-test"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("openrouter upsert = %v, want ErrNotFound", err)
+	}
+}
+
 func TestPurgeUserDeletesLLMCredentials(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -63,5 +74,29 @@ func TestPurgeUserDeletesLLMCredentials(t *testing.T) {
 	}
 	if n != 0 {
 		t.Fatalf("credentials left after purge: %d", n)
+	}
+}
+
+func TestDeleteLLMCredentialRequiresCatalogDefaultsBeforeMutation(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	s.SetLLMCredentialKey(bytes.Repeat([]byte{7}, 32))
+	userID := newCreditsTestUser(t, s)
+	if err := s.UpsertLLMCredential(ctx, userID, LLMProviderOpenAI, "sk-test-openai"); err != nil {
+		t.Fatal(err)
+	}
+
+	err := s.DeleteLLMCredential(ctx, userID, LLMProviderOpenAI)
+	if !errors.Is(err, ErrModelUnavailable) {
+		t.Fatalf("delete without registry = %v, want ErrModelUnavailable", err)
+	}
+	var count int
+	if err := s.pool.QueryRow(ctx, `
+		SELECT count(*) FROM user_llm_credentials
+		WHERE user_id=$1 AND provider_slug=$2`, userID, LLMProviderOpenAI).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("credential count = %d, want 1", count)
 	}
 }

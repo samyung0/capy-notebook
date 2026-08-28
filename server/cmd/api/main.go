@@ -21,6 +21,7 @@ import (
 	"github.com/evonotes/server/internal/obs"
 	"github.com/evonotes/server/internal/pipeline"
 	"github.com/evonotes/server/internal/ratelimit"
+	"github.com/evonotes/server/internal/reconcile"
 	"github.com/evonotes/server/internal/store"
 )
 
@@ -231,7 +232,15 @@ func main() {
 		if err := st.Migrate(ctx); err != nil {
 			log.Fatalf("migrate: %v", err)
 		}
+		if store.ShouldApplyDevSeed(appEnv) {
+			if err := st.ApplyDevSeed(ctx); err != nil {
+				log.Fatalf("dev seed: %v", err)
+			}
+		}
 		log.Println("migrations applied")
+	}
+	if err := st.AbortOrphanedStreams(ctx); err != nil {
+		log.Fatalf("abort orphaned streams: %v", err)
 	}
 
 	modelReg, err := models.New(ctx, st.Pool())
@@ -325,6 +334,10 @@ func main() {
 			if _, err := st.SweepExpiredUploads(ctx, 100); err != nil && ctx.Err() == nil {
 				log.Printf("sweep expired uploads: %v", err)
 			}
+			if _, err := st.RecoverStalledSourceImports(ctx, 100); err != nil &&
+				ctx.Err() == nil {
+				log.Printf("recover expired source imports: %v", err)
+			}
 			if err := st.PruneUploadSessions(ctx); err != nil && ctx.Err() == nil {
 				log.Printf("prune upload sessions: %v", err)
 			}
@@ -349,9 +362,23 @@ func main() {
 	go runBlobSweep(ctx, st, blobStore)
 	go runAccountPurgeWorker(ctx, st, env("CLERK_SECRET_KEY", "") != "")
 	go runOverQuotaNoticeWorker(ctx, st)
-	runUsageWorkers(ctx, st)
+
+	importRelaySecret := env("IMPORT_RELAY_SECRET", "")
+	importRelayEnqueueURL := env("IMPORT_RELAY_ENQUEUE_URL", "")
+	if (importRelaySecret == "") != (importRelayEnqueueURL == "") {
+		log.Fatal("IMPORT_RELAY_SECRET and IMPORT_RELAY_ENQUEUE_URL must be configured together")
+	}
+	if importRelaySecret != "" && len(importRelaySecret) < 32 {
+		log.Fatal("IMPORT_RELAY_SECRET must be at least 32 characters")
+	}
+	if importRelayEnqueueURL != "" {
+		go runSourceImportDispatcher(
+			ctx, st, importRelayEnqueueURL, importRelaySecret,
+		)
+	}
 
 	cfg := httpapi.Config{
+		ReleaseSHA:             env("RELEASE_SHA", ""),
 		ClerkSecretKey:         env("CLERK_SECRET_KEY", ""),
 		ClerkWebhookSecret:     env("CLERK_WEBHOOK_SECRET", ""),
 		AuthDisabled:           envBool("AUTH_DISABLED"),
@@ -367,6 +394,8 @@ func main() {
 		CollaborationSecret:    env("COLLABORATION_SECRET", "dev-collaboration-secret"),
 		CollaborationURL:       env("COLLABORATION_URL", "ws://localhost:1234"),
 		PipelineSecret:         pipeSecret,
+		ImportRelaySecret:      importRelaySecret,
+		ImportRelayEnqueueURL:  importRelayEnqueueURL,
 		AllowedOrigins:         envList("CORS_ALLOWED_ORIGINS"),
 		RateLimit:              rateLimitConfig(appEnv),
 		ModelRegistry:          modelReg,
@@ -380,6 +409,10 @@ func main() {
 		Handler:           httpapi.New(st, blobStore, pipe, rdb, parser, engine, cfg),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+	runUsageWorkers(ctx, st, reconcile.Config{
+		StripeSecretKey: cfg.StripeSecretKey,
+		StripePricePro:  cfg.StripePricePro,
+	})
 
 	go func() {
 		log.Printf("evo-notes gateway listening on %s", addr)

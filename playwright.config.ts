@@ -72,7 +72,7 @@ export default defineConfig({
   // Sharing/error specs only. The editor matrix and editor-perf suites have
   // their own configs (pnpm e2e:editor / pnpm perf). e2e/perf also holds
   // Vitest files (*.test.ts) that Playwright's default matcher would load.
-  testIgnore: ['**/editor/**', '**/perf/**'],
+  testIgnore: ['**/editor/**', '**/perf/**', '**/uat/**'],
   testMatch: '**/*.spec.ts',
   timeout: 60_000,
   use: {
@@ -88,10 +88,15 @@ export default defineConfig({
     env: {
       ...process.env,
       VITE_API_URL: apiUrl,
+      // E2E failures belong in Playwright reports, not production telemetry.
+      VITE_APP_ENV: 'e2e',
       // No Clerk key → AuthGate passthrough; identity comes from E2E headers.
       VITE_CLERK_PUBLISHABLE_KEY: '',
       VITE_FEATURE_EXPLORE: 'true',
       VITE_PORT: process.env.E2E_VITE_PORT!,
+      VITE_POSTHOG_KEY: '',
+      VITE_RELEASE_SHA: 'e2e',
+      VITE_SENTRY_DSN: '',
       VITE_USE_MSW: 'false',
     },
     reuseExistingServer: false,

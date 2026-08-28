@@ -1,15 +1,19 @@
 import { UserButton } from '@clerk/react';
+import { useIsFetching, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import {
   Activity,
   BarChart3,
+  ClipboardList,
   Gauge,
   Menu,
+  RefreshCw,
   Search,
   Settings2,
   ShieldCheck,
 } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
+import { hasPermission } from '@/api';
 import { useOpsApp } from '@/app-context';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -24,14 +28,26 @@ import {
 import { cn } from '@/lib/utils';
 
 const navItems = [
-  { adminOnly: false, icon: Gauge, label: 'Overview', to: '/' },
-  { adminOnly: false, icon: Activity, label: 'Health', to: '/health' },
-  { adminOnly: false, icon: Search, label: 'User lookup', to: '/users' },
-  { adminOnly: false, icon: BarChart3, label: 'Cost explorer', to: '/costs' },
+  { icon: Gauge, label: 'Overview', permission: null, to: '/' },
+  { icon: Activity, label: 'Health', permission: null, to: '/health' },
   {
-    adminOnly: true,
+    icon: ClipboardList,
+    label: 'Reconciliation',
+    permission: null,
+    to: '/reconciliation',
+  },
+  { icon: Search, label: 'User lookup', permission: null, to: '/users' },
+  { icon: BarChart3, label: 'Usage explorer', permission: null, to: '/costs' },
+  {
+    icon: ClipboardList,
+    label: 'Operator audit',
+    permission: 'read_all',
+    to: '/audit',
+  },
+  {
     icon: Settings2,
     label: 'Model registry',
+    permission: 'write_registry',
     to: '/registry',
   },
 ] as const;
@@ -41,7 +57,10 @@ function Navigation({ close }: { close?: () => void }) {
   return (
     <nav aria-label="Operator navigation" className="space-y-1">
       {navItems
-        .filter((item) => !item.adminOnly || session.role === 'admin')
+        .filter(
+          (item) =>
+            item.permission === null || hasPermission(session, item.permission)
+        )
         .map((item) => (
           <Link
             activeOptions={{ exact: item.to === '/' }}
@@ -77,7 +96,18 @@ function Brand() {
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { session } = useOpsApp();
+  const queryClient = useQueryClient();
+  const isRefreshing = useIsFetching({
+    predicate: (query) => query.isActive(),
+  });
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  function refreshLiveData() {
+    void queryClient.refetchQueries({
+      predicate: (query) => query.isActive(),
+      type: 'active',
+    });
+  }
 
   return (
     <div className="min-h-dvh bg-background">
@@ -104,29 +134,57 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="lg:pl-64">
-        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-background/95 px-4 backdrop-blur lg:hidden">
-          <Sheet onOpenChange={setMobileOpen} open={mobileOpen}>
-            <SheetTrigger asChild>
-              <Button aria-label="Open navigation" size="icon" variant="ghost">
-                <Menu aria-hidden="true" />
-              </Button>
-            </SheetTrigger>
-            <SheetContent className="w-72 p-0" side="left">
-              <SheetHeader className="border-b p-5 text-left">
-                <SheetTitle>
-                  <Brand />
-                </SheetTitle>
-                <SheetDescription className="sr-only">
-                  Operator dashboard navigation
-                </SheetDescription>
-              </SheetHeader>
-              <div className="p-3">
-                <Navigation close={() => setMobileOpen(false)} />
-              </div>
-            </SheetContent>
-          </Sheet>
-          <p className="font-semibold text-sm">Operations</p>
-          <UserButton />
+        <header className="sticky top-0 z-20 flex h-16 items-center justify-between border-b bg-background/95 px-4 backdrop-blur sm:px-6 lg:px-8">
+          <div className="flex items-center gap-3">
+            <Sheet onOpenChange={setMobileOpen} open={mobileOpen}>
+              <SheetTrigger asChild>
+                <Button
+                  aria-label="Open navigation"
+                  className="lg:hidden"
+                  size="icon"
+                  variant="ghost"
+                >
+                  <Menu aria-hidden="true" />
+                </Button>
+              </SheetTrigger>
+              <SheetContent className="w-72 p-0" side="left">
+                <SheetHeader className="border-b p-5 text-left">
+                  <SheetTitle>
+                    <Brand />
+                  </SheetTitle>
+                  <SheetDescription className="sr-only">
+                    Operator dashboard navigation
+                  </SheetDescription>
+                </SheetHeader>
+                <div className="p-3">
+                  <Navigation close={() => setMobileOpen(false)} />
+                </div>
+              </SheetContent>
+            </Sheet>
+            <p className="font-semibold text-sm">Operations</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              aria-label="Refresh active live data"
+              disabled={isRefreshing > 0}
+              onClick={refreshLiveData}
+              size="sm"
+              title="Refresh all active Ops database reads. This does not call model providers or Stripe."
+              type="button"
+              variant="outline"
+            >
+              <RefreshCw
+                aria-hidden="true"
+                className={cn(isRefreshing > 0 && 'animate-spin')}
+              />
+              <span className="hidden sm:inline">
+                {isRefreshing > 0 ? 'Refreshing' : 'Refresh live data'}
+              </span>
+            </Button>
+            <div className="lg:hidden">
+              <UserButton />
+            </div>
+          </div>
         </header>
 
         <main

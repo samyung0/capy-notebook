@@ -37,6 +37,7 @@ class AssembledResponse:
     output_items: list[dict[str, Any]] = field(default_factory=list)
     status: str = "complete"
     error: str = ""
+    provider_message: dict[str, Any] = field(default_factory=dict)
 
 
 def _get(obj: Any, *names: str, default: Any = None) -> Any:
@@ -65,6 +66,9 @@ class ChatCompletionsAssembler:
         self.usage = NormalizedUsage()
         self.status = "complete"
         self.error = ""
+        self.reasoning_content_parts: list[str] = []
+        self.thinking_blocks: list[Any] = []
+        self._last_message: dict[str, Any] = {}
 
     def push(self, chunk: Any) -> list[StreamEvent]:
         events: list[StreamEvent] = []
@@ -79,11 +83,27 @@ class ChatCompletionsAssembler:
         finish = _get(choice, "finish_reason", "finishReason")
         if finish == "length":
             self.status = "incomplete"
+        message = _get(choice, "message")
+        if message is not None:
+            dumped = _as_dict(message)
+            if dumped:
+                self._last_message.update(dumped)
         delta = _get(choice, "delta") or {}
         text = _get(delta, "content") or ""
         if text:
             self.text_parts.append(text)
             events.append(StreamEvent(kind="text", text=text))
+        reasoning = _get(delta, "reasoning_content")
+        if reasoning:
+            self.reasoning_content_parts.append(str(reasoning))
+            events.append(StreamEvent(kind="reasoning"))
+        blocks = _get(delta, "thinking_blocks")
+        if blocks:
+            if isinstance(blocks, list):
+                self.thinking_blocks.extend(
+                    dumped for block in blocks if (dumped := _as_dict(block))
+                )
+            events.append(StreamEvent(kind="reasoning"))
         for raw in _get(delta, "tool_calls", "toolCalls") or []:
             index = int(_get(raw, "index") or 0)
             slot = self._calls.setdefault(
@@ -111,12 +131,33 @@ class ChatCompletionsAssembler:
             )
             for index, slot in sorted(self._calls.items())
         ]
+        text = "".join(self.text_parts)
+        provider_message = dict(self._last_message)
+        provider_message["role"] = "assistant"
+        provider_message["content"] = text
+        if calls:
+            provider_message["tool_calls"] = [
+                {
+                    "id": call.id,
+                    "type": "function",
+                    "function": {"name": call.name, "arguments": call.arguments},
+                }
+                for call in calls
+            ]
+        reasoning = "".join(self.reasoning_content_parts) or provider_message.get(
+            "reasoning_content"
+        )
+        if reasoning:
+            provider_message["reasoning_content"] = reasoning
+        if self.thinking_blocks:
+            provider_message["thinking_blocks"] = list(self.thinking_blocks)
         return AssembledResponse(
-            text="".join(self.text_parts),
+            text=text,
             tool_calls=calls,
             usage=self.usage,
             status=self.status,
             error=self.error,
+            provider_message=provider_message,
         )
 
 
@@ -234,13 +275,30 @@ class OpenAIResponsesAssembler:
             for key in self._order
             if self._calls[key]["name"]
         ]
+        text = "".join(self.text_parts)
+        provider_message: dict[str, Any] = {
+            "role": "assistant",
+            "content": text,
+        }
+        if calls:
+            provider_message["tool_calls"] = [
+                {
+                    "id": call.id,
+                    "type": "function",
+                    "function": {"name": call.name, "arguments": call.arguments},
+                }
+                for call in calls
+            ]
+        if self.output_items:
+            provider_message["output_items"] = list(self.output_items)
         return AssembledResponse(
-            text="".join(self.text_parts),
+            text=text,
             tool_calls=calls,
             usage=self.usage,
             output_items=list(self.output_items),
             status=self.status,
             error=self.error,
+            provider_message=provider_message,
         )
 
 

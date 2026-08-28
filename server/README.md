@@ -21,6 +21,19 @@ go mod tidy                   # resolve deps + write go.sum (first run)
 go run ./cmd/api
 ```
 
+## Test
+
+From the repository root:
+
+```bash
+pnpm test:go
+```
+
+The command starts one disposable `pgvector/pgvector:pg16` container on a
+random loopback port, applies migrations and test fixtures, runs every Go
+package serially, and removes the container. Docker is the only database test
+dependency. The test suite does not accept an existing database URL.
+
 ### OpenAPI reference
 
 From the repository root, run:
@@ -33,11 +46,18 @@ This serves the checked-in `openapi.yaml` at `http://localhost:3000`, so it does
 not require Go. When Go is available and the contract needs regeneration, use
 `pnpm api:docs:generate` instead.
 
+`pnpm gen:api:msw` regenerates OpenAPI, the Python `Surface` enum, and the
+Orval TypeScript bindings. Frontend code imports generated contracts through
+`src/api/types.ts`; the Ops API module is its equivalent boundary for the
+separate dashboard bundle.
+
 Backblaze B2 is required. Set every `B2_*` variable in `.env`; startup verifies
 bucket access and exits if those credentials are invalid.
 
-The server applies the embedded `migrations/0001_init.sql` development baseline
-(schema + seed) on startup; it is idempotent.
+With `MIGRATE=true` (local default) the server applies each numbered file in
+`migrations/` once, records it in `schema_migrations`, then loads `dev_seed.sql`
+when `APP_ENV=development`. Production should run `cmd/migrate` from the same
+image, then start the API with `MIGRATE=false`.
 
 ### Bucket configuration
 
@@ -111,13 +131,16 @@ DATABASE_URL=... go run ./cmd/cancel-deletion -email user@example.com -notify
 
 ## Layout
 
-- `cmd/api` — entrypoint (config, migrate, serve, graceful shutdown).
+- `cmd/api` — entrypoint (config, optional migrate, serve, graceful shutdown).
+- `cmd/migrate` — apply-once runner for an explicit deploy step. Same embed as
+  the API. `-status` prints pending files; `-seed` loads the local demo rows.
 - `cmd/cancel-deletion` — support tool to reactivate a deletion-pending account.
 - `internal/store` — pgx pool, models (mirror `src/api/types.ts`), queries.
 - `internal/httpapi` — chi router + handlers (mirror `src/mocks/handlers.ts`).
-- `migrations` — `0001_init.sql` (complete schema and development seed). It owns
-  the retrieval index (`rag_*`) as well, so it needs the `vector` extension and
-  must run against `pgvector/pgvector:pg16` rather than stock Postgres.
+- `migrations` — numbered `NNNN_*.sql` files (schema + product catalog) plus
+  `dev_seed.sql` (local demo rows). `0001_init.sql` owns the retrieval index
+  (`rag_*`), so it needs the `vector` extension and must run against
+  `pgvector/pgvector:pg16` rather than stock Postgres.
 
 ## Connect the frontend
 

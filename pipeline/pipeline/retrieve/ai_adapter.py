@@ -21,7 +21,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .. import obs, registry
-from ..retrieval import models
+from ..retrieval import accounting, models
 from ..retrieval.chunking import clip_to_tokens
 from ..retrieval.locale import response_language_rule, rewrite_language_rule
 
@@ -49,6 +49,10 @@ class PlateContext(BaseModel):
     model_config = ConfigDict(extra="ignore")
     children: list[dict[str, Any]] = Field(default_factory=list, max_length=2_000)
     selection: dict[str, Any] | None = None
+    # Required on /plate-ai/command. The menu always sends one. ``comment`` is
+    # implemented and kept for a future Comment action; the current UI never
+    # sends it. Free-form Enter sends ``generate``, so a rewrite instruction
+    # still inserts new Markdown instead of editing the selection.
     toolName: Literal["generate", "edit", "comment"] | None = None
 
     @model_validator(mode="after")
@@ -58,18 +62,22 @@ class PlateContext(BaseModel):
         return self
 
 
+ThinkingLevel = Literal["instant", "low", "mid", "high", "max"]
+
+
 class PlateCommandReq(BaseModel):
     model_config = ConfigDict(extra="ignore")
     workspaceId: str = Field(min_length=1, max_length=128)
     messages: list[UIMessage] = Field(min_length=1, max_length=20)
     ctx: PlateContext
     locale: str | None = Field(default=None, max_length=16)
-    modelKey: str | None = None
+    providerSlug: str | None = None
+    modelSlug: str | None = None
     configVersion: int | None = None
     userId: str | None = None
     paidBy: str | None = None
-    reasoningMode: str | None = None
-    reasoningEffort: str | None = None
+    thinking: ThinkingLevel
+    spendSessionId: str = ""
 
 
 class PlateCopilotReq(BaseModel):
@@ -78,12 +86,13 @@ class PlateCopilotReq(BaseModel):
     prompt: str = Field(min_length=1, max_length=MAX_INSTRUCTION_CHARS)
     instructions: str | None = Field(default=None, max_length=8_000)
     system: str | None = Field(default=None, max_length=8_000)
-    modelKey: str | None = None
+    providerSlug: str | None = None
+    modelSlug: str | None = None
     configVersion: int | None = None
     userId: str | None = None
     paidBy: str | None = None
-    reasoningMode: str | None = None
-    reasoningEffort: str | None = None
+    thinking: ThinkingLevel
+    spendSessionId: str = ""
 
 
 class AIAdapterError(RuntimeError):
@@ -97,17 +106,18 @@ class AIAdapterError(RuntimeError):
 
 
 def _editor_spec(req: PlateCommandReq | PlateCopilotReq):
-    registry.bind_request_llm(
-        req.userId, req.paidBy, req.reasoningMode, req.reasoningEffort
-    )
+    registry.bind_request_llm(req.userId, req.paidBy, req.thinking)
     return models.resolve_query_model(
-        req.modelKey, req.configVersion, surface=registry.SURFACE_EDITOR
+        req.providerSlug,
+        req.modelSlug,
+        req.configVersion,
+        surface=registry.Surface.EDITOR,
     )
 
 
 def _ensure_provider(spec) -> None:
     try:
-        provider = registry.provider_cfg_for(spec)
+        key = registry.provider_api_key_for(spec)
     except registry.RegistryError as exc:
         if registry.current_request_llm().paid_by == "user":
             raise models.UserKeyError(models.KEY_FAILED, models.KEY_FAILED_MSG) from exc
@@ -117,7 +127,7 @@ def _ensure_provider(spec) -> None:
             status=503,
             retryable=True,
         ) from exc
-    if not provider.api_key:
+    if not key:
         if registry.current_request_llm().paid_by == "user":
             raise models.UserKeyError(models.KEY_FAILED, models.KEY_FAILED_MSG)
         raise AIAdapterError(
@@ -338,6 +348,7 @@ _AUTHORITATIVE_RULES = """<rules>
 
 
 def build_generate_prompt(req: PlateCommandReq) -> str:
+    """Prompt for inserting new Markdown. Free-form menu text uses this tool."""
     context = _context_markdown(req.ctx)
     source_rule = (
         "Use <context> as the sole source material. Preserve custom MDX tags and "
@@ -359,6 +370,7 @@ def build_generate_prompt(req: PlateCommandReq) -> str:
 
 
 def build_edit_prompt(req: PlateCommandReq) -> str:
+    """Prompt for in-place replacement. Only canned Improve/Grammar/etc. use this."""
     context = _context_markdown(req.ctx)
     return _sections(
         "<task>Replace the selected editor content according to the instruction.</task>",
@@ -378,6 +390,7 @@ Never output Selection tags.
 
 
 def build_comment_prompt(req: PlateCommandReq) -> str:
+    """Prompt for inline comments. Unused by the current menu; kept for later."""
     context = _context_markdown(req.ctx, block_ids=True)
     return _sections(
         "<task>Review the document and produce focused inline comments.</task>",
@@ -409,43 +422,16 @@ Multiple paragraphs in a cell are separated by two newlines.
     )
 
 
-async def _choose_tool(req: PlateCommandReq) -> Literal["generate", "edit", "comment"]:
-    if req.ctx.toolName:
-        return req.ctx.toolName
-    selecting = _is_selecting(req.ctx)
-    options = "generate, edit, comment" if selecting else "generate, comment"
-    prompt = _sections(
-        f"<task>Classify the latest request as exactly one of: {options}.</task>",
-        f"<instruction>{_instruction(req.messages)}</instruction>",
-        """<rules>
-Default to generate. Use comment only for explicit feedback/review/annotation.
-Use edit only for in-place rewriting of selected text. Summaries, explanations,
-extraction, questions, and tables are generate. Output one lowercase word.
-</rules>""",
+def _require_tool(req: PlateCommandReq) -> Literal["generate", "edit", "comment"]:
+    """The client names the apply path. We do not infer it from the prompt."""
+    name = req.ctx.toolName
+    if name in ("generate", "edit", "comment"):
+        return name
+    raise AIAdapterError(
+        "invalid_request",
+        "ctx.toolName is required",
+        status=400,
     )
-    try:
-        spec = _editor_spec(req)
-        _ensure_provider(spec)
-        response = await models.complete_response(
-            [{"role": "user", "content": prompt}],
-            model=spec,
-            max_tokens=8,
-            temperature=0,
-            reasoning=False,
-        )
-        choice = (
-            (response.choices[0].message.content or "").strip().lower()
-            if response.choices
-            else ""
-        )
-    except AIAdapterError:
-        raise
-    except Exception as exc:
-        raise AIAdapterError(
-            "provider_unavailable", "AI provider request failed", retryable=True
-        ) from exc
-    allowed = {"generate", "comment"} | ({"edit"} if selecting else set())
-    return choice if choice in allowed else "generate"
 
 
 def _sse(payload: dict[str, Any] | str) -> str:
@@ -526,6 +512,7 @@ async def _structured_events(
         [{"role": "user", "content": prompt}],
         model=spec,
         temperature=0.2,
+        reasoning=False,
     )
     raw = response.choices[0].message.content if response.choices else ""
     values = _json_value(raw or "")
@@ -605,6 +592,7 @@ async def _text_events(request: Request, prompt: str, spec: Any) -> AsyncIterato
         ],
         model=spec,
         temperature=0.7,
+        reasoning=False,
     ):
         if await request.is_disconnected():
             return
@@ -614,8 +602,10 @@ async def _text_events(request: Request, prompt: str, spec: Any) -> AsyncIterato
 
 
 async def command_events(req: PlateCommandReq, request: Request) -> AsyncIterator[str]:
+    """One named tool. ``comment`` is unused by the current menu but kept."""
+    token = accounting.bind(req.spendSessionId) if req.spendSessionId else None
     try:
-        tool_name = await _choose_tool(req)
+        tool_name = _require_tool(req)
         yield _sse({"type": "start"})
         yield _sse({"type": "start-step"})
         yield _sse(
@@ -670,6 +660,8 @@ async def command_events(req: PlateCommandReq, request: Request) -> AsyncIterato
             }
         )
     finally:
+        if token is not None:
+            accounting.reset(token)
         if not await request.is_disconnected():
             usage = obs.current_usage()
             if usage is not None and not usage.is_empty():
@@ -684,6 +676,7 @@ async def plate_command(req: PlateCommandReq, request: Request):
         spec = _editor_spec(req)
         _ensure_provider(spec)
         _instruction(req.messages)
+        _require_tool(req)
     except AIAdapterError as exc:
         raise HTTPException(
             status_code=exc.status,
@@ -711,6 +704,7 @@ async def plate_copilot(req: PlateCopilotReq, request: Request):
             'If no meaningful continuation is possible, return "0".'
         )
     )
+    token = accounting.bind(req.spendSessionId) if req.spendSessionId else None
     try:
         spec = _editor_spec(req)
         _ensure_provider(spec)
@@ -754,6 +748,9 @@ async def plate_copilot(req: PlateCopilotReq, request: Request):
                 "retryable": True,
             },
         ) from exc
+    finally:
+        if token is not None:
+            accounting.reset(token)
     text = response.choices[0].message.content if response.choices else ""
     usage = obs.current_usage()
     usage_dict = usage.as_dict() if usage is not None else {}

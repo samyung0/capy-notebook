@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -12,9 +13,8 @@ import (
 type DatabaseRole string
 
 const (
-	ReadDatabaseRole     DatabaseRole = "read"
-	AuthDatabaseRole     DatabaseRole = "auth"
-	RegistryDatabaseRole DatabaseRole = "registry"
+	ReadDatabaseRole  DatabaseRole = "read_auth"
+	AdminDatabaseRole DatabaseRole = "admin_actions"
 )
 
 type columnPrivilege struct {
@@ -29,24 +29,70 @@ type tablePrivilege struct {
 }
 
 var readRequiredPrivileges = []columnPrivilege{
-	{"usage_daily", "day", "SELECT"},
-	{"usage_daily", "actor_user_id", "SELECT"},
-	{"usage_daily", "kind", "SELECT"},
-	{"usage_daily", "surface", "SELECT"},
-	{"usage_daily", "provider", "SELECT"},
-	{"usage_daily", "model", "SELECT"},
-	{"usage_daily", "events", "SELECT"},
-	{"usage_daily", "input_tokens", "SELECT"},
-	{"usage_daily", "output_tokens", "SELECT"},
-	{"usage_daily", "units", "SELECT"},
-	{"usage_daily", "credit_micros", "SELECT"},
 	{"user_credits", "user_id", "SELECT"},
 	{"user_credits", "period_start", "SELECT"},
 	{"user_credits", "used_micros", "SELECT"},
 	{"user_credits", "reserved_micros", "SELECT"},
-	{"credit_reservations", "status", "SELECT"},
-	{"credit_reservations", "expires_at", "SELECT"},
-	{"credit_reservations", "settled_at", "SELECT"},
+	{"provider_sessions", "id", "SELECT"},
+	{"provider_sessions", "actor_user_id", "SELECT"},
+	{"provider_sessions", "trace_id", "SELECT"},
+	{"provider_sessions", "surface", "SELECT"},
+	{"provider_sessions", "paid_by", "SELECT"},
+	{"provider_sessions", "status", "SELECT"},
+	{"provider_sessions", "created_at", "SELECT"},
+	{"provider_sessions", "expires_at", "SELECT"},
+	{"provider_sessions", "settled_at", "SELECT"},
+	{"provider_calls", "id", "SELECT"},
+	{"provider_calls", "reservation_id", "SELECT"},
+	{"provider_calls", "actor_user_id", "SELECT"},
+	{"provider_calls", "kind", "SELECT"},
+	{"provider_calls", "purpose", "SELECT"},
+	{"provider_calls", "status", "SELECT"},
+	{"provider_calls", "thinking", "SELECT"},
+	{"provider_calls", "cached_read_tokens", "SELECT"},
+	{"provider_calls", "cache_write_tokens", "SELECT"},
+	{"provider_calls", "reasoning_tokens", "SELECT"},
+	{"provider_calls", "cache_anomaly", "SELECT"},
+	{"provider_calls", "context_system_tokens", "SELECT"},
+	{"provider_calls", "context_tool_tokens", "SELECT"},
+	{"provider_calls", "context_conversation_tokens", "SELECT"},
+	{"provider_calls", "context_total_tokens", "SELECT"},
+	{"provider_calls", "context_window_tokens", "SELECT"},
+	{"provider_calls", "context_counting_method", "SELECT"},
+	{"provider_calls", "context_counting_version", "SELECT"},
+	{"provider_calls", "opened_at", "SELECT"},
+	{"provider_calls", "applied_at", "SELECT"},
+	{"reconcile_runs", "id", "SELECT"},
+	{"reconcile_runs", "job_type", "SELECT"},
+	{"reconcile_runs", "trigger", "SELECT"},
+	{"reconcile_runs", "status", "SELECT"},
+	{"reconcile_runs", "requested_by_id", "SELECT"},
+	{"reconcile_runs", "requested_by_name", "SELECT"},
+	{"reconcile_runs", "requested_at", "SELECT"},
+	{"reconcile_runs", "started_at", "SELECT"},
+	{"reconcile_runs", "finished_at", "SELECT"},
+	{"reconcile_runs", "scanned_count", "SELECT"},
+	{"reconcile_runs", "repaired_count", "SELECT"},
+	{"reconcile_runs", "error_count", "SELECT"},
+	{"reconcile_runs", "error", "SELECT"},
+	{"reconciliation_report", "id", "SELECT"},
+	{"reconciliation_report", "run_id", "SELECT"},
+	{"reconciliation_report", "event_type", "SELECT"},
+	{"reconciliation_report", "subject_type", "SELECT"},
+	{"reconciliation_report", "subject_id", "SELECT"},
+	{"reconciliation_report", "actor_user_id", "SELECT"},
+	{"reconciliation_report", "metadata", "SELECT"},
+	{"reconciliation_report", "created_at", "SELECT"},
+	{"operator_audit_events", "id", "SELECT"},
+	{"operator_audit_events", "occurred_at", "SELECT"},
+	{"operator_audit_events", "actor_user_id", "SELECT"},
+	{"operator_audit_events", "actor_role", "SELECT"},
+	{"operator_audit_events", "action", "SELECT"},
+	{"operator_audit_events", "target_type", "SELECT"},
+	{"operator_audit_events", "target_id", "SELECT"},
+	{"operator_audit_events", "outcome", "SELECT"},
+	{"operator_audit_events", "trace_id", "SELECT"},
+	{"operator_audit_events", "metadata", "SELECT"},
 	{"user_storage", "user_id", "SELECT"},
 	{"user_storage", "used_bytes", "SELECT"},
 	{"user_storage", "reserved_bytes", "SELECT"},
@@ -64,12 +110,15 @@ var readRequiredPrivileges = []columnPrivilege{
 	{"users", "created_at", "SELECT"},
 	{"operators", "user_id", "SELECT"},
 	{"operators", "role", "SELECT"},
+	{"ops_permissions", "role", "SELECT"},
+	{"ops_permissions", "permission", "SELECT"},
 	{"user_subscriptions", "user_id", "SELECT"},
 	{"user_subscriptions", "current_period_end", "SELECT"},
 	{"workspaces", "id", "SELECT"},
 	{"workspaces", "user_id", "SELECT"},
 	{"workspaces", "name", "SELECT"},
-	{"workspaces", "embedding_model_key", "SELECT"},
+	{"workspaces", "embedding_provider_slug", "SELECT"},
+	{"workspaces", "embedding_model_slug", "SELECT"},
 	{"workspaces", "embedding_model_version", "SELECT"},
 	{"workspaces", "embedding_dim", "SELECT"},
 	{"workspaces", "last_accessed_at", "SELECT"},
@@ -81,18 +130,18 @@ var readRequiredPrivileges = []columnPrivilege{
 	{"jobs", "updated_at", "SELECT"},
 	{"email_outbox", "status", "SELECT"},
 	{"email_outbox", "updated_at", "SELECT"},
-	{"usage_rollup_state", "id", "SELECT"},
-	{"usage_rollup_state", "last_run_at", "SELECT"},
 	{"model_registry_state", "id", "SELECT"},
 	{"model_registry_state", "version", "SELECT"},
 	{"model_registry_state", "updated_at", "SELECT"},
-	{"model_configs", "model_key", "SELECT"},
 	{"model_configs", "version", "SELECT"},
-	{"model_configs", "display_name", "SELECT"},
+	{"model_configs", "provider_name", "SELECT"},
+	{"model_configs", "model_name", "SELECT"},
 	{"model_configs", "provider_slug", "SELECT"},
-	{"model_configs", "base_url", "SELECT"},
-	{"model_configs", "provider_model_id", "SELECT"},
-	{"model_configs", "auth_mode", "SELECT"},
+	{"model_configs", "model_slug", "SELECT"},
+	{"model_configs", "platform_enabled", "SELECT"},
+	{"model_configs", "byok_enabled", "SELECT"},
+	{"model_configs", "thinking_levels", "SELECT"},
+	{"model_configs", "default_thinking", "SELECT"},
 	{"model_configs", "context_window_tokens", "SELECT"},
 	{"model_configs", "params", "SELECT"},
 	{"model_configs", "surfaces", "SELECT"},
@@ -102,30 +151,44 @@ var readRequiredPrivileges = []columnPrivilege{
 	{"model_configs", "enabled", "SELECT"},
 	{"model_configs", "is_default_for", "SELECT"},
 	{"model_configs", "created_at", "SELECT"},
+	{"model_configs", "updated_at", "SELECT"},
+	{"model_configs", "created_by", "SELECT"},
+	{"model_configs", "updated_by", "SELECT"},
+	{"usage_events", "id", "SELECT"},
 	{"usage_events", "trace_id", "SELECT"},
 	{"usage_events", "actor_user_id", "SELECT"},
 	{"usage_events", "kind", "SELECT"},
 	{"usage_events", "surface", "SELECT"},
 	{"usage_events", "provider", "SELECT"},
 	{"usage_events", "model", "SELECT"},
-	{"usage_events", "model_key", "SELECT"},
+	{"usage_events", "thinking", "SELECT"},
+	{"usage_events", "catalog_provider_slug", "SELECT"},
+	{"usage_events", "catalog_model_slug", "SELECT"},
 	{"usage_events", "model_version", "SELECT"},
 	{"usage_events", "input_tokens", "SELECT"},
 	{"usage_events", "output_tokens", "SELECT"},
 	{"usage_events", "units", "SELECT"},
 	{"usage_events", "unit", "SELECT"},
+	{"usage_events", "parse_pages", "SELECT"},
+	{"usage_events", "parse_ocr_pages", "SELECT"},
+	{"usage_events", "parse_cpu_milliseconds", "SELECT"},
+	{"usage_events", "parse_elapsed_milliseconds", "SELECT"},
 	{"usage_events", "credit_micros", "SELECT"},
+	{"usage_events", "reservation_id", "SELECT"},
+	{"usage_events", "provider_call_id", "SELECT"},
 	{"usage_events", "created_at", "SELECT"},
 }
 
 var registryRequiredPrivileges = []columnPrivilege{
-	{"model_configs", "model_key", "SELECT"},
 	{"model_configs", "version", "SELECT"},
-	{"model_configs", "display_name", "SELECT"},
+	{"model_configs", "provider_name", "SELECT"},
+	{"model_configs", "model_name", "SELECT"},
 	{"model_configs", "provider_slug", "SELECT"},
-	{"model_configs", "base_url", "SELECT"},
-	{"model_configs", "provider_model_id", "SELECT"},
-	{"model_configs", "auth_mode", "SELECT"},
+	{"model_configs", "model_slug", "SELECT"},
+	{"model_configs", "platform_enabled", "SELECT"},
+	{"model_configs", "byok_enabled", "SELECT"},
+	{"model_configs", "thinking_levels", "SELECT"},
+	{"model_configs", "default_thinking", "SELECT"},
 	{"model_configs", "context_window_tokens", "SELECT"},
 	{"model_configs", "params", "SELECT"},
 	{"model_configs", "surfaces", "SELECT"},
@@ -135,20 +198,30 @@ var registryRequiredPrivileges = []columnPrivilege{
 	{"model_configs", "enabled", "SELECT"},
 	{"model_configs", "is_default_for", "SELECT"},
 	{"model_configs", "created_at", "SELECT"},
+	{"model_configs", "updated_at", "SELECT"},
+	{"model_configs", "created_by", "SELECT"},
+	{"model_configs", "updated_by", "SELECT"},
 	{"model_registry_state", "id", "SELECT"},
 	{"model_registry_state", "version", "SELECT"},
 	{"model_registry_state", "updated_at", "SELECT"},
 	{"workspaces", "id", "SELECT"},
-	{"workspaces", "embedding_model_key", "SELECT"},
+	{"workspaces", "embedding_provider_slug", "SELECT"},
+	{"workspaces", "embedding_model_slug", "SELECT"},
 	{"workspaces", "embedding_model_version", "SELECT"},
 	{"workspaces", "embedding_dim", "SELECT"},
 	{"users", "id", "SELECT"},
 	{"users", "email", "SELECT"},
 	{"users", "locale", "SELECT"},
-	{"users", "chat_model_key", "SELECT"},
-	{"users", "generate_model_key", "SELECT"},
-	{"users", "editor_model_key", "SELECT"},
-	{"users", "quiz_model_key", "SELECT"},
+	{"users", "chat_model_provider_slug", "SELECT"},
+	{"users", "chat_model_slug", "SELECT"},
+	{"users", "generate_model_provider_slug", "SELECT"},
+	{"users", "generate_model_slug", "SELECT"},
+	{"users", "editor_model_provider_slug", "SELECT"},
+	{"users", "editor_model_slug", "SELECT"},
+	{"users", "quiz_model_provider_slug", "SELECT"},
+	{"users", "quiz_model_slug", "SELECT"},
+	{"user_llm_credentials", "user_id", "SELECT"},
+	{"user_llm_credentials", "provider_slug", "SELECT"},
 	{"notification_prefs", "user_id", "SELECT"},
 	{"notification_prefs", "email_workspace_invite", "SELECT"},
 	{"notification_prefs", "email_membership", "SELECT"},
@@ -163,13 +236,15 @@ var registryRequiredPrivileges = []columnPrivilege{
 	{"notifications", "at", "SELECT"},
 	{"notifications", "read_at", "SELECT"},
 	{"email_outbox", "idempotency_key", "SELECT"},
-	{"model_configs", "model_key", "INSERT"},
 	{"model_configs", "version", "INSERT"},
-	{"model_configs", "display_name", "INSERT"},
+	{"model_configs", "provider_name", "INSERT"},
+	{"model_configs", "model_name", "INSERT"},
 	{"model_configs", "provider_slug", "INSERT"},
-	{"model_configs", "base_url", "INSERT"},
-	{"model_configs", "provider_model_id", "INSERT"},
-	{"model_configs", "auth_mode", "INSERT"},
+	{"model_configs", "model_slug", "INSERT"},
+	{"model_configs", "platform_enabled", "INSERT"},
+	{"model_configs", "byok_enabled", "INSERT"},
+	{"model_configs", "thinking_levels", "INSERT"},
+	{"model_configs", "default_thinking", "INSERT"},
 	{"model_configs", "context_window_tokens", "INSERT"},
 	{"model_configs", "params", "INSERT"},
 	{"model_configs", "surfaces", "INSERT"},
@@ -178,16 +253,22 @@ var registryRequiredPrivileges = []columnPrivilege{
 	{"model_configs", "micros_per_output_token", "INSERT"},
 	{"model_configs", "enabled", "INSERT"},
 	{"model_configs", "is_default_for", "INSERT"},
-	{"model_configs", "provider_slug", "UPDATE"},
-	{"model_configs", "base_url", "UPDATE"},
+	{"model_configs", "created_by", "INSERT"},
+	{"model_configs", "updated_by", "INSERT"},
 	{"model_configs", "enabled", "UPDATE"},
 	{"model_configs", "is_default_for", "UPDATE"},
+	{"model_configs", "updated_at", "UPDATE"},
+	{"model_configs", "updated_by", "UPDATE"},
 	{"model_registry_state", "version", "UPDATE"},
 	{"model_registry_state", "updated_at", "UPDATE"},
-	{"users", "chat_model_key", "UPDATE"},
-	{"users", "generate_model_key", "UPDATE"},
-	{"users", "editor_model_key", "UPDATE"},
-	{"users", "quiz_model_key", "UPDATE"},
+	{"users", "chat_model_provider_slug", "UPDATE"},
+	{"users", "chat_model_slug", "UPDATE"},
+	{"users", "generate_model_provider_slug", "UPDATE"},
+	{"users", "generate_model_slug", "UPDATE"},
+	{"users", "editor_model_provider_slug", "UPDATE"},
+	{"users", "editor_model_slug", "UPDATE"},
+	{"users", "quiz_model_provider_slug", "UPDATE"},
+	{"users", "quiz_model_slug", "UPDATE"},
 	{"users", "updated_at", "UPDATE"},
 	{"notifications", "id", "INSERT"},
 	{"notifications", "user_id", "INSERT"},
@@ -212,7 +293,6 @@ var customerContentColumns = []columnPrivilege{
 	{"materials", "content", "SELECT"},
 	{"material_yjs_documents", "state", "SELECT"},
 	{"conversation_compactions", "summary", "SELECT"},
-	{"conversation_compactions", "source_refs", "SELECT"},
 	{"rag_chunks", "text", "SELECT"},
 	{"rag_chunks", "indexed_text", "SELECT"},
 	{"rag_chunks", "regions", "SELECT"},
@@ -229,6 +309,33 @@ var customerContentColumns = []columnPrivilege{
 	{"email_outbox", "payload", "SELECT"},
 	{"usage_events", "metadata", "SELECT"},
 	{"usage_events", "workspace_id", "SELECT"},
+}
+
+func ProbeDatabaseRole(
+	ctx context.Context,
+	dsn string,
+	role DatabaseRole,
+) error {
+	if strings.TrimSpace(dsn) == "" {
+		return fmt.Errorf("%s database URL is required", role)
+	}
+	config, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		return fmt.Errorf("%s database URL: %w", role, err)
+	}
+	config.MaxConns = 1
+	config.MinConns = 0
+	config.MaxConnLifetime = 30 * time.Minute
+	config.ConnConfig.RuntimeParams["statement_timeout"] = "15000"
+	pool, err := pgxpool.NewWithConfig(ctx, config)
+	if err != nil {
+		return fmt.Errorf("open %s database: %w", role, err)
+	}
+	defer pool.Close()
+	if err := pool.Ping(ctx); err != nil {
+		return fmt.Errorf("%s database ping: %w", role, err)
+	}
+	return ValidateDatabaseRole(ctx, pool, role)
 }
 
 func ValidateDatabaseRole(
@@ -263,25 +370,75 @@ func ValidateDatabaseRole(
 	case ReadDatabaseRole:
 		problems = append(problems, validateRequiredColumns(ctx, pool, readRequiredPrivileges)...)
 		problems = append(problems, validateRequiredTables(ctx, pool, []tablePrivilege{
-			{"ops_completed_assistant_messages", "SELECT"},
+			{"ops_assistant_turns", "SELECT"},
 		})...)
 		problems = append(problems, validateNoBroadWrites(ctx, pool)...)
 		problems = append(problems, validateForbiddenColumns(ctx, pool, customerContentColumns)...)
-	case AuthDatabaseRole:
-		problems = append(problems, validateNoTablePrivileges(ctx, pool)...)
+		problems = append(problems, validateOnlyFunctionExecutes(
+			ctx, pool, "touch_operator_seen(text)",
+		)...)
 		var execute bool
 		if err := pool.QueryRow(ctx,
 			`SELECT has_function_privilege(current_user, 'touch_operator_seen(text)', 'EXECUTE')`,
 		).Scan(&execute); err != nil {
-			return fmt.Errorf("inspect auth function privilege: %w", err)
+			return fmt.Errorf("inspect read/auth function privilege: %w", err)
 		}
 		if !execute {
 			problems = append(problems, "cannot execute touch_operator_seen(text)")
 		}
-	case RegistryDatabaseRole:
+	case AdminDatabaseRole:
 		problems = append(problems, validateRequiredColumns(ctx, pool, registryRequiredPrivileges)...)
 		problems = append(problems, validateForbiddenColumns(ctx, pool, customerContentColumns)...)
 		problems = append(problems, validateRegistryTableWrites(ctx, pool)...)
+		problems = append(problems, validateOnlyFunctionExecutes(
+			ctx, pool,
+			"model_configs_thinking_ok(text[],text[],text)",
+			"request_reconciliation(text,text,text)",
+			"record_registry_audit(text,bigint,bigint,bigint,bigint,bigint,text)",
+		)...)
+		var canExecuteThinking, canRequestReconciliation, canRecordRegistryAudit bool
+		if err := pool.QueryRow(ctx,
+			`SELECT
+				has_function_privilege(
+					current_user,
+					'model_configs_thinking_ok(text[],text[],text)',
+					'EXECUTE'
+				),
+				has_function_privilege(
+					current_user,
+					'request_reconciliation(text,text,text)',
+					'EXECUTE'
+				),
+				has_function_privilege(
+					current_user,
+					'record_registry_audit(text,bigint,bigint,bigint,bigint,bigint,text)',
+					'EXECUTE'
+				)`,
+		).Scan(
+			&canExecuteThinking,
+			&canRequestReconciliation,
+			&canRecordRegistryAudit,
+		); err != nil {
+			return fmt.Errorf("inspect admin function privileges: %w", err)
+		}
+		if !canExecuteThinking {
+			problems = append(
+				problems,
+				"cannot execute model_configs_thinking_ok(text[],text[],text)",
+			)
+		}
+		if !canRequestReconciliation {
+			problems = append(
+				problems,
+				"cannot execute request_reconciliation(text,text,text)",
+			)
+		}
+		if !canRecordRegistryAudit {
+			problems = append(
+				problems,
+				"cannot execute record_registry_audit(text,bigint,bigint,bigint,bigint,bigint,text)",
+			)
+		}
 		var canDelete bool
 		if err := pool.QueryRow(ctx,
 			`SELECT has_table_privilege(current_user, 'model_configs', 'DELETE')`,
@@ -412,7 +569,13 @@ func validateNoTablePrivileges(ctx context.Context, pool *pgxpool.Pool) []string
 			has_table_privilege(current_user, c.oid, 'SELECT') OR
 			has_table_privilege(current_user, c.oid, 'INSERT') OR
 			has_table_privilege(current_user, c.oid, 'UPDATE') OR
-			has_table_privilege(current_user, c.oid, 'DELETE')
+			has_table_privilege(current_user, c.oid, 'DELETE') OR
+			has_table_privilege(current_user, c.oid, 'TRUNCATE') OR
+			has_table_privilege(current_user, c.oid, 'REFERENCES') OR
+			has_table_privilege(current_user, c.oid, 'TRIGGER') OR
+			has_any_column_privilege(
+			  current_user, c.oid, 'SELECT,INSERT,UPDATE,REFERENCES'
+			)
 		  )
 		ORDER BY c.relname LIMIT 1
 	`).Scan(&table)
@@ -421,6 +584,37 @@ func validateNoTablePrivileges(ctx context.Context, pool *pgxpool.Pool) []string
 	}
 	if err != pgx.ErrNoRows {
 		return []string{"could not inspect table privileges"}
+	}
+	return nil
+}
+
+func validateOnlyFunctionExecutes(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	allowed ...string,
+) []string {
+	var routine string
+	err := pool.QueryRow(ctx, `
+		SELECT format(
+		  '%I.%I(%s)',
+		  n.nspname,
+		  p.proname,
+		  pg_get_function_identity_arguments(p.oid)
+		)
+		FROM pg_proc p
+		JOIN pg_namespace n ON n.oid=p.pronamespace
+		WHERE n.nspname='public'
+		  AND p.oid NOT IN (
+		    SELECT name::regprocedure::oid FROM unnest($1::text[]) name
+		  )
+		  AND has_function_privilege(current_user, p.oid, 'EXECUTE')
+		ORDER BY p.proname
+		LIMIT 1`, allowed).Scan(&routine)
+	if err == nil {
+		return []string{"can execute unexpected function " + routine}
+	}
+	if err != pgx.ErrNoRows {
+		return []string{"could not inspect function privileges"}
 	}
 	return nil
 }
@@ -435,6 +629,7 @@ func validateRegistryTableWrites(
 		{"users", "UPDATE"},
 		{"notifications", "INSERT"},
 		{"email_outbox", "INSERT"},
+		{"operator_audit_events", "INSERT"},
 	}
 	var problems []string
 	for _, check := range checks {

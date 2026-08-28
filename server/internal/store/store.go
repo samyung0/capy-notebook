@@ -6,9 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io/fs"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
@@ -17,7 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/evonotes/server/internal/models"
-	"github.com/evonotes/server/migrations"
 )
 
 // ErrNotFound is returned by Get-style methods when a row is absent.
@@ -34,8 +31,8 @@ var ErrNotFound = errors.New("not found")
 // gone. Callers must fail the request rather than substituting Flash.
 var ErrModelUnavailable = errors.New("model unavailable")
 
-// ErrModelKeyRequired is a Settings write that tried to clear a preference.
-var ErrModelKeyRequired = errors.New("model key required")
+// ErrModelRefRequired is a Settings write that tried to clear a preference.
+var ErrModelRefRequired = errors.New("model reference required")
 
 // ErrInvalidLLMKey means a BYOK credential was rejected by the provider.
 var ErrInvalidLLMKey = errors.New("invalid llm credential")
@@ -121,32 +118,6 @@ func (s *Store) Close() { s.pool.Close() }
 func (s *Store) ConfigureCollaboration(rawURL, secret string) {
 	s.collaborationURL = strings.TrimRight(rawURL, "/")
 	s.collaborationSecret = secret
-}
-
-// Migrate applies every embedded *.sql migration in filename order. The files
-// are written idempotently (IF NOT EXISTS / ON CONFLICT) so re-running is safe.
-func (s *Store) Migrate(ctx context.Context) error {
-	entries, err := fs.ReadDir(migrations.FS, ".")
-	if err != nil {
-		return err
-	}
-	names := make([]string, 0, len(entries))
-	for _, e := range entries {
-		if !e.IsDir() && len(e.Name()) > 4 && e.Name()[len(e.Name())-4:] == ".sql" {
-			names = append(names, e.Name())
-		}
-	}
-	sort.Strings(names)
-	for _, name := range names {
-		body, err := migrations.FS.ReadFile(name)
-		if err != nil {
-			return err
-		}
-		if _, err := s.pool.Exec(ctx, string(body)); err != nil {
-			return fmt.Errorf("migration %s: %w", name, err)
-		}
-	}
-	return nil
 }
 
 // uid mirrors the frontend's id scheme: a short prefixed random token.

@@ -4,18 +4,15 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 
 	"github.com/evonotes/server/internal/mail"
 	"github.com/evonotes/server/internal/store"
+	"github.com/evonotes/server/internal/testdb"
 )
 
 func TestEmailUnsubscribeGETDoesNotMutate(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
+	dsn := testdb.URL(t)
 	ctx := context.Background()
 	st, err := store.New(ctx, dsn)
 	if err != nil {

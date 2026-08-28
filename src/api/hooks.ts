@@ -560,7 +560,6 @@ export function useImportSources(
   workspaceId: string,
   options?: MutationUiOptions
 ) {
-  const qc = useQueryClient();
   return useMutation({
     meta: mutationMeta(options),
     mutationFn: (body: {
@@ -568,11 +567,15 @@ export function useImportSources(
       driveIds?: string[];
       fileIds: string[];
       provider: 'google' | 'microsoft';
-    }) =>
-      api.post<SourceFile[]>(`/workspaces/${workspaceId}/sources/import`, body),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: qk.files(workspaceId) });
-      qc.invalidateQueries({ queryKey: qk.workspaceStats(workspaceId) });
+      requestId?: string;
+      signal?: AbortSignal;
+    }) => {
+      const { signal, ...request } = body;
+      return api.post<unknown>(
+        `/workspaces/${workspaceId}/sources/import`,
+        request,
+        { signal }
+      );
     },
   });
 }

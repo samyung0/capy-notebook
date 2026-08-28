@@ -14,4 +14,6 @@ export interface ImportSourcesReq {
   /** @minItems 1 */
   fileIds: string[];
   provider: ImportSourcesReqProvider;
+  /** @maxLength 128 */
+  requestId?: string;
 }

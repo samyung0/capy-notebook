@@ -4,20 +4,21 @@ import {
   assembleRegistryRequest,
   cloneCatalogToDraft,
   createRegistryState,
+  modelRefId,
   registryReducer,
 } from './registry-domain';
 
 function config(
-  modelKey: string,
+  name: string,
   surfaces: CatalogConfig['surfaces'],
   defaults: CatalogConfig['isDefaultFor']
 ): CatalogConfig {
   return {
-    authMode: 'platform',
-    baseUrl: 'https://models.example.test',
+    byokEnabled: false,
     contextWindowTokens: 128_000,
     createdAt: '2026-08-24T12:00:00Z',
-    displayName: modelKey,
+    createdBy: '',
+    defaultThinking: surfaces.includes('embedding') ? '' : 'instant',
     embeddingDefaultEligible: surfaces.includes('embedding'),
     embeddingValidationError: '',
     enabled: true,
@@ -25,11 +26,18 @@ function config(
     microsPerCachedInputToken: 1,
     microsPerInputToken: 2,
     microsPerOutputToken: 6,
-    modelKey,
+    modelName: name,
+    modelSlug: `test/${name}`,
     params: {},
-    providerModelId: modelKey,
-    providerSlug: 'test-provider',
+    platformEnabled: true,
+    providerName: 'Test',
+    providerSlug: 'deepseek',
     surfaces,
+    thinkingLevels: surfaces.includes('embedding')
+      ? []
+      : ['instant', 'low', 'mid', 'high', 'max'],
+    updatedAt: '2026-08-24T12:00:00Z',
+    updatedBy: '',
     version: 1,
   };
 }
@@ -42,13 +50,19 @@ function registry(): Registry {
       config('beta', ['chat', 'embedding'], []),
     ],
     embeddingWorkspaceCounts: [
-      { count: 12, dim: 1536, modelKey: 'alpha', version: 1 },
+      {
+        count: 12,
+        dim: 1536,
+        modelSlug: 'test/alpha',
+        providerSlug: 'deepseek',
+        version: 1,
+      },
     ],
     providerCredentials: [
       {
         configured: true,
-        environment: 'TEST_API_KEY',
-        providerSlug: 'test-provider',
+        environment: 'DEEPSEEK_API_KEY',
+        providerSlug: 'deepseek',
       },
     ],
     revision: 7,
@@ -59,15 +73,17 @@ function registry(): Registry {
 describe('registry reducer', () => {
   it('moves defaults without mutating the prior state', () => {
     const initial = createRegistryState(registry());
+    const alpha = modelRefId(registry().configs[0]);
+    const beta = modelRefId(registry().configs[1]);
     const changed = registryReducer(initial, {
-      rowKey: 'beta',
+      rowId: beta,
       surface: 'chat',
       type: 'set-default',
     });
 
-    expect(initial.cells.get('alpha\u0000chat')?.isDefault).toBe(true);
-    expect(changed.cells.get('alpha\u0000chat')?.isDefault).toBe(false);
-    expect(changed.cells.get('beta\u0000chat')?.isDefault).toBe(true);
+    expect(initial.cells.get(`${alpha}\u0000chat`)?.isDefault).toBe(true);
+    expect(changed.cells.get(`${alpha}\u0000chat`)?.isDefault).toBe(false);
+    expect(changed.cells.get(`${beta}\u0000chat`)?.isDefault).toBe(true);
   });
 });
 
@@ -76,11 +92,12 @@ describe('registry request assembly', () => {
     const snapshot = registry();
     let state = createRegistryState(snapshot);
     const draft = cloneCatalogToDraft(snapshot.configs[0], 'draft-alpha');
+    const alpha = modelRefId(draft);
     state = registryReducer(state, { draft, type: 'upsert-draft' });
     state = registryReducer(state, {
       cell: {
         isDefault: true,
-        rowKey: 'alpha',
+        rowId: alpha,
         surface: 'chat',
         target: { draftId: draft.id, kind: 'draft' },
       },
@@ -89,7 +106,7 @@ describe('registry request assembly', () => {
     state = registryReducer(state, {
       cell: {
         isDefault: true,
-        rowKey: 'alpha',
+        rowId: alpha,
         surface: 'embedding',
         target: { draftId: draft.id, kind: 'draft' },
       },
@@ -110,56 +127,55 @@ describe('registry request assembly', () => {
       active: [
         {
           defaultFor: ['chat', 'embedding'],
-          modelKey: 'alpha',
+          modelSlug: 'test/alpha',
+          platformEnabled: true,
+          providerSlug: 'deepseek',
           surfaces: ['chat', 'embedding'],
         },
         {
           defaultFor: [],
-          modelKey: 'beta',
+          modelSlug: 'test/beta',
+          providerSlug: 'deepseek',
           surfaces: ['chat', 'embedding'],
         },
       ],
-      fallbacks: [],
       revision: 7,
     });
   });
 
-  it('requires a fallback when clearing a preference cell', () => {
+  it('allows clearing a preference cell without a fallback picker', () => {
     const snapshot = registry();
+    const alpha = modelRefId(snapshot.configs[0]);
+    const beta = modelRefId(snapshot.configs[1]);
     let state = createRegistryState(snapshot);
     state = registryReducer(state, {
-      rowKey: 'alpha',
+      rowId: alpha,
       surface: 'chat',
       type: 'clear-cell',
     });
     state = registryReducer(state, {
-      rowKey: 'beta',
+      rowId: beta,
       surface: 'chat',
       type: 'set-default',
     });
-    const missing = assembleRegistryRequest(snapshot, state);
-    expect(missing.valid).toBe(false);
-
-    state = registryReducer(state, {
-      fallbackKey: 'beta',
-      modelKey: 'alpha',
-      surface: 'chat',
-      type: 'set-deprecation',
-    });
-    const complete = assembleRegistryRequest(snapshot, state);
-    expect(complete.valid).toBe(true);
-    if (complete.valid) {
-      expect(complete.request.fallbacks).toEqual([
-        { fromKey: 'alpha', surface: 'chat', toKey: 'beta' },
-      ]);
+    const assembled = assembleRegistryRequest(snapshot, state);
+    expect(assembled.valid).toBe(true);
+    if (assembled.valid) {
+      expect(
+        assembled.request.active.find(
+          (row) =>
+            row.providerSlug === 'deepseek' && row.modelSlug === 'test/alpha'
+        )?.surfaces
+      ).toEqual(['embedding']);
     }
   });
 
   it('blocks embedding changes until acknowledged', () => {
     const snapshot = registry();
+    const beta = modelRefId(snapshot.configs[1]);
     let state = createRegistryState(snapshot);
     state = registryReducer(state, {
-      rowKey: 'beta',
+      rowId: beta,
       surface: 'embedding',
       type: 'set-default',
     });

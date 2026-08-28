@@ -365,7 +365,17 @@ export const ListMessagesParams = zod.object({
 })
 
 export const ListMessagesResponseItem = zod.object({
+  "activity": zod.array(zod.object({
+  "callId": zod.string().optional(),
+  "detail": zod.string().optional(),
+  "id": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string().optional(),
+  "status": zod.string().optional(),
+  "text": zod.string().optional()
+})).nullish(),
   "citations": zod.array(zod.object({
+  "chunkId": zod.string().optional(),
   "fileId": zod.string(),
   "fileName": zod.string(),
   "pageEnd": zod.int().optional(),
@@ -382,8 +392,9 @@ export const ListMessagesResponseItem = zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
   "modelDisplayName": zod.string().optional(),
-  "modelKey": zod.string().optional(),
+  "modelSlug": zod.string().optional(),
   "modelVersion": zod.int().optional(),
+  "providerSlug": zod.string().optional(),
   "role": zod.string(),
   "status": zod.string()
 })
@@ -1259,16 +1270,28 @@ export const ListMaterialRevisionsResponse = zod.array(ListMaterialRevisionsResp
 export const GetMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "avatarUrl": zod.string().optional(),
-  "chatModelKey": zod.string(),
+  "chatModel": zod.object({
+  "modelSlug": zod.string(),
+  "providerSlug": zod.string()
+}),
   "classLabel": zod.string().optional(),
-  "editorModelKey": zod.string(),
+  "editorModel": zod.object({
+  "modelSlug": zod.string(),
+  "providerSlug": zod.string()
+}),
   "email": zod.string(),
-  "generateModelKey": zod.string(),
+  "generateModel": zod.object({
+  "modelSlug": zod.string(),
+  "providerSlug": zod.string()
+}),
   "id": zod.string(),
   "locale": zod.string(),
   "name": zod.string(),
   "planTier": zod.enum(['free', 'pro']),
-  "quizModelKey": zod.string(),
+  "quizModel": zod.object({
+  "modelSlug": zod.string(),
+  "providerSlug": zod.string()
+}),
   "streak": zod.int(),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
@@ -1293,6 +1316,13 @@ export const ListLLMCredentialsResponse = zod.object({
   "credentials": zod.array(zod.object({
   "last4": zod.string(),
   "providerSlug": zod.string()
+})),
+  "providers": zod.array(zod.object({
+  "eligible": zod.boolean(),
+  "last4": zod.string().optional(),
+  "providerSlug": zod.string(),
+  "reason": zod.string().optional(),
+  "unlocks": zod.array(zod.string())
 }))
 })
 
@@ -1332,16 +1362,25 @@ export const SetLocaleResponse = zod.void()
  * @summary Set chat, generate, editor and quiz model preferences
  */
 export const SetModelPrefsBody = zod.object({
-  "chatModelKey": zod.string().optional(),
-  "chatReasoningEffort": zod.string().optional(),
-  "chatReasoningMode": zod.string().optional(),
-  "editorModelKey": zod.string().optional(),
-  "generateModelKey": zod.string().optional(),
-  "generateReasoningEffort": zod.string().optional(),
-  "generateReasoningMode": zod.string().optional(),
-  "quizModelKey": zod.string().optional(),
-  "quizReasoningEffort": zod.string().optional(),
-  "quizReasoningMode": zod.string().optional()
+  "chatModel": zod.object({
+  "modelSlug": zod.string(),
+  "providerSlug": zod.string()
+}).optional(),
+  "chatThinking": zod.string().optional(),
+  "editorModel": zod.object({
+  "modelSlug": zod.string(),
+  "providerSlug": zod.string()
+}).optional(),
+  "generateModel": zod.object({
+  "modelSlug": zod.string(),
+  "providerSlug": zod.string()
+}).optional(),
+  "generateThinking": zod.string().optional(),
+  "quizModel": zod.object({
+  "modelSlug": zod.string(),
+  "providerSlug": zod.string()
+}).optional(),
+  "quizThinking": zod.string().optional()
 })
 
 export const SetModelPrefsResponse = zod.void()
@@ -1366,6 +1405,15 @@ export const GetMistakesResponse = zod.object({
 
 
 /**
+ * @summary Known model surfaces
+ */
+export const ListModelSurfacesResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "surfaces": zod.array(zod.enum(['chat', 'generate', 'editor', 'quiz', 'ingest', 'embedding', 'vision']))
+})
+
+
+/**
  * @summary Enabled models for a surface
  */
 export const ListModelsQueryParams = zod.object({
@@ -1374,24 +1422,28 @@ export const ListModelsQueryParams = zod.object({
 
 export const ListModelsResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "defaultKey": zod.string(),
+  "defaultModel": zod.object({
+  "modelSlug": zod.string(),
+  "providerSlug": zod.string()
+}),
   "models": zod.array(zod.object({
   "available": zod.boolean(),
-  "displayName": zod.string(),
   "isDefault": zod.boolean(),
-  "key": zod.string(),
+  "modelName": zod.string(),
+  "modelSlug": zod.string(),
+  "providerName": zod.string(),
   "providerSlug": zod.string(),
-  "reasoning": zod.object({
-  "canDisable": zod.boolean(),
-  "defaultEffort": zod.string(),
-  "defaultMode": zod.string(),
-  "efforts": zod.array(zod.string())
+  "thinking": zod.object({
+  "default": zod.string(),
+  "levels": zod.array(zod.string())
 }).optional(),
   "usesUserKey": zod.boolean()
 })),
-  "selectedKey": zod.string(),
-  "selectedReasoningEffort": zod.string(),
-  "selectedReasoningMode": zod.string()
+  "selectedModel": zod.object({
+  "modelSlug": zod.string(),
+  "providerSlug": zod.string()
+}),
+  "selectedThinking": zod.string()
 })
 
 
@@ -1880,8 +1932,9 @@ export const GetUsageResponse = zod.object({
   "creditMicros": zod.int(),
   "inputTokens": zod.int(),
   "kind": zod.string(),
-  "modelKey": zod.string(),
+  "modelSlug": zod.string(),
   "outputTokens": zod.int(),
+  "providerSlug": zod.string(),
   "surface": zod.string(),
   "unit": zod.string(),
   "units": zod.int()
@@ -2547,12 +2600,14 @@ export const UpdateWorkspaceSharingResponse = zod.object({
 
 
 /**
- * @summary Import sources from a connected drive
+ * @summary Queue sources from a connected drive
  */
 export const ImportSourcesParams = zod.object({
   "id": zod.string()
 })
 
+
+export const importSourcesBodyRequestIdMax = 128;
 
 
 
@@ -2560,25 +2615,40 @@ export const ImportSourcesBody = zod.object({
   "chapterId": zod.string().optional(),
   "driveIds": zod.array(zod.string()).optional(),
   "fileIds": zod.array(zod.string()).min(1),
-  "provider": zod.enum(['google', 'microsoft'])
+  "provider": zod.enum(['google', 'microsoft']),
+  "requestId": zod.string().max(importSourcesBodyRequestIdMax).optional()
 })
 
-export const ImportSourcesResponseItem = zod.object({
+export const ImportSourcesResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "addedAt": zod.iso.datetime({"offset":true}),
-  "chapterId": zod.string().nullable(),
-  "content": zod.string().optional(),
-  "id": zod.string(),
-  "indexed": zod.boolean(),
-  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "jobs": zod.array(zod.object({
+  "jobId": zod.string(),
   "name": zod.string(),
-  "position": zod.int(),
-  "sizeBytes": zod.int(),
-  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
-  "url": zod.string().optional(),
-  "workspaceId": zod.string()
+  "uploadId": zod.string()
+})),
+  "rejected": zod.array(zod.object({
+  "code": zod.string(),
+  "fileId": zod.string()
+}))
 })
-export const ImportSourcesResponse = zod.array(ImportSourcesResponseItem)
+
+
+/**
+ * @summary Get source import status
+ */
+export const GetSourceImportParams = zod.object({
+  "id": zod.string(),
+  "jobId": zod.string()
+})
+
+export const GetSourceImportResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "errorCode": zod.string().optional(),
+  "fileId": zod.string().optional(),
+  "jobId": zod.string(),
+  "name": zod.string(),
+  "status": zod.enum(['pending', 'running', 'succeeded', 'failed', 'cancelled'])
+})
 
 
 /**

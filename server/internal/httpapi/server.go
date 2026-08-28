@@ -43,6 +43,7 @@ func corsOrigins(configured []string) []string {
 // Config holds gateway settings for auth and billing. Provider OAuth
 // (Google/Microsoft/Notion) is managed entirely by Clerk.
 type Config struct {
+	ReleaseSHA         string
 	ClerkSecretKey     string
 	ClerkWebhookSecret string
 	AuthDisabled       bool
@@ -71,6 +72,10 @@ type Config struct {
 	// PipelineSecret authenticates the retrieval service's callbacks into
 	// /api/internal/*. Empty disables those routes entirely.
 	PipelineSecret string
+	// ImportRelaySecret authenticates the Cloudflare Queue relay in both
+	// directions. EnqueueURL is also the feature gate for public import POSTs.
+	ImportRelaySecret     string
+	ImportRelayEnqueueURL string
 	// MailRecorder exposes delivered mail to Playwright. Non-nil only under
 	// APP_ENV=e2e.
 	MailRecorder mail.Recorder
@@ -167,7 +172,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	registerRoutes(humaAPI, a)
 
 	// Raw (OpenAPI-excluded) routes.
-	r.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("ok")) })
+	r.Get("/healthz", healthHandler(cfg.ReleaseSHA))
 	r.Post("/webhooks/clerk", a.clerkWebhook)
 	r.Post("/webhooks/stripe", a.stripeWebhook)
 	r.Get("/api/notifications/stream", a.notificationEvents)
@@ -182,7 +187,6 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Get("/api/workspaces/{id}/ingest-events", a.ingestEvents)
 	r.Get("/api/editor-assets/{assetId}/resolve", a.resolveEditorAsset)
 	r.Post("/api/workspaces/{id}/chat/stream", a.chatStream)
-	r.Post("/api/workspaces/{id}/complete/stream", a.completeStream)
 	r.Post("/api/workspaces/{id}/ai/command", a.aiCommand)
 	r.Post("/api/workspaces/{id}/ai/copilot", a.aiCopilot)
 	if cfg.PipelineSecret != "" {
@@ -190,12 +194,28 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Get("/api/internal/materials/{materialId}", a.internalGetMaterial)
 		r.Post("/api/internal/provider-calls", a.internalSettleProviderCall)
 	}
+	if cfg.ImportRelaySecret != "" {
+		r.Post("/api/internal/import-relay/acquire", a.internalAcquireSourceImport)
+		r.Post("/api/internal/import-relay/upload-grant", a.internalGrantSourceImportUpload)
+		r.Post("/api/internal/import-relay/complete", a.internalCompleteSourceImport)
+		r.Post("/api/internal/import-relay/fail", a.internalFailSourceImport)
+		r.Post("/api/internal/import-relay/dead-letter", a.internalDeadLetterSourceImport)
+	}
 	r.Get("/api/files/{id}/raw", a.getFileRaw)
 
 	return r
 }
 
 /* ------------------------------------------------------------------ helpers */
+
+func healthHandler(releaseSHA string) http.HandlerFunc {
+	return func(w http.ResponseWriter, _ *http.Request) {
+		if releaseSHA != "" {
+			w.Header().Set("X-Evo-Release", releaseSHA)
+		}
+		_, _ = w.Write([]byte("ok"))
+	}
+}
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -221,14 +241,16 @@ var errAgentFailed = errors.New("the chat agent hit an internal error")
 // blank mindmap is not reported as the retrieval process being down.
 var errGenerateEmpty = errors.New("the model returned no usable material")
 
+var errScopeNoIndexedContent = errors.New("the requested scope has no indexed content")
+
 func (a *api) fail(w http.ResponseWriter, err error) {
 	if errors.Is(err, store.ErrNotFound) {
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "not found"})
 		return
 	}
-	if errors.Is(err, store.ErrModelKeyRequired) {
+	if errors.Is(err, store.ErrModelRefRequired) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
-			"code":    "model_key_required",
+			"code":    "model_ref_required",
 			"message": "a model preference is required",
 		})
 		return
@@ -305,6 +327,13 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		writeJSON(w, http.StatusBadGateway, map[string]string{
 			"code":    "generate_empty",
 			"message": errGenerateEmpty.Error(),
+		})
+		return
+	}
+	if errors.Is(err, errScopeNoIndexedContent) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"code":    "scope_has_no_indexed_content",
+			"message": errScopeNoIndexedContent.Error(),
 		})
 		return
 	}

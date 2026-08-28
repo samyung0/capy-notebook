@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"testing"
 	"time"
 
@@ -18,6 +17,7 @@ import (
 	"github.com/evonotes/server/internal/models"
 	"github.com/evonotes/server/internal/pipeline"
 	"github.com/evonotes/server/internal/store"
+	"github.com/evonotes/server/internal/testdb"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -27,10 +27,7 @@ func openShareHTTP(t *testing.T) http.Handler {
 
 func openShareAPI(t *testing.T, pipe *pipeline.Client) http.Handler {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
+	dsn := testdb.URL(t)
 	ctx := context.Background()
 	st, err := store.New(ctx, dsn)
 	if err != nil {
@@ -341,10 +338,7 @@ func TestShareHTTPExploreAndAttempts(t *testing.T) {
 }
 
 func TestMaterialRevisionHTTPCapsFreeOwnerAtSevenDailyVersions(t *testing.T) {
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
+	dsn := testdb.URL(t)
 	ctx := context.Background()
 	st, err := store.New(ctx, dsn)
 	if err != nil {

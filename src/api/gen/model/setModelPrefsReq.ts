@@ -4,18 +4,16 @@
  * Evo Notes API
  * OpenAPI spec version: 0.1.0
  */
+import type { Ref } from './ref.ts';
 
 export interface SetModelPrefsReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  chatModelKey?: string;
-  chatReasoningEffort?: string;
-  chatReasoningMode?: string;
-  editorModelKey?: string;
-  generateModelKey?: string;
-  generateReasoningEffort?: string;
-  generateReasoningMode?: string;
-  quizModelKey?: string;
-  quizReasoningEffort?: string;
-  quizReasoningMode?: string;
+  chatModel?: Ref;
+  chatThinking?: string;
+  editorModel?: Ref;
+  generateModel?: Ref;
+  generateThinking?: string;
+  quizModel?: Ref;
+  quizThinking?: string;
 }

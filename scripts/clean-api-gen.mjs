@@ -4,3 +4,7 @@ rmSync(new URL('../src/api/gen', import.meta.url), {
   force: true,
   recursive: true,
 });
+rmSync(new URL('../ops/src/api-gen', import.meta.url), {
+  force: true,
+  recursive: true,
+});

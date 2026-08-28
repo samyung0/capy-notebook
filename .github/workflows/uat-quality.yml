@@ -1,0 +1,86 @@
+name: Deterministic UAT quality
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Full deployed SHA; blank verifies the selected revision
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      revision:
+        description: Full deployed SHA to verify
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deterministic-uat-quality
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    environment: uat
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+      - name: Probe authorized UAT services
+        env:
+          UAT_ALLOWED_HOSTS: ${{ vars.UAT_ALLOWED_HOSTS }}
+          UAT_API_URL: ${{ vars.DEPLOYMENT_API_URL || vars.UAT_API_URL }}
+          UAT_APP_URL: ${{ vars.DEPLOYMENT_APP_URL || vars.UAT_APP_URL }}
+          UAT_COLLAB_URL: ${{ vars.DEPLOYMENT_COLLAB_URL || vars.UAT_COLLAB_URL }}
+          UAT_OPS_URL: ${{ vars.DEPLOYMENT_OPS_URL || vars.UAT_OPS_URL }}
+          UAT_TARGET_AUTHORIZED: ${{ vars.UAT_TARGET_AUTHORIZED }}
+          EXPECTED_REVISION: ${{ inputs.revision || github.sha }}
+        run: scripts/review/remote-smoke.sh
+
+  authenticated_browser:
+    needs: smoke
+    runs-on: ubuntu-24.04
+    environment: uat
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          cache: pnpm
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run e2e:install
+      - name: Run authenticated functional and UI quality checks
+        env:
+          CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
+          UAT_ALLOWED_HOSTS: ${{ vars.UAT_ALLOWED_HOSTS }}
+          UAT_API_URL: ${{ vars.DEPLOYMENT_API_URL || vars.UAT_API_URL }}
+          UAT_APP_URL: ${{ vars.DEPLOYMENT_APP_URL || vars.UAT_APP_URL }}
+          UAT_COLLAB_URL: ${{ vars.DEPLOYMENT_COLLAB_URL || vars.UAT_COLLAB_URL }}
+          UAT_COMMENTER_EMAIL: ${{ vars.UAT_COMMENTER_EMAIL }}
+          UAT_EDITOR_EMAIL: ${{ vars.UAT_EDITOR_EMAIL }}
+          UAT_FIXTURE_MATERIAL_ID: ${{ vars.UAT_FIXTURE_MATERIAL_ID }}
+          UAT_FIXTURE_WORKSPACE_ID: ${{ vars.UAT_FIXTURE_WORKSPACE_ID }}
+          UAT_OTHER_EMAIL: ${{ vars.UAT_OTHER_EMAIL }}
+          UAT_OWNER_EMAIL: ${{ vars.UAT_OWNER_EMAIL }}
+          UAT_TARGET_AUTHORIZED: ${{ vars.UAT_TARGET_AUTHORIZED }}
+          UAT_VIEWER_EMAIL: ${{ vars.UAT_VIEWER_EMAIL }}
+        run: pnpm e2e:uat
+      - name: Upload Playwright evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          if-no-files-found: ignore
+          name: deterministic-uat-quality-${{ github.run_id }}
+          path: |
+            e2e/uat/report/
+            e2e/uat/test-results/
+          retention-days: 30

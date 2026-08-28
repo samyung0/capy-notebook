@@ -1,12 +1,13 @@
-// Command reconcile syncs Stripe subscription state with the local database daily.
+// Command reconcile enqueues and drains the daily storage and Stripe jobs.
 package main
 
 import (
 	"context"
 	"log"
 	"os"
+	"time"
 
-	"github.com/evonotes/server/internal/billing"
+	"github.com/evonotes/server/internal/reconcile"
 	"github.com/evonotes/server/internal/store"
 )
 
@@ -29,47 +30,15 @@ func main() {
 	}
 	defer st.Close()
 
-	repaired, err := st.ReconcileStorage(ctx)
-	if err != nil {
-		log.Fatalf("storage reconciliation: %v", err)
+	runner := reconcile.NewRunner(st, reconcile.Config{
+		StripeSecretKey: stripeKey,
+		StripePricePro:  pricePro,
+	})
+	if err := runner.EnqueueDaily(ctx, time.Now()); err != nil {
+		log.Fatalf("enqueue reconciliation: %v", err)
 	}
-	log.Printf("storage reconciliation repaired %d user(s)", repaired)
-
-	if stripeKey == "" {
-		log.Println("reconcile complete (Stripe disabled)")
-		return
+	if err := runner.Drain(ctx); err != nil {
+		log.Fatalf("run reconciliation: %v", err)
 	}
-	billing.Init(billing.Config{SecretKey: stripeKey})
-
-	rows, err := st.ListStripeCustomers(ctx)
-	if err != nil {
-		log.Fatalf("list customers: %v", err)
-	}
-
-	drifted := 0
-	for _, row := range rows {
-		sub, err := billing.ListActiveSubscription(row.CustomerID)
-		if err != nil {
-			log.Printf("customer %s: stripe error: %v", row.CustomerID, err)
-			continue
-		}
-		// Reconcile the subscription table rather than users.plan_tier: the tier
-		// column is a projection of it now, so writing the column directly would
-		// be undone by the next webhook.
-		var live *store.Subscription
-		if sub != nil {
-			record := billing.SubscriptionRecord(sub, row.UserID, pricePro, 0)
-			live = &record
-		}
-		changed, err := st.SyncSubscriptionsFromStripe(ctx, row.UserID, live)
-		if err != nil {
-			log.Printf("fix user %s: %v", row.UserID, err)
-			continue
-		}
-		if changed {
-			drifted++
-			log.Printf("drift repaired user=%s customer=%s", row.UserID, row.CustomerID)
-		}
-	}
-	log.Printf("reconcile complete (%d subscription drift(s) repaired)", drifted)
+	log.Println("reconciliation queue drained")
 }

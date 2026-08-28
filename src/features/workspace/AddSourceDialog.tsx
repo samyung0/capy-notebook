@@ -69,9 +69,16 @@ import {
   useProviderConnect,
 } from '@/lib/useProviderConnect';
 import {
+  collectSourceImportResponses,
+  parseSourceImportAcceptedResponse,
+  SourceImportFailedError,
+  SourceImportPollingTimeoutError,
+  waitForSourceImportWave,
+  withSourceImportRequestRetry,
+} from './sourceImport';
+import {
   aggregateUploadPct,
   capSourceUploads,
-  chunkItems,
   defaultParseMode,
   fileExt,
   fileReachedTerminal,
@@ -194,6 +201,28 @@ function fileLimitToast(
     description: m.error_files_limit_body({ limit }),
     title: m.error_files_limit_title(),
   };
+}
+
+function sourceImportFailureReason(code: string) {
+  switch (code) {
+    case 'file_too_large':
+      return m.source_import_file_too_large();
+    case 'unsupported_file':
+      return m.source_unsupported_format();
+    case 'provider_file_unavailable':
+    case 'provider_download_refused':
+      return m.source_import_file_unavailable();
+    case 'invalid_name':
+      return m.source_import_invalid_name();
+    case 'source_import_cancelled':
+      return m.source_import_cancelled();
+    case 'import_result_missing':
+    case 'invalid_import_response':
+    case 'unknown_import_status':
+      return m.source_import_invalid_response();
+    default:
+      return m.source_try_again();
+  }
 }
 
 interface GooglePickerBuilder {
@@ -895,11 +924,25 @@ function ImportFiles({
   const [unsentCount, setUnsentCount] = useState(0);
   const [isDraining, setIsDraining] = useState(false);
   const drainAbort = useRef(new AbortController());
+  const importRequestIds = useRef(new Map<string, string>());
   useUnsentBeforeUnload(unsentCount);
   useEffect(() => () => drainAbort.current.abort(), []);
 
-  function handleImportError(error: unknown) {
+  function handleImportError(error: unknown, fileName?: string) {
     const fileToast = fileLimitToast(error);
+    const sourceImportError =
+      error instanceof SourceImportFailedError ? error : null;
+    const importFailure = sourceImportError
+      ? sourceImportFailureReason(sourceImportError.code)
+      : null;
+    const description = importFailure
+      ? fileName || sourceImportError?.fileName
+        ? m.source_import_file_error({
+            name: fileName ?? sourceImportError?.fileName ?? '',
+            reason: importFailure,
+          })
+        : importFailure
+      : null;
     trackQuotaBlocked(error, 'upload');
     userToast({
       description: isCreditsExhaustedError(error)
@@ -910,9 +953,7 @@ function ImportFiles({
             ? m.error_quota_body()
             : fileToast
               ? fileToast.description
-              : error instanceof Error
-                ? error.message
-                : m.source_try_again(),
+              : (description ?? m.source_try_again()),
       title: isCreditsExhaustedError(error)
         ? m.error_credits_title()
         : isTooManyIngestLeasesError(error)
@@ -926,12 +967,30 @@ function ImportFiles({
     });
   }
 
+  function reportRejectedImports(rejected: { code: string; fileId: string }[]) {
+    const counts = new Map<string, number>();
+    for (const item of rejected) {
+      counts.set(item.code, (counts.get(item.code) ?? 0) + 1);
+    }
+    for (const [code, count] of counts) {
+      userToast({
+        description: m.source_import_rejected_count({
+          count,
+          reason: sourceImportFailureReason(code),
+        }),
+        title: m.source_import_failed(),
+        variant: 'error',
+      });
+    }
+  }
+
   async function drainImport(
     provider: 'google' | 'microsoft',
     refs: ImportSourceRef[]
   ) {
     setIsDraining(true);
     let remaining = [...refs];
+    let hadIssue = false;
     setUnsentCount(remaining.length);
     try {
       while (remaining.length > 0 && !drainAbort.current.signal.aborted) {
@@ -948,49 +1007,112 @@ function ImportFiles({
           continue;
         }
         setUnsentCount(rest.length);
-        const chunks = chunkItems(wave, SOURCE_UPLOAD_CONCURRENCY);
+        const chunks = wave.map((ref) => [ref]);
+        const requests = chunks.map((chunk) => {
+          const key = JSON.stringify([
+            provider,
+            chunk.map((ref) => [ref.id, ref.driveId ?? '']),
+          ]);
+          let requestId = importRequestIds.current.get(key);
+          if (!requestId) {
+            requestId = crypto.randomUUID();
+            importRequestIds.current.set(key, requestId);
+          }
+          return {
+            body: { ...toImportRequest(provider, chunk, null), requestId },
+            key,
+          };
+        });
         const results = await mapWithConcurrency(
-          chunks,
+          requests,
           SOURCE_UPLOAD_CONCURRENCY,
-          (chunk) =>
-            withUploadRetry(() =>
-              importSources(toImportRequest(provider, chunk, null))
+          (request) =>
+            withSourceImportRequestRetry(
+              async () =>
+                parseSourceImportAcceptedResponse(
+                  await importSources({
+                    ...request.body,
+                    signal: drainAbort.current.signal,
+                  }),
+                  request.body.fileIds[0]
+                ),
+              undefined,
+              drainAbort.current.signal
             )
         );
-        const waits: Promise<void>[] = [];
-        for (const result of results) {
-          if (result.status === 'rejected') {
-            handleImportError(result.reason);
-            setUnsentCount(0);
-            return;
-          }
-          qc.setQueryData<SourceFile[]>(qk.files(workspaceId), (prev) => {
-            const next = prev ? [...prev] : [];
-            for (const file of result.value) {
-              if (!next.some((entry) => entry.id === file.id)) {
-                next.push({ ...file, ingestPct: file.ingestPct ?? 0 });
-              }
+        const jobRequestKeys = new Map<string, string>();
+        results.forEach((result, index) => {
+          const request = requests[index];
+          if (result.status === 'fulfilled' && request) {
+            if (result.value.jobs.length === 0) {
+              importRequestIds.current.delete(request.key);
             }
-            return next;
-          });
-          if (USE_MSW) continue;
-          for (const file of result.value) {
-            if (file.status === 'ready') continue;
-            waits.push(
-              waitForFileTerminal(
-                qc,
-                workspaceId,
-                file.id,
-                drainAbort.current.signal
-              )
-            );
+            for (const job of result.value.jobs) {
+              jobRequestKeys.set(job.jobId, request.key);
+            }
           }
+        });
+        const { jobs, rejected, requestErrors } =
+          collectSourceImportResponses(results);
+        if (requestErrors.length > 0 || rejected.length > 0) {
+          hadIssue = true;
         }
-        await Promise.all(waits);
+        for (const error of requestErrors) handleImportError(error);
+        reportRejectedImports(rejected);
+
+        const { completedJobIds, failures } = await waitForSourceImportWave(
+          (jobId, signal) =>
+            api.get(`/workspaces/${workspaceId}/sources/imports/${jobId}`, {
+              signal,
+            }),
+          jobs,
+          { signal: drainAbort.current.signal }
+        );
+        for (const jobId of completedJobIds) {
+          const requestKey = jobRequestKeys.get(jobId);
+          if (requestKey) importRequestIds.current.delete(requestKey);
+        }
+        if (jobs.length > 0) {
+          await Promise.all([
+            qc.invalidateQueries({ queryKey: qk.files(workspaceId) }),
+            qc.invalidateQueries({ queryKey: qk.ingestSlots }),
+            qc.invalidateQueries({ queryKey: qk.workspace(workspaceId) }),
+            qc.invalidateQueries({ queryKey: qk.workspaceStats(workspaceId) }),
+          ]);
+        }
+        const timedOutNames: string[] = [];
+        for (const failure of failures) {
+          if (drainAbort.current.signal.aborted) break;
+          hadIssue = true;
+          if (failure.error instanceof SourceImportPollingTimeoutError) {
+            timedOutNames.push(failure.job.name);
+            continue;
+          }
+          if (
+            failure.error instanceof SourceImportFailedError &&
+            failure.error.code !== 'invalid_import_response' &&
+            failure.error.code !== 'unknown_import_status' &&
+            failure.error.code !== 'import_result_missing'
+          ) {
+            const requestKey = jobRequestKeys.get(failure.job.jobId);
+            if (requestKey) importRequestIds.current.delete(requestKey);
+          }
+          handleImportError(failure.error, failure.job.name);
+        }
+        if (timedOutNames.length > 0) {
+          userToast({
+            description: m.source_import_background_files({
+              names: timedOutNames.join(', '),
+            }),
+            title: m.source_import_background_title(),
+          });
+        }
         remaining = rest;
       }
       if (drainAbort.current.signal.aborted) return;
-      onClose();
+      if (!hadIssue) onClose();
+    } catch (error) {
+      if (!drainAbort.current.signal.aborted) handleImportError(error);
     } finally {
       setUnsentCount(0);
       setIsDraining(false);

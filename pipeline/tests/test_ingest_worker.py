@@ -87,9 +87,12 @@ def _ingest_payload(**overrides):
         "parseMode": "fast",
         "captionImages": False,
         "actorUserId": "u_1",
-        "ingestModelKey": "ingest",
+        "reservationId": "cr_1",
+        "ingestProviderSlug": "deepseek",
+        "ingestModelSlug": "ingest",
         "ingestModelVersion": 1,
-        "visionModelKey": "vision",
+        "visionProviderSlug": "gemini",
+        "visionModelSlug": "vision",
         "visionModelVersion": 1,
     }
     payload.update(overrides)
@@ -339,7 +342,7 @@ def test_a_vanished_source_reads_as_missing_rather_than_an_s3_error(monkeypatch)
 async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
     parse_stub, monkeypatch
 ):
-    """When every GPU slot is taken, the file stays pending and the attempt is undone."""
+    """When every parser slot is taken, the file stays pending and the attempt is undone."""
     from pipeline.jobs import CapacityWait
 
     yielded: list[str] = []
@@ -350,7 +353,8 @@ async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
     async def _embed_pin(_ws):
         return {
             "embedding_dim": 2560,
-            "embedding_model_key": "qwen-embed",
+            "embedding_provider_slug": "openrouter",
+            "embedding_model_slug": "qwen/qwen3-embedding-4b",
             "embedding_model_version": 1,
         }
 
@@ -454,3 +458,32 @@ async def test_blank_job_type_is_terminal():
 
     with pytest.raises(TerminalError, match="missing job type"):
         await worker.process_job({"id": "job_1", "type": "", "payload": {}})
+
+
+async def test_retry_records_parse_attempt_before_requeue(monkeypatch):
+    from pipeline.jobs import RetryableError
+
+    order: list[tuple[str, str]] = []
+
+    def _record(*_args, **kwargs):
+        order.append(("record", kwargs.get("outcome", _args[-1])))
+
+    def _requeue(job, _error):
+        order.append(("requeue", job["id"]))
+        return "pending"
+
+    monkeypatch.setattr(worker, "_record_parse_attempt", _record)
+    monkeypatch.setattr(worker, "_requeue", _requeue)
+    job = {
+        "id": "job_metered_retry",
+        "type": "ingest",
+        "attempts": 1,
+        "payload": _ingest_payload(),
+    }
+
+    await worker._handle_job_failure(job, RetryableError("temporary"))
+
+    assert order == [
+        ("record", "retrying"),
+        ("requeue", "job_metered_retry"),
+    ]

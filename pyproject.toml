@@ -7,9 +7,9 @@ dependencies = [
   # Everything retrieval-related is ours now; the schema is owned by the Go
   # migrations, so psycopg over the shared Postgres is the whole storage layer.
   "psycopg[binary,pool]>=3.1",
-  # Model providers (OpenAI-compatible: OpenRouter / DeepSeek / Gemini).
-  "openai>=1.30",
+  # Provider HTTP is hand-rolled in pipeline.elitellm (httpx).
   "cryptography>=42",
+  "httpx>=0.27",
   # Modal parse client + Redis progress + retrieval API.
   "requests>=2.31",
   "redis>=5.0",
@@ -17,7 +17,7 @@ dependencies = [
   "boto3>=1.34",
   "Pillow>=10.0",
   "fastapi>=0.110",
-  "python-multipart>=0.0.9",  # FastAPI UploadFile (/transcribe) form parsing
+  "python-multipart>=0.0.9", # FastAPI UploadFile (/transcribe) form parsing
   "uvicorn[standard]>=0.29",
   "pydantic>=2",
   "python-dotenv>=1.0",
@@ -31,9 +31,11 @@ dependencies = [
 # cassettes so the suite replays them for free (see pipeline/tests/README.md).
 # testcontainers starts fresh Postgres/Redis containers for cassette tests.
 # pytest-asyncio drives the async ingest/retrieval entry points.
+# prompt-toolkit powers the model certification selector run through this extra.
 test = [
   "pytest>=8.0",
   "pytest-asyncio>=0.24",
+  "prompt-toolkit>=3.0.37",
   "testcontainers>=4.15.0",
   "vcrpy>=6.0",
 ]
@@ -48,6 +50,9 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["pipeline"]
 include = ["pipeline*"]
+
+[tool.setuptools.package-data]
+pipeline = ["elitellm/providers.json"]
 
 [tool.ruff.lint.isort]
 # Keep first-party grouping stable whether Ruff is invoked from the repo root

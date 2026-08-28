@@ -16,11 +16,17 @@ import (
 )
 
 type modelsInput struct {
-	Surface string `query:"surface" enum:"chat,generate,editor,quiz"`
+	Surface models.UserModelSurface `query:"surface"`
 }
 
 type modelsOutput struct {
 	Body apimodel.ModelsResponse
+}
+
+type modelSurfacesOutput struct {
+	Body struct {
+		Surfaces []models.Surface `json:"surfaces" nullable:"false"`
+	}
 }
 
 type setModelsInput struct {
@@ -29,6 +35,7 @@ type setModelsInput struct {
 
 func (a *api) registerModels(api huma.API) {
 	const tag = "Account"
+	reg(api, http.MethodGet, "/api/model-surfaces", "listModelSurfaces", tag, "Known model surfaces", http.StatusOK, a.listModelSurfaces)
 	reg(api, http.MethodGet, "/api/models", "listModels", tag, "Enabled models for a surface", http.StatusOK, a.listModels)
 	reg(api, http.MethodPatch, "/api/me/models", "setModelPrefs", tag, "Set chat, generate, editor and quiz model preferences", http.StatusNoContent, a.setModelPrefs)
 	reg(api, http.MethodGet, "/api/me/llm-credentials", "listLLMCredentials", tag, "Saved provider keys", http.StatusOK, a.listLLMCredentials)
@@ -36,54 +43,56 @@ func (a *api) registerModels(api huma.API) {
 	reg(api, http.MethodDelete, "/api/me/llm-credentials/{provider}", "deleteLLMCredential", tag, "Remove a provider key", http.StatusNoContent, a.deleteLLMCredential)
 }
 
+func (a *api) listModelSurfaces(context.Context, *struct{}) (*modelSurfacesOutput, error) {
+	out := &modelSurfacesOutput{}
+	out.Body.Surfaces = models.AllSurfaces()
+	return out, nil
+}
+
 func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, error) {
 	out := apimodel.ModelsResponse{Models: []apimodel.ModelOption{}}
 	if in.Surface == "" {
 		return &modelsOutput{Body: out}, nil
 	}
-	surface := in.Surface
+	surface := string(in.Surface)
 	if a.modelReg == nil {
 		return &modelsOutput{Body: out}, nil
 	}
-	prefs, prefErr := a.s.UserLLMPrefs(ctx, userID(ctx))
+	prefs, err := a.s.UserLLMPrefs(ctx, userID(ctx))
+	if err != nil {
+		return nil, hErr(err)
+	}
 	credSlugs, credErr := a.s.LLMCredentialSlugs(ctx, userID(ctx))
 	if credErr != nil {
 		return nil, hErr(credErr)
 	}
-	pref := ""
-	if prefErr == nil {
-		pref = prefs.ModelKey(surface)
-	}
+	pref := prefs.Model(surface)
 	def, err := a.modelReg.DefaultPin(surface)
 	if err == nil {
-		out.DefaultKey = def.Key
+		out.DefaultModel = def.Ref
 	}
-	if pref != "" {
-		out.SelectedKey = pref
+	if !pref.Zero() {
+		out.SelectedModel = pref
 	} else {
-		out.SelectedKey = out.DefaultKey
+		out.SelectedModel = out.DefaultModel
 	}
 
 	var items []listedModel
 	for _, cfg := range a.modelReg.ListEnabled(surface) {
 		hasCred := credSlugs[cfg.ProviderSlug]
 		opt := apimodel.ModelOption{
-			Key:          cfg.Key,
-			DisplayName:  cfg.DisplayName,
-			IsDefault:    cfg.Key == out.DefaultKey,
+			ProviderName: cfg.ProviderName,
+			ModelName:    cfg.ModelName,
+			ModelSlug:    cfg.ModelSlug,
+			IsDefault:    cfg.Ref() == out.DefaultModel,
 			Available:    cfg.Available(hasCred),
 			UsesUserKey:  cfg.UsesUserKey(hasCred),
 			ProviderSlug: cfg.ProviderSlug,
 		}
-		if spec := cfg.Reasoning(); len(spec.Efforts) > 0 || spec.CanDisable || spec.DefaultMode == "on" {
-			opt.Reasoning = &apimodel.ModelReasoning{
-				CanDisable:    spec.CanDisable,
-				Efforts:       spec.Efforts,
-				DefaultMode:   spec.DefaultMode,
-				DefaultEffort: spec.DefaultEffort,
-			}
-			if opt.Reasoning.Efforts == nil {
-				opt.Reasoning.Efforts = []string{}
+		if len(cfg.ThinkingLevels) > 0 {
+			opt.Thinking = &apimodel.ModelThinking{
+				Levels:  append([]string(nil), cfg.ThinkingLevels...),
+				Default: cfg.DefaultThinking,
 			}
 		}
 		items = append(items, listedModel{opt: opt, cfg: cfg})
@@ -95,17 +104,18 @@ func (a *api) listModels(ctx context.Context, in *modelsInput) (*modelsOutput, e
 		if items[i].opt.UsesUserKey != items[j].opt.UsesUserKey {
 			return !items[i].opt.UsesUserKey
 		}
-		return items[i].opt.DisplayName < items[j].opt.DisplayName
+		return models.JoinModelLabel(items[i].opt.ProviderName, items[i].opt.ModelName) <
+			models.JoinModelLabel(items[j].opt.ProviderName, items[j].opt.ModelName)
 	})
 	for _, item := range items {
 		out.Models = append(out.Models, item.opt)
 	}
-	if selected, ok := findListed(items, out.SelectedKey); ok && selected.Reasoning != nil {
-		mode, effort := "", ""
-		if prefErr == nil {
-			mode, effort = prefs.Reasoning(surface)
+	if selected, ok := findListed(items, out.SelectedModel); ok && selected.Thinking != nil {
+		resolved, err := listedCfg(items, out.SelectedModel).ResolveThinking(prefs.Thinking(surface))
+		if err != nil {
+			return nil, hErr(fmt.Errorf("%w: %v", store.ErrModelUnavailable, err))
 		}
-		out.SelectedReasoningMode, out.SelectedReasoningEffort = listedCfg(items, out.SelectedKey).ResolveReasoning(mode, effort)
+		out.SelectedThinking = resolved
 	}
 	return &modelsOutput{Body: out}, nil
 }
@@ -115,18 +125,18 @@ type listedModel struct {
 	cfg models.Config
 }
 
-func findListed(items []listedModel, key string) (apimodel.ModelOption, bool) {
+func findListed(items []listedModel, ref models.Ref) (apimodel.ModelOption, bool) {
 	for _, item := range items {
-		if item.opt.Key == key {
+		if item.cfg.Ref() == ref {
 			return item.opt, true
 		}
 	}
 	return apimodel.ModelOption{}, false
 }
 
-func listedCfg(items []listedModel, key string) models.Config {
+func listedCfg(items []listedModel, ref models.Ref) models.Config {
 	for _, item := range items {
-		if item.opt.Key == key {
+		if item.cfg.Ref() == ref {
 			return item.cfg
 		}
 	}
@@ -135,16 +145,13 @@ func listedCfg(items []listedModel, key string) models.Config {
 
 func (a *api) setModelPrefs(ctx context.Context, in *setModelsInput) (*Empty, error) {
 	if err := a.s.SetModelPrefs(ctx, userID(ctx), store.ModelPrefsPatch{
-		ChatModelKey:            in.Body.ChatModelKey,
-		GenerateModelKey:        in.Body.GenerateModelKey,
-		EditorModelKey:          in.Body.EditorModelKey,
-		QuizModelKey:            in.Body.QuizModelKey,
-		ChatReasoningMode:       in.Body.ChatReasoningMode,
-		ChatReasoningEffort:     in.Body.ChatReasoningEffort,
-		GenerateReasoningMode:   in.Body.GenerateReasoningMode,
-		GenerateReasoningEffort: in.Body.GenerateReasoningEffort,
-		QuizReasoningMode:       in.Body.QuizReasoningMode,
-		QuizReasoningEffort:     in.Body.QuizReasoningEffort,
+		ChatModel:        in.Body.ChatModel,
+		GenerateModel:    in.Body.GenerateModel,
+		EditorModel:      in.Body.EditorModel,
+		QuizModel:        in.Body.QuizModel,
+		ChatThinking:     in.Body.ChatThinking,
+		GenerateThinking: in.Body.GenerateThinking,
+		QuizThinking:     in.Body.QuizThinking,
 	}); err != nil {
 		return nil, hErr(err)
 	}
@@ -152,28 +159,25 @@ func (a *api) setModelPrefs(ctx context.Context, in *setModelsInput) (*Empty, er
 }
 
 type resolvedLLM struct {
-	Cfg             models.Config
-	Rates           store.TokenRates
-	PaidBy          string
-	UserID          string
-	ReasoningMode   string
-	ReasoningEffort string
+	Cfg      models.Config
+	Rates    store.TokenRates
+	PaidBy   string
+	UserID   string
+	Thinking string
 }
 
 func (r resolvedLLM) attach(body map[string]any) {
-	body["modelKey"] = r.Cfg.Key
 	body["configVersion"] = r.Cfg.Version
+	body["providerSlug"] = r.Cfg.ProviderSlug
+	body["modelSlug"] = r.Cfg.ModelSlug
 	if r.UserID != "" {
 		body["userId"] = r.UserID
 	}
 	if r.PaidBy != "" {
 		body["paidBy"] = r.PaidBy
 	}
-	if r.ReasoningMode != "" {
-		body["reasoningMode"] = r.ReasoningMode
-	}
-	if r.ReasoningEffort != "" {
-		body["reasoningEffort"] = r.ReasoningEffort
+	if r.Thinking != "" {
+		body["thinking"] = r.Thinking
 	}
 }
 
@@ -191,11 +195,11 @@ func (a *api) resolveLLM(ctx context.Context, userID, surface string) (resolvedL
 		if err != nil {
 			return out, err
 		}
-		pref := prefs.ModelKey(surface)
-		if pref == "" {
+		pref := prefs.Model(surface)
+		if pref.Zero() {
 			return out, fmt.Errorf("%w: empty %s preference", store.ErrModelUnavailable, surface)
 		}
-		if store.IsBrowserQuizKey(pref) {
+		if store.IsBrowserQuizModel(pref) {
 			return out, fmt.Errorf("%w: browser quiz model", store.ErrModelUnavailable)
 		}
 		cfg, err := a.modelReg.ResolveUser(ctx, pref, surface)
@@ -217,10 +221,13 @@ func (a *api) resolveLLM(ctx context.Context, userID, surface string) (resolvedL
 		} else {
 			out.PaidBy = models.PaidByPlatform
 		}
-		mode, effort := prefs.Reasoning(surface)
-		out.ReasoningMode, out.ReasoningEffort = cfg.ResolveReasoning(mode, effort)
-		if out.ReasoningMode == "on" && out.ReasoningEffort == "" {
-			return out, fmt.Errorf("%w: %s reasoning on with no catalog effort", store.ErrModelUnavailable, cfg.Key)
+		stored := prefs.Thinking(surface)
+		if surface == models.SurfaceEditor {
+			stored = models.ThinkingInstant
+		}
+		out.Thinking, err = cfg.ResolveThinking(stored)
+		if err != nil {
+			return resolvedLLM{}, fmt.Errorf("%w: %v", store.ErrModelUnavailable, err)
 		}
 		return out, nil
 	default:
@@ -263,8 +270,11 @@ func pipelineGenerateError(err error) error {
 	if !errors.As(err, &pe) {
 		return nil
 	}
-	if pe.Decode().Code == "generate_empty" {
+	switch pe.Decode().Code {
+	case "generate_empty":
 		return errGenerateEmpty
+	case "scope_has_no_indexed_content":
+		return errScopeNoIndexedContent
 	}
 	return nil
 }
@@ -275,12 +285,20 @@ func keyErrorFromEvent(code, message string) error {
 		return store.ErrInvalidLLMKey
 	case "key_failed":
 		return store.ErrLLMKeyFailed
+	case "context_too_large", "compaction_failed", "query_too_long", "invalid_scope":
+		return &chatEventError{Code: code, Message: message}
 	default:
-		if message == "" {
-			return nil
-		}
-		return errors.New(message)
+		return nil
 	}
+}
+
+type chatEventError struct {
+	Code    string
+	Message string
+}
+
+func (e *chatEventError) Error() string {
+	return e.Message
 }
 
 func llmKeyPayload(err error) (code, message string, ok bool) {

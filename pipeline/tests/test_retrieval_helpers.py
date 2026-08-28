@@ -30,26 +30,53 @@ def _passage(chunk_id: str, file_id: str = "f_1", **kwargs) -> Passage:
 # ------------------------------------------------------------------- scoping
 
 
-def test_unscoped_context_lets_the_tool_choose():
+async def test_unscoped_context_resolves_to_every_workspace_file():
     ctx = ToolContext(workspace_id="ws_1")
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [
+            {"id": "f_1", "name": "one", "chapter_id": None, "chunks": 1},
+            {"id": "f_2", "name": "two", "chapter_id": None, "chunks": 1},
+        ],
+    }
 
-    assert tools._scoped(ctx, None) is None
-    assert tools._scoped(ctx, ["f_9"]) == ["f_9"]
+    resolved = await tools._resolve_scope(ctx, tools._MISSING)
+
+    assert isinstance(resolved, tools.ResolvedScope)
+    assert resolved.file_ids == ["f_1", "f_2"]
 
 
-def test_agent_cannot_widen_a_scope_the_user_narrowed():
+async def test_agent_cannot_widen_a_scope_the_user_narrowed():
     ctx = ToolContext(workspace_id="ws_1", file_ids=["f_1", "f_2"])
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [
+            {"id": "f_1", "name": "one", "chapter_id": None, "chunks": 1},
+            {"id": "f_2", "name": "two", "chapter_id": None, "chunks": 1},
+            {"id": "f_99", "name": "other", "chapter_id": None, "chunks": 1},
+        ],
+    }
 
-    assert tools._scoped(ctx, ["f_2", "f_99"]) == ["f_2"]
-    assert tools._scoped(ctx, None) == ["f_1", "f_2"]
+    resolved = await tools._resolve_scope(ctx, {"file_ids": ["f_2", "f_99"]})
+
+    assert isinstance(resolved, tools.ToolResult)
+    assert resolved.refused
 
 
-def test_a_fully_out_of_scope_request_falls_back_to_the_scope():
-    """An empty file filter would search the whole workspace, so it must not be
-    the result of asking for files outside the scope."""
+async def test_fully_out_of_scope_request_is_rejected_not_widened():
     ctx = ToolContext(workspace_id="ws_1", file_ids=["f_1"])
+    ctx._scope_outline = {
+        "chapters": [],
+        "files": [
+            {"id": "f_1", "name": "one", "chapter_id": None, "chunks": 1},
+            {"id": "f_99", "name": "other", "chapter_id": None, "chunks": 1},
+        ],
+    }
 
-    assert tools._scoped(ctx, ["f_99"]) == ["f_1"]
+    resolved = await tools._resolve_scope(ctx, {"file_ids": ["f_99"]})
+
+    assert isinstance(resolved, tools.ToolResult)
+    assert resolved.refused
 
 
 def test_material_tool_is_hidden_without_a_gateway(monkeypatch):
@@ -139,6 +166,32 @@ def test_concept_normalization_is_case_and_space_insensitive():
 # ----------------------------------------------------------------- workflows
 
 
+async def test_gather_context_rejects_one_invalid_file_atomically(monkeypatch):
+    async def _outline(_workspace_id):
+        return {
+            "chapters": [],
+            "files": [
+                {
+                    "id": "f_valid",
+                    "name": "valid.md",
+                    "chapter_id": None,
+                    "chunks": 1,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(workflows.store, "workspace_outline", _outline)
+    try:
+        await workflows.gather_context(
+            workspace_id="ws_1",
+            file_ids=["f_valid", "f_missing"],
+        )
+    except workflows.InvalidGenerateScope:
+        pass
+    else:
+        raise AssertionError("one invalid file id must reject the whole scope")
+
+
 def test_extract_json_handles_plain_fenced_and_embedded():
     assert workflows.extract_json('[{"a": 1}]') == [{"a": 1}]
     assert workflows.extract_json('sure:\n```json\n{"x": 2}\n```') == {"x": 2}
@@ -217,29 +270,85 @@ def test_scope_label_names_both_axes():
     assert workflows.scope_label([], []) == ""
 
 
-def test_overflow_only_triggers_with_more_than_one_document():
-    from pipeline.config import cfg
+async def test_generate_refuses_empty_indexed_scope_before_model(monkeypatch):
+    import pytest
 
-    big = "x" * (cfg.llm_input_budget_tokens * 4)
-    one_file = [_passage("c1", file_id="f_1")]
-    two_files = one_file + [_passage("c2", file_id="f_2")]
+    from pipeline.retrieve import service
 
-    assert workflows.overflows(big, one_file) is False
-    assert workflows.overflows(big, two_files) is True
-    assert workflows.overflows("short", two_files) is False
+    spec = ModelConfig(
+        version=1,
+        provider_name="DeepSeek",
+        model_name="Flash",
+        provider_slug="deepseek",
+        model_slug="deepseek-v4-flash",
+        thinking_levels=("instant",),
+        default_thinking="instant",
+        context_window_tokens=100_000,
+    )
+    req = service.GenerateReq(
+        providerSlug=spec.provider_slug,
+        modelSlug=spec.model_slug,
+        configVersion=spec.version,
+        userId="u_1",
+        paidBy="platform",
+        thinking="instant",
+        workspaceId="ws_1",
+        kind="flashcards",
+        count=5,
+        levels=["recall"],
+        types=["mcq"],
+        detail="standard",
+        diagramType="auto",
+    )
+
+    async def _gather(**_kwargs):
+        return "", []
+
+    async def _produce(**_kwargs):
+        raise AssertionError("produce must not run without indexed content")
+
+    monkeypatch.setattr(service, "_bind_llm", lambda _req: None)
+    monkeypatch.setattr(service.models, "resolve_query_model", lambda *_a, **_k: spec)
+    monkeypatch.setattr(service.workflows, "gather_context", _gather)
+    monkeypatch.setattr(service.workflows, "produce", _produce)
+
+    with pytest.raises(workflows.GenerateNoContent):
+        await service._generate(req)
+
+
+async def test_pipeline_chat_defense_rejects_query_token_overflow():
+    import json
+
+    from pipeline.retrieve import service
+
+    req = service.ChatStreamReq(
+        providerSlug="deepseek",
+        modelSlug="deepseek-v4-flash",
+        configVersion=1,
+        userId="u_1",
+        paidBy="platform",
+        thinking="instant",
+        query="光" * (service.QUERY_MAX_ESTIMATED_TOKENS + 1),
+        workspaceId="ws_1",
+        spendSessionId="cr_1",
+    )
+
+    chunk = await anext(service._chat_events(req, None))
+    payload = json.loads(chunk.removeprefix("data: "))
+
+    assert payload["code"] == "query_too_long"
 
 
 # ------------------------------------------------------- query embed prefix
 
 
-def _embed_spec(provider_model_id: str) -> ModelConfig:
+def _embed_spec(litellm_model_id: str) -> ModelConfig:
     return ModelConfig(
-        model_key="qwen-embed",
         version=1,
-        display_name="embed",
+        provider_name="Qwen",
+        model_name="embed",
         provider_slug="openrouter",
-        base_url="https://example.test",
-        provider_model_id=provider_model_id,
+        model_slug=litellm_model_id,
         params={"dimensions": 2560},
         surfaces=("embedding",),
     )
@@ -271,7 +380,8 @@ async def test_search_prefixes_qwen3_vectors_not_lexical_terms(monkeypatch):
 
     async def pin(_ws: str) -> dict[str, object]:
         return {
-            "embedding_model_key": "qwen-embed",
+            "embedding_provider_slug": "openrouter",
+            "embedding_model_slug": "qwen/qwen3-embedding-4b",
             "embedding_model_version": 1,
             "embedding_dim": 2560,
         }
@@ -303,7 +413,8 @@ async def test_search_skips_prefix_when_workspace_pin_is_not_qwen3(monkeypatch):
 
     async def pin(_ws: str) -> dict[str, object]:
         return {
-            "embedding_model_key": "openai-embed",
+            "embedding_provider_slug": "openai",
+            "embedding_model_slug": "text-embedding-3-large",
             "embedding_model_version": 1,
             "embedding_dim": 2560,
         }
@@ -331,6 +442,20 @@ async def test_search_skips_prefix_when_workspace_pin_is_not_qwen3(monkeypatch):
 # ------------------------------------------------------------ file summaries
 
 
+def _ingest_spec() -> ModelConfig:
+    return ModelConfig(
+        version=1,
+        provider_name="DeepSeek",
+        model_name="Flash",
+        provider_slug="deepseek",
+        model_slug="deepseek-v4-flash-vision-exp",
+        surfaces=("ingest",),
+        thinking_levels=("instant",),
+        default_thinking="instant",
+        context_window_tokens=100_000,
+    )
+
+
 async def test_a_failed_file_summary_retries_instead_of_storing_a_blank(monkeypatch):
     """A blank summary is permanent: nothing refills it and donors copy it."""
     import pytest
@@ -342,7 +467,7 @@ async def test_a_failed_file_summary_retries_instead_of_storing_a_blank(monkeypa
     async def _explode(*_a, **_k):
         raise RuntimeError("provider is down")
 
-    monkeypatch.setattr(indexing, "ingest_spec", lambda: object())
+    monkeypatch.setattr(indexing, "ingest_spec", _ingest_spec)
     monkeypatch.setattr(indexing.models, "complete_text", _explode)
 
     with pytest.raises(RetryableError):
@@ -360,7 +485,7 @@ async def test_the_summary_prompt_excludes_the_uploaders_file_name(monkeypatch):
         seen.append(messages[-1]["content"])
         return '{"descriptor": "Chlorophyll absorbs light.", "summary": "A summary"}'
 
-    monkeypatch.setattr(indexing, "ingest_spec", lambda: object())
+    monkeypatch.setattr(indexing, "ingest_spec", _ingest_spec)
     monkeypatch.setattr(indexing.models, "complete_text", _capture)
 
     descriptor, summary = await indexing.summarize_file(

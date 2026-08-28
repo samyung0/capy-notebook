@@ -10,6 +10,7 @@ const dateTime = new Intl.DateTimeFormat('en-US', {
 const shortDate = new Intl.DateTimeFormat('en-US', {
   day: 'numeric',
   month: 'short',
+  timeZone: 'UTC',
 });
 
 export function formatCredits(micros: number): string {

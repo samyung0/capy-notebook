@@ -57,26 +57,32 @@ def vector_literal(values: list[float]) -> str:
 # Per pin, not per width. rag_chunk_vectors_2560 is the historical name for
 # qwen-embed v1. A later model, including another 2560-d one, gets its own
 # table and a new entry here.
-_VECTOR_TABLES = {("qwen-embed", 1): "rag_chunk_vectors_2560"}
+_VECTOR_TABLES = {
+    ("openrouter", "qwen/qwen3-embedding-4b", 1): "rag_chunk_vectors_2560"
+}
 
 
-def vector_table(model_key: str, version: int) -> str:
+def vector_table(provider_slug: str, model_slug: str, version: int) -> str:
     """The vector table for one embedding pin.
 
     Interpolated into SQL, so it is looked up rather than formatted: only pins
     that exist in the schema can ever reach a statement.
     """
-    table = _VECTOR_TABLES.get((model_key, int(version)))
+    table = _VECTOR_TABLES.get((provider_slug, model_slug, int(version)))
     if table is None:
         raise RuntimeError(
-            f"no vector table for {model_key} v{version}; add one to "
+            f"no vector table for {provider_slug}/{model_slug} v{version}; add one to "
             "0001_init.sql and _VECTOR_TABLES together"
         )
     return table
 
 
 def vector_table_for_pin(pin: dict[str, Any]) -> str:
-    return vector_table(pin["embedding_model_key"], int(pin["embedding_model_version"]))
+    return vector_table(
+        pin["embedding_provider_slug"],
+        pin["embedding_model_slug"],
+        int(pin["embedding_model_version"]),
+    )
 
 
 async def workspace_embedding_pin(workspace_id: str) -> dict[str, Any]:
@@ -91,7 +97,8 @@ async def workspace_embedding_pin(workspace_id: str) -> dict[str, Any]:
     async with db.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT embedding_model_key, embedding_model_version, embedding_dim
+            SELECT embedding_provider_slug, embedding_model_slug,
+                   embedding_model_version, embedding_dim
             FROM workspaces WHERE id = %s
             """,
             (workspace_id,),
@@ -213,7 +220,8 @@ async def find_ready_donor(
     *,
     source_sha256: str,
     pipeline_identity: str,
-    embedding_model_key: str,
+    embedding_provider_slug: str,
+    embedding_model_slug: str,
     embedding_model_version: int,
     embedding_dim: int,
 ) -> dict[str, Any] | None:
@@ -231,13 +239,15 @@ async def find_ready_donor(
         cur = await conn.execute(
             """
             SELECT id, workspace_id, content_hash,
-                   embedding_model_key, embedding_model_version, embedding_dim
+                   embedding_provider_slug, embedding_model_slug,
+                   embedding_model_version, embedding_dim
             FROM rag_contents
             WHERE source_sha256 = %s
               AND pipeline_identity = %s
               AND status = 'ready'
             ORDER BY (
-                embedding_model_key = %s
+                embedding_provider_slug = %s
+                AND embedding_model_slug = %s
                 AND embedding_model_version = %s
                 AND embedding_dim = %s
             ) DESC, updated_at DESC
@@ -246,7 +256,8 @@ async def find_ready_donor(
             (
                 source_sha256,
                 pipeline_identity,
-                embedding_model_key,
+                embedding_provider_slug,
+                embedding_model_slug,
                 embedding_model_version,
                 embedding_dim,
             ),
@@ -325,7 +336,8 @@ async def copy_content_from_donor(
         cur = await conn.execute(
             """
             SELECT id, workspace_id, content_hash, source_sha256, pipeline_identity,
-                   embedding_model_key, embedding_model_version, embedding_dim
+                   embedding_provider_slug, embedding_model_slug,
+                   embedding_model_version, embedding_dim
             FROM rag_contents
             WHERE id = %s AND status = 'ready'
             FOR SHARE
@@ -426,7 +438,8 @@ async def copy_content_from_donor(
             UPDATE rag_contents SET
                 source_sha256 = %s,
                 pipeline_identity = %s,
-                embedding_model_key = CASE WHEN %s THEN %s ELSE embedding_model_key END,
+                embedding_provider_slug = CASE WHEN %s THEN %s ELSE embedding_provider_slug END,
+                embedding_model_slug = CASE WHEN %s THEN %s ELSE embedding_model_slug END,
                 embedding_model_version = CASE WHEN %s THEN %s ELSE embedding_model_version END,
                 embedding_dim = CASE WHEN %s THEN %s ELSE embedding_dim END,
                 updated_at = now()
@@ -436,7 +449,9 @@ async def copy_content_from_donor(
                 pin["source_sha256"],
                 pin["pipeline_identity"],
                 copy_vectors,
-                pin["embedding_model_key"],
+                pin["embedding_provider_slug"],
+                copy_vectors,
+                pin["embedding_model_slug"],
                 copy_vectors,
                 pin["embedding_model_version"],
                 copy_vectors,
@@ -541,13 +556,15 @@ async def replace_content_chunks(
         await conn.execute(
             """
             UPDATE rag_contents SET
-                embedding_model_key = %s,
+                embedding_provider_slug = %s,
+                embedding_model_slug = %s,
                 embedding_model_version = %s,
                 embedding_dim = %s
             WHERE id = %s
             """,
             (
-                pin["embedding_model_key"] if rows else None,
+                pin["embedding_provider_slug"] if rows else None,
+                pin["embedding_model_slug"] if rows else None,
                 pin["embedding_model_version"] if rows else None,
                 pin["embedding_dim"] if rows else None,
                 content_id,
@@ -771,7 +788,11 @@ async def neighbor_chunks(
 
 
 async def related_concepts(
-    *, workspace_id: str, name: str, limit: int = 12
+    *,
+    workspace_id: str,
+    name: str,
+    file_ids: list[str] | None = None,
+    limit: int = 12,
 ) -> list[dict[str, Any]]:
     """Concepts co-mentioned with this one, and where they are discussed.
 
@@ -788,8 +809,12 @@ async def related_concepts(
                 WHERE workspace_id = %(ws)s AND norm = %(norm)s
             ),
             seed_chunks AS (
-                SELECT chunk_id FROM rag_concept_mentions
-                WHERE concept_id IN (SELECT id FROM seed)
+                SELECT DISTINCT m.chunk_id
+                  FROM rag_concept_mentions m
+                  JOIN rag_chunks rc ON rc.id = m.chunk_id
+                  JOIN rag_file_contents fc ON fc.content_id = rc.content_id
+                 WHERE m.concept_id IN (SELECT id FROM seed)
+                   AND (%(no_filter)s OR fc.file_id = ANY(%(file_ids)s))
             )
             SELECT c.name,
                    count(DISTINCT m.chunk_id) AS mentions,
@@ -802,11 +827,18 @@ async def related_concepts(
             WHERE m.chunk_id IN (SELECT chunk_id FROM seed_chunks)
               AND c.norm <> %(norm)s
               AND c.workspace_id = %(ws)s
+              AND (%(no_filter)s OR fc.file_id = ANY(%(file_ids)s))
             GROUP BY c.name
             ORDER BY mentions DESC
             LIMIT %(limit)s
             """,
-            {"ws": workspace_id, "norm": normalize_concept(name), "limit": limit},
+            {
+                "ws": workspace_id,
+                "norm": normalize_concept(name),
+                "file_ids": list(file_ids or []),
+                "no_filter": not file_ids,
+                "limit": limit,
+            },
         )
         return [dict(row) for row in await cur.fetchall()]
 
@@ -854,7 +886,9 @@ async def workspace_outline(workspace_id: str) -> dict[str, Any]:
     return {"chapters": chapters, "files": files}
 
 
-async def file_summaries(file_ids: list[str]) -> list[dict[str, Any]]:
+async def file_summaries(
+    workspace_id: str, file_ids: list[str]
+) -> list[dict[str, Any]]:
     if not file_ids:
         return []
     db = await pool()
@@ -866,9 +900,9 @@ async def file_summaries(file_ids: list[str]) -> list[dict[str, Any]]:
             FROM files f
             LEFT JOIN rag_file_contents fc ON fc.file_id = f.id
             LEFT JOIN rag_content_summaries cs ON cs.content_id = fc.content_id
-            WHERE f.id = ANY(%s)
+            WHERE f.workspace_id = %s AND f.id = ANY(%s)
             """,
-            (file_ids,),
+            (workspace_id, file_ids),
         )
         rows = [dict(row) for row in await cur.fetchall()]
     by_id = {row["id"]: row for row in rows}
@@ -888,7 +922,7 @@ async def file_ids_for_names(workspace_id: str, names: list[str]) -> list[str]:
 
 
 async def read_file_range(
-    *, file_id: str, start: int, count: int
+    *, workspace_id: str, file_id: str, start: int, count: int
 ) -> list[dict[str, Any]]:
     db = await pool()
     async with db.connection() as conn:
@@ -899,59 +933,13 @@ async def read_file_range(
             FROM rag_file_contents fc
             JOIN files f ON f.id = fc.file_id
             JOIN rag_chunks c ON c.content_id = fc.content_id
-            WHERE fc.file_id = %s AND c.chunk_idx >= %s
+            WHERE f.workspace_id = %s AND fc.file_id = %s AND c.chunk_idx >= %s
             ORDER BY c.chunk_idx
             LIMIT %s
             """,
-            (file_id, start, count),
+            (workspace_id, file_id, start, count),
         )
         return [dict(row) for row in await cur.fetchall()]
-
-
-async def validate_source_refs(
-    workspace_id: str, refs: list[dict[str, Any]]
-) -> list[dict[str, Any]]:
-    """Keep checkpoint refs whose file still belongs to this workspace."""
-    if not refs:
-        return []
-    file_ids = [str(ref.get("fileId") or "") for ref in refs if ref.get("fileId")]
-    chunk_ids = [str(ref.get("chunkId") or "") for ref in refs if ref.get("chunkId")]
-    if not file_ids:
-        return []
-    db = await pool()
-    async with db.connection() as conn:
-        cur = await conn.execute(
-            """
-            SELECT f.id
-              FROM files f
-             WHERE f.workspace_id = %s AND f.id = ANY(%s)
-            """,
-            (workspace_id, file_ids),
-        )
-        allowed = {row["id"] for row in await cur.fetchall()}
-        live_chunks: set[str] = set()
-        if chunk_ids:
-            cur = await conn.execute(
-                """
-                SELECT c.id
-                  FROM rag_chunks c
-                  JOIN rag_file_contents fc ON fc.content_id = c.content_id
-                  JOIN files f ON f.id = fc.file_id
-                 WHERE f.workspace_id = %s AND c.id = ANY(%s)
-                """,
-                (workspace_id, chunk_ids),
-            )
-            live_chunks = {row["id"] for row in await cur.fetchall()}
-    out: list[dict[str, Any]] = []
-    for ref in refs:
-        file_id = str(ref.get("fileId") or "")
-        chunk_id = str(ref.get("chunkId") or "")
-        if file_id not in allowed:
-            continue
-        if chunk_id and chunk_id not in live_chunks:
-            continue
-        out.append(ref)
-    return out
 
 
 def decode_regions(value: Any) -> list[dict[str, Any]]:

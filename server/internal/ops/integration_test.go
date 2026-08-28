@@ -3,17 +3,26 @@ package ops
 import (
 	"os"
 	"testing"
+
+	"github.com/evonotes/server/internal/testdb"
 )
+
+func TestMain(m *testing.M) {
+	for _, key := range []string{
+		"ANTHROPIC_API_KEY",
+		"DEEPSEEK_API_KEY",
+		"OPENAI_API_KEY",
+		"GEMINI_API_KEY",
+		"OPENROUTER_API_KEY",
+	} {
+		if os.Getenv(key) == "" {
+			_ = os.Setenv(key, "test-"+key)
+		}
+	}
+	os.Exit(m.Run())
+}
 
 func integrationDSN(t *testing.T) string {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn != "" {
-		return dsn
-	}
-	if os.Getenv("OPS_INTEGRATION_REQUIRED") == "1" {
-		t.Fatal("TEST_DATABASE_URL is required for ops integration tests")
-	}
-	t.Skip("TEST_DATABASE_URL is not set")
-	return ""
+	return testdb.URL(t)
 }

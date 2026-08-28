@@ -2,9 +2,9 @@ import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
-  Line,
-  LineChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -14,6 +14,7 @@ import type { Overview } from '@/api';
 import { useOpsApp } from '@/app-context';
 import {
   ErrorState,
+  FreshnessNote,
   MetricCard,
   PageHeader,
   PageLoading,
@@ -37,6 +38,7 @@ import {
   formatBytes,
   formatCount,
   formatCredits,
+  formatDateTime,
   formatShortDate,
 } from '@/format';
 
@@ -46,17 +48,37 @@ const chartColors = [
   'var(--chart-3)',
   'var(--chart-4)',
   'var(--chart-5)',
+  '#0f766e',
+  '#7c3aed',
+  '#be123c',
 ];
 
 type UsagePoint = Overview['byKind'][number];
 type ChartRow = { day: string; [key: string]: string | number };
 
-function pivotUsage(points: UsagePoint[]): {
+function pivotUsage(
+  points: UsagePoint[],
+  dataAsOf: string
+): {
   rows: ChartRow[];
   groups: string[];
 } {
   const days = new Map<string, ChartRow>();
   const groups = [...new Set(points.map((point) => point.key))].sort();
+  const now = new Date(dataAsOf);
+  const cursor = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const end = new Date(
+    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())
+  );
+  while (cursor <= end) {
+    const day = cursor.toISOString().slice(0, 10);
+    const row: ChartRow = { day };
+    for (const group of groups) {
+      row[group] = 0;
+    }
+    days.set(day, row);
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
   for (const point of points) {
     const day = point.day.slice(0, 10);
     const row = days.get(day) ?? { day };
@@ -74,13 +96,18 @@ function pivotUsage(points: UsagePoint[]): {
 function UsageChart({
   title,
   description,
+  dataAsOf,
   points,
 }: {
   title: string;
   description: string;
+  dataAsOf: string;
   points: UsagePoint[];
 }) {
-  const { rows, groups } = useMemo(() => pivotUsage(points), [points]);
+  const { rows, groups } = useMemo(
+    () => pivotUsage(points, dataAsOf),
+    [dataAsOf, points]
+  );
   return (
     <Card className="min-w-0 shadow-sm">
       <CardHeader>
@@ -89,12 +116,12 @@ function UsageChart({
       </CardHeader>
       <CardContent>
         <div
-          aria-label={`${title} line chart`}
+          aria-label={`${title} stacked bar chart`}
           className="h-72 min-w-0"
           role="img"
         >
           <ResponsiveContainer height="100%" width="100%">
-            <LineChart data={rows} margin={{ left: 4, right: 12, top: 4 }}>
+            <BarChart data={rows} margin={{ left: 4, right: 12, top: 4 }}>
               <CartesianGrid stroke="var(--border)" strokeDasharray="3 3" />
               <XAxis
                 axisLine={false}
@@ -121,17 +148,15 @@ function UsageChart({
                 labelFormatter={(value) => formatShortDate(String(value))}
               />
               {groups.map((group, index) => (
-                <Line
+                <Bar
                   dataKey={group}
-                  dot={false}
+                  fill={chartColors[index % chartColors.length]}
                   key={group}
                   name={group}
-                  stroke={chartColors[index % chartColors.length]}
-                  strokeWidth={2}
-                  type="monotone"
+                  stackId="credits"
                 />
               ))}
-            </LineChart>
+            </BarChart>
           </ResponsiveContainer>
         </div>
         <div className="mt-3 flex flex-wrap gap-x-4 gap-y-2">
@@ -161,7 +186,6 @@ export function OverviewPage() {
   const { data, error, isPending, refetch } = useQuery({
     queryFn: api.overview,
     queryKey: ['overview'],
-    refetchInterval: 30_000,
   });
 
   if (isPending) {
@@ -174,7 +198,12 @@ export function OverviewPage() {
   return (
     <>
       <PageHeader
-        description="Thirty-day usage, storage, growth, and queue activity. Refreshes every 30 seconds."
+        actions={
+          <FreshnessNote>
+            Live ledger and queue data, cached and refreshed every 30 seconds.
+          </FreshnessNote>
+        }
+        description={`Current-month usage in UTC, storage, growth, and queue activity. Data as of ${formatDateTime(data.dataAsOf)}.`}
         title="Overview"
       />
 
@@ -199,11 +228,13 @@ export function OverviewPage() {
 
       <section className="grid min-w-0 gap-4 xl:grid-cols-2">
         <UsageChart
+          dataAsOf={data.dataAsOf}
           description="Credits grouped by billable event kind."
           points={data.byKind}
           title="Credits by kind"
         />
         <UsageChart
+          dataAsOf={data.dataAsOf}
           description="Credits grouped by product surface."
           points={data.bySurface}
           title="Credits by surface"
@@ -240,7 +271,7 @@ export function OverviewPage() {
           <CardHeader>
             <CardTitle>Top credit users</CardTitle>
             <CardDescription>
-              Highest spend in the current period.
+              Highest spend in the current month.
             </CardDescription>
           </CardHeader>
           <CardContent>

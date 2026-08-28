@@ -26,6 +26,7 @@ type HandlerConfig struct {
 func NewHandler(
 	read *ReadStore,
 	registry *RegistryStore,
+	actions *AdminStore,
 	config HandlerConfig,
 ) http.Handler {
 	router := chi.NewRouter()
@@ -40,27 +41,86 @@ func NewHandler(
 			writeJSON(w, http.StatusOK, principal)
 		})
 		api.Get("/overview", func(w http.ResponseWriter, r *http.Request) {
-			days, err := overviewDays(r)
+			if _, ok := requirePermission(w, r, PermReadAll); !ok {
+				return
+			}
+			value, err := read.Overview(r.Context())
+			respond(w, value, err)
+		})
+		api.Get("/health", func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := requirePermission(w, r, PermReadAll); !ok {
+				return
+			}
+			value, err := read.Health(r.Context(), config.StuckJobMinutes)
+			respond(w, value, err)
+		})
+		api.Get("/reconciliation", func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := requirePermission(w, r, PermReadAll); !ok {
+				return
+			}
+			value, err := read.Reconciliation(r.Context())
+			respond(w, value, err)
+		})
+		api.Get("/audit", func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := requirePermission(w, r, PermReadAll); !ok {
+				return
+			}
+			beforeID, limit, err := auditPageParams(r)
 			if err != nil {
 				respond(w, nil, err)
 				return
 			}
-			value, err := read.Overview(r.Context(), days)
+			value, err := read.AuditEvents(r.Context(), beforeID, limit)
 			respond(w, value, err)
 		})
-		api.Get("/health", func(w http.ResponseWriter, r *http.Request) {
-			value, err := read.Health(r.Context(), config.StuckJobMinutes)
-			respond(w, value, err)
+		api.Post("/reconciliation/{jobType}", func(w http.ResponseWriter, r *http.Request) {
+			principal, ok := requirePermission(w, r, PermExecuteReconciliation)
+			if !ok {
+				return
+			}
+			jobType := chi.URLParam(r, "jobType")
+			if jobType != "storage" && jobType != "stripe" {
+				writeError(
+					w, http.StatusBadRequest,
+					"invalid_reconciliation_job",
+					"reconciliation job must be storage or stripe",
+				)
+				return
+			}
+			if actions == nil || !actions.Configured() {
+				writeError(
+					w, http.StatusServiceUnavailable,
+					"actions_unavailable", "operator actions unavailable",
+				)
+				return
+			}
+			value, err := actions.RequestReconciliation(
+				r.Context(), principal, jobType,
+			)
+			if err != nil {
+				respond(w, nil, err)
+				return
+			}
+			writeJSON(w, http.StatusAccepted, value)
 		})
 		api.Get("/users/search", func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := requirePermission(w, r, PermReadAll); !ok {
+				return
+			}
 			value, err := read.SearchUsers(r.Context(), r.URL.Query().Get("q"))
 			respond(w, value, err)
 		})
 		api.Get("/users/{userID}", func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := requirePermission(w, r, PermReadAll); !ok {
+				return
+			}
 			value, err := read.User(r.Context(), chi.URLParam(r, "userID"))
 			respond(w, value, err)
 		})
 		api.Get("/costs", func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := requirePermission(w, r, PermReadAll); !ok {
+				return
+			}
 			from, to, err := costRange(r)
 			if err != nil {
 				respond(w, nil, err)
@@ -68,10 +128,20 @@ func NewHandler(
 			}
 			value, err := read.Costs(
 				r.Context(), from, to, r.URL.Query().Get("groupBy"),
+				r.URL.Query().Get("bucket"),
 			)
 			respond(w, value, err)
 		})
+		api.Get("/providers", func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := requirePermission(w, r, PermReadAll); !ok {
+				return
+			}
+			respond(w, listEliteLLMProviders(), nil)
+		})
 		api.Get("/registry", func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := requirePermission(w, r, PermReadAll); !ok {
+				return
+			}
 			if registry == nil {
 				writeError(
 					w, http.StatusServiceUnavailable, "registry_unavailable",
@@ -83,11 +153,8 @@ func NewHandler(
 			respond(w, value, err)
 		})
 		api.Post("/registry/save", func(w http.ResponseWriter, r *http.Request) {
-			principal, _ := PrincipalFromContext(r.Context())
-			if principal.Role != RoleAdmin {
-				writeError(
-					w, http.StatusForbidden, "admin_required", "admin role required",
-				)
+			principal, ok := requirePermission(w, r, PermWriteRegistry)
+			if !ok {
 				return
 			}
 			if registry == nil || !registry.WriteConfigured() {
@@ -113,16 +180,25 @@ func NewHandler(
 	return router
 }
 
-func overviewDays(r *http.Request) (int, error) {
-	raw := r.URL.Query().Get("days")
-	if raw == "" {
-		return 30, nil
+func auditPageParams(r *http.Request) (int64, int, error) {
+	beforeID := int64(0)
+	limit := auditPageMax
+	var err error
+	if raw := r.URL.Query().Get("beforeId"); raw != "" {
+		beforeID, err = strconv.ParseInt(raw, 10, 64)
+		if err != nil || beforeID < 1 {
+			return 0, 0, validation("beforeId must be a positive integer")
+		}
 	}
-	days, err := strconv.Atoi(raw)
-	if err != nil || days < 1 || days > 90 {
-		return 0, validation("days must be between 1 and 90")
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		limit, err = strconv.Atoi(raw)
+		if err != nil || limit < 1 || limit > auditPageMax {
+			return 0, 0, validation(
+				"audit limit must be between 1 and %d", auditPageMax,
+			)
+		}
 	}
-	return days, nil
+	return beforeID, limit, nil
 }
 
 func costRange(r *http.Request) (time.Time, time.Time, error) {
@@ -188,6 +264,21 @@ func respond(w http.ResponseWriter, value any, err error) {
 	}
 	switch {
 	case IsValidation(err):
+		var invalid *ValidationError
+		if errors.As(err, &invalid) && invalid.Code != "" {
+			payload := map[string]any{"code": invalid.Code, "message": invalid.Message}
+			if invalid.ModelSlug != "" {
+				payload["modelSlug"] = invalid.ModelSlug
+			}
+			if invalid.Surface != "" {
+				payload["surface"] = invalid.Surface
+			}
+			if invalid.Reason != "" {
+				payload["reason"] = invalid.Reason
+			}
+			writeJSON(w, http.StatusBadRequest, payload)
+			return
+		}
 		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
 	case IsConflict(err):
 		var conflict *ConflictError
@@ -203,7 +294,7 @@ func respond(w http.ResponseWriter, value any, err error) {
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "record not found")
 	case errors.Is(err, ErrForbidden):
-		writeError(w, http.StatusForbidden, "admin_required", "admin role required")
+		writePermissionDenied(w)
 	default:
 		slog.Error("ops request failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "request failed")
@@ -233,6 +324,23 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 
 func writeError(w http.ResponseWriter, status int, code, message string) {
 	writeJSON(w, status, map[string]string{"code": code, "message": message})
+}
+
+func writePermissionDenied(w http.ResponseWriter) {
+	writeError(w, http.StatusForbidden, "permission_denied", "permission denied")
+}
+
+func requirePermission(
+	w http.ResponseWriter,
+	r *http.Request,
+	permission string,
+) (Principal, bool) {
+	principal, _ := PrincipalFromContext(r.Context())
+	if !principal.Has(permission) {
+		writePermissionDenied(w)
+		return principal, false
+	}
+	return principal, true
 }
 
 func noStore(next http.Handler) http.Handler {

@@ -35,6 +35,8 @@ type internalMaterialReq struct {
 	Title       string   `json:"title"`
 	Chapters    []string `json:"chapters"`
 	FileNames   []string `json:"fileNames"`
+	ChapterIDs  []string `json:"chapterIds"`
+	FileIDs     []string `json:"fileIds"`
 
 	Questions json.RawMessage `json:"questions"`
 	Cards     []struct {
@@ -71,7 +73,6 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-
 	if req.ID != "" {
 		existing, err := a.s.GetMaterial(ctx, req.ID)
 		if err == nil {
@@ -86,6 +87,18 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 			a.fail(w, err)
 			return
 		}
+	}
+	if err := a.resolveInternalMaterialScope(ctx, &req); err != nil {
+		if errors.Is(err, errScopeNoIndexedContent) {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"code": "scope_has_no_indexed_content", "message": errScopeNoIndexedContent.Error(),
+			})
+			return
+		}
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"code": "invalid_scope", "message": "The requested scope is invalid or unavailable.",
+		})
+		return
 	}
 
 	// Do not recheck inference credits here. The provider call that emitted this
@@ -134,12 +147,24 @@ func (a *api) internalCreateMaterial(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, created)
 }
 
+func (a *api) resolveInternalMaterialScope(ctx context.Context, req *internalMaterialReq) error {
+	opts := generateOpts{FileIds: req.FileIDs, Chapters: req.ChapterIDs}
+	fileIDs, fileNames, chapterNames, err := a.resolveScope(ctx, req.WorkspaceID, &opts)
+	if err != nil {
+		return err
+	}
+	req.FileIDs = fileIDs
+	req.FileNames = fileNames
+	req.Chapters = chapterNames
+	return nil
+}
+
 func (a *api) insertInternalMaterial(ctx context.Context, req internalMaterialReq, title, wsName string) (map[string]any, error) {
 	switch req.Kind {
 	case "quiz":
 		quiz, err := a.s.CreateQuiz(ctx, store.Quiz{
 			ID: req.ID, UserID: req.UserID, Name: title, WorkspaceID: req.WorkspaceID, WorkspaceName: wsName,
-			Chapters: req.Chapters, Questions: req.Questions, Privacy: "private",
+			Chapters: req.Chapters, ScopeFileNames: req.FileNames, Questions: req.Questions, Privacy: "private",
 			TimeLimitMin: req.TimeLimitMin,
 		})
 		if err != nil {
@@ -151,7 +176,9 @@ func (a *api) insertInternalMaterial(ctx context.Context, req internalMaterialRe
 		for _, c := range req.Cards {
 			cards = append(cards, [2]string{c.Front, c.Back})
 		}
-		deck, err := a.s.CreateDeckWithCards(ctx, req.UserID, title, "green", req.WorkspaceID, cards, req.ID)
+		deck, err := a.s.CreateDeckWithCards(
+			ctx, req.UserID, title, "green", req.WorkspaceID, cards, req.ID, req.Chapters, req.FileNames,
+		)
 		if err != nil {
 			return nil, err
 		}

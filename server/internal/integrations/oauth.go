@@ -3,14 +3,234 @@ package integrations
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"strings"
+	"time"
 
 	"github.com/evonotes/server/internal/sourceupload"
 )
+
+var (
+	ErrImportFileUnavailable = errors.New("provider file is unavailable")
+	ErrUnsupportedImportFile = errors.New("provider file type is not supported")
+)
+
+type providerHTTPError struct {
+	provider   string
+	statusCode int
+}
+
+func (e *providerHTTPError) Error() string {
+	return fmt.Sprintf("%s metadata status %d", e.provider, e.statusCode)
+}
+
+func IsRetryableImportProviderError(err error) bool {
+	var providerErr *providerHTTPError
+	return errors.As(err, &providerErr)
+}
+
+func providerMetadataStatusError(
+	provider string,
+	statusCode int,
+	rateLimited bool,
+) error {
+	if statusCode == http.StatusUnauthorized ||
+		statusCode == http.StatusRequestTimeout ||
+		statusCode == http.StatusTooManyRequests ||
+		statusCode >= http.StatusInternalServerError ||
+		rateLimited {
+		return &providerHTTPError{provider: provider, statusCode: statusCode}
+	}
+	return fmt.Errorf(
+		"%w: %s metadata status %d",
+		ErrImportFileUnavailable,
+		provider,
+		statusCode,
+	)
+}
+
+func googleRateLimitResponse(body []byte) bool {
+	var payload struct {
+		Error struct {
+			Errors []struct {
+				Reason string `json:"reason"`
+			} `json:"errors"`
+		} `json:"error"`
+	}
+	if json.Unmarshal(body, &payload) != nil {
+		return false
+	}
+	for _, item := range payload.Error.Errors {
+		switch item.Reason {
+		case "rateLimitExceeded", "userRateLimitExceeded", "backendError":
+			return true
+		}
+	}
+	return false
+}
+
+const googleExportMaxBytes = int64(10_000_000)
+
+var providerHTTP = &http.Client{Timeout: 30 * time.Second}
+
+type ImportFileMetadata struct {
+	Name        string
+	MIMEType    string
+	Size        *int64
+	DownloadURL string
+	ExportPDF   bool
+}
+
+func GoogleExportMaxBytes() int64 { return googleExportMaxBytes }
+
+func GetGoogleFileMetadata(
+	ctx context.Context,
+	accessToken, fileID string,
+) (ImportFileMetadata, error) {
+	if !validGoogleFileID(fileID) {
+		return ImportFileMetadata{}, ErrImportFileUnavailable
+	}
+	endpoint := "https://www.googleapis.com/drive/v3/files/" +
+		url.PathEscape(fileID) +
+		"?fields=id,name,mimeType,size,capabilities(canDownload)"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return ImportFileMetadata{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := providerHTTP.Do(req)
+	if err != nil {
+		return ImportFileMetadata{}, err
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Name         string `json:"name"`
+		MIMEType     string `json:"mimeType"`
+		Size         *int64 `json:"size,string"`
+		Capabilities struct {
+			CanDownload bool `json:"canDownload"`
+		} `json:"capabilities"`
+	}
+	if resp.StatusCode >= 400 {
+		errorBody, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		return ImportFileMetadata{}, providerMetadataStatusError(
+			"google",
+			resp.StatusCode,
+			resp.StatusCode == http.StatusForbidden &&
+				googleRateLimitResponse(errorBody),
+		)
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(&body); err != nil {
+		return ImportFileMetadata{}, err
+	}
+	if strings.TrimSpace(body.Name) == "" || !body.Capabilities.CanDownload {
+		return ImportFileMetadata{}, ErrImportFileUnavailable
+	}
+	meta := ImportFileMetadata{
+		Name:     body.Name,
+		MIMEType: body.MIMEType,
+		Size:     body.Size,
+	}
+	if strings.HasPrefix(body.MIMEType, "application/vnd.google-apps.") {
+		switch body.MIMEType {
+		case "application/vnd.google-apps.document",
+			"application/vnd.google-apps.spreadsheet",
+			"application/vnd.google-apps.presentation",
+			"application/vnd.google-apps.drawing":
+			meta.ExportPDF = true
+			meta.MIMEType = "application/pdf"
+			meta.Size = nil
+			if !strings.EqualFold(path.Ext(meta.Name), ".pdf") {
+				meta.Name += ".pdf"
+			}
+		default:
+			return ImportFileMetadata{}, ErrUnsupportedImportFile
+		}
+	}
+	return meta, nil
+}
+
+func GoogleDownloadURL(fileID string, exportPDF bool) string {
+	escaped := url.PathEscape(fileID)
+	if exportPDF {
+		return "https://www.googleapis.com/drive/v3/files/" + escaped +
+			"/export?mimeType=application/pdf"
+	}
+	return "https://www.googleapis.com/drive/v3/files/" + escaped + "?alt=media"
+}
+
+func validGoogleFileID(fileID string) bool {
+	if fileID == "" {
+		return false
+	}
+	for _, ch := range fileID {
+		if (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
+			(ch >= '0' && ch <= '9') || ch == '_' || ch == '-' {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func GetMicrosoftFileMetadata(
+	ctx context.Context,
+	accessToken, itemID, driveID string,
+) (ImportFileMetadata, error) {
+	base := MicrosoftItemURL(driveID, itemID)
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodGet,
+		base+"?select=id,name,size,file,@microsoft.graph.downloadUrl",
+		nil,
+	)
+	if err != nil {
+		return ImportFileMetadata{}, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := providerHTTP.Do(req)
+	if err != nil {
+		return ImportFileMetadata{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+		return ImportFileMetadata{}, providerMetadataStatusError(
+			"microsoft", resp.StatusCode, false,
+		)
+	}
+	var body struct {
+		Name        string `json:"name"`
+		Size        *int64 `json:"size"`
+		DownloadURL string `json:"@microsoft.graph.downloadUrl"`
+		File        *struct {
+			MIMEType string `json:"mimeType"`
+		} `json:"file"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(&body); err != nil {
+		return ImportFileMetadata{}, err
+	}
+	if strings.TrimSpace(body.Name) == "" || body.File == nil ||
+		body.Size == nil || *body.Size < 0 || body.DownloadURL == "" {
+		return ImportFileMetadata{}, ErrUnsupportedImportFile
+	}
+	downloadURL, err := url.Parse(body.DownloadURL)
+	if err != nil || downloadURL.Scheme != "https" || downloadURL.Host == "" ||
+		downloadURL.User != nil {
+		return ImportFileMetadata{}, ErrImportFileUnavailable
+	}
+	return ImportFileMetadata{
+		Name:        body.Name,
+		MIMEType:    body.File.MIMEType,
+		Size:        body.Size,
+		DownloadURL: body.DownloadURL,
+	}, nil
+}
 
 // Providers supported for file import. OAuth token management lives in Clerk
 // (see clerk.go); this file only talks to the providers' file APIs.

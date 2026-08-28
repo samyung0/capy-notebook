@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -26,6 +27,12 @@ func TestReadStoreQueriesMatchTheProductionSchema(t *testing.T) {
 	if _, err := read.Health(ctx, 30); err != nil {
 		t.Fatalf("health: %v", err)
 	}
+	if _, err := read.Reconciliation(ctx); err != nil {
+		t.Fatalf("reconciliation: %v", err)
+	}
+	if _, err := read.AuditEvents(ctx, 0, auditPageMax); err != nil {
+		t.Fatalf("operator audit: %v", err)
+	}
 	users, err := read.SearchUsers(ctx, "kate")
 	if err != nil {
 		t.Fatalf("search users: %v", err)
@@ -41,8 +48,9 @@ func TestReadStoreQueriesMatchTheProductionSchema(t *testing.T) {
 		time.Now().UTC().AddDate(0, 0, -30),
 		time.Now().UTC(),
 		"surface",
+		"day",
 	); err != nil {
-		t.Fatalf("cost explorer: %v", err)
+		t.Fatalf("usage explorer: %v", err)
 	}
 	var healthIndexes int
 	if err := pool.QueryRow(ctx, `
@@ -50,13 +58,154 @@ func TestReadStoreQueriesMatchTheProductionSchema(t *testing.T) {
 		WHERE schemaname='public'
 		  AND indexname IN (
 			'usage_events_trace_idx',
-			'messages_completed_assistant_idx'
+			'messages_ops_assistant_idx',
+			'provider_calls_reservation_idx',
+			'provider_calls_context_idx',
+			'provider_sessions_trace_idx'
 		  )`,
 	).Scan(&healthIndexes); err != nil {
 		t.Fatal(err)
 	}
-	if healthIndexes != 2 {
-		t.Fatalf("usage health indexes = %d, want 2", healthIndexes)
+	if healthIndexes != 5 {
+		t.Fatalf("usage health indexes = %d, want 5", healthIndexes)
+	}
+}
+
+func TestHealthClassifiesTurnAndProviderLifecycles(t *testing.T) {
+	dsn := integrationDSN(t)
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(pool.Close)
+	read := NewReadStore(store.NewWithPool(pool))
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	userID := "ops_health_user_" + suffix
+	workspaceID := "ops_health_ws_" + suffix
+	conversationID := "ops_health_conv_" + suffix
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO users (id, name, email) VALUES ($1, 'Ops Health', $2)`,
+		userID, userID+"@example.test",
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO workspaces (id, user_id, name, color)
+		VALUES ($1, $2, 'Ops Health Workspace', 'green')`,
+		workspaceID, userID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO conversations (id, user_id, workspace_id)
+		VALUES ($1, $2, $3)`, conversationID, userID, workspaceID,
+	); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = pool.Exec(ctx, `DELETE FROM users WHERE id=$1`, userID)
+	})
+
+	type lifecycleFixture struct {
+		name              string
+		messageStatus     string
+		reservationStatus string
+		callStatus        string
+	}
+	fixtures := []lifecycleFixture{
+		{name: "active", messageStatus: "streaming", reservationStatus: "open", callStatus: "open"},
+		{name: "failed", messageStatus: "error", reservationStatus: "released", callStatus: "abandoned"},
+		{name: "recovered", messageStatus: "complete", reservationStatus: "settled", callStatus: "abandoned"},
+	}
+	for _, fixture := range fixtures {
+		messageID := "m_" + fixture.name + "_" + suffix
+		traceID := "trace_" + fixture.name + "_" + suffix
+		reservationID := "cr_" + fixture.name + "_" + suffix
+		callID := "pc_" + fixture.name + "_" + suffix
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO messages (
+			  id, conversation_id, role, status, metadata
+			) VALUES ($1, $2, 'assistant', $3,
+			          jsonb_build_object('traceId', $4::text))`,
+			messageID, conversationID, fixture.messageStatus, traceID,
+		); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO provider_sessions (
+			  id, actor_user_id, workspace_id, trace_id, surface,
+			  reserved_micros, status, expires_at, settled_at
+			) VALUES ($1, $2, $3, $4, 'chat', 0, $5,
+			          now() + interval '10 minutes',
+			          CASE WHEN $5 = 'open' THEN NULL ELSE now() END)`,
+			reservationID, userID, workspaceID, traceID, fixture.reservationStatus,
+		); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `
+			INSERT INTO provider_calls (
+			  id, reservation_id, actor_user_id, kind, purpose, status
+			) VALUES ($1, $2, $3, 'llm', 'agent', $4)`,
+			callID, reservationID, userID, fixture.callStatus,
+		); err != nil {
+			t.Fatal(err)
+		}
+		if fixture.name == "recovered" {
+			appliedID := "pc_applied_" + suffix
+			if _, err := pool.Exec(ctx, `
+				INSERT INTO provider_calls (
+				  id, reservation_id, actor_user_id, kind, purpose, status,
+				  applied_at
+				) VALUES ($1, $2, $3, 'llm', 'agent', 'applied', now())`,
+				appliedID, reservationID, userID,
+			); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := pool.Exec(ctx, `
+				INSERT INTO usage_events (
+				  trace_id, actor_user_id, workspace_id, kind, surface,
+				  reservation_id, provider_call_id
+				) VALUES ($1, $2, $3, 'llm', 'chat', $4, $5)`,
+				traceID, userID, workspaceID, reservationID, appliedID,
+			); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	staleMessageID := "m_stale_" + suffix
+	if _, err := pool.Exec(ctx, `
+		INSERT INTO messages (id, conversation_id, role, status, metadata)
+		VALUES ($1, $2, 'assistant', 'streaming',
+		        jsonb_build_object('traceId', $3::text))`,
+		staleMessageID, conversationID, "trace_stale_"+suffix,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	health, err := read.Health(ctx, 30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(health.ActiveTurns, func(turn TurnLifecycle) bool {
+		return turn.MessageID == "m_active_"+suffix && turn.ReservationStatus == "open"
+	}) {
+		t.Fatal("active streaming turn was not classified as active")
+	}
+	if !slices.ContainsFunc(health.StaleTurns, func(turn TurnLifecycle) bool {
+		return turn.MessageID == staleMessageID && turn.ReservationStatus == ""
+	}) {
+		t.Fatal("streaming turn without a reservation was not classified as stale")
+	}
+	if !slices.ContainsFunc(health.FailedTurns, func(turn TurnLifecycle) bool {
+		return turn.MessageID == "m_failed_"+suffix && turn.ReservationStatus == "released"
+	}) {
+		t.Fatal("terminally failed turn did not retain its reservation outcome")
+	}
+	if !slices.ContainsFunc(health.AbandonedCalls, func(call ProviderCallDiagnostic) bool {
+		return call.CallID == "pc_recovered_"+suffix && call.TurnStatus == "complete"
+	}) {
+		t.Fatal("recovered retry was not distinguished from a terminal turn failure")
 	}
 }
 
@@ -109,8 +258,16 @@ func TestOperatorRejectsProductAccountLocksButAllowsOverQuota(t *testing.T) {
 	if status.State != store.AccountOverQuotaFrozen {
 		t.Fatalf("account state = %q, want over_quota_frozen", status.State)
 	}
-	if _, err := read.Operator(ctx, userID); err != nil {
+	session, err := read.Operator(ctx, userID)
+	if err != nil {
 		t.Fatalf("over-quota operator rejected: %v", err)
+	}
+	if session.Role != "viewer" || !slices.Contains(session.Permissions, PermReadAll) {
+		t.Fatalf("operator session = %+v, want viewer with read_all", session)
+	}
+	if slices.Contains(session.Permissions, PermWriteRegistry) ||
+		slices.Contains(session.Permissions, PermExecuteReconciliation) {
+		t.Fatalf("viewer inherited write tokens: %v", session.Permissions)
 	}
 
 	for _, testCase := range []struct {

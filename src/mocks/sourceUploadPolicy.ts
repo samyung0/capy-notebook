@@ -62,7 +62,7 @@ const supportedExtensions = [...extensionKinds.keys()]
   .map((extension) => `.${extension}`)
   .sort((a, b) => a.localeCompare(b));
 
-/** Mirrors sourceupload.parseExtensions: the GPU parser's format list. */
+/** Mirrors sourceupload.parseExtensions: the document parser's format list. */
 const parseExtensions = [
   '.bmp',
   '.doc',

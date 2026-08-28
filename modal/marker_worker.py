@@ -12,6 +12,7 @@ import io
 import json
 import os
 import tempfile
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -47,15 +48,40 @@ def ping() -> int:
 
 
 def parse_document(data: bytes, name: str, parse_method: str) -> dict:
-    if _MODELS is None:
-        init_worker()
-    converter = _marker_converter(
-        FAST_MODE,
-        disable_ocr=True,
-        force_ocr=False,
-        models=dict(_MODELS),
+    """Parse one document and always return its attributable measurements.
+
+    ``process_time_ns`` counts CPU consumed by this Marker child, including its
+    threads, while excluding time that another job spends in a sibling child.
+    Returning an error envelope lets the caller meter a parse that failed after
+    it had already consumed CPU.
+    """
+    started = time.process_time_ns()
+    probes: list[Any] = []
+    flagged: list[int] = []
+    try:
+        from scan_pages import probe_pages
+
+        probes = probe_pages(data)
+        flagged = [probe.page_idx for probe in probes if probe.needs_ocr]
+        if _MODELS is None:
+            init_worker()
+        converter = _marker_converter(
+            FAST_MODE,
+            disable_ocr=True,
+            force_ocr=False,
+            models=dict(_MODELS),
+        )
+        result = parse_fast(
+            _Document(data, name, parse_method), converter, probes=probes
+        )
+    except Exception as exc:  # noqa: BLE001 - parent needs measured failure data
+        result = {"_worker_error": f"{type(exc).__name__}: {exc}"}
+    result["_page_count"] = len(probes)
+    result["_ocr_pages"] = flagged
+    result["_worker_cpu_ms"] = max(
+        0, round((time.process_time_ns() - started) / 1_000_000)
     )
-    return parse_fast(_Document(data, name, parse_method), converter)
+    return result
 
 
 def _marker_converter(mode: str, *, disable_ocr: bool, force_ocr: bool, models: dict):
@@ -240,14 +266,21 @@ def _ocr_flagged_pages(
     return out
 
 
-def parse_fast(document: _Document, converter: Any, _ocr_engine: Any = None) -> dict:
+def parse_fast(
+    document: _Document,
+    converter: Any,
+    _ocr_engine: Any = None,
+    *,
+    probes: list[Any] | None = None,
+) -> dict:
     from marker_adapt import content_list_to_md, drop_scan_rasters, merge_ocr_lines
     from scan_pages import probe_pages
 
     result = _run_marker(converter, document.data, document.name)
     if (document.parse_method or PARSE_METHOD) == "txt":
         return result
-    probes = probe_pages(document.data)
+    if probes is None:
+        probes = probe_pages(document.data)
     flagged = [p.page_idx for p in probes if p.needs_ocr]
     print(
         "fast probe: "
@@ -275,5 +308,4 @@ def parse_fast(document: _Document, converter: Any, _ocr_engine: Any = None) -> 
         for name, blob in (result.get("images") or {}).items()
         if os.path.basename(name) in keep
     }
-    result["_ocr_pages"] = flagged
     return result

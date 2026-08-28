@@ -193,9 +193,9 @@ function AssistantBubble({
           <p>{msg.error || m.chat_retry_connection()}</p>
         </div>
       )}
-      {msg.modelDisplayName || msg.modelKey ? (
+      {msg.modelDisplayName || msg.modelSlug ? (
         <p className="mt-1.5 text-[11px] text-fg-muted">
-          {msg.modelDisplayName || msg.modelKey}
+          {msg.modelDisplayName || msg.modelSlug}
         </p>
       ) : null}
       <Citations msg={msg} onOpen={onOpenCitation} />
@@ -349,6 +349,7 @@ export function ChatPanel({
           actionCallback={streaming ? stop : submit}
           actionClassName="bg-(--temp-btn-bg) text-(--temp-btn-fg) hover:bg-(--temp-btn-bg) hover:opacity-85"
           actionIcon={streaming ? 'x' : 'send'}
+          actionLabel={streaming ? m.chat_stop() : m.chat_send()}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {

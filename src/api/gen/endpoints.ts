@@ -41,6 +41,7 @@ import type {
   Generate200,
   GenerateReq,
   GetSourceUploadPolicyParams,
+  ImportSourcesAccepted,
   ImportSourcesReq,
   IngestSlots,
   IntegrationsStatus,
@@ -57,6 +58,7 @@ import type {
   MaterialUpdateResult,
   Message,
   MicrosoftDriveHost,
+  ModelSurfacesOutputBody,
   ModelsResponse,
   NotificationCountOutputBody,
   NotificationPage,
@@ -75,6 +77,7 @@ import type {
   SearchParams,
   SearchResult,
   SetModelPrefsReq,
+  SourceImportStatus,
   SourceUploadPolicy,
   SourceUploadReservation,
   Tag,
@@ -3150,6 +3153,56 @@ export const getMistakes = async ( options?: RequestInit): Promise<getMistakesRe
 
 
 
+export type listModelSurfacesResponse200 = {
+  data: ModelSurfacesOutputBody
+  status: 200
+}
+
+export type listModelSurfacesResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listModelSurfacesResponseSuccess = (listModelSurfacesResponse200) & {
+  headers: Headers;
+};
+export type listModelSurfacesResponseError = (listModelSurfacesResponseDefault) & {
+  headers: Headers;
+};
+
+export type listModelSurfacesResponse = (listModelSurfacesResponseSuccess | listModelSurfacesResponseError)
+
+export const getListModelSurfacesUrl = () => {
+
+
+
+
+  return `/api/model-surfaces`
+}
+
+/**
+ * @summary Known model surfaces
+ */
+export const listModelSurfaces = async ( options?: RequestInit): Promise<listModelSurfacesResponse> => {
+
+  const res = await fetch(getListModelSurfacesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listModelSurfacesResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listModelSurfacesResponse
+}
+
+
+
 export type listModelsResponse200 = {
   data: ModelsResponse
   status: 200
@@ -5660,17 +5713,17 @@ export const updateWorkspaceSharing = async (id: string,
 
 
 
-export type importSourcesResponse201 = {
-  data: File[]
-  status: 201
+export type importSourcesResponse202 = {
+  data: ImportSourcesAccepted
+  status: 202
 }
 
 export type importSourcesResponseDefault = {
   data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
+  status: Exclude<HTTPStatusCodes, 202>
 }
 
-export type importSourcesResponseSuccess = (importSourcesResponse201) & {
+export type importSourcesResponseSuccess = (importSourcesResponse202) & {
   headers: Headers;
 };
 export type importSourcesResponseError = (importSourcesResponseDefault) & {
@@ -5688,7 +5741,7 @@ export const getImportSourcesUrl = (id: string,) => {
 }
 
 /**
- * @summary Import sources from a connected drive
+ * @summary Queue sources from a connected drive
  */
 export const importSources = async (id: string,
     importSourcesReq: NonReadonly<ImportSourcesReq>, options?: RequestInit): Promise<importSourcesResponse> => {
@@ -5707,6 +5760,58 @@ export const importSources = async (id: string,
 
   const data: importSourcesResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as importSourcesResponse
+}
+
+
+
+export type getSourceImportResponse200 = {
+  data: SourceImportStatus
+  status: 200
+}
+
+export type getSourceImportResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type getSourceImportResponseSuccess = (getSourceImportResponse200) & {
+  headers: Headers;
+};
+export type getSourceImportResponseError = (getSourceImportResponseDefault) & {
+  headers: Headers;
+};
+
+export type getSourceImportResponse = (getSourceImportResponseSuccess | getSourceImportResponseError)
+
+export const getGetSourceImportUrl = (id: string,
+    jobId: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/sources/imports/${jobId}`
+}
+
+/**
+ * @summary Get source import status
+ */
+export const getSourceImport = async (id: string,
+    jobId: string, options?: RequestInit): Promise<getSourceImportResponse> => {
+
+  const res = await fetch(getGetSourceImportUrl(id,jobId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: getSourceImportResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getSourceImportResponse
 }
 
 

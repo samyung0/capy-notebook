@@ -59,76 +59,70 @@ func openPool(ctx context.Context, dsn, name string) *pgxpool.Pool {
 }
 
 func main() {
-	appEnv := env("APP_ENV", "development")
-	obs.Init("ops", appEnv)
+	cfg := ops.ConfigFromEnv()
+	if err := cfg.Validate(); err != nil {
+		log.Fatalf("ops security configuration: %v", err)
+	}
+
+	obs.Init("ops", cfg.AppEnv)
 	shutdownSentry := obs.InitSentry(obs.SentryConfig{
-		DSN: env("SENTRY_DSN", ""), Environment: appEnv,
+		DSN: env("SENTRY_DSN", ""), Environment: cfg.AppEnv,
 		Release:    env("RELEASE_SHA", ""),
 		SampleRate: env("SENTRY_TRACES_SAMPLE_RATE", "0.1"), Service: "ops",
 	})
 	defer shutdownSentry()
 
-	security := ops.SecurityConfig{
-		ClerkSecretKey:         env("CLERK_SECRET_KEY", ""),
-		CloudflareAccessIssuer: env("OPS_CF_ACCESS_ISSUER", ""),
-		CloudflareAccessAUD:    env("OPS_CF_ACCESS_AUDIENCE", ""),
-		CloudflareAccessJWKS:   env("OPS_CF_ACCESS_JWKS_URL", ""),
-	}
-	if err := security.Validate(); err != nil {
-		log.Fatalf("ops security configuration: %v", err)
-	}
-
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	readPool := openPool(ctx, env("OPS_DATABASE_URL", ""), "OPS_DATABASE_URL")
+	readPool := openPool(ctx, cfg.DatabaseURL, "OPS_DATABASE_URL")
 	readApp := store.NewWithPool(readPool)
 	defer readApp.Close()
-	sessionPool := openPool(
-		ctx,
-		env("OPS_SESSION_DATABASE_URL", ""),
-		"OPS_SESSION_DATABASE_URL",
-	)
-	defer sessionPool.Close()
-	registryDSN := env("OPS_REGISTRY_DATABASE_URL", "")
-	if appEnv == "production" {
+	if !cfg.AllowOwnerDSN() {
 		if err := ops.ValidateDatabaseRole(ctx, readPool, ops.ReadDatabaseRole); err != nil {
 			log.Fatalf("OPS_DATABASE_URL: %v", err)
 		}
-		if err := ops.ValidateDatabaseRole(
-			ctx, sessionPool, ops.AuthDatabaseRole,
+		if err := ops.ProbeDatabaseRole(
+			ctx, cfg.AdminDatabaseURL, ops.AdminDatabaseRole,
 		); err != nil {
-			log.Fatalf("OPS_SESSION_DATABASE_URL: %v", err)
+			log.Fatalf("OPS_ADMIN_DATABASE_URL: %v", err)
 		}
 	}
 	read := ops.NewReadStore(readApp)
-	registry := ops.NewLazyRegistryStore(
-		readApp.Pool(),
-		registryDSN,
-	)
-	defer registry.Close()
-	handler := ops.NewHandler(read, registry, ops.HandlerConfig{
+	admin := ops.NewLazyAdminStore(cfg.AdminDatabaseURL)
+	if cfg.AllowOwnerDSN() {
+		admin.SkipRoleValidation()
+	}
+	defer admin.Close()
+	registry := ops.NewRegistryStoreWithAdmin(readApp.Pool(), admin)
+	handler := ops.NewHandler(read, registry, admin, ops.HandlerConfig{
 		StaticDir:       env("OPS_STATIC_DIR", ""),
 		StuckJobMinutes: envInt("OPS_STUCK_JOB_MINUTES", 30),
 	})
-	accessVerifier, err := ops.NewAccessVerifier(ops.AccessConfig{
-		Issuer: security.CloudflareAccessIssuer, Audience: security.CloudflareAccessAUD,
-		JWKSURL: security.CloudflareAccessJWKS,
-	})
-	if err != nil {
-		log.Fatalf("Cloudflare Access: %v", err)
+	authenticator := ops.Authenticator{
+		Operators:    ops.NewOperatorDirectory(read, ops.NewAuthStore(readPool)),
+		AuthDisabled: cfg.AuthDisabled,
+		DevUserID:    cfg.DevUserID,
 	}
-	clerkVerifier, err := ops.NewClerkVerifier(security.ClerkSecretKey)
-	if err != nil {
-		log.Fatalf("Clerk: %v", err)
+	var accessVerifier *ops.AccessVerifier
+	if !cfg.AccessDisabled {
+		var err error
+		accessVerifier, err = ops.NewAccessVerifier(cfg.AccessConfig())
+		if err != nil {
+			log.Fatalf("Cloudflare Access: %v", err)
+		}
 	}
-	handler = (ops.Authenticator{
-		Cloudflare: accessVerifier,
-		Clerk:      clerkVerifier,
-		Operators: ops.NewOperatorDirectory(
-			read, ops.NewAuthStore(sessionPool),
-		),
-	}).Middleware(handler)
-	handler = obs.SentryMiddleware(obs.Middleware(handler))
+	if !cfg.AuthDisabled {
+		clerkVerifier, err := ops.NewClerkVerifier(cfg.ClerkSecretKey)
+		if err != nil {
+			log.Fatalf("Clerk: %v", err)
+		}
+		authenticator.Clerk = clerkVerifier
+	}
+	handler = authenticator.Middleware(handler)
+	if accessVerifier != nil {
+		handler = ops.AccessMiddleware(accessVerifier)(handler)
+	}
+	handler = obs.Middleware(obs.SentryMiddleware(handler))
 
 	server := &http.Server{
 		Addr: env("OPS_ADDR", ":8082"), Handler: handler,

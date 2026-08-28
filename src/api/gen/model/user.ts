@@ -5,22 +5,23 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { PlanTier } from './planTier.ts';
+import type { Ref } from './ref.ts';
 import type { SubscriptionStatus } from './subscriptionStatus.ts';
 
 export interface User {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   avatarUrl?: string;
-  chatModelKey: string;
+  chatModel: Ref;
   classLabel?: string;
-  editorModelKey: string;
+  editorModel: Ref;
   email: string;
-  generateModelKey: string;
+  generateModel: Ref;
   id: string;
   locale: string;
   name: string;
   planTier: PlanTier;
-  quizModelKey: string;
+  quizModel: Ref;
   streak: number;
   subscriptionStatus: SubscriptionStatus;
 }

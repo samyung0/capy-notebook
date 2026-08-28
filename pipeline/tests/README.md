@@ -8,11 +8,11 @@ Three tiers:
 | **SQL integration** (`@pytest.mark.integration`) | `test_store_sql.py`, `test_model_configs_lock.py` | Docker | free, ~10s |
 | **cassette integration** (`@pytest.mark.cassette`) | `test_ingest_query.py`, `test_generate.py` | Docker + recorded cassettes | free on replay |
 
-The retrieval index is owned by `server/migrations/0001_init.sql`, so both
-Docker tiers start a stock `pgvector/pgvector:pg16` container and apply that
-file — the same one the gateway applies at boot. Nothing in the pipeline
-creates tables, and a column rename in the migration surfaces here rather than
-in production.
+The retrieval index is owned by the numbered Go migrations
+(`server/migrations/0001_init.sql` today), so both Docker tiers start a stock
+`pgvector/pgvector:pg16` container and apply those files — the same ones
+`Store.Migrate` ledgers. Nothing in the pipeline creates tables, and a column
+rename in a migration surfaces here rather than in production.
 
 The SQL tier writes synthetic one-hot embeddings, so it exercises every
 statement in `retrieval/store.py` (hybrid search, scoping, the concept
@@ -28,11 +28,25 @@ Redis are raw TCP, so VCR never touches them.
 uv run --extra test pytest pipeline/tests/ -q
 ```
 
+To replay only the certified two-turn agentic-loop cassettes, run:
+
+```bash
+pnpm test:pipeline:replay
+```
+
+That command removes `EVO_TEST_RECORD` before it starts pytest. It cannot make
+live model calls or rewrite a cassette, even if record mode is exported in the
+calling shell.
+
 Docker Desktop (or another daemon) is required for the two integration tiers.
 Cassette tests **skip** when their recording is missing, so a fresh checkout
-without cassettes still gives a meaningful green run. Each test gets a
-throwaway workspace and deletes it afterwards; every `rag_*` row cascades from
-it, so isolation needs no table-by-table cleanup.
+without optional ingest/generate cassettes still gives a meaningful green run.
+Entries in `model_replay_certifications.json` are exact provider/model pairs
+that passed certification. A missing or incomplete tape is not certified. A
+tape that exists must contain two interactions and must match the manifest.
+Each ingest/generate test gets a throwaway workspace and deletes it
+afterwards; every `rag_*` row cascades from it, so isolation needs no
+table-by-table cleanup.
 
 ## Re-recording cassettes
 
@@ -41,14 +55,58 @@ model or embedding-dimension changes, or chunking changes. Recording hits the
 real services and costs tokens.
 
 ```bash
-export EMBEDDING_API_KEY="..."    # embeddings (OPENROUTER_API_KEY still works)
-export DEEPSEEK_API_KEY="..."     # summaries, concepts, answers
+export OPENROUTER_API_KEY="..." # seeded qwen-embed hop
+export DEEPSEEK_API_KEY="..."   # summaries, concepts, answers
+export ANTHROPIC_API_KEY="..."  # first-party Anthropic if you certify a Claude slug
+export GEMINI_API_KEY="..."     # vision / captions if the test hits them
 
 export EVO_TEST_RECORD=once       # record only interactions not already saved
 # delete the cassette(s) you want to refresh first, then:
 uv run --extra test pytest pipeline/tests/test_ingest_query.py -q
 unset EVO_TEST_RECORD
 ```
+
+## Certifying or re-recording an agentic-loop model
+
+Certification is a source-changing operator workflow, not a test command. It
+accepts any exact model slug from a conversational provider in
+`elitellm/providers.json`. The model does not need to exist in the certification
+manifest. After provider selection, the command prints that provider's currently
+certified model slugs. Selecting an existing provider/model pair re-records it.
+For interactive runs, it then reads the provider API key and fetches the model
+slugs available to that key. The model prompt supports free typing, substring
+filtering, and Up/Down selection. Certified slugs remain in the choices even if
+the provider no longer returns them.
+
+```bash
+pnpm model:certify
+
+# Non-interactive model selection; the API key still comes from the provider env.
+pnpm model:certify --provider openai --model gpt-5.6-sol
+```
+
+The command reads the provider API key from its environment variable or asks
+for it without echoing. If the provider model-list request fails, the command
+warns and falls back to an exact free-text model prompt. It then records two
+live streaming calls. The first must return a tool call and one of the adapter's
+recognized continuity fields. The test appends a tool result, and the second
+request must preserve that state. The command then disables record mode and
+replays the new tape. The two
+recording calls use the live provider and incur its normal cost.
+
+Only a successful replay keeps the cassette and manifest entry. The test
+discovers the provider's continuity fields from the first response and verifies
+that the adapter returns them on the second request. Those fields are not stored
+in the manifest. Success regenerates
+`server/internal/models/agentic_loop_certs.json`. A recording failure restores
+an existing tape. A mistyped or unavailable new slug should be rejected by the
+live provider, and the failed recording leaves no manifest entry or cassette behind.
+Ctrl+C, Ctrl+D, terminal hangup, and normal termination exit without a traceback.
+An interruption during recording or replay restores the exact pre-command
+manifest, cassette, and generated Go certificate file.
+If recording succeeds but replay fails, the provider/model pair is not
+certified. The command does not write `model_configs`; commit and deploy the
+generated source artifacts before adding the model to the Ops dashboard.
 
 ## How determinism is kept (why replay matches)
 

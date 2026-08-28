@@ -53,7 +53,6 @@ var ErrTooManyIngestLeases = errors.New("too many ingest leases")
 var ErrProviderSessionClosed = errors.New("provider session closed")
 var ErrProviderCallConflict = errors.New("provider call id reused with different usage")
 var ErrTerminalCallNotAllowed = errors.New("terminal provider call not allowed")
-var ErrTerminalCallAlreadyUsed = errors.New("terminal provider call already used")
 
 // ConcurrentLLMLeases caps unsettled platform-paid model calls per actor.
 // Worst-case overshoot is this many in-flight settlements. BYOK does not take
@@ -110,7 +109,8 @@ type UsageEventView struct {
 	CreatedAt    time.Time `json:"createdAt"`
 	Kind         string    `json:"kind"`
 	Surface      string    `json:"surface"`
-	ModelKey     string    `json:"modelKey"`
+	ProviderSlug string    `json:"providerSlug"`
+	ModelSlug    string    `json:"modelSlug"`
 	InputTokens  int64     `json:"inputTokens"`
 	OutputTokens int64     `json:"outputTokens"`
 	Units        int64     `json:"units"`
@@ -119,7 +119,7 @@ type UsageEventView struct {
 }
 
 // UsageReport is the actor's current-period spend plus a recent event list.
-// It reads usage_events for this user, not usage_daily (operator rollup).
+// It reads the append-only usage_events ledger for this user.
 type UsageReport struct {
 	ByKind    []UsageBucket    `json:"byKind" nullable:"false"`
 	BySurface []UsageBucket    `json:"bySurface" nullable:"false"`
@@ -127,32 +127,39 @@ type UsageReport struct {
 }
 
 // UsageEvent is one metered consumption. Token fields are provider-reported;
-// Units carries everything that is not a token (GPU milliseconds, bytes, mail
-// count) so a single ledger covers every resource.
+// Units carries the resource's real billing unit, while parse timing stays in
+// typed telemetry fields and does not determine the charge.
 type UsageEvent struct {
-	TraceID        string
-	ActorUserID    string
-	WorkspaceID    string
-	Kind           string
-	Surface        string
-	Provider       string
-	Model          string
-	InputTokens    int64
-	OutputTokens   int64
-	Units          int64
-	Unit           string
-	CreditMicros   int64
-	ModelKey       string
-	ModelVersion   int
-	ReservationID  string
-	ProviderCallID string
-	Metadata       map[string]any
+	TraceID                  string
+	ActorUserID              string
+	WorkspaceID              string
+	Kind                     string
+	Surface                  string
+	Provider                 string
+	Model                    string
+	Thinking                 string
+	InputTokens              int64
+	OutputTokens             int64
+	Units                    int64
+	Unit                     string
+	ParsePages               int64
+	ParseOCRPages            int64
+	ParseCPUMilliseconds     int64
+	ParseElapsedMilliseconds int64
+	CreditMicros             int64
+	CatalogModel             models.Ref
+	ModelVersion             int
+	ReservationID            string
+	ProviderCallID           string
+	IdempotencyKey           string
+	Metadata                 map[string]any
 }
 
 type ProviderCallUsage struct {
 	CallID           string
 	Kind             string
 	Purpose          string
+	Thinking         string
 	Provider         string
 	Model            string
 	InputTokens      int64
@@ -170,22 +177,22 @@ type ProviderCallSettlement struct {
 }
 
 // Usage kinds and surfaces. Kept as constants because they are the grouping
-// keys in every dashboard query and rollup row; a typo creates a silent second
-// category rather than an error.
+// keys in every ledger report; a typo creates a silent second category rather
+// than an error.
 const (
 	KindLLM       = "llm"
 	KindEmbedding = "embedding"
 	KindCaption   = "caption"
-	KindParseGPU  = "parse_gpu"
+	KindParse     = "parse"
 	KindEmail     = "email"
 )
 
 const (
-	SurfaceChat     = "chat"
-	SurfaceGenerate = "generate"
-	SurfaceEditor   = "editor"
-	SurfaceQuiz     = "quiz"
-	SurfaceIngest   = "ingest"
+	SurfaceChat     = models.SurfaceChat
+	SurfaceGenerate = models.SurfaceGenerate
+	SurfaceEditor   = models.SurfaceEditor
+	SurfaceQuiz     = models.SurfaceQuiz
+	SurfaceIngest   = models.SurfaceIngest
 	SurfaceSystem   = "system"
 )
 
@@ -292,16 +299,20 @@ func (s *Store) AssertCreditsAvailable(ctx context.Context, userID string) error
 	if err != nil {
 		return err
 	}
-	if usage.UsedMicros+usage.ReservedMicros >= usage.LimitMicros {
-		return &CreditsExhaustedError{
-			UserID:         userID,
-			UsedMicros:     usage.UsedMicros,
-			ReservedMicros: usage.ReservedMicros,
-			LimitMicros:    usage.LimitMicros,
-			PlanTier:       usage.PlanTier,
-		}
+	return exhaustedIfOverLimit(usage)
+}
+
+func exhaustedIfOverLimit(usage CreditUsage) error {
+	if usage.UsedMicros+usage.ReservedMicros < usage.LimitMicros {
+		return nil
 	}
-	return nil
+	return &CreditsExhaustedError{
+		UserID:         usage.UserID,
+		UsedMicros:     usage.UsedMicros,
+		ReservedMicros: usage.ReservedMicros,
+		LimitMicros:    usage.LimitMicros,
+		PlanTier:       usage.PlanTier,
+	}
 }
 
 func monthStart() time.Time {
@@ -311,77 +322,11 @@ func monthStart() time.Time {
 
 /* ------------------------------------------------------- begin / settle */
 
-// BeginSpend opens a 0-amount lease on the actor's inference budget. The
-// returned id must be passed to SettleCredits or ReleaseCredits; anything
-// neither settled nor released is swept once it expires.
-//
-// There is no estimated hold. The gate is used >= limit, plus at most
-// ConcurrentLLMLeases open rows for this actor. Settlement writes the measured
-// cost. The user_credits row lock serializes concurrent begins so the count
-// cannot race past the cap.
-func (s *Store) BeginSpend(
-	ctx context.Context,
-	actorUserID, workspaceID, surface string,
-) (string, error) {
-	if actorUserID == "" {
-		return "", ErrNotFound
-	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	usage, err := s.lockedCreditUsageTx(ctx, tx, actorUserID)
-	if err != nil {
-		return "", err
-	}
-	if usage.UsedMicros >= usage.LimitMicros {
-		return "", &CreditsExhaustedError{
-			UserID:         actorUserID,
-			UsedMicros:     usage.UsedMicros,
-			ReservedMicros: usage.ReservedMicros,
-			LimitMicros:    usage.LimitMicros,
-			PlanTier:       usage.PlanTier,
-		}
-	}
-
-	var open int64
-	if err := tx.QueryRow(ctx, `
-		SELECT count(*) FROM credit_reservations
-		 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
-		   AND surface <> $2 AND paid_by = $3`,
-		actorUserID, SurfaceIngest, models.PaidByPlatform).Scan(&open); err != nil {
-		return "", err
-	}
-	if open >= ConcurrentLLMLeases {
-		return "", ErrTooManyLLMLeases
-	}
-
-	id := uid("cr")
-	var wsID *string
-	if workspaceID != "" {
-		wsID = &workspaceID
-	}
-	if _, err := tx.Exec(ctx, `
-		INSERT INTO credit_reservations
-			(id, actor_user_id, workspace_id, trace_id, surface, amount_micros, expires_at)
-		VALUES ($1, $2, $3, $4, $5, 0, now() + ($6 * interval '1 millisecond'))`,
-		id, actorUserID, wsID, nullString(obs.TraceID(ctx)), surface,
-		reservationTTL.Milliseconds(),
-	); err != nil {
-		return "", err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return "", err
-	}
-	return id, nil
-}
-
 func (s *Store) BeginProviderSession(
 	ctx context.Context,
 	actorUserID, workspaceID, surface, paidBy string,
 	llm, embedding TokenRates,
+	thinking string,
 ) (string, error) {
 	if actorUserID == "" {
 		return "", ErrNotFound
@@ -400,18 +345,12 @@ func (s *Store) BeginProviderSession(
 		if err != nil {
 			return "", err
 		}
-		if usage.UsedMicros >= usage.LimitMicros {
-			return "", &CreditsExhaustedError{
-				UserID:         actorUserID,
-				UsedMicros:     usage.UsedMicros,
-				ReservedMicros: usage.ReservedMicros,
-				LimitMicros:    usage.LimitMicros,
-				PlanTier:       usage.PlanTier,
-			}
+		if err := exhaustedIfOverLimit(usage); err != nil {
+			return "", err
 		}
 		var open int64
 		if err := tx.QueryRow(ctx, `
-			SELECT count(*) FROM credit_reservations
+			SELECT count(*) FROM provider_sessions
 			 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
 			   AND surface <> $2 AND paid_by = $3`,
 			actorUserID, SurfaceIngest, models.PaidByPlatform).Scan(&open); err != nil {
@@ -428,14 +367,18 @@ func (s *Store) BeginProviderSession(
 		wsID = &workspaceID
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO credit_reservations
-			(id, actor_user_id, workspace_id, trace_id, surface, amount_micros,
-			 paid_by, llm_model_key, llm_model_version,
-			 embedding_model_key, embedding_model_version, expires_at)
-		VALUES ($1,$2,$3,$4,$5,0,$6,$7,$8,$9,$10,
-		        now() + ($11 * interval '1 millisecond'))`,
+		INSERT INTO provider_sessions
+			(id, actor_user_id, workspace_id, trace_id, surface, reserved_micros,
+			 paid_by, llm_provider_slug, llm_model_slug, llm_model_version, thinking,
+			 llm_micros_per_input_token, llm_micros_per_output_token,
+			 llm_micros_per_cached_input_token,
+			 embedding_provider_slug, embedding_model_slug, embedding_model_version, expires_at)
+		VALUES ($1,$2,$3,$4,$5,0,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,
+		        now() + ($17 * interval '1 millisecond'))`,
 		id, actorUserID, wsID, nullString(obs.TraceID(ctx)), surface, paidBy,
-		llm.ModelKey, llm.ModelVersion, embedding.ModelKey, embedding.ModelVersion,
+		llm.Model.ProviderSlug, llm.Model.ModelSlug, llm.ModelVersion, thinking,
+		llm.MicrosPerInputToken, llm.MicrosPerOutputToken, llm.MicrosPerCachedInputToken,
+		embedding.Model.ProviderSlug, embedding.Model.ModelSlug, embedding.ModelVersion,
 		reservationTTL.Milliseconds(),
 	); err != nil {
 		return "", err
@@ -444,6 +387,26 @@ func (s *Store) BeginProviderSession(
 		return "", err
 	}
 	return id, nil
+}
+
+type providerCallReceipt struct {
+	actorUserID    string
+	paidBy         string
+	status         string
+	credits        int64
+	exhaustedAt    *time.Time
+	terminalCallID *string
+	duplicate      bool
+}
+
+func (r providerCallReceipt) flags() ProviderCallSettlement {
+	exhausted := r.paidBy == models.PaidByPlatform && r.exhaustedAt != nil
+	return ProviderCallSettlement{
+		CreditsExhausted: exhausted,
+		TerminalCallAllowed: r.status == "open" && exhausted &&
+			(r.terminalCallID == nil || *r.terminalCallID == ""),
+		Duplicate: r.duplicate,
+	}
 }
 
 func (s *Store) SettleProviderCall(
@@ -458,44 +421,80 @@ func (s *Store) SettleProviderCall(
 	if call.Kind != KindLLM && call.Kind != KindEmbedding {
 		return out, fmt.Errorf("invalid provider call kind %q", call.Kind)
 	}
+	if call.Kind == KindEmbedding && call.Thinking != "" {
+		return out, errors.New("embedding provider calls cannot have thinking")
+	}
+	if call.Kind == KindLLM && !models.IsKnownThinking(call.Thinking) {
+		return out, fmt.Errorf("invalid provider call thinking %q", call.Thinking)
+	}
 	if call.InputTokens < 0 || call.OutputTokens < 0 || call.CachedReadTokens < 0 ||
 		call.CacheWriteTokens < 0 || call.ReasoningTokens < 0 {
 		return out, fmt.Errorf("provider usage cannot be negative")
 	}
+	return s.settleProviderCallAtomic(ctx, sessionID, call)
+}
 
+// settleProviderCallAtomic records provider usage and updates the derived
+// counter in one transaction. A retry observes either all of the prior
+// settlement or none of it.
+func (s *Store) settleProviderCallAtomic(
+	ctx context.Context,
+	sessionID string,
+	call ProviderCallUsage,
+) (ProviderCallSettlement, error) {
+	var settlement ProviderCallSettlement
+	var out providerCallReceipt
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return out, err
+		return settlement, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var (
-		actorUserID, workspaceID, surface, paidBy string
-		traceID                                   string
-		llmKey, embeddingKey                      string
-		llmVersion, embeddingVersion              int
-		status                                    string
-		exhaustedAt                               *time.Time
-		terminalCallID                            *string
+		workspaceID, surface, traceID string
+		llmRef, embeddingRef          models.Ref
+		llmVersion, embeddingVersion  int
+		snapshotted                   TokenRates
 	)
 	err = tx.QueryRow(ctx, `
 		SELECT actor_user_id, COALESCE(workspace_id, ''), surface, paid_by,
 		       COALESCE(trace_id, ''),
-		       llm_model_key, llm_model_version,
-		       embedding_model_key, embedding_model_version,
+		       llm_provider_slug, llm_model_slug, llm_model_version,
+		       embedding_provider_slug, embedding_model_slug, embedding_model_version,
+		       llm_micros_per_input_token, llm_micros_per_output_token,
+		       llm_micros_per_cached_input_token,
 		       status, credits_exhausted_at, terminal_call_id
-		FROM credit_reservations WHERE id = $1 FOR UPDATE`, sessionID).
+		FROM provider_sessions WHERE id = $1 FOR UPDATE`, sessionID).
 		Scan(
-			&actorUserID, &workspaceID, &surface, &paidBy,
+			&out.actorUserID, &workspaceID, &surface, &out.paidBy,
 			&traceID,
-			&llmKey, &llmVersion, &embeddingKey, &embeddingVersion,
-			&status, &exhaustedAt, &terminalCallID,
+			&llmRef.ProviderSlug, &llmRef.ModelSlug, &llmVersion,
+			&embeddingRef.ProviderSlug, &embeddingRef.ModelSlug, &embeddingVersion,
+			&snapshotted.MicrosPerInputToken, &snapshotted.MicrosPerOutputToken,
+			&snapshotted.MicrosPerCachedInputToken,
+			&out.status, &out.exhaustedAt, &out.terminalCallID,
 		)
 	if isNoRows(err) {
-		return out, ErrNotFound
+		return settlement, ErrNotFound
 	}
 	if err != nil {
-		return out, err
+		return settlement, err
+	}
+
+	var stubSession, stubActor, stubKind, stubPurpose, stubThinking, stubStatus string
+	err = tx.QueryRow(ctx, `
+		SELECT reservation_id, actor_user_id, kind, purpose, thinking, status
+		  FROM provider_calls WHERE id=$1 FOR UPDATE`, call.CallID).
+		Scan(&stubSession, &stubActor, &stubKind, &stubPurpose, &stubThinking, &stubStatus)
+	if isNoRows(err) {
+		return settlement, ErrProviderCallConflict
+	}
+	if err != nil {
+		return settlement, err
+	}
+	if stubSession != sessionID || stubActor != out.actorUserID ||
+		stubKind != call.Kind || stubPurpose != call.Purpose || stubThinking != call.Thinking {
+		return settlement, ErrProviderCallConflict
 	}
 
 	var duplicate bool
@@ -504,12 +503,15 @@ func (s *Store) SettleProviderCall(
 		  SELECT 1 FROM usage_events
 		  WHERE reservation_id = $1 AND provider_call_id = $2
 		)`, sessionID, call.CallID).Scan(&duplicate); err != nil {
-		return out, err
+		return settlement, err
 	}
 	if duplicate {
+		if stubStatus != "applied" {
+			return settlement, ErrProviderCallConflict
+		}
 		var recorded ProviderCallUsage
 		if err := tx.QueryRow(ctx, `
-			SELECT kind, COALESCE(metadata->>'purpose', ''), provider, model,
+			SELECT kind, COALESCE(metadata->>'purpose', ''), thinking, provider, model,
 			       input_tokens, output_tokens,
 			       COALESCE((metadata->>'cachedReadTokens')::bigint, 0),
 			       COALESCE((metadata->>'cacheWriteTokens')::bigint, 0),
@@ -519,55 +521,56 @@ func (s *Store) SettleProviderCall(
 			WHERE reservation_id = $1 AND provider_call_id = $2`,
 			sessionID, call.CallID,
 		).Scan(
-			&recorded.Kind, &recorded.Purpose, &recorded.Provider, &recorded.Model,
+			&recorded.Kind, &recorded.Purpose, &recorded.Thinking, &recorded.Provider, &recorded.Model,
 			&recorded.InputTokens, &recorded.OutputTokens,
 			&recorded.CachedReadTokens, &recorded.CacheWriteTokens,
 			&recorded.ReasoningTokens, &recorded.CacheAnomaly,
 		); err != nil {
-			return out, err
+			return settlement, err
 		}
 		recorded.CallID = call.CallID
 		if recorded != call {
-			return out, ErrProviderCallConflict
+			return settlement, ErrProviderCallConflict
 		}
-		out.CreditsExhausted = paidBy == models.PaidByPlatform && exhaustedAt != nil
-		out.TerminalCallAllowed = status == "open" && out.CreditsExhausted &&
-			(terminalCallID == nil || *terminalCallID == "")
-		out.Duplicate = true
-		return out, tx.Commit(ctx)
-	}
-	if status != "open" && status != "settled" && status != "released" {
-		return out, ErrProviderSessionClosed
-	}
-
-	if call.Purpose == "terminal" && (call.Kind != KindLLM || exhaustedAt == nil) {
-		return out, ErrTerminalCallNotAllowed
-	}
-	if call.Kind == KindLLM && exhaustedAt != nil {
-		if terminalCallID != nil && *terminalCallID != "" && *terminalCallID != call.CallID {
-			return out, ErrTerminalCallAlreadyUsed
+		out.duplicate = true
+		settlement = out.flags()
+		if err := tx.Commit(ctx); err != nil {
+			return ProviderCallSettlement{}, err
 		}
-		terminalCallID = &call.CallID
+		return settlement, nil
 	}
+	if out.status != "open" && out.status != "settled" && out.status != "released" {
+		return settlement, ErrProviderSessionClosed
+	}
+	if stubStatus != "open" {
+		return settlement, ErrProviderCallConflict
+	}
+	if call.Purpose == "terminal" &&
+		(out.terminalCallID == nil || *out.terminalCallID != call.CallID) {
+		return settlement, ErrTerminalCallNotAllowed
+	}
+	settlement = out.flags()
 
 	rates := TokenRates{}
-	modelKey, modelVersion := llmKey, llmVersion
+	catalogModel, modelVersion := llmRef, llmVersion
 	if call.Kind == KindEmbedding {
-		modelKey, modelVersion = embeddingKey, embeddingVersion
-	} else if paidBy == models.PaidByPlatform {
+		catalogModel, modelVersion = embeddingRef, embeddingVersion
 		if s.registry == nil {
-			return out, fmt.Errorf("%w: registry not configured", ErrModelUnavailable)
+			return settlement, fmt.Errorf("%w: registry not configured", ErrModelUnavailable)
 		}
-		cfg, err := s.registry.Get(ctx, llmKey, llmVersion)
+		cfg, err := s.registry.Get(ctx, embeddingRef, embeddingVersion)
 		if err != nil {
-			return out, fmt.Errorf("%w: %v", ErrModelUnavailable, err)
+			return settlement, fmt.Errorf("%w: %v", ErrModelUnavailable, err)
 		}
 		rates = RatesFromConfig(cfg)
+	} else if out.paidBy == models.PaidByPlatform {
+		rates = snapshotted
+		rates.Model = llmRef
+		rates.ModelVersion = llmVersion
 	}
 
-	credits := int64(0)
-	if call.Kind == KindLLM && paidBy == models.PaidByPlatform {
-		credits = CreditsForTokens(
+	if call.Kind == KindLLM && out.paidBy == models.PaidByPlatform {
+		out.credits = CreditsForTokens(
 			rates,
 			KindLLM,
 			call.InputTokens,
@@ -575,10 +578,17 @@ func (s *Store) SettleProviderCall(
 			call.CachedReadTokens,
 		)
 	}
+	var balance CreditUsage
+	if out.credits > 0 && out.paidBy == models.PaidByPlatform {
+		balance, err = s.lockedCreditUsageTx(ctx, tx, out.actorUserID)
+		if err != nil {
+			return settlement, err
+		}
+	}
 	meta := map[string]any{
 		"callId":  call.CallID,
 		"purpose": call.Purpose,
-		"paidBy":  paidBy,
+		"paidBy":  out.paidBy,
 	}
 	if call.CachedReadTokens > 0 {
 		meta["cachedReadTokens"] = call.CachedReadTokens
@@ -597,56 +607,77 @@ func (s *Store) SettleProviderCall(
 	}
 	event := UsageEvent{
 		TraceID:        traceID,
-		ActorUserID:    actorUserID,
+		ActorUserID:    out.actorUserID,
 		WorkspaceID:    workspaceID,
 		Kind:           call.Kind,
 		Surface:        surface,
 		Provider:       call.Provider,
 		Model:          call.Model,
+		Thinking:       call.Thinking,
 		InputTokens:    call.InputTokens,
 		OutputTokens:   call.OutputTokens,
 		Unit:           "tokens",
-		CreditMicros:   credits,
-		ModelKey:       modelKey,
+		CreditMicros:   out.credits,
+		CatalogModel:   catalogModel,
 		ModelVersion:   modelVersion,
 		ReservationID:  sessionID,
 		ProviderCallID: call.CallID,
 		Metadata:       meta,
 	}
 	if err := insertUsageEventTx(ctx, tx, event); err != nil {
-		return out, err
+		return settlement, err
 	}
-
-	if paidBy == models.PaidByPlatform {
-		balance, err := s.lockedCreditUsageTx(ctx, tx, actorUserID)
-		if err != nil {
-			return out, err
-		}
-		used := balance.UsedMicros + credits
+	tag, err := tx.Exec(ctx, `
+		UPDATE provider_calls SET
+		  status='applied',
+		  provider=$6,
+		  model=$7,
+		  input_tokens=$8,
+		  output_tokens=$9,
+		  cached_read_tokens=$10,
+		  cache_write_tokens=$11,
+		  reasoning_tokens=$12,
+		  cache_anomaly=$13,
+		  credit_micros=$5,
+		  received_at=now(),
+		  applied_at=now()
+		 WHERE id=$1 AND reservation_id=$2 AND kind=$3 AND purpose=$4
+		   AND status='open'`,
+		call.CallID, sessionID, call.Kind, call.Purpose, out.credits,
+		call.Provider, call.Model, call.InputTokens, call.OutputTokens,
+		call.CachedReadTokens, call.CacheWriteTokens, call.ReasoningTokens,
+		call.CacheAnomaly,
+	)
+	if err != nil {
+		return settlement, err
+	}
+	if tag.RowsAffected() != 1 {
+		return settlement, ErrProviderCallConflict
+	}
+	if out.credits > 0 && out.paidBy == models.PaidByPlatform {
+		used := balance.UsedMicros + out.credits
 		if _, err := tx.Exec(ctx, `UPDATE user_credits
 			SET used_micros = $2, updated_at = now()
-			WHERE user_id = $1`, actorUserID, used); err != nil {
-			return out, err
+			WHERE user_id = $1`, out.actorUserID, used); err != nil {
+			return settlement, err
 		}
-		out.CreditsExhausted = used >= balance.LimitMicros
-		if out.CreditsExhausted && exhaustedAt == nil {
-			if _, err := tx.Exec(ctx, `UPDATE credit_reservations
-				SET credits_exhausted_at = now() WHERE id = $1`, sessionID); err != nil {
-				return out, err
-			}
-			now := time.Now()
-			exhaustedAt = &now
-		}
+		settlement.CreditsExhausted = used+balance.ReservedMicros >= balance.LimitMicros
 	}
-	if terminalCallID != nil && *terminalCallID != "" {
-		if _, err := tx.Exec(ctx, `UPDATE credit_reservations
-			SET terminal_call_id = $2 WHERE id = $1`, sessionID, *terminalCallID); err != nil {
-			return out, err
+	if settlement.CreditsExhausted && out.exhaustedAt == nil {
+		if _, err := tx.Exec(ctx, `UPDATE provider_sessions
+			SET credits_exhausted_at = now() WHERE id = $1`, sessionID); err != nil {
+			return settlement, err
 		}
+		now := time.Now()
+		out.exhaustedAt = &now
 	}
-	out.TerminalCallAllowed = status == "open" && out.CreditsExhausted &&
-		(terminalCallID == nil || *terminalCallID == "")
-	return out, tx.Commit(ctx)
+	settlement.TerminalCallAllowed = out.status == "open" && settlement.CreditsExhausted &&
+		(out.terminalCallID == nil || *out.terminalCallID == "")
+	settlement.Duplicate = out.duplicate
+	if err := tx.Commit(ctx); err != nil {
+		return ProviderCallSettlement{}, err
+	}
+	return settlement, nil
 }
 
 // IngestSlots is this actor's ingest concurrency remaining, across every
@@ -664,7 +695,7 @@ func (s *Store) IngestSlots(ctx context.Context, actorUserID string) (IngestSlot
 	}
 	var used int
 	err := s.pool.QueryRow(ctx, `
-		SELECT count(*) FROM credit_reservations
+		SELECT count(*) FROM provider_sessions
 		 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
 		   AND surface = $2`,
 		actorUserID, SurfaceIngest).Scan(&used)
@@ -710,19 +741,13 @@ func (s *Store) beginIngestSpendTx(
 	if err != nil {
 		return "", err
 	}
-	if usage.UsedMicros >= usage.LimitMicros {
-		return "", &CreditsExhaustedError{
-			UserID:         actorUserID,
-			UsedMicros:     usage.UsedMicros,
-			ReservedMicros: usage.ReservedMicros,
-			LimitMicros:    usage.LimitMicros,
-			PlanTier:       usage.PlanTier,
-		}
+	if err := exhaustedIfOverLimit(usage); err != nil {
+		return "", err
 	}
 
 	var open int64
 	if err := tx.QueryRow(ctx, `
-		SELECT count(*) FROM credit_reservations
+		SELECT count(*) FROM provider_sessions
 		 WHERE actor_user_id = $1 AND status = 'open' AND expires_at > now()
 		   AND surface = $2`,
 		actorUserID, SurfaceIngest).Scan(&open); err != nil {
@@ -738,8 +763,8 @@ func (s *Store) beginIngestSpendTx(
 		wsID = &workspaceID
 	}
 	if _, err := tx.Exec(ctx, `
-		INSERT INTO credit_reservations
-			(id, actor_user_id, workspace_id, trace_id, surface, amount_micros, expires_at)
+		INSERT INTO provider_sessions
+			(id, actor_user_id, workspace_id, trace_id, surface, reserved_micros, expires_at)
 		VALUES ($1, $2, $3, $4, $5, 0, now() + ($6 * interval '1 millisecond'))`,
 		id, actorUserID, wsID, nullString(obs.TraceID(ctx)), SurfaceIngest,
 		ingestReservationHold.Milliseconds(),
@@ -749,17 +774,12 @@ func (s *Store) beginIngestSpendTx(
 	return id, nil
 }
 
-// SettleCredits closes a reservation and records what was actually consumed.
-// Events may be empty, which settles the reservation at zero — the normal
-// outcome when a provider returned no usage at all.
-//
-// Settlement is idempotent on reservation id: a retry after a successful
-// settle is a no-op, and a late settle after the sweeper released the hold
-// charges at most once. Without that, a client disconnect that is saved twice
-// double-bills.
-func (s *Store) SettleCredits(ctx context.Context, reservationID string, events ...UsageEvent) error {
+// SettleCredits closes a reservation after its provider calls or ingest work
+// have already been recorded. Measured spend is written by SettleProviderCall
+// or RecordUsage, not here. A retry after close or sweep is a no-op.
+func (s *Store) SettleCredits(ctx context.Context, reservationID string) error {
 	if reservationID == "" {
-		return s.RecordUsage(ctx, events...)
+		return nil
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -768,109 +788,25 @@ func (s *Store) SettleCredits(ctx context.Context, reservationID string, events 
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var actorUserID string
-	var amountMicros int64
+	var reservedMicros int64
 	err = tx.QueryRow(ctx, `
-		UPDATE credit_reservations
+		UPDATE provider_sessions
 		SET status = 'settled', settled_at = now()
 		WHERE id = $1 AND status = 'open'
-		RETURNING actor_user_id, amount_micros`, reservationID).Scan(&actorUserID, &amountMicros)
+		RETURNING actor_user_id, reserved_micros`, reservationID).Scan(&actorUserID, &reservedMicros)
 	if isNoRows(err) {
-		// Open is gone: already settled, released, or swept. Charging is
-		// decided by that status, not by blindly appending to the ledger —
-		// RecordUsage here is how a retry after a successful settle used to
-		// double-charge.
-		return s.settleClosedReservationTx(ctx, tx, reservationID, events)
+		return nil
 	}
 	if err != nil {
 		return err
 	}
-
-	spent, err := insertReservationEventsTx(ctx, tx, reservationID, actorUserID, events)
-	if err != nil {
-		return err
-	}
-
-	// Release the hold and charge the measured amount in one statement so the
-	// counter is never transiently wrong.
 	if _, err := tx.Exec(ctx, `UPDATE user_credits
 		SET reserved_micros = GREATEST(0, reserved_micros - $2),
-		    used_micros = used_micros + $3,
 		    updated_at = now()
-		WHERE user_id = $1`, actorUserID, amountMicros, spent); err != nil {
+		WHERE user_id = $1`, actorUserID, reservedMicros); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
-}
-
-// settleClosedReservationTx finishes a settle whose reservation is no longer
-// open. The row lock serializes two late settles so they cannot both observe
-// an empty ledger and both charge.
-func (s *Store) settleClosedReservationTx(
-	ctx context.Context,
-	tx pgx.Tx,
-	reservationID string,
-	events []UsageEvent,
-) error {
-	var status, actorUserID string
-	err := tx.QueryRow(ctx, `
-		SELECT status, actor_user_id FROM credit_reservations
-		WHERE id = $1 FOR UPDATE`, reservationID).Scan(&status, &actorUserID)
-	if isNoRows(err) {
-		return s.RecordUsage(ctx, events...)
-	}
-	if err != nil {
-		return err
-	}
-	if status == "settled" {
-		return nil
-	}
-
-	var existing int64
-	if err := tx.QueryRow(ctx, `
-		SELECT count(*) FROM usage_events WHERE reservation_id = $1`,
-		reservationID).Scan(&existing); err != nil {
-		return err
-	}
-	if existing > 0 {
-		return nil
-	}
-
-	spent, err := insertReservationEventsTx(ctx, tx, reservationID, actorUserID, events)
-	if err != nil {
-		return err
-	}
-	if spent == 0 {
-		return tx.Commit(ctx)
-	}
-	if err := s.ensureCreditsRowTx(ctx, tx, actorUserID); err != nil {
-		return err
-	}
-	if _, err := tx.Exec(ctx, `UPDATE user_credits
-		SET used_micros = used_micros + $2, updated_at = now()
-		WHERE user_id = $1`, actorUserID, spent); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
-}
-
-func insertReservationEventsTx(
-	ctx context.Context,
-	tx pgx.Tx,
-	reservationID, actorUserID string,
-	events []UsageEvent,
-) (int64, error) {
-	var spent int64
-	for i := range events {
-		events[i].ReservationID = reservationID
-		if events[i].ActorUserID == "" {
-			events[i].ActorUserID = actorUserID
-		}
-		spent += events[i].CreditMicros
-		if err := insertUsageEventTx(ctx, tx, events[i]); err != nil {
-			return 0, err
-		}
-	}
-	return spent, nil
 }
 
 // ReleaseCredits drops a reservation without charging, for a request that
@@ -886,12 +822,12 @@ func (s *Store) ReleaseCredits(ctx context.Context, reservationID string) error 
 	defer func() { _ = tx.Rollback(ctx) }()
 
 	var actorUserID string
-	var amountMicros int64
+	var reservedMicros int64
 	err = tx.QueryRow(ctx, `
-		UPDATE credit_reservations
+		UPDATE provider_sessions
 		SET status = 'released', settled_at = now()
 		WHERE id = $1 AND status = 'open'
-		RETURNING actor_user_id, amount_micros`, reservationID).Scan(&actorUserID, &amountMicros)
+		RETURNING actor_user_id, reserved_micros`, reservationID).Scan(&actorUserID, &reservedMicros)
 	if isNoRows(err) {
 		return nil
 	}
@@ -900,14 +836,14 @@ func (s *Store) ReleaseCredits(ctx context.Context, reservationID string) error 
 	}
 	if _, err := tx.Exec(ctx, `UPDATE user_credits
 		SET reserved_micros = GREATEST(0, reserved_micros - $2), updated_at = now()
-		WHERE user_id = $1`, actorUserID, amountMicros); err != nil {
+		WHERE user_id = $1`, actorUserID, reservedMicros); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
 }
 
 // RecordUsage appends metered consumption that was never reserved: ingest work
-// triggered by an upload, GPU parse time, outbound mail. These cannot be gated
+// triggered by an upload, parsed pages, outbound mail. These cannot be gated
 // in advance because nobody is waiting on them, but they still spend.
 func (s *Store) RecordUsage(ctx context.Context, events ...UsageEvent) error {
 	if len(events) == 0 {
@@ -948,8 +884,7 @@ func (s *Store) RecordUsage(ctx context.Context, events ...UsageEvent) error {
 const defaultUsageRecentLimit = 50
 
 // UserUsageReport is the product usage page: this actor's current month,
-// grouped, plus the most recent ledger rows. It does not scan usage_daily —
-// that table is the operator dashboard and lags the ledger by up to a minute.
+// grouped, plus the most recent ledger rows.
 func (s *Store) UserUsageReport(ctx context.Context, userID string, recentLimit int) (UsageReport, error) {
 	out := UsageReport{
 		ByKind:    []UsageBucket{},
@@ -993,7 +928,7 @@ func (s *Store) UserUsageReport(ctx context.Context, userID string, recentLimit 
 	}
 
 	recentRows, err := s.pool.Query(ctx, `
-		SELECT created_at, kind, surface, model_key,
+		SELECT created_at, kind, surface, catalog_provider_slug, catalog_model_slug,
 		       input_tokens, output_tokens, units, unit, credit_micros
 		FROM usage_events
 		WHERE actor_user_id = $1
@@ -1006,7 +941,7 @@ func (s *Store) UserUsageReport(ctx context.Context, userID string, recentLimit 
 	for recentRows.Next() {
 		var ev UsageEventView
 		if err := recentRows.Scan(
-			&ev.CreatedAt, &ev.Kind, &ev.Surface, &ev.ModelKey,
+			&ev.CreatedAt, &ev.Kind, &ev.Surface, &ev.ProviderSlug, &ev.ModelSlug,
 			&ev.InputTokens, &ev.OutputTokens, &ev.Units, &ev.Unit, &ev.CreditMicros,
 		); err != nil {
 			return out, err
@@ -1049,15 +984,19 @@ func insertUsageEventTx(ctx context.Context, tx pgx.Tx, ev UsageEvent) error {
 	_, err := tx.Exec(ctx, `
 		INSERT INTO usage_events
 			(trace_id, actor_user_id, workspace_id, kind, surface, provider, model,
-			 model_key, model_version,
-			 input_tokens, output_tokens, units, unit, credit_micros,
-			 reservation_id, provider_call_id, metadata)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+			 thinking, catalog_provider_slug, catalog_model_slug, model_version,
+			 input_tokens, output_tokens, units, unit, parse_pages, parse_ocr_pages,
+			 parse_cpu_milliseconds, parse_elapsed_milliseconds, credit_micros,
+			 reservation_id, provider_call_id, idempotency_key, metadata)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
 		nullString(ev.TraceID), ev.ActorUserID, wsID, ev.Kind, ev.Surface,
-		ev.Provider, ev.Model, ev.ModelKey, ev.ModelVersion,
+		ev.Provider, ev.Model, ev.Thinking,
+		ev.CatalogModel.ProviderSlug, ev.CatalogModel.ModelSlug, ev.ModelVersion,
 		ev.InputTokens, ev.OutputTokens, ev.Units, ev.Unit,
-		ev.CreditMicros, nullString(ev.ReservationID), nullString(ev.ProviderCallID),
-		ev.Metadata,
+		ev.ParsePages, ev.ParseOCRPages, ev.ParseCPUMilliseconds,
+		ev.ParseElapsedMilliseconds, ev.CreditMicros,
+		nullString(ev.ReservationID), nullString(ev.ProviderCallID),
+		nullString(ev.IdempotencyKey), ev.Metadata,
 	)
 	return err
 }
@@ -1075,158 +1014,61 @@ func nullString(v string) *string {
 // — a killed replica, a panic, a context deadline. Without this a crash
 // permanently reduces a user's budget.
 func (s *Store) SweepExpiredReservations(ctx context.Context) (int64, error) {
-	rows, err := s.pool.Query(ctx, `
-		UPDATE credit_reservations
-		SET status = 'released', settled_at = now()
-		WHERE status = 'open' AND expires_at < now()
-		RETURNING actor_user_id, amount_micros`)
-	if err != nil {
+	var expired int64
+	if err := s.pool.QueryRow(ctx, `
+		WITH released AS (
+		  UPDATE provider_sessions
+		     SET status = 'released', settled_at = now()
+		   WHERE status = 'open' AND expires_at < now()
+		   RETURNING actor_user_id, reserved_micros
+		), totals AS (
+		  SELECT actor_user_id, sum(reserved_micros) AS reserved_micros
+		    FROM released GROUP BY actor_user_id
+		), counters AS (
+		  UPDATE user_credits c
+		     SET reserved_micros = GREATEST(0, c.reserved_micros - t.reserved_micros),
+		         updated_at = now()
+		    FROM totals t
+		   WHERE c.user_id = t.actor_user_id
+		   RETURNING c.user_id
+		)
+		SELECT count(*) FROM released`).Scan(&expired); err != nil {
 		return 0, err
-	}
-	type release struct {
-		userID string
-		micros int64
-	}
-	var releases []release
-	for rows.Next() {
-		var r release
-		if err := rows.Scan(&r.userID, &r.micros); err != nil {
-			rows.Close()
-			return 0, err
-		}
-		releases = append(releases, r)
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return 0, err
-	}
-	for _, r := range releases {
-		if _, err := s.pool.Exec(ctx, `UPDATE user_credits
-			SET reserved_micros = GREATEST(0, reserved_micros - $2), updated_at = now()
-			WHERE user_id = $1`, r.userID, r.micros); err != nil {
-			return int64(len(releases)), err
-		}
 	}
 	released, err := s.sweepOrphanIngestReservations(ctx)
 	if err != nil {
-		return int64(len(releases)), err
+		return expired, err
 	}
-	return int64(len(releases)) + released, nil
+	return expired + released, nil
 }
 
 func (s *Store) sweepOrphanIngestReservations(ctx context.Context) (int64, error) {
-	rows, err := s.pool.Query(ctx, `
-		UPDATE credit_reservations r
-		SET status = 'released', settled_at = now()
-		WHERE r.status = 'open' AND r.surface = $1
-		  AND r.created_at < now() - ($2 * interval '1 millisecond')
-		  AND NOT EXISTS (
-		    SELECT 1 FROM jobs j
-		    WHERE j.type = 'ingest'
-		      AND j.status IN ('pending', 'running')
-		      AND j.payload->>'reservationId' = r.id
-		  )
-		RETURNING actor_user_id, amount_micros`,
-		SurfaceIngest, ingestReservationOrphanAge.Milliseconds())
-	if err != nil {
-		return 0, err
-	}
-	defer rows.Close()
 	var n int64
-	for rows.Next() {
-		var userID string
-		var micros int64
-		if err := rows.Scan(&userID, &micros); err != nil {
-			return n, err
-		}
-		if _, err := s.pool.Exec(ctx, `UPDATE user_credits
-			SET reserved_micros = GREATEST(0, reserved_micros - $2), updated_at = now()
-			WHERE user_id = $1`, userID, micros); err != nil {
-			return n, err
-		}
-		n++
-	}
-	return n, rows.Err()
-}
-
-// RollupUsage folds new ledger rows into usage_daily. It advances a watermark
-// rather than recomputing, so cost is proportional to new events and the
-// operator dashboard never touches the raw ledger.
-func (s *Store) RollupUsage(ctx context.Context) (int64, error) {
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return 0, err
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-
-	var watermark int64
-	if err := tx.QueryRow(ctx,
-		`SELECT last_event_id FROM usage_rollup_state WHERE id = true FOR UPDATE`,
-	).Scan(&watermark); err != nil {
-		return 0, err
-	}
-
-	// Only fold rows that can no longer be joined by an in-flight transaction,
-	// so a row committed out of id order is not skipped past the watermark.
-	var maxID int64
-	if err := tx.QueryRow(ctx, `
-		SELECT COALESCE(max(id), $1) FROM usage_events
-		WHERE id > $1 AND created_at < now() - interval '1 minute'`, watermark,
-	).Scan(&maxID); err != nil {
-		return 0, err
-	}
-	if maxID <= watermark {
-		return 0, tx.Commit(ctx)
-	}
-
-	tag, err := tx.Exec(ctx, `
-		INSERT INTO usage_daily
-			(day, actor_user_id, kind, surface, provider, model,
-			 events, input_tokens, output_tokens, units, credit_micros)
-		SELECT created_at::date, actor_user_id, kind, surface, provider, model,
-		       count(*), sum(input_tokens), sum(output_tokens), sum(units), sum(credit_micros)
-		FROM usage_events
-		WHERE id > $1 AND id <= $2
-		GROUP BY 1,2,3,4,5,6
-		ON CONFLICT (day, actor_user_id, kind, surface, provider, model) DO UPDATE SET
-			events        = usage_daily.events + EXCLUDED.events,
-			input_tokens  = usage_daily.input_tokens + EXCLUDED.input_tokens,
-			output_tokens = usage_daily.output_tokens + EXCLUDED.output_tokens,
-			units         = usage_daily.units + EXCLUDED.units,
-			credit_micros = usage_daily.credit_micros + EXCLUDED.credit_micros`,
-		watermark, maxID)
-	if err != nil {
-		return 0, err
-	}
-	if _, err := tx.Exec(ctx,
-		`UPDATE usage_rollup_state SET last_event_id = $1, last_run_at = now() WHERE id = true`,
-		maxID,
-	); err != nil {
-		return 0, err
-	}
-	return tag.RowsAffected(), tx.Commit(ctx)
-}
-
-// ReconcileCredits recomputes counters from the ledger, repairing drift from
-// crashes between an event insert and its counter update.
-func (s *Store) ReconcileCredits(ctx context.Context) (int64, error) {
-	// Only the current period is repairable: past months have been rolled up
-	// and their ledger rows may already be outside the retention window.
-	tag, err := s.pool.Exec(ctx, `
-		UPDATE user_credits c
-		SET used_micros = COALESCE((
-		      SELECT sum(e.credit_micros) FROM usage_events e
-		      WHERE e.actor_user_id = c.user_id
-		        AND e.created_at >= date_trunc('month', now())
-		    ), 0),
-		    reserved_micros = COALESCE((
-		      SELECT sum(r.amount_micros) FROM credit_reservations r
-		      WHERE r.actor_user_id = c.user_id AND r.status = 'open'
-		    ), 0),
-		    updated_at = now()
-		WHERE c.period_start = date_trunc('month', now())::date`)
-	if err != nil {
-		return 0, err
-	}
-	return tag.RowsAffected(), nil
+	err := s.pool.QueryRow(ctx, `
+		WITH released AS (
+		  UPDATE provider_sessions r
+		     SET status = 'released', settled_at = now()
+		   WHERE r.status = 'open' AND r.surface = $1
+		     AND r.created_at < now() - ($2 * interval '1 millisecond')
+		     AND NOT EXISTS (
+		       SELECT 1 FROM jobs j
+		        WHERE j.type = 'ingest'
+		          AND j.status IN ('pending', 'running')
+		          AND j.payload->>'reservationId' = r.id
+		     )
+		   RETURNING actor_user_id, reserved_micros
+		), totals AS (
+		  SELECT actor_user_id, sum(reserved_micros) AS reserved_micros
+		    FROM released GROUP BY actor_user_id
+		), counters AS (
+		  UPDATE user_credits c
+		     SET reserved_micros = GREATEST(0, c.reserved_micros - t.reserved_micros),
+		         updated_at = now()
+		    FROM totals t
+		   WHERE c.user_id = t.actor_user_id
+		   RETURNING c.user_id
+		)
+		SELECT count(*) FROM released`,
+		SurfaceIngest, ingestReservationOrphanAge.Milliseconds()).Scan(&n)
+	return n, err
 }

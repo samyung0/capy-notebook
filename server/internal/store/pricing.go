@@ -12,7 +12,7 @@ import (
 //
 // Per-model multipliers live on model_configs and are read through the
 // registry. The constants below are the 1x reference and the non-token rates
-// (GPU, mail, the caption floor) that are not model-specific.
+// (parse pages, mail, the caption floor) that are not model-specific.
 //
 // They are intentionally not derived from provider invoices. Provider prices
 // move, are quoted in different currencies and units, and some (cached input,
@@ -30,10 +30,13 @@ const (
 	// inconsistently across providers.
 	microsPerCaptionCall = 2_000 // 2 credits per figure caption
 
-	// Modal parse wall time (CPU Marker + RapidOCR). Parsing a large PDF is
-	// the single most expensive thing an upload triggers, so it is priced
-	// to be visible. Ledger kind stays parse_gpu.
-	microsPerGPUSecond = 500_000 // 0.5 credits per parse-second
+	// Modal CPU parsing is billed by page so concurrent jobs in one container do
+	// not have to divide shared container time. These rates preserve the old
+	// 0.5-credit/second policy and round up the worst benchmark case: a 60-second
+	// cold start for a one-page job, 0.91 seconds of Marker, and up to 42 seconds
+	// of RapidOCR. An OCR page uses the OCR rate instead of both rates.
+	microsPerDigitalParsePage int64 = 31_000_000
+	microsPerOCRParsePage     int64 = 52_000_000
 
 	// Mail is nearly free per message but is the easiest thing to abuse via
 	// invite spam, so it is metered.
@@ -46,7 +49,7 @@ type TokenRates struct {
 	MicrosPerInputToken       int64
 	MicrosPerOutputToken      int64
 	MicrosPerCachedInputToken int64
-	ModelKey                  string
+	Model                     models.Ref
 	ModelVersion              int
 }
 
@@ -66,21 +69,21 @@ func (s *Store) EmbeddingRates(ctx context.Context, workspaceID string) (TokenRa
 	}
 	var pin models.Pin
 	err := s.pool.QueryRow(ctx,
-		`SELECT embedding_model_key, embedding_model_version FROM workspaces WHERE id=$1`,
+		`SELECT embedding_provider_slug, embedding_model_slug, embedding_model_version FROM workspaces WHERE id=$1`,
 		workspaceID,
-	).Scan(&pin.Key, &pin.Version)
+	).Scan(&pin.ProviderSlug, &pin.ModelSlug, &pin.Version)
 	if err != nil {
 		return TokenRates{}, fmt.Errorf("%w: workspace embedding pin: %v", ErrModelUnavailable, err)
 	}
 	if pin.Zero() {
 		return TokenRates{}, fmt.Errorf("%w: empty workspace embedding pin", ErrModelUnavailable)
 	}
-	cfg, err := s.registry.Get(ctx, pin.Key, pin.Version)
+	cfg, err := s.registry.Get(ctx, pin.Ref, pin.Version)
 	if err != nil {
 		return TokenRates{}, fmt.Errorf("%w: %v", ErrModelUnavailable, err)
 	}
 	if !cfg.Allows(models.SurfaceEmbedding) {
-		return TokenRates{}, fmt.Errorf("%w: %s v%d is not an embedding model", ErrModelUnavailable, cfg.Key, cfg.Version)
+		return TokenRates{}, fmt.Errorf("%w: %s v%d is not an embedding model", ErrModelUnavailable, cfg.Ref(), cfg.Version)
 	}
 	return RatesFromConfig(cfg), nil
 }
@@ -90,7 +93,7 @@ func RatesFromConfig(cfg models.Config) TokenRates {
 		MicrosPerInputToken:       cfg.MicrosPerInputToken,
 		MicrosPerOutputToken:      cfg.MicrosPerOutputToken,
 		MicrosPerCachedInputToken: cfg.MicrosPerCachedInputToken,
-		ModelKey:                  cfg.Key,
+		Model:                     cfg.Ref(),
 		ModelVersion:              cfg.Version,
 	}
 }
@@ -118,8 +121,18 @@ func CreditsForCaption(rates TokenRates, inputTokens, outputTokens int64) int64 
 	return microsPerCaptionCall + CreditsForTokens(rates, KindLLM, inputTokens, outputTokens, 0)
 }
 
-func CreditsForGPU(gpuMillis int64) int64 {
-	return gpuMillis * microsPerGPUSecond / 1000
+func CreditsForParsePages(pages, ocrPages int64) int64 {
+	if pages <= 0 {
+		return 0
+	}
+	if ocrPages < 0 {
+		ocrPages = 0
+	}
+	if ocrPages > pages {
+		ocrPages = pages
+	}
+	return (pages-ocrPages)*microsPerDigitalParsePage +
+		ocrPages*microsPerOCRParsePage
 }
 
 func CreditsForEmail(count int64) int64 { return count * microsPerEmail }

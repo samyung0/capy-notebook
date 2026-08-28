@@ -3,6 +3,7 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -18,8 +19,11 @@ jobs:
           cache: pnpm
           node-version: 22
       - run: pnpm install --frozen-lockfile
+      - run: pnpm gen:api
+      - run: git diff --exit-code -- src/api/gen ops/src/api-gen
       - run: pnpm run email:check
       - run: pnpm run check
+      - run: pnpm review:validate-boundaries
       - run: pnpm test
       - run: pnpm --filter @evo-notes/ops typecheck
       - run: pnpm --filter @evo-notes/ops test
@@ -54,48 +58,20 @@ jobs:
 
   backend_check:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        # 0001_init.sql creates the vector extension for the retrieval index, so
-        # the baseline no longer applies to a stock postgres image.
-        image: pgvector/pgvector:pg16
-        env:
-          POSTGRES_DB: evo
-          POSTGRES_PASSWORD: evo
-          POSTGRES_USER: evo
-        options: >-
-          --health-cmd "pg_isready -U evo -d evo"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-        ports:
-          - 5432:5432
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
-      # The store/httpapi suites operate on the shared E2E actors (u_owner and
-      # friends), so the schema alone is not enough to run them.
-      - run: |
-          sudo apt-get update
-          sudo apt-get install -y postgresql-client
-          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f server/migrations/0001_init.sql
-          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f e2e/fixtures/seed.sql
-        env:
-          TEST_DATABASE_URL: postgres://evo:evo@localhost:5432/evo?sslmode=disable
-      # -p 1 because several packages reapply the migration on start-up, and
-      # concurrent DDL on one database deadlocks.
-      - run: go test -count=1 ./internal/ops
+      # The harness owns one fresh pgvector container, migrations, fixtures,
+      # serial package execution, and cleanup. Database tests fail rather than
+      # skip if someone bypasses it.
+      - run: go run ./cmd/testdb
         working-directory: server
-        env:
-          OPS_INTEGRATION_REQUIRED: "1"
-          TEST_DATABASE_URL: postgres://evo:evo@localhost:5432/evo?sslmode=disable
-      - run: go test -p 1 ./...
+      - run: go run ./cmd/openapi -o /tmp/openapi.yaml -python-surfaces /tmp/surface.py
         working-directory: server
-        env:
-          OPS_INTEGRATION_REQUIRED: "1"
-          TEST_DATABASE_URL: postgres://evo:evo@localhost:5432/evo?sslmode=disable
+      - run: diff -u openapi.yaml /tmp/openapi.yaml
+      - run: diff -u pipeline/pipeline/generated/surface.py /tmp/surface.py
 
   pipeline_check:
     runs-on: ubuntu-latest
@@ -104,4 +80,5 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           enable-cache: true
+      - run: uv sync --frozen --extra test
       - run: uv run --extra test pytest

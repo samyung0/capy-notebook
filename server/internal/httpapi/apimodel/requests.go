@@ -202,6 +202,31 @@ type ImportSourcesReq struct {
 	FileIds   []string `json:"fileIds" minItems:"1" nullable:"false"`
 	DriveIds  []string `json:"driveIds,omitempty" nullable:"false"`
 	ChapterID *string  `json:"chapterId,omitempty"`
+	RequestID string   `json:"requestId,omitempty" maxLength:"128"`
+}
+
+type SourceImportAccepted struct {
+	JobID    string `json:"jobId"`
+	UploadID string `json:"uploadId"`
+	Name     string `json:"name"`
+}
+
+type SourceImportRejected struct {
+	FileID string `json:"fileId"`
+	Code   string `json:"code"`
+}
+
+type ImportSourcesAccepted struct {
+	Jobs     []SourceImportAccepted `json:"jobs" nullable:"false"`
+	Rejected []SourceImportRejected `json:"rejected" nullable:"false"`
+}
+
+type SourceImportStatus struct {
+	JobID     string  `json:"jobId"`
+	Status    string  `json:"status" enum:"pending,running,succeeded,failed,cancelled"`
+	Name      string  `json:"name"`
+	FileID    *string `json:"fileId,omitempty"`
+	ErrorCode string  `json:"errorCode,omitempty"`
 }
 
 // UpdateDeckReq is the (partial) body for PATCH /api/decks/{id}.

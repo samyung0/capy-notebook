@@ -1,4 +1,4 @@
-"""Retrieval HTTP service. The Go gateway proxies /chat/stream, /generate and /quiz-grade here.
+"""Retrieval HTTP service. The Go gateway proxies /chat/stream, /generate, /quiz-grade and /plate-ai here.
 
 Chat runs a capped tool loop over the workspace index (see retrieval/agent.py).
 Generation runs fixed workflows instead, because its output has to parse.
@@ -8,12 +8,13 @@ Run: ``uvicorn pipeline.retrieve.service:app --host 0.0.0.0 --port 8001``
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import secrets
 import threading
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -22,9 +23,9 @@ from pydantic import BaseModel, Field
 from .. import obs, registry, use_compatible_event_loop
 from ..config import cfg
 from ..retrieval import accounting, models, store, workflows
-from ..retrieval.agent import run_agent
-from ..retrieval.chunking import clip_to_tokens
-from ..retrieval.locale import response_language_rule, rewrite_language_rule
+from ..retrieval.agent import CLIENT_ERROR, CLIENT_ERROR_CODE, ClientDrop, run_agent
+from ..retrieval.chunking import clip_to_tokens, estimate_tokens
+from ..retrieval.events import error as client_error
 from ..retrieval.tools import ToolContext
 from . import quiz_grade as quiz_grade_mod
 from .ai_adapter import router as plate_ai_router
@@ -48,11 +49,7 @@ async def lifespan(app: FastAPI):
     await store.pool()
     # Embedding is deliberately absent: it is a per-workspace pin now, not a
     # process-wide choice, so there is no single value to report here.
-    log.info(
-        "retrieval up — query_model=%s tools=%s",
-        cfg.query_model,
-        "on" if cfg.gateway_url else "read-only",
-    )
+    log.info("retrieval up — tools=%s", "on" if cfg.gateway_url else "read-only")
     try:
         yield
     finally:
@@ -95,6 +92,23 @@ async def generate_empty_handler(_request: Request, exc: workflows.GenerateEmpty
     )
 
 
+@app.exception_handler(workflows.InvalidGenerateScope)
+async def invalid_generate_scope_handler(
+    _request: Request, exc: workflows.InvalidGenerateScope
+):
+    return JSONResponse({"code": "invalid_scope", "message": str(exc)}, status_code=400)
+
+
+@app.exception_handler(workflows.GenerateNoContent)
+async def generate_no_content_handler(
+    _request: Request, exc: workflows.GenerateNoContent
+):
+    return JSONResponse(
+        {"code": "scope_has_no_indexed_content", "message": str(exc)},
+        status_code=400,
+    )
+
+
 @app.middleware("http")
 async def request_context(request: Request, call_next):
     """Continue the gateway's trace and open a usage accumulator per request.
@@ -118,26 +132,27 @@ def _uid(prefix: str) -> str:
     return f"{prefix}_{secrets.token_hex(5)}"
 
 
+ThinkingLevel = Literal["instant", "low", "mid", "high", "max"]
+
+
 class LLMPin(BaseModel):
-    modelKey: str | None = None
+    providerSlug: str | None = None
+    modelSlug: str | None = None
     configVersion: int | None = None
     userId: str | None = None
     paidBy: str | None = None
-    reasoningMode: str | None = None
-    reasoningEffort: str | None = None
+    thinking: ThinkingLevel
 
 
 def _bind_llm(req: LLMPin) -> None:
-    registry.bind_request_llm(
-        req.userId, req.paidBy, req.reasoningMode, req.reasoningEffort
-    )
+    registry.bind_request_llm(req.userId, req.paidBy, req.thinking)
 
 
 class ChatStreamReq(LLMPin):
-    query: str
+    query: str = Field(min_length=1, max_length=65_536)
     workspaceId: str
     fileIds: list[str] | None = None
-    model: str | None = None  # ignored; pin is modelKey + configVersion
+    model: str | None = None  # ignored; the provider/model/version pin is authoritative
     # Prior turns as OpenAI-style role/content pairs, sent to the LLM only.
     history: list[dict] | None = None
     checkpoint: dict | None = None
@@ -145,6 +160,21 @@ class ChatStreamReq(LLMPin):
     spendSessionId: str
     # Account locale from the gateway (users.locale). Do not trust a browser field.
     locale: str | None = None
+
+
+def _bind_accounting(session_id: str):
+    if not session_id:
+        return None
+    return accounting.bind(session_id)
+
+
+QUERY_MAX_ESTIMATED_TOKENS = 8192
+QUERY_MAX_BYTES = 65_536
+
+
+def _reset_accounting(token) -> None:
+    if token is not None:
+        accounting.reset(token)
 
 
 class GenerateReq(LLMPin):
@@ -162,6 +192,7 @@ class GenerateReq(LLMPin):
     fileIds: list[str] | None = None
     timeLimitMin: int | None = None
     locale: str | None = None
+    spendSessionId: str = ""
 
 
 _VALID_LEVELS = {"recall", "application", "analysis"}
@@ -207,12 +238,68 @@ def _sse(payload: dict) -> str:
 
 @app.get("/healthz")
 def healthz():
-    return {"ok": True, "query_model": cfg.query_model}
+    return {"ok": True}
+
+
+async def _relay_until_disconnect(
+    request: Request,
+    agen,
+    client: ClientDrop,
+):
+    """Write SSE while the client is here. Never cancel the agent pump.
+
+    On disconnect we stop writing and wait for the current provider call to
+    settle. The agent sees ``client.dropped`` and does not start another call.
+    """
+    queue: asyncio.Queue[object] = asyncio.Queue()
+
+    async def _pump() -> None:
+        try:
+            async for event in agen:
+                await queue.put(event)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - relay to the SSE writer
+            await queue.put(exc)
+        finally:
+            await queue.put(None)
+
+    pump = asyncio.create_task(_pump())
+    try:
+        while True:
+            if await request.is_disconnected():
+                client.mark()
+                break
+            try:
+                item = await asyncio.wait_for(queue.get(), timeout=0.2)
+            except TimeoutError:
+                continue
+            if item is None:
+                return
+            if isinstance(item, BaseException):
+                raise item
+            yield _sse(item)
+    finally:
+        if not pump.done():
+            client.mark()
+            await asyncio.shield(pump)
 
 
 async def _chat_events(req: ChatStreamReq, request: Request):
+    if (
+        len(req.query.encode("utf-8")) > QUERY_MAX_BYTES
+        or estimate_tokens(req.query) > QUERY_MAX_ESTIMATED_TOKENS
+    ):
+        yield _sse(
+            client_error(
+                "The message is too long. Shorten it and try again.",
+                "query_too_long",
+            )
+        )
+        return
     _bind_llm(req)
     accounting_token = None
+    client = ClientDrop()
     ctx = ToolContext(
         workspace_id=req.workspaceId,
         user_id=req.userId or "",
@@ -221,22 +308,26 @@ async def _chat_events(req: ChatStreamReq, request: Request):
     )
     try:
         accounting_token = accounting.bind(req.spendSessionId)
-        async for event in run_agent(
+        agen = run_agent(
             query=req.query,
             ctx=ctx,
             history=req.history,
-            model=models.resolve_query_model(req.modelKey, req.configVersion),
+            model=models.resolve_query_model(
+                req.providerSlug, req.modelSlug, req.configVersion
+            ),
             locale=req.locale,
             checkpoint=req.checkpoint,
-        ):
-            if await request.is_disconnected():
-                break
-            yield _sse(event)
+            client=client,
+        )
+        async for chunk in _relay_until_disconnect(request, agen, client):
+            yield chunk
     except models.UserKeyError as exc:
-        yield _sse(exc.as_event())
-    except Exception as exc:
+        if not client.dropped:
+            yield _sse(exc.as_event())
+    except Exception:
         log.exception("chat stream failed")
-        yield _sse({"type": "error", "message": str(exc)})
+        if not client.dropped:
+            yield _sse(client_error(CLIENT_ERROR, CLIENT_ERROR_CODE))
     finally:
         if accounting_token is not None:
             accounting.reset(accounting_token)
@@ -251,89 +342,6 @@ async def chat_stream(req: ChatStreamReq, request: Request):
     )
 
 
-# --------------------------------------------------------------- AI completion
-# Direct (non-RAG) LLM completion for the note editor: an AI command menu and
-# Copilot-style "continue writing". Streams plain tokens in the same SSE shape
-# as chat so the Go gateway relays them unchanged.
-
-
-class CompleteReq(LLMPin):
-    workspaceId: str
-    mode: str = "command"  # command | continue
-    prompt: str | None = None
-    context: str | None = None
-    model: str | None = None  # ignored; pin is modelKey + configVersion
-    locale: str | None = None
-
-
-def _complete_messages(req: CompleteReq) -> list[dict]:
-    context = (req.context or "").strip()
-    if req.mode == "continue":
-        # Continuation matches the note, not the UI locale — forcing Chinese
-        # onto an English paragraph would be worse than leaving it English.
-        system = (
-            "You are a writing assistant embedded in a note editor. Continue the "
-            "user's note naturally from where it stops. Write only the continuation "
-            "(no preamble, no repetition of the existing text). Match the existing tone."
-        )
-        return [
-            {"role": "system", "content": system},
-            {"role": "user", "content": context or "(empty note)"},
-        ]
-    language = (
-        rewrite_language_rule(req.locale)
-        if context
-        else response_language_rule(req.locale)
-    )
-    system = (
-        "You are a writing assistant embedded in a note editor. Apply the user's "
-        "instruction and return ONLY the resulting text to insert (no preamble, no "
-        "code fences unless the instruction asks for code).\n" + language
-    )
-    user = f"Instruction: {(req.prompt or '').strip()}"
-    if context:
-        user += f"\n\nContent:\n{context}"
-    return [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
-    ]
-
-
-async def _complete_stream(req: CompleteReq, request: Request):
-    _bind_llm(req)
-    model = models.resolve_query_model(
-        req.modelKey, req.configVersion, surface=registry.SURFACE_EDITOR
-    )
-    if req.context:
-        req.context = clip_to_tokens(req.context, registry.input_budget(model))
-    try:
-        async for token in models.stream_text(
-            _complete_messages(req), model=model, temperature=0.7
-        ):
-            if await request.is_disconnected():
-                break
-            yield _sse({"type": "token", "text": token})
-        done: dict[str, Any] = {"type": "done"}
-        usage = obs.current_usage()
-        if usage is not None and not usage.is_empty():
-            done["usage"] = usage.as_dict()
-        yield _sse(done)
-    except models.UserKeyError as exc:
-        yield _sse(exc.as_event())
-    except Exception as e:
-        log.exception("complete stream failed")
-        yield _sse({"type": "error", "message": str(e)})
-
-
-@app.post("/complete/stream")
-async def complete_stream(req: CompleteReq, request: Request):
-    return StreamingResponse(
-        _complete_stream(req, request),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
-
-
 class QuizGradeReq(LLMPin):
     workspaceId: str | None = None
     prompt: str = ""
@@ -342,61 +350,49 @@ class QuizGradeReq(LLMPin):
     modelAnswer: str = ""
     userAnswer: str = ""
     locale: str | None = None
+    spendSessionId: str = ""
 
 
 @app.post("/quiz-grade")
 async def quiz_grade(req: QuizGradeReq) -> dict[str, Any]:
     _bind_llm(req)
+    accounting_token = _bind_accounting(req.spendSessionId)
     model = models.resolve_query_model(
-        req.modelKey, req.configVersion, surface=registry.SURFACE_QUIZ
+        req.providerSlug,
+        req.modelSlug,
+        req.configVersion,
+        surface=registry.Surface.QUIZ,
     )
-    text = await models.complete_text(
-        [
-            {"role": "system", "content": quiz_grade_mod.GRADE_SYSTEM},
-            {
-                "role": "user",
-                "content": clip_to_tokens(
-                    quiz_grade_mod.build_grade_prompt(
-                        prompt=req.prompt,
-                        hints=req.hints or [],
-                        rubrics=req.rubrics or [],
-                        model_answer=req.modelAnswer,
-                        user_answer=req.userAnswer,
-                    ),
-                    registry.input_budget(model),
-                ),
-            },
-        ],
-        model=model,
-        temperature=0.1,
-        max_tokens=models.quiz_grade_max_tokens(model),
-        reasoning=False,
-    )
-    payload = quiz_grade_mod.parse_grade_response(text)
-    usage = obs.current_usage()
-    if usage is not None and not usage.is_empty():
-        payload["usage"] = usage.as_dict()
-    return payload
-
-
-@app.post("/ai/command")
-async def ai_command(req: CompleteReq):
-    """Non-streaming one-shot AI command (kept for parity with the gateway)."""
-    _bind_llm(req)
     try:
         text = await models.complete_text(
-            _complete_messages(req),
-            model=models.resolve_query_model(
-                req.modelKey, req.configVersion, surface=registry.SURFACE_EDITOR
-            ),
-            temperature=0.7,
+            [
+                {"role": "system", "content": quiz_grade_mod.GRADE_SYSTEM},
+                {
+                    "role": "user",
+                    "content": clip_to_tokens(
+                        quiz_grade_mod.build_grade_prompt(
+                            prompt=req.prompt,
+                            hints=req.hints or [],
+                            rubrics=req.rubrics or [],
+                            model_answer=req.modelAnswer,
+                            user_answer=req.userAnswer,
+                        ),
+                        registry.input_budget(model),
+                    ),
+                },
+            ],
+            model=model,
+            temperature=0.1,
+            max_tokens=models.quiz_grade_max_tokens(model),
+            reasoning=False,
         )
-        return {"text": text}
-    except models.UserKeyError:
-        raise
-    except Exception as e:
-        log.exception("ai command failed")
-        return {"text": "", "error": str(e)}
+        payload = quiz_grade_mod.parse_grade_response(text)
+        usage = obs.current_usage()
+        if usage is not None and not usage.is_empty():
+            payload["usage"] = usage.as_dict()
+        return payload
+    finally:
+        _reset_accounting(accounting_token)
 
 
 # ------------------------------------------------------------------- generate
@@ -415,21 +411,26 @@ async def generate(req: GenerateReq) -> dict[str, Any]:
     """Produce a material and report what it cost.
 
     The usage envelope is attached here rather than inside each workflow so
-    every generate kind reports it the same way, including the ones that
-    map-reduce across files and therefore make many more model calls than the
-    single-shot kinds.
+    every generate kind reports it the same way.
     """
-    payload = await _generate(req)
-    usage = obs.current_usage()
-    if usage is not None and not usage.is_empty():
-        payload["usage"] = usage.as_dict()
-    return payload
+    accounting_token = _bind_accounting(req.spendSessionId)
+    try:
+        payload = await _generate(req)
+        usage = obs.current_usage()
+        if usage is not None and not usage.is_empty():
+            payload["usage"] = usage.as_dict()
+        return payload
+    finally:
+        _reset_accounting(accounting_token)
 
 
 async def _generate(req: GenerateReq) -> dict[str, Any]:
     _bind_llm(req)
     model = models.resolve_query_model(
-        req.modelKey, req.configVersion, surface=registry.SURFACE_GENERATE
+        req.providerSlug,
+        req.modelSlug,
+        req.configVersion,
+        surface=registry.Surface.GENERATE,
     )
     chapters = req.chapters or []
     file_ids = req.fileIds or []
@@ -438,6 +439,8 @@ async def _generate(req: GenerateReq) -> dict[str, Any]:
         file_ids=file_ids or None,
         budget=registry.input_budget(model),
     )
+    if not passages:
+        raise workflows.GenerateNoContent("The requested scope has no indexed content.")
     file_names = sorted({p.file_name for p in passages})
     scope = workflows.scope_label(chapters, file_names)
 

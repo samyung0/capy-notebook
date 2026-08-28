@@ -11,17 +11,19 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from typing import Any
 
 from .. import obs
 from ..config import cfg
-from . import accounting, compact, events, models, store, tools
+from . import accounting, compact, events, models, tools
 from .chunking import estimate_tokens
 from .limits import (
     MAX_CONCURRENT,
     MAX_CONCURRENT_SEARCH,
     PLANNING_RESPONSES,
     STOP_ANSWER,
+    STOP_CLIENT_GONE,
     STOP_ERROR,
     STOP_PLANNING_CAP,
     STOP_TURN_FAILED,
@@ -101,6 +103,22 @@ CLIENT_ERROR = "The chat agent hit an internal error."
 CLIENT_ERROR_CODE = "agent_failed"
 
 
+@dataclass
+class ClientDrop:
+    """Set when the browser or Go hop is gone. The current provider call still
+    finishes and settles. The loop does not start another one.
+    """
+
+    dropped: bool = False
+
+    def mark(self) -> None:
+        self.dropped = True
+
+
+def _client_gone(client: ClientDrop | None) -> bool:
+    return bool(client and client.dropped)
+
+
 def _history_turns(history: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for turn in history or []:
@@ -111,8 +129,6 @@ def _history_turns(history: list[dict[str, Any]] | None) -> list[dict[str, Any]]
                 "role": role,
                 "content": turn["content"],
             }
-            if turn.get("citations"):
-                row["citations"] = turn["citations"]
             out.append(row)
     return out
 
@@ -140,52 +156,40 @@ async def _admit_checkpoint(
     query_msg: dict[str, Any],
     prime_msg: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], dict[str, Any] | None]:
-    extra = compact.estimate_schemas(schemas)
-    if not compact.needs_compact(messages, spec, extra=extra):
+    if not compact.needs_compact(messages, spec, schemas=schemas):
         return messages, None
-    tail_keep = 4
-    eligible = history[:-tail_keep] if len(history) > tail_keep else []
-    if not eligible and not (checkpoint and checkpoint.get("summary")):
-        return compact.clip_messages(messages, spec), None
-    through = ""
-    for turn in reversed(eligible):
-        if turn.get("role") == "assistant" and turn.get("id"):
-            through = str(turn["id"])
-            break
-    if not through:
-        return compact.clip_messages(messages, spec), None
+    completed = [turn for turn in history if turn.get("id")]
+    if not completed:
+        return messages, None
+    through = str(completed[-1]["id"])
 
     def _count() -> None:
         budget.completion_calls += 1
         budget.compaction_calls += 1
 
-    try:
-        folded = await compact.summarize_checkpoint(
-            prior_summary=str((checkpoint or {}).get("summary") or ""),
-            prior_refs=list((checkpoint or {}).get("sourceRefs") or []),
-            turns=eligible,
-            spec=spec,
-            on_compact=_count,
-        )
-    except (models.UserKeyError, accounting.AccountingError):
-        raise
-    except Exception:
-        log.warning("checkpoint summarize failed", exc_info=True)
-        return compact.clip_messages(messages, spec), None
+    folded = await compact.summarize_checkpoint(
+        prior_summary=str((checkpoint or {}).get("summary") or ""),
+        turns=completed,
+        current_user_message=str(query_msg.get("content") or ""),
+        spec=spec,
+        on_compact=_count,
+    )
     replacement = {
         "throughMessageId": through,
-        "summary": folded["summary"],
-        "sourceRefs": folded["source_refs"],
-        "modelKey": spec.model_key,
+        "summary": folded,
+        "providerSlug": spec.provider_slug,
+        "modelSlug": spec.model_slug,
         "modelVersion": spec.version,
-        "estimatedTokens": estimate_tokens(folded["summary"]),
+        "estimatedTokens": estimate_tokens(folded),
     }
     rebuilt = [messages[0]]
     rebuilt.append(
-        {"role": "user", "content": "Earlier conversation:\n" + folded["summary"]}
-    )
-    rebuilt.extend(
-        {"role": t["role"], "content": t["content"]} for t in history[-tail_keep:]
+        {
+            "role": "user",
+            "content": "Earlier conversation:\n" + folded,
+            "_kind": "memory",
+            "_memory": folded,
+        }
     )
     rebuilt.append(query_msg)
     rebuilt.append(prime_msg)
@@ -198,9 +202,10 @@ async def run_agent(
     query: str,
     ctx: ToolContext,
     history: list[dict[str, Any]] | None,
-    model: str | models.ModelConfig,
+    model: models.ModelConfig,
     locale: str | None = None,
     checkpoint: dict[str, Any] | None = None,
+    client: ClientDrop | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     budget = TurnBudget()
     ctx.budget = budget
@@ -210,9 +215,18 @@ async def run_agent(
     answer = ""
     block_n = 0
 
+    prime_file_ids: list[str] | None = None
+    if ctx.file_ids:
+        active_scope = await tools.resolve_current_scope(ctx)
+        if isinstance(active_scope, ToolResult):
+            yield _with_usage(events.error(active_scope.text(), "invalid_scope"))
+            return
+        prime_file_ids = active_scope.file_ids
     budget.embedding_calls += 1
     passages = await search(
-        workspace_id=ctx.workspace_id, query=query, file_ids=ctx.file_ids or None
+        workspace_id=ctx.workspace_id,
+        query=query,
+        file_ids=prime_file_ids,
     )
     numbered = tools.assign_citations(ctx, passages)
     yield events.tool_start("prime", "search_workspace", query)
@@ -233,13 +247,6 @@ async def run_agent(
             [p.as_citation() for p in ctx.citations], citation_version
         )
 
-    validated_refs: list[dict[str, Any]] = []
-    if checkpoint and checkpoint.get("sourceRefs"):
-        validated_refs = await store.validate_source_refs(
-            ctx.workspace_id, list(checkpoint.get("sourceRefs") or [])
-        )
-        checkpoint = {**checkpoint, "sourceRefs": validated_refs}
-
     messages: list[dict[str, Any]] = [
         {"role": "system", "content": system_prompt(locale)}
     ]
@@ -248,6 +255,8 @@ async def run_agent(
             {
                 "role": "user",
                 "content": "Earlier conversation:\n" + str(checkpoint["summary"]),
+                "_kind": "memory",
+                "_memory": str(checkpoint["summary"]),
             }
         )
     prior = _history_turns(history)
@@ -255,7 +264,7 @@ async def run_agent(
     query_msg = {"role": "user", "content": query, "_kind": "query"}
     prime_msg = {
         "role": "user",
-        "content": _priming_message(numbered),
+        "content": tools.limit_tool_result(_priming_message(numbered)),
         "_kind": "prime",
     }
     messages.append(query_msg)
@@ -276,10 +285,20 @@ async def run_agent(
     except models.UserKeyError as exc:
         yield _with_usage(dict(exc.as_event()))
         return
+    except compact.ContextTooLarge as exc:
+        yield _with_usage(events.error(str(exc), "context_too_large"))
+        return
+    except compact.InvalidSummary:
+        log.warning("checkpoint summarizer returned invalid output", exc_info=True)
+        yield _with_usage(
+            events.error(
+                "The conversation could not be compacted.", "compaction_failed"
+            )
+        )
+        return
     if replacement:
         yield events.checkpoint(replacement)
 
-    openai = spec.provider_slug == "openai"
     planning_cap = min(cfg.agent_max_steps, PLANNING_RESPONSES)
     state = accounting.current()
     terminal_pending = bool(
@@ -288,10 +307,13 @@ async def run_agent(
     step = 0
 
     while step < planning_cap or terminal_pending:
+        if _client_gone(client):
+            budget.stop_reason = STOP_CLIENT_GONE
+            return
         terminal_call = terminal_pending
         terminal_pending = False
         tools_off = terminal_call or step == planning_cap - 1
-        extra = compact.estimate_schemas(None if tools_off else schemas)
+        active_schemas = None if tools_off else schemas
 
         yield events.phase("planning")
         try:
@@ -303,8 +325,8 @@ async def run_agent(
             messages = await compact.compact_messages(
                 messages,
                 spec,
-                extra=extra,
-                protect_openai_chain=openai,
+                schemas=active_schemas,
+                protect_live_chain=True,
                 on_compact=_count,
                 allow_summary=not terminal_call,
             )
@@ -317,15 +339,20 @@ async def run_agent(
             ):
                 terminal_call = True
                 tools_off = True
-                extra = compact.estimate_schemas(None)
+                active_schemas = None
                 messages = await compact.compact_messages(
                     messages,
                     spec,
-                    extra=extra,
-                    protect_openai_chain=openai,
+                    schemas=active_schemas,
+                    protect_live_chain=True,
                     allow_summary=False,
                 )
-            budget.estimated_input_tokens += compact.estimate_messages(messages) + extra
+            if _client_gone(client):
+                budget.stop_reason = STOP_CLIENT_GONE
+                return
+            budget.estimated_input_tokens += compact.request_context(
+                messages, spec, schemas=active_schemas
+            ).total_tokens
             block_n += 1
             block_id = f"b{block_n}"
             pending_q: asyncio.Queue[StreamEvent | None] = asyncio.Queue()
@@ -357,29 +384,57 @@ async def run_agent(
                 q: asyncio.Queue[StreamEvent | None] = pending_q,
             ) -> AssembledResponse:
                 try:
-                    return await task
+                    return await asyncio.shield(task)
                 finally:
                     q.put_nowait(None)
 
             finisher = asyncio.create_task(_finish())
             started = False
-            while True:
-                ev = await pending_q.get()
-                if ev is None:
-                    break
-                if ev.kind == "text" and ev.text:
-                    if not started:
-                        yield events.block_start(block_id)
-                        started = True
-                    yield events.block_delta(block_id, ev.text)
-            assembled = await finisher
+            try:
+                while True:
+                    ev = await pending_q.get()
+                    if ev is None:
+                        break
+                    if ev.kind == "text" and ev.text and not _client_gone(client):
+                        if not started:
+                            yield events.block_start(block_id)
+                            started = True
+                        yield events.block_delta(block_id, ev.text)
+                assembled = await asyncio.shield(finisher)
+            except asyncio.CancelledError:
+                assembled = await asyncio.shield(finisher)
+                raise
+            finally:
+                if not stream_task.done():
+                    try:
+                        await asyncio.shield(stream_task)
+                    except Exception:
+                        log.exception("provider call failed after the SSE writer left")
         except models.UserKeyError as exc:
-            yield _with_usage(dict(exc.as_event()))
+            if not _client_gone(client):
+                yield _with_usage(dict(exc.as_event()))
+            budget.stop_reason = STOP_ERROR
+            return
+        except compact.ContextTooLarge as exc:
+            if not _client_gone(client):
+                yield _with_usage(events.error(str(exc), "context_too_large"))
+            budget.stop_reason = STOP_ERROR
+            return
+        except compact.InvalidSummary:
+            log.warning("live compaction returned invalid output", exc_info=True)
+            if not _client_gone(client):
+                yield _with_usage(
+                    events.error(
+                        "The conversation could not be compacted.",
+                        "compaction_failed",
+                    )
+                )
             budget.stop_reason = STOP_ERROR
             return
         except Exception:
             log.exception("agent step failed")
-            yield _client_error()
+            if not _client_gone(client):
+                yield _client_error()
             budget.stop_reason = STOP_ERROR
             return
 
@@ -387,6 +442,10 @@ async def run_agent(
         budget.cached_read_tokens += assembled.usage.cached_read_tokens
         budget.cache_write_tokens += assembled.usage.cache_write_tokens
         budget.reasoning_tokens += assembled.usage.reasoning_tokens
+
+        if _client_gone(client):
+            budget.stop_reason = STOP_CLIENT_GONE
+            return
 
         calls = assembled.tool_calls
         text = assembled.text.strip()
@@ -405,21 +464,38 @@ async def run_agent(
                     {"id": block_id, "kind": "narration", "text": assembled.text}
                 )
             yield events.phase("running_tools")
-            assistant: dict[str, Any] = {
-                "role": "assistant",
-                "content": assembled.text,
-                "tool_calls": [
-                    {
-                        "id": call.id,
-                        "type": "function",
-                        "function": {
-                            "name": call.name,
-                            "arguments": call.arguments,
-                        },
-                    }
-                    for call in calls
-                ],
-            }
+            if assembled.provider_message:
+                assistant = dict(assembled.provider_message)
+                assistant.setdefault("role", "assistant")
+                assistant.setdefault("content", assembled.text)
+                if not assistant.get("tool_calls"):
+                    assistant["tool_calls"] = [
+                        {
+                            "id": call.id,
+                            "type": "function",
+                            "function": {
+                                "name": call.name,
+                                "arguments": call.arguments,
+                            },
+                        }
+                        for call in calls
+                    ]
+            else:
+                assistant = {
+                    "role": "assistant",
+                    "content": assembled.text,
+                    "tool_calls": [
+                        {
+                            "id": call.id,
+                            "type": "function",
+                            "function": {
+                                "name": call.name,
+                                "arguments": call.arguments,
+                            },
+                        }
+                        for call in calls
+                    ],
+                }
             if assembled.output_items:
                 assistant["output_items"] = assembled.output_items
             messages.append(assistant)
@@ -569,7 +645,7 @@ async def _run_tools(
         numbered = tools.assign_citations(ctx, result.passages)
         if numbered:
             added = True
-        text = tools.render_result(result, numbered)
+        text = tools.limit_tool_result(tools.render_result(result, numbered))
         result.text_parts = [text]
         messages.append({"role": "tool", "tool_call_id": call.id, "content": text})
 

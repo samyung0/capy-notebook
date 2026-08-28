@@ -84,6 +84,11 @@ def extract_usage(block: Any, *, provider: str = "") -> NormalizedUsage:
     cached = _int(_attr(details, "cached_tokens", "cachedTokens"))
     if cached == 0:
         cached = _int(_attr(block, "prompt_cache_hit_tokens", "promptCacheHitTokens"))
+    anthropic_cached = _int(
+        _attr(block, "cache_read_input_tokens", "cacheReadInputTokens")
+    )
+    if cached == 0:
+        cached = anthropic_cached
     writes = _int(_attr(details, "cache_write_tokens", "cacheWriteTokens")) or _int(
         _attr(block, "cache_creation_input_tokens", "cacheCreationInputTokens")
     )
@@ -98,6 +103,14 @@ def extract_usage(block: Any, *, provider: str = "") -> NormalizedUsage:
     out.reasoning_tokens = reasoning
 
     slug = (provider or "").lower()
+    if slug == "anthropic":
+        # Anthropic reports ordinary input, cache reads, and cache writes as
+        # disjoint counters. Pricing expects input to include every category.
+        out.input_tokens += anthropic_cached + writes
+        out.cached_read_tokens = anthropic_cached
+        if cached and not anthropic_cached:
+            out.anomaly = "unproven_cache_shape"
+        return out
     proven = slug in ("deepseek", "openai")
     if not proven:
         if cached:

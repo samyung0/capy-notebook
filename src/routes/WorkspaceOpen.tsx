@@ -555,7 +555,7 @@ export default function WorkspaceOpen() {
                       {!readOnly && (
                         <div className="absolute top-1/2 right-0 flex -translate-y-[calc(50%+4px)] gap-1">
                           <IconButton
-                            className="rounded-md px-0.5 py-1"
+                            className="size-6 rounded-md p-1"
                             icon="newNote"
                             label={m.workspace_new_note()}
                             onClick={() =>
@@ -575,7 +575,7 @@ export default function WorkspaceOpen() {
                             variant={'surface'}
                           />
                           <IconButton
-                            className="rounded-md px-0.5 py-1"
+                            className="size-6 rounded-md p-1"
                             icon="minimize"
                             label={m.workspace_collapse_chapters()}
                             onClick={() =>

@@ -272,11 +272,26 @@ Generate/comment replies follow the account locale injected by the gateway; edit
 keep the selection's language unless the instruction asks to translate. AI
 comments use the same relative-anchor REST path as user comments.
 
-Editor AI (`/ai/command`, `/ai/copilot`, `/complete/stream`) resolves
-`users.editor_model_key` the same way chat does, including BYOK. Chrome is
-gated by `VITE_FEATURE_EDITOR_AI` (off by default). See
-[observability-metering.md](../observability-metering.md) for pinning, leases,
-and credit rates.
+Editor AI is two public routes: `POST /api/workspaces/{id}/ai/command`
+(Python `/plate-ai/command`) and `POST /api/workspaces/{id}/ai/copilot`
+(Python `/plate-ai/copilot`). Both resolve the
+`users.editor_model_provider_slug` / `users.editor_model_slug` pair the same
+way chat does, including BYOK. Chrome is gated by `VITE_FEATURE_EDITOR_AI`
+(off by default).
+
+The command menu always sends `ctx.toolName`. Missing or unknown values are
+`400`. There is no server classify step. Free-form text in the menu input
+sends `generate`, so a rewrite-style sentence still inserts new Markdown
+instead of replacing the selection. Canned Improve / Grammar / Shorter /
+Longer / Simplify send `edit`. `comment` is implemented and kept for a future
+Comment action; the current menu never sends it. Retry resends the last
+`toolName`.
+
+Thinking is forced to Instant on every editor provider call so typing stays
+fast. Settings → LLM shows a disabled Instant control for editor assistance.
+That settings lock is UI-only: the prefs schema has no `editorThinking`.
+See [observability-metering.md](../observability-metering.md) for pinning,
+leases, and credit rates.
 
 ## Static rendering
 

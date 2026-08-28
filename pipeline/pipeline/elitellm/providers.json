@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "providers": {
+    "anthropic": {
+      "name": "Anthropic",
+      "modes": ["chat"],
+      "byok": true,
+      "platformEnv": "ANTHROPIC_API_KEY",
+      "thinking": ["instant", "low", "mid", "high", "max"]
+    },
+    "openai": {
+      "name": "OpenAI",
+      "modes": ["chat"],
+      "byok": true,
+      "platformEnv": "OPENAI_API_KEY",
+      "thinking": ["instant", "low", "mid", "high", "max"]
+    },
+    "deepseek": {
+      "name": "DeepSeek",
+      "modes": ["chat", "vision"],
+      "byok": true,
+      "platformEnv": "DEEPSEEK_API_KEY",
+      "thinking": ["instant", "low", "mid", "high", "max"]
+    },
+    "gemini": {
+      "name": "Gemini",
+      "modes": ["vision"],
+      "byok": true,
+      "platformEnv": "GEMINI_API_KEY",
+      "thinking": ["instant", "low", "mid", "high", "max"]
+    },
+    "openrouter": {
+      "name": "OpenRouter",
+      "modes": ["embedding"],
+      "byok": false,
+      "platformEnv": "OPENROUTER_API_KEY",
+      "allowedModelSlugs": ["qwen/qwen3-embedding-4b"],
+      "thinking": []
+    }
+  }
+}

@@ -5,28 +5,11 @@ import {
   useLLMCredentials,
   useUpsertLLMCredential,
 } from '@/api/hooks';
-import type { LLMCredential } from '@/api/types';
+import type { LLMCredentialProvider } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { m } from '@/i18n';
-
-const PROVIDERS = [
-  {
-    label: () => m.settings_llm_key_openai(),
-    slug: 'openai',
-    unlocks: () => m.settings_llm_key_openai_unlocks(),
-  },
-  {
-    label: () => m.settings_llm_key_anthropic(),
-    slug: 'anthropic',
-    unlocks: () => m.settings_llm_key_anthropic_unlocks(),
-  },
-  {
-    label: () => m.settings_llm_key_deepseek(),
-    slug: 'deepseek',
-    unlocks: () => m.settings_llm_key_deepseek_unlocks(),
-  },
-] as const;
+import { providerLabel } from './ModelPicker';
 
 function credentialError(error: unknown): string {
   if (isApiError(error) && error.status === 503) {
@@ -35,17 +18,7 @@ function credentialError(error: unknown): string {
   return m.settings_llm_key_invalid();
 }
 
-function ProviderRow({
-  credential,
-  label,
-  slug,
-  unlocks,
-}: {
-  credential?: LLMCredential;
-  label: string;
-  slug: string;
-  unlocks: string;
-}) {
+function ProviderRow({ provider }: { provider: LLMCredentialProvider }) {
   const [value, setValue] = useState('');
   const {
     isPending: saving,
@@ -53,14 +26,19 @@ function ProviderRow({
     error: saveError,
   } = useUpsertLLMCredential();
   const { isPending: removing, mutate: remove } = useDeleteLLMCredential();
+  const label = providerLabel(provider.providerSlug);
+  const unlocks =
+    provider.unlocks.length > 0
+      ? provider.unlocks.join(', ')
+      : provider.reason || provider.providerSlug;
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="font-medium text-fg">{label}</p>
-        {credential ? (
+        {provider.last4 ? (
           <p className="text-fg-muted text-sm">
-            {m.settings_llm_key_saved({ last4: credential.last4 })}
+            {m.settings_llm_key_saved({ last4: provider.last4 })}
           </p>
         ) : null}
       </div>
@@ -70,6 +48,7 @@ function ProviderRow({
           aria-label={label}
           autoComplete="off"
           className="max-w-sm"
+          disabled={!provider.eligible && !provider.last4}
           onChange={(event) => setValue(event.target.value)}
           placeholder={m.settings_llm_key_placeholder()}
           spellCheck={false}
@@ -77,10 +56,10 @@ function ProviderRow({
           value={value}
         />
         <Button
-          disabled={saving || !value.trim()}
+          disabled={saving || !value.trim() || !provider.eligible}
           onClick={() => {
             save(
-              { apiKey: value.trim(), providerSlug: slug },
+              { apiKey: value.trim(), providerSlug: provider.providerSlug },
               { onSuccess: () => setValue('') }
             );
           }}
@@ -88,10 +67,10 @@ function ProviderRow({
         >
           {m.settings_llm_key_save()}
         </Button>
-        {credential ? (
+        {provider.last4 ? (
           <Button
             disabled={removing}
-            onClick={() => remove(slug)}
+            onClick={() => remove(provider.providerSlug)}
             size="sm"
             variant="ghost"
           >
@@ -112,9 +91,7 @@ export function KeysSection() {
   const { data, error, isError, refetch } = useLLMCredentials({
     errorBoundary: false,
   });
-  const bySlug = new Map(
-    (data?.credentials ?? []).map((item) => [item.providerSlug, item])
-  );
+  const providers = data?.providers ?? [];
 
   return (
     <div className="rounded-card border border-line bg-surface px-5 py-4">
@@ -141,14 +118,8 @@ export function KeysSection() {
         </div>
       ) : null}
       <div className="mt-4 flex flex-col gap-5">
-        {PROVIDERS.map((provider) => (
-          <ProviderRow
-            credential={bySlug.get(provider.slug)}
-            key={provider.slug}
-            label={provider.label()}
-            slug={provider.slug}
-            unlocks={provider.unlocks()}
-          />
+        {providers.map((provider) => (
+          <ProviderRow key={provider.providerSlug} provider={provider} />
         ))}
       </div>
     </div>

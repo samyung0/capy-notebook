@@ -14,7 +14,6 @@ func TestClassifySplitsEditorFromChat(t *testing.T) {
 		"/api/workspaces/ws_1/generate":        classAI,
 		"/api/quiz-grade":                      classAI,
 		"/api/workspaces/ws_1/ai/command":      classAI,
-		"/api/workspaces/ws_1/complete/stream": classEditor,
 		"/api/workspaces/ws_1/ai/copilot":      classEditor,
 		"/api/workspaces/ws_1/sources/uploads": classUpload,
 		"/api/workspaces":                      classDefault,

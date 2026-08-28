@@ -7,8 +7,8 @@ import (
 )
 
 func TestCreditsForTokensDifferByModel(t *testing.T) {
-	flash := TokenRates{MicrosPerInputToken: 250, MicrosPerOutputToken: 1000, ModelKey: "deepseek-flash", ModelVersion: 1}
-	pro := TokenRates{MicrosPerInputToken: 775, MicrosPerOutputToken: 3100, ModelKey: "deepseek-pro", ModelVersion: 1}
+	flash := TokenRates{MicrosPerInputToken: 250, MicrosPerOutputToken: 1000, Model: models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}, ModelVersion: 1}
+	pro := TokenRates{MicrosPerInputToken: 775, MicrosPerOutputToken: 3100, Model: models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-pro"}, ModelVersion: 1}
 	in, out := int64(1_000), int64(1_000)
 	flashC := CreditsForTokens(flash, KindLLM, in, out, 0)
 	proC := CreditsForTokens(pro, KindLLM, in, out, 0)
@@ -21,11 +21,11 @@ func TestCreditsForTokensDifferByModel(t *testing.T) {
 }
 
 func TestRatesFromConfigKeepsZeros(t *testing.T) {
-	got := RatesFromConfig(models.Config{Key: "gpt-5.6-sol", Version: 1})
+	got := RatesFromConfig(models.Config{ProviderSlug: "openai", ModelSlug: "gpt-5.6-sol", Version: 1})
 	if got.MicrosPerInputToken != 0 || got.MicrosPerOutputToken != 0 {
 		t.Fatalf("zeros were filled: %#v", got)
 	}
-	if got.ModelKey != "gpt-5.6-sol" || got.ModelVersion != 1 {
+	if got.Model != (models.Ref{ProviderSlug: "openai", ModelSlug: "gpt-5.6-sol"}) || got.ModelVersion != 1 {
 		t.Fatalf("pin: %#v", got)
 	}
 }
@@ -55,5 +55,14 @@ func TestEmbeddingRatesFailsWithoutRegistry(t *testing.T) {
 	s := &Store{}
 	if _, err := s.EmbeddingRates(t.Context(), "ws_1"); err == nil {
 		t.Fatal("nil registry must fail")
+	}
+}
+
+func TestCreditsForParsePagesUsesOCRRateInsteadOfAddingBoth(t *testing.T) {
+	if got := CreditsForParsePages(3, 1); got != 114_000_000 {
+		t.Fatalf("CreditsForParsePages(3, 1) = %d, want 114000000", got)
+	}
+	if got := CreditsForParsePages(1, 9); got != 52_000_000 {
+		t.Fatalf("CreditsForParsePages clamps OCR pages: %d", got)
 	}
 }

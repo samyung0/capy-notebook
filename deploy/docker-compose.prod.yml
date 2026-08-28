@@ -1,0 +1,289 @@
+# Production stack for Coolify (or a VPS). Not for local development.
+#
+# CLI (from the repo root, after copying .env.prod.example → .env.prod):
+#   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod up -d --build
+#
+# Coolify: Git resource, build pack Docker Compose, file
+# deploy/docker-compose.prod.yml — see openwiki/deployment-runbook.md §1.1.
+#
+# Differences from docker-compose.yml:
+# - APP_ENV=production, no demo seed, AUTH_DISABLED off
+# - /migrate runs once per deploy; the API has MIGRATE=false
+# - no host port publishes (Coolify Traefik + the tunnel own the public path)
+# - Postgres password comes from the environment
+# - ops stays behind the `ops` profile until §8 roles exist
+
+x-observability: &observability
+  APP_ENV: production
+  RELEASE_SHA: ${SOURCE_COMMIT:-${RELEASE_SHA:-}}
+  SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+
+# In-compose Postgres. Override DATABASE_URL in Coolify if you move to a
+# managed instance, and drop or stop the `db` service in that case.
+x-database-url: &database-url postgres://evo:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@db:5432/evo?sslmode=disable
+
+x-b2: &b2
+  B2_ENDPOINT: ${B2_ENDPOINT:?set B2_ENDPOINT}
+  B2_REGION: ${B2_REGION:?set B2_REGION}
+  B2_BUCKET: ${B2_BUCKET:?set B2_BUCKET}
+  B2_KEY_ID: ${B2_KEY_ID:?set B2_KEY_ID}
+  B2_APP_KEY: ${B2_APP_KEY:?set B2_APP_KEY}
+  B2_FORCE_PATH_STYLE: ${B2_FORCE_PATH_STYLE:-}
+  B2_PRESIGN_TTL: ${B2_PRESIGN_TTL:-}
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: evo
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      POSTGRES_DB: evo
+    volumes:
+      - evo_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evo -d evo"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    restart: unless-stopped
+
+  migrate:
+    build:
+      context: ../server
+    entrypoint: ["/migrate"]
+    environment:
+      DATABASE_URL: *database-url
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  server:
+    build:
+      context: ../server
+    environment:
+      <<: [*observability, *b2]
+      DATABASE_URL: *database-url
+      ADDR: ":8080"
+      MIGRATE: "false"
+      SENTRY_DSN: ${SENTRY_DSN_GATEWAY:-}
+      REDIS_URL: redis://redis:6379/0
+      COLLABORATION_SECRET: ${COLLABORATION_SECRET:?set COLLABORATION_SECRET}
+      COLLABORATION_URL: ${COLLABORATION_URL:?set COLLABORATION_URL}
+      COLLABORATION_INTERNAL_URL: http://collaboration:1234
+      EVO_PARSER: ${EVO_PARSER:-mineru}
+      EVO_ENGINE: ${EVO_ENGINE:-evo}
+      PIPELINE_URL: http://retrieval:8001
+      PIPELINE_SECRET: ${PIPELINE_SECRET:?set PIPELINE_SECRET}
+      IMPORT_RELAY_ENQUEUE_URL: ${IMPORT_RELAY_ENQUEUE_URL:-}
+      IMPORT_RELAY_SECRET: ${IMPORT_RELAY_SECRET:-}
+      LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:?set LLM_CREDENTIALS_KEY}
+      APP_URL: ${APP_URL:?set APP_URL}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:?set CORS_ALLOWED_ORIGINS}
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-resend}
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-}
+      EMAIL_REPLY_TO: ${EMAIL_REPLY_TO:-}
+      EMAIL_UNSUBSCRIBE_SECRET: ${EMAIL_UNSUBSCRIBE_SECRET:-}
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?set CLERK_SECRET_KEY}
+      CLERK_WEBHOOK_SECRET: ${CLERK_WEBHOOK_SECRET:?set CLERK_WEBHOOK_SECRET}
+      AUTH_DISABLED: "false"
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_PRO: ${STRIPE_PRICE_PRO:-}
+      STRIPE_PRICE_TEAM: ${STRIPE_PRICE_TEAM:-}
+      RATE_LIMIT_DISABLED: "false"
+      RATE_LIMIT_AI_PER_HOUR: ${RATE_LIMIT_AI_PER_HOUR:-}
+      EVO_CAPTION_CACHE_TTL_DAYS: ${EVO_CAPTION_CACHE_TTL_DAYS:-90}
+      EVO_PARSE_ZIP_TTL_HOURS: ${EVO_PARSE_ZIP_TTL_HOURS:-6}
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8080/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  collaboration:
+    build:
+      context: ..
+      dockerfile: collaboration/Dockerfile
+    environment:
+      <<: *observability
+      API_URL: http://server:8080
+      COLLABORATION_ALLOWED_ORIGINS: ${COLLABORATION_ALLOWED_ORIGINS:-${APP_URL:?set APP_URL}}
+      COLLABORATION_SECRET: ${COLLABORATION_SECRET:?set COLLABORATION_SECRET}
+      DATABASE_URL: *database-url
+      REDIS_URL: redis://redis:6379/0
+      PORT: "1234"
+      SENTRY_DSN: ${SENTRY_DSN_COLLABORATION:-}
+    expose:
+      - "1234"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:1234/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: ..
+      dockerfile: pipeline/Dockerfile
+    environment:
+      <<: [*observability, *b2]
+      DATABASE_URL: *database-url
+      SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
+      REDIS_URL: redis://redis:6379/0
+      MODAL_FAST_PARSE_URL: ${MODAL_FAST_PARSE_URL:-}
+      MODAL_PARSE_TOKEN: ${MODAL_PARSE_TOKEN:-}
+      MODAL_PARSE_TIMEOUT: ${MODAL_PARSE_TIMEOUT:-900}
+      EVO_PARSE_FAST_SLOTS: ${EVO_PARSE_FAST_SLOTS:-72}
+      MODAL_B2_ARTIFACTS: ${MODAL_B2_ARTIFACTS:-true}
+      EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-ocr}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
+      EVO_CAPTION_CONCURRENCY: ${EVO_CAPTION_CONCURRENCY:-8}
+      EVO_CAPTION_MAX_EDGE: ${EVO_CAPTION_MAX_EDGE:-1280}
+      EVO_CAPTION_VERSION: ${EVO_CAPTION_VERSION:-v1}
+      EVO_CAPTION_CACHE_TTL_DAYS: ${EVO_CAPTION_CACHE_TTL_DAYS:-90}
+      EVO_PARSE_ZIP_TTL_HOURS: ${EVO_PARSE_ZIP_TTL_HOURS:-6}
+    command: ["python", "-m", "pipeline.ingest.worker"]
+    deploy:
+      replicas: ${WORKER_REPLICAS:-1}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  retrieval:
+    build:
+      context: ..
+      dockerfile: pipeline/Dockerfile
+    environment:
+      <<: *observability
+      DATABASE_URL: *database-url
+      SENTRY_DSN: ${SENTRY_DSN_RETRIEVAL:-}
+      GATEWAY_URL: http://server:8080
+      PIPELINE_SECRET: ${PIPELINE_SECRET:?set PIPELINE_SECRET}
+      LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:?set LLM_CREDENTIALS_KEY}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
+    expose:
+      - "8001"
+    command:
+      [
+        "uvicorn",
+        "pipeline.retrieve.service:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8001",
+      ]
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  ops:
+    profiles:
+      - ops
+    build:
+      context: ..
+      dockerfile: ops/Dockerfile
+      args:
+        VITE_CLERK_PUBLISHABLE_KEY: ${VITE_CLERK_PUBLISHABLE_KEY:-}
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN_OPS:-}
+        VITE_RELEASE_SHA: ${SOURCE_COMMIT:-${RELEASE_SHA:-}}
+    environment:
+      <<: *observability
+      OPS_ADDR: ":8082"
+      OPS_STATIC_DIR: /app/static
+      # Required before enabling COMPOSE_PROFILES=ops. Interpolated even when
+      # the profile is off, so these cannot use :? on first deploy.
+      OPS_DATABASE_URL: ${OPS_DATABASE_URL:-}
+      OPS_ADMIN_DATABASE_URL: ${OPS_ADMIN_DATABASE_URL:-}
+      OPS_CF_ACCESS_ISSUER: ${OPS_CF_ACCESS_ISSUER:-}
+      OPS_CF_ACCESS_AUDIENCE: ${OPS_CF_ACCESS_AUDIENCE:-}
+      OPS_CF_ACCESS_JWKS_URL: ${OPS_CF_ACCESS_JWKS_URL:-}
+      OPS_ACCESS_DISABLED: "false"
+      OPS_AUTH_DISABLED: "false"
+      OPS_UNSAFE_DEVELOPMENT: "false"
+      CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:?set CLERK_SECRET_KEY}
+      SENTRY_DSN: ${SENTRY_DSN_OPS:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+    expose:
+      - "8082"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:8082/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  reconcile:
+    profiles:
+      - reconcile
+    build:
+      context: ../server
+    entrypoint: ["/app/reconcile"]
+    environment:
+      DATABASE_URL: *database-url
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PRICE_PRO: ${STRIPE_PRICE_PRO:-}
+      STRIPE_PRICE_TEAM: ${STRIPE_PRICE_TEAM:-}
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  evo_pgdata:

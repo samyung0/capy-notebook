@@ -79,6 +79,27 @@ components:
         - storageUsedBytes
         - storageLimitBytes
       type: object
+    ActivityBlock:
+      additionalProperties: false
+      properties:
+        callId:
+          type: string
+        detail:
+          type: string
+        id:
+          type: string
+        kind:
+          type: string
+        name:
+          type: string
+        status:
+          type: string
+        text:
+          type: string
+      required:
+        - id
+        - kind
+      type: object
     AddChapterReq:
       additionalProperties: false
       properties:
@@ -323,6 +344,8 @@ components:
     Citation:
       additionalProperties: false
       properties:
+        chunkId:
+          type: string
         fileId:
           type: string
         fileName:
@@ -1262,6 +1285,27 @@ components:
         - levels
         - title
       type: object
+    ImportSourcesAccepted:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ImportSourcesAccepted.json
+          format: uri
+          readOnly: true
+          type: string
+        jobs:
+          items:
+            $ref: "#/components/schemas/SourceImportAccepted"
+          type: array
+        rejected:
+          items:
+            $ref: "#/components/schemas/SourceImportRejected"
+          type: array
+      required:
+        - jobs
+        - rejected
+      type: object
     ImportSourcesReq:
       additionalProperties: false
       properties:
@@ -1286,6 +1330,9 @@ components:
           enum:
             - google
             - microsoft
+          type: string
+        requestId:
+          maxLength: 128
           type: string
       required:
         - provider
@@ -1342,6 +1389,26 @@ components:
         - providerSlug
         - last4
       type: object
+    LLMCredentialProvider:
+      additionalProperties: false
+      properties:
+        eligible:
+          type: boolean
+        last4:
+          type: string
+        providerSlug:
+          type: string
+        reason:
+          type: string
+        unlocks:
+          items:
+            type: string
+          type: array
+      required:
+        - providerSlug
+        - eligible
+        - unlocks
+      type: object
     LLMCredentialsResponse:
       additionalProperties: false
       properties:
@@ -1355,8 +1422,13 @@ components:
           items:
             $ref: "#/components/schemas/LLMCredential"
           type: array
+        providers:
+          items:
+            $ref: "#/components/schemas/LLMCredentialProvider"
+          type: array
       required:
         - credentials
+        - providers
       type: object
     Label:
       additionalProperties: false
@@ -1615,6 +1687,11 @@ components:
     Message:
       additionalProperties: false
       properties:
+        activity:
+          items:
+            $ref: "#/components/schemas/ActivityBlock"
+          nullable: true
+          type: array
         citations:
           items:
             $ref: "#/components/schemas/Citation"
@@ -1631,11 +1708,13 @@ components:
           type: string
         modelDisplayName:
           type: string
-        modelKey:
+        modelSlug:
           type: string
         modelVersion:
           format: int64
           type: integer
+        providerSlug:
+          type: string
         role:
           type: string
         status:
@@ -1673,44 +1752,57 @@ components:
       properties:
         available:
           type: boolean
-        displayName:
-          type: string
         isDefault:
           type: boolean
-        key:
+        modelName:
+          type: string
+        modelSlug:
+          type: string
+        providerName:
           type: string
         providerSlug:
           type: string
-        reasoning:
-          $ref: "#/components/schemas/ModelReasoning"
+        thinking:
+          $ref: "#/components/schemas/ModelThinking"
         usesUserKey:
           type: boolean
       required:
-        - key
-        - displayName
+        - providerName
+        - modelName
+        - modelSlug
         - isDefault
         - available
         - usesUserKey
         - providerSlug
       type: object
-    ModelReasoning:
+    ModelSurfacesOutputBody:
       additionalProperties: false
       properties:
-        canDisable:
-          type: boolean
-        defaultEffort:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ModelSurfacesOutputBody.json
+          format: uri
+          readOnly: true
           type: string
-        defaultMode:
+        surfaces:
+          items:
+            $ref: "#/components/schemas/Surface"
+          type: array
+      required:
+        - surfaces
+      type: object
+    ModelThinking:
+      additionalProperties: false
+      properties:
+        default:
           type: string
-        efforts:
+        levels:
           items:
             type: string
           type: array
       required:
-        - canDisable
-        - efforts
-        - defaultMode
-        - defaultEffort
+        - levels
+        - default
       type: object
     ModelsResponse:
       additionalProperties: false
@@ -1721,24 +1813,21 @@ components:
           format: uri
           readOnly: true
           type: string
-        defaultKey:
-          type: string
+        defaultModel:
+          $ref: "#/components/schemas/Ref"
         models:
           items:
             $ref: "#/components/schemas/ModelOption"
           type: array
-        selectedKey:
-          type: string
-        selectedReasoningEffort:
-          type: string
-        selectedReasoningMode:
+        selectedModel:
+          $ref: "#/components/schemas/Ref"
+        selectedThinking:
           type: string
       required:
         - models
-        - selectedKey
-        - defaultKey
-        - selectedReasoningMode
-        - selectedReasoningEffort
+        - selectedModel
+        - defaultModel
+        - selectedThinking
       type: object
     Notification:
       additionalProperties: false
@@ -2109,6 +2198,17 @@ components:
         - award
         - reason
       type: object
+    Ref:
+      additionalProperties: false
+      properties:
+        modelSlug:
+          type: string
+        providerSlug:
+          type: string
+      required:
+        - providerSlug
+        - modelSlug
+      type: object
     Region:
       additionalProperties: false
       properties:
@@ -2238,25 +2338,19 @@ components:
           format: uri
           readOnly: true
           type: string
-        chatModelKey:
+        chatModel:
+          $ref: "#/components/schemas/Ref"
+        chatThinking:
           type: string
-        chatReasoningEffort:
+        editorModel:
+          $ref: "#/components/schemas/Ref"
+        generateModel:
+          $ref: "#/components/schemas/Ref"
+        generateThinking:
           type: string
-        chatReasoningMode:
-          type: string
-        editorModelKey:
-          type: string
-        generateModelKey:
-          type: string
-        generateReasoningEffort:
-          type: string
-        generateReasoningMode:
-          type: string
-        quizModelKey:
-          type: string
-        quizReasoningEffort:
-          type: string
-        quizReasoningMode:
+        quizModel:
+          $ref: "#/components/schemas/Ref"
+        quizThinking:
           type: string
       type: object
     ShareRole:
@@ -2265,6 +2359,61 @@ components:
         - commenter
         - viewer
       type: string
+    SourceImportAccepted:
+      additionalProperties: false
+      properties:
+        jobId:
+          type: string
+        name:
+          type: string
+        uploadId:
+          type: string
+      required:
+        - jobId
+        - uploadId
+        - name
+      type: object
+    SourceImportRejected:
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+        fileId:
+          type: string
+      required:
+        - fileId
+        - code
+      type: object
+    SourceImportStatus:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SourceImportStatus.json
+          format: uri
+          readOnly: true
+          type: string
+        errorCode:
+          type: string
+        fileId:
+          type: string
+        jobId:
+          type: string
+        name:
+          type: string
+        status:
+          enum:
+            - pending
+            - running
+            - succeeded
+            - failed
+            - cancelled
+          type: string
+      required:
+        - jobId
+        - status
+        - name
+      type: object
     SourceUploadKindPolicy:
       additionalProperties: false
       properties:
@@ -2428,6 +2577,16 @@ components:
         - past_due
         - canceled
         - trialing
+      type: string
+    Surface:
+      enum:
+        - chat
+        - generate
+        - editor
+        - quiz
+        - ingest
+        - embedding
+        - vision
       type: string
     Tag:
       additionalProperties: false
@@ -2841,11 +3000,13 @@ components:
           type: integer
         kind:
           type: string
-        modelKey:
+        modelSlug:
           type: string
         outputTokens:
           format: int64
           type: integer
+        providerSlug:
+          type: string
         surface:
           type: string
         unit:
@@ -2857,7 +3018,8 @@ components:
         - createdAt
         - kind
         - surface
-        - modelKey
+        - providerSlug
+        - modelSlug
         - inputTokens
         - outputTokens
         - units
@@ -2901,16 +3063,16 @@ components:
           type: string
         avatarUrl:
           type: string
-        chatModelKey:
-          type: string
+        chatModel:
+          $ref: "#/components/schemas/Ref"
         classLabel:
           type: string
-        editorModelKey:
-          type: string
+        editorModel:
+          $ref: "#/components/schemas/Ref"
         email:
           type: string
-        generateModelKey:
-          type: string
+        generateModel:
+          $ref: "#/components/schemas/Ref"
         id:
           type: string
         locale:
@@ -2919,8 +3081,8 @@ components:
           type: string
         planTier:
           $ref: "#/components/schemas/PlanTier"
-        quizModelKey:
-          type: string
+        quizModel:
+          $ref: "#/components/schemas/Ref"
         streak:
           format: int64
           type: integer
@@ -2932,10 +3094,10 @@ components:
         - email
         - streak
         - locale
-        - chatModelKey
-        - generateModelKey
-        - editorModelKey
-        - quizModelKey
+        - chatModel
+        - generateModel
+        - editorModel
+        - quizModel
         - planTier
         - subscriptionStatus
       type: object
@@ -2948,6 +3110,13 @@ components:
         - coral
         - graphite
         - transparent
+      type: string
+    UserModelSurface:
+      enum:
+        - chat
+        - generate
+        - editor
+        - quiz
       type: string
     Workspace:
       additionalProperties: false
@@ -4510,6 +4679,25 @@ paths:
       summary: Review-mistakes quiz
       tags:
         - Quizzes
+  /api/model-surfaces:
+    get:
+      operationId: listModelSurfaces
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelSurfacesOutputBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Known model surfaces
+      tags:
+        - Account
   /api/models:
     get:
       operationId: listModels
@@ -4518,12 +4706,7 @@ paths:
           in: query
           name: surface
           schema:
-            enum:
-              - chat
-              - generate
-              - editor
-              - quiz
-            type: string
+            $ref: "#/components/schemas/UserModelSurface"
       responses:
         "200":
           content:
@@ -5813,21 +5996,49 @@ paths:
               $ref: "#/components/schemas/ImportSourcesReq"
         required: true
       responses:
-        "201":
+        "202":
           content:
             application/json:
               schema:
-                items:
-                  $ref: "#/components/schemas/File"
-                type: array
-          description: Created
+                $ref: "#/components/schemas/ImportSourcesAccepted"
+          description: Accepted
         default:
           content:
             application/problem+json:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Import sources from a connected drive
+      summary: Queue sources from a connected drive
+      tags:
+        - Content
+  /api/workspaces/{id}/sources/imports/{jobId}:
+    get:
+      operationId: getSourceImport
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: jobId
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceImportStatus"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Get source import status
       tags:
         - Content
   /api/workspaces/{id}/sources/uploads:

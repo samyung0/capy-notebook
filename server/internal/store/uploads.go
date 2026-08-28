@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/evonotes/server/internal/sourceupload"
+	"github.com/jackc/pgx/v5"
 )
 
 var (
@@ -136,6 +137,24 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
 		return File{}, err
 	}
+
+	file, err := s.finalizeUploadSessionTx(
+		ctx, tx, uploadID, sourceETag, parser, engine,
+	)
+	if err != nil {
+		return File{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return File{}, err
+	}
+	return file, nil
+}
+
+func (s *Store) finalizeUploadSessionTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	uploadID, sourceETag, parser, engine string,
+) (File, error) {
 	u, err := scanUploadSession(tx.QueryRow(ctx,
 		`SELECT `+uploadSessionCols+uploadSessionFrom+`id=$1 FOR UPDATE`, uploadID))
 	if isNoRows(err) {
@@ -145,8 +164,12 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 		return File{}, err
 	}
 	if u.Status == "completed" && u.FileID != nil {
-		_ = tx.Rollback(ctx)
-		return s.GetFile(ctx, *u.FileID)
+		file, err := scanFile(tx.QueryRow(ctx,
+			`SELECT `+fileCols+` FROM files WHERE id=$1`, *u.FileID))
+		if isNoRows(err) {
+			return File{}, ErrNotFound
+		}
+		return file, err
 	}
 	if u.Status != "pending" {
 		return File{}, ErrUploadState
@@ -206,9 +229,6 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 	if _, err := tx.Exec(ctx, `UPDATE upload_sessions
 		SET status='completed', file_id=$2, source_etag=$3, completed_at=now()
 		WHERE id=$1`, uploadID, fileID, sourceETag); err != nil {
-		return File{}, err
-	}
-	if err := tx.Commit(ctx); err != nil {
 		return File{}, err
 	}
 	return File{
@@ -289,7 +309,7 @@ func (s *Store) MarkUploadExpired(ctx context.Context, id string) error {
 	if err := s.lockStorageRowTx(ctx, tx, userID); err != nil {
 		return err
 	}
-	var objectPath, finalPath string
+	var objectPath, finalPath, attemptObjectPath string
 	err = tx.QueryRow(ctx, `UPDATE upload_sessions SET status='expired'
 		WHERE id=$1 AND status='pending'
 		RETURNING object_path, final_path`, id).Scan(&objectPath, &finalPath)
@@ -299,8 +319,22 @@ func (s *Store) MarkUploadExpired(ctx context.Context, id string) error {
 	if err != nil {
 		return err
 	}
+	if err := tx.QueryRow(ctx, `SELECT COALESCE(attempt_object_path,'')
+		FROM source_import_jobs WHERE upload_session_id=$1`, id).
+		Scan(&attemptObjectPath); err != nil && !isNoRows(err) {
+		return err
+	}
 	if err := s.EnqueueBlobDeletionTx(ctx, tx, uploadPresignGrace,
-		objectPath, finalPath); err != nil {
+		objectPath, finalPath, attemptObjectPath); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE source_import_jobs
+		SET status='failed', completed_at=now(), lease_token=NULL,
+			lease_expires_at=NULL, attempt_object_path=NULL,
+			last_error_code='import_expired',
+			last_error='source import expired before completion', updated_at=now()
+		WHERE upload_session_id=$1
+			AND status NOT IN ('succeeded','failed','cancelled')`, id); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -311,8 +345,13 @@ func (s *Store) MarkUploadExpired(ctx context.Context, id string) error {
 // for a completed session because the file that took over final_path holds the
 // reference.
 func (s *Store) PruneUploadSessions(ctx context.Context) error {
-	_, err := s.pool.Exec(ctx, `DELETE FROM upload_sessions
+	if _, err := s.pool.Exec(ctx, `DELETE FROM upload_sessions
 		WHERE (status='completed' AND completed_at < now() - interval '30 days')
-		   OR (status='expired' AND expires_at < now() - interval '7 days')`)
+		   OR (status='expired' AND expires_at < now() - interval '7 days')`); err != nil {
+		return err
+	}
+	_, err := s.pool.Exec(ctx, `DELETE FROM source_import_requests
+		WHERE completed_at < now() - interval '30 days'
+		   OR (response IS NULL AND created_at < now() - interval '1 day')`)
 	return err
 }

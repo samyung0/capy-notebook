@@ -39,12 +39,11 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 	if err != nil {
 		return nil, hErr(err)
 	}
-	llmRates := llm.Rates
 	embed, err := a.resolveEmbedding(ctx, wsID)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	charge, err := a.beginSpend(ctx, actor, wsID, store.SurfaceGenerate, llm.PaidBy)
+	charge, err := a.beginProviderSession(ctx, actor, wsID, store.SurfaceGenerate, llm.PaidBy, llm.Rates, embed.Rates, llm.Thinking)
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -70,7 +69,7 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 		return nil, hErr(errAIUnavailable)
 	}
 	opts := generateOptsFrom(in.Body, title)
-	payload, usage, err := a.generateViaPipe(ctx, actor, wsID, ws.Name, &opts, llm)
+	payload, _, err := a.generateViaPipe(ctx, actor, wsID, ws.Name, &opts, llm, charge.id)
 	if err != nil {
 		var unknown unknownScopeIDError
 		if errors.As(err, &unknown) {
@@ -78,7 +77,7 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 		}
 		return nil, hErr(err)
 	}
-	charge.settle(ctx, usage.events(actor, wsID, store.SurfaceGenerate, llmRates, embed.Rates, llm.PaidBy)...)
+	charge.settle(ctx)
 	body, ok := payload.(map[string]any)
 	if !ok {
 		encoded, err := json.Marshal(payload)
@@ -153,8 +152,10 @@ func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts)
 		return nil, nil, nil, err
 	}
 	fileNamesByID := make(map[string]string, len(files))
+	indexedByID := make(map[string]bool, len(files))
 	for _, file := range files {
 		fileNamesByID[file.ID] = file.Name
+		indexedByID[file.ID] = file.Indexed
 	}
 	seen := map[string]struct{}{}
 	fileIDs = make([]string, 0, len(opts.FileIds))
@@ -170,6 +171,11 @@ func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts)
 			return nil, nil, nil, unknownScopeIDError{kind: "file", id: id}
 		}
 		add(id)
+	}
+	if len(opts.FileIds) == 0 && len(opts.Chapters) == 0 {
+		for _, file := range files {
+			add(file.ID)
+		}
 	}
 	if len(opts.Chapters) > 0 {
 		chapters, err := a.s.ListChapters(ctx, wsID)
@@ -195,8 +201,13 @@ func (a *api) resolveScope(ctx context.Context, wsID string, opts *generateOpts)
 		}
 	}
 	fileNames = make([]string, 0, len(fileIDs))
+	hasIndexed := false
 	for _, id := range fileIDs {
 		fileNames = append(fileNames, fileNamesByID[id])
+		hasIndexed = hasIndexed || indexedByID[id]
+	}
+	if !hasIndexed {
+		return nil, nil, nil, errScopeNoIndexedContent
 	}
 	return fileIDs, fileNames, chapterNames, nil
 }
@@ -207,7 +218,7 @@ type unknownScopeIDError struct {
 }
 
 func (e unknownScopeIDError) Error() string {
-	return fmt.Sprintf("unknown %s id %q", e.kind, e.id)
+	return "The requested scope is invalid or unavailable."
 }
 
 func (a *api) generateViaPipe(
@@ -215,6 +226,7 @@ func (a *api) generateViaPipe(
 	userID, wsID, wsName string,
 	opts *generateOpts,
 	llm resolvedLLM,
+	spendSessionID string,
 ) (any, pipeUsage, error) {
 	fileIDs, fileNames, chapterNames, err := a.resolveScope(ctx, wsID, opts)
 	if err != nil {
@@ -225,7 +237,8 @@ func (a *api) generateViaPipe(
 		"count": opts.Count, "style": opts.Style, "types": opts.Types, "levels": opts.Levels,
 		"chapters": chapterNames, "fileIds": fileIDs,
 		"detail": opts.Detail, "diagramType": opts.DiagramType, "timeLimitMin": opts.TimeLimitMin,
-		"locale": a.userLocale(ctx, userID),
+		"locale":         a.userLocale(ctx, userID),
+		"spendSessionId": spendSessionID,
 	}
 	llm.attach(body)
 	var usage pipeUsage
@@ -250,22 +263,18 @@ func (a *api) generateViaPipe(
 	case "quiz":
 		var qp struct {
 			Name         string          `json:"name"`
-			Chapters     []string        `json:"chapters"`
 			Questions    json.RawMessage `json:"questions"`
 			TimeLimitMin *int            `json:"timeLimitMin"`
 		}
 		_ = json.Unmarshal(raw, &qp)
 		name := opts.Title
-		chapters := qp.Chapters
-		if chapters == nil {
-			chapters = chapterNames
-		}
 		qs := strings.TrimSpace(string(qp.Questions))
 		if qs == "" || qs == "[]" || qs == "null" {
 			return nil, usage, errGenerateEmpty
 		}
 		quiz, err := a.s.CreateQuiz(ctx, store.Quiz{
-			UserID: userID, Name: name, WorkspaceID: wsID, WorkspaceName: wsName, Chapters: chapters,
+			UserID: userID, Name: name, WorkspaceID: wsID, WorkspaceName: wsName,
+			Chapters: chapterNames, ScopeFileNames: fileNames,
 			Questions: qp.Questions, Privacy: "private", TimeLimitMin: qp.TimeLimitMin,
 		})
 		if err != nil {
@@ -284,7 +293,7 @@ func (a *api) generateViaPipe(
 		for _, c := range fp.Cards {
 			fronts = append(fronts, [2]string{c.Front, c.Back})
 		}
-		res, err := a.persistDeck(ctx, userID, wsID, opts.Title, fronts)
+		res, err := a.persistDeck(ctx, userID, wsID, opts.Title, fronts, chapterNames, fileNames)
 		if err != nil {
 			return nil, usage, err
 		}
@@ -308,12 +317,17 @@ func (a *api) generateViaPipe(
 	return m, usage, nil
 }
 
-func (a *api) persistDeck(ctx context.Context, userID, wsID, title string, cards [][2]string) (any, error) {
+func (a *api) persistDeck(
+	ctx context.Context,
+	userID, wsID, title string,
+	cards [][2]string,
+	chapterNames, fileNames []string,
+) (any, error) {
 	if len(cards) == 0 {
 		return nil, errGenerateEmpty
 	}
 	deck, err := a.s.CreateDeckWithCards(
-		ctx, userID, title, "green", wsID, cards, "",
+		ctx, userID, title, "green", wsID, cards, "", chapterNames, fileNames,
 	)
 	if err != nil {
 		return nil, err

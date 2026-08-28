@@ -16,8 +16,9 @@ export interface StreamStart {
   conversationId: string;
   messageId: string;
   modelDisplayName?: string;
-  modelKey?: string;
+  modelSlug?: string;
   modelVersion?: number;
+  providerSlug?: string;
 }
 export interface StreamDone {
   generationId?: string;
@@ -125,7 +126,8 @@ export async function streamChat(
       message?: string;
       messageId?: string;
       modelDisplayName?: string;
-      modelKey?: string;
+      providerSlug?: string;
+      modelSlug?: string;
       modelVersion?: number;
       name?: string;
       phase?: ChatPhase;
@@ -146,8 +148,9 @@ export async function streamChat(
           conversationId: ev.conversationId!,
           messageId: ev.messageId!,
           modelDisplayName: ev.modelDisplayName,
-          modelKey: ev.modelKey,
+          modelSlug: ev.modelSlug,
           modelVersion: ev.modelVersion,
+          providerSlug: ev.providerSlug,
         });
         break;
       case 'phase':

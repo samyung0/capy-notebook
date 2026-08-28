@@ -10,7 +10,6 @@ namespaces, no working directory, no graph extension.
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
 
 
 def _env(key: str, default: str = "") -> str:
@@ -20,18 +19,18 @@ def _env(key: str, default: str = "") -> str:
     return default
 
 
-def _env_first(*keys: str, default: str = "") -> str:
-    for key in keys:
-        value = os.getenv(key)
-        if value:
-            return value
-    return default
+def env_name_for_provider(provider_slug: str) -> str:
+    from .elitellm.providers import platform_env_name
+
+    try:
+        return platform_env_name(provider_slug)
+    except KeyError:
+        replacer = str.maketrans({"-": "_", ".": "_"})
+        return provider_slug.upper().translate(replacer) + "_API_KEY"
 
 
-@dataclass(frozen=True)
-class ProviderCfg:
-    api_key: str
-    base_url: str
+def platform_api_key(provider_slug: str) -> str:
+    return _env(env_name_for_provider(provider_slug))
 
 
 class Config:
@@ -95,36 +94,10 @@ class Config:
     chunk_overlap_chars: int = int(_env("EVO_CHUNK_OVERLAP_CHARS", "200"))
     chunk_min_chars: int = int(_env("EVO_CHUNK_MIN_CHARS", "160"))
 
-    # ---- embeddings (OpenAI-compatible) -----------------------------------
-    # Credentials only. Which embedding model runs is never configured here: it
-    # is pinned per workspace (`workspaces.embedding_model_key`) and resolved
-    # from `model_configs`, because every chunk already in that workspace lives
-    # in that model's vector space and there is no reindex job to move them.
-    # One env pair for every embedding row; base_url on the catalog row wins
-    # when set. OPENROUTER_* is the previous name and still accepted.
-    embedding = ProviderCfg(
-        api_key=_env_first("EMBEDDING_API_KEY", "OPENROUTER_API_KEY"),
-        base_url=_env_first(
-            "EMBEDDING_BASE_URL",
-            "OPENROUTER_BASE_URL",
-            default="https://openrouter.ai/api/v1",
-        ),
-    )
     # Width the seeded qwen-embed row emits. Fixtures use this for synthetic
     # vectors. A new model is a new rag_chunk_vectors_* table, not an env edit.
     embedding_dim: int = int(_env("EMBEDDING_DIM", "2560"))
     embedding_batch: int = int(_env("EVO_EMBEDDING_BATCH", "64"))
-
-    # ---- text LLM (DeepSeek, OpenAI-compatible) ---------------------------
-    llm = ProviderCfg(
-        api_key=_env("DEEPSEEK_API_KEY"),
-        base_url=_env("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
-    )
-    # Last-resort provider model id for an LLM call that was handed a bare model
-    # string rather than a registry pin. Ingest, embedding and vision no longer
-    # have an equivalent: each is resolved from an exact pin and fails loudly
-    # instead of running an unpriced model.
-    query_model: str = _env("EVO_QUERY_MODEL", "deepseek-v4-flash")
 
     # ---- retrieval --------------------------------------------------------
     search_candidates: int = int(_env("EVO_SEARCH_CANDIDATES", "40"))
@@ -137,19 +110,10 @@ class Config:
     # open-ended: the cost of a wrong plan is bounded. Each round re-sends the
     # whole transcript, so this is the main lever on chat spend.
     agent_max_steps: int = int(_env("EVO_AGENT_MAX_STEPS", "12"))
-    # Floor every LLM we dispatch to is assumed to support. File summaries,
-    # generate context, and map-reduce splits all read this rather than a
-    # per-call character constant.
+    # Pre-model gathering budget when no catalog model has been selected yet.
+    # Provider calls use the selected catalog row's required context window.
     llm_input_budget_tokens: int = int(_env("EVO_LLM_INPUT_BUDGET_TOKENS", "50000"))
 
-    # ---- vision / image caption (Gemini via its OpenAI-compatible API) ----
-    vision = ProviderCfg(
-        api_key=_env("GOOGLE_API_KEY"),
-        base_url=_env(
-            "GEMINI_BASE_URL",
-            "https://generativelanguage.googleapis.com/v1beta/openai/",
-        ),
-    )
     # Default for uploads that do not carry an explicit captionImages choice.
     # The real switch is per file, set at upload time and carried on the job.
     caption_images: bool = _env("EVO_CAPTION_IMAGES", "false").lower() == "true"
@@ -167,11 +131,6 @@ class Config:
     # Bumped whenever the prompt, the model or the filters change, so cached
     # captions from an older definition are not reused.
     caption_version: str = _env("EVO_CAPTION_VERSION", "v1")
-
-    @property
-    def query_models(self) -> set[str]:
-        """Models the retrieval service is allowed to dispatch to."""
-        return {self.query_model} if self.query_model else set()
 
 
 cfg = Config()

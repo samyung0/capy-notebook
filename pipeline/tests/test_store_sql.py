@@ -13,14 +13,215 @@ the interpolated table name inside the set the schema actually defines.
 from __future__ import annotations
 
 import hashlib
+import secrets
 
 import pytest
 
 from pipeline.config import cfg
 from pipeline.retrieval import store
 from pipeline.retrieval.chunking import tokenize_for_search
+from pipeline.retrieval.usage_extract import NormalizedUsage
+from pipeline.store import db
 
 pytestmark = pytest.mark.integration
+
+
+def test_ingest_provider_call_links_context_and_usage_atomically(workspace):
+    import psycopg
+
+    reservation_id = f"cr_{secrets.token_hex(6)}"
+    call_id = f"pc_{secrets.token_hex(6)}"
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO provider_sessions (
+              id, actor_user_id, workspace_id, trace_id, surface,
+              reserved_micros, expires_at
+            ) VALUES (%s, %s, %s, 'trace-ingest', 'ingest', 0,
+                      now() + interval '30 minutes')
+            """,
+            (reservation_id, workspace.user_id, workspace.id),
+        )
+        db.open_provider_call(
+            cur,
+            reservation_id,
+            call_id,
+            "llm",
+            "ingest_summary",
+            "instant",
+            context_system_tokens=11,
+            context_tool_tokens=7,
+            context_conversation_tokens=23,
+            context_total_tokens=41,
+            context_window_tokens=128_000,
+            context_counting_method="test_estimator",
+            context_counting_version=1,
+        )
+        db.settle_ingest_provider_call(
+            cur,
+            session_id=reservation_id,
+            call_id=call_id,
+            kind="llm",
+            purpose="ingest_summary",
+            thinking="instant",
+            provider="deepseek",
+            model="deepseek/flash",
+            catalog_provider_slug="deepseek",
+            catalog_model_slug="flash",
+            model_version=1,
+            usage=NormalizedUsage(input_tokens=44, output_tokens=5),
+            credit_micros=0,
+        )
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        row = conn.execute(
+            """
+            SELECT pc.status, pc.context_total_tokens, ue.input_tokens,
+                   ue.provider_call_id
+            FROM provider_calls pc
+            JOIN usage_events ue
+              ON ue.reservation_id = pc.reservation_id
+             AND ue.provider_call_id = pc.id
+            WHERE pc.id = %s
+            """,
+            (call_id,),
+        ).fetchone()
+        assert row == ("applied", 41, 44, call_id)
+        conn.execute("DELETE FROM usage_events WHERE provider_call_id = %s", (call_id,))
+        conn.execute("DELETE FROM provider_sessions WHERE id = %s", (reservation_id,))
+
+
+def test_provider_call_open_enforces_terminal_slot_and_idempotency(workspace):
+    import psycopg
+
+    reservation_id = f"cr_{secrets.token_hex(6)}"
+    terminal_call_id = f"pc_{secrets.token_hex(6)}"
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO provider_sessions (
+              id, actor_user_id, workspace_id, surface, reserved_micros,
+              expires_at
+            ) VALUES (%s, %s, %s, 'chat', 0, now() + interval '30 minutes')
+            """,
+            (reservation_id, workspace.user_id, workspace.id),
+        )
+        with pytest.raises(RuntimeError, match="terminal provider call is not allowed"):
+            db.open_provider_call(
+                cur, reservation_id, terminal_call_id, "llm", "terminal", "instant"
+            )
+
+        cur.execute(
+            "UPDATE provider_sessions SET credits_exhausted_at = now() WHERE id = %s",
+            (reservation_id,),
+        )
+        with pytest.raises(RuntimeError, match="only a terminal provider call"):
+            db.open_provider_call(
+                cur,
+                reservation_id,
+                f"pc_{secrets.token_hex(6)}",
+                "llm",
+                "agent",
+                "instant",
+            )
+
+        db.open_provider_call(
+            cur, reservation_id, terminal_call_id, "llm", "terminal", "instant"
+        )
+        db.open_provider_call(
+            cur, reservation_id, terminal_call_id, "llm", "terminal", "instant"
+        )
+        with pytest.raises(
+            RuntimeError, match="terminal provider call was already used"
+        ):
+            db.open_provider_call(
+                cur,
+                reservation_id,
+                f"pc_{secrets.token_hex(6)}",
+                "llm",
+                "terminal",
+                "instant",
+            )
+        with pytest.raises(RuntimeError, match="conflicts with an existing call"):
+            db.open_provider_call(
+                cur, reservation_id, terminal_call_id, "llm", "terminal", "high"
+            )
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute("DELETE FROM provider_sessions WHERE id = %s", (reservation_id,))
+
+
+def test_parse_attempt_page_charge_is_idempotent_and_settles_session(workspace):
+    import psycopg
+
+    reservation_id = f"cr_{secrets.token_hex(6)}"
+    idempotency_key = f"parse:job_{secrets.token_hex(4)}:1"
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        cur.execute(
+            "SELECT used_micros FROM user_credits WHERE user_id = %s",
+            (workspace.user_id,),
+        )
+        row = cur.fetchone()
+        used_before = int(row[0]) if row else 0
+        cur.execute(
+            """
+            INSERT INTO provider_sessions (
+              id, actor_user_id, workspace_id, trace_id, surface,
+              reserved_micros, expires_at
+            ) VALUES (%s, %s, %s, 'trace-parse', 'ingest', 0,
+                      now() + interval '30 minutes')
+            """,
+            (reservation_id, workspace.user_id, workspace.id),
+        )
+        for _ in range(2):
+            db.record_usage_event(
+                cur,
+                actor_user_id=workspace.user_id,
+                workspace_id=workspace.id,
+                kind="parse",
+                surface="ingest",
+                provider="modal",
+                units=2,
+                unit="pages",
+                parse_pages=2,
+                parse_ocr_pages=1,
+                parse_cpu_milliseconds=1200,
+                parse_elapsed_milliseconds=2000,
+                credit_micros=db.credits_for_parse_pages(2, 1),
+                reservation_id=reservation_id,
+                idempotency_key=idempotency_key,
+            )
+        db.close_credit_reservation(cur, reservation_id)
+
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        event = conn.execute(
+            """
+            SELECT count(*), max(parse_pages), max(parse_ocr_pages),
+                   max(parse_cpu_milliseconds), max(credit_micros)
+              FROM usage_events WHERE idempotency_key = %s
+            """,
+            (idempotency_key,),
+        ).fetchone()
+        status = conn.execute(
+            "SELECT status FROM provider_sessions WHERE id = %s",
+            (reservation_id,),
+        ).fetchone()[0]
+        used_after = conn.execute(
+            "SELECT used_micros FROM user_credits WHERE user_id = %s",
+            (workspace.user_id,),
+        ).fetchone()[0]
+        assert event == (1, 2, 1, 1200, 83_000_000)
+        assert status == "settled"
+        assert used_after - used_before == 83_000_000
+        conn.execute(
+            "DELETE FROM usage_events WHERE idempotency_key = %s",
+            (idempotency_key,),
+        )
+        conn.execute("DELETE FROM provider_sessions WHERE id = %s", (reservation_id,))
+        conn.execute(
+            "UPDATE user_credits SET used_micros = %s WHERE user_id = %s",
+            (used_before, workspace.user_id),
+        )
 
 
 def _unit_vector(axis: int) -> list[float]:
@@ -314,7 +515,9 @@ async def test_duplicate_alias_survives_deleting_first_file(workspace):
         file_ids=[second],
         candidates=10,
     )
-    read = await store.read_file_range(file_id=second, start=0, count=1)
+    read = await store.read_file_range(
+        workspace_id=workspace.id, file_id=second, start=0, count=1
+    )
 
     assert rows and rows[0]["file_id"] == second and rows[0]["file_name"] == "b.txt"
     assert read and read[0]["file_id"] == second
@@ -528,7 +731,8 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
     donor = await store.find_ready_donor(
         source_sha256=sha,
         pipeline_identity=identity,
-        embedding_model_key=pin["embedding_model_key"],
+        embedding_provider_slug=pin["embedding_provider_slug"],
+        embedding_model_slug=pin["embedding_model_slug"],
         embedding_model_version=pin["embedding_model_version"],
         embedding_dim=pin["embedding_dim"],
     )
@@ -603,7 +807,8 @@ async def test_donor_copy_skips_vectors_when_pins_differ(workspace):
     donor = await store.find_ready_donor(
         source_sha256=sha,
         pipeline_identity=identity,
-        embedding_model_key=pin["embedding_model_key"],
+        embedding_provider_slug=pin["embedding_provider_slug"],
+        embedding_model_slug=pin["embedding_model_slug"],
         embedding_model_version=pin["embedding_model_version"],
         embedding_dim=pin["embedding_dim"],
     )
@@ -680,7 +885,8 @@ async def test_donor_lookup_prefers_matching_pin(workspace):
         """
         UPDATE rag_contents
         SET source_sha256 = %s, pipeline_identity = %s,
-            embedding_model_key = 'other-embed', embedding_model_version = 1,
+            embedding_provider_slug = 'other', embedding_model_slug = 'other-embed',
+            embedding_model_version = 1,
             updated_at = now()
         WHERE id = %s
         RETURNING id
@@ -692,7 +898,8 @@ async def test_donor_lookup_prefers_matching_pin(workspace):
     donor = await store.find_ready_donor(
         source_sha256=sha,
         pipeline_identity=identity,
-        embedding_model_key=pin["embedding_model_key"],
+        embedding_provider_slug=pin["embedding_provider_slug"],
+        embedding_model_slug=pin["embedding_model_slug"],
         embedding_model_version=pin["embedding_model_version"],
         embedding_dim=pin["embedding_dim"],
     )
@@ -702,7 +909,8 @@ async def test_donor_lookup_prefers_matching_pin(workspace):
     other_space = await store.find_ready_donor(
         source_sha256=sha,
         pipeline_identity=identity,
-        embedding_model_key="other-embed",
+        embedding_provider_slug="other",
+        embedding_model_slug="other-embed",
         embedding_model_version=1,
         embedding_dim=pin["embedding_dim"],
     )

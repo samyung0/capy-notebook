@@ -17,7 +17,8 @@
       "!!**/.vscode",
       "!!**/src/api/gen",
       "!!**/public/mockServiceWorker.js",
-      "!!**/src/styles/tailwind.css"
+      "!!**/src/styles/tailwind.css",
+      "!!**/litellm_catalog.json"
     ]
   },
   "linter": {

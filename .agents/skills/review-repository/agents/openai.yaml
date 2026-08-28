@@ -1,0 +1,6 @@
+interface:
+  display_name: "Review Repository"
+  short_description: "Deep security plus adversarial repository review"
+  default_prompt: "Use $review-repository to run an evidence-backed repository review, including the required Codex Security Deep scan, and challenge the findings."
+policy:
+  allow_implicit_invocation: false

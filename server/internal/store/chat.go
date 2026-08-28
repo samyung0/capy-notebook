@@ -31,7 +31,8 @@ type Message struct {
 	Citations        []Citation      `json:"citations,omitempty"`
 	Activity         []ActivityBlock `json:"activity,omitempty"`
 	CreatedAt        time.Time       `json:"createdAt"`
-	ModelKey         string          `json:"modelKey,omitempty"`
+	ProviderSlug     string          `json:"providerSlug,omitempty"`
+	ModelSlug        string          `json:"modelSlug,omitempty"`
 	ModelVersion     int             `json:"modelVersion,omitempty"`
 	ModelDisplayName string          `json:"modelDisplayName,omitempty"`
 }
@@ -64,20 +65,18 @@ type ActivityBlock struct {
 	Status string `json:"status,omitempty"`
 }
 
-const historySafetyCap = 200
-
 // ConversationCheckpoint is the rolling summary pin for one conversation.
 type ConversationCheckpoint struct {
-	ThroughMessageID string          `json:"throughMessageId"`
-	Summary          string          `json:"summary"`
-	SourceRefs       json.RawMessage `json:"sourceRefs,omitempty"`
-	ModelKey         string          `json:"modelKey"`
-	ModelVersion     int             `json:"modelVersion"`
-	EstimatedTokens  int             `json:"estimatedTokens"`
+	ThroughMessageID string `json:"throughMessageId"`
+	Summary          string `json:"summary"`
+	ProviderSlug     string `json:"providerSlug"`
+	ModelSlug        string `json:"modelSlug"`
+	ModelVersion     int    `json:"modelVersion"`
+	EstimatedTokens  int    `json:"estimatedTokens"`
 }
 
 // ConversationPrompt is prior context for one turn: optional checkpoint plus
-// the completed tail after that pin. It never includes the current question.
+// all completed history after that pin. It never includes the current question.
 type ConversationPrompt struct {
 	Checkpoint *ConversationCheckpoint `json:"checkpoint,omitempty"`
 	History    []Message               `json:"history"`
@@ -99,7 +98,8 @@ type msgMetadata struct {
 	Activity         []ActivityBlock `json:"activity,omitempty"`
 	GenerationID     string          `json:"generationId,omitempty"`
 	TraceID          string          `json:"traceId,omitempty"`
-	ModelKey         string          `json:"modelKey,omitempty"`
+	ProviderSlug     string          `json:"providerSlug,omitempty"`
+	ModelSlug        string          `json:"modelSlug,omitempty"`
 	ModelVersion     int             `json:"modelVersion,omitempty"`
 	ModelDisplayName string          `json:"modelDisplayName,omitempty"`
 }
@@ -228,7 +228,8 @@ func (s *Store) ListMessages(ctx context.Context, userID, convID string) ([]Mess
 		_ = json.Unmarshal(raw, &meta)
 		m.Citations = meta.Citations
 		m.Activity = meta.Activity
-		m.ModelKey = meta.ModelKey
+		m.ProviderSlug = meta.ProviderSlug
+		m.ModelSlug = meta.ModelSlug
 		m.ModelVersion = meta.ModelVersion
 		m.ModelDisplayName = meta.ModelDisplayName
 		out = append(out, m)
@@ -261,9 +262,10 @@ func (s *Store) AddUserMessage(ctx context.Context, convID, content string) (Mes
 func (s *Store) StartAssistantMessage(ctx context.Context, convID string, cfg models.Config) (Message, error) {
 	id := uid("m")
 	meta, _ := json.Marshal(msgMetadata{
-		ModelKey:         cfg.Key,
+		ProviderSlug:     cfg.ProviderSlug,
+		ModelSlug:        cfg.ModelSlug,
 		ModelVersion:     cfg.Version,
-		ModelDisplayName: cfg.DisplayName,
+		ModelDisplayName: cfg.DisplayName(),
 		TraceID:          obs.TraceID(ctx),
 	})
 	var m Message
@@ -276,9 +278,10 @@ func (s *Store) StartAssistantMessage(ctx context.Context, convID string, cfg mo
 	if err != nil {
 		return Message{}, err
 	}
-	m.ModelKey = cfg.Key
+	m.ProviderSlug = cfg.ProviderSlug
+	m.ModelSlug = cfg.ModelSlug
 	m.ModelVersion = cfg.Version
-	m.ModelDisplayName = cfg.DisplayName
+	m.ModelDisplayName = cfg.DisplayName()
 	return m, nil
 }
 
@@ -300,37 +303,32 @@ func (s *Store) FinalizeAssistantMessage(ctx context.Context, msgID, content, st
 	return err
 }
 
-// ConversationPrompt loads the rolling checkpoint (if any) and the completed
-// tail after that pin. Call this before inserting the current user row so the
-// question is not sent twice.
+// ConversationPrompt loads the rolling checkpoint (if any) and every completed
+// historical message after that pin. Call this before inserting the current
+// user row so the question is not sent twice.
 func (s *Store) ConversationPrompt(ctx context.Context, convID string) (ConversationPrompt, error) {
 	var (
 		cp        ConversationCheckpoint
-		refs      []byte
 		throughID *string
 	)
 	err := s.pool.QueryRow(ctx, `
-		SELECT through_message_id, summary, source_refs, model_key, model_version, estimated_tokens
+		SELECT through_message_id, summary, model_provider_slug, model_slug, model_version, estimated_tokens
 		  FROM conversation_compactions WHERE conversation_id=$1`, convID).
-		Scan(&cp.ThroughMessageID, &cp.Summary, &refs, &cp.ModelKey, &cp.ModelVersion, &cp.EstimatedTokens)
+		Scan(&cp.ThroughMessageID, &cp.Summary, &cp.ProviderSlug, &cp.ModelSlug, &cp.ModelVersion, &cp.EstimatedTokens)
 	switch {
 	case err == nil:
-		cp.SourceRefs = refs
 		throughID = &cp.ThroughMessageID
 	case !isNoRows(err):
 		return ConversationPrompt{}, err
 	}
 	rows, err := s.pool.Query(ctx, `
-		SELECT id, conversation_id, role, content, status, metadata, created_at FROM (
-		  SELECT id, conversation_id, role, content, status, metadata, created_at
-		    FROM messages
-		   WHERE conversation_id=$1 AND status='complete'
-		     AND ($2::text IS NULL OR (created_at, id) > (
-		          SELECT created_at, id FROM messages WHERE id=$2
-		        ))
-		   ORDER BY created_at DESC, id DESC
-		   LIMIT $3
-		) t ORDER BY created_at, id`, convID, throughID, historySafetyCap)
+		SELECT id, conversation_id, role, content, status, metadata, created_at
+		  FROM messages
+		 WHERE conversation_id=$1 AND status='complete'
+		   AND ($2::text IS NULL OR (created_at, id) > (
+		        SELECT created_at, id FROM messages WHERE id=$2
+		      ))
+		 ORDER BY created_at, id`, convID, throughID)
 	if err != nil {
 		return ConversationPrompt{}, err
 	}
@@ -362,20 +360,16 @@ func (s *Store) ConversationPrompt(ctx context.Context, convID string) (Conversa
 // PersistCheckpoint writes or advances the rolling pin. A later pin wins; an
 // earlier one is ignored so two tabs cannot move the conversation backwards.
 func (s *Store) PersistCheckpoint(ctx context.Context, convID string, cp ConversationCheckpoint) error {
-	refs := cp.SourceRefs
-	if len(refs) == 0 {
-		refs = []byte("[]")
-	}
 	_, err := s.pool.Exec(ctx, `
 		INSERT INTO conversation_compactions (
-		  conversation_id, through_message_id, summary, source_refs,
-		  model_key, model_version, estimated_tokens
+		  conversation_id, through_message_id, summary,
+		  model_provider_slug, model_slug, model_version, estimated_tokens
 		) VALUES ($1,$2,$3,$4,$5,$6,$7)
 		ON CONFLICT (conversation_id) DO UPDATE SET
 		  through_message_id = EXCLUDED.through_message_id,
 		  summary = EXCLUDED.summary,
-		  source_refs = EXCLUDED.source_refs,
-		  model_key = EXCLUDED.model_key,
+		  model_provider_slug = EXCLUDED.model_provider_slug,
+		  model_slug = EXCLUDED.model_slug,
 		  model_version = EXCLUDED.model_version,
 		  estimated_tokens = EXCLUDED.estimated_tokens,
 		  updated_at = now()
@@ -384,6 +378,6 @@ func (s *Store) PersistCheckpoint(ctx context.Context, convID string, cp Convers
 		) > (
 		  SELECT (m.created_at, m.id) FROM messages m WHERE m.id = conversation_compactions.through_message_id
 		)`,
-		convID, cp.ThroughMessageID, cp.Summary, refs, cp.ModelKey, cp.ModelVersion, cp.EstimatedTokens)
+		convID, cp.ThroughMessageID, cp.Summary, cp.ProviderSlug, cp.ModelSlug, cp.ModelVersion, cp.EstimatedTokens)
 	return err
 }

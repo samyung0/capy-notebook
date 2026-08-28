@@ -1,0 +1,106 @@
+name: Reusable environment deployment
+
+on:
+  workflow_call:
+    inputs:
+      environment_name:
+        description: GitHub environment and deployment target
+        required: true
+        type: string
+      revision:
+        description: Full Git commit SHA to deploy
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment:
+      name: ${{ inputs.environment_name }}
+      url: ${{ vars.DEPLOYMENT_APP_URL }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.revision }}
+      - name: Validate immutable deployment input
+        env:
+          DEPLOY_REVISION: ${{ inputs.revision }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
+        run: |
+          [[ "$TARGET_ENVIRONMENT" == "uat" || "$TARGET_ENVIRONMENT" == "production" ]] || {
+            echo "Unsupported deployment environment: $TARGET_ENVIRONMENT" >&2
+            exit 1
+          }
+          [[ "$DEPLOY_REVISION" =~ ^[0-9a-fA-F]{40}$ ]] || {
+            echo "Deployment revision must be a full Git SHA" >&2
+            exit 1
+          }
+          [[ "$(git rev-parse HEAD)" == "$DEPLOY_REVISION" ]] || {
+            echo "Checked-out revision does not match deployment input" >&2
+            exit 1
+          }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v6
+        with:
+          cache: pnpm
+          node-version: 22
+      - run: pnpm install --frozen-lockfile
+      - name: Build the SPA for the target environment
+        env:
+          NODE_OPTIONS: --max-old-space-size=4096
+          VITE_APP_ENV: ${{ inputs.environment_name }}
+          VITE_APP_URL: ${{ vars.DEPLOYMENT_APP_URL }}
+          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY }}
+          VITE_DIRECT_B2_UPLOAD: ${{ vars.VITE_DIRECT_B2_UPLOAD || 'true' }}
+          VITE_E2E_EDITOR_SEED: "false"
+          VITE_FEATURE_EDITOR_AI: ${{ vars.VITE_FEATURE_EDITOR_AI || 'false' }}
+          VITE_FEATURE_EXPLORE: ${{ vars.VITE_FEATURE_EXPLORE || 'false' }}
+          VITE_FEATURE_SCHEDULE: ${{ vars.VITE_FEATURE_SCHEDULE || 'false' }}
+          VITE_FEATURE_TASKS: ${{ vars.VITE_FEATURE_TASKS || 'false' }}
+          VITE_FEATURE_THINKING: ${{ vars.VITE_FEATURE_THINKING || 'false' }}
+          VITE_GOOGLE_PICKER_API_KEY: ${{ vars.VITE_GOOGLE_PICKER_API_KEY }}
+          VITE_GOOGLE_PICKER_APP_ID: ${{ vars.VITE_GOOGLE_PICKER_APP_ID }}
+          VITE_LLM_RUNTIME_ORIGIN: ${{ vars.VITE_LLM_RUNTIME_ORIGIN }}
+          VITE_LOAD_TEST_SEED: "false"
+          VITE_MSAL_AUTHORITY: ${{ vars.VITE_MSAL_AUTHORITY }}
+          VITE_MSAL_CLIENT_ID: ${{ vars.VITE_MSAL_CLIENT_ID }}
+          VITE_POSTHOG_HOST: ${{ vars.VITE_POSTHOG_HOST }}
+          VITE_POSTHOG_KEY: ${{ vars.VITE_POSTHOG_KEY }}
+          VITE_RELEASE_SHA: ${{ inputs.revision }}
+          VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
+          VITE_USE_MSW: "false"
+        run: pnpm build
+      - name: Deploy the pinned backend revision through Coolify
+        id: coolify
+        env:
+          COOLIFY_API_TOKEN: ${{ secrets.COOLIFY_API_TOKEN }}
+          COOLIFY_API_URL: ${{ vars.COOLIFY_API_URL }}
+          COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
+          DEPLOY_REVISION: ${{ inputs.revision }}
+        run: scripts/deploy/coolify-deploy.sh
+      - name: Deploy the matching SPA revision to Cloudflare Pages
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_PAGES_BRANCH: ${{ vars.CLOUDFLARE_PAGES_BRANCH || 'main' }}
+          CLOUDFLARE_PAGES_PROJECT: ${{ vars.CLOUDFLARE_PAGES_PROJECT }}
+          DEPLOY_REVISION: ${{ inputs.revision }}
+        run: >-
+          pnpm --filter @evo-notes/drive-import-relay exec wrangler pages deploy
+          "$GITHUB_WORKSPACE/dist"
+          --project-name="$CLOUDFLARE_PAGES_PROJECT"
+          --branch="$CLOUDFLARE_PAGES_BRANCH"
+          --commit-hash="$DEPLOY_REVISION"
+          --commit-dirty=false
+      - name: Verify the public deployment revision
+        env:
+          DEPLOYMENT_API_URL: ${{ vars.DEPLOYMENT_API_URL }}
+          DEPLOYMENT_APP_URL: ${{ vars.DEPLOYMENT_APP_URL }}
+          DEPLOYMENT_COLLAB_URL: ${{ vars.DEPLOYMENT_COLLAB_URL }}
+          EXPECTED_REVISION: ${{ inputs.revision }}
+        run: scripts/deploy/verify-release.sh

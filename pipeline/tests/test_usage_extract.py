@@ -47,3 +47,19 @@ def test_missing_or_invalid_cache_charges_full_input():
     )
     assert unproven.cached_read_tokens == 0
     assert unproven.anomaly == "unproven_cache_shape"
+
+
+def test_anthropic_disjoint_cache_counts_become_inclusive_input():
+    usage = extract_usage(
+        {
+            "input_tokens": 30,
+            "output_tokens": 5,
+            "cache_read_input_tokens": 40,
+            "cache_creation_input_tokens": 10,
+        },
+        provider="anthropic",
+    )
+    assert usage.input_tokens == 80
+    assert usage.cached_read_tokens == 40
+    assert usage.cache_write_tokens == 10
+    assert usage.anomaly == ""

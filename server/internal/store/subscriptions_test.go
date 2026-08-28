@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 )
@@ -128,7 +129,13 @@ func TestReconcileAdoptsStripeAndClosesRowsStripeNoLongerReports(t *testing.T) {
 		t.Fatal(err)
 	}
 	record := proSubscription(user, live, 0)
-	changed, err := s.SyncSubscriptionsFromStripe(ctx, user, &record)
+	version, err := s.SubscriptionVersion(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := s.SyncSubscriptionsFromStripe(
+		ctx, user, []Subscription{record}, version, 1500, nil,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,12 +155,63 @@ func TestReconcileAdoptsStripeAndClosesRowsStripeNoLongerReports(t *testing.T) {
 	// A second pass over unchanged state must not report drift, otherwise the
 	// nightly log names every customer and drift becomes invisible.
 	again := proSubscription(user, live, 0)
-	changed, err = s.SyncSubscriptionsFromStripe(ctx, user, &again)
+	version, err = s.SubscriptionVersion(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err = s.SyncSubscriptionsFromStripe(
+		ctx, user, []Subscription{again}, version, 1600, nil,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if changed {
 		t.Fatal("reconciling identical state reported drift")
+	}
+}
+
+func TestReconcileKeepsAllEntitlingSubscriptionsAndRejectsStaleSnapshot(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	user := newBlobTestUser(t, s, "sub_recon_multi")
+	first := proSubscription(user, uid("sub"), 1000)
+	second := proSubscription(user, uid("sub"), 1000)
+	if err := s.UpsertSubscription(ctx, first); err != nil {
+		t.Fatal(err)
+	}
+	version, err := s.SubscriptionVersion(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertSubscription(ctx, second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SyncSubscriptionsFromStripe(
+		ctx, user, []Subscription{first, second}, version, 1500, nil,
+	); !errors.Is(err, ErrReconciliationStale) {
+		t.Fatalf("stale snapshot error = %v", err)
+	}
+	version, err = s.SubscriptionVersion(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := s.SyncSubscriptionsFromStripe(
+		ctx, user, []Subscription{first, second}, version, 1500, nil,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changed {
+		t.Fatal("complete live set should not cancel or rewrite either subscription")
+	}
+	var live int
+	if err := s.pool.QueryRow(ctx, `
+		SELECT count(*) FROM user_subscriptions
+		 WHERE user_id=$1 AND status IN `+entitlingStatuses, user).Scan(&live); err != nil {
+		t.Fatal(err)
+	}
+	if live != 2 {
+		t.Fatalf("live subscriptions=%d, want 2", live)
 	}
 }
 

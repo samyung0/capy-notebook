@@ -4,10 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"github.com/evonotes/server/internal/models"
+)
+
+var (
+	flashModelRef = models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}
+	proModelRef   = models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-pro"}
+	embedModelRef = models.Ref{ProviderSlug: "openrouter", ModelSlug: "qwen/qwen3-embedding-4b"}
 )
 
 func TestAssistantMessagePinsTheResolvedChatModel(t *testing.T) {
@@ -28,7 +35,7 @@ func TestAssistantMessagePinsTheResolvedChatModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := reg.ResolveUser(ctx, "deepseek-flash", models.SurfaceChat)
+	cfg, err := reg.ResolveUser(ctx, flashModelRef, models.SurfaceChat)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +43,7 @@ func TestAssistantMessagePinsTheResolvedChatModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if assistant.ModelKey != cfg.Key || assistant.ModelVersion != cfg.Version {
+	if assistant.ProviderSlug != cfg.ProviderSlug || assistant.ModelSlug != cfg.ModelSlug || assistant.ModelVersion != cfg.Version {
 		t.Fatalf("start dropped the pin: %#v", assistant)
 	}
 	if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "hi", "complete", 1, nil, "", nil); err != nil {
@@ -49,11 +56,70 @@ func TestAssistantMessagePinsTheResolvedChatModel(t *testing.T) {
 	if len(msgs) != 1 {
 		t.Fatalf("messages: %#v", msgs)
 	}
-	if msgs[0].ModelKey != cfg.Key || msgs[0].ModelVersion != cfg.Version {
+	if msgs[0].ProviderSlug != cfg.ProviderSlug || msgs[0].ModelSlug != cfg.ModelSlug || msgs[0].ModelVersion != cfg.Version {
 		t.Fatalf("finalize dropped the pin: %#v", msgs[0])
 	}
 	if msgs[0].ModelDisplayName == "" {
 		t.Fatal("expected display name on the assistant row")
+	}
+}
+
+func TestConversationPromptLoadsEveryMessageAfterCheckpoint(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	userID := newCreditsTestUser(t, s)
+	ws, err := s.CreateWorkspace(ctx, userID, "Long chat", ColorGreen, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	conv, err := s.CreateConversation(ctx, userID, ws.ID, "history")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AddUserMessage(ctx, conv.ID, "checkpoint question"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := reg.ResolveUser(ctx, flashModelRef, models.SurfaceChat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assistant, err := s.StartAssistantMessage(ctx, conv.ID, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.FinalizeAssistantMessage(ctx, assistant.ID, "checkpoint answer", "complete", 1, nil, "", nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PersistCheckpoint(ctx, conv.ID, ConversationCheckpoint{
+		ThroughMessageID: assistant.ID,
+		Summary:          "checkpoint memory",
+		ProviderSlug:     cfg.ProviderSlug,
+		ModelSlug:        cfg.ModelSlug,
+		ModelVersion:     cfg.Version,
+		EstimatedTokens:  10,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for i := range 205 {
+		if _, err := s.AddUserMessage(ctx, conv.ID, fmt.Sprintf("turn-%03d", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	prompt, err := s.ConversationPrompt(ctx, conv.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prompt.History) != 205 {
+		t.Fatalf("history length = %d, want 205", len(prompt.History))
+	}
+	if prompt.History[0].Content != "turn-000" || prompt.History[204].Content != "turn-204" {
+		t.Fatalf("history was clipped or reordered: first=%q last=%q", prompt.History[0].Content, prompt.History[204].Content)
 	}
 }
 
@@ -80,8 +146,8 @@ func TestIngestJobPayloadPinsActorAndModels(t *testing.T) {
 		t.Fatalf("actor missing: %v", payload)
 	}
 	for _, key := range []string{
-		"ingestModelKey", "ingestModelVersion",
-		"visionModelKey", "visionModelVersion",
+		"ingestProviderSlug", "ingestModelSlug", "ingestModelVersion",
+		"visionProviderSlug", "visionModelSlug", "visionModelVersion",
 	} {
 		if payload[key] == nil || payload[key] == "" || payload[key] == 0.0 {
 			t.Fatalf("pin %s missing: %v", key, payload)
@@ -89,13 +155,13 @@ func TestIngestJobPayloadPinsActorAndModels(t *testing.T) {
 	}
 	// Embedding is the workspace's, not the job's. A per-job copy could only
 	// duplicate the workspace row or contradict it.
-	if _, ok := payload["embeddingModelKey"]; ok {
+	if _, ok := payload["embeddingModelSlug"]; ok {
 		t.Fatalf("embedding pin does not belong on an ingest job: %v", payload)
 	}
 }
 
 // The upload must fail rather than enqueue work nobody can be charged for: the
-// worker settles against actorUserId, so a job without one runs a GPU parse,
+// worker settles against actorUserId, so a job without one runs a document parse,
 // captions and embeddings for free.
 func TestIngestJobPayloadRefusesWithoutActor(t *testing.T) {
 	s := openAccessTestStore(t)
@@ -141,8 +207,8 @@ func TestCloneInheritsSourceEmbeddingPin(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx,
-		`UPDATE workspaces SET embedding_model_key='qwen-embed', embedding_model_version=7
-		   WHERE id=$1`, src.ID); err != nil {
+		`UPDATE workspaces SET embedding_provider_slug=$2, embedding_model_slug=$3, embedding_model_version=7
+		   WHERE id=$1`, src.ID, embedModelRef.ProviderSlug, embedModelRef.ModelSlug); err != nil {
 		t.Fatal(err)
 	}
 
@@ -151,16 +217,16 @@ func TestCloneInheritsSourceEmbeddingPin(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var key string
+	var providerSlug, modelSlug string
 	var version int
 	if err := s.pool.QueryRow(ctx,
-		`SELECT embedding_model_key, embedding_model_version FROM workspaces WHERE id=$1`,
+		`SELECT embedding_provider_slug, embedding_model_slug, embedding_model_version FROM workspaces WHERE id=$1`,
 		clone.ID,
-	).Scan(&key, &version); err != nil {
+	).Scan(&providerSlug, &modelSlug, &version); err != nil {
 		t.Fatal(err)
 	}
-	if key != "qwen-embed" || version != 7 {
-		t.Fatalf("clone did not inherit the source pin: %s v%d", key, version)
+	if (models.Ref{ProviderSlug: providerSlug, ModelSlug: modelSlug}) != embedModelRef || version != 7 {
+		t.Fatalf("clone did not inherit the source pin: %s/%s v%d", providerSlug, modelSlug, version)
 	}
 }
 
@@ -178,20 +244,20 @@ func TestCreateWorkspacePinsLiveEmbeddingDefault(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var key string
+	var providerSlug, modelSlug string
 	var version int
 	if err := s.pool.QueryRow(ctx,
-		`SELECT embedding_model_key, embedding_model_version FROM workspaces WHERE id=$1`,
+		`SELECT embedding_provider_slug, embedding_model_slug, embedding_model_version FROM workspaces WHERE id=$1`,
 		first.ID,
-	).Scan(&key, &version); err != nil {
+	).Scan(&providerSlug, &modelSlug, &version); err != nil {
 		t.Fatal(err)
 	}
-	if key != "qwen-embed" || version != 1 {
-		t.Fatalf("first workspace: %s v%d", key, version)
+	if (models.Ref{ProviderSlug: providerSlug, ModelSlug: modelSlug}) != embedModelRef || version != 1 {
+		t.Fatalf("first workspace: %s/%s v%d", providerSlug, modelSlug, version)
 	}
 
-	altKey := "alt-embed-" + first.ID
-	altPin := models.Pin{Key: altKey, Version: 1}
+	altRef := models.Ref{ProviderSlug: "embedtest", ModelSlug: "alt-embed-" + first.ID}
+	altPin := models.Pin{Ref: altRef, Version: 1}
 	originalVectorTableForPin := vectorTableForPin
 	vectorTableForPin = func(pin models.Pin) (string, error) {
 		if pin == altPin {
@@ -203,17 +269,20 @@ func TestCreateWorkspacePinsLiveEmbeddingDefault(t *testing.T) {
 
 	if _, err := s.pool.Exec(ctx, `
 		UPDATE model_configs SET is_default_for='{}'
-		 WHERE model_key='qwen-embed' AND version=1`); err != nil {
+		 WHERE provider_slug=$1 AND model_slug=$2 AND version=1`, embedModelRef.ProviderSlug, embedModelRef.ModelSlug); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx, `
 		INSERT INTO model_configs (
-			model_key, version, display_name, provider_slug, base_url, provider_model_id,
-			params, surfaces, micros_per_input_token, micros_per_output_token,
+			version, provider_name, model_name, provider_slug, model_slug,
+			platform_enabled, byok_enabled, context_window_tokens,
+			thinking_levels, default_thinking, params, surfaces,
+			micros_per_input_token, micros_per_output_token,
 			micros_per_cached_input_token, enabled, is_default_for
-		) VALUES ($1, 1, 'Alt Embed', 'openrouter', 'https://example.test', 'alt-embed',
+		) VALUES (1, 'Alt', 'Embed', $1, $2,
+			true, false, 0, ARRAY[]::text[], '',
 			'{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}'::jsonb,
-			ARRAY['embedding'], 99, 99, 0, true, ARRAY['embedding'])`, altKey); err != nil {
+			ARRAY['embedding'], 99, 99, 0, true, ARRAY['embedding'])`, altRef.ProviderSlug, altRef.ModelSlug); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx, `
@@ -223,10 +292,10 @@ func TestCreateWorkspacePinsLiveEmbeddingDefault(t *testing.T) {
 	t.Cleanup(func() {
 		// Embedding rows cannot be deleted. Clear the test default first.
 		_, _ = s.pool.Exec(context.Background(), `
-			UPDATE model_configs SET is_default_for='{}' WHERE model_key=$1`, altKey)
+			UPDATE model_configs SET is_default_for='{}' WHERE provider_slug=$1 AND model_slug=$2`, altRef.ProviderSlug, altRef.ModelSlug)
 		_, _ = s.pool.Exec(context.Background(), `
 			UPDATE model_configs SET is_default_for=ARRAY['embedding']
-			 WHERE model_key='qwen-embed' AND version=1`)
+			 WHERE provider_slug=$1 AND model_slug=$2 AND version=1`, embedModelRef.ProviderSlug, embedModelRef.ModelSlug)
 		_, _ = s.pool.Exec(context.Background(), `
 			UPDATE model_registry_state SET version = version + 1 WHERE id = true`)
 	})
@@ -242,27 +311,27 @@ func TestCreateWorkspacePinsLiveEmbeddingDefault(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := s.pool.QueryRow(ctx,
-		`SELECT embedding_model_key, embedding_model_version FROM workspaces WHERE id=$1`,
+		`SELECT embedding_provider_slug, embedding_model_slug, embedding_model_version FROM workspaces WHERE id=$1`,
 		second.ID,
-	).Scan(&key, &version); err != nil {
+	).Scan(&providerSlug, &modelSlug, &version); err != nil {
 		t.Fatal(err)
 	}
-	if key != altKey || version != 1 {
-		t.Fatalf("newWorkspaceEmbedding skipped the live default: %s v%d", key, version)
+	if (models.Ref{ProviderSlug: providerSlug, ModelSlug: modelSlug}) != altRef || version != 1 {
+		t.Fatalf("newWorkspaceEmbedding skipped the live default: %s/%s v%d", providerSlug, modelSlug, version)
 	}
 
 	oldRates, err := s.EmbeddingRates(ctx, first.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if oldRates.ModelKey != "qwen-embed" || oldRates.MicrosPerInputToken != 50 {
+	if oldRates.Model != embedModelRef || oldRates.MicrosPerInputToken != 50 {
 		t.Fatalf("old workspace rates followed the new default: %#v", oldRates)
 	}
 	newRates, err := s.EmbeddingRates(ctx, second.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if newRates.ModelKey != altKey || newRates.MicrosPerInputToken != 99 {
+	if newRates.Model != altRef || newRates.MicrosPerInputToken != 99 {
 		t.Fatalf("new workspace rates: %#v", newRates)
 	}
 }
@@ -286,7 +355,7 @@ func TestEmbeddingRatesFailsWhenPinCannotResolve(t *testing.T) {
 	}
 
 	if _, err := s.pool.Exec(ctx,
-		`UPDATE workspaces SET embedding_model_key='ghost-embed', embedding_model_version=1
+		`UPDATE workspaces SET embedding_provider_slug='ghost', embedding_model_slug='ghost-embed', embedding_model_version=1
 		   WHERE id=$1`, ws.ID); err != nil {
 		t.Fatal(err)
 	}
@@ -299,9 +368,9 @@ func TestSetModelPrefsRejectsEmpty(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
-	empty := ""
+	empty := models.Ref{}
 	for _, surface := range []string{"chat", "generate", "editor", "quiz"} {
-		var chat, generate, editor, quiz *string
+		var chat, generate, editor, quiz *models.Ref
 		switch surface {
 		case "chat":
 			chat = &empty
@@ -313,8 +382,8 @@ func TestSetModelPrefsRejectsEmpty(t *testing.T) {
 			quiz = &empty
 		}
 		if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{
-			ChatModelKey: chat, GenerateModelKey: generate, EditorModelKey: editor, QuizModelKey: quiz,
-		}); !errors.Is(err, ErrModelKeyRequired) {
+			ChatModel: chat, GenerateModel: generate, EditorModel: editor, QuizModel: quiz,
+		}); !errors.Is(err, ErrModelRefRequired) {
 			t.Fatalf("%s: got %v", surface, err)
 		}
 	}
@@ -324,24 +393,26 @@ func TestSetModelPrefsRevalidatesAfterWaitingForUserLock(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
-	key := "prefs-race-" + uid("m")
+	ref := models.Ref{ProviderSlug: "deepseek", ModelSlug: "prefs-race-" + uid("m")}
 	if _, err := s.pool.Exec(ctx, `
 		INSERT INTO model_configs (
-			model_key, version, display_name, provider_slug, base_url, provider_model_id,
-			auth_mode, context_window_tokens, params, surfaces,
+			version, provider_name, model_name, provider_slug, model_slug,
+			platform_enabled, byok_enabled, context_window_tokens,
+			thinking_levels, default_thinking, params, surfaces,
 			micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 			enabled, is_default_for
 		)
-		SELECT $1, 1, $1, provider_slug, base_url, provider_model_id,
-		       auth_mode, context_window_tokens, params, ARRAY['chat']::text[],
+		SELECT 1, $2, $2, $1, $2,
+		       platform_enabled, byok_enabled, context_window_tokens,
+		       thinking_levels, default_thinking, params, ARRAY['chat']::text[],
 		       micros_per_input_token, micros_per_output_token, micros_per_cached_input_token,
 		       true, ARRAY[]::text[]
 		  FROM model_configs
-		 WHERE model_key='deepseek-pro' AND version=1`, key); err != nil {
+		 WHERE provider_slug=$3 AND model_slug=$4 AND version=1`, ref.ProviderSlug, ref.ModelSlug, proModelRef.ProviderSlug, proModelRef.ModelSlug); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_, _ = s.pool.Exec(context.Background(), `DELETE FROM model_configs WHERE model_key=$1`, key)
+		_, _ = s.pool.Exec(context.Background(), `DELETE FROM model_configs WHERE provider_slug=$1 AND model_slug=$2`, ref.ProviderSlug, ref.ModelSlug)
 	})
 
 	blocker, err := s.pool.Begin(ctx)
@@ -355,7 +426,7 @@ func TestSetModelPrefsRevalidatesAfterWaitingForUserLock(t *testing.T) {
 
 	result := make(chan error, 1)
 	go func() {
-		result <- s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModelKey: &key})
+		result <- s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModel: &ref})
 	}()
 
 	deadline := time.Now().Add(2 * time.Second)
@@ -365,7 +436,7 @@ func TestSetModelPrefsRevalidatesAfterWaitingForUserLock(t *testing.T) {
 			SELECT EXISTS (
 				SELECT 1 FROM pg_stat_activity
 				 WHERE wait_event_type='Lock'
-				   AND query LIKE '%chat_model_key%generate_model_key%FOR UPDATE%'
+				   AND query LIKE '%chat_model_provider_slug%generate_model_provider_slug%FOR UPDATE%'
 			)`).Scan(&waiting); err != nil {
 			t.Fatal(err)
 		}
@@ -378,7 +449,7 @@ func TestSetModelPrefsRevalidatesAfterWaitingForUserLock(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	if _, err := s.pool.Exec(ctx, `UPDATE model_configs SET enabled=false WHERE model_key=$1`, key); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE model_configs SET enabled=false WHERE provider_slug=$1 AND model_slug=$2`, ref.ProviderSlug, ref.ModelSlug); err != nil {
 		t.Fatal(err)
 	}
 	if err := blocker.Commit(ctx); err != nil {
@@ -412,28 +483,36 @@ func TestUpsertUserPopulatesRegistryDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if me.ChatModelKey == "" || me.GenerateModelKey == "" || me.EditorModelKey == "" || me.QuizModelKey == "" {
+	if me.ChatModel.Zero() || me.GenerateModel.Zero() || me.EditorModel.Zero() || me.QuizModel.Zero() {
 		t.Fatalf("prefs empty: %#v", me)
 	}
 }
 
-func TestSetModelPrefsAcceptsBrowserQuizKey(t *testing.T) {
+func TestAccountModelPrefsRequiresRegistry(t *testing.T) {
+	s := openAccessTestStore(t)
+	_, _, _, _, err := s.accountModelPrefs(context.Background())
+	if !errors.Is(err, ErrModelUnavailable) {
+		t.Fatalf("account prefs without registry: got %v", err)
+	}
+}
+
+func TestSetModelPrefsAcceptsBrowserQuizRef(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
-	key := "browser:ternary-1.7b"
-	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{QuizModelKey: &key}); err != nil {
+	ref := models.Ref{ProviderSlug: BrowserProviderSlug, ModelSlug: "ternary-1.7b"}
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{QuizModel: &ref}); err != nil {
 		t.Fatal(err)
 	}
 	me, err := s.Me(ctx, userID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if me.QuizModelKey != key {
-		t.Fatalf("quiz pref = %q", me.QuizModelKey)
+	if me.QuizModel != ref {
+		t.Fatalf("quiz pref = %#v", me.QuizModel)
 	}
-	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModelKey: &key}); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("browser key on chat: %v", err)
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModel: &ref}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("browser ref on chat: %v", err)
 	}
 }
 
@@ -441,58 +520,52 @@ func TestSetModelPrefsRejectsLockedUserKey(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
-	key := "gpt-5.6-sol"
-	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModelKey: &key}); !errors.Is(err, ErrModelUnavailable) {
+	ref := models.Ref{ProviderSlug: "openai", ModelSlug: "gpt-5.6-sol"}
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{GenerateModel: &ref}); !errors.Is(err, ErrModelUnavailable) {
 		t.Fatalf("locked byok: %v", err)
 	}
 }
 
-func TestSetModelPrefsReasoningIsPerModel(t *testing.T) {
+func TestSetModelPrefsThinkingIsPerModel(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
-	on := "on"
-	max := "max"
-	high := "high"
+	high := models.ThinkingHigh
 	medium := "medium"
-	flash := "deepseek-flash"
-	pro := "deepseek-pro"
 
 	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{
-		ChatReasoningMode: &on, ChatReasoningEffort: &max,
+		ChatThinking: &high,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{
-		ChatReasoningEffort: &medium,
+		ChatThinking: &medium,
 	}); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("medium on deepseek: %v", err)
+		t.Fatalf("invented thinking on deepseek: %v", err)
 	}
-	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModelKey: &pro}); err != nil {
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModel: &proModelRef}); err != nil {
 		t.Fatal(err)
 	}
 	prefs, err := s.UserLLMPrefs(ctx, userID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mode, effort := prefs.Reasoning(SurfaceChat)
-	if mode != "" || effort != "" {
-		t.Fatalf("pro inherited flash prefs: %s %s", mode, effort)
+	if got := prefs.Thinking(SurfaceChat); got != "" {
+		t.Fatalf("pro inherited flash prefs: %s", got)
 	}
 	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{
-		ChatReasoningMode: &on, ChatReasoningEffort: &high,
+		ChatThinking: &high,
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModelKey: &flash}); err != nil {
+	if err := s.SetModelPrefs(ctx, userID, ModelPrefsPatch{ChatModel: &flashModelRef}); err != nil {
 		t.Fatal(err)
 	}
 	prefs, err = s.UserLLMPrefs(ctx, userID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mode, effort = prefs.Reasoning(SurfaceChat)
-	if mode != "on" || effort != "max" {
-		t.Fatalf("flash prefs lost: %s %s", mode, effort)
+	if got := prefs.Thinking(SurfaceChat); got != models.ThinkingHigh {
+		t.Fatalf("flash prefs lost: %s", got)
 	}
 }

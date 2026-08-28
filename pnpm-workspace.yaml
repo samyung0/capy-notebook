@@ -2,6 +2,7 @@ packages:
   - .
   - collaboration
   - ops
+  - workers/*
 
 injectWorkspacePackages: true
 
@@ -14,3 +15,4 @@ allowBuilds:
   msw: true
   sharp: true
   vue-demi: true
+  workerd: true

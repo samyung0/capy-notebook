@@ -15,6 +15,7 @@ import { useOpsApp } from '@/app-context';
 import {
   EmptyState,
   ErrorState,
+  FreshnessNote,
   MetricCard,
   PageHeader,
   PageLoading,
@@ -69,6 +70,11 @@ export function UserLookupPage() {
   return (
     <>
       <PageHeader
+        actions={
+          <FreshnessNote>
+            Search results refresh every 30 seconds.
+          </FreshnessNote>
+        }
         description="Search by exact or partial user ID or email address."
         title="User lookup"
       />
@@ -204,7 +210,16 @@ export function UserDetailPage({ userId }: { userId: string }) {
   return (
     <>
       <PageHeader
-        actions={<Badge variant="outline">{data.accountState}</Badge>}
+        actions={
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <Badge variant="outline">{data.accountState}</Badge>
+            <FreshnessNote>
+              Refreshes every 30 seconds. Snapshot at{' '}
+              {formatDateTime(data.dataAsOf)}. Provider usage appears after its
+              response settles.
+            </FreshnessNote>
+          </div>
+        }
         description={data.userId}
         title={data.email || data.name || data.userId}
       />
@@ -237,14 +252,14 @@ export function UserDetailPage({ userId }: { userId: string }) {
 
       <Card className="shadow-sm">
         <CardHeader>
-          <CardTitle>90-day usage</CardTitle>
+          <CardTitle>Current-month usage</CardTitle>
           <CardDescription>
-            Daily credits across all usage kinds.
+            Daily credits across all usage kinds, bucketed in UTC.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div
-            aria-label="Ninety-day credit usage bar chart"
+            aria-label="Current-month credit usage bar chart"
             className="h-72"
             role="img"
           >
@@ -291,13 +306,15 @@ export function UserDetailPage({ userId }: { userId: string }) {
         <CardHeader>
           <CardTitle>Workspaces and files</CardTitle>
           <CardDescription>
-            Names are omitted to avoid exposing customer content.
+            Workspace metadata is shown. Material bodies, file contents,
+            prompts, and responses are not shown.
           </CardDescription>
         </CardHeader>
         <CardContent>
           <Table>
             <TableHeader>
               <TableRow>
+                <TableHead>Name</TableHead>
                 <TableHead>Workspace ID</TableHead>
                 <TableHead className="text-right">Files</TableHead>
                 <TableHead>Last activity</TableHead>
@@ -306,6 +323,7 @@ export function UserDetailPage({ userId }: { userId: string }) {
             <TableBody>
               {data.workspaces.map((workspace) => (
                 <TableRow key={workspace.id}>
+                  <TableCell>{workspace.name}</TableCell>
                   <TableCell className="font-mono text-xs">
                     {workspace.id}
                   </TableCell>
@@ -331,42 +349,115 @@ export function UserDetailPage({ userId }: { userId: string }) {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Time</TableHead>
-                <TableHead>Kind / surface</TableHead>
-                <TableHead>Provider / model</TableHead>
-                <TableHead className="text-right">Tokens</TableHead>
-                <TableHead className="text-right">Credits</TableHead>
-                <TableHead>Trace ID</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {data.recentUsage.map((event) => (
-                <TableRow key={`${event.traceId}:${event.createdAt}`}>
-                  <TableCell className="whitespace-nowrap">
-                    {formatDateTime(event.createdAt)}
-                  </TableCell>
-                  <TableCell>
-                    {event.kind} / {event.surface}
-                  </TableCell>
-                  <TableCell>
-                    {event.provider} / {event.modelKey} v{event.modelVersion}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatCount(event.inputTokens + event.outputTokens)}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {formatCredits(event.creditMicros)}
-                  </TableCell>
-                  <TableCell className="font-mono text-xs">
-                    {event.traceId}
-                  </TableCell>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Time</TableHead>
+                  <TableHead>Kind / surface</TableHead>
+                  <TableHead>Catalog / observed model</TableHead>
+                  <TableHead>Thinking</TableHead>
+                  <TableHead className="text-right">
+                    Input / cached / output / reasoning
+                  </TableHead>
+                  <TableHead className="text-right">
+                    Pages / OCR / CPU ms / elapsed ms
+                  </TableHead>
+                  <TableHead className="text-right">
+                    System / tools / conversation
+                  </TableHead>
+                  <TableHead className="text-right">Credits</TableHead>
+                  <TableHead>Call / trace</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {data.recentUsage.map((event) => (
+                  <TableRow key={`${event.traceId}:${event.createdAt}`}>
+                    <TableCell className="whitespace-nowrap">
+                      {formatDateTime(event.createdAt)}
+                    </TableCell>
+                    <TableCell>
+                      {event.kind} / {event.surface}
+                      {event.purpose ? ` / ${event.purpose}` : ''}
+                    </TableCell>
+                    <TableCell>
+                      <span className="block">
+                        {event.catalogProviderSlug
+                          ? `${event.catalogProviderSlug} / ${event.catalogModelSlug} v${event.modelVersion}`
+                          : event.provider || 'No provider'}
+                      </span>
+                      {event.catalogProviderSlug && event.provider ? (
+                        <span className="block text-muted-foreground text-xs">
+                          observed: {event.provider}
+                          {event.model ? ` / ${event.model}` : ''}
+                        </span>
+                      ) : null}
+                    </TableCell>
+                    <TableCell>{event.thinking || '—'}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCount(event.inputTokens)} /{' '}
+                      {formatCount(event.cachedReadTokens)} /{' '}
+                      {formatCount(event.outputTokens)} /{' '}
+                      {formatCount(event.reasoningTokens)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCount(event.parsePages)} /{' '}
+                      {formatCount(event.parseOcrPages)} /{' '}
+                      {formatCount(event.parseCpuMilliseconds)} /{' '}
+                      {formatCount(event.parseElapsedMilliseconds)}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {event.contextTotalTokens > 0 ? (
+                        <span
+                          title={`${event.contextCountingMethod} v${event.contextCountingVersion}; ${formatCount(event.contextTotalTokens)} estimated of ${formatCount(event.contextWindowTokens)} window tokens`}
+                        >
+                          <span className="block">
+                            {formatCount(event.contextSystemTokens)} /{' '}
+                            {formatCount(event.contextToolTokens)} /{' '}
+                            {formatCount(event.contextConversationTokens)}
+                          </span>
+                          <span className="block text-muted-foreground text-xs">
+                            Δ actual−estimated{' '}
+                            {formatCount(
+                              event.inputTokens - event.contextTotalTokens
+                            )}
+                          </span>
+                        </span>
+                      ) : (
+                        '—'
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatCredits(event.creditMicros)}
+                      {event.paidBy ? ` · ${event.paidBy}` : ''}
+                    </TableCell>
+                    <TableCell className="max-w-64 font-mono text-xs">
+                      <span
+                        className="block truncate"
+                        title={event.providerCallId}
+                      >
+                        {event.providerCallId || 'No call'}
+                        {event.providerCallStatus
+                          ? ` · ${event.providerCallStatus}`
+                          : ''}
+                      </span>
+                      <span
+                        className="block truncate text-muted-foreground"
+                        title={event.traceId}
+                      >
+                        {event.traceId || 'No trace'}
+                      </span>
+                      {event.cacheAnomaly ? (
+                        <span className="block text-amber-700">
+                          {event.cacheAnomaly}
+                        </span>
+                      ) : null}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
         </CardContent>
       </Card>
     </>

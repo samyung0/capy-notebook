@@ -1,35 +1,30 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import pytest
 
 from pipeline.ingest import worker
 from pipeline.registry import (
-    SURFACE_CHAT,
-    SURFACE_EMBEDDING,
-    SURFACE_INGEST,
-    SURFACE_VISION,
     JobPins,
     ModelConfig,
     RegistryError,
+    Surface,
     credits_for_tokens,
     embedding_spec,
     registry,
     resolve_pinned,
     set_job_pins,
 )
+from pipeline.retrieval import models as retrieval_models
 from pipeline.store import db
 
 
 def _spec(**overrides) -> ModelConfig:
     base = {
-        "model_key": "deepseek-flash",
         "version": 1,
-        "display_name": "Flash",
+        "provider_name": "DeepSeek",
+        "model_name": "Flash",
         "provider_slug": "deepseek",
-        "base_url": "https://example.test",
-        "provider_model_id": "flash",
+        "model_slug": "flash",
         "surfaces": ("chat", "generate", "editor", "quiz", "ingest"),
         "micros_per_input_token": 250,
         "micros_per_output_token": 1000,
@@ -42,7 +37,8 @@ def test_credits_for_tokens_keeps_zeros():
     spec = _spec(micros_per_input_token=0, micros_per_output_token=0)
     assert credits_for_tokens(spec, "llm", 1000, 1000) == 0
     embed = _spec(
-        model_key="qwen-embed",
+        provider_slug="openrouter",
+        model_slug="qwen/qwen3-embedding-4b",
         surfaces=("embedding",),
         micros_per_input_token=0,
         micros_per_output_token=0,
@@ -52,7 +48,8 @@ def test_credits_for_tokens_keeps_zeros():
 
 def test_embedding_credits_ignore_cached_rate():
     embed = _spec(
-        model_key="qwen-embed",
+        provider_slug="openrouter",
+        model_slug="qwen/qwen3-embedding-4b",
         surfaces=("embedding",),
         micros_per_input_token=10,
         micros_per_cached_input_token=1,
@@ -72,8 +69,7 @@ def test_credits_discount_only_valid_cache_reads():
 def test_credits_differ_by_model():
     flash = _spec()
     pro = _spec(
-        model_key="deepseek-pro",
-        provider_model_id="pro",
+        model_slug="pro",
         micros_per_input_token=775,
         micros_per_output_token=3100,
     )
@@ -83,14 +79,14 @@ def test_credits_differ_by_model():
 
 
 def test_get_never_falls_back_to_default(monkeypatch):
-    def boom(_key, _version):
+    def boom(_provider_slug, _model_slug, _version):
         raise RegistryError("missing")
 
     monkeypatch.setattr(registry, "_load", boom)
     with registry._lock:
         registry._by_pin.clear()
     with pytest.raises(RegistryError, match="missing"):
-        registry.get("deepseek-flash", 99)
+        registry.get("deepseek", "flash", 99)
 
 
 def test_chat_pin_does_not_fall_back(monkeypatch):
@@ -99,10 +95,15 @@ def test_chat_pin_does_not_fall_back(monkeypatch):
         lambda _surface: (_ for _ in ()).throw(AssertionError("default used")),
     )
     with pytest.raises(RegistryError, match="missing pin"):
-        resolve_pinned(None, None, SURFACE_CHAT)
+        resolve_pinned(None, None, None, Surface.CHAT)
 
 
-@pytest.mark.parametrize("surface", [SURFACE_INGEST, SURFACE_EMBEDDING, SURFACE_VISION])
+def test_model_string_does_not_create_a_bootstrap_config():
+    with pytest.raises(RegistryError, match="pinned ModelConfig"):
+        retrieval_models._as_spec("deepseek-v4-flash")  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize("surface", [Surface.INGEST, Surface.EMBEDDING, Surface.VISION])
 def test_no_surface_resolves_its_own_default(monkeypatch, surface):
     """Ingest, embedding and vision used to fall back to the live default
     when handed no pin, which is how an ingest job could run on a model nobody
@@ -113,20 +114,20 @@ def test_no_surface_resolves_its_own_default(monkeypatch, surface):
         lambda _surface: (_ for _ in ()).throw(AssertionError("default used")),
     )
     with pytest.raises(RegistryError, match="missing pin"):
-        resolve_pinned(None, None, surface)
+        resolve_pinned(None, None, None, surface)
 
 
 def test_job_pins_keep_embedding_after_default_would_move():
     pinned = _spec(
-        model_key="old-embed",
+        provider_slug="openrouter",
         surfaces=("embedding",),
-        provider_model_id="old-embed-id",
+        model_slug="old-embed-id",
     )
     set_job_pins(JobPins(embedding=pinned))
     try:
         got = embedding_spec()
-        assert got.model_key == "old-embed"
-        assert got.provider_model_id == "old-embed-id"
+        assert got.provider_slug == "openrouter"
+        assert got.litellm_model_id == "old-embed-id"
     finally:
         set_job_pins(None)
 
@@ -177,7 +178,7 @@ def test_claim_gating_matrix(monkeypatch):
     assert worker._account_allows_ingest("f_1", payload) is True
 
 
-def test_ingest_bills_the_actor(monkeypatch):
+def test_ingest_closes_the_actor_reservation_after_page_billing(monkeypatch):
     billed = []
 
     def record(_cur, **kwargs):
@@ -186,18 +187,19 @@ def test_ingest_bills_the_actor(monkeypatch):
     monkeypatch.setattr(db, "connect", lambda: _Conn())
     monkeypatch.setattr(db, "record_usage_event", record)
     monkeypatch.setattr(db, "workspace_owner_user_id", lambda _cur, _ws: "u_owner")
+    monkeypatch.setattr(worker, "_lost_claim", lambda *_a, **_k: False)
+    monkeypatch.setattr(db, "set_file_status", lambda *_a, **_k: None)
+    monkeypatch.setattr(db, "set_file_indexed", lambda *_a, **_k: None)
+    monkeypatch.setattr(db, "set_job", lambda *_a, **_k: None)
+    monkeypatch.setattr(db, "add_notification", lambda *_a, **_k: None)
 
-    usage = SimpleNamespace(
-        by_model={},
-        input_tokens=10,
-        output_tokens=4,
-        embed_tokens=0,
-        model="flash",
-        calls=1,
-        is_empty=lambda: False,
+    worker.obs.start_usage()
+    worker.obs.record_parse_usage(
+        pages=2,
+        ocr_pages=1,
+        cpu_milliseconds=1250,
+        elapsed_milliseconds=2100,
     )
-    monkeypatch.setattr(worker.obs, "current_usage", lambda: usage)
-    monkeypatch.setattr(worker.obs, "take_gpu_millis", lambda: 0)
     monkeypatch.setattr(worker.obs, "trace_id", lambda: "t")
     monkeypatch.setattr(
         worker.registry,
@@ -207,33 +209,62 @@ def test_ingest_bills_the_actor(monkeypatch):
     monkeypatch.setattr(
         worker.registry,
         "embedding_spec",
-        lambda: _spec(model_key="qwen-embed", surfaces=("embedding",)),
+        lambda: _spec(
+            provider_slug="openrouter",
+            model_slug="qwen/qwen3-embedding-4b",
+            surfaces=("embedding",),
+        ),
     )
     monkeypatch.setattr(
         worker.registry,
         "vision_spec",
-        lambda: _spec(model_key="gemini-flash-lite", surfaces=("vision",)),
+        lambda: _spec(
+            provider_slug="gemini",
+            model_slug="gemini-flash-lite",
+            surfaces=("vision",),
+        ),
     )
 
     settled: list[str] = []
     monkeypatch.setattr(
         db, "settle_credit_reservation", lambda _cur, rid: settled.append(rid)
     )
-    worker._charge_ingest("f_1", "ws_1", "u_actor", "cr_1")
+    worker._finish_ok(
+        "f_1",
+        "notes.pdf",
+        "job_1",
+        attempt=1,
+        actor_user_id="u_actor",
+        workspace_id="ws_1",
+        reservation_id="cr_1",
+    )
     assert billed and billed[0]["actor_user_id"] == "u_actor"
     assert billed[0]["reservation_id"] == "cr_1"
+    assert billed[0]["kind"] == "parse"
+    assert billed[0]["unit"] == "pages"
+    assert billed[0]["units"] == 2
+    assert billed[0]["parse_ocr_pages"] == 1
+    assert billed[0]["parse_cpu_milliseconds"] == 1250
+    assert billed[0]["credit_micros"] == 83_000_000
+    assert billed[0]["idempotency_key"] == "parse:job_1:1"
     assert settled == ["cr_1"]
 
 
-def test_finish_fail_releases_reservation(monkeypatch):
-    released: list[str] = []
+def test_finish_fail_closes_reservation_from_recorded_spend(monkeypatch):
+    closed: list[str] = []
     monkeypatch.setattr(db, "connect", lambda: _Conn())
     monkeypatch.setattr(worker, "_lost_claim", lambda *_a, **_k: False)
     monkeypatch.setattr(db, "set_file_status", lambda *_a, **_k: None)
     monkeypatch.setattr(db, "set_file_indexed", lambda *_a, **_k: None)
     monkeypatch.setattr(db, "set_job", lambda *_a, **_k: None)
     monkeypatch.setattr(
-        db, "release_credit_reservation", lambda _cur, rid: released.append(rid)
+        db, "close_credit_reservation", lambda _cur, rid: closed.append(rid)
     )
     worker._finish_fail("f_1", "j_1", "boom", 1, "cr_fail")
-    assert released == ["cr_fail"]
+    assert closed == ["cr_fail"]
+
+
+def test_parse_page_rates_are_worst_case_and_ocr_replaces_digital_rate():
+    assert db.credits_for_parse_pages(1, 0) == 31_000_000
+    assert db.credits_for_parse_pages(1, 1) == 52_000_000
+    assert db.credits_for_parse_pages(3, 1) == 114_000_000

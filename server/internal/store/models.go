@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/evonotes/server/internal/materialdoc"
+	"github.com/evonotes/server/internal/models"
 )
 
 // JSON tags match src/api/types.ts exactly so responses are drop-in for the
@@ -20,10 +21,10 @@ type User struct {
 	ClassLabel         string             `json:"classLabel,omitempty"`
 	Streak             int                `json:"streak"`
 	Locale             string             `json:"locale"`
-	ChatModelKey       string             `json:"chatModelKey"`
-	GenerateModelKey   string             `json:"generateModelKey"`
-	EditorModelKey     string             `json:"editorModelKey"`
-	QuizModelKey       string             `json:"quizModelKey"`
+	ChatModel          models.Ref         `json:"chatModel"`
+	GenerateModel      models.Ref         `json:"generateModel"`
+	EditorModel        models.Ref         `json:"editorModel"`
+	QuizModel          models.Ref         `json:"quizModel"`
 	PlanTier           PlanTier           `json:"planTier"`
 	SubscriptionStatus SubscriptionStatus `json:"subscriptionStatus"`
 }
@@ -111,16 +112,17 @@ type File struct {
 }
 
 type Quiz struct {
-	ID            string          `json:"id"`
-	UserID        string          `json:"-"`
-	Name          string          `json:"name"`
-	WorkspaceID   string          `json:"workspaceId"`
-	WorkspaceName string          `json:"workspaceName"`
-	Chapters      []string        `json:"chapters"`
-	Questions     json.RawMessage `json:"questions"`
-	CreatedAt     time.Time       `json:"createdAt"`
-	Privacy       Privacy         `json:"privacy"`
-	TimeLimitMin  *int            `json:"timeLimitMin,omitempty"`
+	ID             string          `json:"id"`
+	UserID         string          `json:"-"`
+	Name           string          `json:"name"`
+	WorkspaceID    string          `json:"workspaceId"`
+	WorkspaceName  string          `json:"workspaceName"`
+	Chapters       []string        `json:"chapters"`
+	ScopeFileNames []string        `json:"-"`
+	Questions      json.RawMessage `json:"questions"`
+	CreatedAt      time.Time       `json:"createdAt"`
+	Privacy        Privacy         `json:"privacy"`
+	TimeLimitMin   *int            `json:"timeLimitMin,omitempty"`
 }
 
 type Attempt struct {

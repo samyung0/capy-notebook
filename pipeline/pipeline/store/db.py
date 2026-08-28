@@ -475,13 +475,18 @@ def workspace_owner_user_id(cur, workspace_id: str) -> str | None:
 # duplicated here or the same work costs different amounts depending on which
 # process did it.
 MICROS_PER_CREDIT = 1_000_000
-_MICROS_PER_GPU_SECOND = 500_000
+DIGITAL_PARSE_PAGE_CREDIT_MICROS = 31_000_000
+OCR_PARSE_PAGE_CREDIT_MICROS = 52_000_000
 _FREE_CREDITS_PER_MONTH = 1_000
 _PRO_CREDITS_PER_MONTH = 20_000
 
 
-def credits_for_gpu(gpu_millis: int) -> int:
-    return gpu_millis * _MICROS_PER_GPU_SECOND // 1000
+def credits_for_parse_pages(pages: int, ocr_pages: int) -> int:
+    pages = max(0, int(pages))
+    ocr_pages = min(pages, max(0, int(ocr_pages)))
+    return (pages - ocr_pages) * DIGITAL_PARSE_PAGE_CREDIT_MICROS + (
+        ocr_pages * OCR_PARSE_PAGE_CREDIT_MICROS
+    )
 
 
 def credit_limit_micros(plan_tier: str) -> int:
@@ -499,33 +504,45 @@ def record_usage_event(
     surface: str,
     provider: str = "",
     model: str = "",
-    model_key: str = "",
+    catalog_provider_slug: str = "",
+    catalog_model_slug: str = "",
     model_version: int = 0,
     input_tokens: int = 0,
     output_tokens: int = 0,
     units: int = 0,
     unit: str = "",
+    parse_pages: int = 0,
+    parse_ocr_pages: int = 0,
+    parse_cpu_milliseconds: int = 0,
+    parse_elapsed_milliseconds: int = 0,
     credit_micros: int = 0,
     reservation_id: str = "",
+    provider_call_id: str = "",
+    idempotency_key: str = "",
     trace_id: str | None = None,
     metadata: dict[str, Any] | None = None,
-) -> None:
+) -> bool:
     """Append one metered consumption and charge it to the actor's counter.
 
-    Ingest is leased at enqueue and recorded here after the job finishes. The
-    measured charge can still push a user past their limit; the next
-    interactive request is what refuses.
+    Ingest is leased at enqueue. Provider calls use this helper as they settle;
+    parse pages use it when each job attempt closes. A measured charge can push a
+    user past their limit; the next interactive request is what refuses.
     """
     if not actor_user_id or credit_micros < 0:
-        return
+        return False
     cur.execute(
         """
         INSERT INTO usage_events
             (trace_id, actor_user_id, workspace_id, kind, surface, provider, model,
-             model_key, model_version,
-             input_tokens, output_tokens, units, unit, credit_micros,
-             reservation_id, metadata)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+             catalog_provider_slug, catalog_model_slug, model_version,
+             input_tokens, output_tokens, units, unit, parse_pages,
+             parse_ocr_pages, parse_cpu_milliseconds,
+             parse_elapsed_milliseconds, credit_micros, reservation_id,
+             provider_call_id, idempotency_key, metadata)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (idempotency_key) WHERE idempotency_key IS NOT NULL
+        DO NOTHING
+        RETURNING id
         """,
         (
             trace_id or None,
@@ -535,18 +552,26 @@ def record_usage_event(
             surface,
             provider,
             model,
-            model_key,
+            catalog_provider_slug,
+            catalog_model_slug,
             model_version,
             input_tokens,
             output_tokens,
             units,
             unit,
+            parse_pages,
+            parse_ocr_pages,
+            parse_cpu_milliseconds,
+            parse_elapsed_milliseconds,
             credit_micros,
             reservation_id or None,
+            provider_call_id or None,
+            idempotency_key or None,
             Jsonb(metadata or {}),
         ),
     )
-    if credit_micros:
+    inserted = cur.fetchone() is not None
+    if inserted and credit_micros:
         cur.execute(
             "INSERT INTO user_credits (user_id) VALUES (%s) ON CONFLICT DO NOTHING",
             (actor_user_id,),
@@ -559,6 +584,259 @@ def record_usage_event(
             """,
             (credit_micros, actor_user_id),
         )
+    return inserted
+
+
+def open_provider_call(
+    cur,
+    session_id: str,
+    call_id: str,
+    kind: str,
+    purpose: str,
+    thinking: str,
+    *,
+    context_system_tokens: int = 0,
+    context_tool_tokens: int = 0,
+    context_conversation_tokens: int = 0,
+    context_total_tokens: int = 0,
+    context_window_tokens: int = 0,
+    context_counting_method: str = "",
+    context_counting_version: int = 0,
+) -> None:
+    """Authorize the exact call before the provider HTTP request."""
+    context_values = (
+        context_system_tokens,
+        context_tool_tokens,
+        context_conversation_tokens,
+        context_total_tokens,
+        context_window_tokens,
+        context_counting_version,
+    )
+    if any(value < 0 for value in context_values):
+        raise RuntimeError("provider call context values cannot be negative")
+    if context_total_tokens != (
+        context_system_tokens + context_tool_tokens + context_conversation_tokens
+    ):
+        raise RuntimeError("provider call context total does not match its components")
+    cur.execute(
+        """
+        SELECT actor_user_id, status, credits_exhausted_at, terminal_call_id
+          FROM provider_sessions WHERE id = %s FOR UPDATE
+        """,
+        (session_id,),
+    )
+    reservation = cur.fetchone()
+    if reservation is None:
+        raise RuntimeError("spend session not found")
+    actor_user_id, status, exhausted_at, terminal_call_id = reservation
+    if status != "open":
+        raise RuntimeError("provider session is closed")
+    if purpose == "terminal" and (kind != "llm" or exhausted_at is None):
+        raise RuntimeError("terminal provider call is not allowed")
+    if kind == "llm" and exhausted_at is not None:
+        if purpose != "terminal":
+            raise RuntimeError("only a terminal provider call is allowed")
+        if terminal_call_id and terminal_call_id != call_id:
+            raise RuntimeError("terminal provider call was already used")
+
+    cur.execute(
+        """
+        SELECT reservation_id, actor_user_id, kind, purpose, thinking, status,
+               context_system_tokens, context_tool_tokens,
+               context_conversation_tokens, context_total_tokens,
+               context_window_tokens, context_counting_method,
+               context_counting_version
+          FROM provider_calls WHERE id = %s FOR UPDATE
+        """,
+        (call_id,),
+    )
+    existing = cur.fetchone()
+    if existing is not None:
+        expected = (
+            session_id,
+            actor_user_id,
+            kind,
+            purpose,
+            thinking,
+            "open",
+            context_system_tokens,
+            context_tool_tokens,
+            context_conversation_tokens,
+            context_total_tokens,
+            context_window_tokens,
+            context_counting_method,
+            context_counting_version,
+        )
+        if existing != expected:
+            raise RuntimeError("provider call id conflicts with an existing call")
+        return
+    cur.execute(
+        """
+        INSERT INTO provider_calls (
+          id, reservation_id, actor_user_id, kind, purpose, thinking,
+          context_system_tokens, context_tool_tokens,
+          context_conversation_tokens, context_total_tokens,
+          context_window_tokens, context_counting_method,
+          context_counting_version
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """,
+        (
+            call_id,
+            session_id,
+            actor_user_id,
+            kind,
+            purpose,
+            thinking,
+            context_system_tokens,
+            context_tool_tokens,
+            context_conversation_tokens,
+            context_total_tokens,
+            context_window_tokens,
+            context_counting_method,
+            context_counting_version,
+        ),
+    )
+    if purpose == "terminal":
+        cur.execute(
+            """
+            UPDATE provider_sessions SET terminal_call_id = %s WHERE id = %s
+            """,
+            (call_id, session_id),
+        )
+
+
+def abandon_provider_call(cur, call_id: str) -> None:
+    if not call_id:
+        return
+    cur.execute(
+        """
+        UPDATE provider_calls SET status = 'abandoned'
+         WHERE id = %s AND status = 'open'
+         RETURNING reservation_id, purpose
+        """,
+        (call_id,),
+    )
+    abandoned = cur.fetchone()
+    if abandoned is not None and abandoned[1] == "terminal":
+        cur.execute(
+            """
+            UPDATE provider_sessions SET terminal_call_id = NULL
+             WHERE id = %s AND terminal_call_id = %s
+            """,
+            (abandoned[0], call_id),
+        )
+
+
+def settle_ingest_provider_call(
+    cur,
+    *,
+    session_id: str,
+    call_id: str,
+    kind: str,
+    purpose: str,
+    thinking: str,
+    provider: str,
+    model: str,
+    catalog_provider_slug: str,
+    catalog_model_slug: str,
+    model_version: int,
+    usage: Any,
+    credit_micros: int,
+) -> None:
+    """Atomically apply one post-paid ingest provider attempt."""
+    cur.execute(
+        """
+        SELECT actor_user_id, workspace_id, trace_id, surface, status
+          FROM provider_sessions WHERE id = %s FOR UPDATE
+        """,
+        (session_id,),
+    )
+    reservation = cur.fetchone()
+    if reservation is None:
+        raise RuntimeError("ingest spend session not found")
+    actor_user_id, workspace_id, trace_id, surface, reservation_status = reservation
+    if surface != "ingest" or reservation_status != "open":
+        raise RuntimeError("ingest spend session is closed or has the wrong surface")
+
+    cur.execute(
+        """
+        SELECT kind, purpose, thinking, status
+          FROM provider_calls
+         WHERE id = %s AND reservation_id = %s FOR UPDATE
+        """,
+        (call_id, session_id),
+    )
+    call = cur.fetchone()
+    if call is None or call[:3] != (kind, purpose, thinking):
+        raise RuntimeError("ingest provider call does not match its open stub")
+    if call[3] == "applied":
+        return
+    if call[3] != "open":
+        raise RuntimeError("ingest provider call is not open")
+
+    metadata: dict[str, Any] = {
+        "callId": call_id,
+        "purpose": purpose,
+        "paidBy": "platform",
+    }
+    if usage.cached_read_tokens:
+        metadata["cachedReadTokens"] = usage.cached_read_tokens
+    if usage.cache_write_tokens:
+        metadata["cacheWriteTokens"] = usage.cache_write_tokens
+    if usage.reasoning_tokens:
+        metadata["reasoningTokens"] = usage.reasoning_tokens
+    if usage.anomaly:
+        metadata["cacheAnomaly"] = usage.anomaly
+    if not usage.input_tokens and not usage.output_tokens:
+        metadata["usageMissing"] = True
+
+    record_usage_event(
+        cur,
+        actor_user_id=actor_user_id,
+        workspace_id=workspace_id,
+        kind=kind,
+        surface="ingest",
+        provider=provider,
+        model=model,
+        catalog_provider_slug=catalog_provider_slug,
+        catalog_model_slug=catalog_model_slug,
+        model_version=model_version,
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+        unit="tokens",
+        credit_micros=credit_micros,
+        reservation_id=session_id,
+        provider_call_id=call_id,
+        trace_id=trace_id,
+        metadata=metadata,
+    )
+    cur.execute(
+        """
+        UPDATE provider_calls SET
+          status = 'applied', provider = %s, model = %s,
+          input_tokens = %s, output_tokens = %s,
+          cached_read_tokens = %s, cache_write_tokens = %s,
+          reasoning_tokens = %s, cache_anomaly = %s,
+          credit_micros = %s, received_at = now(), applied_at = now()
+        WHERE id = %s AND reservation_id = %s AND status = 'open'
+        """,
+        (
+            provider,
+            model,
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.cached_read_tokens,
+            usage.cache_write_tokens,
+            usage.reasoning_tokens,
+            usage.anomaly,
+            credit_micros,
+            call_id,
+            session_id,
+        ),
+    )
+    if cur.rowcount != 1:
+        raise RuntimeError("ingest provider call could not be applied")
 
 
 def settle_credit_reservation(cur, reservation_id: str) -> None:
@@ -566,7 +844,7 @@ def settle_credit_reservation(cur, reservation_id: str) -> None:
         return
     cur.execute(
         """
-        UPDATE credit_reservations
+        UPDATE provider_sessions
         SET status = 'settled', settled_at = now()
         WHERE id = %s AND status = 'open'
         """,
@@ -579,9 +857,29 @@ def release_credit_reservation(cur, reservation_id: str) -> None:
         return
     cur.execute(
         """
-        UPDATE credit_reservations
+        UPDATE provider_sessions
         SET status = 'released', settled_at = now()
         WHERE id = %s AND status = 'open'
+        """,
+        (reservation_id,),
+    )
+
+
+def close_credit_reservation(cur, reservation_id: str) -> None:
+    """Settle a session that spent anything; otherwise release it."""
+    if not reservation_id:
+        return
+    cur.execute(
+        """
+        UPDATE provider_sessions AS cr
+        SET status = CASE
+              WHEN EXISTS (
+                SELECT 1 FROM usage_events ue WHERE ue.reservation_id = cr.id
+              ) THEN 'settled'
+              ELSE 'released'
+            END,
+            settled_at = now()
+        WHERE cr.id = %s AND cr.status = 'open'
         """,
         (reservation_id,),
     )

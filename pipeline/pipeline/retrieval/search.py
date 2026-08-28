@@ -99,9 +99,10 @@ async def search(
     # and removes the possibility of a redeploy silently changing vector spaces.
     pin = await store.workspace_embedding_pin(workspace_id)
     spec = registry.resolve_pinned(
-        pin["embedding_model_key"],
+        pin["embedding_provider_slug"],
+        pin["embedding_model_slug"],
         pin["embedding_model_version"],
-        registry.SURFACE_EMBEDDING,
+        registry.Surface.EMBEDDING,
     )
     vectors = await models.embed([models.format_query(query, spec)], spec=spec)
     if not vectors:

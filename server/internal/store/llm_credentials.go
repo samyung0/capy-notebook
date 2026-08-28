@@ -9,9 +9,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/evonotes/server/internal/models"
+	"github.com/jackc/pgx/v5"
 )
 
 const (
@@ -20,20 +23,27 @@ const (
 	LLMProviderDeepSeek  = "deepseek"
 )
 
-var LLMCredentialProviders = []string{LLMProviderOpenAI, LLMProviderAnthropic, LLMProviderDeepSeek}
+var providerSlugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,62}$`)
+
+func ValidLLMProvider(slug string) bool {
+	return ValidLLMProviderSlug(slug)
+}
 
 type LLMCredential struct {
 	ProviderSlug string `json:"providerSlug"`
 	Last4        string `json:"last4"`
 }
 
-func ValidLLMProvider(slug string) bool {
-	for _, item := range LLMCredentialProviders {
-		if item == slug {
-			return true
-		}
-	}
-	return false
+type LLMCredentialProvider struct {
+	ProviderSlug string   `json:"providerSlug"`
+	Eligible     bool     `json:"eligible"`
+	Reason       string   `json:"reason,omitempty"`
+	Unlocks      []string `json:"unlocks"`
+	Last4        string   `json:"last4,omitempty"`
+}
+
+func ValidLLMProviderSlug(slug string) bool {
+	return providerSlugPattern.MatchString(strings.TrimSpace(slug))
 }
 
 func ParseCredentialKey(raw string) ([]byte, error) {
@@ -140,8 +150,8 @@ func (s *Store) UpsertLLMCredential(ctx context.Context, userID, providerSlug, a
 	if err := s.requireCredKey(); err != nil {
 		return err
 	}
-	if !ValidLLMProvider(providerSlug) {
-		return ErrNotFound
+	if err := s.canUpsertLLMCredential(ctx, providerSlug); err != nil {
+		return err
 	}
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
@@ -187,7 +197,16 @@ func (s *Store) DecryptLLMCredential(ctx context.Context, userID, providerSlug s
 }
 
 func (s *Store) DeleteLLMCredential(ctx context.Context, userID, providerSlug string) error {
-	tag, err := s.pool.Exec(ctx, `
+	defaults, err := s.modelPreferenceDefaults()
+	if err != nil {
+		return err
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck -- commit decides the outcome
+	tag, err := tx.Exec(ctx, `
 		DELETE FROM user_llm_credentials WHERE user_id=$1 AND provider_slug=$2`,
 		userID, providerSlug)
 	if err != nil {
@@ -196,52 +215,171 @@ func (s *Store) DeleteLLMCredential(ctx context.Context, userID, providerSlug st
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return s.remapUserKeyPrefs(ctx, userID, providerSlug)
+	if err := remapUserKeyPrefs(ctx, tx, userID, providerSlug, defaults); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// modelPreferenceDefaults resolves every operator-selected default before a
+// credential is deleted, so the delete never needs a hardcoded model fallback.
+func (s *Store) modelPreferenceDefaults() (map[string]models.Ref, error) {
+	if s.registry == nil {
+		return nil, fmt.Errorf("%w: registry not configured", ErrModelUnavailable)
+	}
+	defaults := make(map[string]models.Ref, 4)
+	for _, surface := range []string{models.SurfaceChat, models.SurfaceGenerate, models.SurfaceEditor, models.SurfaceQuiz} {
+		pin, err := s.registry.DefaultPin(surface)
+		if err != nil {
+			return nil, fmt.Errorf("%w: %s default: %v", ErrModelUnavailable, surface, err)
+		}
+		defaults[surface] = pin.Ref
+	}
+	return defaults, nil
 }
 
 // remapUserKeyPrefs moves surfaces still pointing at a now-locked user_key
 // model back to the surface default. platform_or_user rows stay put: they
-// fall back to the env key.
-func (s *Store) remapUserKeyPrefs(ctx context.Context, userID, providerSlug string) error {
-	defaults := map[string]string{}
-	if s.registry != nil {
-		for _, surface := range []string{models.SurfaceChat, models.SurfaceGenerate, models.SurfaceEditor, models.SurfaceQuiz} {
-			if pin, err := s.registry.DefaultPin(surface); err == nil {
-				defaults[surface] = pin.Key
+// continue using the platform key.
+func remapUserKeyPrefs(ctx context.Context, tx pgx.Tx, userID, providerSlug string, defaults map[string]models.Ref) error {
+	chat := defaults[models.SurfaceChat]
+	generate := defaults[models.SurfaceGenerate]
+	editor := defaults[models.SurfaceEditor]
+	quiz := defaults[models.SurfaceQuiz]
+	_, err := tx.Exec(ctx, `
+		UPDATE users SET
+			chat_model_provider_slug = CASE
+				WHEN (chat_model_provider_slug, chat_model_slug) IN (
+					SELECT provider_slug, model_slug FROM model_configs
+					 WHERE provider_slug=$2 AND byok_enabled AND NOT platform_enabled AND enabled
+				) THEN $3 ELSE chat_model_provider_slug END,
+			chat_model_slug = CASE
+				WHEN (chat_model_provider_slug, chat_model_slug) IN (
+					SELECT provider_slug, model_slug FROM model_configs
+					 WHERE provider_slug=$2 AND byok_enabled AND NOT platform_enabled AND enabled
+				) THEN $4 ELSE chat_model_slug END,
+			generate_model_provider_slug = CASE
+				WHEN (generate_model_provider_slug, generate_model_slug) IN (
+					SELECT provider_slug, model_slug FROM model_configs
+					 WHERE provider_slug=$2 AND byok_enabled AND NOT platform_enabled AND enabled
+				) THEN $5 ELSE generate_model_provider_slug END,
+			generate_model_slug = CASE
+				WHEN (generate_model_provider_slug, generate_model_slug) IN (
+					SELECT provider_slug, model_slug FROM model_configs
+					 WHERE provider_slug=$2 AND byok_enabled AND NOT platform_enabled AND enabled
+				) THEN $6 ELSE generate_model_slug END,
+			editor_model_provider_slug = CASE
+				WHEN (editor_model_provider_slug, editor_model_slug) IN (
+					SELECT provider_slug, model_slug FROM model_configs
+					 WHERE provider_slug=$2 AND byok_enabled AND NOT platform_enabled AND enabled
+				) THEN $7 ELSE editor_model_provider_slug END,
+			editor_model_slug = CASE
+				WHEN (editor_model_provider_slug, editor_model_slug) IN (
+					SELECT provider_slug, model_slug FROM model_configs
+					 WHERE provider_slug=$2 AND byok_enabled AND NOT platform_enabled AND enabled
+				) THEN $8 ELSE editor_model_slug END,
+			quiz_model_provider_slug = CASE
+				WHEN (quiz_model_provider_slug, quiz_model_slug) IN (
+					SELECT provider_slug, model_slug FROM model_configs
+					 WHERE provider_slug=$2 AND byok_enabled AND NOT platform_enabled AND enabled
+				) THEN $9 ELSE quiz_model_provider_slug END,
+			quiz_model_slug = CASE
+				WHEN (quiz_model_provider_slug, quiz_model_slug) IN (
+					SELECT provider_slug, model_slug FROM model_configs
+					 WHERE provider_slug=$2 AND byok_enabled AND NOT platform_enabled AND enabled
+				) THEN $10 ELSE quiz_model_slug END,
+			updated_at = now()
+		WHERE id=$1`, userID, providerSlug,
+		chat.ProviderSlug, chat.ModelSlug,
+		generate.ProviderSlug, generate.ModelSlug,
+		editor.ProviderSlug, editor.ModelSlug,
+		quiz.ProviderSlug, quiz.ModelSlug)
+	return err
+}
+
+func (s *Store) canUpsertLLMCredential(ctx context.Context, providerSlug string) error {
+	if !ValidLLMProviderSlug(providerSlug) {
+		return ErrNotFound
+	}
+	if !models.IsFirstPartyProvider(providerSlug) {
+		return ErrNotFound
+	}
+	var ok bool
+	err := s.pool.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM model_configs
+			 WHERE provider_slug=$1 AND enabled AND byok_enabled
+		)`, providerSlug).Scan(&ok)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) ListLLMCredentialProviders(ctx context.Context, userID string) ([]LLMCredentialProvider, error) {
+	saved, err := s.LLMCredentialSlugs(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	last4 := map[string]string{}
+	list, err := s.ListLLMCredentials(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	for _, item := range list {
+		last4[item.ProviderSlug] = item.Last4
+	}
+	rows, err := s.pool.Query(ctx, `
+		SELECT provider_slug, provider_name, model_name
+		  FROM model_configs
+		 WHERE enabled AND byok_enabled
+		 ORDER BY provider_slug, provider_name, model_name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	bySlug := map[string]*LLMCredentialProvider{}
+	for rows.Next() {
+		var slug, providerName, modelName string
+		if err := rows.Scan(&slug, &providerName, &modelName); err != nil {
+			return nil, err
+		}
+		if !models.IsFirstPartyProvider(slug) {
+			continue
+		}
+		name := models.JoinModelLabel(providerName, modelName)
+		item, ok := bySlug[slug]
+		if !ok {
+			item = &LLMCredentialProvider{ProviderSlug: slug, Eligible: true, Unlocks: []string{}}
+			bySlug[slug] = item
+		}
+		item.Unlocks = append(item.Unlocks, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for slug, four := range last4 {
+		if bySlug[slug] == nil {
+			bySlug[slug] = &LLMCredentialProvider{
+				ProviderSlug: slug,
+				Eligible:     true,
+				Unlocks:      []string{},
 			}
 		}
+		bySlug[slug].Last4 = four
+		_ = saved
 	}
-	fallback := "deepseek-flash"
-	chat := defaults[models.SurfaceChat]
-	if chat == "" {
-		chat = fallback
+	out := make([]LLMCredentialProvider, 0, len(bySlug))
+	for _, item := range bySlug {
+		if item.Eligible || item.Last4 != "" {
+			out = append(out, *item)
+		}
 	}
-	generate := defaults[models.SurfaceGenerate]
-	if generate == "" {
-		generate = fallback
-	}
-	quiz := defaults[models.SurfaceQuiz]
-	if quiz == "" {
-		quiz = fallback
-	}
-	_, err := s.pool.Exec(ctx, `
-		UPDATE users SET
-			chat_model_key = CASE
-				WHEN chat_model_key IN (
-					SELECT model_key FROM model_configs
-					 WHERE provider_slug=$2 AND auth_mode='user_key' AND enabled
-				) THEN $3 ELSE chat_model_key END,
-			generate_model_key = CASE
-				WHEN generate_model_key IN (
-					SELECT model_key FROM model_configs
-					 WHERE provider_slug=$2 AND auth_mode='user_key' AND enabled
-				) THEN $4 ELSE generate_model_key END,
-			quiz_model_key = CASE
-				WHEN quiz_model_key IN (
-					SELECT model_key FROM model_configs
-					 WHERE provider_slug=$2 AND auth_mode='user_key' AND enabled
-				) THEN $5 ELSE quiz_model_key END,
-			updated_at = now()
-		WHERE id=$1`, userID, providerSlug, chat, generate, quiz)
-	return err
+	sort.Slice(out, func(i, j int) bool {
+		return out[i].ProviderSlug < out[j].ProviderSlug
+	})
+	return out, nil
 }

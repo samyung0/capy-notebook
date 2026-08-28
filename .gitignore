@@ -7,14 +7,18 @@ Thumbs.db
 .vscode/*
 !.vscode/settings.json
 *~
+.zed
+.cursor
 
 # --- Env / secrets ---
 .env
 .env.*
 !.env.example
+!review/.env.uat.example
 
 # --- Node / Vite frontend ---
 node_modules/
+.pnpm-store/
 dist/
 dist-ssr/
 .vite/
@@ -66,6 +70,7 @@ data/
 # fixtures). These are only transient debug/probe artifacts.
 pipeline/tests/_match_debug.txt
 pipeline/tests/_probe.py
+.evo-cert-continuity.json
 
 # --- Playwright ---
 playwright-report/
@@ -75,5 +80,11 @@ test-results/
 e2e/perf/.results/
 blob-report/
 playwright/.cache/
+e2e/uat/report/
+e2e/uat/test-results/
+
+# --- Repository review evidence ---
+review-results/
+strix_runs/
 
 plate-playground-template

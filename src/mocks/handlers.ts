@@ -8,6 +8,7 @@ import type {
   MaterialDiscussion,
   MaterialRef,
   MaterialRefType,
+  ModelRef,
   Question,
   Quiz,
   SearchResult,
@@ -29,7 +30,11 @@ import {
   mermaidNode,
   quizNode,
 } from '@/features/materials/document';
-import { effectiveReasoning } from '@/features/settings/llmOptions';
+import {
+  modelRefValue,
+  optionRef,
+  sameModel,
+} from '@/features/settings/llmOptions';
 import { getFileKind } from '@/features/workspace/sourceUpload';
 import { isKnown, newSrsState } from '@/lib/srs';
 import * as db from './db';
@@ -48,66 +53,50 @@ const GENERATE_KINDS: GenerateOptions['kind'][] = [
   'diagram',
 ];
 const USER_KEY_MODELS: Record<string, string> = {
-  'claude-opus-5': 'anthropic',
-  'gpt-5.6-sol': 'openai',
+  [modelRefValue({ modelSlug: 'gpt-5.6-sol', providerSlug: 'openai' })]:
+    'openai',
 };
 
 function mockCatalogModels() {
   const hasOpenAI = Boolean(db.llmCredentials.openai);
-  const hasAnthropic = Boolean(db.llmCredentials.anthropic);
   const hasDeepSeek = Boolean(db.llmCredentials.deepseek);
-  const reasoning = {
-    canDisable: true,
-    defaultEffort: 'max',
-    defaultMode: 'off',
-    efforts: ['low', 'high', 'max'],
+  const thinking = {
+    default: 'instant',
+    levels: ['instant', 'low', 'mid', 'high', 'max'],
   };
   return [
     {
       available: true,
-      displayName: 'DeepSeek Flash',
       isDefault: true,
-      key: 'deepseek-flash',
+      modelName: 'Flash Vision',
+      modelSlug: 'deepseek-v4-flash-vision-exp',
+      providerName: 'DeepSeek',
       providerSlug: 'deepseek',
-      reasoning,
+      thinking,
       usesUserKey: hasDeepSeek,
     },
     {
       available: true,
-      displayName: 'DeepSeek Pro',
       isDefault: false,
-      key: 'deepseek-pro',
+      modelName: 'Pro',
+      modelSlug: 'deepseek-v4-pro',
+      providerName: 'DeepSeek',
       providerSlug: 'deepseek',
-      reasoning,
+      thinking,
       usesUserKey: hasDeepSeek,
     },
     {
       available: hasOpenAI,
-      displayName: 'GPT-5.6 Sol',
       isDefault: false,
-      key: 'gpt-5.6-sol',
+      modelName: 'GPT-5.6 Sol',
+      modelSlug: 'gpt-5.6-sol',
+      providerName: 'OpenAI',
       providerSlug: 'openai',
-      reasoning: {
-        canDisable: true,
-        defaultEffort: 'medium',
-        defaultMode: 'on',
-        efforts: ['low', 'medium', 'high', 'xhigh'],
+      thinking: {
+        default: 'mid',
+        levels: ['instant', 'low', 'mid', 'high', 'max'],
       },
       usesUserKey: hasOpenAI,
-    },
-    {
-      available: hasAnthropic,
-      displayName: 'Claude Opus 5',
-      isDefault: false,
-      key: 'claude-opus-5',
-      providerSlug: 'anthropic',
-      reasoning: {
-        canDisable: false,
-        defaultEffort: 'high',
-        defaultMode: 'on',
-        efforts: ['low', 'medium', 'high', 'xhigh'],
-      },
-      usesUserKey: hasAnthropic,
     },
   ];
 }
@@ -290,6 +279,57 @@ function sortWorkspaces(list: Workspace[], sort: string | null): Workspace[] {
   }
 }
 
+interface MockSourceImport {
+  chapterId: string | null;
+  completed: boolean;
+  fileId: string;
+  name: string;
+  polls: number;
+  sizeBytes: number;
+  workspaceId: string;
+}
+
+const sourceImports = new Map<string, MockSourceImport>();
+const sourceImportResponses = new Map<
+  string,
+  {
+    jobs: { jobId: string; name: string; uploadId: string }[];
+    rejected: { code: string; fileId: string }[];
+  }
+>();
+
+function completeMockSourceImport(sourceImport: MockSourceImport) {
+  if (sourceImport.completed) return;
+  sourceImport.completed = true;
+  const file: (typeof db.files)[number] = {
+    addedAt: new Date().toISOString(),
+    chapterId: sourceImport.chapterId,
+    id: sourceImport.fileId,
+    indexed: true,
+    ingestPct: 100,
+    kind: 'pdf',
+    name: sourceImport.name,
+    position: db.nextContentPosition(
+      sourceImport.workspaceId,
+      sourceImport.chapterId
+    ),
+    sizeBytes: sourceImport.sizeBytes,
+    status: 'ready',
+    workspaceId: sourceImport.workspaceId,
+  };
+  db.files.unshift(file);
+  const workspace = db.workspaces.find(
+    (item) => item.id === sourceImport.workspaceId
+  );
+  if (workspace) workspace.fileCount += 1;
+  db.accountStatus.storageUsedBytes += sourceImport.sizeBytes;
+  if (sourceImport.chapterId) {
+    db.chapters
+      .find((chapter) => chapter.id === sourceImport.chapterId)
+      ?.fileIds.push(file.id);
+  }
+}
+
 export const handlers = [
   http.all('/api/*', async () => {
     await latency();
@@ -349,68 +389,72 @@ export const handlers = [
   }),
   http.get('/api/models', async ({ request }) => {
     const surface = new URL(request.url).searchParams.get('surface');
+    const fallback = {
+      modelSlug: 'deepseek-v4-flash-vision-exp',
+      providerSlug: 'deepseek',
+    };
     if (!surface) {
       return HttpResponse.json({
-        defaultKey: '',
+        defaultModel: { modelSlug: '', providerSlug: '' },
         models: [],
-        selectedKey: '',
-        selectedReasoningEffort: '',
-        selectedReasoningMode: '',
+        selectedModel: { modelSlug: '', providerSlug: '' },
+        selectedThinking: '',
       });
     }
-    const prefs: Record<string, string | undefined> = {
-      chat: db.user.chatModelKey,
-      editor: db.user.editorModelKey,
-      generate: db.user.generateModelKey,
-      quiz: db.user.quizModelKey,
+    const prefs: Record<string, ModelRef | undefined> = {
+      chat: db.user.chatModel,
+      editor: db.user.editorModel,
+      generate: db.user.generateModel,
+      quiz: db.user.quizModel,
     };
-    const selected = prefs[surface] ?? 'deepseek-flash';
+    const selected = prefs[surface] ?? fallback;
     const models = mockCatalogModels();
-    const stored = db.userReasoning[selected]?.[surface] ?? {
-      effort: '',
-      mode: '',
-    };
-    const resolved = effectiveReasoning(
-      models.find((item) => item.key === selected),
-      stored.mode,
-      stored.effort
+    const stored = db.userThinking[modelRefValue(selected)]?.[surface] ?? '';
+    const selectedOption = models.find((item) =>
+      sameModel(optionRef(item), selected)
     );
+    const selectedThinking = stored || selectedOption?.thinking?.default || '';
+    if (
+      selectedOption?.thinking &&
+      !selectedOption.thinking.levels.includes(selectedThinking)
+    ) {
+      return HttpResponse.json(
+        { message: 'Stored thinking is not supported by the selected model.' },
+        { status: 503 }
+      );
+    }
     return HttpResponse.json({
-      defaultKey: 'deepseek-flash',
+      defaultModel: fallback,
       models,
-      selectedKey: selected,
-      selectedReasoningEffort: resolved.effort,
-      selectedReasoningMode: resolved.mode,
+      selectedModel: selected,
+      selectedThinking,
     });
   }),
   http.patch('/api/me/models', async ({ request }) => {
     const body = (await request.json()) as {
-      chatModelKey?: string;
-      chatReasoningEffort?: string;
-      chatReasoningMode?: string;
-      editorModelKey?: string;
-      generateModelKey?: string;
-      generateReasoningEffort?: string;
-      generateReasoningMode?: string;
-      quizModelKey?: string;
-      quizReasoningEffort?: string;
-      quizReasoningMode?: string;
+      chatModel?: ModelRef;
+      chatThinking?: string;
+      editorModel?: ModelRef;
+      generateModel?: ModelRef;
+      generateThinking?: string;
+      quizModel?: ModelRef;
+      quizThinking?: string;
     };
     const fields = [
-      'chatModelKey',
-      'editorModelKey',
-      'generateModelKey',
-      'quizModelKey',
+      'chatModel',
+      'editorModel',
+      'generateModel',
+      'quizModel',
     ] as const;
     for (const field of fields) {
       const value = body[field];
       if (value === undefined) continue;
-      if (!value)
+      if (!value?.providerSlug || !value.modelSlug)
         return HttpResponse.json(
           { message: 'a model preference is required' },
           { status: 400 }
         );
-      const required = USER_KEY_MODELS[value];
+      const required = USER_KEY_MODELS[modelRefValue(value)];
       if (required && !db.llmCredentials[required]) {
         return HttpResponse.json(
           {
@@ -422,43 +466,22 @@ export const handlers = [
       }
       db.user[field] = value;
     }
-    const reasoning = [
-      [
-        'chat',
-        db.user.chatModelKey,
-        body.chatReasoningMode,
-        body.chatReasoningEffort,
-      ],
-      [
-        'generate',
-        db.user.generateModelKey,
-        body.generateReasoningMode,
-        body.generateReasoningEffort,
-      ],
-      [
-        'quiz',
-        db.user.quizModelKey,
-        body.quizReasoningMode,
-        body.quizReasoningEffort,
-      ],
+    const thinking = [
+      ['chat', db.user.chatModel, body.chatThinking],
+      ['generate', db.user.generateModel, body.generateThinking],
+      ['quiz', db.user.quizModel, body.quizThinking],
     ] as const;
-    for (const [surface, modelKey, mode, effort] of reasoning) {
-      if (mode === undefined && effort === undefined) continue;
-      const spec = mockCatalogModels().find(
-        (item) => item.key === modelKey
-      )?.reasoning;
-      if (effort && spec && !spec.efforts.includes(effort)) {
+    for (const [surface, model, value] of thinking) {
+      if (value === undefined) continue;
+      const spec = mockCatalogModels().find((item) =>
+        sameModel(optionRef(item), model)
+      )?.thinking;
+      if (value && spec && !spec.levels.includes(value)) {
         return HttpResponse.json({ message: 'not found' }, { status: 404 });
       }
-      const current = db.userReasoning[modelKey]?.[surface] ?? {
-        effort: '',
-        mode: '',
-      };
-      if (!db.userReasoning[modelKey]) db.userReasoning[modelKey] = {};
-      db.userReasoning[modelKey][surface] = {
-        effort: effort ?? current.effort,
-        mode: mode ?? current.mode,
-      };
+      const identity = modelRefValue(model);
+      if (!db.userThinking[identity]) db.userThinking[identity] = {};
+      db.userThinking[identity][surface] = value;
     }
     return new HttpResponse(null, { status: 204 });
   }),
@@ -468,6 +491,20 @@ export const handlers = [
         last4,
         providerSlug: slug,
       })),
+      providers: [
+        {
+          eligible: true,
+          last4: db.llmCredentials.openai ?? '',
+          providerSlug: 'openai',
+          unlocks: ['GPT-5.6 Sol', 'GPT-5.6 Terra', 'GPT-5.6 Luna'],
+        },
+        {
+          eligible: true,
+          last4: db.llmCredentials.deepseek ?? '',
+          providerSlug: 'deepseek',
+          unlocks: ['DeepSeek Flash', 'DeepSeek Pro'],
+        },
+      ],
     })
   ),
   http.put('/api/me/llm-credentials', async ({ request }) => {
@@ -477,7 +514,7 @@ export const handlers = [
     };
     const slug = body.providerSlug ?? '';
     const key = (body.apiKey ?? '').trim();
-    if (!['openai', 'anthropic', 'deepseek'].includes(slug) || !key) {
+    if (!/^[a-z0-9][a-z0-9_-]{0,62}$/.test(slug) || !key) {
       return HttpResponse.json({ message: 'invalid key' }, { status: 400 });
     }
     db.llmCredentials[slug] = key.slice(-4);
@@ -490,11 +527,17 @@ export const handlers = [
       .filter(([, provider]) => provider === slug)
       .map(([key]) => key);
     for (const field of [
-      'chatModelKey',
-      'generateModelKey',
-      'quizModelKey',
+      'chatModel',
+      'generateModel',
+      'editorModel',
+      'quizModel',
     ] as const) {
-      if (locked.includes(db.user[field])) db.user[field] = 'deepseek-flash';
+      if (locked.includes(modelRefValue(db.user[field]))) {
+        db.user[field] = {
+          modelSlug: 'deepseek-v4-flash-vision-exp',
+          providerSlug: 'deepseek',
+        };
+      }
     }
     return new HttpResponse(null, { status: 204 });
   }),
@@ -1621,8 +1664,9 @@ export const handlers = [
           conversationId: convId,
           messageId: assistantId,
           modelDisplayName: 'DeepSeek Flash',
-          modelKey: 'deepseek-flash',
+          modelSlug: 'deepseek-v4-flash-vision-exp',
           modelVersion: 1,
+          providerSlug: 'deepseek',
           type: 'start',
         });
         await delay(120);
@@ -1642,8 +1686,9 @@ export const handlers = [
           createdAt: new Date().toISOString(),
           id: assistantId,
           modelDisplayName: 'DeepSeek Flash',
-          modelKey: 'deepseek-flash',
+          modelSlug: 'deepseek-v4-flash-vision-exp',
           modelVersion: 1,
+          providerSlug: 'deepseek',
           role: 'assistant',
           status: aborted ? 'aborted' : 'complete',
         });
@@ -1654,37 +1699,6 @@ export const handlers = [
             tokenCount: words.length,
             type: 'done',
           });
-        controller.close();
-      },
-    });
-    return new HttpResponse(stream, {
-      headers: {
-        'Cache-Control': 'no-cache',
-        'Content-Type': 'text/event-stream',
-      },
-    });
-  }),
-  http.post('/api/workspaces/:id/complete/stream', async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as {
-      mode?: 'command' | 'continue';
-      prompt?: string;
-    };
-    const text =
-      body.mode === 'continue'
-        ? ' and this continues the thought with a few more grounded sentences drawn from your notes.'
-        : `Here is an AI response${body.prompt ? ` to "${body.prompt}"` : ''}: the key ideas are summarized clearly and concisely for study.`;
-    const words = text.split(' ');
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream<Uint8Array>({
-      async start(controller) {
-        const send = (o: unknown) =>
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(o)}\n\n`));
-        for (const w of words) {
-          if (request.signal.aborted) break;
-          await delay(40);
-          send({ text: w + ' ', type: 'token' });
-        }
-        if (!request.signal.aborted) send({ type: 'done' });
         controller.close();
       },
     });
@@ -1715,11 +1729,19 @@ export const handlers = [
         ?.parts?.filter((part) => part.type === 'text')
         .map((part) => part.text ?? '')
         .join('') ?? '';
-    const toolName =
-      body.ctx?.toolName ??
-      (/\b(comment|feedback|review|annotat)/i.test(instruction)
-        ? 'comment'
-        : 'generate');
+    const toolName = body.ctx?.toolName;
+    if (!toolName) {
+      return HttpResponse.json(
+        {
+          error: {
+            code: 'invalid_request',
+            message: 'ctx.toolName is required',
+            retryable: false,
+          },
+        },
+        { status: 400 }
+      );
+    }
     const encoder = new TextEncoder();
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
@@ -2516,7 +2538,7 @@ export const handlers = [
       byKind: [
         { creditMicros: 1000 * 1_000_000, events: 12, key: 'llm' },
         { creditMicros: 180 * 1_000_000, events: 4, key: 'embedding' },
-        { creditMicros: 70 * 1_000_000, events: 2, key: 'parse_gpu' },
+        { creditMicros: 70 * 1_000_000, events: 2, key: 'parse' },
       ],
       bySurface: [
         { creditMicros: 820 * 1_000_000, events: 9, key: 'chat' },
@@ -2529,8 +2551,9 @@ export const handlers = [
           creditMicros: 120_000,
           inputTokens: 800,
           kind: 'llm',
-          modelKey: 'deepseek-flash',
+          modelSlug: 'deepseek-v4-flash-vision-exp',
           outputTokens: 240,
+          providerSlug: 'deepseek',
           surface: 'chat',
           unit: 'tokens',
           units: 0,
@@ -2540,8 +2563,9 @@ export const handlers = [
           creditMicros: 80_000,
           inputTokens: 0,
           kind: 'embedding',
-          modelKey: '',
+          modelSlug: 'qwen/qwen3-embedding-4b',
           outputTokens: 0,
+          providerSlug: 'openrouter',
           surface: 'ingest',
           unit: 'tokens',
           units: 1200,
@@ -2582,27 +2606,61 @@ export const handlers = [
         driveIds?: string[];
         fileIds: string[];
         provider: string;
+        requestId?: string;
       };
-      const created = body.fileIds.map((_fileId, i) => {
-        const f = {
-          addedAt: new Date().toISOString(),
+      const replayKey = body.requestId
+        ? `${wsId}:${body.requestId}`
+        : undefined;
+      const replayed = replayKey
+        ? sourceImportResponses.get(replayKey)
+        : undefined;
+      if (replayed) {
+        return HttpResponse.json(replayed, { status: 202 });
+      }
+      const jobs = body.fileIds.map((_fileId, i) => {
+        const jobId = uid('imp');
+        const sourceImport: MockSourceImport = {
           chapterId: body.chapterId ?? null,
-          id: uid('f'),
-          indexed: false,
-          ingestPct: 0,
-          kind: 'pdf' as const,
+          completed: false,
+          fileId: uid('f'),
           name: `${body.provider}-import-${i + 1}.pdf`,
-          position: db.nextContentPosition(wsId, body.chapterId ?? null),
+          polls: 0,
           sizeBytes: 512 * 1024,
-          status: 'pending' as const,
           workspaceId: wsId,
         };
-        db.files.unshift(f);
-        return f;
+        sourceImports.set(jobId, sourceImport);
+        return {
+          jobId,
+          name: sourceImport.name,
+          uploadId: uid('up'),
+        };
       });
-      return HttpResponse.json(created, { status: 201 });
+      const response = { jobs, rejected: [] };
+      if (replayKey) sourceImportResponses.set(replayKey, response);
+      return HttpResponse.json(response, { status: 202 });
     }
   ),
+  http.get('/api/workspaces/:id/sources/imports/:jobId', async ({ params }) => {
+    const jobId = params.jobId as string;
+    const sourceImport = sourceImports.get(jobId);
+    if (!sourceImport) {
+      return HttpResponse.json({ message: 'not found' }, { status: 404 });
+    }
+    sourceImport.polls += 1;
+    const status =
+      sourceImport.polls === 1
+        ? 'pending'
+        : sourceImport.polls === 2
+          ? 'running'
+          : 'succeeded';
+    if (status === 'succeeded') completeMockSourceImport(sourceImport);
+    return HttpResponse.json({
+      ...(status === 'succeeded' ? { fileId: sourceImport.fileId } : {}),
+      jobId,
+      name: sourceImport.name,
+      status,
+    });
+  }),
 ];
 
 type SourceKindFix = 'pdf' | 'doc' | 'md' | 'image' | 'txt';

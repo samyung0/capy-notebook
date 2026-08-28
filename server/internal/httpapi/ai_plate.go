@@ -66,7 +66,11 @@ type plateMessage struct {
 type plateContext struct {
 	Children  json.RawMessage `json:"children"`
 	Selection json.RawMessage `json:"selection,omitempty"`
-	ToolName  string          `json:"toolName,omitempty"`
+	// Required. The menu always sends one. comment is implemented and kept
+	// for a future Comment action; the current UI never sends it. Free-form
+	// Enter sends generate, so a rewrite instruction still inserts new
+	// Markdown instead of editing the selection.
+	ToolName string `json:"toolName,omitempty"`
 }
 
 type plateCommandReq struct {
@@ -88,7 +92,9 @@ func (req plateCommandReq) validate() error {
 		return errors.New("ctx.children must be valid JSON")
 	}
 	switch req.Context.ToolName {
-	case "", "generate", "edit", "comment":
+	case "generate", "edit", "comment":
+	case "":
+		return errors.New("ctx.toolName is required")
 	default:
 		return errors.New("ctx.toolName is invalid")
 	}
@@ -134,8 +140,9 @@ func decodeBoundedJSON(w http.ResponseWriter, r *http.Request, dst any) error {
 }
 
 // aiCommand is the Plate/@ai-sdk UI-message stream endpoint. The gateway
-// authenticates and scopes the workspace, strips all provider/model choices,
-// then relays the internal Python adapter's protocol without buffering.
+// authenticates and scopes the workspace, requires ctx.toolName, strips all
+// provider/model choices, then relays the internal Python adapter's protocol
+// without buffering.
 func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 	wsID := id(r)
 	if !a.assertPlateEditor(w, r, wsID) {
@@ -164,8 +171,7 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
 		return
 	}
-	rates := llm.Rates
-	charge, err := a.beginSpend(ctx, userID, wsID, store.SurfaceEditor, llm.PaidBy)
+	charge, err := a.beginProviderSession(ctx, userID, wsID, store.SurfaceEditor, llm.PaidBy, llm.Rates, store.TokenRates{}, llm.Thinking)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -178,10 +184,11 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	// apiKey/model/provider fields are never accepted across this trust boundary.
 	body := map[string]any{
-		"workspaceId": wsID,
-		"messages":    req.Messages,
-		"ctx":         req.Context,
-		"locale":      a.userLocale(ctx, userID),
+		"workspaceId":    wsID,
+		"messages":       req.Messages,
+		"ctx":            req.Context,
+		"locale":         a.userLocale(ctx, userID),
+		"spendSessionId": charge.id,
 	}
 	llm.attach(body)
 	rc, err := a.pipe.PostStream(ctx, "/plate-ai/command", body)
@@ -205,7 +212,7 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, "data: %s\n\n", payload)
 		flusher.Flush()
 	}
-	usage, copyErr := copyAIDataStream(ctx, rc, send)
+	_, copyErr := copyAIDataStream(ctx, rc, send)
 	if copyErr != nil && ctx.Err() == nil {
 		event, _ := json.Marshal(map[string]any{
 			"type":      "error",
@@ -219,7 +226,7 @@ func (a *api) aiCommand(w http.ResponseWriter, r *http.Request) {
 		send([]byte("[DONE]"))
 		return
 	}
-	charge.settle(ctx, usage.events(userID, wsID, store.SurfaceEditor, rates, store.TokenRates{}, llm.PaidBy)...)
+	charge.settle(ctx)
 }
 
 // copyAIDataStream copies only valid data-stream payloads. It drops comments
@@ -313,8 +320,7 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 		writeAIError(w, http.StatusServiceUnavailable, "ai_unavailable", "AI service is unavailable", true)
 		return
 	}
-	rates := llm.Rates
-	charge, err := a.beginSpend(ctx, userID, wsID, store.SurfaceEditor, llm.PaidBy)
+	charge, err := a.beginProviderSession(ctx, userID, wsID, store.SurfaceEditor, llm.PaidBy, llm.Rates, store.TokenRates{}, llm.Thinking)
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -326,10 +332,11 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body := map[string]any{
-		"workspaceId":  wsID,
-		"prompt":       req.Prompt,
-		"instructions": req.Instructions,
-		"system":       req.System,
+		"workspaceId":    wsID,
+		"prompt":         req.Prompt,
+		"instructions":   req.Instructions,
+		"system":         req.System,
+		"spendSessionId": charge.id,
 	}
 	llm.attach(body)
 	raw, err := a.pipe.PostRaw(ctx, "/plate-ai/copilot", body)
@@ -348,7 +355,7 @@ func (a *api) aiCopilot(w http.ResponseWriter, r *http.Request) {
 		writeAIError(w, http.StatusBadGateway, "invalid_upstream_response", "AI service returned invalid JSON", true)
 		return
 	}
-	charge.settle(ctx, usageFrom(raw).events(userID, wsID, store.SurfaceEditor, rates, store.TokenRates{}, llm.PaidBy)...)
+	charge.settle(ctx)
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(raw)
 }

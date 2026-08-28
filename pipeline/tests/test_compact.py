@@ -1,277 +1,200 @@
 from __future__ import annotations
 
+import json
+
 import pytest
 
-from pipeline.registry import AUTH_PLATFORM_OR_USER, ModelConfig
+from pipeline.registry import ModelConfig
 from pipeline.retrieval import accounting, compact
 
 
 def _spec(**overrides) -> ModelConfig:
     base = {
-        "model_key": "deepseek-flash",
         "version": 1,
-        "display_name": "Flash",
+        "provider_name": "DeepSeek",
+        "model_name": "Flash",
         "provider_slug": "deepseek",
-        "base_url": "https://api.deepseek.com",
-        "provider_model_id": "deepseek-v4-flash",
-        "auth_mode": AUTH_PLATFORM_OR_USER,
-        "context_window_tokens": 200,
+        "model_slug": "deepseek-v4-flash",
+        "platform_enabled": True,
+        "byok_enabled": True,
+        "thinking_levels": ("instant", "low"),
+        "default_thinking": "instant",
+        "context_window_tokens": 20_000,
     }
     base.update(overrides)
     return ModelConfig(**base)
 
 
-def test_needs_compact_ignores_short_history():
-    spec = _spec(context_window_tokens=10_000)
-    assert not compact.needs_compact(
-        [{"role": "system", "content": "s"}, {"role": "user", "content": "hi"}],
-        spec,
+def test_compaction_uses_full_usable_budget_not_a_ratio(monkeypatch):
+    spec = _spec()
+    usable = compact.usable_input_limit(spec)
+    measured = {"tokens": usable}
+
+    def _measure(*_args, **_kwargs):
+        return accounting.ContextComposition(conversation_tokens=measured["tokens"])
+
+    monkeypatch.setattr(compact, "request_context", _measure)
+    assert not compact.needs_compact([{"role": "user", "content": "q"}], spec)
+    measured["tokens"] += 1
+    assert compact.needs_compact([{"role": "user", "content": "q"}], spec)
+
+
+def test_catalog_margin_can_apply_calibrated_estimation_error():
+    plain = compact.usable_input_limit(_spec())
+    calibrated = compact.usable_input_limit(
+        _spec(params={"context_safety_margin_tokens": 2048})
     )
-
-
-def test_tail_start_keeps_tool_call_with_result():
-    messages = [
-        {"role": "system", "content": "s"},
-        {"role": "user", "content": "q"},
-        {
-            "role": "assistant",
-            "content": "",
-            "tool_calls": [{"function": {"name": "search_workspace"}}],
-        },
-        {"role": "tool", "content": "hits"},
-        {"role": "user", "content": "1"},
-        {"role": "user", "content": "2"},
-        {"role": "user", "content": "3"},
-        {"role": "user", "content": "4"},
-        {"role": "user", "content": "5"},
-    ]
-    assert compact._tail_start(messages, 1) == 2
+    assert plain - calibrated == 2048 - compact.PROTOCOL_SAFETY_MARGIN_TOKENS
 
 
 @pytest.mark.asyncio
-async def test_compact_summarizes_middle(monkeypatch):
-    pad = "word " * 2000
-    messages = [
-        {"role": "system", "content": "sys"},
-        *[
-            {
-                "role": "user" if i % 2 == 0 else "assistant",
-                "content": pad,
-            }
-            for i in range(8)
-        ],
-        {"role": "user", "content": "latest question"},
-    ]
-
-    async def fake_complete(*_args, **_kwargs):
-        return "kept facts"
-
-    monkeypatch.setattr(compact.models, "complete_text", fake_complete)
-    out = await compact.compact_messages(messages, _spec())
-    assert out[0]["content"] == "sys"
-    assert out[1]["content"].startswith("Earlier conversation:")
-    assert "kept facts" in out[1]["content"]
-    assert out[-1]["content"] == "latest question"
-
-
-@pytest.mark.asyncio
-async def test_compact_does_not_swallow_accounting_failure(monkeypatch):
-    messages = [
-        {"role": "system", "content": "sys"},
-        *[
-            {
-                "role": "user" if i % 2 == 0 else "assistant",
-                "content": "old " * 20_000,
-            }
-            for i in range(8)
-        ],
-        {"role": "user", "content": "latest question"},
-    ]
-
-    async def fail_settlement(*_args, **_kwargs):
-        raise accounting.AccountingError("settlement outcome unknown")
-
-    monkeypatch.setattr(compact.models, "complete_text", fail_settlement)
-    with pytest.raises(accounting.AccountingError):
-        await compact.compact_messages(messages, _spec())
-
-
-def test_needs_compact_uses_input_budget_not_full_window():
-    spec = _spec(context_window_tokens=20_000)
-    # input_budget is max(4000, 20000-8192)=11808; 90% is about 10627.
-    pad = "word " * 10_000
-    assert compact.needs_compact([{"role": "user", "content": pad}], spec)
-
-
-def test_openai_live_chain_start_protects_after_last_user():
-    messages = [
-        {"role": "system", "content": "s"},
-        {"role": "user", "content": "q"},
-        {"role": "assistant", "content": "", "tool_calls": [{"id": "c1"}]},
-        {"role": "tool", "tool_call_id": "c1", "content": "hits"},
-    ]
-    assert compact.openai_live_chain_start(messages) == 1
-    done = [*messages, {"role": "assistant", "content": "answer"}]
-    assert compact.openai_live_chain_start(done) == 1
-    idle = [
-        {"role": "system", "content": "s"},
-        {"role": "user", "content": "q"},
-        {"role": "assistant", "content": "done"},
-    ]
-    assert compact.openai_live_chain_start(idle) == len(idle)
-
-
-@pytest.mark.asyncio
-async def test_summarize_checkpoint_keeps_structured_refs(monkeypatch):
+async def test_checkpoint_prompt_uses_current_message_only_as_relevance_lens(
+    monkeypatch,
+):
     seen = {}
 
-    async def fake_complete(messages, **_kwargs):
-        seen["user"] = messages[1]["content"]
-        return (
-            '{"summary":"kept","source_refs":['
-            '{"fileId":"f1","chunkId":"c1","fileName":"a.pdf","snippet":"hi"}]}'
-        )
+    async def fake_complete(messages, **kwargs):
+        seen["system"] = messages[0]["content"]
+        seen["payload"] = json.loads(messages[1]["content"])
+        seen["max_tokens"] = kwargs["max_tokens"]
+        return "The third bullet was to reject every invalid id."
 
     monkeypatch.setattr(compact.models, "complete_text", fake_complete)
-    out = await compact.summarize_checkpoint(
-        prior_summary="old",
-        prior_refs=[{"fileId": "f1", "chunkId": "c1", "fileName": "a.pdf"}],
+    summary = await compact.summarize_checkpoint(
+        prior_summary="Earlier plan",
         turns=[
             {
                 "role": "assistant",
-                "content": "a",
-                "citations": [{"fileId": "f1", "chunkId": "c1", "fileName": "a.pdf"}],
+                "content": "1. Keep it. 2. Rename it. 3. Reject every invalid id.",
             }
         ],
-        spec=_spec(),
+        current_user_message="What did you mean by the third bullet?",
+        spec=_spec(context_window_tokens=100_000),
     )
-    assert out["summary"] == "kept"
-    assert out["source_refs"][0]["chunkId"] == "c1"
-    assert "f1" in seen["user"]
-    assert "c1" in seen["user"]
-    assert "Known sources" in seen["user"]
+
+    assert summary.startswith("The third bullet")
+    assert seen["payload"]["current_user_message"] == (
+        "What did you mean by the third bullet?"
+    )
+    assert "third bullet" in seen["system"]
+    assert seen["max_tokens"] == compact.SUMMARY_MAX_TOKENS
 
 
 @pytest.mark.asyncio
-async def test_checkpoint_summary_request_fits_pinned_input_budget(monkeypatch):
-    spec = _spec(context_window_tokens=5_000)
+async def test_checkpoint_folds_every_turn_in_chronological_batches(monkeypatch):
+    payloads = []
 
     async def fake_complete(messages, **_kwargs):
-        assert compact.estimate_messages(messages) <= compact.registry.input_budget(
-            spec
-        )
-        return '{"summary":"kept","source_refs":[]}'
+        payload = json.loads(messages[1]["content"])
+        payloads.append(payload)
+        labels = [
+            turn["content"].split()[0] for turn in payload["new_completed_messages"]
+        ]
+        return (payload["previous_memory"] + " " + " ".join(labels)).strip()
 
     monkeypatch.setattr(compact.models, "complete_text", fake_complete)
-    await compact.summarize_checkpoint(
-        prior_summary="old " * 10_000,
-        prior_refs=[
-            {
-                "fileId": f"f{i}",
-                "chunkId": f"c{i}",
-                "fileName": "source.pdf",
-                "snippet": "evidence " * 500,
-            }
-            for i in range(100)
-        ],
-        turns=[],
-        spec=spec,
+    turns = [
+        {
+            "role": "user" if index % 2 == 0 else "assistant",
+            "content": f"turn-{index} " + ("detail " * 700),
+        }
+        for index in range(8)
+    ]
+    summary = await compact.summarize_checkpoint(
+        prior_summary="prior",
+        turns=turns,
+        current_user_message="current",
+        spec=_spec(context_window_tokens=12_000),
     )
+
+    assert len(payloads) > 1
+    assert summary.split() == ["prior", *[f"turn-{index}" for index in range(8)]]
+    assert all(payload["current_user_message"] == "current" for payload in payloads)
 
 
 @pytest.mark.asyncio
-async def test_openai_compacts_prefix_keeps_live_chain(monkeypatch):
-    pad = "word " * 2000
+async def test_empty_summary_fails_instead_of_advancing_checkpoint(monkeypatch):
+    async def fake_complete(*_args, **_kwargs):
+        return ""
+
+    monkeypatch.setattr(compact.models, "complete_text", fake_complete)
+    with pytest.raises(compact.InvalidSummary):
+        await compact.summarize_checkpoint(
+            prior_summary="",
+            turns=[{"role": "assistant", "content": "answer"}],
+            current_user_message="next question",
+            spec=_spec(context_window_tokens=100_000),
+        )
+
+
+@pytest.mark.asyncio
+async def test_live_compaction_preserves_current_query_and_active_chain(monkeypatch):
     messages = [
-        {"role": "system", "content": "sys"},
-        *[
-            {"role": "user" if i % 2 == 0 else "assistant", "content": pad}
-            for i in range(8)
-        ],
-        {"role": "user", "content": "1"},
-        {"role": "user", "content": "2"},
-        {"role": "user", "content": "3"},
-        {"role": "user", "content": "4"},
-        {"role": "user", "content": "5"},
-        {"role": "user", "content": "current q"},
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "old " * 15_000},
+        {"role": "assistant", "content": "old answer"},
+        {"role": "user", "content": "current exact question", "_kind": "query"},
+        {"role": "user", "content": "prime passages", "_kind": "prime"},
         {
             "role": "assistant",
-            "content": "n",
+            "content": "working",
             "output_items": [
                 {"type": "reasoning", "id": "rs1", "encrypted_content": "enc"}
             ],
         },
-        {"role": "tool", "tool_call_id": "c1", "content": "hits"},
+        {"role": "tool", "tool_call_id": "c1", "content": "result"},
     ]
 
-    async def fake_complete(*_a, **_k):
-        return "folded"
+    async def fake_complete(*_args, **_kwargs):
+        return "old memory"
 
     monkeypatch.setattr(compact.models, "complete_text", fake_complete)
-    out = await compact.compact_messages(messages, _spec(), protect_openai_chain=True)
+    out = await compact.compact_messages(messages, _spec(context_window_tokens=30_000))
+
+    assert any(message.get("content") == "current exact question" for message in out)
+    assert any(message.get("content") == "prime passages" for message in out)
     assert any(
         item.get("encrypted_content") == "enc"
         for message in out
         for item in message.get("output_items") or []
     )
-    assert any(m.get("content") == "hits" for m in out)
 
 
 @pytest.mark.asyncio
-async def test_openai_strips_output_items_when_live_chain_overflows(monkeypatch):
+async def test_protected_context_is_refused_not_clipped():
     messages = [
-        {"role": "system", "content": "sys"},
-        {"role": "user", "content": "q"},
+        {"role": "system", "content": "system"},
+        {"role": "user", "content": "current " * 20_000, "_kind": "query"},
+    ]
+    with pytest.raises(compact.ContextTooLarge):
+        await compact.compact_messages(
+            messages,
+            _spec(context_window_tokens=10_000),
+            allow_summary=False,
+        )
+
+
+@pytest.mark.asyncio
+async def test_live_compaction_reuses_existing_memory_without_resummarizing(
+    monkeypatch,
+):
+    async def should_not_run(*_args, **_kwargs):
+        raise AssertionError("existing memory must not be summarized again")
+
+    monkeypatch.setattr(compact.models, "complete_text", should_not_run)
+    messages = [
+        {"role": "system", "content": "system"},
         {
-            "role": "assistant",
-            "content": "n",
-            "output_items": [
-                {"type": "reasoning", "id": "rs1", "encrypted_content": "enc"}
-            ],
+            "role": "user",
+            "content": "Earlier conversation:\nprior memory",
+            "_kind": "memory",
+            "_memory": "prior memory",
         },
-        {"role": "tool", "tool_call_id": "c1", "content": "x" * 20_000},
+        {"role": "user", "content": "current " * 20_000, "_kind": "query"},
     ]
 
-    async def fake_complete(*_a, **_k):
-        return "folded"
-
-    monkeypatch.setattr(compact.models, "complete_text", fake_complete)
-    out = await compact.compact_messages(messages, _spec(), protect_openai_chain=True)
-    assert not any(m.get("output_items") for m in out)
-    assert compact.estimate_messages(out) < compact.estimate_messages(messages)
-
-
-@pytest.mark.asyncio
-async def test_terminal_compaction_clips_without_another_model_call(monkeypatch):
-    messages = [
-        {"role": "system", "content": "sys"},
-        {"role": "user", "content": "old " * 20_000},
-        {"role": "assistant", "content": "working"},
-        {"role": "tool", "tool_call_id": "c1", "content": "result " * 20_000},
-    ]
-
-    async def fail_complete(*_args, **_kwargs):
-        raise AssertionError("terminal preparation must not spend a compaction call")
-
-    monkeypatch.setattr(compact.models, "complete_text", fail_complete)
-    spec = _spec()
-    out = await compact.compact_messages(
-        messages,
-        spec,
-        extra=500,
-        allow_summary=False,
-    )
-
-    assert compact.fits_request(out, spec, extra=500)
-    assert out[0]["role"] == "system"
-    assert out[-1]["role"] == "tool"
-
-
-def test_clip_messages_reserves_tool_schema_budget():
-    spec = _spec()
-    messages = [
-        {"role": "system", "content": "sys"},
-        {"role": "user", "content": "question " * 10_000},
-    ]
-    out = compact.clip_messages(messages, spec, extra=1_000)
-    assert compact.fits_request(out, spec, extra=1_000)
+    with pytest.raises(compact.ContextTooLarge):
+        await compact.compact_messages(
+            messages,
+            _spec(context_window_tokens=10_000),
+        )

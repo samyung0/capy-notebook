@@ -25,17 +25,21 @@ func newCreditsTestUser(t *testing.T, s *Store) string {
 	return id
 }
 
-func creditSpend(micros int64) UsageEvent {
-	return UsageEvent{
-		Kind:         KindLLM,
-		Surface:      SurfaceChat,
-		Provider:     "deepseek",
-		Model:        "test",
-		InputTokens:  1,
-		OutputTokens: 1,
-		Unit:         "tokens",
-		CreditMicros: micros,
+func platformSessionRates() (TokenRates, TokenRates) {
+	return TokenRates{Model: models.Ref{ProviderSlug: "test", ModelSlug: "test-llm"}, ModelVersion: 1},
+		TokenRates{Model: models.Ref{ProviderSlug: "test", ModelSlug: "test-embed"}, ModelVersion: 1}
+}
+
+func mustBeginPlatformSession(t *testing.T, ctx context.Context, s *Store, userID string) string {
+	t.Helper()
+	llm, embed := platformSessionRates()
+	id, err := s.BeginProviderSession(
+		ctx, userID, "", SurfaceChat, models.PaidByPlatform, llm, embed, "",
+	)
+	if err != nil {
+		t.Fatal(err)
 	}
+	return id
 }
 
 func mustBalance(t *testing.T, s *Store, userID string) CreditUsage {
@@ -59,63 +63,35 @@ func eventCount(t *testing.T, s *Store, userID, reservationID string) int64 {
 	return n
 }
 
-func TestBeginThenSettleWritesMeasuredCost(t *testing.T) {
-	s := openAccessTestStore(t)
+func mustInsertProviderCall(
+	t *testing.T,
+	s *Store,
+	sessionID string,
+	call ProviderCallUsage,
+) {
+	t.Helper()
 	ctx := context.Background()
-	userID := newCreditsTestUser(t, s)
-
-	id, err := s.BeginSpend(ctx, userID, "", SurfaceChat)
+	if call.Purpose == "terminal" {
+		if _, err := s.pool.Exec(ctx, `UPDATE provider_sessions
+			SET terminal_call_id=$2 WHERE id=$1`, sessionID, call.CallID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	tag, err := s.pool.Exec(ctx, `
+		INSERT INTO provider_calls
+			(id, reservation_id, actor_user_id, kind, purpose, thinking)
+		SELECT $2, id, actor_user_id, $3, $4, $5
+		FROM provider_sessions WHERE id=$1`,
+		sessionID, call.CallID, call.Kind, call.Purpose, call.Thinking)
 	if err != nil {
 		t.Fatal(err)
 	}
-	held := mustBalance(t, s, userID)
-	if held.ReservedMicros != 0 || held.UsedMicros != 0 {
-		t.Fatalf("after begin: used=%d reserved=%d", held.UsedMicros, held.ReservedMicros)
-	}
-
-	const spent int64 = 1_500_000
-	if err := s.SettleCredits(ctx, id, creditSpend(spent)); err != nil {
-		t.Fatal(err)
-	}
-	got := mustBalance(t, s, userID)
-	if got.ReservedMicros != 0 || got.UsedMicros != spent {
-		t.Fatalf("after settle: used=%d reserved=%d, want used=%d reserved=0",
-			got.UsedMicros, got.ReservedMicros, spent)
-	}
-	if n := eventCount(t, s, userID, id); n != 1 {
-		t.Fatalf("ledger rows = %d, want 1", n)
+	if tag.RowsAffected() != 1 {
+		t.Fatalf("provider session %q was not found", sessionID)
 	}
 }
 
-func TestSettleCreditsTwiceDoesNotDoubleCharge(t *testing.T) {
-	s := openAccessTestStore(t)
-	ctx := context.Background()
-	userID := newCreditsTestUser(t, s)
-
-	id, err := s.BeginSpend(ctx, userID, "", SurfaceChat)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const spent int64 = 2_000_000
-	event := creditSpend(spent)
-	if err := s.SettleCredits(ctx, id, event); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SettleCredits(ctx, id, event); err != nil {
-		t.Fatal(err)
-	}
-
-	got := mustBalance(t, s, userID)
-	if got.UsedMicros != spent || got.ReservedMicros != 0 {
-		t.Fatalf("retry charged again: used=%d reserved=%d, want used=%d reserved=0",
-			got.UsedMicros, got.ReservedMicros, spent)
-	}
-	if n := eventCount(t, s, userID, id); n != 1 {
-		t.Fatalf("ledger rows = %d, want 1", n)
-	}
-}
-
-func TestProviderSessionSettlesEachCallOnceAndAllowsOneTerminalCall(t *testing.T) {
+func TestProviderSessionSettlesEachCallOnceAndReportsTerminalState(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	reg, err := models.New(ctx, s.Pool())
@@ -125,16 +101,16 @@ func TestProviderSessionSettlesEachCallOnceAndAllowsOneTerminalCall(t *testing.T
 	s.SetModelRegistry(reg)
 	userID := newCreditsTestUser(t, s)
 	limit := CreditLimitMicros(PlanFree)
-	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, reserved_micros)
 		VALUES ($1, $2)`, userID, limit-1); err != nil {
 		t.Fatal(err)
 	}
-	llmCfg, err := reg.Get(ctx, "deepseek-flash", 1)
+	llmCfg, err := reg.Get(ctx, models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	llm := RatesFromConfig(llmCfg)
-	embed := TokenRates{ModelKey: "qwen-embed", ModelVersion: 1}
+	embed := TokenRates{Model: models.Ref{ProviderSlug: "openrouter", ModelSlug: "qwen/qwen3-embedding-4b"}, ModelVersion: 1}
 	sessionID, err := s.BeginProviderSession(
 		ctx,
 		userID,
@@ -143,6 +119,7 @@ func TestProviderSessionSettlesEachCallOnceAndAllowsOneTerminalCall(t *testing.T
 		models.PaidByPlatform,
 		llm,
 		embed,
+		"",
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -152,10 +129,18 @@ func TestProviderSessionSettlesEachCallOnceAndAllowsOneTerminalCall(t *testing.T
 		CallID:      "pc_1",
 		Kind:        KindLLM,
 		Purpose:     "agent",
+		Thinking:    models.ThinkingHigh,
 		Provider:    "deepseek",
 		Model:       "deepseek-v4-flash",
 		InputTokens: 1,
 	}
+	if _, err := s.SettleProviderCall(ctx, sessionID, first); !errors.Is(
+		err,
+		ErrProviderCallConflict,
+	) {
+		t.Fatalf("settlement without authorized stub: %v", err)
+	}
+	mustInsertProviderCall(t, s, sessionID, first)
 	settlement, err := s.SettleProviderCall(ctx, sessionID, first)
 	if err != nil {
 		t.Fatal(err)
@@ -163,7 +148,25 @@ func TestProviderSessionSettlesEachCallOnceAndAllowsOneTerminalCall(t *testing.T
 	if !settlement.CreditsExhausted || !settlement.TerminalCallAllowed {
 		t.Fatalf("first settlement = %#v", settlement)
 	}
-	used := mustBalance(t, s, userID).UsedMicros
+	var callThinking, eventThinking string
+	if err := s.pool.QueryRow(ctx,
+		`SELECT thinking FROM provider_calls WHERE id=$1`, first.CallID,
+	).Scan(&callThinking); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.pool.QueryRow(ctx,
+		`SELECT thinking FROM usage_events WHERE provider_call_id=$1`, first.CallID,
+	).Scan(&eventThinking); err != nil {
+		t.Fatal(err)
+	}
+	if callThinking != models.ThinkingHigh || eventThinking != models.ThinkingHigh {
+		t.Fatalf("call thinking = %q, event thinking = %q", callThinking, eventThinking)
+	}
+	balance := mustBalance(t, s, userID)
+	used := balance.UsedMicros
+	if used >= limit || balance.ReservedMicros != limit-1 {
+		t.Fatalf("post-call balance = %#v, want used below limit and reservation retained", balance)
+	}
 	duplicate, err := s.SettleProviderCall(ctx, sessionID, first)
 	if err != nil {
 		t.Fatal(err)
@@ -172,14 +175,16 @@ func TestProviderSessionSettlesEachCallOnceAndAllowsOneTerminalCall(t *testing.T
 		t.Fatalf("duplicate settlement = %#v", duplicate)
 	}
 
-	embedding, err := s.SettleProviderCall(ctx, sessionID, ProviderCallUsage{
+	embeddingCall := ProviderCallUsage{
 		CallID:      "pc_embed",
 		Kind:        KindEmbedding,
 		Purpose:     "embedding",
 		Provider:    "openrouter",
 		Model:       "qwen/qwen3-embedding-4b",
 		InputTokens: 20,
-	})
+	}
+	mustInsertProviderCall(t, s, sessionID, embeddingCall)
+	embedding, err := s.SettleProviderCall(ctx, sessionID, embeddingCall)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,28 +194,22 @@ func TestProviderSessionSettlesEachCallOnceAndAllowsOneTerminalCall(t *testing.T
 	if mustBalance(t, s, userID).UsedMicros != used {
 		t.Fatal("query embedding changed actor credits")
 	}
-
-	terminal, err := s.SettleProviderCall(ctx, sessionID, ProviderCallUsage{
+	terminalCall := ProviderCallUsage{
 		CallID:       "pc_terminal",
 		Kind:         KindLLM,
 		Purpose:      "terminal",
+		Thinking:     models.ThinkingInstant,
 		Provider:     "deepseek",
 		Model:        "deepseek-v4-flash",
 		OutputTokens: 1,
-	})
+	}
+	mustInsertProviderCall(t, s, sessionID, terminalCall)
+	terminal, err := s.SettleProviderCall(ctx, sessionID, terminalCall)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !terminal.CreditsExhausted || terminal.TerminalCallAllowed {
 		t.Fatalf("terminal settlement = %#v", terminal)
-	}
-	_, err = s.SettleProviderCall(ctx, sessionID, ProviderCallUsage{
-		CallID:  "pc_terminal_2",
-		Kind:    KindLLM,
-		Purpose: "terminal",
-	})
-	if !errors.Is(err, ErrTerminalCallAlreadyUsed) {
-		t.Fatalf("second terminal settlement: %v", err)
 	}
 	if err := s.SettleCredits(ctx, sessionID); err != nil {
 		t.Fatal(err)
@@ -235,18 +234,22 @@ func TestUserKeyProviderSessionRecordsZeroCreditCallsPastPlatformLimit(t *testin
 		"",
 		SurfaceChat,
 		models.PaidByUser,
-		TokenRates{ModelKey: "gpt-byok", ModelVersion: 1},
-		TokenRates{ModelKey: "qwen-embed", ModelVersion: 1},
+		TokenRates{Model: models.Ref{ProviderSlug: "openai", ModelSlug: "gpt-byok"}, ModelVersion: 1},
+		TokenRates{Model: models.Ref{ProviderSlug: "openrouter", ModelSlug: "qwen/qwen3-embedding-4b"}, ModelVersion: 1},
+		"",
 	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	settlement, err := s.SettleProviderCall(ctx, sessionID, ProviderCallUsage{
+	call := ProviderCallUsage{
 		CallID:      "pc_byok",
 		Kind:        KindLLM,
 		Purpose:     "agent",
+		Thinking:    models.ThinkingInstant,
 		InputTokens: 100,
-	})
+	}
+	mustInsertProviderCall(t, s, sessionID, call)
+	settlement, err := s.SettleProviderCall(ctx, sessionID, call)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +276,7 @@ func TestClosedProviderSessionAcceptsLateReceiptWithoutContinuation(t *testing.T
 		VALUES ($1, $2)`, userID, limit-1); err != nil {
 		t.Fatal(err)
 	}
-	llmCfg, err := reg.Get(ctx, "deepseek-flash", 1)
+	llmCfg, err := reg.Get(ctx, models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -284,21 +287,24 @@ func TestClosedProviderSessionAcceptsLateReceiptWithoutContinuation(t *testing.T
 		SurfaceChat,
 		models.PaidByPlatform,
 		RatesFromConfig(llmCfg),
-		TokenRates{ModelKey: "qwen-embed", ModelVersion: 1},
+		TokenRates{Model: models.Ref{ProviderSlug: "openrouter", ModelSlug: "qwen/qwen3-embedding-4b"}, ModelVersion: 1},
+		"",
 	)
 	if err != nil {
-		t.Fatal(err)
-	}
-	if err := s.ReleaseCredits(ctx, sessionID); err != nil {
 		t.Fatal(err)
 	}
 	call := ProviderCallUsage{
 		CallID:      "pc_late",
 		Kind:        KindLLM,
 		Purpose:     "agent",
+		Thinking:    models.ThinkingInstant,
 		Provider:    "deepseek",
 		Model:       "deepseek-v4-flash",
 		InputTokens: 1,
+	}
+	mustInsertProviderCall(t, s, sessionID, call)
+	if err := s.ReleaseCredits(ctx, sessionID); err != nil {
+		t.Fatal(err)
 	}
 	settlement, err := s.SettleProviderCall(ctx, sessionID, call)
 	if err != nil {
@@ -330,27 +336,58 @@ func TestClosedProviderSessionAcceptsLateReceiptWithoutContinuation(t *testing.T
 	}
 }
 
-func TestBeginSpendRejectsWhenUsedAtLimit(t *testing.T) {
-	s := openAccessTestStore(t)
-	ctx := context.Background()
-	userID := newCreditsTestUser(t, s)
-
-	limit := CreditLimitMicros(PlanFree)
-	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros)
-		VALUES ($1, $2)`, userID, limit); err != nil {
+func providerCallStatus(t *testing.T, s *Store, callID string) (status string, credits int64) {
+	t.Helper()
+	err := s.pool.QueryRow(context.Background(), `
+		SELECT status, credit_micros FROM provider_calls WHERE id=$1`,
+		callID).Scan(&status, &credits)
+	if err != nil {
 		t.Fatal(err)
 	}
-	_, err := s.BeginSpend(ctx, userID, "", SurfaceChat)
-	var exhausted *CreditsExhaustedError
-	if !errors.As(err, &exhausted) {
-		t.Fatalf("begin at limit: %v", err)
+	return status, credits
+}
+
+func TestBeginProviderSessionRejectsWhenUsedOrReservedAtLimit(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	limit := CreditLimitMicros(PlanFree)
+	llm, embed := platformSessionRates()
+
+	usedID := newCreditsTestUser(t, s)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros)
+		VALUES ($1, $2)`, usedID, limit); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.BeginProviderSession(
+		ctx, usedID, "", SurfaceChat, models.PaidByPlatform, llm, embed, "",
+	)
+	var usedExhausted *CreditsExhaustedError
+	if !errors.As(err, &usedExhausted) {
+		t.Fatalf("used at limit: %v", err)
+	}
+
+	reservedID := newCreditsTestUser(t, s)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits
+		(user_id, used_micros, reserved_micros) VALUES ($1, 0, $2)`, reservedID, limit); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.BeginProviderSession(
+		ctx, reservedID, "", SurfaceChat, models.PaidByPlatform, llm, embed, "",
+	)
+	var reservedExhausted *CreditsExhaustedError
+	if !errors.As(err, &reservedExhausted) {
+		t.Fatalf("reserved at limit: %v", err)
+	}
+	if reservedExhausted.ReservedMicros != limit {
+		t.Fatalf("reserved error reserved=%d, want %d", reservedExhausted.ReservedMicros, limit)
 	}
 }
 
-func TestBeginSpendCapsOpenLeases(t *testing.T) {
+func TestBeginProviderSessionCapsOpenLeases(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
+	llm, embed := platformSessionRates()
 
 	start := make(chan struct{})
 	var wg sync.WaitGroup
@@ -362,7 +399,9 @@ func TestBeginSpendCapsOpenLeases(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			id, err := s.BeginSpend(ctx, userID, "", SurfaceChat)
+			id, err := s.BeginProviderSession(
+				ctx, userID, "", SurfaceChat, models.PaidByPlatform, llm, embed, "",
+			)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -388,17 +427,44 @@ func TestBeginSpendCapsOpenLeases(t *testing.T) {
 	}
 }
 
-func TestSweepThenLateSettleChargesOnce(t *testing.T) {
+func TestSweepThenLateProviderCallChargesOnce(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	userID := newCreditsTestUser(t, s)
-
-	id, err := s.BeginSpend(ctx, userID, "", SurfaceChat)
+	reg, err := models.New(ctx, s.Pool())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE credit_reservations
-		SET expires_at = now() - interval '1 second' WHERE id=$1`, id); err != nil {
+	s.SetModelRegistry(reg)
+	userID := newCreditsTestUser(t, s)
+	llmCfg, err := reg.Get(ctx, models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionID, err := s.BeginProviderSession(
+		ctx,
+		userID,
+		"",
+		SurfaceChat,
+		models.PaidByPlatform,
+		RatesFromConfig(llmCfg),
+		TokenRates{Model: models.Ref{ProviderSlug: "openrouter", ModelSlug: "qwen/qwen3-embedding-4b"}, ModelVersion: 1},
+		"",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := ProviderCallUsage{
+		CallID:      "pc_swept",
+		Kind:        KindLLM,
+		Purpose:     "agent",
+		Thinking:    models.ThinkingInstant,
+		Provider:    "deepseek",
+		Model:       "deepseek-v4-flash",
+		InputTokens: 1,
+	}
+	mustInsertProviderCall(t, s, sessionID, call)
+	if _, err := s.pool.Exec(ctx, `UPDATE provider_sessions
+		SET expires_at = now() - interval '1 second' WHERE id=$1`, sessionID); err != nil {
 		t.Fatal(err)
 	}
 
@@ -415,21 +481,21 @@ func TestSweepThenLateSettleChargesOnce(t *testing.T) {
 			afterSweep.UsedMicros, afterSweep.ReservedMicros)
 	}
 
-	const spent int64 = 900_000
-	event := creditSpend(spent)
-	if err := s.SettleCredits(ctx, id, event); err != nil {
+	settlement, err := s.SettleProviderCall(ctx, sessionID, call)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SettleCredits(ctx, id, event); err != nil {
+	if settlement.TerminalCallAllowed {
+		t.Fatalf("swept session must not continue: %#v", settlement)
+	}
+	duplicate, err := s.SettleProviderCall(ctx, sessionID, call)
+	if err != nil {
 		t.Fatal(err)
 	}
-
-	got := mustBalance(t, s, userID)
-	if got.UsedMicros != spent || got.ReservedMicros != 0 {
-		t.Fatalf("late settle: used=%d reserved=%d, want used=%d reserved=0",
-			got.UsedMicros, got.ReservedMicros, spent)
+	if !duplicate.Duplicate {
+		t.Fatalf("late duplicate = %#v", duplicate)
 	}
-	if n := eventCount(t, s, userID, id); n != 1 {
+	if n := eventCount(t, s, userID, sessionID); n != 1 {
 		t.Fatalf("ledger rows = %d, want 1", n)
 	}
 }
@@ -452,10 +518,7 @@ func TestStalePeriodDoesNotBlockTheNewMonth(t *testing.T) {
 		t.Fatalf("CreditBalance used=%d, want 0 for a lapsed period", reported.UsedMicros)
 	}
 
-	id, err := s.BeginSpend(ctx, userID, "", SurfaceChat)
-	if err != nil {
-		t.Fatalf("begin against last month's full balance: %v", err)
-	}
+	id := mustBeginPlatformSession(t, ctx, s, userID)
 	got := mustBalance(t, s, userID)
 	if got.UsedMicros != 0 || got.ReservedMicros != 0 {
 		t.Fatalf("after rollover begin: used=%d reserved=%d", got.UsedMicros, got.ReservedMicros)
@@ -508,7 +571,7 @@ func TestUserUsageReportScopesToActorAndGroupsCurrentPeriod(t *testing.T) {
 	other := newCreditsTestUser(t, s)
 
 	if err := s.RecordUsage(ctx,
-		UsageEvent{ActorUserID: userID, Kind: KindLLM, Surface: SurfaceChat, ModelKey: "deepseek-flash", CreditMicros: 1_000_000, InputTokens: 10, OutputTokens: 4},
+		UsageEvent{ActorUserID: userID, Kind: KindLLM, Surface: SurfaceChat, CatalogModel: models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}, CreditMicros: 1_000_000, InputTokens: 10, OutputTokens: 4},
 		UsageEvent{ActorUserID: userID, Kind: KindEmbedding, Surface: SurfaceIngest, CreditMicros: 200_000},
 		UsageEvent{ActorUserID: other, Kind: KindLLM, Surface: SurfaceChat, CreditMicros: 9_000_000},
 	); err != nil {
@@ -575,10 +638,7 @@ func TestBeginIngestSpendCapsAndSettles(t *testing.T) {
 		t.Fatalf("slots %#v", slots)
 	}
 
-	chatID, err := s.BeginSpend(ctx, userID, "", SurfaceChat)
-	if err != nil {
-		t.Fatalf("ingest leases must not consume LLM slots: %v", err)
-	}
+	chatID := mustBeginPlatformSession(t, ctx, s, userID)
 	if err := s.ReleaseCredits(ctx, chatID); err != nil {
 		t.Fatal(err)
 	}
@@ -610,7 +670,17 @@ func TestBeginIngestSpendRejectsWhenUsedAtLimit(t *testing.T) {
 	_, err := s.BeginIngestSpend(ctx, userID, "")
 	var exhausted *CreditsExhaustedError
 	if !errors.As(err, &exhausted) {
-		t.Fatalf("begin ingest at limit: %v", err)
+		t.Fatalf("begin ingest at used limit: %v", err)
+	}
+
+	reservedID := newCreditsTestUser(t, s)
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits
+		(user_id, used_micros, reserved_micros) VALUES ($1, 0, $2)`, reservedID, limit); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.BeginIngestSpend(ctx, reservedID, "")
+	if !errors.As(err, &exhausted) {
+		t.Fatalf("begin ingest at reserved limit: %v", err)
 	}
 }
 
@@ -622,7 +692,7 @@ func TestSweepReleasesOrphanIngestReservation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE credit_reservations
+	if _, err := s.pool.Exec(ctx, `UPDATE provider_sessions
 		SET created_at = now() - interval '25 hours' WHERE id=$1`, id); err != nil {
 		t.Fatal(err)
 	}

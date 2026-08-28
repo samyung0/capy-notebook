@@ -3,14 +3,18 @@ from types import SimpleNamespace
 import pytest
 from pydantic import ValidationError
 
+from pipeline.registry import ModelConfig, RegistryError, bind_request_llm
 from pipeline.retrieve import ai_adapter
 from pipeline.retrieve.ai_adapter import (
+    AIAdapterError,
     PlateCommandReq,
     PlateContext,
     UIMessage,
     UIMessagePart,
     _context_markdown,
+    _ensure_provider,
     _json_value,
+    _require_tool,
     _selected_cell_ids,
     build_generate_prompt,
 )
@@ -23,6 +27,7 @@ def _message(text: str) -> UIMessage:
 def test_generate_prompt_preserves_context_and_authority():
     req = PlateCommandReq(
         workspaceId="ws_1",
+        thinking="instant",
         messages=[_message("Summarize this")],
         ctx=PlateContext(
             children=[
@@ -84,6 +89,7 @@ def test_command_request_ignores_browser_provider_controls():
     req = PlateCommandReq.model_validate(
         {
             "workspaceId": "ws_1",
+            "thinking": "instant",
             "apiKey": "must-not-survive",
             "model": "browser/model",
             "messages": [
@@ -96,6 +102,18 @@ def test_command_request_ignores_browser_provider_controls():
     encoded = req.model_dump()
     assert "apiKey" not in encoded
     assert "model" not in encoded
+
+
+def test_command_request_requires_valid_thinking():
+    payload = {
+        "workspaceId": "ws_1",
+        "messages": [{"role": "user", "parts": [{"type": "text", "text": "Write"}]}],
+        "ctx": {"children": [{"type": "p", "children": [{"text": ""}]}]},
+    }
+    with pytest.raises(ValidationError, match="thinking"):
+        PlateCommandReq.model_validate(payload)
+    with pytest.raises(ValidationError, match="thinking"):
+        PlateCommandReq.model_validate({**payload, "thinking": "medium"})
 
 
 def test_command_request_rejects_oversized_context():
@@ -143,6 +161,7 @@ async def test_generate_and_comment_omit_output_token_cap(monkeypatch):
 
     req = PlateCommandReq(
         workspaceId="ws_1",
+        thinking="instant",
         messages=[_message("Review this")],
         ctx=PlateContext(
             children=[
@@ -162,3 +181,88 @@ async def test_generate_and_comment_omit_output_token_cap(monkeypatch):
         pass
 
     assert captured == {"comment": None, "generate": None}
+
+
+def test_require_tool_rejects_missing_and_accepts_named():
+    req = PlateCommandReq(
+        workspaceId="ws_1",
+        thinking="instant",
+        messages=[_message("Rewrite this")],
+        ctx=PlateContext(
+            children=[{"type": "p", "children": [{"text": "Hello"}]}],
+        ),
+    )
+    with pytest.raises(AIAdapterError, match="ctx.toolName is required"):
+        _require_tool(req)
+    req.ctx.toolName = "edit"
+    assert _require_tool(req) == "edit"
+
+
+async def test_editor_llm_calls_force_reasoning_off(monkeypatch):
+    seen: list[object] = []
+
+    async def fake_wait(*_args, **kwargs):
+        seen.append(kwargs.get("reasoning"))
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="[]"))]
+        )
+
+    async def fake_stream(*_args, **kwargs):
+        seen.append(kwargs.get("reasoning"))
+        if False:
+            yield ""
+
+    monkeypatch.setattr(ai_adapter, "_editor_spec", lambda _req: object())
+    monkeypatch.setattr(ai_adapter, "_wait_completion", fake_wait)
+    monkeypatch.setattr(ai_adapter.models, "stream_text", fake_stream)
+
+    req = PlateCommandReq(
+        workspaceId="ws_1",
+        thinking="instant",
+        messages=[_message("Review this")],
+        ctx=PlateContext(
+            children=[{"id": "b1", "type": "p", "children": [{"text": "Hello"}]}],
+            toolName="comment",
+        ),
+    )
+    spec = SimpleNamespace(context_window_tokens=16_000)
+    async for _ in ai_adapter._structured_events(_Connected(), req, "comment"):
+        pass
+    async for _ in ai_adapter._text_events(_Connected(), "write more", spec):
+        pass
+    assert seen == [False, False]
+
+
+def test_ensure_provider_accepts_a_string_key(monkeypatch):
+    spec = ModelConfig(
+        version=1,
+        provider_name="DeepSeek",
+        model_name="Flash",
+        provider_slug="deepseek",
+        model_slug="deepseek-v4-flash",
+        surfaces=("editor",),
+    )
+    bind_request_llm()
+    monkeypatch.setattr(
+        ai_adapter.registry, "provider_api_key_for", lambda _spec: "sk-test"
+    )
+    _ensure_provider(spec)
+
+
+def test_ensure_provider_maps_missing_platform_key(monkeypatch):
+    spec = ModelConfig(
+        version=1,
+        provider_name="DeepSeek",
+        model_name="Flash",
+        provider_slug="deepseek",
+        model_slug="deepseek-v4-flash",
+        surfaces=("editor",),
+    )
+    bind_request_llm()
+
+    def missing(_spec):
+        raise RegistryError("missing key")
+
+    monkeypatch.setattr(ai_adapter.registry, "provider_api_key_for", missing)
+    with pytest.raises(AIAdapterError, match="not configured"):
+        _ensure_provider(spec)

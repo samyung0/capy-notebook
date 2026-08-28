@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/evonotes/server/internal/models"
 	"github.com/evonotes/server/internal/store"
@@ -23,6 +24,34 @@ import (
 type chatStreamReq struct {
 	ConversationID string `json:"conversationId"`
 	Text           string `json:"text"`
+}
+
+const (
+	chatQueryMaxEstimatedTokens = 8192
+	chatQueryMaxBytes           = 65_536
+)
+
+func estimateChatQueryTokens(text string) int {
+	cjk, other := 0, 0
+	for _, r := range text {
+		switch {
+		case r >= 0x3040 && r <= 0x30ff,
+			r >= 0x3400 && r <= 0x4dbf,
+			r >= 0x4e00 && r <= 0x9fff,
+			r >= 0xf900 && r <= 0xfaff,
+			r >= 0xac00 && r <= 0xd7af:
+			cjk++
+		default:
+			other++
+		}
+	}
+	return cjk + (other+3)/4
+}
+
+func chatQueryTooLong(text string) bool {
+	return len(text) > chatQueryMaxBytes ||
+		estimateChatQueryTokens(text) > chatQueryMaxEstimatedTokens ||
+		!utf8.ValidString(text)
 }
 
 // pipeChatEvent is one event line from the Python retrieval service.
@@ -49,8 +78,8 @@ type pipeChatEvent struct {
 	Answer           string                `json:"answer,omitempty"`
 	ThroughMessageID string                `json:"throughMessageId,omitempty"`
 	Summary          string                `json:"summary,omitempty"`
-	SourceRefs       json.RawMessage       `json:"sourceRefs,omitempty"`
-	ModelKey         string                `json:"modelKey,omitempty"`
+	ProviderSlug     string                `json:"providerSlug,omitempty"`
+	ModelSlug        string                `json:"modelSlug,omitempty"`
 	ModelVersion     int                   `json:"modelVersion,omitempty"`
 	EstimatedTokens  int                   `json:"estimatedTokens,omitempty"`
 }
@@ -79,8 +108,10 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "text is required"})
 		return
 	}
-	if len(req.Text) > 8000 {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "text is too long"})
+	if chatQueryTooLong(req.Text) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"code": "query_too_long", "message": "The message is too long. Shorten it and try again.",
+		})
 		return
 	}
 
@@ -114,6 +145,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		llm.PaidBy,
 		llm.Rates,
 		embed.Rates,
+		llm.Thinking,
 	)
 	if err != nil {
 		a.fail(w, err)
@@ -158,9 +190,10 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		"type":             "start",
 		"messageId":        assistant.ID,
 		"conversationId":   conv.ID,
-		"modelKey":         cfg.Key,
+		"providerSlug":     cfg.ProviderSlug,
+		"modelSlug":        cfg.ModelSlug,
 		"modelVersion":     cfg.Version,
-		"modelDisplayName": cfg.DisplayName,
+		"modelDisplayName": cfg.DisplayName(),
 	})
 
 	var (
@@ -180,8 +213,8 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 			if err := a.s.PersistCheckpoint(cpCtx, conv.ID, store.ConversationCheckpoint{
 				ThroughMessageID: ev.ThroughMessageID,
 				Summary:          ev.Summary,
-				SourceRefs:       ev.SourceRefs,
-				ModelKey:         ev.ModelKey,
+				ProviderSlug:     ev.ProviderSlug,
+				ModelSlug:        ev.ModelSlug,
 				ModelVersion:     ev.ModelVersion,
 				EstimatedTokens:  ev.EstimatedTokens,
 			}); err != nil {
@@ -247,8 +280,11 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 
 	if ctx.Err() == nil {
 		if streamErr != nil {
+			var eventErr *chatEventError
 			if code, msg, ok := llmKeyPayload(streamErr); ok {
 				send(pipeChatEvent{Type: "error", Code: code, Message: msg})
+			} else if errors.As(streamErr, &eventErr) {
+				send(pipeChatEvent{Type: "error", Code: eventErr.Code, Message: eventErr.Message})
 			} else if errors.Is(streamErr, errAIUnavailable) {
 				send(pipeChatEvent{Type: "error", Code: "ai_unavailable", Message: errAIUnavailable.Error()})
 			} else {

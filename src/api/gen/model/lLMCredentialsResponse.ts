@@ -5,9 +5,11 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { LLMCredential } from './lLMCredential.ts';
+import type { LLMCredentialProvider } from './lLMCredentialProvider.ts';
 
 export interface LLMCredentialsResponse {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   credentials: LLMCredential[];
+  providers: LLMCredentialProvider[];
 }

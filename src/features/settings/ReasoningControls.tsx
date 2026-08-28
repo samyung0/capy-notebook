@@ -8,82 +8,54 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { m } from '@/i18n';
-import {
-  effectiveReasoning,
-  hasReasoningControls,
-  reasoningField,
-} from './llmOptions';
+import { hasThinkingControls, thinkingField } from './llmOptions';
 
-const EFFORT_LABEL: Record<string, () => string> = {
-  high: () => m.settings_llm_effort_high(),
-  low: () => m.settings_llm_effort_low(),
-  max: () => m.settings_llm_effort_max(),
-  medium: () => m.settings_llm_effort_medium(),
-  xhigh: () => m.settings_llm_effort_xhigh(),
+const THINKING_LABEL: Record<string, () => string> = {
+  high: () => m.settings_llm_thinking_high(),
+  instant: () => m.settings_llm_thinking_instant(),
+  low: () => m.settings_llm_thinking_low(),
+  max: () => m.settings_llm_thinking_max(),
+  mid: () => m.settings_llm_thinking_mid(),
 };
 
 export function ReasoningControls({
   disabled,
-  effort,
-  mode,
   selected,
+  stored,
   surface,
 }: {
   disabled?: boolean;
-  effort: string;
-  mode: string;
   selected: ModelOption | undefined;
+  stored: string;
   surface: Exclude<ModelSurface, 'editor' | 'quiz'>;
 }) {
   const { isPending, mutate } = useSetModelPrefs();
-  if (!hasReasoningControls(selected?.reasoning)) return null;
-  const spec = selected.reasoning;
-  const resolved = effectiveReasoning(selected, mode, effort);
+  if (!hasThinkingControls(selected?.thinking)) return null;
+  const spec = selected.thinking;
   const busy = disabled || isPending || !selected.available;
 
   return (
-    <div className="flex min-w-0 flex-wrap items-start gap-2">
-      {spec.canDisable ? (
-        <Select
-          disabled={busy}
-          onValueChange={(value) => {
-            mutate({ [reasoningField(surface, 'mode')]: value });
-          }}
-          value={resolved.mode}
-        >
-          <SelectTrigger
-            aria-label={m.settings_llm_thinking()}
-            className="w-30"
-            size="md"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="off">{m.settings_llm_thinking_off()}</SelectItem>
-            <SelectItem value="on">{m.settings_llm_thinking_on()}</SelectItem>
-          </SelectContent>
-        </Select>
-      ) : null}
-      {resolved.mode === 'on' && spec.efforts.length > 0 ? (
-        <Select
-          disabled={busy}
-          onValueChange={(value) => {
-            mutate({ [reasoningField(surface, 'effort')]: value });
-          }}
-          value={resolved.effort || spec.defaultEffort}
-        >
-          <SelectTrigger aria-label={m.settings_llm_effort()} className="w-34">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {spec.efforts.map((item) => (
-              <SelectItem key={item} value={item}>
-                {EFFORT_LABEL[item]?.() ?? item}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      ) : null}
-    </div>
+    <Select
+      disabled={busy}
+      onValueChange={(next) => {
+        mutate({ [thinkingField(surface)]: next });
+      }}
+      value={stored}
+    >
+      <SelectTrigger
+        aria-label={m.settings_llm_thinking()}
+        className="w-34"
+        size="md"
+      >
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {spec.levels.map((item) => (
+          <SelectItem key={item} value={item}>
+            {THINKING_LABEL[item]?.() ?? item}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }

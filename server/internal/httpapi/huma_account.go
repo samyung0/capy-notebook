@@ -248,6 +248,13 @@ func (a *api) getUsage(ctx context.Context, _ *struct{}) (*usageOutput, error) {
 
 func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*urlOutput, error) {
 	uid := userID(ctx)
+	current, err := a.s.SubscriptionForUser(ctx, uid)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if current != nil {
+		return nil, huma.Error409Conflict("an active subscription already exists")
+	}
 	u, err := a.s.Me(ctx, uid)
 	if err != nil {
 		return nil, hErr(err)

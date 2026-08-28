@@ -364,7 +364,7 @@ func IsTextKind(kind string) bool {
 
 func DefaultParseMode(name, kind string) string {
 	if IsTextKind(kind) {
-		// Text is never sent to the GPU parser. The worker reads the bytes and
+		// Text is never sent to the document parser. The worker reads the bytes and
 		// chunks them; parseMode=none still enqueues that job (see NeedsIngestJob).
 		return ParseModeNone
 	}
@@ -430,7 +430,7 @@ func Validate(name, kind, mode string, size, maxBytes int64) error {
 	return nil
 }
 
-// parseExtensions is the format list the GPU parser accepts.
+// parseExtensions is the format list the document parser accepts.
 var parseExtensions = map[string]bool{
 	"pdf": true, "doc": true, "docx": true, "ppt": true, "pptx": true,
 	"xls": true, "xlsx": true, "png": true, "jpg": true, "jpeg": true,

@@ -10,72 +10,30 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/evonotes/server/internal/models"
 	"github.com/evonotes/server/internal/pipeline"
 	"github.com/evonotes/server/internal/store"
 )
-
-func TestUsageEventsZeroLLMCreditsForUserKey(t *testing.T) {
-	u := pipeUsage{InputTokens: 10, OutputTokens: 4, EmbedTokens: 20, Calls: 2}
-	rates := store.TokenRates{
-		ModelKey:             "gpt-5.6-sol",
-		ModelVersion:         1,
-		MicrosPerInputToken:  250,
-		MicrosPerOutputToken: 1000,
-	}
-	embed := store.TokenRates{
-		ModelKey:            "qwen-embed",
-		ModelVersion:        1,
-		MicrosPerInputToken: 50,
-	}
-	events := u.events("u_1", "ws_1", store.SurfaceChat, rates, embed, models.PaidByUser)
-	if len(events) != 2 {
-		t.Fatalf("events: %d", len(events))
-	}
-	if events[0].Kind != store.KindLLM || events[0].CreditMicros != 0 {
-		t.Fatalf("llm event %#v", events[0])
-	}
-	if events[0].Metadata["paidBy"] != models.PaidByUser {
-		t.Fatalf("paidBy: %#v", events[0].Metadata)
-	}
-	if events[1].Kind != store.KindEmbedding || events[1].CreditMicros != 0 {
-		t.Fatalf("embed event %#v", events[1])
-	}
-}
-
-func TestUsageEventsDoNotInventEmbedRates(t *testing.T) {
-	u := pipeUsage{EmbedTokens: 100}
-	events := u.events("u_1", "ws_1", store.SurfaceChat, store.TokenRates{}, store.TokenRates{}, models.PaidByPlatform)
-	if len(events) != 1 {
-		t.Fatalf("events: %d", len(events))
-	}
-	if events[0].Kind != store.KindEmbedding {
-		t.Fatalf("kind %#v", events[0])
-	}
-	if events[0].ModelKey != "" || events[0].CreditMicros != 0 {
-		t.Fatalf("invented embed rates: %#v", events[0])
-	}
-}
-
-func TestUsageEventsEmptyPaidByDoesNotInventRates(t *testing.T) {
-	u := pipeUsage{InputTokens: 10, OutputTokens: 4}
-	events := u.events("u_1", "ws_1", store.SurfaceChat, store.TokenRates{}, store.TokenRates{}, "")
-	if len(events) != 1 {
-		t.Fatalf("events: %d", len(events))
-	}
-	if events[0].CreditMicros != 0 {
-		t.Fatalf("empty rates must stay zero, got %#v", events[0])
-	}
-	if events[0].Metadata["paidBy"] != "" {
-		t.Fatalf("paidBy should stay empty, got %#v", events[0].Metadata)
-	}
-}
 
 func TestResolveEmbeddingRequiresStore(t *testing.T) {
 	a := &api{}
 	_, err := a.resolveEmbedding(context.Background(), "ws_1")
 	if !errors.Is(err, store.ErrModelUnavailable) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestHealthReportsReleaseRevision(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	healthHandler("0123456789abcdef0123456789abcdef01234567").ServeHTTP(
+		recorder,
+		httptest.NewRequest(http.MethodGet, "/healthz", nil),
+	)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusOK)
+	}
+	if got := recorder.Header().Get("X-Evo-Release"); got != "0123456789abcdef0123456789abcdef01234567" {
+		t.Fatalf("X-Evo-Release = %q", got)
 	}
 }
 
@@ -95,26 +53,41 @@ func TestFailMapsTooManyIngestLeases(t *testing.T) {
 	}
 }
 
-func TestUsageEventsZeroQueryEmbedCredits(t *testing.T) {
-	u := pipeUsage{InputTokens: 8, OutputTokens: 2, EmbedTokens: 1_000_000}
-	embed := store.TokenRates{
-		ModelKey:            "qwen-embed",
-		ModelVersion:        1,
-		MicrosPerInputToken: 50,
+func TestFailMapsCreditsExhaustedForbidden(t *testing.T) {
+	a := &api{}
+	rec := httptest.NewRecorder()
+	a.fail(rec, &store.CreditsExhaustedError{
+		UsedMicros: 1, LimitMicros: 1, PlanTier: store.PlanFree,
+	})
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	llm := store.TokenRates{MicrosPerInputToken: 250, MicrosPerOutputToken: 1000, ModelKey: "deepseek-flash", ModelVersion: 1}
-	events := u.events("u_1", "ws_1", store.SurfaceChat, llm, embed, models.PaidByPlatform)
-	if len(events) != 2 {
-		t.Fatalf("events: %d", len(events))
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
 	}
-	if events[0].Kind != store.KindLLM || events[0].CreditMicros == 0 {
-		t.Fatalf("llm event %#v", events[0])
+	if body["code"] != "llm_credits_exhausted" {
+		t.Fatalf("code = %#v", body["code"])
 	}
-	if events[1].Kind != store.KindEmbedding || events[1].CreditMicros != 0 {
-		t.Fatalf("query embed must not bill, got %#v", events[1])
+}
+
+func TestWriteRelayCapacityRetryCredits(t *testing.T) {
+	rec := httptest.NewRecorder()
+	writeRelayCapacityRetry(rec, &store.CreditsExhaustedError{
+		UsedMicros: 1, LimitMicros: 1, PlanTier: store.PlanFree,
+	})
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d body=%s", rec.Code, rec.Body.String())
 	}
-	if events[1].ModelKey != "qwen-embed" {
-		t.Fatalf("query embed pin: %#v", events[1])
+	if rec.Header().Get("Retry-After") != "300" {
+		t.Fatalf("Retry-After = %q", rec.Header().Get("Retry-After"))
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["code"] != "llm_credits_exhausted" {
+		t.Fatalf("code = %#v", body["code"])
 	}
 }
 

@@ -10,6 +10,50 @@ Code-side configuration lives in `observability-metering.md` §9.
 
 ---
 
+## 0. Release flow and branch policy
+
+Use one protected, long-lived `main` branch. Do not create permanent `uat` and
+`prod` branches. Environment branches look simple at first, but they turn
+promotion into merging, allow fixes to land in one environment but not the
+other, and make it harder to identify the code actually running. Release
+branches are justified only when maintaining multiple supported versions; they
+are not deployment environments.
+
+This repository defines deployment as follows:
+
+1. **Push to UAT:** merge or push to `main`; `CI` must succeed. The **Deploy
+   UAT** workflow then deploys the exact CI `head_sha` to the isolated UAT
+   Coolify and Cloudflare Pages resources and calls the reusable
+   **Deterministic UAT quality** workflow. Set repository variable
+   `UAT_DEPLOYMENT_ENABLED=true` only after the first manual baseline.
+2. **Push to production:** manually dispatch **Promote revision to production**
+   from `main` with a full 40-character SHA. The workflow re-deploys that SHA
+   to UAT, re-runs the same deterministic UAT gate, and only then reaches the
+   protected `production` GitHub environment. Approving that environment is
+   the release action.
+3. **Costly review:** `$review-repository`, Codex Security, and both Strix
+   workflows remain separately and explicitly invoked. They never run because
+   code was pushed or deployed.
+
+Configure `main` branch protection to require `CI`. Configure the `uat`
+environment without a reviewer so post-CI deployment can run unattended.
+Configure `production` to allow only `main` and require a reviewer if the
+repository's GitHub plan supports it. A solo maintainer must leave “prevent
+self-review” off; otherwise nobody can approve. Manual workflow dispatch is the
+fallback approval on plans that do not offer required reviewers for a private
+repository.
+
+The current deployment adapter pins the same source SHA in UAT and production
+and verifies that SHA at the public SPA and gateway. Coolify still builds the
+Compose images separately for each environment, and the SPA is rebuilt with
+environment-specific public configuration. This is reproducible source
+promotion, not yet byte-identical artifact promotion. The mature follow-up is
+to publish content-addressed backend images once and make both environments
+pull the same digests; do that when the deployment exists and registry access
+can be tested.
+
+---
+
 ## 1. DNS & hostnames
 
 The SPA is static. The Go gateway, the Hocuspocus sidecar, the Python
@@ -17,17 +61,17 @@ retrieval service, the ingest worker, and the operator dashboard are separate
 processes. Three services have public hostnames. Cloudflare Access protects the
 operator hostname before traffic reaches its origin.
 
-| Hostname | Serves | Public DNS | Proxied |
-| --- | --- | --- | --- |
-| `abcd.com` | SPA (Cloudflare Pages / static) | yes | yes |
-| `llm.abcd.com` | optional; only if `VITE_LLM_RUNTIME_ORIGIN` is set | optional | yes |
-| `www.abcd.com` | redirect to apex | yes | yes |
-| `api.abcd.com` | Go gateway (`server`, :8080) | yes | yes |
-| `collab.abcd.com` | Hocuspocus WebSocket (`collaboration`, :1234) | yes | yes |
-| `ops.evonotes.com` | Go ops API + static dashboard (`ops`, :8082) | yes | yes, Access required |
-| retrieval :8001 | Python chat/generate | **no** | — |
-| ingest worker | Modal parse + embed | **no** | — |
-| Postgres / Redis | — | **no** | — |
+| Hostname           | Serves                                             | Public DNS | Proxied              |
+| ------------------ | -------------------------------------------------- | ---------- | -------------------- |
+| `abcd.com`         | SPA (Cloudflare Pages / static)                    | yes        | yes                  |
+| `llm.abcd.com`     | optional; only if `VITE_LLM_RUNTIME_ORIGIN` is set | optional   | yes                  |
+| `www.abcd.com`     | redirect to apex                                   | yes        | yes                  |
+| `api.abcd.com`     | Go gateway (`server`, :8080)                       | yes        | yes                  |
+| `collab.abcd.com`  | Hocuspocus WebSocket (`collaboration`, :1234)      | yes        | yes                  |
+| `ops.evonotes.com` | Go ops API + static dashboard (`ops`, :8082)       | yes        | yes, Access required |
+| retrieval :8001    | Python chat/generate                               | **no**     | —                    |
+| ingest worker      | Modal parse + embed                                | **no**     | —                    |
+| Postgres / Redis   | —                                                  | **no**     | —                    |
 
 The browser talks to the gateway at same-origin `/api` (`src/api/client.ts`
 hard-codes `API_BASE = '/api'`; `VITE_API_URL` is only the Vite **dev** proxy).
@@ -66,6 +110,7 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    A 302 redirect is not enough — `fetch('/api/...')` would leave the SPA
    origin. Do **not** proxy `/webhooks/` via the apex; those URLs are configured
    in Clerk/Stripe as `https://api.abcd.com/webhooks/...`.
+
 4. **Always Use HTTPS** and **HSTS** (start with a short max-age). SSL/TLS mode
    depends on how the origin is reached — see the option you picked.
 
@@ -75,26 +120,93 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
 
 ### 1.1 Coolify + Cloudflare Tunnel (recommended for this stack)
 
+Use `deploy/docker-compose.prod.yml`, not the local `docker-compose.yml`.
+The prod file runs `/migrate` once per deploy, starts the API with
+`MIGRATE=false`, and does not publish host ports.
+
+#### Create the Coolify resource
+
+1. **Project → production environment → + New Resource → Git** (GitHub App
+   or deploy key). Pick this repository and `main`; GitHub Actions pins the
+   exact commit separately.
+2. **Build Pack:** Docker Compose.
+3. **Docker Compose Location:** `deploy/docker-compose.prod.yml`.
+   Leave **Base Directory** empty (repository root). Contexts are relative to
+   the compose file (`../server` is `server/` in the repo).
+4. **Environment Variables:** paste `deploy/.env.prod.example`, fill values,
+   and mark passwords/keys as secrets. Do **not** set `COMPOSE_PROFILES=ops`
+   on the first deploy — ops needs the §8 roles first. Do **not** set
+   `AUTH_DISABLED=true` or `MIGRATE=true`. In Advanced settings, enable
+   **Include Source Commit in Build** so Coolify supplies `SOURCE_COMMIT` to
+   the Compose build and runtime; the release verifier depends on it.
+5. **Deploy.** Coolify runs `docker compose up --build`. `migrate` applies
+   pending `NNNN_*.sql` files and exits 0; `server` / `worker` / `retrieval`
+   wait on `service_completed_successfully`. An exited `migrate` container
+   is expected. Open its logs and look for `applying 0001_init.sql` (first
+   deploy) or only `migrations applied` (later deploys).
+6. **Domains** on the resource, after the first successful deploy (Coolify
+   has to parse the compose file first). Enter **`http://`** — Cloudflare
+   terminates TLS. Include the container port if the UI asks for one:
+
+   | Service                                         | Domain field                   |
+   | ----------------------------------------------- | ------------------------------ |
+   | `server`                                        | `http://api.abcd.com:8080`     |
+   | `collaboration`                                 | `http://collab.abcd.com:1234`  |
+   | `ops` (after step 8)                            | `http://ops.evonotes.com:8082` |
+   | `db`, `redis`, `migrate`, `worker`, `retrieval` | no domain                      |
+
+   Redeploy or wait for the proxy to pick up the domains.
+
+7. Disable Coolify **Auto Deploy**. The GitHub deployment workflow updates
+   `git_commit_sha`, starts the deployment through the Coolify API, polls its
+   result, and verifies the reported commit. A native Coolify webhook would
+   bypass the UAT and production gates.
+8. After §8 grants and Access are ready: add the two Ops database URLs
+   values, Access issuer/audience, `VITE_CLERK_PUBLISHABLE_KEY`, then
+   `COMPOSE_PROFILES=ops`, and redeploy. Assign the ops domain. A
+   `VITE_*` change rebuilds the ops image; runtime-only env does not.
+
+CLI equivalent (same file, from the repo root):
+
+```bash
+cp deploy/.env.prod.example deploy/.env.prod
+# fill deploy/.env.prod — never commit it
+docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod up -d --build
+docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod logs migrate
+```
+
+Enable ops on a later CLI deploy with `COMPOSE_PROFILES=ops` in `.env.prod`.
+Storage and Stripe reconciliation is scheduled and claimed by the gateway's
+database-backed runner; no Coolify task is required. To ensure today's runs are
+queued and drain any pending work from a one-off container, use:
+
+```bash
+docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env.prod --profile reconcile run --rm reconcile
+```
+
+The command and gateway share `reconcile_runs`, so concurrent invocations are
+safe and do not create a second run for the same UTC schedule slot.
+
 Do **not** point the tunnel at `:8080` / `:1234`. Coolify already runs Traefik
 or Caddy on the host; the tunnel should hit that proxy and let it route by
 `Host`. Follow [Coolify: access all resources via tunnels](https://coolify.io/docs/integrations/cloudflare/tunnels/all-resource), with these bindings:
 
-| Hostname | Tunnel service | Coolify domain field |
-| --- | --- | --- |
-| `api.abcd.com` | `http://localhost:80` (or `http://coolify-proxy:80` if `cloudflared` is a container on the `coolify` network) | `http://api.abcd.com` on the **server** service |
-| `collab.abcd.com` | same `:80` | `http://collab.abcd.com` on **collaboration** |
-| `ops.evonotes.com` | same `:80` | `http://ops.evonotes.com` on **ops** |
-| retrieval, worker, db, redis | none | no domain |
+| Hostname                     | Tunnel service                                                                                                | Coolify domain field                            |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| `api.abcd.com`               | `http://localhost:80` (or `http://coolify-proxy:80` if `cloudflared` is a container on the `coolify` network) | `http://api.abcd.com` on the **server** service |
+| `collab.abcd.com`            | same `:80`                                                                                                    | `http://collab.abcd.com` on **collaboration**   |
+| `ops.evonotes.com`           | same `:80`                                                                                                    | `http://ops.evonotes.com` on **ops**            |
+| retrieval, worker, db, redis | none                                                                                                          | no domain                                       |
 
 Details that are easy to get wrong:
 
 - Run `cloudflared` as a **Coolify service** (or systemd on the host), not as a
-  service in `deploy/docker-compose.yml`. A compose restart must not drop every
+  service in either compose file. A compose restart must not drop every
   hostname on the server.
-- Enable the compose `ops` profile in Coolify (`COMPOSE_PROFILES=ops`). Set the
-  `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_SENTRY_DSN_OPS`, and `RELEASE_SHA` build
-  values before the first image build. Runtime-only changes do not rebuild the
-  static dashboard.
+- Enable the compose `ops` profile in Coolify (`COMPOSE_PROFILES=ops`) only
+  after §8. Set the `VITE_CLERK_PUBLISHABLE_KEY`, `VITE_SENTRY_DSN_OPS`, and
+  `RELEASE_SHA` / `SOURCE_COMMIT` build values before that ops image build.
+  Runtime-only changes do not rebuild the static dashboard.
 - Enter Coolify domains as **`http://`**. Cloudflare terminates TLS. `https://`
   here makes Traefik request Let's Encrypt and usually 301-loops.
 - App env vars still use `https://` / `wss://` — those are what browsers, Clerk,
@@ -157,23 +269,24 @@ COLLABORATION_URL=wss://collab.abcd.com
 COLLABORATION_ALLOWED_ORIGINS=https://abcd.com
 ```
 
-Ops uses one read role, one execute-only session role, and opens the registry
-writer only after the application has authorized an `admin`:
+Ops uses one read/auth role and one shared admin-actions role. The admin pool
+opens lazily only after the application authorizes a registry Save or a
+reconciliation request:
 
 ```
 OPS_DATABASE_URL=postgres://evo_ops:<password>@<private-postgres-host>:5432/evo?sslmode=require
-OPS_AUTH_DATABASE_URL=postgres://evo_ops_auth:<password>@<private-postgres-host>:5432/evo?sslmode=require
-OPS_REGISTRY_DATABASE_URL=postgres://evo_ops_registry:<password>@<private-postgres-host>:5432/evo?sslmode=require
+OPS_ADMIN_DATABASE_URL=postgres://evo_ops_admin:<password>@<private-postgres-host>:5432/evo?sslmode=require
 OPS_CF_ACCESS_ISSUER=https://<team-name>.cloudflareaccess.com
 OPS_CF_ACCESS_AUDIENCE=<Access application AUD>
+# OPS_CF_ACCESS_JWKS_URL defaults to <issuer>/cdn-cgi/access/certs
 OPS_ACCESS_DISABLED=false
 OPS_AUTH_DISABLED=false
 OPS_UNSAFE_DEVELOPMENT=false
 ```
 
-`OPS_REGISTRY_DATABASE_URL` is stored as configuration at startup but its pool
-is opened lazily by the admin-only Save handler. Viewer requests are rejected
-before that credential is used.
+`OPS_ADMIN_DATABASE_URL` is stored as configuration at startup, but its shared
+pool opens lazily from admin-only handlers. Viewer requests are rejected before
+the credential is used.
 
 Use `db` as the Postgres host only when the ops container shares the compose
 network with `db`. A managed database must use its private hostname. Do not add
@@ -181,11 +294,11 @@ a public Postgres DNS record or a Coolify domain. The ops process does not run
 migrations and must never receive the database owner URL. Deploy the gateway
 migration first, then start ops.
 
-Startup verifies all three database sessions against their privilege contracts.
-It rejects superusers, owner sessions with broad writes, inherited roles,
-customer-content reads, direct operator-table access on the auth session, and
-`model_configs` DELETE on the registry session. Missing required column grants
-also stop startup. Local owner URLs are accepted only with
+Startup verifies both database sessions against their privilege contracts. It
+rejects superusers, owner sessions with broad writes, inherited roles,
+customer-content reads, direct operator-table writes, direct reconciliation
+queue writes, and `model_configs` DELETE. Missing required column grants also
+stop startup. Local owner URLs are accepted only with
 `APP_ENV=development` and `OPS_UNSAFE_DEVELOPMENT=true`. Auth bypasses also
 require their individual `OPS_ACCESS_DISABLED=true` or
 `OPS_AUTH_DISABLED=true` switch. None of these unsafe settings is accepted
@@ -275,8 +388,10 @@ causes every request to fail JWT verification.
 
 Access is the first gate, not the application identity. The ops service verifies
 the signed `Cf-Access-Jwt-Assertion` against the remote JWKS, including issuer,
-audience, and time claims. It then verifies Clerk and checks the `operators`
-table. A request must pass all three checks.
+audience, and time claims, before it serves static files or API responses. The
+static shell must load before Clerk can produce a bearer token. Clerk and the
+`operators` check therefore apply to `/api/ops/*`, not to the static shell. An
+API request must pass all three checks.
 
 The Access identity and Clerk identity are intentionally independent. Access
 decides who may reach the origin. Clerk supplies the product user id checked
@@ -290,15 +405,65 @@ on the private container network. The public hostname still requires Access.
 Test both failure paths before granting an operator row:
 
 1. An email outside the Access policy must stop at Cloudflare.
-2. An allowed Access identity without a Clerk session must receive `401`.
+2. An allowed Access identity without a Clerk session can load the sign-in
+   shell, but `/api/ops/session` must receive `401`.
 3. A valid Clerk user missing from `operators` must receive `403`.
-4. A `viewer` must receive `403` from registry Save without opening the writer
-   database pool.
+4. A `viewer` without `write_registry` must receive `403` from registry Save
+   without opening the writer database pool.
 
 **Timeouts:** the default 100 s orange-cloud proxy read timeout will cut long
 chat streams and Modal parse waits. A Cloudflare Tunnel is not subject to it.
 Coolify's Traefik/Caddy in front of the tunnel still has its own read timeout —
 raise that on `api.abcd.com` if streams die around a minute.
+
+### 2.2 Drive import Queue relay
+
+Drive and OneDrive imports require the paid Workers plan. The relay buffers one
+bounded file per isolate so its queue consumer is intentionally pinned to batch
+size 1 and concurrency 1. Do not raise concurrency until production memory
+telemetry shows enough headroom at the plan's largest upload.
+The main queue retries every five minutes up to 20 times so temporary provider
+or ingest-capacity pressure does not discard an accepted import. The DLQ also
+retries every five minutes up to 50 times; its retry window must remain longer
+than the gateway's 12-minute attempt lease before terminal cleanup can succeed.
+
+Create both queues once, then deploy the Worker:
+
+```sh
+cd workers/drive-import-relay
+pnpm exec wrangler queues create evo-drive-imports
+pnpm exec wrangler queues create evo-drive-imports-dlq
+pnpm exec wrangler secret put IMPORT_RELAY_SECRET
+pnpm exec wrangler deploy
+```
+
+Before deploy, replace `API_BASE_URL` in `wrangler.jsonc` with the public gateway
+origin, for example `https://api.abcd.com`. Generate the shared secret with
+`openssl rand -hex 32`; give the exact same value to the Worker secret and the
+gateway's `IMPORT_RELAY_SECRET`. Set the gateway's
+`IMPORT_RELAY_ENQUEUE_URL` to the deployed Worker URL plus `/enqueue`.
+Both gateway variables must be present or both absent; the latter disables new
+imports with `503` instead of creating stranded reservations.
+
+The Worker enqueue endpoint is public but accepts only a timestamped
+HMAC-SHA256 request. Worker callbacks use the same canonical signature, and
+each import attempt also has a short database lease. The Queue message contains
+only an opaque job id. Microsoft downloads use a one-file preauthenticated URL;
+the Microsoft OAuth bearer is never sent to Worker execution.
+Every attempt receives a distinct incoming object key. A stale presigned PUT
+therefore cannot replace bytes uploaded by a newer lease.
+
+Keep the DLQ consumer configured. It calls the gateway's terminal cleanup route,
+which marks the job failed and releases its upload reservation. As a backstop,
+the normal upload-session sweeper expires any job that never reaches the DLQ.
+The same minute worker reopens expired attempt leases. It reopens pending
+deliveries after six hours, beyond the roughly four-hour DLQ retry horizon, so
+a live DLQ callback cannot fail a newly dispatched generation. Losing both a
+Queue delivery and its DLQ callback therefore does not strand a job for a day.
+Gateway-to-Worker dispatch uses capped exponential backoff and fails
+non-retryable 4xx responses immediately.
+An unsigned `POST /enqueue` must return `401`; a signed import should move
+`source_import_jobs.status` from `pending` to `running` and then `succeeded`.
 
 ---
 
@@ -376,7 +541,7 @@ and collaboration:
 - Beyond ~5 replicas, raise `max_connections` or put pgbouncer in front.
 
 Provider rate limits scale with replica count. `EVO_CAPTION_CONCURRENCY` is 8
-*per job*, so N replicas means up to 8N concurrent vision calls.
+_per job_, so N replicas means up to 8N concurrent vision calls.
 
 Do not scale above 1 until the worker running in production includes
 lease-keyed content-claim steal. A waiter on a second replica can otherwise
@@ -433,8 +598,13 @@ delete a live creator's `rag_contents` row.
 
 ## 8. Database
 
-1. Apply migrations through the gateway (`MIGRATE=true`) before deploying ops.
-   The ops service does not run migrations.
+1. Apply migrations with `/migrate` from the **same image / git SHA** as the
+   API. `deploy/docker-compose.prod.yml` does this as the `migrate` service
+   before `server` starts (`MIGRATE=false`). Local docker keeps `MIGRATE=true`
+   on the API. The ops service does not run migrations.
+   `docker compose … run --rm migrate -status` prints pending files versus
+   `schema_migrations`. Do not `psql -f` a migration against a kept database —
+   that skips the ledger.
 2. **Grant operator access by hand.** Have the operator sign in to the product
    once so `users.id` exists. Copy their Clerk user id, then use a database
    owner session:
@@ -444,38 +614,66 @@ delete a live creator's `rag_contents` row.
    VALUES ('user_2abc...', 'admin', 'initial operator');
    ```
 
-   Use `viewer` unless the person must save registry changes. Revoke access with
-   `DELETE FROM operators WHERE user_id='user_2abc...'`. There is no operator
-   membership API by design.
-3. Create three roles with independent random passwords. The grants name every
-   readable column. In particular, none of these roles can read `messages`, file
+   Use `viewer` unless the person must save registry changes or queue
+   reconciliation. Those writes are tokens on `ops_permissions` for that role,
+   not a second grant API. Seeded map: both roles have `read_all`; `admin` also
+   has `write_registry` and `execute_reconciliation_job`. Give a viewer a write
+   without promoting them:
+
+   ```sql
+   INSERT INTO ops_permissions (role, permission)
+   VALUES ('viewer', 'execute_reconciliation_job');
+   ```
+
+   Revoke access with `DELETE FROM operators WHERE user_id='user_2abc...'`.
+   There is no operator membership API by design.
+
+3. Create two roles with independent random passwords. The grants name every
+   readable column. In particular, neither role can read `messages`, file
    `content` or blob paths, job `payload`, email recipients or `payload`, or
    `usage_events.metadata`:
 
    ```sql
    CREATE ROLE evo_ops LOGIN NOINHERIT PASSWORD '<read-password>';
-   CREATE ROLE evo_ops_auth LOGIN NOINHERIT PASSWORD '<auth-password>';
-   CREATE ROLE evo_ops_registry LOGIN NOINHERIT PASSWORD '<registry-password>';
+   CREATE ROLE evo_ops_admin LOGIN NOINHERIT PASSWORD '<admin-password>';
 
    GRANT CONNECT ON DATABASE evo
-     TO evo_ops, evo_ops_auth, evo_ops_registry;
+     TO evo_ops, evo_ops_admin;
    REVOKE CREATE ON SCHEMA public FROM PUBLIC;
    REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA public FROM PUBLIC;
    ALTER DEFAULT PRIVILEGES IN SCHEMA public
      REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC;
    GRANT USAGE ON SCHEMA public
-     TO evo_ops, evo_ops_auth, evo_ops_registry;
+     TO evo_ops, evo_ops_admin;
 
-   GRANT SELECT (
-     day, actor_user_id, kind, surface, provider, model,
-     events, input_tokens, output_tokens, units, credit_micros
-   ) ON usage_daily TO evo_ops;
    GRANT SELECT (
      user_id, period_start, used_micros, reserved_micros
    ) ON user_credits TO evo_ops;
    GRANT SELECT (
-     status, expires_at, settled_at
-   ) ON credit_reservations TO evo_ops;
+     id, actor_user_id, trace_id, surface, paid_by, status,
+     created_at, expires_at, settled_at
+   ) ON provider_sessions TO evo_ops;
+   GRANT SELECT (
+     id, reservation_id, actor_user_id, kind, purpose, status, thinking,
+     cached_read_tokens, cache_write_tokens, reasoning_tokens, cache_anomaly,
+     context_system_tokens, context_tool_tokens,
+     context_conversation_tokens, context_total_tokens,
+     context_window_tokens, context_counting_method,
+     context_counting_version, opened_at, applied_at
+   ) ON provider_calls TO evo_ops;
+   GRANT SELECT (
+     id, job_type, trigger, status, requested_by_id, requested_by_name,
+     requested_at, started_at, finished_at, scanned_count, repaired_count,
+     error_count, error
+   ) ON reconcile_runs TO evo_ops;
+   GRANT SELECT (
+     id, run_id, event_type, subject_type, subject_id, actor_user_id,
+     metadata, created_at
+   ) ON reconciliation_report TO evo_ops;
+   GRANT SELECT (
+     id, occurred_at, actor_user_id, actor_role, action,
+     target_type, target_id, outcome, trace_id, metadata
+   ) ON operator_audit_events TO evo_ops;
    GRANT SELECT (
      user_id, used_bytes, reserved_bytes
    ) ON user_storage TO evo_ops;
@@ -489,19 +687,21 @@ delete a live creator's `rag_contents` row.
    GRANT SELECT (user_id, current_period_end)
      ON user_subscriptions TO evo_ops;
    GRANT SELECT (
-     id, user_id, name, embedding_model_key, embedding_model_version,
+     id, user_id, name, embedding_provider_slug, embedding_model_slug,
+     embedding_model_version,
      embedding_dim, last_accessed_at
    ) ON workspaces TO evo_ops;
    GRANT SELECT (user_id, role) ON operators TO evo_ops;
+   GRANT SELECT (role, permission) ON ops_permissions TO evo_ops;
    GRANT SELECT (
-     model_key, version, display_name, provider_slug, base_url,
-     provider_model_id, auth_mode, context_window_tokens, params, surfaces,
-     micros_per_input_token, micros_per_cached_input_token,
-     micros_per_output_token, enabled, is_default_for, created_at
+     version, provider_name, model_name, provider_slug, model_slug,
+     platform_enabled, byok_enabled, thinking_levels, default_thinking,
+     context_window_tokens, params, surfaces, micros_per_input_token,
+     micros_per_cached_input_token, micros_per_output_token, enabled,
+     is_default_for, created_at, updated_at, created_by, updated_by
    ) ON model_configs TO evo_ops;
    GRANT SELECT (id, version, updated_at) ON model_registry_state TO evo_ops;
-   GRANT SELECT (id, last_run_at) ON usage_rollup_state TO evo_ops;
-   GRANT SELECT ON ops_completed_assistant_messages TO evo_ops;
+   GRANT SELECT ON ops_assistant_turns TO evo_ops;
    GRANT SELECT (id, workspace_id)
      ON files TO evo_ops;
    GRANT SELECT (
@@ -511,66 +711,93 @@ delete a live creator's `rag_contents` row.
      status, updated_at
    ) ON email_outbox TO evo_ops;
    GRANT SELECT (
-     trace_id, actor_user_id, kind, surface, provider, model,
-     model_key, model_version, input_tokens, output_tokens, units, unit,
-     credit_micros, created_at
+     id, trace_id, actor_user_id, kind, surface, provider, model,
+     thinking, catalog_provider_slug, catalog_model_slug, model_version,
+     input_tokens, output_tokens, units, unit,
+     parse_pages, parse_ocr_pages, parse_cpu_milliseconds,
+     parse_elapsed_milliseconds,
+     credit_micros, reservation_id, provider_call_id, created_at
    ) ON usage_events TO evo_ops;
 
-   GRANT EXECUTE ON FUNCTION touch_operator_seen(text) TO evo_ops_auth;
+   GRANT EXECUTE ON FUNCTION touch_operator_seen(text) TO evo_ops;
+   GRANT EXECUTE ON FUNCTION request_reconciliation(text, text, text)
+     TO evo_ops_admin;
+   GRANT EXECUTE ON FUNCTION record_registry_audit(
+     text, bigint, bigint, bigint, bigint, bigint, text
+   )
+     TO evo_ops_admin;
 
    GRANT SELECT (
-     model_key, version, display_name, provider_slug, base_url,
-     provider_model_id, auth_mode, context_window_tokens, params, surfaces,
-     micros_per_input_token, micros_per_cached_input_token,
-     micros_per_output_token, enabled, is_default_for, created_at
-   ) ON model_configs TO evo_ops_registry;
+     version, provider_name, model_name, provider_slug, model_slug,
+     platform_enabled, byok_enabled, thinking_levels, default_thinking,
+     context_window_tokens, params, surfaces, micros_per_input_token,
+     micros_per_cached_input_token, micros_per_output_token, enabled,
+     is_default_for, created_at, updated_at, created_by, updated_by
+   ) ON model_configs TO evo_ops_admin;
    GRANT SELECT (id, version, updated_at)
-     ON model_registry_state TO evo_ops_registry;
+     ON model_registry_state TO evo_ops_admin;
    GRANT SELECT (
-     id, embedding_model_key, embedding_model_version, embedding_dim
-   ) ON workspaces TO evo_ops_registry;
+     id, embedding_provider_slug, embedding_model_slug,
+     embedding_model_version, embedding_dim
+   ) ON workspaces TO evo_ops_admin;
    GRANT SELECT (
-     id, email, locale, chat_model_key, generate_model_key,
-     editor_model_key, quiz_model_key
-   ) ON users TO evo_ops_registry;
+     id, email, locale,
+     chat_model_provider_slug, chat_model_slug,
+     generate_model_provider_slug, generate_model_slug,
+     editor_model_provider_slug, editor_model_slug,
+     quiz_model_provider_slug, quiz_model_slug
+   ) ON users TO evo_ops_admin;
    GRANT SELECT (
      user_id, email_workspace_invite, email_membership, email_billing
-   ) ON notification_prefs TO evo_ops_registry;
+   ) ON notification_prefs TO evo_ops_admin;
    GRANT SELECT (
      id, user_id, kind, data, href, workspace_id, workspace_invite_id,
      at, read_at
-   ) ON notifications TO evo_ops_registry;
-   GRANT SELECT (idempotency_key) ON email_outbox TO evo_ops_registry;
+   ) ON notifications TO evo_ops_admin;
+   GRANT SELECT (idempotency_key) ON email_outbox TO evo_ops_admin;
+   GRANT SELECT (user_id, provider_slug)
+     ON user_llm_credentials TO evo_ops_admin;
 
    GRANT INSERT (
-     model_key, version, display_name, provider_slug, base_url,
-     provider_model_id, auth_mode, context_window_tokens, params, surfaces,
-     micros_per_input_token, micros_per_cached_input_token,
-     micros_per_output_token, enabled, is_default_for
-   ) ON model_configs TO evo_ops_registry;
-   GRANT UPDATE (
-     provider_slug, base_url, enabled, is_default_for
-   ) ON model_configs TO evo_ops_registry;
+     version, provider_name, model_name, provider_slug, model_slug,
+     platform_enabled, byok_enabled, thinking_levels, default_thinking,
+     context_window_tokens, params, surfaces, micros_per_input_token,
+     micros_per_cached_input_token, micros_per_output_token, enabled,
+     is_default_for, created_by, updated_by
+   ) ON model_configs TO evo_ops_admin;
+   GRANT UPDATE ON model_configs TO evo_ops_admin;
+   GRANT EXECUTE ON FUNCTION model_configs_thinking_ok(text[], text[], text)
+     TO evo_ops_admin;
    GRANT UPDATE (version, updated_at)
-     ON model_registry_state TO evo_ops_registry;
+     ON model_registry_state TO evo_ops_admin;
    GRANT UPDATE (
-     chat_model_key, generate_model_key, editor_model_key, quiz_model_key,
+     chat_model_provider_slug, chat_model_slug,
+     generate_model_provider_slug, generate_model_slug,
+     editor_model_provider_slug, editor_model_slug,
+     quiz_model_provider_slug, quiz_model_slug,
      updated_at
-   ) ON users TO evo_ops_registry;
+   ) ON users TO evo_ops_admin;
    GRANT INSERT (
      id, user_id, kind, data, href, workspace_id, workspace_invite_id, at
-   ) ON notifications TO evo_ops_registry;
+   ) ON notifications TO evo_ops_admin;
    GRANT INSERT (
      id, user_id, to_email, template, locale, payload, idempotency_key
-   ) ON email_outbox TO evo_ops_registry;
+   ) ON email_outbox TO evo_ops_admin;
    ```
 
-   `ops_completed_assistant_messages` exposes only an id, trace id, and
-   timestamp. Do not replace that view grant with `SELECT` on `messages`.
-   `touch_operator_seen` is `SECURITY DEFINER`; it is the auth role's only
-   privilege beyond connecting and schema usage. Do not grant `UPDATE` on
-   `operators`, `DELETE` on `model_configs`, schema creation, sequence access,
-   or generic
+   `ops_assistant_turns` exposes only an assistant message id, owning user id,
+   lifecycle status, trace id, and timestamp. Do not replace that view grant
+   with `SELECT` on `messages`.
+   `touch_operator_seen`, `request_reconciliation`, and
+   `record_registry_audit` are `SECURITY DEFINER`.
+   The read/auth role cannot update `operators` directly. The admin-actions
+   role cannot write the reconciliation queue or `operator_audit_events`
+   directly. The two action functions check the operator token again and append
+   the audit event inside the mutation transaction. Audit triggers reject
+   `UPDATE`, `DELETE`, and `TRUNCATE`, including attempts by the database owner.
+   `model_configs_thinking_ok` is the CHECK helper for registry inserts; grant
+   EXECUTE to `evo_ops_admin` only. Do not grant `UPDATE` on `operators`,
+   `DELETE` on `model_configs`, audit-table writes, schema creation, sequence access, or generic
    `ALL TABLES IN SCHEMA` privileges.
 
    PostgreSQL grants function execution to `PUBLIC` by default. The two
@@ -579,10 +806,10 @@ delete a live creator's `rag_contents` row.
    production service uses a non-owner database role, grant that role the exact
    functions it calls before applying the global revoke.
 
-4. Put the three URLs in the matching `OPS_*_DATABASE_URL` variables. Restart
-   ops, verify `current_user` through all three pools, and check that no role
-   belongs to a broader role. A viewer registry Save must fail before the
-   application uses `OPS_REGISTRY_DATABASE_URL`.
+4. Put the two URLs in `OPS_DATABASE_URL` and `OPS_ADMIN_DATABASE_URL`. Restart
+   ops, verify `current_user` through both pools, and check that neither role
+   belongs to a broader role. Viewer mutation requests must fail before the
+   application opens the admin pool.
 
 ---
 
@@ -592,10 +819,10 @@ Most surfaces are safe to retarget from the ops dashboard: chat, generate,
 editor, ingest and vision all resolve a pin per request or per job, so a new
 default applies to the next one and everything in flight keeps what it had.
 
-The first dashboard version deliberately disallows aliases: a grid row key must
-equal every catalog pin's `model_key`. Each surface cell may still select a
-different immutable version of that key. This keeps stable user preferences
-without adding a second hidden key namespace.
+The dashboard deliberately disallows aliases: each grid row is the natural
+`(provider_slug, model_slug)` identity. Each surface cell may still select a
+different immutable version of that identity. User preferences store the same
+two slugs, so there is no second hidden key namespace.
 
 Embedding is not one of those, and neither is deleting any row.
 
@@ -613,15 +840,15 @@ changing it, be sure you accept:
 - **The old model must keep working forever.** Every existing workspace still
   resolves it on every search and every upload. Postgres refuses
   `enabled=false`, `DELETE`, stripping or adding the embedding surface, and
-  in-place changes to the pin, `provider_model_id`, or `params`
+  in-place changes to the pin, `model_slug`, or `params`
   (`protect_embedding_model_configs`). Same width from another model is a
   different space and a different table. Add a `rag_chunk_vectors_*` table,
   an allowlist entry in both languages, a `model_configs` row with
   `params.vector_table`, then in one transaction clear the old
   `is_default_for` and mark the new row (Postgres refuses two defaults for
   the same surface). Bump `model_registry_state.version`. Old workspaces
-  stay on the old pin. If a vendor drops the model, change `base_url` /
-  `provider_slug` only and serve the **same weights** from elsewhere.
+  stay on the old pin. If a vendor drops the model, create a new version
+  with a different exact `model_slug` that serves the **same weights**.
 - **Deprecating a table is not possible.** Every embedding row stays
   enabled, and every pin in use keeps its table.
 - **A new model is a migration, not a config change.** Even at 2560-d.
@@ -642,21 +869,21 @@ Embedding rows are the ones the database will actually reject a delete of.
 
 ## 10. Post-deploy verification
 
-| Check | Expected |
-| --- | --- |
-| `curl -sI https://api.abcd.com/healthz` | `x-request-id` header present |
-| Send a chat turn, then `SELECT * FROM usage_events ORDER BY id DESC LIMIT 5` | rows with non-zero `output_tokens` |
-| Same `trace_id` searched in Sentry and in gateway logs | both return the request |
-| `SELECT * FROM credit_reservations WHERE status='open' AND expires_at < now()` | empty after a minute (sweeper is running) |
-| `SELECT * FROM usage_daily` | populated within 5 minutes (rollup is running) |
-| `curl -sI https://ops.evonotes.com` without Access credentials | Cloudflare Access login or denial, never the app |
-| Sign in through Access + Clerk as a user absent from `operators` | `403` from the ops service |
-| Sign in as an operator with `role='viewer'`, then submit registry Save | `403`; registry writer pool remains unopened |
-| `curl -sI http://127.0.0.1:8082/healthz` on the host | `200`; :8082 is not reachable from another host |
-| Fire >200 AI requests in an hour, or 16 in a minute | `429` with `code: "ai_rate_limited"` |
-| Open 6 platform-paid AI calls at once | 6th returns `429 too_many_streams` |
-| Hit the origin IP directly | connection refused |
-| Coolify: `ss`/`docker ps` shows `:8080`/`:1234`/`:8082` bound on `0.0.0.0` | wrong: only Traefik `:80` should be public |
+| Check                                                                          | Expected                                         |
+| ------------------------------------------------------------------------------ | ------------------------------------------------ |
+| `curl -sI https://api.abcd.com/healthz`                                        | `x-request-id` header present                    |
+| Send a chat turn, then `SELECT * FROM usage_events ORDER BY id DESC LIMIT 5`   | rows with non-zero `output_tokens`               |
+| Same `trace_id` searched in Sentry and in gateway logs                         | both return the request                          |
+| `SELECT * FROM provider_sessions WHERE status='open' AND expires_at < now()` | empty after a minute (sweeper is running)        |
+| Open Ops Overview after sending a chat turn                                   | current-month usage appears within 30 seconds    |
+| `curl -sI https://ops.evonotes.com` without Access credentials                 | Cloudflare Access login or denial, never the app |
+| Sign in through Access + Clerk as a user absent from `operators`               | `403` from the ops service                       |
+| Sign in as an operator with `role='viewer'`, then submit registry Save         | `403`; registry writer pool remains unopened     |
+| `curl -sI http://127.0.0.1:8082/healthz` on the host                           | `200`; :8082 is not reachable from another host  |
+| Fire >200 AI requests in an hour, or 16 in a minute                            | `429` with `code: "ai_rate_limited"`             |
+| Open 6 platform-paid AI calls at once                                          | 6th returns `429 too_many_streams`               |
+| Hit the origin IP directly                                                     | connection refused                               |
+| Coolify: `ss`/`docker ps` shows `:8080`/`:1234`/`:8082` bound on `0.0.0.0`     | wrong: only Traefik `:80` should be public       |
 
 If `usage_events` stays empty while chat works, the usual cause is a streamed
 completion without `stream_options={"include_usage": True}` — the request
@@ -750,3 +977,294 @@ Import stays `POST /api/workspaces/{id}/sources/import` with `fileIds` and,
 for OneDrive, optional `driveIds` of the same length. Download uses
 `/drives/{driveId}/items/{id}` when `driveId` is present, otherwise
 `/me/drive/items/{id}`.
+
+---
+
+## 12. UAT review environment and external-service sandboxes
+
+This section is the manual counterpart to the repository's review automation.
+There is no deployed UAT system yet, so complete it only when rapid local
+development has settled enough to keep an environment running. Until then,
+source review and local tests work normally; remote smoke, authenticated
+authorization tests, and Strix UAT scans must remain disabled.
+
+Start the guided setup from the repository root:
+
+```bash
+scripts/review/setup-uat.sh
+```
+
+The wizard records local values in ignored `review/.env.uat` with mode `0600`.
+When the GitHub CLI is authenticated, it can also populate the repository
+variables and `uat` environment secrets listed below. It cannot create Clerk,
+Stripe, Coolify, DNS, database, or bucket resources; those remain deliberate
+human actions.
+
+### 12.1 Isolation model
+
+UAT should resemble production without sharing state or credentials with it.
+
+| Resource            | Local development    | UAT                                             | Production                                   |
+| ------------------- | -------------------- | ----------------------------------------------- | -------------------------------------------- |
+| App compute         | local compose        | separate Coolify environment/resource           | production Coolify environment/resource      |
+| Postgres and Redis  | disposable/local     | dedicated UAT instances/volumes                 | production instances/volumes                 |
+| Blob storage        | local/test bucket    | dedicated private UAT bucket and key            | production private bucket and key            |
+| Clerk               | development instance | separate Clerk application, Production instance | production application's Production instance |
+| Stripe              | sandbox/test data    | named UAT sandbox                               | live mode                                    |
+| Users and content   | developer fixtures   | synthetic accounts and fixtures only            | real users and content                       |
+| Scanner credentials | local only           | GitHub `uat` environment                        | never supplied to scanners                   |
+
+Do not clone a production database, user table, object bucket, Clerk users, API
+keys, or webhook secrets into UAT. Never set `AUTH_DISABLED`,
+`E2E_AUTH_ENABLED`, `OPS_ACCESS_DISABLED`, `OPS_AUTH_DISABLED`, or
+`OPS_UNSAFE_DEVELOPMENT` in UAT. The E2E bypass in
+`deploy/docker-compose.e2e.yml` is for disposable CI only and is not a UAT
+authentication strategy.
+
+### 12.2 Create the UAT deployment
+
+1. Create a Coolify environment named `uat` and a separate Docker Compose
+   resource tracking `main`. Disable its native auto-deploy webhook; the
+   workflow pins the candidate through `git_commit_sha`. Use
+   `deploy/docker-compose.prod.yml`; do not reuse the production resource.
+   Enable **Include Source Commit in Build**, matching production.
+2. Provision separate Postgres and Redis state. A separate database on the same
+   managed cluster is acceptable only if it has a distinct owner, database
+   name, credentials, backup policy, and no cross-database application grants.
+3. Create a separate private B2 bucket and bucket-scoped key. Apply the same
+   CORS and lifecycle policy described in §4, substituting only the UAT SPA
+   origin. Do not point UAT at the production bucket.
+4. Choose explicit hostnames, for example `uat.example.com`,
+   `api.uat.example.com`, `collab.uat.example.com`, and optionally
+   `ops.uat.example.com`. Configure DNS, Cloudflare, tunnel routing, origin
+   lockdown, cache bypass, WebSocket support, and `/api` reverse proxy using
+   §§1–3. Do not use wildcard host authorization for review tooling.
+5. Copy `deploy/.env.prod.example` into the UAT resource and fill it with only
+   UAT values. Set `APP_ENV=production`; UAT must exercise production safety
+   checks. Use the UAT origins in `APP_URL`, CORS, collaboration, OAuth, Sentry,
+   and browser build variables.
+6. Create a separate Cloudflare Pages project for the UAT SPA. Either create it
+   as Direct Upload or disable builds on an existing Git-integrated project;
+   GitHub Actions deploys `dist/` with Wrangler. Set its production branch to
+   `main` and attach only the UAT domains.
+7. Deploy once, inspect the `migrate` container, and verify all public routes
+   resolve through Cloudflare. This initial deployment may use a unique random
+   temporary Clerk webhook secret until the public UAT webhook URL exists.
+   Replace it with Clerk's actual endpoint signing secret and redeploy before
+   creating fixtures.
+
+Give UAT a visible banner and separate Sentry/PostHog projects if practical.
+Budget alerts and conservative rate limits belong on UAT too: automated
+security exploration can generate more traffic and LLM work than a human test.
+
+### 12.3 Clerk: a separate UAT application
+
+Create a separate Clerk application named `Evo Notes UAT`. Use its Production
+instance for UAT so custom domains, production-key behavior, cookies, webhook
+verification, and browser restrictions match production. This does not mean
+sharing the real production Clerk application: UAT and production must have
+different user directories and keys. Within the real production environment,
+the product and ops dashboard still use the same production Clerk instance as
+required by §1.4.
+
+In the Clerk dashboard:
+
+1. Activate the UAT application's Production instance and configure the UAT
+   application domain. Complete any required Clerk DNS records.
+2. Enable the same sign-in methods, session lifetime, organization settings,
+   and restrictions intended for production. If Google or Microsoft OAuth is
+   enabled, create separate UAT OAuth credentials and UAT redirect URLs.
+3. Add the UAT SPA and ops origins to the instance's allowed origins and
+   redirect URLs. Do not add production origins unless the provider explicitly
+   requires them.
+4. Create `https://api.uat.example.com/webhooks/clerk`, selecting the same
+   events as production. Copy its signing secret into UAT
+   `CLERK_WEBHOOK_SECRET` and redeploy.
+5. Put the UAT publishable key in the SPA build as
+   `VITE_CLERK_PUBLISHABLE_KEY`, and the UAT secret key in the server as
+   `CLERK_SECRET_KEY`. The GitHub authenticated tests receive the same values
+   as `CLERK_PUBLISHABLE_KEY` and the protected `CLERK_SECRET_KEY` environment
+   secret. Never put the secret key in a repository variable or browser build.
+
+Create five synthetic accounts. Dedicated inbox aliases are sufficient if the
+mail provider routes them separately:
+
+- owner: creates the private fixture;
+- editor: invited with edit access;
+- commenter: invited with comment access;
+- viewer: invited with view access;
+- other: never invited, used to check cross-tenant denial.
+
+Use no real customer identity or content. Playwright uses the Clerk Backend API
+to mint a short-lived, one-time sign-in token for the selected synthetic user;
+CI does not need account passwords and the Clerk secret never enters the
+browser. Keep MFA requirements consistent with production, but verify that the
+sign-in-token flow works before enabling unattended runs. Suspended and
+over-quota accounts are useful future fixtures but are not required by the
+initial UAT workflow.
+
+### 12.4 Stripe: a persistent UAT sandbox
+
+Stripe's dashboard view switch does not turn a live integration into a test
+integration. Live mode and sandboxes/test data have separate API keys,
+customers, products, prices, events, and webhook secrets. Keep production in
+live mode and create a named, persistent `Evo Notes UAT` sandbox for the UAT
+deployment. Local development may use the same sandbox at first, but a separate
+developer sandbox is preferable once tests mutate subscriptions concurrently.
+
+In the UAT sandbox:
+
+1. Create the Pro and Team products and recurring prices with the same billing
+   intervals and entitlements intended for production. Record the UAT price
+   IDs; they are not interchangeable with live price IDs.
+2. Create a webhook endpoint at
+   `https://api.uat.example.com/webhooks/stripe` with the same event selection
+   as production. Record this endpoint's UAT signing secret.
+3. Put only `sk_test_…`, the UAT webhook secret, and UAT price IDs in the UAT
+   Coolify resource as `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`,
+   `STRIPE_PRICE_PRO`, and `STRIPE_PRICE_TEAM`. Set the matching sandbox
+   publishable key in `VITE_STRIPE_PUBLISHABLE_KEY` if the frontend needs it.
+4. Exercise one successful subscription, update, cancellation, failed payment,
+   duplicate webhook delivery, and out-of-order delivery using synthetic
+   customers. Confirm plan state, idempotency, and reconciliation before the
+   first production release.
+
+Stripe credentials are deployment secrets, not review-runner secrets. The
+wizard keeps them locally only to reduce transcription mistakes; paste them
+into Coolify yourself. Do not add them to GitHub Actions unless a future test
+has a narrow, documented reason to call Stripe directly.
+
+### 12.5 Create the authorization fixture
+
+After Clerk webhooks are healthy and the UAT deployment is stable:
+
+1. Sign in as the synthetic owner and create one private workspace and one
+   small, non-sensitive material.
+2. Invite the editor, commenter, and viewer with their matching roles. Sign in
+   as each account and accept every invitation.
+3. Leave the `other` account uninvited. It must receive the same not-found
+   response as any unrelated tenant rather than learning that the fixture
+   exists.
+4. Record the workspace and material IDs in the wizard. Do not put fixture
+   content, session cookies, invitation tokens, or passwords in GitHub.
+5. Reset or recreate the fixture whenever a scanner changes it. Keep the IDs
+   current; stale IDs are failed setup, not passing authorization tests.
+
+The authenticated UAT suite checks read visibility, owner-only statistics, and
+collaboration token modes for all five roles. Extend this fixture later for
+suspension, over-quota, deletion, billing, import, and asynchronous lifecycle
+tests; each extension should use bounded synthetic data and deterministic
+cleanup.
+
+### 12.6 GitHub Actions configuration
+
+Create Actions environments named `uat` and `production`, both restricted to
+`main`. Do not add required reviewers to `uat`, because successful `main` CI is
+supposed to deploy there unattended. Add the available approval protection to
+`production`. The agent-driven Strix workflows remain manual dispatch only.
+
+Repository variables used by UAT validation and activation:
+
+```text
+UAT_DEPLOYMENT_ENABLED=false
+UAT_TARGET_AUTHORIZED=true
+UAT_APP_URL=https://uat.example.com
+UAT_API_URL=https://api.uat.example.com
+UAT_COLLAB_URL=wss://collab.uat.example.com
+UAT_OPS_URL=https://ops.uat.example.com
+UAT_ALLOWED_HOSTS=uat.example.com,api.uat.example.com,collab.uat.example.com,ops.uat.example.com
+CLERK_PUBLISHABLE_KEY=<UAT publishable key>
+UAT_OWNER_EMAIL=<synthetic owner>
+UAT_EDITOR_EMAIL=<synthetic editor>
+UAT_COMMENTER_EMAIL=<synthetic commenter>
+UAT_VIEWER_EMAIL=<synthetic viewer>
+UAT_OTHER_EMAIL=<synthetic unrelated user>
+UAT_FIXTURE_WORKSPACE_ID=<fixture id>
+UAT_FIXTURE_MATERIAL_ID=<fixture id>
+STRIX_LLM=openai/gpt-5.4
+STRIX_UAT_MAX_BUDGET=40
+STRIX_SOURCE_MAX_BUDGET=40
+```
+
+Variables on the `uat` environment:
+
+```text
+COOLIFY_API_URL=https://coolify.example.com/api/v1
+COOLIFY_RESOURCE_UUID=<UAT Coolify application UUID>
+CLOUDFLARE_ACCOUNT_ID=<account id>
+CLOUDFLARE_PAGES_PROJECT=<UAT Pages project>
+CLOUDFLARE_PAGES_BRANCH=main
+DEPLOYMENT_APP_URL=https://uat.example.com
+DEPLOYMENT_API_URL=https://api.uat.example.com
+DEPLOYMENT_COLLAB_URL=wss://collab.uat.example.com
+DEPLOYMENT_OPS_URL=https://ops.uat.example.com
+CLERK_PUBLISHABLE_KEY=<UAT publishable key>
+# Optional public VITE_* values: Sentry, PostHog, picker/OAuth, feature flags
+```
+
+Protected secrets on the `uat` environment:
+
+```text
+COOLIFY_API_TOKEN=<token able to update, deploy, and read the UAT application>
+CLOUDFLARE_API_TOKEN=<token with Cloudflare Pages Edit for the UAT project>
+CLERK_SECRET_KEY=<UAT Clerk secret key>
+LLM_API_KEY=<key accepted by STRIX_LLM>
+STRIX_UAT_AUTH_INSTRUCTIONS=<optional synthetic-only instructions>
+```
+
+Configure the `production` environment with the same deployment variable names,
+but production URLs, the production Coolify UUID, the production Pages project,
+and the production Clerk publishable key. Add separate
+`COOLIFY_API_TOKEN` and `CLOUDFLARE_API_TOKEN` environment secrets. Do not add
+Clerk, Stripe, database, B2, or LLM server secrets to GitHub: those stay in the
+production Coolify resource. Disable native Git auto-deploy on both production
+resources so the protected workflow is the only release path.
+
+Keep `STRIX_UAT_AUTH_INSTRUCTIONS` limited to synthetic accounts and the
+minimum navigation needed. If authenticated autonomous exploration is worth
+the extra coverage, it may contain a dedicated synthetic password; rotate that
+password after the scan and inspect artifacts for accidental disclosure. The
+workflow writes the value to a mode-`0600` temporary file and removes that file
+after the scan. The short-lived Clerk-token Playwright suite covers the fixed
+authorization matrix even when Strix remains unauthenticated.
+
+### 12.7 Baseline, automation, and release gate
+
+1. Leave `UAT_DEPLOYMENT_ENABLED=false` initially. This prevents successful CI
+   runs from deploying to a half-configured target. It does not control Strix:
+   both Strix workflows are permanently manual dispatch only.
+2. Manually dispatch **Deploy UAT** from `main`. It deploys the selected SHA and
+   automatically calls **Deterministic UAT quality**. Inspect Coolify, Pages,
+   smoke, and Playwright evidence, including release-SHA, accessibility, and
+   320 CSS-pixel reflow checks.
+3. Repair the fixture and tune only documented budgets or exclusions. Do not
+   weaken authorization assertions or allow-host guards to make a run green.
+4. After a stable baseline, set `UAT_DEPLOYMENT_ENABLED=true`. Every successful
+   `CI` run for `main` then deploys its exact SHA to UAT and calls the same gate.
+   Editor performance remains manual; no review workflow has a schedule.
+5. When you explicitly want the costly scanner baseline, manually dispatch
+   **Manual repository security review** and **Manual UAT review with Strix**
+   with enforcement off. Triage candidates rather than suppressing unexplained
+   results. Neither workflow has a schedule.
+6. When the release warrants the costly review, explicitly invoke
+   `$review-repository` in `release` mode and manually dispatch both Strix
+   workflows for the exact candidate revision with `enforce_findings=true`.
+   Review medium findings and coverage gaps manually. This remains a human
+   release decision, not an automatic production prerequisite.
+7. Perform the manual Stripe sandbox sequence in §12.4 plus the release checks
+   for over-quota/suspension, ingest/index/search, cleanup, reconciliation,
+   collaboration revocation, and recovery until dedicated synthetic fixtures
+   automate them.
+8. Dispatch **Promote revision to production** with the exact full SHA. The
+   workflow re-stages UAT, re-runs the deterministic gate, waits for production
+   approval, deploys both production resources, and verifies the public release
+   SHA and health. Then perform the bounded login, upload, collaboration,
+   webhook, and observability checks in §10. Production is not a penetration-
+   test target.
+
+Set `UAT_DEPLOYMENT_ENABLED=false` immediately if UAT is being rebuilt, its
+fixture is invalid, or allowed-host ownership changes. Manual deployment and
+quality dispatch remain available for repair. Strix cannot run until a person
+dispatches it. Rotate Clerk and LLM secrets after exposure or personnel
+changes. Delete stale artifacts under the repository's retention policy; they
+should contain sanitized evidence, but they are still security-sensitive.

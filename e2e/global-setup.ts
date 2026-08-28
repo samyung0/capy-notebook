@@ -79,30 +79,6 @@ function applySeed() {
   }
 }
 
-function runBackendAccessTests() {
-  const result = spawnSync(
-    'go',
-    // -p 1 because both packages reapply the migration on start-up, and
-    // concurrent DDL on one database deadlocks.
-    ['test', '-p', '1', './internal/store', './internal/httpapi', '-count=1'],
-    {
-      cwd: path.join(root, 'server'),
-      encoding: 'utf8',
-      env: {
-        ...process.env,
-        REQUIRE_INTEGRATION_DB: 'true',
-        TEST_DATABASE_URL: `postgres://evo:evo@127.0.0.1:${process.env.E2E_DB_PORT}/evo?sslmode=disable`,
-      },
-      shell: process.platform === 'win32',
-    }
-  );
-  if (result.status !== 0) {
-    throw new Error(
-      `backend access tests failed:\n${result.stdout}\n${result.stderr}`
-    );
-  }
-}
-
 function shutDownCompose() {
   if (process.env.E2E_KEEP_STACK === 'true') return;
   console.error('[e2e] shutting down docker compose…');
@@ -117,7 +93,6 @@ export default async function globalSetup() {
   if (process.env.E2E_SKIP_COMPOSE === 'true') {
     await Promise.all([waitForHealth(), waitForHealth(collaborationUrl)]);
     applySeed();
-    runBackendAccessTests();
     return;
   }
 
@@ -127,8 +102,6 @@ export default async function globalSetup() {
     await Promise.all([waitForHealth(), waitForHealth(collaborationUrl)]);
     console.log('[e2e] applying seed…');
     applySeed();
-    console.log('[e2e] running backend access tests…');
-    runBackendAccessTests();
     console.log('[e2e] ready');
   } catch (err) {
     // Playwright skips globalTeardown when setup throws, so tear down here.

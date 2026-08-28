@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/evonotes/server/internal/materialdoc"
+	"github.com/evonotes/server/internal/models"
 	"github.com/evonotes/server/internal/store"
 )
 
@@ -85,44 +86,39 @@ type (
 	MaterialRef        = store.MaterialRef
 )
 
-type ModelReasoning struct {
-	CanDisable    bool     `json:"canDisable"`
-	Efforts       []string `json:"efforts" nullable:"false"`
-	DefaultMode   string   `json:"defaultMode"`
-	DefaultEffort string   `json:"defaultEffort"`
+type ModelThinking struct {
+	Levels  []string `json:"levels" nullable:"false"`
+	Default string   `json:"default"`
 }
 
 type ModelOption struct {
-	Key          string          `json:"key"`
-	DisplayName  string          `json:"displayName"`
-	IsDefault    bool            `json:"isDefault"`
-	Available    bool            `json:"available"`
-	UsesUserKey  bool            `json:"usesUserKey"`
-	ProviderSlug string          `json:"providerSlug"`
-	Reasoning    *ModelReasoning `json:"reasoning,omitempty"`
+	ProviderName string         `json:"providerName"`
+	ModelName    string         `json:"modelName"`
+	ModelSlug    string         `json:"modelSlug"`
+	IsDefault    bool           `json:"isDefault"`
+	Available    bool           `json:"available"`
+	UsesUserKey  bool           `json:"usesUserKey"`
+	ProviderSlug string         `json:"providerSlug"`
+	Thinking     *ModelThinking `json:"thinking,omitempty"`
 }
 
 type ModelsResponse struct {
-	Models                  []ModelOption `json:"models" nullable:"false"`
-	SelectedKey             string        `json:"selectedKey"`
-	DefaultKey              string        `json:"defaultKey"`
-	SelectedReasoningMode   string        `json:"selectedReasoningMode"`
-	SelectedReasoningEffort string        `json:"selectedReasoningEffort"`
+	Models           []ModelOption `json:"models" nullable:"false"`
+	SelectedModel    models.Ref    `json:"selectedModel"`
+	DefaultModel     models.Ref    `json:"defaultModel"`
+	SelectedThinking string        `json:"selectedThinking"`
 }
 
 // SetModelPrefsReq patches one or more surface preferences. Omitted fields are
 // left as they are, so a picker on one surface cannot reset another.
 type SetModelPrefsReq struct {
-	ChatModelKey            *string `json:"chatModelKey,omitempty"`
-	GenerateModelKey        *string `json:"generateModelKey,omitempty"`
-	EditorModelKey          *string `json:"editorModelKey,omitempty"`
-	QuizModelKey            *string `json:"quizModelKey,omitempty"`
-	ChatReasoningMode       *string `json:"chatReasoningMode,omitempty"`
-	ChatReasoningEffort     *string `json:"chatReasoningEffort,omitempty"`
-	GenerateReasoningMode   *string `json:"generateReasoningMode,omitempty"`
-	GenerateReasoningEffort *string `json:"generateReasoningEffort,omitempty"`
-	QuizReasoningMode       *string `json:"quizReasoningMode,omitempty"`
-	QuizReasoningEffort     *string `json:"quizReasoningEffort,omitempty"`
+	ChatModel        *models.Ref `json:"chatModel,omitempty"`
+	GenerateModel    *models.Ref `json:"generateModel,omitempty"`
+	EditorModel      *models.Ref `json:"editorModel,omitempty"`
+	QuizModel        *models.Ref `json:"quizModel,omitempty"`
+	ChatThinking     *string     `json:"chatThinking,omitempty"`
+	GenerateThinking *string     `json:"generateThinking,omitempty"`
+	QuizThinking     *string     `json:"quizThinking,omitempty"`
 }
 
 type LLMCredential struct {
@@ -130,8 +126,17 @@ type LLMCredential struct {
 	Last4        string `json:"last4"`
 }
 
+type LLMCredentialProvider struct {
+	ProviderSlug string   `json:"providerSlug"`
+	Eligible     bool     `json:"eligible"`
+	Reason       string   `json:"reason,omitempty"`
+	Unlocks      []string `json:"unlocks" nullable:"false"`
+	Last4        string   `json:"last4,omitempty"`
+}
+
 type LLMCredentialsResponse struct {
-	Credentials []LLMCredential `json:"credentials" nullable:"false"`
+	Credentials []LLMCredential         `json:"credentials" nullable:"false"`
+	Providers   []LLMCredentialProvider `json:"providers" nullable:"false"`
 }
 
 type UpsertLLMCredentialReq struct {

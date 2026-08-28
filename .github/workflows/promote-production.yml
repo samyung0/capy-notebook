@@ -1,0 +1,77 @@
+name: Promote revision to production
+run-name: Promote ${{ inputs.revision }} to production
+
+on:
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Full main-branch SHA to promote
+        required: true
+        type: string
+      confirmation:
+        description: Confirm the production promotion
+        required: true
+        type: choice
+        options:
+          - DEPLOY
+
+permissions:
+  contents: read
+
+concurrency:
+  group: uat-promotion-flow
+  cancel-in-progress: false
+
+jobs:
+  validate_candidate:
+    runs-on: ubuntu-24.04
+    outputs:
+      revision: ${{ steps.revision.outputs.revision }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: main
+      - name: Validate the release candidate
+        id: revision
+        env:
+          CANDIDATE_REVISION: ${{ inputs.revision }}
+        run: |
+          [[ "$GITHUB_REF" == "refs/heads/main" ]] || {
+            echo "Run production promotion from main." >&2
+            exit 1
+          }
+          [[ "$CANDIDATE_REVISION" =~ ^[0-9a-fA-F]{40}$ ]] || {
+            echo "Revision must be a full 40-character Git SHA." >&2
+            exit 1
+          }
+          git cat-file -e "${CANDIDATE_REVISION}^{commit}"
+          git merge-base --is-ancestor "$CANDIDATE_REVISION" origin/main || {
+            echo "Revision is not reachable from origin/main." >&2
+            exit 1
+          }
+          echo "revision=$CANDIDATE_REVISION" >> "$GITHUB_OUTPUT"
+
+  restage_uat:
+    needs: validate_candidate
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment_name: uat
+      revision: ${{ needs.validate_candidate.outputs.revision }}
+
+  uat_quality_gate:
+    needs:
+      - validate_candidate
+      - restage_uat
+    uses: ./.github/workflows/uat-quality.yml
+    with:
+      revision: ${{ needs.validate_candidate.outputs.revision }}
+
+  deploy_production:
+    needs:
+      - validate_candidate
+      - uat_quality_gate
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment_name: production
+      revision: ${{ needs.validate_candidate.outputs.revision }}

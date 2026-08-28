@@ -1,14 +1,18 @@
 # Dev stack for the Evo Notes backend.
 #   docker compose -f deploy/docker-compose.yml up --build
 #
+# Production / Coolify: deploy/docker-compose.prod.yml
+# (MIGRATE=false, /migrate one-shot, no host ports). See
+# openwiki/deployment-runbook.md §1.1.
+#
 # - db        : Postgres 16 + pgvector. The retrieval index lives in the same
 #               schema the Go migrations own, so the stock pgvector image is
 #               enough — no custom build, no Apache AGE.
 # - redis     : pub/sub bus for live ingest progress (worker -> server -> SSE).
 # - server    : Go gateway (the frontend's /api). Writes uploads to Backblaze
 #               B2, subscribes to Redis and fans progress out over SSE.
-# - worker    : Python ingest worker. Parses on Modal (GPU MinerU) or the MinerU
-#               lite relay, chunks/embeds into rag_chunks, publishes progress.
+# - worker    : Python ingest worker. Parses with CPU Marker + RapidOCR on
+#               Modal, chunks/embeds into rag_chunks, and publishes progress.
 # - retrieval : Python FastAPI chat/generate over the in-house retrieval index.
 #
 # Worker downloads B2 objects before parsing. Real ingest needs B2 credentials,
@@ -93,6 +97,8 @@ services:
       <<: *observability
       DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
       ADDR: ":8080"
+      # Local stack: the API applies numbered files and the demo seed.
+      # Production serving API should be false; run /migrate from this image first.
       MIGRATE: "true"
       SENTRY_DSN: ${SENTRY_DSN_GATEWAY:-}
       # Backblaze B2 source-object storage.
@@ -113,6 +119,8 @@ services:
       EVO_ENGINE: ${EVO_ENGINE:-evo}
       PIPELINE_URL: http://retrieval:8001
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
+      IMPORT_RELAY_ENQUEUE_URL: ${IMPORT_RELAY_ENQUEUE_URL:-}
+      IMPORT_RELAY_SECRET: ${IMPORT_RELAY_SECRET:-}
       LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:-}
       APP_URL: ${APP_URL:-http://localhost:5173}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
@@ -163,10 +171,10 @@ services:
       OPS_ADDR: ":8082"
       OPS_STATIC_DIR: /app/static
       OPS_DATABASE_URL: ${OPS_DATABASE_URL:-}
-      OPS_AUTH_DATABASE_URL: ${OPS_AUTH_DATABASE_URL:-}
-      OPS_REGISTRY_DATABASE_URL: ${OPS_REGISTRY_DATABASE_URL:-}
+      OPS_ADMIN_DATABASE_URL: ${OPS_ADMIN_DATABASE_URL:-}
       OPS_CF_ACCESS_ISSUER: ${OPS_CF_ACCESS_ISSUER:-}
       OPS_CF_ACCESS_AUDIENCE: ${OPS_CF_ACCESS_AUDIENCE:-}
+      OPS_CF_ACCESS_JWKS_URL: ${OPS_CF_ACCESS_JWKS_URL:-}
       OPS_ACCESS_DISABLED: ${OPS_ACCESS_DISABLED:-false}
       OPS_AUTH_DISABLED: ${OPS_AUTH_DISABLED:-false}
       OPS_UNSAFE_DEVELOPMENT: ${OPS_UNSAFE_DEVELOPMENT:-false}
@@ -177,8 +185,7 @@ services:
       OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
-      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
     expose:
       - "8082"
     ports:
@@ -194,7 +201,8 @@ services:
 
   worker:
     build:
-      context: ../pipeline
+      context: ..
+      dockerfile: pipeline/Dockerfile
     environment:
       <<: *observability
       DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
@@ -213,20 +221,14 @@ services:
       EVO_PARSE_FAST_SLOTS: ${EVO_PARSE_FAST_SLOTS:-72}
       MODAL_B2_ARTIFACTS: ${MODAL_B2_ARTIFACTS:-true}
       EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-ocr}
-      # Embeddings: credentials only. The model is pinned per workspace from
-      # model_configs. OPENROUTER_* is still read if EMBEDDING_* is unset.
-      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
-      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://openrouter.ai/api/v1}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-      EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
-      # Text LLM (DeepSeek). The ingest model comes from each job's pin.
+      # Platform keys match elitellm_providers.json. Model identity lives on
+      # model_configs.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
-      # Figure captions (Gemini, OpenAI-compatible endpoint). Whether a file is
-      # captioned at all is chosen per upload and carried on the job.
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
-      GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
       EVO_CAPTION_CONCURRENCY: ${EVO_CAPTION_CONCURRENCY:-8}
       EVO_CAPTION_MAX_EDGE: ${EVO_CAPTION_MAX_EDGE:-1280}
       EVO_CAPTION_VERSION: ${EVO_CAPTION_VERSION:-v1}
@@ -244,7 +246,8 @@ services:
 
   retrieval:
     build:
-      context: ../pipeline
+      context: ..
+      dockerfile: pipeline/Dockerfile
     environment:
       <<: *observability
       DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
@@ -254,16 +257,12 @@ services:
       GATEWAY_URL: http://server:8080
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
       LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:-}
-      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-}
-      EMBEDDING_BASE_URL: ${EMBEDDING_BASE_URL:-https://openrouter.ai/api/v1}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
-      OPENROUTER_BASE_URL: ${OPENROUTER_BASE_URL:-https://openrouter.ai/api/v1}
-      EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
-      EVO_QUERY_MODEL: ${EVO_QUERY_MODEL:-deepseek-v4-flash}
-      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
-      GEMINI_BASE_URL: ${GEMINI_BASE_URL:-https://generativelanguage.googleapis.com/v1beta/openai/}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
     ports:
       # Bound to localhost: this is a debug port. Do not publish :8001 on a
       # public interface — the gateway reaches retrieval over the docker network.

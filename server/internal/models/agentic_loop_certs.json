@@ -1,0 +1,10 @@
+{
+  "certified": {
+    "deepseek": {
+      "deepseek-v4-flash": true,
+      "deepseek-v4-flash-vision-exp": true,
+      "deepseek-v4-pro": true
+    }
+  },
+  "schemaVersion": 1
+}

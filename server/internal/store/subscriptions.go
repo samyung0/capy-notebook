@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -34,6 +35,23 @@ type Subscription struct {
 // customer.subscription.deleted, and the status becomes canceled.
 const entitlingStatuses = `('active','trialing','past_due')`
 
+var ErrReconciliationStale = errors.New("reconciliation snapshot changed")
+
+type SubscriptionVersion struct {
+	Count     int64
+	UpdatedAt time.Time
+}
+
+func lockSubscriptionUserTx(ctx context.Context, tx pgx.Tx, userID string) error {
+	var locked string
+	err := tx.QueryRow(ctx, `SELECT id FROM users WHERE id=$1 FOR UPDATE`, userID).
+		Scan(&locked)
+	if isNoRows(err) {
+		return ErrNotFound
+	}
+	return err
+}
+
 // UpsertSubscription records subscription state from a Stripe webhook and
 // re-derives the user's projected tier, in one transaction.
 //
@@ -47,6 +65,9 @@ func (s *Store) UpsertSubscription(ctx context.Context, sub Subscription) error 
 	}
 	defer tx.Rollback(ctx)
 
+	if err := lockSubscriptionUserTx(ctx, tx, sub.UserID); err != nil {
+		return err
+	}
 	changed, err := upsertSubscriptionTx(ctx, tx, sub)
 	if err != nil {
 		return err
@@ -131,6 +152,18 @@ func (s *Store) MarkSubscriptionPastDue(
 	}
 	defer tx.Rollback(ctx)
 	var userID string
+	err = tx.QueryRow(ctx, `
+		SELECT user_id FROM user_subscriptions
+		 WHERE stripe_subscription_id = $1`, stripeSubscriptionID).Scan(&userID)
+	if isNoRows(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := lockSubscriptionUserTx(ctx, tx, userID); err != nil {
+		return err
+	}
 	err = tx.QueryRow(ctx, `UPDATE user_subscriptions
 		SET status = 'past_due',
 		    stripe_event_created = greatest(stripe_event_created, $2),
@@ -184,18 +217,32 @@ func (s *Store) UserIDBySubscription(ctx context.Context, subscriptionID string)
 	return userID, err
 }
 
-// SyncSubscriptionsFromStripe makes our record match a live read of Stripe for
-// one user, where live is the entitling subscription Stripe reports or nil. It is
-// the reconciler's write path: unlike the webhook path it is authoritative rather
-// than ordered, so it stamps stripe_event_created with now() and thereby also
-// prevents a webhook redelivered from before the read from undoing it.
+func (s *Store) SubscriptionVersion(
+	ctx context.Context,
+	userID string,
+) (SubscriptionVersion, error) {
+	var version SubscriptionVersion
+	err := s.pool.QueryRow(ctx, `
+		SELECT count(*), COALESCE(max(updated_at), 'epoch'::timestamptz)
+		  FROM user_subscriptions WHERE user_id=$1`, userID).
+		Scan(&version.Count, &version.UpdatedAt)
+	return version, err
+}
+
+// SyncSubscriptionsFromStripe makes our rows match a complete live read of
+// Stripe's entitling subscriptions. observed is captured immediately before
+// the provider read. If a webhook commits during that read, the compare-and-
+// swap fails and the caller retries instead of overwriting newer state.
 //
 // It returns whether anything actually differed, so the caller can log real drift
 // instead of every user every night.
 func (s *Store) SyncSubscriptionsFromStripe(
 	ctx context.Context,
 	userID string,
-	live *Subscription,
+	live []Subscription,
+	observed SubscriptionVersion,
+	authoritativeAt int64,
+	run *ReconcileRun,
 ) (bool, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -203,17 +250,38 @@ func (s *Store) SyncSubscriptionsFromStripe(
 	}
 	defer tx.Rollback(ctx)
 
+	if run != nil {
+		if err := assertReconciliationLeaseTx(ctx, tx, *run); err != nil {
+			return false, err
+		}
+	}
+	if err := lockSubscriptionUserTx(ctx, tx, userID); err != nil {
+		return false, err
+	}
+	var current SubscriptionVersion
+	if err := tx.QueryRow(ctx, `
+		SELECT count(*), COALESCE(max(updated_at), 'epoch'::timestamptz)
+		  FROM user_subscriptions WHERE user_id=$1`, userID).
+		Scan(&current.Count, &current.UpdatedAt); err != nil {
+		return false, err
+	}
+	if current.Count != observed.Count || !current.UpdatedAt.Equal(observed.UpdatedAt) {
+		return false, ErrReconciliationStale
+	}
+
 	changed := false
-	keep := ""
-	if live != nil {
-		keep = live.StripeSubscriptionID
+	keep := make([]string, 0, len(live))
+	for i := range live {
+		subscription := &live[i]
+		keep = append(keep, subscription.StripeSubscriptionID)
 		// Drift is decided by comparing the material fields, not by whether the
 		// upsert touched a row: the upsert always advances the event stamp, so it
 		// always reports a write.
 		var stored Subscription
 		err := tx.QueryRow(ctx, `SELECT status, price_id, plan_tier, current_period_end,
 				cancel_at_period_end
-			FROM user_subscriptions WHERE stripe_subscription_id = $1`, keep).
+			FROM user_subscriptions WHERE stripe_subscription_id = $1`,
+			subscription.StripeSubscriptionID).
 			Scan(&stored.Status, &stored.PriceID, &stored.PlanTier,
 				&stored.CurrentPeriodEnd, &stored.CancelAtPeriodEnd)
 		switch {
@@ -222,15 +290,16 @@ func (s *Store) SyncSubscriptionsFromStripe(
 		case err != nil:
 			return false, err
 		default:
-			changed = stored.Status != live.Status ||
-				stored.PriceID != live.PriceID ||
-				stored.PlanTier != live.PlanTier ||
-				stored.CancelAtPeriodEnd != live.CancelAtPeriodEnd ||
-				!sameInstant(stored.CurrentPeriodEnd, live.CurrentPeriodEnd)
+			changed = changed ||
+				stored.Status != subscription.Status ||
+				stored.PriceID != subscription.PriceID ||
+				stored.PlanTier != subscription.PlanTier ||
+				stored.CancelAtPeriodEnd != subscription.CancelAtPeriodEnd ||
+				!sameInstant(stored.CurrentPeriodEnd, subscription.CurrentPeriodEnd)
 		}
-		live.UserID = userID
-		live.StripeEventCreated = time.Now().Unix()
-		if _, err := upsertSubscriptionTx(ctx, tx, *live); err != nil {
+		subscription.UserID = userID
+		subscription.StripeEventCreated = authoritativeAt
+		if _, err := upsertSubscriptionTx(ctx, tx, *subscription); err != nil {
 			return false, err
 		}
 	}
@@ -242,9 +311,10 @@ func (s *Store) SyncSubscriptionsFromStripe(
 		    stripe_event_created = greatest(stripe_event_created, $3),
 		    updated_at = now()
 		WHERE user_id = $1
-		  AND stripe_subscription_id <> $2
+		  AND NOT (stripe_subscription_id = ANY($2))
+		  AND stripe_event_created <= $3
 		  AND status IN `+entitlingStatuses,
-		userID, keep, time.Now().Unix())
+		userID, keep, authoritativeAt)
 	if err != nil {
 		return false, err
 	}

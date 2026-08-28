@@ -1,4 +1,4 @@
-import type { Question } from '@/api/types';
+import type { ModelRef, Question } from '@/api/types';
 import { browserLlmHost } from './browserLlm';
 import { isBrowserQuizModel } from './browserModels';
 import { gradeOpenViaCloud } from './cloudGrade';
@@ -14,7 +14,7 @@ import { gradeOpenAnswer } from './judge';
 export async function gradeAttemptQuestions(
   questions: Question[],
   answers: Record<string, Answer>,
-  opts: { modelKey: string; workspaceId?: string }
+  opts: { model: ModelRef; workspaceId?: string }
 ): Promise<{ questions: Question[]; awarded: number; max: number }> {
   const next: Question[] = [];
   for (const question of questions) {
@@ -38,10 +38,14 @@ export async function gradeAttemptQuestions(
       rubrics: question.rubrics.map((r) => r.value),
       userAnswer,
     };
-    // browser: keys stay in the tab. They never hit /quiz-grade or usage_events.
-    const result = isBrowserQuizModel(opts.modelKey)
+    const browserModel =
+      opts.model.providerSlug === 'browser'
+        ? `browser:${opts.model.modelSlug}`
+        : '';
+    // Browser models stay in the tab. They never hit /quiz-grade or usage_events.
+    const result = isBrowserQuizModel(browserModel)
       ? await gradeOpenAnswer(input, (prompt) =>
-          browserLlmHost().complete(opts.modelKey, prompt)
+          browserLlmHost().complete(browserModel, prompt)
         )
       : await gradeOpenViaCloud(input, opts.workspaceId);
     next.push(applyOpenAward(question, result.award, result.reason));

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import pytest
 
+from pipeline import registry
 from pipeline.retrieval import indexing, models, store, tools
 from pipeline.retrieval.agent import _priming_message, system_prompt
 from pipeline.retrieval.chunking import chunk_markdown
@@ -73,7 +74,8 @@ async def test_index_file_writes_chunks_summary_and_concepts(
         workspace.scalar(
             "SELECT count(*) FROM rag_contents rc JOIN workspaces w ON w.id = rc.workspace_id "
             "JOIN rag_file_contents fc ON fc.content_id = rc.id WHERE fc.file_id = %s "
-            "AND rc.embedding_model_key = w.embedding_model_key "
+            "AND rc.embedding_provider_slug = w.embedding_provider_slug "
+            "AND rc.embedding_model_slug = w.embedding_model_slug "
             "AND rc.embedding_model_version = w.embedding_model_version "
             "AND rc.embedding_dim = w.embedding_dim",
             (file_id,),
@@ -167,7 +169,7 @@ async def test_answer_is_grounded_and_cited(cassette, workspace, sample_txt):
             {"role": "user", "content": query},
             {"role": "user", "content": _priming_message(numbered)},
         ],
-        model="deepseek-v4-flash",
+        model=registry.ingest_spec(),
         temperature=0.0,
     )
 

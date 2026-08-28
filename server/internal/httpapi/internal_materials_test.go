@@ -9,7 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -18,9 +18,11 @@ import (
 	"github.com/evonotes/server/internal/httpapi"
 	"github.com/evonotes/server/internal/models"
 	"github.com/evonotes/server/internal/store"
+	"github.com/evonotes/server/internal/testdb"
 )
 
 const pipeSecret = "pipe-test-secret"
+const importRelayTestSecret = "import-relay-test-secret-at-least-32-bytes"
 
 func openInternalMaterialsHTTP(t *testing.T) http.Handler {
 	h, _ := openInternalHTTP(t)
@@ -29,10 +31,13 @@ func openInternalMaterialsHTTP(t *testing.T) http.Handler {
 
 func openInternalHTTP(t *testing.T) (http.Handler, *store.Store) {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
+	h, st, _ := openInternalHTTPWithBlob(t)
+	return h, st
+}
+
+func openInternalHTTPWithBlob(t *testing.T) (http.Handler, *store.Store, *blob.Memory) {
+	t.Helper()
+	dsn := testdb.URL(t)
 	ctx := context.Background()
 	st, err := store.New(ctx, dsn)
 	if err != nil {
@@ -44,15 +49,17 @@ func openInternalHTTP(t *testing.T) (http.Handler, *store.Store) {
 		t.Fatalf("registry: %v", err)
 	}
 	st.SetModelRegistry(reg)
-	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling", "evo", httpapi.Config{
-		AuthDisabled:   true,
-		E2EAuth:        true,
-		E2ESecret:      "e2e-test-secret",
-		E2EUserIDs:     []string{"u_owner", "u_editor", "u_commenter", "u_viewer", "u_other"},
-		ModelRegistry:  reg,
-		PipelineSecret: pipeSecret,
+	mem := blob.NewMemory()
+	h := httpapi.New(st, mem, nil, nil, "docling", "evo", httpapi.Config{
+		AuthDisabled:      true,
+		E2EAuth:           true,
+		E2ESecret:         "e2e-test-secret",
+		E2EUserIDs:        []string{"u_owner", "u_editor", "u_commenter", "u_viewer", "u_other"},
+		ModelRegistry:     reg,
+		PipelineSecret:    pipeSecret,
+		ImportRelaySecret: importRelayTestSecret,
 	})
-	return h, st
+	return h, st, mem
 }
 
 func doInternal(
@@ -207,6 +214,64 @@ func TestInternalMaterialConcurrentSameIDConverges(t *testing.T) {
 	}
 	if len(ids) != 2 || ids[0] != id || ids[1] != id {
 		t.Fatalf("ids = %v want both %s", ids, id)
+	}
+}
+
+func TestInternalGeneratedQuizAndDeckPersistResolvedScope(t *testing.T) {
+	h, st := openInternalHTTP(t)
+	ctx := context.Background()
+
+	tests := []struct {
+		kind string
+		body map[string]any
+	}{
+		{
+			kind: "quiz",
+			body: map[string]any{
+				"questions": []map[string]any{{
+					"id": "q_scope", "type": "boolean", "level": "recall",
+					"prompt": "Was this scope persisted?", "correct": true,
+				}},
+			},
+		},
+		{
+			kind: "flashcards",
+			body: map[string]any{
+				"cards": []map[string]string{{"front": "Scope", "back": "Persisted"}},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.kind, func(t *testing.T) {
+			id := fmt.Sprintf("mat_scope_%s_%d", tt.kind, time.Now().UnixNano())
+			t.Cleanup(func() {
+				_, _ = st.Pool().Exec(context.Background(), `DELETE FROM materials WHERE id=$1`, id)
+			})
+			body := map[string]any{
+				"id": id, "workspaceId": "ws_e2e_private", "userId": "u_editor",
+				"kind": tt.kind, "title": "Scoped " + tt.kind,
+				"fileIds": []string{"f_e2e_private"}, "chapterIds": []string{"ch_e2e_private"},
+			}
+			for key, value := range tt.body {
+				body[key] = value
+			}
+
+			response := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body)
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
+			}
+			material, err := st.GetMaterial(ctx, id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !slices.Equal(material.ScopeChapters, []string{"Private chapter"}) {
+				t.Errorf("scope chapters = %#v", material.ScopeChapters)
+			}
+			if !slices.Equal(material.ScopeFileNames, []string{"secret-notes.md"}) {
+				t.Errorf("scope file names = %#v", material.ScopeFileNames)
+			}
+		})
 	}
 }
 

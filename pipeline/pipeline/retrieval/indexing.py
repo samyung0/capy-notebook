@@ -15,7 +15,6 @@ import secrets
 from typing import Any
 
 from .. import registry
-from ..config import cfg
 from ..jobs import RetryableError
 from ..registry import embedding_spec, ingest_spec
 from . import models, store
@@ -251,10 +250,7 @@ def _parse_summary_payload(raw: str) -> tuple[str, str]:
 
 
 def _input_budget() -> int:
-    try:
-        return max(1000, registry.input_budget(ingest_spec()))
-    except Exception:  # noqa: BLE001 - no ingest pin yet; use the env fallback
-        return max(1000, cfg.llm_input_budget_tokens - _PROMPT_RESERVE_TOKENS)
+    return max(1000, registry.input_budget(ingest_spec()))
 
 
 def _chunk_groups(chunks: list[Chunk], budget: int) -> list[list[Chunk]]:

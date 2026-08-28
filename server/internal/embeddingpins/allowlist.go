@@ -12,7 +12,7 @@ type Spec struct {
 }
 
 var specs = map[models.Pin]Spec{
-	{Key: "qwen-embed", Version: 1}: {
+	{Ref: models.Ref{ProviderSlug: "openrouter", ModelSlug: models.SeededHopEmbedSlug}, Version: 1}: {
 		VectorTable: "rag_chunk_vectors_2560",
 		Dimensions:  2560,
 	},
@@ -26,7 +26,7 @@ func Lookup(pin models.Pin) (Spec, bool) {
 func VectorTable(pin models.Pin) (string, error) {
 	spec, ok := Lookup(pin)
 	if !ok {
-		return "", fmt.Errorf("no vector table for %s v%d", pin.Key, pin.Version)
+		return "", fmt.Errorf("no vector table for %s v%d", pin.Ref, pin.Version)
 	}
 	return spec.VectorTable, nil
 }

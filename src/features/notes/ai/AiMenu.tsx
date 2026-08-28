@@ -28,7 +28,7 @@ import {
   useEditorSelector,
   usePluginOption,
 } from 'platejs/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -120,6 +120,11 @@ export function AiMenu() {
   const preview = useAiPreview(editor);
   const [input, setInput] = useState('');
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const lastCommand = useRef<{
+    mode?: AiAction['mode'];
+    prompt: string;
+    toolName: AiAction['toolName'];
+  } | null>(null);
   const loading =
     chat.status === 'streaming' || chat.status === 'submitted' || streaming;
   const streamError = chat.error ? editorAiError(chat.error) : null;
@@ -188,7 +193,11 @@ export function AiMenu() {
       selectedBlocks.length > 0
         ? (editor.api.nodesRange(selectedBlocks) ?? null)
         : (savedSelection ?? null);
+    // Free-form Enter has no tool button. We always send generate, so a
+    // rewrite instruction still inserts new Markdown instead of editing
+    // the selection. Comment is not offered in this menu.
     const toolName = options.toolName ?? 'generate';
+    lastCommand.current = { mode: options.mode, prompt, toolName };
 
     if (savedSelection && selectedBlocks.length === 0) {
       editor.tf.select(structuredClone(savedSelection));
@@ -352,7 +361,15 @@ export function AiMenu() {
             {chat.messages.length > 0 && (
               <button
                 className="flex w-full items-center gap-2 rounded-button px-2 py-2 text-left text-fg text-sm hover:bg-surface-hover-bg"
-                onClick={() => void editor.getApi(AIChatPlugin).aiChat.reload()}
+                onClick={() => {
+                  const last = lastCommand.current;
+                  if (last) {
+                    submit(last.prompt, {
+                      mode: last.mode,
+                      toolName: last.toolName,
+                    });
+                  }
+                }}
                 type="button"
               >
                 <RotateCcw className="size-4 text-fg-muted" />

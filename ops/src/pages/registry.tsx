@@ -1,8 +1,19 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Check, Copy, Star, Trash2, TriangleAlert } from 'lucide-react';
-import { type FormEvent, useMemo, useReducer, useState } from 'react';
+import { Check, Copy, Plus, Star, Trash2, TriangleAlert } from 'lucide-react';
+import {
+  type FormEvent,
+  useEffect,
+  useMemo,
+  useReducer,
+  useState,
+} from 'react';
 import { useOpsApp } from '@/app-context';
-import { ErrorState, PageHeader, PageLoading } from '@/components/common';
+import {
+  ErrorState,
+  FreshnessNote,
+  PageHeader,
+  PageLoading,
+} from '@/components/common';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -14,36 +25,35 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { DraftFields } from '@/draft-fields';
 import { formatCount } from '@/format';
 import { cn } from '@/lib/utils';
 import {
   assembleRegistryRequest,
+  canMutateRegistry,
   cellId,
   cloneCatalogToDraft,
   createRegistryState,
   embeddingChanged,
+  emptyDraft,
+  modelRefId,
+  modelRefLabel,
   type RegistryIssue,
   type RegistryState,
   registryReducer,
-  removedPreferenceCells,
   targetForRow,
 } from '@/registry-domain';
 import type {
-  AuthMode,
   CatalogConfig,
   DraftConfig,
+  EliteLLMProvider,
   Registry,
   Surface,
 } from '@/types';
 
-const authModes: AuthMode[] = ['platform', 'user_key', 'platform_or_user'];
-
-function latestConfig(registry: Registry, rowKey: string) {
+function latestConfig(registry: Registry, rowId: string) {
   return registry.configs
-    .filter((config) => config.modelKey === rowKey)
+    .filter((config) => modelRefId(config) === rowId)
     .sort((left, right) => right.version - left.version)[0];
 }
 
@@ -56,63 +66,62 @@ function targetLabel(
   return `v${cell.target.version}`;
 }
 
+function parseParams(
+  text: string
+):
+  | { ok: true; params: Record<string, unknown> }
+  | { ok: false; error: string } {
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (!parsed || Array.isArray(parsed) || typeof parsed !== 'object') {
+      return { error: 'Params must be a JSON object.', ok: false };
+    }
+    return { ok: true, params: Object.fromEntries(Object.entries(parsed)) };
+  } catch {
+    return { error: 'Params must be valid JSON.', ok: false };
+  }
+}
+
 function DraftDialog({
   config,
-  open,
-  onOpenChange,
   onCreate,
+  onOpenChange,
+  open,
+  providers,
 }: {
   config: CatalogConfig | undefined;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
   onCreate: (draft: DraftConfig) => void;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  providers: EliteLLMProvider[];
 }) {
   const initial = useMemo(
     () =>
-      config ? cloneCatalogToDraft(config, crypto.randomUUID()) : undefined,
+      config
+        ? cloneCatalogToDraft(config, crypto.randomUUID())
+        : emptyDraft(crypto.randomUUID()),
     [config]
   );
   const [draft, setDraft] = useState(initial);
   const [paramsText, setParamsText] = useState(
-    initial ? JSON.stringify(initial.params, null, 2) : '{}'
+    JSON.stringify(initial.params, null, 2)
   );
   const [error, setError] = useState('');
 
-  if (!draft || !config) {
+  if (!config) {
     return null;
   }
-  const currentDraft = draft;
   const embedding = config.surfaces.includes('embedding');
-
-  function numberField(
-    key:
-      | 'contextWindowTokens'
-      | 'microsPerInputToken'
-      | 'microsPerCachedInputToken'
-      | 'microsPerOutputToken',
-    value: string
-  ) {
-    setDraft((current) =>
-      current ? { ...current, [key]: Number(value) } : current
-    );
-  }
 
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    let params: unknown;
-    try {
-      params = JSON.parse(paramsText);
-    } catch {
-      setError('Params must be valid JSON.');
+    const parsed = parseParams(paramsText);
+    if (!parsed.ok) {
+      setError(parsed.error);
       return;
     }
-    if (!params || Array.isArray(params) || typeof params !== 'object') {
-      setError('Params must be a JSON object.');
-      return;
-    }
-    const safeParams = Object.fromEntries(Object.entries(params));
     setError('');
-    onCreate({ ...currentDraft, params: safeParams });
+    onCreate({ ...draft, params: parsed.params });
     onOpenChange(false);
   }
 
@@ -120,204 +129,22 @@ function DraftDialog({
     <Dialog onOpenChange={onOpenChange} open={open}>
       <DialogContent className="max-h-[90dvh] max-w-3xl overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Clone {config.modelKey} to draft</DialogTitle>
+          <DialogTitle>Clone {modelRefLabel(config)} to draft</DialogTitle>
           <DialogDescription>
             The draft is assigned to this model row. The server creates a new
             immutable version when you use the page-level Save action.
           </DialogDescription>
         </DialogHeader>
         <form id="draft-form" onSubmit={submit}>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <Label htmlFor="draft-model-key">Model key</Label>
-              <Input
-                id="draft-model-key"
-                name="modelKey"
-                readOnly
-                value={draft.modelKey}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="draft-display-name">Display name</Label>
-              <Input
-                id="draft-display-name"
-                name="displayName"
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current
-                      ? { ...current, displayName: event.currentTarget.value }
-                      : current
-                  )
-                }
-                readOnly={embedding}
-                required
-                value={draft.displayName}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="draft-provider">Provider slug</Label>
-              <Input
-                id="draft-provider"
-                name="providerSlug"
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current
-                      ? { ...current, providerSlug: event.currentTarget.value }
-                      : current
-                  )
-                }
-                required
-                value={draft.providerSlug}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="draft-provider-model">Provider model ID</Label>
-              <Input
-                id="draft-provider-model"
-                name="providerModelId"
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current
-                      ? {
-                          ...current,
-                          providerModelId: event.currentTarget.value,
-                        }
-                      : current
-                  )
-                }
-                readOnly={embedding}
-                required
-                value={draft.providerModelId}
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="draft-base-url">Base URL</Label>
-              <Input
-                id="draft-base-url"
-                name="baseUrl"
-                onChange={(event) =>
-                  setDraft((current) =>
-                    current
-                      ? { ...current, baseUrl: event.currentTarget.value }
-                      : current
-                  )
-                }
-                type="url"
-                value={draft.baseUrl}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="draft-auth-mode">Authentication mode</Label>
-              <select
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                disabled={embedding}
-                id="draft-auth-mode"
-                name="authMode"
-                onChange={(event) => {
-                  const authMode = authModes.find(
-                    (mode) => mode === event.currentTarget.value
-                  );
-                  if (authMode) {
-                    setDraft((current) =>
-                      current ? { ...current, authMode } : current
-                    );
-                  }
-                }}
-                value={draft.authMode}
-              >
-                {authModes.map((mode) => (
-                  <option key={mode} value={mode}>
-                    {mode}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="draft-context">Context window tokens</Label>
-              <Input
-                id="draft-context"
-                min="0"
-                name="contextWindowTokens"
-                onChange={(event) =>
-                  numberField('contextWindowTokens', event.currentTarget.value)
-                }
-                readOnly={embedding}
-                required
-                type="number"
-                value={draft.contextWindowTokens}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="draft-input-rate">Micros / input token</Label>
-              <Input
-                id="draft-input-rate"
-                min="0"
-                name="microsPerInputToken"
-                onChange={(event) =>
-                  numberField('microsPerInputToken', event.currentTarget.value)
-                }
-                readOnly={embedding}
-                required
-                type="number"
-                value={draft.microsPerInputToken}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="draft-cached-rate">
-                Micros / cached input token
-              </Label>
-              <Input
-                id="draft-cached-rate"
-                min="0"
-                name="microsPerCachedInputToken"
-                onChange={(event) =>
-                  numberField(
-                    'microsPerCachedInputToken',
-                    event.currentTarget.value
-                  )
-                }
-                readOnly={embedding}
-                required
-                type="number"
-                value={draft.microsPerCachedInputToken}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="draft-output-rate">Micros / output token</Label>
-              <Input
-                id="draft-output-rate"
-                min="0"
-                name="microsPerOutputToken"
-                onChange={(event) =>
-                  numberField('microsPerOutputToken', event.currentTarget.value)
-                }
-                readOnly={embedding}
-                required
-                type="number"
-                value={draft.microsPerOutputToken}
-              />
-            </div>
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="draft-params">Params JSON</Label>
-              <Textarea
-                aria-describedby="draft-params-help"
-                className="min-h-40 font-mono text-xs"
-                id="draft-params"
-                name="params"
-                onChange={(event) => setParamsText(event.currentTarget.value)}
-                readOnly={embedding}
-                value={paramsText}
-              />
-              <p
-                className="text-muted-foreground text-xs"
-                id="draft-params-help"
-              >
-                {embedding
-                  ? 'Embedding identity, parameters, rates, and surfaces are immutable.'
-                  : 'Include provider options such as structured reasoning settings.'}
-              </p>
-            </div>
-          </div>
+          <DraftFields
+            draft={draft}
+            embedding={embedding}
+            idPrefix="draft"
+            paramsText={paramsText}
+            providers={providers}
+            setDraft={setDraft}
+            setParamsText={setParamsText}
+          />
           <p aria-live="polite" className="mt-3 text-destructive text-sm">
             {error}
           </p>
@@ -339,17 +166,111 @@ function DraftDialog({
   );
 }
 
+function AddModelDialog({
+  onCreate,
+  onOpenChange,
+  open,
+  providers,
+}: {
+  onCreate: (draft: DraftConfig) => void;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  providers: EliteLLMProvider[];
+}) {
+  const [draft, setDraft] = useState(() => emptyDraft(crypto.randomUUID()));
+  const [paramsText, setParamsText] = useState('{}');
+  const [error, setError] = useState('');
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!draft.providerSlug.trim() || !draft.modelSlug.trim()) {
+      setError('Provider and model slug are required.');
+      return;
+    }
+    const parsed = parseParams(paramsText);
+    if (!parsed.ok) {
+      setError(parsed.error);
+      return;
+    }
+    setError('');
+    onCreate({ ...draft, params: parsed.params });
+    onOpenChange(false);
+  }
+
+  return (
+    <Dialog
+      onOpenChange={(next) => {
+        if (next) {
+          setDraft(emptyDraft(crypto.randomUUID()));
+          setParamsText('{}');
+          setError('');
+        }
+        onOpenChange(next);
+      }}
+      open={open}
+    >
+      <DialogContent className="max-h-[90dvh] max-w-3xl overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add model</DialogTitle>
+          <DialogDescription>
+            Pick a first-party provider and the exact model slug, then assign
+            surfaces on the grid and save.
+          </DialogDescription>
+        </DialogHeader>
+        <form id="add-model-form" onSubmit={submit}>
+          <DraftFields
+            draft={draft}
+            embedding={false}
+            idPrefix="add"
+            paramsText={paramsText}
+            providers={providers}
+            setDraft={setDraft}
+            setParamsText={setParamsText}
+          />
+          <p aria-live="polite" className="mt-3 text-destructive text-sm">
+            {error}
+          </p>
+        </form>
+        <DialogFooter>
+          <Button
+            onClick={() => onOpenChange(false)}
+            type="button"
+            variant="outline"
+          >
+            Cancel
+          </Button>
+          <Button form="add-model-form" type="submit">
+            Add draft
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function RegistryEditor({ registry }: { registry: Registry }) {
   const { api } = useOpsApp();
   const queryClient = useQueryClient();
+  const { data: providerPage } = useQuery({
+    queryFn: api.providers,
+    queryKey: ['ops-providers'],
+  });
+  const providers = providerPage?.providers ?? [];
   const [state, dispatch] = useReducer(
     registryReducer,
     registry,
     createRegistryState
   );
   const [cloneRow, setCloneRow] = useState<string>();
+  const [adding, setAdding] = useState(false);
   const [issues, setIssues] = useState<RegistryIssue[]>([]);
   const [status, setStatus] = useState('');
+
+  useEffect(() => {
+    if (!state.dirty && state.expectedVersion !== registry.revision) {
+      dispatch({ registry, type: 'reset' });
+    }
+  }, [registry, state.dirty, state.expectedVersion]);
   const {
     mutate,
     error: saveError,
@@ -363,16 +284,15 @@ function RegistryEditor({ registry }: { registry: Registry }) {
     },
   });
 
-  const removed = removedPreferenceCells(state);
   const changedEmbedding = embeddingChanged(state);
 
-  function setCell(rowKey: string, surface: Surface) {
-    const target = targetForRow(registry, state, rowKey);
+  function setCell(rowId: string, surface: Surface) {
+    const target = targetForRow(registry, state, rowId);
     if (!target) {
       return;
     }
     dispatch({
-      cell: { isDefault: false, rowKey, surface, target },
+      cell: { isDefault: false, rowId, surface, target },
       type: 'set-cell',
     });
   }
@@ -380,7 +300,7 @@ function RegistryEditor({ registry }: { registry: Registry }) {
   function createDraft(draft: DraftConfig) {
     dispatch({ draft, type: 'upsert-draft' });
     const currentCells = [...state.cells.values()].filter(
-      (cell) => cell.rowKey === draft.modelKey
+      (cell) => cell.rowId === modelRefId(draft)
     );
     for (const cell of currentCells) {
       dispatch({
@@ -407,24 +327,37 @@ function RegistryEditor({ registry }: { registry: Registry }) {
     <>
       <PageHeader
         actions={
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">Revision {registry.revision}</Badge>
-            <Badge
-              variant={registry.aliasesAllowed ? 'destructive' : 'secondary'}
-            >
-              Aliases{' '}
-              {registry.aliasesAllowed ? 'unexpectedly enabled' : 'disabled'}
-            </Badge>
+          <div className="flex flex-col items-start gap-2 sm:items-end">
+            <FreshnessNote>
+              Database registry, refreshed every 30 seconds.
+            </FreshnessNote>
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">Revision {registry.revision}</Badge>
+              <Badge
+                variant={registry.aliasesAllowed ? 'destructive' : 'secondary'}
+              >
+                Aliases{' '}
+                {registry.aliasesAllowed ? 'unexpectedly enabled' : 'disabled'}
+              </Badge>
+              <Button
+                onClick={() => setAdding(true)}
+                type="button"
+                variant="outline"
+              >
+                <Plus aria-hidden="true" />
+                Add model
+              </Button>
+            </div>
           </div>
         }
-        description="Rows are model keys. Cells control serving, defaults, drafts, and retirement fallbacks."
+        description="Rows are provider/model identities. Cells control serving, defaults, and drafts. Clearing a preference remaps users to the surface default."
         title="Model registry"
       />
 
       <div className="-mx-4 overflow-x-auto border-y bg-card sm:-mx-6 lg:-mx-8">
         <table className="w-full min-w-[1120px] border-collapse text-sm">
           <caption className="sr-only">
-            Model keys by supported product surface
+            Provider and model slugs by supported product surface
           </caption>
           <thead className="sticky top-0 z-10 bg-card shadow-sm">
             <tr>
@@ -432,7 +365,7 @@ function RegistryEditor({ registry }: { registry: Registry }) {
                 className="sticky left-0 z-20 min-w-64 border-r border-b bg-card p-3 text-left font-medium"
                 scope="col"
               >
-                Model key
+                Provider / model
               </th>
               {state.surfaces.map((surface) => (
                 <th
@@ -446,13 +379,14 @@ function RegistryEditor({ registry }: { registry: Registry }) {
             </tr>
           </thead>
           <tbody>
-            {state.rows.map((rowKey) => {
-              const config = latestConfig(registry, rowKey);
+            {state.rows.map((rowId) => {
+              const config = latestConfig(registry, rowId);
               const draft = [...state.drafts.values()].find(
-                (item) => item.modelKey === rowKey
+                (item) => modelRefId(item) === rowId
               );
+              const model = draft ?? config;
               return (
-                <tr className="hover:bg-muted/30" key={rowKey}>
+                <tr className="hover:bg-muted/30" key={rowId}>
                   <th
                     className="sticky left-0 z-[5] border-r border-b bg-card p-3 text-left"
                     scope="row"
@@ -460,20 +394,20 @@ function RegistryEditor({ registry }: { registry: Registry }) {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate font-mono font-semibold text-xs">
-                          {rowKey}
+                          {model ? modelRefLabel(model) : rowId}
                         </p>
                         <p className="mt-1 truncate font-normal text-muted-foreground text-xs">
                           {draft
-                            ? `${draft.providerSlug} · draft`
+                            ? `${draft.modelSlug} · draft`
                             : config
-                              ? `${config.providerSlug} · v${config.version}`
+                              ? `${config.modelSlug} · v${config.version}`
                               : 'Draft'}
                         </p>
                       </div>
                       {config ? (
                         <Button
-                          aria-label={`Clone ${rowKey} to draft`}
-                          onClick={() => setCloneRow(rowKey)}
+                          aria-label={`Clone ${modelRefLabel(config)} to draft`}
+                          onClick={() => setCloneRow(rowId)}
                           size="icon"
                           title="Clone to draft"
                           type="button"
@@ -485,7 +419,7 @@ function RegistryEditor({ registry }: { registry: Registry }) {
                     </div>
                   </th>
                   {state.surfaces.map((surface) => {
-                    const id = cellId(rowKey, surface);
+                    const id = cellId(rowId, surface);
                     const cell = state.cells.get(id);
                     return (
                       <td
@@ -522,7 +456,7 @@ function RegistryEditor({ registry }: { registry: Registry }) {
                             </div>
                             <div className="mt-2 flex gap-1">
                               <Button
-                                aria-label={`Make ${rowKey} the ${surface} default`}
+                                aria-label={`Make ${model ? modelRefLabel(model) : rowId} the ${surface} default`}
                                 disabled={
                                   cell.isDefault ||
                                   (surface === 'embedding' &&
@@ -530,7 +464,7 @@ function RegistryEditor({ registry }: { registry: Registry }) {
                                 }
                                 onClick={() =>
                                   dispatch({
-                                    rowKey,
+                                    rowId,
                                     surface,
                                     type: 'set-default',
                                   })
@@ -543,10 +477,10 @@ function RegistryEditor({ registry }: { registry: Registry }) {
                                 Default
                               </Button>
                               <Button
-                                aria-label={`Clear ${surface} from ${rowKey}`}
+                                aria-label={`Clear ${surface} from ${model ? modelRefLabel(model) : rowId}`}
                                 onClick={() =>
                                   dispatch({
-                                    rowKey,
+                                    rowId,
                                     surface,
                                     type: 'clear-cell',
                                   })
@@ -563,8 +497,8 @@ function RegistryEditor({ registry }: { registry: Registry }) {
                         ) : (
                           <Button
                             className="w-full border-dashed"
-                            disabled={!targetForRow(registry, state, rowKey)}
-                            onClick={() => setCell(rowKey, surface)}
+                            disabled={!targetForRow(registry, state, rowId)}
+                            onClick={() => setCell(rowId, surface)}
                             size="sm"
                             type="button"
                             variant="outline"
@@ -582,70 +516,6 @@ function RegistryEditor({ registry }: { registry: Registry }) {
         </table>
       </div>
 
-      {removed.length > 0 ? (
-        <section
-          aria-labelledby="fallback-heading"
-          className="rounded-lg border border-amber-300 bg-amber-50/60 p-5"
-        >
-          <div className="flex items-start gap-3">
-            <TriangleAlert
-              aria-hidden="true"
-              className="mt-0.5 size-5 text-amber-700"
-            />
-            <div className="flex-1">
-              <h2 className="font-semibold" id="fallback-heading">
-                Deprecation fallbacks required
-              </h2>
-              <p className="mt-1 text-muted-foreground text-sm">
-                Users pinned to a cleared model need a replacement.
-              </p>
-              <div className="mt-4 grid gap-4 md:grid-cols-2">
-                {removed.map((cell) => {
-                  const fallbackId = `${cell.rowKey}-${cell.surface}-fallback`;
-                  return (
-                    <div className="space-y-2" key={fallbackId}>
-                      <Label htmlFor={fallbackId}>
-                        {cell.rowKey} · {cell.surface}
-                      </Label>
-                      <select
-                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                        id={fallbackId}
-                        onChange={(event) =>
-                          dispatch({
-                            fallbackKey: event.currentTarget.value,
-                            modelKey: cell.rowKey,
-                            surface: cell.surface,
-                            type: 'set-deprecation',
-                          })
-                        }
-                        value={
-                          state.deprecations.get(
-                            `${cell.rowKey}\u0000${cell.surface}`
-                          ) ?? ''
-                        }
-                      >
-                        <option value="">Choose fallback</option>
-                        {state.rows
-                          .filter(
-                            (candidate) =>
-                              candidate !== cell.rowKey &&
-                              state.cells.has(cellId(candidate, cell.surface))
-                          )
-                          .map((candidate) => (
-                            <option key={candidate} value={candidate}>
-                              {candidate}
-                            </option>
-                          ))}
-                      </select>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-        </section>
-      ) : null}
-
       {changedEmbedding ? (
         <section className="rounded-lg border border-amber-300 bg-amber-50/60 p-5">
           <div className="flex items-start gap-3">
@@ -661,9 +531,11 @@ function RegistryEditor({ registry }: { registry: Registry }) {
               </p>
               <ul className="mt-2 list-inside list-disc text-sm">
                 {registry.embeddingWorkspaceCounts.map((item) => (
-                  <li key={`${item.modelKey}:${item.version}:${item.dim}`}>
-                    {item.modelKey} v{item.version}, {item.dim} dimensions:{' '}
-                    {formatCount(item.count)}
+                  <li
+                    key={`${item.providerSlug}:${item.modelSlug}:${item.version}:${item.dim}`}
+                  >
+                    {modelRefLabel(item)} v{item.version}, {item.dim}{' '}
+                    dimensions: {formatCount(item.count)}
                   </li>
                 ))}
               </ul>
@@ -707,7 +579,7 @@ function RegistryEditor({ registry }: { registry: Registry }) {
           <ul className="mt-2 list-inside list-disc text-sm">
             {issues.map((issue, index) => (
               <li
-                key={`${issue.code}:${issue.rowKey}:${issue.surface}:${index}`}
+                key={`${issue.code}:${issue.rowId}:${issue.surface}:${index}`}
               >
                 {issue.message}
               </li>
@@ -754,6 +626,13 @@ function RegistryEditor({ registry }: { registry: Registry }) {
           }
         }}
         open={Boolean(cloneRow)}
+        providers={providers}
+      />
+      <AddModelDialog
+        onCreate={createDraft}
+        onOpenChange={setAdding}
+        open={adding}
+        providers={providers}
       />
     </>
   );
@@ -762,12 +641,12 @@ function RegistryEditor({ registry }: { registry: Registry }) {
 export function RegistryPage() {
   const { api, session } = useOpsApp();
   const { data, error, isPending, refetch } = useQuery({
-    enabled: session.role === 'admin',
+    enabled: canMutateRegistry(session.permissions),
     queryFn: api.registry,
     queryKey: ['registry'],
   });
 
-  if (session.role !== 'admin') {
+  if (!canMutateRegistry(session.permissions)) {
     return null;
   }
   if (isPending) {
@@ -776,5 +655,5 @@ export function RegistryPage() {
   if (error || !data) {
     return <ErrorState error={error} retry={() => void refetch()} />;
   }
-  return <RegistryEditor key={data.revision} registry={data} />;
+  return <RegistryEditor registry={data} />;
 }

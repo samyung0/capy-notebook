@@ -58,4 +58,17 @@ func TestKeyErrorFromEvent(t *testing.T) {
 	if keyErrorFromEvent("", "") != nil {
 		t.Fatal("empty")
 	}
+	var eventErr *chatEventError
+	if !errors.As(
+		keyErrorFromEvent("context_too_large", "too large"),
+		&eventErr,
+	) || eventErr.Code != "context_too_large" {
+		t.Fatalf("context event did not retain its code: %#v", eventErr)
+	}
+	if !errors.As(
+		keyErrorFromEvent("invalid_scope", "invalid"),
+		&eventErr,
+	) || eventErr.Code != "invalid_scope" {
+		t.Fatalf("scope event did not retain its code: %#v", eventErr)
+	}
 }
