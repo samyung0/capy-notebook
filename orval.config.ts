@@ -2,9 +2,7 @@ import { defineConfig } from 'orval';
 
 /**
  * Input is always the local ./openapi.yaml.
- * - One-shot: `pnpm gen:api:msw` regenerates the spec from source then runs orval.
- * - Live: `air` regenerates ./openapi.yaml on each rebuild (server/.air.toml) and
- *   `pnpm gen:api:watch` (orval --watch) picks up the file change.
+ * `pnpm gen:api:full` regenerates the spec from source before running Orval.
  */
 const input = './openapi.yaml';
 

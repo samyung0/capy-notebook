@@ -46,7 +46,7 @@ This serves the checked-in `openapi.yaml` at `http://localhost:3000`, so it does
 not require Go. When Go is available and the contract needs regeneration, use
 `pnpm api:docs:generate` instead.
 
-`pnpm gen:api:msw` regenerates OpenAPI, the Python `Surface` enum, and the
+`pnpm gen:api:full` regenerates OpenAPI, the Python `Surface` enum, and the
 Orval TypeScript bindings. Frontend code imports generated contracts through
 `src/api/types.ts`; the Ops API module is its equivalent boundary for the
 separate dashboard bundle.

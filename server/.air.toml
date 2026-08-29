@@ -1,6 +1,5 @@
 # Air live-reload config for the gateway. Run `air` inside server/.
-# On each successful rebuild post_cmd regenerates ../openapi.yaml (atomic write),
-# so the frontend's `orval --watch` (pnpm gen:api:watch) picks up contract changes.
+# On each successful rebuild post_cmd regenerates ../openapi.yaml atomically.
 root = "."
 tmp_dir = "tmp"
 

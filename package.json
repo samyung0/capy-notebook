@@ -159,8 +159,7 @@
     "gen:openapi": "cd server && go run ./cmd/openapi -o ../openapi.yaml -python-surfaces ../pipeline/pipeline/generated/surface.py",
     "gen:api": "pnpm gen:api:clean && orval && node scripts/sync-surface-contracts.mjs",
     "gen:api:clean": "node scripts/clean-api-gen.mjs",
-    "gen:api:msw": "pnpm gen:openapi && pnpm gen:api",
-    "gen:api:watch": "pnpm gen:api:clean && orval --watch",
+    "gen:api:full": "pnpm gen:openapi && pnpm gen:api",
     "fix": "ultracite fix",
     "prepare": "husky",
     "deploy:import-relay": "pnpm --filter @evo-notes/drive-import-relay deploy"

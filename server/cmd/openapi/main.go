@@ -5,9 +5,8 @@
 //	go run ./cmd/openapi                 # write to stdout
 //	go run ./cmd/openapi -o ../openapi.yaml  # atomic write to a file
 //
-// The frontend's orval config always consumes the local openapi.yaml. In live
-// mode `air` regenerates it via -o on each rebuild (see server/.air.toml), and
-// `orval --watch` picks up the file change.
+// The frontend's Orval config always consumes the local openapi.yaml. Air
+// regenerates it via -o on each successful server rebuild (see server/.air.toml).
 package main
 
 import (

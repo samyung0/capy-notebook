@@ -16,14 +16,22 @@ low priority:
 
 high PRIORITIES:
 
-1. a path that can get all valid thinking and reasoning effort/adaptive blablabla from litellm 
-auto version bump for litellm? but it may break record/replay test 
-1. store model effort/thinking mode on the provider_cll for information (and fix the credits, table name)
-1. put all plan related usage limit constant in db rows where ops dashboard can update, and go server hot reload every 10 minutes (set the model refresh rate to 10 minutes as well), user side also need to see these numbers so there should be a in memory cache that periodically refreshese these limits and serve them through getters to endpoints/creditLimitMicros/etc
-1. confirm db pool mechanism 
-2. litellm?
-2. after litellm, llm provider calls have rate limits, make a queue for incoming calls? on http request connection lost, remove from queue. if llm call picked up from queue but response never reached client or client disconnected/http request died at that moment -> handle it the same way we handle disconnection: proceed at server and bill accordingly but client sees nothing
-3. import thingy?
+1. brevo for mail, maily instead of react mail for interactive email template
+1. separate orchestrator (go server + pythong) and worker flow (netcup vm -> currently does parsing and ingest)
+1. diagrams.net (generate have a 1 turn generate->QA->fix loop on server)
+   we need to orchestrate the behavior for material generation for different surfaces (for anything that includes non-text):
+    -> determine the surface needing this (chat or editor (plate))
+    -> start flow in go server
+    -> QA loop necessary:  run job in worker vm (because it might involve spawning different processes and I dont want to have the load on the main server)
+        not necessary (like generating images -> one shot, cant really tune after pixel is generated): run in main server is fine
+    -> upload artifacts/files onto blackblaze if necessary (decide on policies for combinations of surfaces + material)
+    -> render in appropriate surfaces (if chat surface sucks because vercel ai sdk we are using sucks at embed/custom plugins, then find another solution)
+
+2. allow llm to embed interactive html files (deterministic santizing after generate (no jailbreak) and rendered in sandbox iframe), no editing allowed
+3. check equations, formulas and math graphs, both plate editors, and chat
+4. confirm db pool mechanism
+2. llm provider calls have rate limits, make a queue for incoming calls? on http request connection lost, remove from queue. if llm call picked up from queue but response never reached client or client disconnected/http request died at that moment -> handle it the same way we handle disconnection: proceed at server and bill accordingly but client sees nothing
+3. import thingy? (userimport/updalod
 4. llm chat compaction
 5. ops usage dashboard, wtf is going on (cloudflare zero trust, audit logs)
 6. feature flags should allow for A/B testing, current way of env variables do not allow that
