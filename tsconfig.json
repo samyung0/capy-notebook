@@ -18,7 +18,40 @@
     "noFallthroughCasesInSwitch": true,
     "paths": {
       "@/*": ["./src/*"],
-      "@paraglide/*": ["./src/i18n/paraglide/*"]
+      "@paraglide/*": ["./src/i18n/paraglide/*"],
+      "@betteroffice/xlsx": [
+        "./vendor/betteroffice/packages/xlsx/src/index.ts"
+      ],
+      "@betteroffice/xlsx/viewer": [
+        "./vendor/betteroffice/packages/xlsx/src/viewer.ts"
+      ],
+      "@betteroffice/xlsx/editor": [
+        "./vendor/betteroffice/packages/xlsx/src/editor.ts"
+      ],
+      "@betteroffice/xlsx/collaboration": [
+        "./vendor/betteroffice/packages/xlsx/src/collaboration/index.ts"
+      ],
+      "@betteroffice/xlsx-react": [
+        "./vendor/betteroffice/packages/xlsx-react/src/index.ts"
+      ],
+      "@betteroffice/xlsx-i18n": [
+        "./vendor/betteroffice/packages/xlsx-i18n/src/index.ts"
+      ],
+      "@betteroffice/pptx": [
+        "./vendor/betteroffice/packages/pptx/src/index.ts"
+      ],
+      "@betteroffice/pptx/viewer": [
+        "./vendor/betteroffice/packages/pptx/src/viewer.ts"
+      ],
+      "@betteroffice/pptx/editor": [
+        "./vendor/betteroffice/packages/pptx/src/editor.ts"
+      ],
+      "@betteroffice/pptx-react": [
+        "./vendor/betteroffice/packages/pptx-react/src/index.ts"
+      ],
+      "@betteroffice/pptx-i18n": [
+        "./vendor/betteroffice/packages/pptx-i18n/src/index.ts"
+      ]
     },
     "types": ["vite/client"]
   },

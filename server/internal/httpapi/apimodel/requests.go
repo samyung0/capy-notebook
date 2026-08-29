@@ -196,6 +196,15 @@ type SourceUploadReservation struct {
 	ExpiresAt time.Time         `json:"expiresAt"`
 }
 
+// CreateFileReplacementUploadReq reserves a direct-to-blob PUT for bytes saved
+// by a browser editor. ExpectedRevision prevents a stale tab overwriting a
+// newer save of the same logical file.
+type CreateFileReplacementUploadReq struct {
+	ExpectedRevision int64  `json:"expectedRevision" minimum:"1"`
+	SizeBytes        int64  `json:"sizeBytes" minimum:"0"`
+	ContentType      string `json:"contentType,omitempty"`
+}
+
 // ImportSourcesReq pulls files from a connected Drive/OneDrive account.
 type ImportSourcesReq struct {
 	Provider  string   `json:"provider" enum:"google,microsoft"`

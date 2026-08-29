@@ -68,6 +68,7 @@ import {
   useMicrosoftLoginHint,
   useProviderConnect,
 } from '@/lib/useProviderConnect';
+import { analyzeOfficeUpload } from './officeUploadAnalysis';
 import {
   collectSourceImportResponses,
   parseSourceImportAcceptedResponse,
@@ -348,6 +349,8 @@ interface PendingFile {
   file: File;
   key: string;
   kind: SourceFile['kind'];
+  officeAnalysis?: Awaited<ReturnType<typeof analyzeOfficeUpload>>;
+  officeAnalysisStatus?: 'pending' | 'ready' | 'error';
   /** PDF page count via pdfjs; undefined = still counting, null = unknown. */
   pageCount?: number | null;
   parseMode: ParseMode;
@@ -431,7 +434,7 @@ function UploadFiles({
   className?: string;
 }) {
   const { mutateAsync: uploadSource } = useUploadSource(workspaceId);
-  const { refetch: refetchIngestSlots } = useIngestSlots({
+  const { data: ingestSlots } = useIngestSlots({
     errorBoundary: false,
   });
   const qc = useQueryClient();
@@ -453,14 +456,14 @@ function UploadFiles({
   const [newChapterName, setNewChapterName] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  useEffect(
-    () => () => {
+  useEffect(() => {
+    drainAbort.current = new AbortController();
+    return () => {
       drainAbort.current.abort();
       for (const controller of uploadControllers.current.values())
         controller.abort();
-    },
-    []
-  );
+    };
+  }, []);
 
   function handleFiles(list: FileList | null) {
     if (!list?.length) return;
@@ -474,6 +477,7 @@ function UploadFiles({
     }
     const candidates = Array.from(list).map((f, i) => {
       const kind = getFileKind(f.name, uploadPolicy);
+      const officeFile = ['xlsx', 'pptx'].includes(fileExt(f.name));
       return {
         captionImages: false,
         chapterId: null,
@@ -481,6 +485,7 @@ function UploadFiles({
         file: f,
         key: `${Date.now()}-${i}-${f.name}`,
         kind,
+        officeAnalysisStatus: officeFile ? ('pending' as const) : undefined,
         parseMode: defaultParseMode(f, kind, uploadPolicy),
       };
     });
@@ -534,6 +539,38 @@ function UploadFiles({
         );
       });
     }
+    for (const row of added) {
+      if (row.officeAnalysisStatus !== 'pending') continue;
+      void analyzeOfficeUpload(row.file).then(
+        (officeAnalysis) => {
+          setFiles((prev) =>
+            prev.map((file) =>
+              file.key === row.key
+                ? {
+                    ...file,
+                    officeAnalysis,
+                    officeAnalysisStatus: 'ready',
+                  }
+                : file
+            )
+          );
+        },
+        () => {
+          setFiles((prev) =>
+            prev.map((file) =>
+              file.key === row.key
+                ? { ...file, officeAnalysisStatus: 'error' }
+                : file
+            )
+          );
+          userToast({
+            description: row.file.name,
+            title: m.source_office_invalid(),
+            variant: 'error',
+          });
+        }
+      );
+    }
   }
 
   function patchFile(key: string, patch: Partial<PendingFile>) {
@@ -559,16 +596,32 @@ function UploadFiles({
   }
 
   const handleUpload = async () => {
-    if (isSubmitting || files.length === 0) return;
+    if (
+      isSubmitting ||
+      files.length === 0 ||
+      files.some((file) =>
+        ['pending', 'error'].includes(file.officeAnalysisStatus ?? '')
+      )
+    )
+      return;
+    const drainController = new AbortController();
+    drainAbort.current = drainController;
     setIsSubmitting(true);
     setFiles((prev) => prev.map((file) => ({ ...file, uploadPct: 0 })));
     let remaining = [...files];
     setUnsentCount(remaining.length);
     const failed: PendingFile[] = [];
     let sawError: unknown;
-    while (remaining.length > 0 && !drainAbort.current.signal.aborted) {
-      const { data: slots } = await refetchIngestSlots();
-      const slotsFree = slots?.slotsFree ?? MAX_FILES_PER_UPLOAD;
+    while (remaining.length > 0 && !drainController.signal.aborted) {
+      // A zero slot snapshot can be stale by the time this batch starts. Send
+      // one item and let the server's 429 retry contract provide backpressure
+      // instead of leaving the client queue parked forever.
+      const slotsFree = Math.max(
+        1,
+        USE_MSW
+          ? MAX_FILES_PER_UPLOAD
+          : (ingestSlots?.slotsFree ?? MAX_FILES_PER_UPLOAD)
+      );
       const { wave, rest } = splitSourceWave(
         remaining,
         (file) => needsIngestJob(file.kind, file.parseMode),
@@ -617,7 +670,7 @@ function UploadFiles({
               qc,
               workspaceId,
               result.value.id,
-              drainAbort.current.signal
+              drainController.signal
             )
           );
         }
@@ -625,7 +678,7 @@ function UploadFiles({
       await Promise.all(ingestWaits);
       remaining = rest;
     }
-    if (drainAbort.current.signal.aborted) return;
+    if (drainController.signal.aborted) return;
     setUnsentCount(0);
     setIsSubmitting(false);
     if (failed.length === 0) {
@@ -734,6 +787,10 @@ function UploadFiles({
                       {formatSize(f.file.size)}
                       {f.pageCount != null &&
                         ` · ${f.pageCount === 1 ? m.source_page({ count: f.pageCount }) : m.source_pages({ count: f.pageCount })}`}
+                      {f.officeAnalysis?.format === 'xlsx' &&
+                        ` · ${m.source_office_sheets({ count: f.officeAnalysis.sheetCount })}`}
+                      {f.officeAnalysis?.format === 'pptx' &&
+                        ` · ${m.source_office_slides({ count: f.officeAnalysis.slideCount })}`}
                       {` · ${f.kind.toUpperCase()}`}
                     </span>
                     <div className="flex flex-1 items-center justify-end gap-2">
@@ -817,6 +874,16 @@ function UploadFiles({
                       )}
                     </div>
                   </div>
+                  {f.officeAnalysisStatus === 'pending' && (
+                    <p className="t-meta text-fg-muted">
+                      {m.source_office_analyzing()}
+                    </p>
+                  )}
+                  {f.officeAnalysisStatus === 'error' && (
+                    <p className="t-meta text-tint-error-fg">
+                      {m.source_office_invalid()}
+                    </p>
+                  )}
                   {f.uploadPct != null && (
                     <ProgressBar
                       className="mt-1.5 w-full"
@@ -846,7 +913,16 @@ function UploadFiles({
         })}
         closeOnConfirm={false}
         danger={false}
-        disabled={!uploadPolicy || files.length === 0 || isSubmitting}
+        disabled={
+          !uploadPolicy ||
+          files.length === 0 ||
+          isSubmitting ||
+          files.some(
+            (file) =>
+              file.officeAnalysisStatus !== 'ready' &&
+              file.officeAnalysisStatus != null
+          )
+        }
         isSubmitting={isSubmitting}
         onClose={() => {
           if (!isSubmitting) setConfirmOpen(false);
@@ -884,7 +960,16 @@ function UploadFiles({
           </Button>
         </DialogClose>
         <Button
-          disabled={!uploadPolicy || files.length === 0 || isSubmitting}
+          disabled={
+            !uploadPolicy ||
+            files.length === 0 ||
+            isSubmitting ||
+            files.some(
+              (file) =>
+                file.officeAnalysisStatus !== 'ready' &&
+                file.officeAnalysisStatus != null
+            )
+          }
           onClick={() => setConfirmOpen(true)}
           size="lg"
         >

@@ -10,8 +10,10 @@ import (
 )
 
 var (
-	ErrUploadExpired = errors.New("upload session expired")
-	ErrUploadState   = errors.New("upload session is not pending")
+	ErrUploadExpired        = errors.New("upload session expired")
+	ErrUploadState          = errors.New("upload session is not pending")
+	ErrFileRevisionConflict = errors.New("file changed after the editor opened")
+	ErrFileNotReady         = errors.New("file is not ready to edit")
 )
 
 // uploadPresignGrace is how long an abandoned upload's objects wait before the
@@ -25,21 +27,23 @@ type UploadSession struct {
 	WorkspaceID string
 	// UserID is the storage owner charged for the reservation; CreatedBy is the
 	// uploader, which may be a collaborator rather than the workspace owner.
-	UserID        string
-	CreatedBy     *string
-	ChapterID     *string
-	ChapterName   string
-	ObjectPath    string
-	FinalPath     string
-	Name          string
-	Kind          string
-	ContentType   string
-	DeclaredSize  int64
-	ParseMode     string
-	CaptionImages bool
-	Status        string
-	FileID        *string
-	ExpiresAt     time.Time
+	UserID           string
+	CreatedBy        *string
+	ChapterID        *string
+	ChapterName      string
+	ObjectPath       string
+	FinalPath        string
+	Name             string
+	Kind             string
+	ContentType      string
+	DeclaredSize     int64
+	ReservedSize     int64
+	ParseMode        string
+	CaptionImages    bool
+	Status           string
+	FileID           *string
+	ExpectedRevision *int64
+	ExpiresAt        time.Time
 }
 
 type NewUploadSession struct {
@@ -57,6 +61,30 @@ type NewUploadSession struct {
 	ParseMode     string
 	CaptionImages bool
 	ExpiresAt     time.Time
+}
+
+type NewReplacementUploadSession struct {
+	ID               string
+	FileID           string
+	CreatedBy        string
+	ObjectPath       string
+	FinalPath        string
+	ContentType      string
+	DeclaredSize     int64
+	ExpectedRevision int64
+	ExpiresAt        time.Time
+}
+
+// FileIngestPolicy returns the persisted processing choice that a replacement
+// inherits. Store-only files must not be blocked by an empty inference budget.
+func (s *Store) FileIngestPolicy(ctx context.Context, fileID string) (kind, parseMode string, err error) {
+	err = s.pool.QueryRow(ctx,
+		`SELECT kind, parse_mode FROM files WHERE id=$1`, fileID,
+	).Scan(&kind, &parseMode)
+	if isNoRows(err) {
+		return "", "", ErrNotFound
+	}
+	return kind, parseMode, err
 }
 
 func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (UploadSession, error) {
@@ -77,9 +105,9 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO upload_sessions
 		(id, target, workspace_id, user_id, created_by, chapter_id, chapter_name,
-		 object_path, final_path, name, kind, content_type, declared_size, parse_mode,
+		 object_path, final_path, name, kind, content_type, declared_size, reserved_size, parse_mode,
 		 caption_images, expires_at)
-		VALUES ($1,'source',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+		VALUES ($1,'source',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14,$15)`,
 		in.ID, in.WorkspaceID, ownerID, nullStr(in.CreatedBy), in.ChapterID, in.ChapterName,
 		in.ObjectPath, in.FinalPath,
 		in.Name, in.Kind, in.ContentType, in.DeclaredSize, in.ParseMode,
@@ -93,16 +121,70 @@ func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (U
 	return s.GetUploadSession(ctx, in.ID)
 }
 
+func (s *Store) CreateReplacementUploadSession(
+	ctx context.Context,
+	in NewReplacementUploadSession,
+) (UploadSession, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return UploadSession{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	var workspaceID, ownerID, name, kind, parseMode, status string
+	var chapterID *string
+	var oldSize, revision int64
+	var captionImages bool
+	err = tx.QueryRow(ctx, `SELECT workspace_id, user_id, chapter_id, name, kind,
+		size_bytes, revision, parse_mode, caption_images, status
+		FROM files WHERE id=$1 FOR UPDATE`, in.FileID).Scan(
+		&workspaceID, &ownerID, &chapterID, &name, &kind, &oldSize, &revision,
+		&parseMode, &captionImages, &status,
+	)
+	if isNoRows(err) {
+		return UploadSession{}, ErrNotFound
+	}
+	if err != nil {
+		return UploadSession{}, err
+	}
+	if revision != in.ExpectedRevision {
+		return UploadSession{}, ErrFileRevisionConflict
+	}
+	if status != string(FileReady) {
+		return UploadSession{}, ErrFileNotReady
+	}
+	reservedSize := max(in.DeclaredSize-oldSize, 0)
+	if err := s.reserveStorageTx(ctx, tx, ownerID, reservedSize); err != nil {
+		return UploadSession{}, err
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO upload_sessions
+		(id, target, workspace_id, user_id, created_by, chapter_id, object_path,
+		 final_path, name, kind, content_type, declared_size, reserved_size,
+		 parse_mode, caption_images, file_id, expected_revision, expires_at)
+		VALUES ($1,'source_replace',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+		in.ID, workspaceID, ownerID, nullStr(in.CreatedBy), chapterID,
+		in.ObjectPath, in.FinalPath, name, kind, in.ContentType, in.DeclaredSize,
+		reservedSize, parseMode, captionImages, in.FileID, in.ExpectedRevision,
+		in.ExpiresAt)
+	if err != nil {
+		return UploadSession{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return UploadSession{}, err
+	}
+	return s.GetReplacementUploadSession(ctx, in.ID)
+}
+
 func scanUploadSession(row interface{ Scan(...any) error }) (UploadSession, error) {
 	var u UploadSession
 	err := row.Scan(&u.ID, &u.WorkspaceID, &u.UserID, &u.CreatedBy, &u.ChapterID, &u.ChapterName, &u.ObjectPath, &u.FinalPath,
-		&u.Name, &u.Kind, &u.ContentType, &u.DeclaredSize, &u.ParseMode, &u.CaptionImages,
-		&u.Status, &u.FileID, &u.ExpiresAt)
+		&u.Name, &u.Kind, &u.ContentType, &u.DeclaredSize, &u.ReservedSize, &u.ParseMode, &u.CaptionImages,
+		&u.Status, &u.FileID, &u.ExpectedRevision, &u.ExpiresAt)
 	return u, err
 }
 
 const uploadSessionCols = `id, workspace_id, user_id, created_by, chapter_id, chapter_name, object_path, final_path,
-	name, kind, content_type, declared_size, parse_mode, caption_images, status, file_id, expires_at`
+	name, kind, content_type, declared_size, COALESCE(reserved_size, declared_size), parse_mode, caption_images, status, file_id, expected_revision, expires_at`
 
 // uploadSessionFrom restricts the shared table to the source flow, so an
 // editor-asset upload id can never be driven through the file finalize path.
@@ -111,6 +193,15 @@ const uploadSessionFrom = ` FROM upload_sessions WHERE target='source' AND `
 func (s *Store) GetUploadSession(ctx context.Context, id string) (UploadSession, error) {
 	u, err := scanUploadSession(s.pool.QueryRow(ctx,
 		`SELECT `+uploadSessionCols+uploadSessionFrom+`id=$1`, id))
+	if isNoRows(err) {
+		return u, ErrNotFound
+	}
+	return u, err
+}
+
+func (s *Store) GetReplacementUploadSession(ctx context.Context, id string) (UploadSession, error) {
+	u, err := scanUploadSession(s.pool.QueryRow(ctx,
+		`SELECT `+uploadSessionCols+` FROM upload_sessions WHERE target='source_replace' AND id=$1`, id))
 	if isNoRows(err) {
 		return u, ErrNotFound
 	}
@@ -191,10 +282,10 @@ func (s *Store) finalizeUploadSessionTx(
 		status = "ready"
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, engine, blob_path, url, source_etag)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, engine, blob_path, url, source_etag, parse_mode, caption_images)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
 		fileID, u.WorkspaceID, u.UserID, u.CreatedBy, chapterID, u.Name, u.Kind, u.DeclaredSize,
-		now, status, parser, engine, u.FinalPath, fileURL, sourceETag)
+		now, status, parser, engine, u.FinalPath, fileURL, sourceETag, u.ParseMode, u.CaptionImages)
 	if err != nil {
 		return File{}, err
 	}
@@ -213,8 +304,9 @@ func (s *Store) finalizeUploadSessionTx(
 			"fileId": fileID, "workspaceId": u.WorkspaceID, "blobPath": u.FinalPath,
 			"kind": u.Kind, "parser": parser, "engine": engine,
 			"parseMode": u.ParseMode, "captionImages": u.CaptionImages,
-			"sourceETag":    sourceETag,
-			"reservationId": reservationID,
+			"sourceETag":     sourceETag,
+			"sourceRevision": int64(1),
+			"reservationId":  reservationID,
 		})
 		if err != nil {
 			return File{}, err
@@ -234,8 +326,126 @@ func (s *Store) finalizeUploadSessionTx(
 	return File{
 		ID: fileID, WorkspaceID: u.WorkspaceID, ChapterID: chapterID,
 		Name: u.Name, Kind: FileKind(u.Kind), SizeBytes: u.DeclaredSize,
-		AddedAt: now, Status: FileStatus(status), Indexed: false, URL: &fileURL,
+		AddedAt: now, Status: FileStatus(status), Indexed: false, URL: &fileURL, Revision: 1,
 	}, nil
+}
+
+// FinalizeReplacementUploadSession swaps the blob behind an existing logical
+// file, invalidates its retrieval association, and enqueues the same ingest
+// policy that was chosen for the original upload.
+func (s *Store) FinalizeReplacementUploadSession(
+	ctx context.Context,
+	uploadID, sourceETag, parser, engine string,
+) (File, error) {
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return File{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	u, err := scanUploadSession(tx.QueryRow(ctx,
+		`SELECT `+uploadSessionCols+` FROM upload_sessions
+		WHERE target='source_replace' AND id=$1 FOR UPDATE`, uploadID))
+	if isNoRows(err) {
+		return File{}, ErrNotFound
+	}
+	if err != nil {
+		return File{}, err
+	}
+	if u.FileID == nil || u.ExpectedRevision == nil {
+		return File{}, ErrUploadState
+	}
+	if err := s.lockStorageRowTx(ctx, tx, u.UserID); err != nil {
+		return File{}, err
+	}
+	if u.Status == "completed" {
+		file, err := scanFile(tx.QueryRow(ctx,
+			`SELECT `+fileCols+` FROM files WHERE id=$1`, *u.FileID))
+		if isNoRows(err) {
+			return File{}, ErrNotFound
+		}
+		return file, err
+	}
+	if u.Status != "pending" {
+		return File{}, ErrUploadState
+	}
+	if time.Now().UTC().After(u.ExpiresAt) {
+		return File{}, ErrUploadExpired
+	}
+
+	var currentRevision int64
+	var currentStatus string
+	err = tx.QueryRow(ctx, `SELECT revision, status FROM files WHERE id=$1 FOR UPDATE`,
+		*u.FileID).Scan(&currentRevision, &currentStatus)
+	if isNoRows(err) {
+		return File{}, ErrNotFound
+	}
+	if err != nil {
+		return File{}, err
+	}
+	if currentRevision != *u.ExpectedRevision {
+		return File{}, ErrFileRevisionConflict
+	}
+	if currentStatus != string(FileReady) {
+		return File{}, ErrFileNotReady
+	}
+
+	ready := !sourceupload.NeedsIngestJob(u.Kind, u.ParseMode)
+	status := string(FilePending)
+	if ready {
+		status = string(FileReady)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM rag_file_contents WHERE file_id=$1`, *u.FileID); err != nil {
+		return File{}, err
+	}
+	file, err := scanFile(tx.QueryRow(ctx, `UPDATE files SET
+		size_bytes=$3, status=$4, indexed=false, parser=$5, engine=$6,
+		blob_path=$7, source_etag=$8, source_sha256=NULL, content_hash=NULL,
+		content=NULL, parsed_blob_path=NULL, parsed_fingerprint=NULL,
+		parsed_parser_version=NULL, caption_blob_path=NULL,
+		parse_mode=$9, caption_images=$10, revision=revision+1
+		WHERE id=$1 AND revision=$2 RETURNING `+fileCols,
+		*u.FileID, *u.ExpectedRevision, u.DeclaredSize, status, parser, engine,
+		u.FinalPath, sourceETag, u.ParseMode, u.CaptionImages))
+	if err != nil {
+		return File{}, err
+	}
+
+	if !ready {
+		actor := ""
+		if u.CreatedBy != nil {
+			actor = *u.CreatedBy
+		}
+		reservationID, err := s.beginIngestSpendTx(ctx, tx, actor, u.WorkspaceID)
+		if err != nil {
+			return File{}, err
+		}
+		payload, err := s.ingestJobPayload(ctx, actor, map[string]any{
+			"fileId": *u.FileID, "workspaceId": u.WorkspaceID,
+			"blobPath": u.FinalPath, "kind": u.Kind, "parser": parser,
+			"engine": engine, "parseMode": u.ParseMode,
+			"captionImages": u.CaptionImages, "sourceETag": sourceETag,
+			"sourceRevision": file.Revision, "reservationId": reservationID,
+		})
+		if err != nil {
+			return File{}, err
+		}
+		if _, err := tx.Exec(ctx,
+			`INSERT INTO jobs (id, type, payload) VALUES ($1,'ingest',$2)`,
+			uid("job"), payload); err != nil {
+			return File{}, err
+		}
+	}
+
+	if _, err := tx.Exec(ctx, `UPDATE upload_sessions SET
+		status='completed', source_etag=$2, completed_at=now()
+		WHERE id=$1`, uploadID, sourceETag); err != nil {
+		return File{}, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return File{}, err
+	}
+	return file, nil
 }
 
 // SweepExpiredUploads writes off reservations whose presigned window closed
@@ -298,8 +508,8 @@ func (s *Store) MarkUploadExpired(ctx context.Context, id string) error {
 	}
 	defer tx.Rollback(ctx)
 	var userID string
-	err = tx.QueryRow(ctx, `SELECT user_id`+uploadSessionFrom+
-		`id=$1 AND status='pending'`, id).Scan(&userID)
+	err = tx.QueryRow(ctx, `SELECT user_id FROM upload_sessions
+		WHERE target IN ('source','source_replace') AND id=$1 AND status='pending'`, id).Scan(&userID)
 	if isNoRows(err) {
 		return nil
 	}

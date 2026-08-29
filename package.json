@@ -119,13 +119,17 @@
   },
   "name": "evo-notes",
   "scripts": {
+    "predev": "pnpm run office:prepare",
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "prebuild": "pnpm run office:prepare",
+    "build": "tsc -b && node --max-old-space-size=4096 node_modules/vite/bin/vite.js build",
     "preview": "vite preview",
     "fmt": "biome format --write .",
     "fmt:go": "cd server && go fmt ./...",
     "fmt:py": "uv --native-tls run --with ruff ruff format pipeline && uv --native-tls run --with ruff ruff check --fix pipeline",
+    "pretypecheck": "pnpm run office:prepare",
     "typecheck": "tsc -b --noEmit",
+    "pretest": "pnpm run office:prepare",
     "test": "vitest run --dir src && vitest run --dir e2e/perf",
     "test:collaboration": "vitest run --dir collaboration",
     "test:import-relay": "pnpm --filter @evo-notes/drive-import-relay test",
@@ -162,7 +166,8 @@
     "gen:api:full": "pnpm gen:openapi && pnpm gen:api",
     "fix": "ultracite fix",
     "prepare": "husky",
-    "deploy:import-relay": "pnpm --filter @evo-notes/drive-import-relay deploy"
+    "deploy:import-relay": "pnpm --filter @evo-notes/drive-import-relay deploy",
+    "office:prepare": "node scripts/prepare-betteroffice.mjs"
   },
   "lint-staged": {
     "*.{js,jsx,ts,tsx,mjs,cjs,json,jsonc,css,scss,md,mdx}": [

@@ -127,6 +127,13 @@ Expiry marks the session expired and releases the reservation in the same
 transaction before best-effort blob cleanup (cleanup details in the
 authorization doc).
 
+An Office edit replaces an existing source rather than creating another file.
+Its upload session reserves `max(new_size - current_size, 0)`, so unchanged or
+smaller saves do not need free quota they will not consume. Finalization locks
+the file, verifies its expected revision, swaps the blob and size, then releases
+the growth reservation. The normal file-size trigger applies the signed used
+byte delta. A stale editor or a file that is no longer ready cannot finalize.
+
 Editor assets write to an `editor-assets/incoming/…` key and are promoted to
 an unpresigned stable `editor-assets/{id}/…` key before finalization, so the
 still-valid upload URL cannot overwrite a ready object. If creating the

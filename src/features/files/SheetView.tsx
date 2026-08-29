@@ -1,125 +1,94 @@
-import { useEffect, useState } from 'react';
+import type { SourceFile } from '@/api/types';
+import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
+import { useOfficeRuntime } from './useOfficeRuntime';
 
-type Cell = string | number | boolean | null;
-interface SheetData {
-  name: string;
-  rows: Cell[][];
-}
+export default function SheetView({
+  canEdit,
+  file,
+  onSave,
+}: {
+  canEdit: boolean;
+  file: SourceFile;
+  onSave?: (
+    bytes: Uint8Array,
+    expectedRevision: number
+  ) => Promise<{
+    revision: number;
+  }>;
+}) {
+  const runtime = useOfficeRuntime({
+    canEdit,
+    file,
+    format: 'xlsx',
+    onSave,
+    revision: file.revision,
+  });
 
-// Render caps so a huge workbook can't lock up the tab.
-const MAX_ROWS = 500;
-const MAX_COLS = 50;
-
-/** Spreadsheet viewer (xlsx/xls/csv). SheetJS is imported on demand so it
- * stays out of the main bundle. */
-export default function SheetView({ url }: { url: string }) {
-  const [sheets, setSheets] = useState<SheetData[] | null>(null);
-  const [active, setActive] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setSheets(null);
-    setError(null);
-    setActive(0);
-    (async () => {
-      try {
-        const [XLSX, buf] = await Promise.all([
-          import('xlsx'),
-          fetch(url).then((r) => {
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            return r.arrayBuffer();
-          }),
-        ]);
-        const wb = XLSX.read(buf);
-        const parsed = wb.SheetNames.map((name) => ({
-          name,
-          rows: XLSX.utils.sheet_to_json<Cell[]>(wb.Sheets[name], {
-            defval: null,
-            header: 1,
-          }),
-        }));
-        if (!cancelled) setSheets(parsed);
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'error');
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [url]);
-
-  if (error) {
+  if (runtime.error && !runtime.analysis) {
     return (
       <p className="py-8 text-center text-tint-error-fg">
         {m.files_sheet_failed()}
       </p>
     );
   }
-  if (!sheets) {
-    return <Skeleton className="h-[60vh] w-full" />;
-  }
-  if (sheets.length === 0) {
-    return (
-      <p className="py-8 text-center text-fg-muted">{m.files_sheet_empty()}</p>
-    );
-  }
-
-  const sheet = sheets[Math.min(active, sheets.length - 1)];
-  const rows = sheet.rows.slice(0, MAX_ROWS);
-  const truncated =
-    sheet.rows.length > MAX_ROWS || rows.some((r) => r.length > MAX_COLS);
-
   return (
-    <div className="flex h-full flex-col gap-2">
-      {sheets.length > 1 && (
-        <div className="flex flex-wrap gap-1">
-          {sheets.map((s, i) => (
-            <button
-              className={cn(
-                'rounded-button px-2.5 py-1 text-sm transition-colors',
-                i === active
-                  ? 'bg-surface-dark font-medium text-fg'
-                  : 'text-fg-muted hover:bg-surface-hover-bg'
-              )}
-              key={s.name}
-              onClick={() => setActive(i)}
-              type="button"
-            >
-              {s.name}
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="min-h-0 flex-1 overflow-auto rounded-card border border-line">
-        <table className="w-max min-w-full border-collapse text-sm">
-          <tbody>
-            {rows.map((row, ri) => (
-              <tr
-                className={ri === 0 ? 'bg-surface-dark font-medium' : undefined}
-                key={ri}
-              >
-                {row.slice(0, MAX_COLS).map((cell, ci) => (
-                  <td
-                    className="max-w-90 truncate border border-line px-2.5 py-1.5"
-                    key={ci}
-                  >
-                    {cell == null ? '' : String(cell)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
+    <div className="flex h-full min-h-[60vh] flex-col">
+      <div className="flex min-h-10 items-center gap-2 border-line border-b px-2">
+        <span className="t-meta flex-1 text-fg-muted">
+          {runtime.analysis?.format === 'xlsx'
+            ? m.files_office_sheet_count({
+                count: runtime.analysis.sheetCount,
+              })
+            : m.files_office_opening_workbook()}
+        </span>
+        {runtime.saving && (
+          <span className="t-meta">{m.files_office_saving()}</span>
+        )}
+        {canEdit &&
+          file.status === 'ready' &&
+          onSave &&
+          runtime.mode === 'view' &&
+          runtime.analysis && (
+            <Button onClick={() => runtime.setRuntimeMode('edit')} size="sm">
+              {m.action_edit()}
+            </Button>
+          )}
+        {runtime.mode === 'edit' && (
+          <Button
+            onClick={() => {
+              if (
+                !runtime.dirty ||
+                window.confirm(m.files_office_discard_changes())
+              )
+                runtime.setRuntimeMode('view');
+            }}
+            size="sm"
+            variant="outline"
+          >
+            {m.files_office_cancel_editing()}
+          </Button>
+        )}
       </div>
-      {truncated && (
-        <p className="t-meta text-fg-muted">
-          Preview truncated to {MAX_ROWS} rows × {MAX_COLS} columns.
+      {runtime.error && runtime.analysis && (
+        <p className="border-line border-b px-3 py-2 text-sm text-tint-error-fg">
+          {runtime.error}
         </p>
       )}
+      <div className="relative min-h-0 flex-1">
+        {!runtime.analysis && (
+          <Skeleton className="absolute inset-0 h-full w-full" />
+        )}
+        <iframe
+          className="h-full w-full border-0"
+          onLoad={() => runtime.setFrameLoaded(true)}
+          ref={runtime.iframeRef}
+          sandbox="allow-downloads allow-same-origin allow-scripts"
+          src="/office-runtime.html"
+          title={m.files_office_workbook_frame_title({ name: file.name })}
+        />
+      </div>
     </div>
   );
 }

@@ -2,7 +2,7 @@
  * Thin fetch wrapper around the API. One base URL so the real
  * backend can be dropped in later by changing `API_BASE`.
  */
-import { authHeaders } from './auth';
+import { authHeaders, USE_MSW } from './auth';
 
 export const API_BASE = '/api';
 
@@ -174,6 +174,31 @@ async function upload<T>(
   signal?: AbortSignal
 ): Promise<T> {
   const auth = await authHeaders();
+  // Service workers can intercept fetch uploads reliably, while Chromium can
+  // leave an MSW-intercepted multipart XHR pending forever. Mock uploads are
+  // tiny local fixtures, so report coarse progress and keep XHR for real bytes.
+  if (USE_MSW) {
+    onProgress?.(0);
+    const res = await fetch(`${API_BASE}${path}`, {
+      body: form,
+      headers: auth,
+      method: 'POST',
+      signal,
+    });
+    if (!res.ok) {
+      let body: ApiErrorBody | null = null;
+      try {
+        body = parseErrorBody(await res.json());
+      } catch {
+        /* ignore */
+      }
+      throw new ApiError(res.status, res.statusText, errorDetail(body), body);
+    }
+    onProgress?.(100);
+    if (res.status === 204) return undefined as T;
+    const body = await res.text();
+    return (body ? JSON.parse(body) : undefined) as T;
+  }
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     const abort = () => xhr.abort();

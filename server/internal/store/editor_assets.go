@@ -84,8 +84,8 @@ func (s *Store) CreateEditorAssetReservation(ctx context.Context, in NewEditorAs
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO upload_sessions
 		(id, target, asset_id, workspace_id, user_id, created_by, object_path, final_path,
-		 content_type, declared_size, expires_at)
-		VALUES ($1,'editor_asset',$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		 content_type, declared_size, reserved_size, expires_at)
+		VALUES ($1,'editor_asset',$2,$3,$4,$5,$6,$7,$8,$9,$9,$10)`,
 		in.UploadID, in.AssetID, in.WorkspaceID, ownerID, nullStr(in.CreatedBy),
 		in.ObjectPath, finalPath, in.ContentType, in.DeclaredSize, in.ExpiresAt); err != nil {
 		return EditorAsset{}, EditorAssetUpload{}, err

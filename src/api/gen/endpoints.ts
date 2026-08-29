@@ -26,6 +26,7 @@ import type {
   CreateDeckReq,
   CreateDiscussionReq,
   CreateEventReq,
+  CreateFileReplacementUploadReq,
   CreateMaterialReq,
   CreateQuizReq,
   CreateSourceUploadReq,
@@ -1996,6 +1997,109 @@ export const updateFile = async (id: string,
 
   const data: updateFileResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateFileResponse
+}
+
+
+
+export type createFileReplacementUploadResponse201 = {
+  data: SourceUploadReservation
+  status: 201
+}
+
+export type createFileReplacementUploadResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type createFileReplacementUploadResponseSuccess = (createFileReplacementUploadResponse201) & {
+  headers: Headers;
+};
+export type createFileReplacementUploadResponseError = (createFileReplacementUploadResponseDefault) & {
+  headers: Headers;
+};
+
+export type createFileReplacementUploadResponse = (createFileReplacementUploadResponseSuccess | createFileReplacementUploadResponseError)
+
+export const getCreateFileReplacementUploadUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/${id}/replacement-uploads`
+}
+
+/**
+ * @summary Reserve a direct file replacement
+ */
+export const createFileReplacementUpload = async (id: string,
+    createFileReplacementUploadReq: NonReadonly<CreateFileReplacementUploadReq>, options?: RequestInit): Promise<createFileReplacementUploadResponse> => {
+
+  const res = await fetch(getCreateFileReplacementUploadUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createFileReplacementUploadReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: createFileReplacementUploadResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createFileReplacementUploadResponse
+}
+
+
+
+export type completeFileReplacementUploadResponse200 = {
+  data: File
+  status: 200
+}
+
+export type completeFileReplacementUploadResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type completeFileReplacementUploadResponseSuccess = (completeFileReplacementUploadResponse200) & {
+  headers: Headers;
+};
+export type completeFileReplacementUploadResponseError = (completeFileReplacementUploadResponseDefault) & {
+  headers: Headers;
+};
+
+export type completeFileReplacementUploadResponse = (completeFileReplacementUploadResponseSuccess | completeFileReplacementUploadResponseError)
+
+export const getCompleteFileReplacementUploadUrl = (id: string,
+    uploadId: string,) => {
+
+
+
+
+  return `/api/files/${id}/replacement-uploads/${uploadId}/complete`
+}
+
+/**
+ * @summary Complete a direct file replacement
+ */
+export const completeFileReplacementUpload = async (id: string,
+    uploadId: string, options?: RequestInit): Promise<completeFileReplacementUploadResponse> => {
+
+  const res = await fetch(getCompleteFileReplacementUploadUrl(id,uploadId),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: completeFileReplacementUploadResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as completeFileReplacementUploadResponse
 }
 
 

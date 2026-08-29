@@ -18,8 +18,20 @@ Study workspace: notes, sources, quizzes, flashcards, schedule, and AI retrieval
 - **Deploy** (`deploy/`) — Docker Compose for the backend stack. `ops` and `reconcile` are opt-in profiles.
 - **Docs** (`openwiki/`) — Authz, quota, retrieval, editor, observability/metering (operator access), deployment runbook, tests.
 - **Tests** — Vitest (`src/`, `ops/`, `collaboration/`), Go (`server/`), pytest (`pipeline/`), Playwright (`e2e/`).
+- **Office engines** (`vendor/betteroffice/`) — pinned fork used for lazy XLSX/PPTX viewing, analysis, editing, and save round-trips.
 
 ## Local
+
+Initialize the pinned Office-engine fork once after cloning:
+
+```bash
+git submodule update --init vendor/betteroffice
+```
+
+Cold Office builds require Bun, Rust, `wasm-pack` 0.15.0, and Binaryen's
+`wasm-opt`. The normal frontend lifecycle scripts build missing WASM artifacts
+and reuse intact outputs. See
+[`openwiki/frontend/office-files.md`](openwiki/frontend/office-files.md).
 
 ```bash
 # SPA — MSW on by default; VITE_USE_MSW=false talks to the gateway

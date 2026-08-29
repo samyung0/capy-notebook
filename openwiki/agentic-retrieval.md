@@ -254,6 +254,15 @@ the file is viewable and downloadable, and chat/generate cannot search it. A
 failed ingest is the same shape — nothing is auto-deleted; the UI shows a banner
 on the file rather than replacing the viewer.
 
+Browser Office saves replace the full source file under the same logical
+`files.id`. Completion uses an expected `files.revision` compare-and-swap,
+increments the revision, removes the old `rag_file_contents` alias, clears
+source/parse artifacts, and enqueues ingest with the saved parse and caption
+policy. The orphan cleanup trigger removes canonical retrieval content only
+when no other alias uses it. Store-only replacements return ready and unindexed.
+There is no chunk-level dirty update: the serialized OOXML file is the source of
+truth and follows the normal donor/parse/index path.
+
 Nothing calls a third-party parsing API. The former service could not return
 bounding boxes or images, needed polling, and capped files at 10 MB / 20 pages.
 

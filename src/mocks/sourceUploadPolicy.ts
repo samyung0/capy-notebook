@@ -2,13 +2,13 @@ import type { FileKind, SourceUploadPolicy } from '@/api/types';
 
 const explicitExtensions: Record<string, string[]> = {
   audio: ['mp3', 'wav', 'm4a', 'ogg', 'flac', 'aac'],
-  doc: ['doc', 'docx'],
+  doc: ['docx'],
   image: ['png', 'jpg', 'jpeg', 'jp2', 'webp', 'gif', 'bmp', 'svg', 'avif'],
   json: ['json', 'map'],
   md: ['md', 'markdown', 'mdx', 'mdc'],
   pdf: ['pdf'],
-  sheet: ['xls', 'xlsx', 'csv'],
-  slides: ['ppt', 'pptx'],
+  sheet: ['xlsx', 'csv'],
+  slides: ['pptx'],
 };
 
 const textExtensions = `
@@ -65,7 +65,6 @@ const supportedExtensions = [...extensionKinds.keys()]
 /** Mirrors sourceupload.parseExtensions: the document parser's format list. */
 const parseExtensions = [
   '.bmp',
-  '.doc',
   '.docx',
   '.gif',
   '.jp2',
@@ -73,10 +72,8 @@ const parseExtensions = [
   '.jpg',
   '.pdf',
   '.png',
-  '.ppt',
   '.pptx',
   '.webp',
-  '.xls',
   '.xlsx',
 ];
 

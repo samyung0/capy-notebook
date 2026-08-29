@@ -836,6 +836,7 @@ export const ListAllFilesResponseItem = zod.object({
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
+  "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "url": zod.string().optional(),
@@ -871,6 +872,7 @@ export const GetFileResponse = zod.object({
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
+  "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "url": zod.string().optional(),
@@ -904,6 +906,61 @@ export const UpdateFileResponse = zod.object({
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
+  "revision": zod.int(),
+  "sizeBytes": zod.int(),
+  "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
+  "url": zod.string().optional(),
+  "workspaceId": zod.string()
+})
+
+
+/**
+ * @summary Reserve a direct file replacement
+ */
+export const CreateFileReplacementUploadParams = zod.object({
+  "id": zod.string()
+})
+
+
+export const createFileReplacementUploadBodySizeBytesMin = 0;
+
+
+
+export const CreateFileReplacementUploadBody = zod.object({
+  "contentType": zod.string().optional(),
+  "expectedRevision": zod.int().min(1),
+  "sizeBytes": zod.int().min(createFileReplacementUploadBodySizeBytesMin)
+})
+
+export const CreateFileReplacementUploadResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "expiresAt": zod.iso.datetime({"offset":true}),
+  "headers": zod.record(zod.string(), zod.string()),
+  "method": zod.string(),
+  "uploadId": zod.string(),
+  "url": zod.string()
+})
+
+
+/**
+ * @summary Complete a direct file replacement
+ */
+export const CompleteFileReplacementUploadParams = zod.object({
+  "id": zod.string(),
+  "uploadId": zod.string()
+})
+
+export const CompleteFileReplacementUploadResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "addedAt": zod.iso.datetime({"offset":true}),
+  "chapterId": zod.string().nullable(),
+  "content": zod.string().optional(),
+  "id": zod.string(),
+  "indexed": zod.boolean(),
+  "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
+  "name": zod.string(),
+  "position": zod.int(),
+  "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "url": zod.string().optional(),
@@ -2366,6 +2423,7 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
+  "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "url": zod.string().optional(),
@@ -2697,6 +2755,7 @@ export const CompleteSourceUploadResponse = zod.object({
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
+  "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
   "url": zod.string().optional(),

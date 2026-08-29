@@ -259,9 +259,9 @@ func (s *Store) createSourceImports(
 		u := item.Upload
 		if _, err := tx.Exec(ctx, `INSERT INTO upload_sessions
 			(id, target, workspace_id, user_id, created_by, chapter_id, chapter_name,
-			 object_path, final_path, name, kind, content_type, declared_size,
+			 object_path, final_path, name, kind, content_type, declared_size, reserved_size,
 			 parse_mode, caption_images, expires_at)
-			VALUES ($1,'source',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
+			VALUES ($1,'source',$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$12,$13,$14,$15)`,
 			u.ID, u.WorkspaceID, ownerID, nullStr(u.CreatedBy), u.ChapterID,
 			u.ChapterName, u.ObjectPath, u.FinalPath, u.Name, u.Kind,
 			u.ContentType, u.DeclaredSize, u.ParseMode, u.CaptionImages,
@@ -524,7 +524,8 @@ func (s *Store) prepareSourceImportUpload(
 		}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE upload_sessions
-		SET declared_size=$2 WHERE id=$1 AND status='pending'`,
+		SET declared_size=$2, reserved_size=$2
+		WHERE id=$1 AND status='pending'`,
 		job.UploadSessionID, actualSize); err != nil {
 		return job, err
 	}
