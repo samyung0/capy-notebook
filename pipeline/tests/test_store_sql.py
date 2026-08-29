@@ -180,7 +180,7 @@ def test_parse_attempt_page_charge_is_idempotent_and_settles_session(workspace):
                 workspace_id=workspace.id,
                 kind="parse",
                 surface="ingest",
-                provider="modal",
+                provider="parser-vm",
                 units=2,
                 unit="pages",
                 parse_pages=2,
@@ -247,7 +247,7 @@ async def _write(ws, file_id: str, texts: list[str], *, axis_base: int = 0) -> N
             "page_start": i + 1,
             "page_end": i + 1,
             "regions": [
-                {"page": i + 1, "bbox": [1, 2, 3, 4], "space": "mineru-1000-lefttop"}
+                {"page": i + 1, "bbox": [1, 2, 3, 4], "space": "page-1000-topleft"}
             ],
             "search_text": tokenize_for_search(text),
             "embedding": store.vector_literal(_unit_vector(axis_base + i)),
@@ -344,7 +344,7 @@ async def test_chunks_carry_the_provenance_a_citation_needs(workspace):
 
     row = rows[0]
     assert (row["page_start"], row["page_end"]) == (1, 1)
-    assert store.decode_regions(row["regions"])[0]["space"] == "mineru-1000-lefttop"
+    assert store.decode_regions(row["regions"])[0]["space"] == "page-1000-topleft"
     assert row["section_path"] == "Ch 1 › Section"
 
 
@@ -925,7 +925,7 @@ def test_only_the_claiming_attempt_may_write_its_outcome(workspace):
     """A worker whose lease was reclaimed must not overwrite its successor.
 
     The scenario is a live worker that lost its lease (heartbeat failure, long
-    Modal parse) while the reaper re-pended the row and a second worker took it.
+    remote parse) while the reaper re-pended the row and a second worker took it.
     """
     from pipeline.store import db
 

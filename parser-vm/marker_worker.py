@@ -1,4 +1,4 @@
-"""Fast-route Marker worker (one process per in-flight parse).
+"""Marker worker for one in-flight parser VM job.
 
 PDFium is not thread-safe. Threads in one container blew up with
 ``Failed to load page`` / ``Data format error``. Marker's own CLI uses

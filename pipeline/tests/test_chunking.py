@@ -101,7 +101,7 @@ def test_tables_equations_and_captioned_images_are_indexed():
 def test_chart_blocks_are_indexed_like_images():
     """A ``chart`` is a picture block under a different label.
 
-    MinerU's GPU routes label recognised data graphics ``chart`` rather than
+    Some parser routes label recognised data graphics ``chart`` rather than
     ``image``, with the caption under ``chart_caption``. Treating that as an
     unknown type dropped the single most retrievable thing on a lecture slide.
     """
@@ -154,7 +154,7 @@ def test_list_blocks_carry_their_items():
 def test_header_and_footnote_are_body_text_not_headings():
     """``header`` is the slide title on a deck, so it must not be dropped.
 
-    It must also not become a heading: MinerU gives it no ``text_level``, and a
+    It must also not become a heading. The parser gives it no ``text_level``, and a
     genuine running header would then overwrite the section path on every page.
     """
     chunks = chunk_content_list(

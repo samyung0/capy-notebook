@@ -1,4 +1,4 @@
-"""Time the Modal parse endpoint: one job, then a burst on one box.
+"""Time the parser VM endpoint: one job, then a concurrent burst.
 
 Warm the container first (a cheap /healthz), then:
 
@@ -8,15 +8,12 @@ Warm the container first (a cheap /healthz), then:
 Prints wall clock, in-container ``_server_parse_s``, block/char counts, and
 which lane (digital vs ocr) each job took.
 
-    python modal/bench_parse.py --file bench/parsers/docs/metabolic_pathway.pdf
-    python modal/bench_parse.py --jobs 8 --parse-method txt --file ...
-    python modal/bench_parse.py --sweep 1,2,4,6,8 --parse-method txt --file ...
+    python bench/parsers/bench_parse.py --file bench/parsers/docs/metabolic_pathway.pdf
+    python bench/parsers/bench_parse.py --jobs 8 --parse-method marker_only --file ...
+    python bench/parsers/bench_parse.py --sweep 1,2,4,6,8 --parse-method marker_only --file ...
 
-Needs ``requests``. URL/token from env (MODAL_FAST_PARSE_URL /
-MODAL_PARSE_TOKEN) or flags.
-
-To measure *one* box, keep N <= that box's max_inputs. Extra concurrent HTTP
-opens a second container and the burst wall stops meaning "one GPU".
+Needs ``requests``. URL and token come from ``PARSER_URL`` and ``PARSER_TOKEN``
+or the matching flags.
 """
 
 from __future__ import annotations
@@ -40,9 +37,9 @@ def _file_parse_url(url: str) -> str:
 
 
 def _parse_url(args: argparse.Namespace) -> str:
-    url = args.url or os.environ.get("MODAL_FAST_PARSE_URL", "")
+    url = args.url or os.environ.get("PARSER_URL", "")
     if not url:
-        raise SystemExit("no URL: pass --url or set MODAL_FAST_PARSE_URL")
+        raise SystemExit("no URL: pass --url or set PARSER_URL")
     return _file_parse_url(url)
 
 
@@ -63,15 +60,16 @@ def _summarize(body: dict) -> str:
             chars += len(str(item.get("text") or item.get("table_body") or ""))
     images = body.get("images") or {}
     ocr_pages = body.get("_ocr_pages")
-    lane = body.get("_fast_lane")
+    lane = body.get("_parse_lane")
     extra = ""
     if ocr_pages is not None:
         extra += f"  ocr_pages={ocr_pages}"
     if lane:
         extra += f"  lane={lane}"
-    rss = body.get("_rss") or {}
-    if rss.get("total_rss_mb") is not None:
-        extra += f"  rss={rss.get('total_rss_mb')}MB/{rss.get('n_procs')}procs"
+    rss = body.get("_parser_rss_bytes")
+    processes = body.get("_parser_process_count")
+    if rss is not None:
+        extra += f"  rss={int(rss) / (1 << 20):.0f}MB/{processes or '?'}procs"
     return (
         f"blocks={len(items)} chars={chars} headings={headings} "
         f"images={len(images)}{extra}"
@@ -200,7 +198,7 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--url", default="", help="override /file_parse URL")
-    ap.add_argument("--token", default=os.environ.get("MODAL_PARSE_TOKEN", ""))
+    ap.add_argument("--token", default=os.environ.get("PARSER_TOKEN", ""))
     ap.add_argument("--file", required=True, help="PDF to parse")
     ap.add_argument(
         "--jobs",

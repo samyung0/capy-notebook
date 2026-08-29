@@ -84,7 +84,7 @@ type ConversationPrompt struct {
 
 // Region locates one source block inside its page. Stored and shipped ahead of
 // the highlight overlay that will consume it; Space names the coordinate
-// convention ('mineru-1000-lefttop': origin top-left, both axes scaled to
+// convention ('page-1000-topleft': origin top-left, both axes scaled to
 // 0..1000) so a renderer never has to infer it.
 type Region struct {
 	Page  int       `json:"page"`

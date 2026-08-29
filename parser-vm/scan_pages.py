@@ -1,4 +1,4 @@
-"""Cheap per-page probe: scanned raster vs a figure sitting on a digital page.
+"""Classify parser VM pages that need OCR.
 
 A page with a photo is not a scanned page. A scanned page is (almost) the whole
 page drawn as one image, with little real text in the PDF layer. We also OCR

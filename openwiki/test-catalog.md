@@ -245,14 +245,13 @@ at the top of each section.
 | [`pipeline/tests/test_locale.py`](../pipeline/tests/test_locale.py)                         | Locale propagation to chat and Plate AI prompts.                          |
 | [`pipeline/tests/test_marker_adapt.py`](../pipeline/tests/test_marker_adapt.py)             | Marker output conversion, image filtering, and OCR merging.               |
 | [`pipeline/tests/test_marker_worker_ocr.py`](../pipeline/tests/test_marker_worker_ocr.py)   | Explicit OCR modes, modern/legacy Office-to-PDF and extra-image-to-PNG normalization, lazy RapidOCR, and child-process resource/failure receipts. |
-| [`pipeline/tests/test_modal_parser.py`](../pipeline/tests/test_modal_parser.py)             | Provider-neutral parser artifact validation, release-derived identity, presigned URL budgets, caching, route checks, and full success/failure measurement capture. |
+| [`pipeline/tests/test_parser_client.py`](../pipeline/tests/test_parser_client.py)             | Provider-neutral parser artifact validation, release-derived identity, presigned URL budgets, caching, route checks, and full success/failure measurement capture. |
 | [`pipeline/tests/test_model_configs_lock.py`](../pipeline/tests/test_model_configs_lock.py) | Database rules that protect model configuration rows.                     |
 | [`pipeline/tests/test_model_replay.py`](../pipeline/tests/test_model_replay.py)             | Replay-only two-turn streaming checks for every certified provider/model cassette. |
 | [`pipeline/tests/test_model_replay_cert.py`](../pipeline/tests/test_model_replay_cert.py)   | Provider/model-list selection, certified-slug retention, forced replay mode, metadata-free manifest entries, interruption/failure rollback, and agentic-loop Go embed updates. |
 | [`pipeline/tests/test_parse_slots.py`](../pipeline/tests/test_parse_slots.py)               | Redis parse-slot limits and fail-open behavior.                           |
 | [`pipeline/tests/test_parse_time_budgets.py`](../pipeline/tests/test_parse_time_budgets.py) | Parser request, slot, presigned URL, and whole-ingest deadline ordering.  |
 | [`pipeline/tests/test_parser_vm_app.py`](../pipeline/tests/test_parser_vm_app.py)           | Parser retries with the same artifact fingerprint share one in-flight parse/upload. |
-| [`pipeline/tests/test_pool_shutdown.py`](../pipeline/tests/test_pool_shutdown.py)           | Shutdown of stuck parser worker processes.                                |
 | [`pipeline/tests/test_provider_byok.py`](../pipeline/tests/test_provider_byok.py)           | BYOK resolution, isolation, and error handling.                           |
 | [`pipeline/tests/test_quiz_grade.py`](../pipeline/tests/test_quiz_grade.py)                 | Open-answer quiz scoring and result parsing.                              |
 | [`pipeline/tests/test_registry_billing.py`](../pipeline/tests/test_registry_billing.py)     | Model registry pins, worst-case digital/OCR page rates, actor billing, and ingest reservation closure. |
@@ -355,5 +354,5 @@ Supporting (not tests): [`e2e/perf/metrics.ts`](../e2e/perf/metrics.ts) instrume
 
 | File                                                          | About                                                                                                                                                                   |
 | ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`modal/test_snapshot.py`](../modal/test_snapshot.py)         | Manual script measuring Modal CPU memory-snapshot cold-boot vs parse latency on `evo-mineru-fast`.                                                                      |
-| [`modal/bench_mixed_lanes.py`](../modal/bench_mixed_lanes.py) | Manual mixed-lane load: 6 digital lecture parses + 2 OCR jobs of lecture+newspaper glued together; checks the combined bundle kept slide text and recovered scan lines. |
+| [`bench/parsers/bench_parse.py`](../bench/parsers/bench_parse.py)             | Manual parser throughput and resource benchmark against the persistent VM endpoint.                                                                |
+| [`bench/parsers/bench_mixed_lanes.py`](../bench/parsers/bench_mixed_lanes.py) | Manual mixed-lane load: four digital jobs plus two OCR-heavy jobs; checks the returned bundles contain representative text.                         |

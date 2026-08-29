@@ -10,7 +10,7 @@ dependencies = [
   # Provider HTTP is hand-rolled in pipeline.elitellm (httpx).
   "cryptography>=42",
   "httpx>=0.27",
-  # Modal parse client + Redis progress + retrieval API.
+  # Parser VM client + Redis progress + retrieval API.
   "requests>=2.31",
   "redis>=5.0",
   # Backblaze B2 source-object downloads in the ingest worker.
@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# vcrpy records the expensive LLM/embedding/VLM/Modal HTTP calls to YAML
+# vcrpy records expensive LLM, embedding, VLM, and parser HTTP calls to YAML
 # cassettes so the suite replays them for free (see pipeline/tests/README.md).
 # testcontainers starts fresh Postgres/Redis containers for cassette tests.
 # pytest-asyncio drives the async ingest/retrieval entry points.

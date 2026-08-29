@@ -3,10 +3,10 @@ Drive / OneDrive import via Cloudflare Worker relay
 Status: implemented. User uploads already go browser →
 presigned B2 PUT → Go `Head` + finalize. Cloud import now reserves and writes
 an outbox job; the Queue Worker downloads one bounded file and PUTs it through
-a late-minted presign. The origin never holds raw import bytes. Modal remains
-the first process that downloads parseable files after finalization.
+a late-minted presign. The origin never holds raw import bytes. The parser VM is
+the first application host that downloads parseable files after finalization.
 
-This is “Go/Coolify never sees import payloads,” not “only Modal sees files.”
+This is “Go/Coolify never sees import payloads,” not “only the parser sees files.”
 The Worker still sees bytes. Cloudflare already terminates API TLS.
 
 
@@ -45,8 +45,8 @@ Agreed points
   another PUT client, not a new ingest protocol. Do not give the isolate
   B2 app keys.
 
-- Do not use the Postgres `ingest` job type for the relay. That job is
-  Modal parse and assumes the blob is already in B2.
+- Do not use the Postgres `ingest` job type for the relay. That job parses from
+  the dedicated VM and assumes the blob is already in B2.
 
 - `upload_sessions` remains the quota/object reservation. The separate
   `source_import_jobs` row is the transactional outbox, provider locator,

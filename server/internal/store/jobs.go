@@ -13,7 +13,7 @@ import (
 // CreateSourceWithJob inserts an uploaded file as 'pending' and enqueues an
 // ingest job in the same transaction (Postgres-backed queue; the Python worker
 // claims it with SKIP LOCKED). The file stays pending until a worker actually
-// starts (or a Modal parse slot is free); then it becomes 'processing'. The
+// starts (or a parser slot is free); then it becomes 'processing'. The
 // file's url points at the raw-blob endpoint so the viewer can render it
 // immediately. parseMode selects the CPU parser the worker runs:
 // 'fast' (Marker + RapidOCR on scans). Unknown names fail validation.

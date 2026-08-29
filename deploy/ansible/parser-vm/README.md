@@ -53,6 +53,6 @@ before the application deployment begins.
 
 ## Rollback
 
-Stop `evo-parser.service`, deploy `main` on the app host, and enable its legacy
-Modal worker profile. Parser artifacts have distinct version-and-mode
-fingerprints, so the rollback cannot mistake VM output for the old Modal output.
+Promote the previous known-good exact SHA through the same release workflow.
+This keeps the app, migration, worker, sampler, and parser on one revision.
+Artifact schemas, parser versions, and modes all participate in cache identity.

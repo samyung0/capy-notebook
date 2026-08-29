@@ -115,7 +115,7 @@ def test_page_furniture_and_undersized_crops_are_rejected(
 def test_a_figure_the_parser_already_described_is_not_recaptioned(tmp_path: Path):
     _write(tmp_path / "images" / "fig.png", _diagram())
     content_list = [
-        _image_block("images/fig.png", 0, description="MinerU already said this")
+        _image_block("images/fig.png", 0, description="Parser already said this")
     ]
 
     assert figures.select_figures(content_list, tmp_path) == []
@@ -406,7 +406,7 @@ async def test_nothing_to_caption_makes_no_calls(tmp_path: Path, captioning):
 async def test_the_caption_cache_follows_the_source_blob_not_the_parse_route(
     tmp_path: Path, captioning
 ):
-    """Re-parsing the same bytes on a different MinerU route must not recaption."""
+    """Re-parsing the same bytes on another route must not recaption."""
     _write(tmp_path / "images" / "a.png", _diagram(seed=1))
     first = [_image_block("images/a.png", 0)]
     second = [_image_block("images/a.png", 0)]

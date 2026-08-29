@@ -9,10 +9,8 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 PARSER_VM_DIR = REPO_ROOT / "parser-vm"
-MODAL_DIR = REPO_ROOT / "modal"
-for path in (PARSER_VM_DIR, MODAL_DIR):
-    if str(path) not in sys.path:
-        sys.path.insert(0, str(path))
+if str(PARSER_VM_DIR) not in sys.path:
+    sys.path.insert(0, str(PARSER_VM_DIR))
 
 spec = importlib.util.spec_from_file_location("parser_vm_app", PARSER_VM_DIR / "app.py")
 assert spec is not None and spec.loader is not None

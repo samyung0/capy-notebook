@@ -1,7 +1,7 @@
 """Flatten Marker JSON into the ``content_list`` shape the rest of ingest eats.
 
 bbox is ``[x0, y0, x1, y1]`` on a 1000x1000 page, origin at the TOP LEFT — the
-same space ``retrieval/chunking.py`` records as ``mineru-1000-lefttop``. Marker
+same space ``retrieval/chunking.py`` records as ``page-1000-topleft``. Marker
 emits page pixels; we scale. Get the origin wrong and every citation highlight
 lands upside down while the text still looks fine.
 """

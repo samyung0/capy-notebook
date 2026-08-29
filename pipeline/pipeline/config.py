@@ -73,14 +73,10 @@ class Config:
 
     # ---- persistent parse service ----------------------------------------
     # In production the ingest worker and parser both run on the Netcup VM.
-    # The old MODAL_* names remain read-only fallbacks so a checkout of this
-    # branch can be rolled back without editing secrets first.
-    parser_url: str = _env("PARSER_URL", _env("MODAL_FAST_PARSE_URL", ""))
-    parser_token: str = _env("PARSER_TOKEN", _env("MODAL_PARSE_TOKEN", ""))
+    parser_url: str = _env("PARSER_URL", "")
+    parser_token: str = _env("PARSER_TOKEN", "")
     # Includes queue time behind the measured two-job OCR-heavy lane.
-    parser_timeout: int = int(
-        _env("PARSER_TIMEOUT", _env("MODAL_PARSE_TIMEOUT", "2400"))
-    )
+    parser_timeout: int = int(_env("PARSER_TIMEOUT", "2400"))
     # These are deliberately separate deadlines. A parser call must finish
     # before its Redis admission lease, both presigned URLs must remain valid
     # through the final B2 upload, and the ingest job needs time afterwards for
@@ -90,18 +86,10 @@ class Config:
     ingest_timeout: int = int(_env("EVO_INGEST_TIMEOUT", "3600"))
     # Up to eight ingest workers may queue a parse. The parser independently
     # admits four Marker-only/selective digital jobs or two OCR-heavy jobs.
-    parse_fast_slots: int = int(
-        _env("EVO_PARSE_SLOTS", _env("EVO_PARSE_FAST_SLOTS", "8"))
-    )
+    parse_fast_slots: int = int(_env("EVO_PARSE_SLOTS", "8"))
     # Part of the parse artifact fingerprint. Never silently fall back between
     # these modes: their output and resource profile are intentionally distinct.
     parse_method: str = _env("EVO_PARSE_METHOD", "selective_rapidocr")
-
-    # Compatibility attributes for code outside this repository that has not
-    # moved to the provider-neutral names yet.
-    modal_fast_parse_url: str = parser_url
-    modal_parse_token: str = parser_token
-    modal_parse_timeout: int = parser_timeout
 
     # ---- chunking ---------------------------------------------------------
     # Target size in characters, not tokens: the boundary decisions here are

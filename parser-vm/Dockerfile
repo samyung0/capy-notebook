@@ -21,7 +21,7 @@ ENV PYTHONUNBUFFERED=1 \
     OMP_NUM_THREADS=2 \
     MKL_NUM_THREADS=2 \
     RELEASE_SHA=$RELEASE_SHA \
-    PYTHONPATH=/app/modal:/app/parser-vm
+    PYTHONPATH=/app/parser-vm
 
 COPY parser-vm/debian.sources /etc/apt/sources.list.d/debian.sources
 RUN apt-get update \
@@ -43,8 +43,7 @@ RUN pip install --no-cache-dir --require-hashes \
         --extra-index-url https://download.pytorch.org/whl/cpu \
         -r parser-vm/requirements.txt
 
-COPY modal/marker_adapt.py modal/marker_worker.py modal/scan_pages.py ./modal/
-COPY parser-vm/app.py ./parser-vm/app.py
+COPY parser-vm/app.py parser-vm/marker_adapt.py parser-vm/marker_worker.py parser-vm/scan_pages.py ./parser-vm/
 
 RUN useradd --create-home --uid 10001 parser \
     && mkdir -p /models/fonts /run/evo-parser/output /run/evo-parser/debug \

@@ -20,9 +20,9 @@ Two invariants are easy to get wrong and both are silent failures:
   every citation highlight in the reader lands mirrored vertically — the text is
   still correct, so no test catches it unless the test looks at coordinates.
 * ``text_level`` carries heading depth, which is what builds ``section_path``.
-  Neither candidate reports depth as reliably as MinerU, so both adapters fall
-  back to the document's own heading hierarchy and the benchmark counts how
-  often a real level was available.
+  Neither candidate reports depth reliably, so both adapters fall back to the
+  document's own heading hierarchy and the benchmark counts how often a real
+  level was available.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ from __future__ import annotations
 from html.parser import HTMLParser
 from typing import Any
 
-BBOX_SPACE = "mineru-1000-topleft"
+BBOX_SPACE = "page-1000-topleft"
 _PAGE_SCALE = 1000.0
 
 # Marker block types that carry prose. Everything not listed here and not
@@ -260,51 +260,6 @@ def _docling_bbox(
         # is the *larger* value. Flipping is not optional here.
         top, bottom = page_height - top, page_height - bottom
     return _scaled_bbox(left, top, right, bottom, page_width, page_height)
-
-
-# --------------------------------------------------------------------- mineru
-
-_MINERU_TYPES = {"text", "table", "equation", "image"}
-
-
-def from_mineru(content_list: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Validate MinerU's own ``content_list`` — it is already the target shape.
-
-    This is deliberately a near-passthrough, and that is the point of including
-    MinerU in the comparison: it needs no adapter, no bbox conversion and no
-    heading-level guessing, so it is the only candidate that carries zero
-    contract risk. The only work here is asserting the invariants the other two
-    adapters have to construct, so a regression upstream shows up as a metric
-    change rather than as silently wrong citations.
-    """
-    items: list[dict[str, Any]] = []
-    for raw in content_list:
-        if not isinstance(raw, dict) or raw.get("type") not in _MINERU_TYPES:
-            continue
-        item = dict(raw)
-
-        page = item.get("page_idx")
-        item["page_idx"] = int(page) if isinstance(page, int) else None
-
-        bbox = item.get("bbox")
-        coords: list[float] | None = None
-        if isinstance(bbox, list) and len(bbox) == 4:
-            try:
-                values = [float(v) for v in bbox]
-            except (TypeError, ValueError):
-                values = []
-            # MinerU already normalizes to 1000x1000 top-left. Anything outside
-            # that range means the upstream convention moved and every stored
-            # citation region would be wrong, so drop it rather than rescale a
-            # box whose real space we no longer know.
-            if len(values) == 4 and all(-1.0 <= v <= _PAGE_SCALE + 1.0 for v in values):
-                coords = [round(v, 2) for v in values]
-        item["bbox"] = coords
-
-        if isinstance(item.get("text_level"), int) and item["text_level"] > 0:
-            item["_level_inferred"] = False
-        items.append(item)
-    return items
 
 
 def _docling_table_html(item: Any, document: Any) -> str:

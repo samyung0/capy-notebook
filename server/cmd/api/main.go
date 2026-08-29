@@ -147,7 +147,7 @@ func openBlobStore(appEnv string) (blob.Store, error) {
 func main() {
 	dsn := env("DATABASE_URL", "postgres://evo:evo@localhost:5432/evo?sslmode=disable")
 	addr := env("ADDR", ":8080")
-	parser := env("EVO_PARSER", "docling")
+	parser := env("EVO_PARSER", "marker")
 	engine := env("EVO_ENGINE", "evo")
 	appURL := env("APP_URL", "http://localhost:5173")
 	appEnv := env("APP_ENV", "development")

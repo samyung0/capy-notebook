@@ -11,9 +11,9 @@ The live route supports Marker-only, selective RapidOCR, and all-page
 RapidOCR. Unknown parse modes fail and each mode has a separate artifact
 fingerprint.
 
-Artifacts are addressed by a fingerprint over (source object, etag, size, parse
-options, route, parser version). Re-ingesting the same document — a retry, a
-re-upload, a cloned workspace — hits the cached zip instead of Modal.
+Artifacts are addressed by a fingerprint over the source object, parse options,
+route, parser version, and artifact schema. A retry, re-upload, or workspace
+clone of the same document hits the cached zip instead of parsing again.
 """
 
 from __future__ import annotations
@@ -35,10 +35,10 @@ from .. import obs
 from ..config import cfg
 from ..store import blobstore
 
-log = logging.getLogger("evo.parse.modal")
+log = logging.getLogger("evo.parse.client")
 
 SOURCE_DESCRIPTOR_SCHEMA = "evo-b2-source-v1"
-ARTIFACT_SCHEMA = "evo-mineru-bundle-v1"
+ARTIFACT_SCHEMA = "evo-parser-bundle-v2"
 
 ROUTE_FAST = "fast"
 
@@ -48,8 +48,8 @@ ROUTE_FAST = "fast"
 PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "marker-2-vm-hybrid-v3"}
 
 
-class ModalParseError(RuntimeError):
-    """Compatibility name for a remote parser contract failure."""
+class ParserClientError(RuntimeError):
+    """The remote parser violated its request or artifact contract."""
 
 
 def _record_measurement(payload: object) -> None:
@@ -82,7 +82,7 @@ def parser_version(route: str) -> str:
     try:
         implementation = PARSER_IMPLEMENTATIONS[route]
     except KeyError:
-        raise ModalParseError(f"unknown parse route {route!r}") from None
+        raise ParserClientError(f"unknown parse route {route!r}") from None
     return f"{implementation}+{cfg.release_sha}"
 
 
@@ -98,7 +98,7 @@ def _route(descriptor: Mapping[str, Any]) -> str:
 def _endpoint() -> str:
     url = cfg.parser_url
     if not url:
-        raise ModalParseError("PARSER_URL is not configured")
+        raise ParserClientError("PARSER_URL is not configured")
     return url
 
 
@@ -117,7 +117,7 @@ def artifact_identity(descriptor: Mapping[str, Any]) -> tuple[str, str]:
     route = _route(descriptor)
     version = parser_version(route)
     source_sha256 = str(descriptor.get("source_sha256") or "")
-    identity = f"{source_sha256}:{cfg.parse_method}:{route}:{version}"
+    identity = f"{source_sha256}:{cfg.parse_method}:{route}:{version}:{ARTIFACT_SCHEMA}"
     fingerprint = hashlib.sha256(identity.encode()).hexdigest()
     return f"parsed/{source_sha256}/{version}/{fingerprint}.zip", fingerprint
 
@@ -181,12 +181,12 @@ def _request_artifact(
     _record_measurement(payload)
     if resp.status_code >= 300:
         detail = payload.get("detail") if isinstance(payload, dict) else resp.text[:500]
-        raise ModalParseError(f"remote parse {resp.status_code}: {detail}")
+        raise ParserClientError(f"remote parse {resp.status_code}: {detail}")
     if not isinstance(payload, dict):
-        raise ModalParseError("parser returned an invalid JSON response")
+        raise ParserClientError("parser returned an invalid JSON response")
     artifact = payload.get("artifact") or {}
     if artifact.get("key") != artifact_key:
-        raise ModalParseError("parser returned an unexpected artifact key")
+        raise ParserClientError("parser returned an unexpected artifact key")
     artifact["fingerprint"] = fingerprint
     # Wall time remains useful for latency. The charge uses page counts, and
     # _worker_cpu_ms is the dedicated Marker child process's actual CPU time.
@@ -214,25 +214,25 @@ def _extract(artifact: Mapping[str, Any], raw_dir: Path, version: str) -> None:
         digest = hashlib.sha256(tmp.read_bytes()).hexdigest()
         expected = str(artifact.get("sha256") or "")
         if expected and digest != expected:
-            raise ModalParseError("parsed artifact checksum mismatch")
+            raise ParserClientError("parsed artifact checksum mismatch")
         with zipfile.ZipFile(tmp) as archive:
             names = set(archive.namelist())
             if "manifest.json" not in names or "content_list.json" not in names:
-                raise ModalParseError(
+                raise ParserClientError(
                     "parsed artifact is missing its manifest or content list"
                 )
             manifest = json.loads(archive.read("manifest.json"))
             if manifest.get("schema") != ARTIFACT_SCHEMA:
-                raise ModalParseError("unsupported parsed artifact schema")
+                raise ParserClientError("unsupported parsed artifact schema")
             if manifest.get("parser_version") != version:
-                raise ModalParseError("parsed artifact version mismatch")
+                raise ParserClientError("parsed artifact version mismatch")
             fingerprint = str(artifact.get("fingerprint") or "")
             if fingerprint and manifest.get("source_fingerprint") != fingerprint:
-                raise ModalParseError("parsed artifact source mismatch")
+                raise ParserClientError("parsed artifact source mismatch")
             for info in archive.infolist():
                 path = PurePosixPath(info.filename)
                 if path.is_absolute() or ".." in path.parts:
-                    raise ModalParseError("unsafe path in parsed artifact")
+                    raise ParserClientError("unsafe path in parsed artifact")
                 if info.is_dir():
                     continue
                 destination = raw_dir.joinpath(*path.parts)
@@ -274,5 +274,5 @@ def parse_to_bundle(
         (raw_dir / "content_list.json").read_text(encoding="utf-8")
     )
     if not isinstance(content_list, list):
-        raise ModalParseError("content_list.json is not a list of blocks")
+        raise ParserClientError("content_list.json is not a list of blocks")
     return content_list, str(artifact["key"]), str(artifact.get("fingerprint") or "")

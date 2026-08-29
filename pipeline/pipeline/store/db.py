@@ -176,7 +176,7 @@ def requeue_job(
 def release_job_for_capacity(cur, job_id: str, attempt: int, *, backoff_s: int) -> None:
     """Put a running job back to pending without spending an attempt.
 
-    Used when every Modal parse slot is taken. ``claim_job`` already incremented
+    Used when every parser slot is taken. ``claim_job`` already incremented
     ``attempts``; undoing that is what keeps a long queue from looking like
     three failures.
     """

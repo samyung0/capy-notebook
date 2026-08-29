@@ -10,9 +10,9 @@ from types import SimpleNamespace
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-MODAL_DIR = REPO_ROOT / "modal"
-if str(MODAL_DIR) not in sys.path:
-    sys.path.insert(0, str(MODAL_DIR))
+PARSER_VM_DIR = REPO_ROOT / "parser-vm"
+if str(PARSER_VM_DIR) not in sys.path:
+    sys.path.insert(0, str(PARSER_VM_DIR))
 
 from marker_worker import (
     ALL_RAPIDOCR,

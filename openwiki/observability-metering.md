@@ -30,7 +30,7 @@ browser  →  Go gateway  →  Python retrieval  →  provider
 | Go gateway | continues or mints | `server/internal/obs/trace.go` |
 | Go → pipeline | injects | `obs.Inject` in `internal/pipeline/client.go` |
 | Python | continues | `pipeline/pipeline/obs.py` middleware |
-| Python → parser VM | injects | `obs.outbound_headers()` in `parse/modal_parser.py` |
+| Python → parser VM | injects | `obs.outbound_headers()` in `parse/parser_client.py` |
 | Ingest worker | mints per job | `ingest/worker.py` claim loop |
 
 The gateway echoes it as `X-Request-Id`, so a user can quote the id from a
@@ -527,7 +527,7 @@ LLM rates are deliberately not derived from provider invoices. Provider prices
 move and are quoted in units the product does not copy, including supplier cache
 prices and reasoning tokens. Cache-read tokens are billed from the catalog
 rate, not the invoice. The two fixed parse page rates were calibrated from the
-former Modal deployment. They change only in code, with a new policy review and
+former hosted deployment. They change only in code, with a new policy review and
 tests after the VM benchmark is accepted.
 
 ### Background workers

@@ -8,8 +8,8 @@
 # access is the one-time model download from Hugging Face into /models.
 FROM python:3.12-slim
 
-# libgl1/libglib2.0-0 for OpenCV, libgomp1 for onnxruntime's OpenMP runtime —
-# the same three the Modal MinerU image needs.
+# libgl1/libglib2.0-0 support OpenCV; libgomp1 supports onnxruntime's OpenMP
+# runtime.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 libgomp1 curl unzip \
     && rm -rf /var/lib/apt/lists/*

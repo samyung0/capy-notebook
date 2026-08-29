@@ -65,7 +65,7 @@ For "how does rag work in this repo?":
 
 1. Goal and basic idea in two sentences (embed text, compare vectors, fast search).
 2. Ideal flow: upload → server records → embed → index → results back, each step with a file pointer.
-3. Layer 1 Problem: pdfs aren't plain text → parsing flow (mineru, image captioning). Layer 2 problem: parsing is expensive and duplicate uploads waste money → artifact caching by file identity.
+3. Layer 1 Problem: PDFs are not plain text → parsing flow (Marker, RapidOCR, image captioning). Layer 2 problem: parsing is expensive and duplicate uploads waste money → artifact caching by file identity.
 4. Layer 1 Problem: users want live ingestion progress → how sse streams progress back.
 5. Layer 1 Problem: parsing costs credits and exhausted users must be blocked → how billing checks gate the flow.
 6. After the core flow: error handling, rate limiting, and other factors, layered if substantial, brief file pointers if not.

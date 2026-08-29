@@ -1,7 +1,7 @@
 """Evo Notes retrieval pipeline.
 
 Two runtime roles share this package (compose picks the command):
-- ``pipeline.ingest.worker``    — claims jobs, parses on Modal or MinerU lite,
+- ``pipeline.ingest.worker``    — claims jobs, calls the parser VM,
   chunks and embeds into the retrieval index, publishes progress to Redis.
 - ``pipeline.retrieve.service`` — FastAPI chat/generate over that index.
 

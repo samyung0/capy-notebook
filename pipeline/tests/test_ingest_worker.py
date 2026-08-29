@@ -16,12 +16,12 @@ from typing import Any
 import pytest
 
 from pipeline.ingest import worker
-from pipeline.parse import modal_parser
+from pipeline.parse import parser_client
 
 
 @pytest.fixture
 def parse_stub(monkeypatch):
-    """Stand in for Modal and for the captioner; record how both were called."""
+    """Stand in for the parser and captioner; record how both were called."""
     state: dict[str, Any] = {
         "descriptor": None,
         "captioned": 0,
@@ -55,7 +55,7 @@ def parse_stub(monkeypatch):
     monkeypatch.setattr(
         worker.blobstore, "object_info", lambda _p: {"etag": "e", "size": 9}
     )
-    monkeypatch.setattr(worker.modal_parser, "parse_to_bundle", _parse)
+    monkeypatch.setattr(worker.parser_client, "parse_to_bundle", _parse)
     monkeypatch.setattr(worker.figures, "caption_figures", _caption)
     monkeypatch.setattr(worker, "chunk_content_list", _chunk)
     monkeypatch.setattr(worker, "_record_parse_artifact", lambda *a, **k: None)
@@ -102,8 +102,8 @@ def _ingest_payload(**overrides):
 async def test_the_parse_mode_selects_the_route(parse_stub):
     _, _, _, version = await _run("fast")
 
-    assert parse_stub["descriptor"]["route"] == modal_parser.ROUTE_FAST
-    assert version == modal_parser.parser_version(modal_parser.ROUTE_FAST)
+    assert parse_stub["descriptor"]["route"] == parser_client.ROUTE_FAST
+    assert version == parser_client.parser_version(parser_client.ROUTE_FAST)
 
 
 @pytest.mark.parametrize("parse_mode", ["accurate", "advanced"])

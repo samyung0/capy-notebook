@@ -2,7 +2,7 @@
 
 The Go gateway records a B2 object key in ``files.blob_path`` and echoes it
 into each ingest job as ``blobPath``. This module downloads the object to a
-temporary file so existing readers (``open(...)``) and the Modal parse client
+temporary file so existing readers and the remote parser client
 keep working untouched, then deletes it once ingest is done.
 
 ``fetch_local`` is synchronous (boto3 + file IO block); the worker calls it via

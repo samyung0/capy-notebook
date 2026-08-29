@@ -33,7 +33,6 @@ import subprocess
 import sys
 import tempfile
 import time
-import uuid
 from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -43,10 +42,6 @@ from typing import Any
 import normalize
 
 SUPPORTED_SUFFIXES = {".pdf", ".png", ".jpg", ".jpeg", ".pptx", ".docx", ".xlsx"}
-
-# Matches modal/parse_common.py. "ch" covers Chinese, Japanese and Latin scripts
-# but not Korean, so keep it identical to production rather than tuning it here.
-MINERU_LANG = "ch"
 
 
 @dataclass
@@ -118,8 +113,8 @@ def truncate_docs(docs: list[Path], max_pages: int, work: Path) -> list[Path]:
                 total = len(source)
                 if total <= max_pages:
                     # Copy anyway, so the capped directory is a complete input
-                    # set that a second image (e.g. Dockerfile.mineru) can be
-                    # pointed at directly and provably see the same bytes.
+                    # set that another image can consume and provably see the
+                    # same bytes.
                     shutil.copy2(doc, target)
                     prepared.append(target)
                     continue
@@ -359,111 +354,6 @@ def run_marker(
         )
         print(f"    {doc.name}: {seconds:.1f}s {error}".rstrip(), flush=True)
         if timed_out:
-            result.docs.extend(_skipped(docs[index + 1 :]))
-            break
-    return result
-
-
-# -------------------------------------------------------------------- mineru
-
-
-def _mineru_do_parse(do_parse: Any, read_fn: Any, doc: Path, work_out: Path) -> str:
-    stem = f"doc_{uuid.uuid4().hex[:8]}"
-    do_parse(
-        output_dir=str(work_out),
-        pdf_file_names=[stem],
-        pdf_bytes_list=[read_fn(doc)],
-        p_lang_list=[MINERU_LANG],
-        backend="pipeline",
-        parse_method="auto",
-        f_draw_layout_bbox=False,
-        f_draw_span_bbox=False,
-        f_dump_middle_json=False,
-        f_dump_model_output=False,
-        f_dump_orig_pdf=False,
-    )
-    return stem
-
-
-def _mineru_warmup_s(do_parse: Any, read_fn: Any) -> float:
-    """Load MinerU's layout, OCR, table and formula weights on a blank page."""
-    with tempfile.TemporaryDirectory() as tmp:
-        blank = blank_pdf(Path(tmp) / "in")
-        if blank is None:
-            return 0.0
-        started = time.perf_counter()
-        try:
-            _mineru_do_parse(do_parse, read_fn, blank, Path(tmp) / "out")
-        except Exception:  # noqa: BLE001, S110 — warmup failure is not fatal
-            pass
-        return time.perf_counter() - started
-
-
-def run_mineru(
-    docs: list[Path], out_dir: Path, threads: int, *, doc_timeout_s: float
-) -> BackendResult:
-    """MinerU's `pipeline` backend on CPU — the incumbent, unported.
-
-    This is the control in the experiment. It is MinerU's CPU pipeline
-    backend with ``MINERU_DEVICE_MODE=cpu``, so if it is fast enough here the
-    cheapest migration is no parser change at all: same ``content_list``, same
-    bboxes, same ``parser_version`` scheme, no adapter, no re-tuned figure
-    filters.
-
-    Parsed one document at a time on purpose. Production batches several into a
-    single call for cross-document page batching, so this understates MinerU's
-    throughput under load — but per-document latency is the number that has to
-    fit inside a job lease and a progress bar, and it is the only figure that
-    compares directly to the Docling runs.
-
-    ``doc_timeout_s`` cannot interrupt a call already inside MinerU, so it is
-    checked between documents: one document blowing past the budget stops the
-    backend instead of the whole run.
-    """
-    result = BackendResult(backend="mineru-pipeline-cpu", version=version_of("mineru"))
-    try:
-        from mineru.cli.common import do_parse, read_fn
-    except Exception as exc:  # noqa: BLE001 — wrong image, report and move on
-        result.error = f"import failed (use Dockerfile.mineru): {exc}"
-        return result
-
-    result.load_seconds = _mineru_warmup_s(do_parse, read_fn)
-    print(f"    model load ~{result.load_seconds:.1f}s (blank page)", flush=True)
-
-    for index, doc in enumerate(docs):
-        started = time.perf_counter()
-        try:
-            with tempfile.TemporaryDirectory() as work:
-                work_out = Path(work) / "out"
-                work_out.mkdir(parents=True, exist_ok=True)
-                stem = _mineru_do_parse(do_parse, read_fn, doc, work_out)
-                elapsed = time.perf_counter() - started
-                matches = list(work_out.rglob(f"{stem}_content_list.json"))
-                if not matches:
-                    raise RuntimeError("mineru produced no content list")
-                payload = json.loads(matches[0].read_text(encoding="utf-8"))
-                items = normalize.from_mineru(payload)
-            result.docs.append(
-                DocResult(
-                    name=doc.name,
-                    pages=page_count(doc, items),
-                    seconds=elapsed,
-                    items=items,
-                )
-            )
-        except Exception as exc:  # noqa: BLE001 — one bad document, keep the rest
-            result.docs.append(
-                DocResult(
-                    name=doc.name,
-                    pages=page_count(doc),
-                    seconds=time.perf_counter() - started,
-                    error=str(exc)[:400],
-                )
-            )
-        last = result.docs[-1]
-        print(f"    {doc.name}: {last.seconds:.1f}s {last.error}".rstrip(), flush=True)
-        if last.seconds > doc_timeout_s:
-            print(f"    over {doc_timeout_s:.0f}s budget; stopping", flush=True)
             result.docs.extend(_skipped(docs[index + 1 :]))
             break
     return result
@@ -770,9 +660,6 @@ def main() -> int:
 
     budget = float(args.doc_timeout)
     registry: dict[str, Callable[[], BackendResult]] = {
-        "mineru-pipeline-cpu": lambda: run_mineru(
-            docs, out_dir, args.threads, doc_timeout_s=budget
-        ),
         "marker-fast-noocr": lambda: run_marker(
             docs, out_dir, args.threads, disable_ocr=True, doc_timeout_s=budget
         ),

@@ -1,16 +1,16 @@
-"""Mixed-lane load: 6 digital lecture jobs + 2 OCR mixed jobs on one fast box.
+"""Mixed-lane load: four digital lecture jobs plus two OCR jobs on the parser VM.
 
-The box has 6 digital Marker slots and 2 RapidOCR slots. This script fills
-6 of the digital lane with a lecture deck (text layer, parse_method=ocr still
-stays digital because each slide has a real paragraph) and both OCR slots
-with a combined PDF (those same slides plus two full-page newspaper scans).
+The VM has four digital Marker slots and two RapidOCR slots. This script fills
+the digital lane with a lecture deck whose text layer keeps it out of OCR. It
+fills both OCR slots with a combined PDF containing those slides plus two
+full-page newspaper scans.
 
 The original bench files (``metabolic_pathway.pdf``,
 ``newspaper-scan-sample.pdf``) live in gitignored ``bench/parsers/docs/``.
 If they are missing, stand-in PDFs with the same mix are written there.
 
-    python modal/bench_mixed_lanes.py
-    python modal/bench_mixed_lanes.py --lecture ... --scan ...
+    python bench/parsers/bench_mixed_lanes.py
+    python bench/parsers/bench_mixed_lanes.py --lecture ... --scan ...
 
 Needs ``requests`` and ``Pillow``. URL/token from env or flags.
 """
@@ -28,14 +28,13 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import BytesIO
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
-
 from bench_parse import _healthz, _parse_url, _summarize, do_parse
+from PIL import Image, ImageDraw, ImageFont
 
 DECK_CANARY = "EVO-DECK-CANARY-GLYCOLYSIS"
 SCAN_CANARIES = ("EVO-SCAN-FRONT-PAGE", "EVO-SCAN-SPORTS-PAGE")
 LECTURE_PAGES = 40
-DOCS_DIR = Path(__file__).resolve().parent.parent / "bench" / "parsers" / "docs"
+DOCS_DIR = Path(__file__).resolve().parent / "docs"
 
 _FONT_CANDIDATES = (
     "/System/Library/Fonts/Supplemental/Arial.ttf",
@@ -57,7 +56,10 @@ def _font(size: int) -> ImageFont.ImageFont:
 
 def _escape_pdf(text: str) -> bytes:
     return (
-        text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)").encode("latin-1")
+        text.replace("\\", "\\\\")
+        .replace("(", "\\(")
+        .replace(")", "\\)")
+        .encode("latin-1")
     )
 
 
@@ -164,8 +166,12 @@ def build_pdf(kind: str) -> bytes:
         for i in range(LECTURE_PAGES):
             pages.append(("text", _lecture_lines(i + 1, LECTURE_PAGES)))
     if kind in {"scan", "combined"}:
-        pages.append(("image", _scan_image(SCAN_CANARIES[0], "Harbour vote shocks city")))
-        pages.append(("image", _scan_image(SCAN_CANARIES[1], "Rovers win in extra time")))
+        pages.append(
+            ("image", _scan_image(SCAN_CANARIES[0], "Harbour vote shocks city"))
+        )
+        pages.append(
+            ("image", _scan_image(SCAN_CANARIES[1], "Rovers win in extra time"))
+        )
 
     n_pages = len(pages)
     # ids: 1 catalog, 2 pages, 3.. page objs, then content, then extras, then font
@@ -185,9 +191,7 @@ def build_pdf(kind: str) -> bytes:
         else:
             image_id = next_id
             next_id += 1
-            page, content, xobj = _image_page_objects(
-                content_ids[i], image_id, payload
-            )
+            page, content, xobj = _image_page_objects(content_ids[i], image_id, payload)
             extras[image_id] = xobj
         page_bodies.append(page)
         content_bodies.append(content)
@@ -217,7 +221,7 @@ def _merge_existing(lecture: bytes, scan: bytes) -> bytes:
     except ImportError as exc:
         raise SystemExit(
             "pypdf is required to glue existing PDFs. "
-            "Run: uv run --with pypdf python modal/bench_mixed_lanes.py"
+            "Run: uv run --with pypdf python bench/parsers/bench_mixed_lanes.py"
         ) from exc
     writer = PdfWriter()
     for blob in (lecture, scan):
@@ -337,7 +341,10 @@ def _check_combined(body: dict, lecture_page_count: int) -> list[str]:
         if item.get("type") != "image":
             continue
         bbox = item.get("bbox") or []
-        if len(bbox) == 4 and abs(bbox[2] - bbox[0]) * abs(bbox[3] - bbox[1]) >= 700_000:
+        if (
+            len(bbox) == 4
+            and abs(bbox[2] - bbox[0]) * abs(bbox[3] - bbox[1]) >= 700_000
+        ):
             full_page_scans += 1
     if full_page_scans:
         problems.append(
@@ -362,7 +369,7 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--url", default="")
-    ap.add_argument("--token", default=os.environ.get("MODAL_PARSE_TOKEN", ""))
+    ap.add_argument("--token", default=os.environ.get("PARSER_TOKEN", ""))
     ap.add_argument("--lecture", default="", help="digital lecture PDF")
     ap.add_argument("--scan", default="", help="scanned newspaper PDF")
     ap.add_argument("--docs", default=str(DOCS_DIR))
@@ -384,9 +391,9 @@ def main() -> int:
     # real deck's text layer is thin. Combined uses ocr so the newspaper pages
     # take the RapidOCR lane.
     jobs: list[tuple[str, bytes, str]] = [
-        ("lecture_deck.pdf", lecture, "txt")
-    ] * 6 + [(combined_path.name, combined, args.parse_method)] * 2
-    print(f"\n-- 6 digital lecture + 2 combined OCR  ({len(jobs)} HTTP) --")
+        ("lecture_deck.pdf", lecture, "marker_only")
+    ] * 4 + [(combined_path.name, combined, args.parse_method)] * 2
+    print(f"\n-- 4 digital lecture + 2 combined OCR  ({len(jobs)} HTTP) --")
     t0 = time.perf_counter()
     results: list[tuple[str, float, dict | None, str | None]] = []
     with ThreadPoolExecutor(max_workers=len(jobs)) as pool:
@@ -413,7 +420,9 @@ def main() -> int:
         for _, _, p, err in results
         if err is None and isinstance((p or {}).get("_server_parse_s"), (int, float))
     ]
-    print(f"burst wall (all done): {burst:.2f}s  errors={sum(1 for r in results if r[3])}")
+    print(
+        f"burst wall (all done): {burst:.2f}s  errors={sum(1 for r in results if r[3])}"
+    )
     if servers:
         print(
             f"per-job server_parse median={statistics.median(servers):.2f}s  "

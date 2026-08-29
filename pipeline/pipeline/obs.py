@@ -76,7 +76,7 @@ def set_trace(trace: str, actor: str = "") -> None:
 
 
 def traceparent() -> str:
-    """Render the current trace for an outbound call (Modal, gateway callback)."""
+    """Render the current trace for a parser or gateway callback."""
     current = _trace_id.get()
     if not current:
         return ""

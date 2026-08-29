@@ -2,9 +2,9 @@
 
 Two entry points, one output shape:
 
-- :func:`chunk_content_list` consumes MinerU's ``content_list.json`` (the
-  'advanced' parse route), which carries a heading level and a page + bounding
-  box per block. That structure is the whole reason citations can name a page.
+- :func:`chunk_content_list` consumes the parser VM's ``content_list.json``,
+  which carries a heading level and a page plus bounding box per block. That
+  structure is the whole reason citations can name a page.
 - :func:`chunk_markdown` consumes plain markdown (txt/md uploads and the
   'normal' parse route, whose cloud API returns markdown only). Headings still
   give section paths; there is no page model, so pages stay null.
@@ -44,7 +44,7 @@ _IMAGE_TYPES = frozenset({"image", "chart"})
 # ``header`` earns its place here by measurement, not by its name: on a slide
 # deck it is the *slide title* (it sits in the top band), and on a book's table
 # of contents it is "Contents". Dropping it as running furniture cost real
-# titles. It is not promoted to a heading either — MinerU gives it no
+# titles. It is not promoted to a heading either. The parser gives it no
 # ``text_level``, and inventing one would let a genuine running header
 # ("Chapter 3") overwrite the section path on every page of a book.
 _BODY_TEXT_TYPES = frozenset({"header", "page_footnote"})
@@ -54,13 +54,13 @@ _LIST_TYPES = frozenset({"list"})
 
 # Page furniture, dropped on purpose. ``page_number`` is a bare digit,
 # ``footer`` is the repeated conference/publisher line, ``aside_text`` is the
-# rotated margin stamp a scanner picks up as noise (in one sample it read
-# "r00[:0:::02"), and ``discarded`` is MinerU's own reject label.
+# rotated margin stamp a scanner picks up as noise. In one sample it read
+# "r00[:0:::02". ``discarded`` is the parser's reject label.
 _FURNITURE_TYPES = frozenset({"footer", "page_number", "aside_text", "discarded"})
 
-# MinerU normalizes bbox coordinates to a 0..1000 box with the origin at the
-# top-left of the page. Recorded per region so a renderer never has to infer it.
-BBOX_SPACE = "mineru-1000-lefttop"
+# Parser blocks use a 0..1000 box with the origin at the top-left of the page.
+# Recorded per region so a renderer never has to infer it.
+BBOX_SPACE = "page-1000-topleft"
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*$")
 
@@ -314,9 +314,9 @@ def _build(blocks: list[_Block], section_path: str) -> Chunk:
 
 
 def chunk_content_list(content_list: list[dict[str, Any]]) -> list[Chunk]:
-    """Chunk MinerU's block list, keeping page and bbox per block.
+    """Chunk the parser's block list, keeping page and bbox per block.
 
-    Block types follow MinerU's schema: ``text`` (with ``text_level`` set on
+    Block types follow the parser bundle schema: ``text`` with ``text_level`` on
     headings), ``table``, ``equation``, the picture types in
     :data:`_IMAGE_TYPES`, the prose types in :data:`_BODY_TEXT_TYPES`, and
     :data:`_LIST_TYPES`. Pictures contribute their caption or generated

@@ -1,4 +1,4 @@
-"""Offline unit tests for the Modal parse client (no network).
+"""Offline unit tests for the parser VM client, with no network.
 
 The client never sees document bytes — it brokers presigned URLs and then
 unpacks a zip that a remote service produced. Everything worth testing is in
@@ -16,19 +16,19 @@ from pathlib import Path
 
 import pytest
 
-from pipeline.parse import modal_parser
+from pipeline.parse import parser_client
 
-FAST_VERSION = modal_parser.parser_version(modal_parser.ROUTE_FAST)
+FAST_VERSION = parser_client.parser_version(parser_client.ROUTE_FAST)
 
 
 def _descriptor(**overrides) -> dict:
     base = {
         "blob_path": "sources/blob_1.pdf",
         "source_sha256": "aa" * 32,
-        "route": modal_parser.ROUTE_FAST,
+        "route": parser_client.ROUTE_FAST,
     }
     base.update(overrides)
-    return modal_parser.source_descriptor(
+    return parser_client.source_descriptor(
         blob_path=base["blob_path"],
         source_sha256=base["source_sha256"],
         route=base["route"],
@@ -49,7 +49,7 @@ def _artifact_zip(
             "manifest.json",
             json.dumps(
                 {
-                    "schema": schema or modal_parser.ARTIFACT_SCHEMA,
+                    "schema": schema or parser_client.ARTIFACT_SCHEMA,
                     "parser_version": parser_version or FAST_VERSION,
                     "source_fingerprint": fingerprint,
                 }
@@ -73,8 +73,8 @@ def _artifact_zip(
 
 def test_artifact_key_is_stable_and_versioned():
     descriptor = _descriptor()
-    key1, fingerprint1 = modal_parser.artifact_identity(descriptor)
-    key2, fingerprint2 = modal_parser.artifact_identity(descriptor)
+    key1, fingerprint1 = parser_client.artifact_identity(descriptor)
+    key2, fingerprint2 = parser_client.artifact_identity(descriptor)
 
     assert (key1, fingerprint1) == (key2, fingerprint2)
     assert (
@@ -85,41 +85,51 @@ def test_artifact_key_is_stable_and_versioned():
 
 def test_a_changed_source_addresses_a_different_artifact():
     """The source hash is what stops a different document replaying a stale parse."""
-    _, original = modal_parser.artifact_identity(_descriptor())
-    _, reuploaded = modal_parser.artifact_identity(_descriptor(source_sha256="bb" * 32))
+    _, original = parser_client.artifact_identity(_descriptor())
+    _, reuploaded = parser_client.artifact_identity(
+        _descriptor(source_sha256="bb" * 32)
+    )
 
     assert original != reuploaded
 
 
 def test_parse_method_participates_in_the_fingerprint(monkeypatch):
-    _, before = modal_parser.artifact_identity(_descriptor())
-    monkeypatch.setattr(modal_parser.cfg, "parse_method", "txt")
-    _, after = modal_parser.artifact_identity(_descriptor())
+    _, before = parser_client.artifact_identity(_descriptor())
+    monkeypatch.setattr(parser_client.cfg, "parse_method", "txt")
+    _, after = parser_client.artifact_identity(_descriptor())
+
+    assert before != after
+
+
+def test_artifact_schema_participates_in_the_fingerprint(monkeypatch):
+    _, before = parser_client.artifact_identity(_descriptor())
+    monkeypatch.setattr(parser_client, "ARTIFACT_SCHEMA", "evo-parser-bundle-v3")
+    _, after = parser_client.artifact_identity(_descriptor())
 
     assert before != after
 
 
 def test_release_sha_participates_in_parser_and_artifact_identity(monkeypatch):
-    _, before = modal_parser.artifact_identity(_descriptor())
-    monkeypatch.setattr(modal_parser.cfg, "release_sha", "b" * 40)
-    version = modal_parser.parser_version(modal_parser.ROUTE_FAST)
-    _, after = modal_parser.artifact_identity(_descriptor())
+    _, before = parser_client.artifact_identity(_descriptor())
+    monkeypatch.setattr(parser_client.cfg, "release_sha", "b" * 40)
+    version = parser_client.parser_version(parser_client.ROUTE_FAST)
+    _, after = parser_client.artifact_identity(_descriptor())
 
     assert version.endswith("+" + "b" * 40)
     assert before != after
 
 
 def test_an_unknown_route_is_rejected():
-    with pytest.raises(modal_parser.ModalParseError, match="unknown parse route"):
-        modal_parser.artifact_identity(_descriptor(route="turbo"))
+    with pytest.raises(parser_client.ParserClientError, match="unknown parse route"):
+        parser_client.artifact_identity(_descriptor(route="turbo"))
 
 
 def test_a_missing_route_is_rejected_rather_than_read_as_fast():
     """A blank route must not address (and bill) a parser nobody picked."""
-    with pytest.raises(modal_parser.ModalParseError, match="unknown parse route"):
-        modal_parser.artifact_identity({"source_sha256": "aa" * 32})
-    with pytest.raises(modal_parser.ModalParseError, match="unknown parse route"):
-        modal_parser.artifact_identity(_descriptor(route=""))
+    with pytest.raises(parser_client.ParserClientError, match="unknown parse route"):
+        parser_client.artifact_identity({"source_sha256": "aa" * 32})
+    with pytest.raises(parser_client.ParserClientError, match="unknown parse route"):
+        parser_client.artifact_identity(_descriptor(route=""))
 
 
 # ------------------------------------------------------------- request path
@@ -138,22 +148,22 @@ class _Resp:
 @pytest.fixture
 def parser_urls(monkeypatch):
     monkeypatch.setattr(
-        modal_parser.cfg, "parser_url", "http://10.77.0.2:8090/file_parse"
+        parser_client.cfg, "parser_url", "http://10.77.0.2:8090/file_parse"
     )
 
 
 def test_a_cache_hit_never_calls_remote_parser(monkeypatch, parser_urls):
-    key, fingerprint = modal_parser.artifact_identity(_descriptor())
+    key, fingerprint = parser_client.artifact_identity(_descriptor())
     monkeypatch.setattr(
-        modal_parser.blobstore, "object_info", lambda _k: {"size": 10, "etag": "e"}
+        parser_client.blobstore, "object_info", lambda _k: {"size": 10, "etag": "e"}
     )
 
     def _explode(*_a, **_k):
         raise AssertionError("parser must not be called on a cache hit")
 
-    monkeypatch.setattr(modal_parser.requests, "post", _explode)
+    monkeypatch.setattr(parser_client.requests, "post", _explode)
 
-    artifact = modal_parser._request_artifact(_descriptor(), "doc.pdf")
+    artifact = parser_client._request_artifact(_descriptor(), "doc.pdf")
 
     assert artifact["key"] == key
     assert artifact["fingerprint"] == fingerprint
@@ -161,22 +171,22 @@ def test_a_cache_hit_never_calls_remote_parser(monkeypatch, parser_urls):
 
 
 def test_missing_parser_url_is_a_configuration_error(monkeypatch):
-    monkeypatch.setattr(modal_parser.cfg, "parser_url", "")
+    monkeypatch.setattr(parser_client.cfg, "parser_url", "")
 
-    with pytest.raises(modal_parser.ModalParseError, match="PARSER_URL"):
-        modal_parser._request_artifact(_descriptor(), "doc.pdf")
+    with pytest.raises(parser_client.ParserClientError, match="PARSER_URL"):
+        parser_client._request_artifact(_descriptor(), "doc.pdf")
 
 
 def _stub_presign(monkeypatch, response) -> list[dict]:
     calls: list[dict] = []
-    monkeypatch.setattr(modal_parser.blobstore, "object_info", lambda _k: None)
+    monkeypatch.setattr(parser_client.blobstore, "object_info", lambda _k: None)
     monkeypatch.setattr(
-        modal_parser.blobstore,
+        parser_client.blobstore,
         "presign_get",
         lambda _k, *, expires: f"https://get/{expires}",
     )
     monkeypatch.setattr(
-        modal_parser.blobstore,
+        parser_client.blobstore,
         "presign_put",
         lambda _k, _t, *, expires: f"https://put/{expires}",
     )
@@ -185,39 +195,39 @@ def _stub_presign(monkeypatch, response) -> list[dict]:
         calls.append({"url": url, **kwargs})
         return response
 
-    monkeypatch.setattr(modal_parser.requests, "post", _post)
+    monkeypatch.setattr(parser_client.requests, "post", _post)
     return calls
 
 
 def test_the_request_uses_the_fast_endpoint_and_version(monkeypatch, parser_urls):
-    key, _ = modal_parser.artifact_identity(_descriptor())
+    key, _ = parser_client.artifact_identity(_descriptor())
     calls = _stub_presign(monkeypatch, _Resp(200, {"artifact": {"key": key}}))
 
-    modal_parser._request_artifact(_descriptor(), "d.pdf")
+    parser_client._request_artifact(_descriptor(), "d.pdf")
 
     assert calls[0]["url"] == "http://10.77.0.2:8090/file_parse"
     assert calls[0]["json"]["parser_version"] == FAST_VERSION
     assert calls[0]["json"]["source_url"].endswith(
-        f"/{modal_parser.cfg.parser_presign_ttl}"
+        f"/{parser_client.cfg.parser_presign_ttl}"
     )
     assert calls[0]["json"]["output_url"].endswith(
-        f"/{modal_parser.cfg.parser_presign_ttl}"
+        f"/{parser_client.cfg.parser_presign_ttl}"
     )
-    assert calls[0]["timeout"] == modal_parser.cfg.parser_timeout
+    assert calls[0]["timeout"] == parser_client.cfg.parser_timeout
 
 
 def test_http_error_is_wrapped(monkeypatch, parser_urls):
     _stub_presign(monkeypatch, _Resp(500, text="boom"))
 
-    with pytest.raises(modal_parser.ModalParseError, match="remote parse 500"):
-        modal_parser._request_artifact(_descriptor(), "doc.pdf")
+    with pytest.raises(parser_client.ParserClientError, match="remote parse 500"):
+        parser_client._request_artifact(_descriptor(), "doc.pdf")
 
 
 def test_success_records_page_and_child_cpu_measurement(monkeypatch, parser_urls):
-    key, _ = modal_parser.artifact_identity(_descriptor())
+    key, _ = parser_client.artifact_identity(_descriptor())
     measured: list[dict] = []
     monkeypatch.setattr(
-        modal_parser.obs,
+        parser_client.obs,
         "record_parse_usage",
         lambda **values: measured.append(values),
     )
@@ -239,7 +249,7 @@ def test_success_records_page_and_child_cpu_measurement(monkeypatch, parser_urls
         ),
     )
 
-    modal_parser._request_artifact(_descriptor(), "doc.pdf")
+    parser_client._request_artifact(_descriptor(), "doc.pdf")
 
     assert measured[0]["pages"] == 4
     assert measured[0]["ocr_pages"] == 1
@@ -254,7 +264,7 @@ def test_success_records_page_and_child_cpu_measurement(monkeypatch, parser_urls
 def test_failed_parse_records_measurement_before_raising(monkeypatch, parser_urls):
     measured: list[dict] = []
     monkeypatch.setattr(
-        modal_parser.obs,
+        parser_client.obs,
         "record_parse_usage",
         lambda **values: measured.append(values),
     )
@@ -272,8 +282,8 @@ def test_failed_parse_records_measurement_before_raising(monkeypatch, parser_url
         ),
     )
 
-    with pytest.raises(modal_parser.ModalParseError, match="remote parse failed"):
-        modal_parser._request_artifact(_descriptor(), "doc.pdf")
+    with pytest.raises(parser_client.ParserClientError, match="remote parse failed"):
+        parser_client._request_artifact(_descriptor(), "doc.pdf")
 
     assert measured[0]["pages"] == 2
     assert measured[0]["ocr_pages"] == 2
@@ -283,7 +293,7 @@ def test_failed_parse_records_measurement_before_raising(monkeypatch, parser_url
 def test_failed_parse_records_cpu_without_inventing_a_page(monkeypatch, parser_urls):
     measured: list[dict] = []
     monkeypatch.setattr(
-        modal_parser.obs,
+        parser_client.obs,
         "record_parse_usage",
         lambda **values: measured.append(values),
     )
@@ -301,8 +311,8 @@ def test_failed_parse_records_cpu_without_inventing_a_page(monkeypatch, parser_u
         ),
     )
 
-    with pytest.raises(modal_parser.ModalParseError, match="page probing failed"):
-        modal_parser._request_artifact(_descriptor(), "broken.pdf")
+    with pytest.raises(parser_client.ParserClientError, match="page probing failed"):
+        parser_client._request_artifact(_descriptor(), "broken.pdf")
 
     assert measured[0]["pages"] == 0
     assert measured[0]["ocr_pages"] == 0
@@ -317,8 +327,10 @@ def test_a_mismatched_artifact_key_is_rejected(monkeypatch, parser_urls):
         monkeypatch, _Resp(200, {"artifact": {"key": "parsed/somewhere/else.zip"}})
     )
 
-    with pytest.raises(modal_parser.ModalParseError, match="unexpected artifact key"):
-        modal_parser._request_artifact(_descriptor(), "doc.pdf")
+    with pytest.raises(
+        parser_client.ParserClientError, match="unexpected artifact key"
+    ):
+        parser_client._request_artifact(_descriptor(), "doc.pdf")
 
 
 # -------------------------------------------------------------- unpacking
@@ -330,7 +342,7 @@ def _install_artifact(monkeypatch, tmp_path: Path, **zip_kwargs) -> dict:
         tmp_path / "artifact.zip", fingerprint=fingerprint, **zip_kwargs
     )
     monkeypatch.setattr(
-        modal_parser.blobstore,
+        parser_client.blobstore,
         "download_to",
         lambda _key, destination: destination.write_bytes(blob),
     )
@@ -348,7 +360,7 @@ def test_extract_writes_the_bundle(tmp_path: Path, monkeypatch):
     raw = tmp_path / "raw"
     raw.mkdir()
 
-    modal_parser._extract(artifact, raw, FAST_VERSION)
+    parser_client._extract(artifact, raw, FAST_VERSION)
 
     assert json.loads((raw / "content_list.json").read_text())[0]["text"] == "Hello"
     assert (raw / "images" / "fig1.png").is_file()
@@ -361,8 +373,8 @@ def test_extract_rejects_path_traversal(tmp_path: Path, monkeypatch):
     raw = tmp_path / "raw"
     raw.mkdir()
 
-    with pytest.raises(modal_parser.ModalParseError, match="unsafe path"):
-        modal_parser._extract(artifact, raw, FAST_VERSION)
+    with pytest.raises(parser_client.ParserClientError, match="unsafe path"):
+        parser_client._extract(artifact, raw, FAST_VERSION)
     assert not (tmp_path / "outside.txt").exists()
 
 
@@ -372,19 +384,19 @@ def test_extract_rejects_a_checksum_mismatch(tmp_path: Path, monkeypatch):
     raw = tmp_path / "raw"
     raw.mkdir()
 
-    with pytest.raises(modal_parser.ModalParseError, match="checksum mismatch"):
-        modal_parser._extract(artifact, raw, FAST_VERSION)
+    with pytest.raises(parser_client.ParserClientError, match="checksum mismatch"):
+        parser_client._extract(artifact, raw, FAST_VERSION)
 
 
 def test_extract_rejects_a_stale_parser_version(tmp_path: Path, monkeypatch):
     """A bundle from an older parser would silently degrade citations, so it is
     a cache miss rather than a usable artifact."""
-    artifact = _install_artifact(monkeypatch, tmp_path, parser_version="mineru-0.1")
+    artifact = _install_artifact(monkeypatch, tmp_path, parser_version="legacy-0.1")
     raw = tmp_path / "raw"
     raw.mkdir()
 
-    with pytest.raises(modal_parser.ModalParseError, match="version mismatch"):
-        modal_parser._extract(artifact, raw, FAST_VERSION)
+    with pytest.raises(parser_client.ParserClientError, match="version mismatch"):
+        parser_client._extract(artifact, raw, FAST_VERSION)
 
 
 def test_extract_rejects_an_artifact_from_another_source(tmp_path: Path, monkeypatch):
@@ -393,8 +405,8 @@ def test_extract_rejects_an_artifact_from_another_source(tmp_path: Path, monkeyp
     raw = tmp_path / "raw"
     raw.mkdir()
 
-    with pytest.raises(modal_parser.ModalParseError, match="source mismatch"):
-        modal_parser._extract(artifact, raw, FAST_VERSION)
+    with pytest.raises(parser_client.ParserClientError, match="source mismatch"):
+        parser_client._extract(artifact, raw, FAST_VERSION)
 
 
 def test_parse_to_bundle_discards_a_corrupt_cached_artifact(
@@ -409,17 +421,17 @@ def test_parse_to_bundle_discards_a_corrupt_cached_artifact(
         attempts["n"] += 1
         destination.write_bytes(b"not a zip" if attempts["n"] == 1 else good)
 
-    monkeypatch.setattr(modal_parser.blobstore, "download_to", _download)
+    monkeypatch.setattr(parser_client.blobstore, "download_to", _download)
     monkeypatch.setattr(
-        modal_parser.blobstore, "delete", lambda key: deleted.append(key)
+        parser_client.blobstore, "delete", lambda key: deleted.append(key)
     )
     monkeypatch.setattr(
-        modal_parser,
+        parser_client,
         "_request_artifact",
         lambda *_a: {"key": "parsed/f_1/x.zip", "cached": attempts["n"] == 0},
     )
 
-    content_list, key, _fingerprint = modal_parser.parse_to_bundle(
+    content_list, key, _fingerprint = parser_client.parse_to_bundle(
         _descriptor(), "doc.pdf", tmp_path / "raw"
     )
 
@@ -434,18 +446,18 @@ def test_parse_to_bundle_propagates_a_fresh_artifact_failure(
     """Only a *cached* artifact is worth discarding and retrying; a freshly
     produced broken one means the parser is broken."""
     monkeypatch.setattr(
-        modal_parser.blobstore,
+        parser_client.blobstore,
         "download_to",
         lambda _key, destination: destination.write_bytes(b"not a zip"),
     )
     monkeypatch.setattr(
-        modal_parser,
+        parser_client,
         "_request_artifact",
         lambda *_a: {"key": "parsed/f_1/x.zip", "cached": False},
     )
 
     with pytest.raises(zipfile.BadZipFile):
-        modal_parser.parse_to_bundle(_descriptor(), "doc.pdf", tmp_path / "raw")
+        parser_client.parse_to_bundle(_descriptor(), "doc.pdf", tmp_path / "raw")
 
 
 def test_empty_env_is_treated_as_unset(monkeypatch):

@@ -25,7 +25,7 @@ class TerminalError(Exception):
 
 
 class CapacityWait(Exception):
-    """Modal parse slots are full. The job returns to pending.
+    """Parser slots are full. The job returns to pending.
 
     The file stays pending. Do not spend an attempt or mark the file failed.
     """

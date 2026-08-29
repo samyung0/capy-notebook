@@ -34,9 +34,9 @@ import requests
 from PIL import ImageDraw
 
 ROOT = Path(__file__).resolve().parents[2]
-MODAL = ROOT / "modal"
-if str(MODAL) not in sys.path:
-    sys.path.insert(0, str(MODAL))
+PARSER_VM = ROOT / "parser-vm"
+if str(PARSER_VM) not in sys.path:
+    sys.path.insert(0, str(PARSER_VM))
 
 from marker_adapt import html_to_text
 from marker_worker import normalize_document
@@ -50,8 +50,14 @@ SUPPORTED = {
     ".webp",
     ".tif",
     ".tiff",
+    ".bmp",
+    ".gif",
+    ".jp2",
+    ".doc",
     ".docx",
+    ".ppt",
     ".pptx",
+    ".xls",
     ".xlsx",
 }
 MODES = ("marker_only", "selective_rapidocr", "all_rapidocr")

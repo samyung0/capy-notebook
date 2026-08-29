@@ -254,7 +254,7 @@ the file is viewable and downloadable, and chat/generate cannot search it. A
 failed ingest is the same shape — nothing is auto-deleted; the UI shows a banner
 on the file rather than replacing the viewer.
 
-Nothing calls the third-party MinerU cloud API any more. It could not return
+Nothing calls a third-party parsing API. The former service could not return
 bounding boxes or images, needed polling, and capped files at 10 MB / 20 pages.
 
 ### Figure captioning
@@ -305,7 +305,7 @@ are copied verbatim from donors.
 - Packs by character budget (`EVO_CHUNK_CHARS`, overlap, min size) without
   splitting a block unless one block alone exceeds the target.
 - Carries every source block's page + bbox into `regions`, with
-  `space: mineru-1000-lefttop` so a future highlight overlay does not guess the
+  `space: page-1000-topleft` so a future highlight overlay does not guess the
   coordinate system.
 - Builds `indexed_text` = heading breadcrumb + body, never a logical file
   name. Renaming a file must not change `content_hash` or fork canonical
@@ -574,7 +574,7 @@ A citation is:
   "snippet": "…",
   "pageStart": 4,
   "pageEnd": 5,
-  "regions": [{ "page": 4, "bbox": [x0, y0, x1, y1], "space": "mineru-1000-lefttop" }]
+  "regions": [{ "page": 4, "bbox": [x0, y0, x1, y1], "space": "page-1000-topleft" }]
 }
 ```
 
@@ -609,7 +609,7 @@ job and pipeline `/workspace/delete` endpoint are gone.
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
-| Parse | `PARSER_URL`, `PARSER_TOKEN`, `EVO_PARSE_METHOD`, `RELEASE_SHA` | Persistent Netcup service. Modes are `marker_only`, `selective_rapidocr`, and `all_rapidocr`; mode plus the exact release-derived parser version participates in the artifact fingerprint. The old `MODAL_*` names are rollback aliases only. |
+| Parse | `PARSER_URL`, `PARSER_TOKEN`, `EVO_PARSE_METHOD`, `RELEASE_SHA` | Persistent Netcup service. Modes are `marker_only`, `selective_rapidocr`, and `all_rapidocr`; mode, schema, and the exact release-derived parser version participate in the artifact fingerprint. |
 | Chunk size | `EVO_CHUNK_*` | Character budgets, not tokens |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
 | Search | `EVO_SEARCH_CANDIDATES`, `EVO_SEARCH_TOP_K`, `EVO_SEARCH_PER_FILE_CAP` | |

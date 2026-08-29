@@ -11,12 +11,12 @@
 # - redis     : pub/sub bus for live ingest progress (worker -> server -> SSE).
 # - server    : Go gateway (the frontend's /api). Writes uploads to Backblaze
 #               B2, subscribes to Redis and fans progress out over SSE.
-# - worker    : Python ingest worker. Parses with CPU Marker + RapidOCR on
-#               Modal, chunks/embeds into rag_chunks, and publishes progress.
+# - worker    : Python ingest worker. Calls the parser service, chunks/embeds
+#               into rag_chunks, and publishes progress.
 # - retrieval : Python FastAPI chat/generate over the in-house retrieval index.
 #
 # Worker downloads B2 objects before parsing. Real ingest needs B2 credentials,
-# API keys (DeepSeek/OpenRouter/Google/Whisper), and a deployed Modal parse URL.
+# API keys (DeepSeek/OpenRouter/Google/Whisper), and a parser service URL.
 # Set them in deploy/.env (see .env.example) or the shell environment.
 #
 # Only `server` (:8080), `collaboration` (:1234), and the Access-protected
@@ -115,7 +115,7 @@ services:
       COLLABORATION_INTERNAL_URL: http://collaboration:1234
       # Vestigial labels stored on the job payload; the parse route is chosen by
       # the file's parseMode, not by these.
-      EVO_PARSER: ${EVO_PARSER:-mineru}
+      EVO_PARSER: ${EVO_PARSER:-marker}
       EVO_ENGINE: ${EVO_ENGINE:-evo}
       PIPELINE_URL: http://retrieval:8001
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
@@ -214,13 +214,15 @@ services:
       B2_KEY_ID: ${B2_KEY_ID:-}
       B2_APP_KEY: ${B2_APP_KEY:-}
       REDIS_URL: redis://redis:6379/0
-      # Modal CPU parse service (Marker + RapidOCR on scans).
-      MODAL_FAST_PARSE_URL: ${MODAL_FAST_PARSE_URL:-}
-      MODAL_PARSE_TOKEN: ${MODAL_PARSE_TOKEN:-}
-      MODAL_PARSE_TIMEOUT: ${MODAL_PARSE_TIMEOUT:-900}
-      EVO_PARSE_FAST_SLOTS: ${EVO_PARSE_FAST_SLOTS:-72}
-      MODAL_B2_ARTIFACTS: ${MODAL_B2_ARTIFACTS:-true}
-      EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-ocr}
+      # CPU parse service (Marker + RapidOCR on scans).
+      PARSER_URL: ${PARSER_URL:-}
+      PARSER_TOKEN: ${PARSER_TOKEN:-}
+      PARSER_TIMEOUT: ${PARSER_TIMEOUT:-2400}
+      PARSER_SLOT_TTL: ${PARSER_SLOT_TTL:-2700}
+      PARSER_PRESIGN_TTL: ${PARSER_PRESIGN_TTL:-3000}
+      EVO_INGEST_TIMEOUT: ${EVO_INGEST_TIMEOUT:-3600}
+      EVO_PARSE_SLOTS: ${EVO_PARSE_SLOTS:-8}
+      EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-selective_rapidocr}
       # Platform keys match elitellm_providers.json. Model identity lives on
       # model_configs.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}

@@ -163,8 +163,6 @@
     "gen:api:watch": "pnpm gen:api:clean && orval --watch",
     "fix": "ultracite fix",
     "prepare": "husky",
-    "deploy:modal": "modal deploy modal/mineru_fast.py",
-    "deploy:modal:fast": "modal deploy modal/mineru_fast.py",
     "deploy:import-relay": "pnpm --filter @evo-notes/drive-import-relay deploy"
   },
   "lint-staged": {
@@ -173,8 +171,8 @@
     ],
     "*.go": "gofmt -w",
     "*.py": [
-      "uv run --with ruff ruff format --extend-exclude modal --force-exclude",
-      "uv run --with ruff ruff check --fix --extend-exclude modal --force-exclude"
+      "uv run --with ruff ruff format",
+      "uv run --with ruff ruff check --fix"
     ],
     "*.{yml,yaml}": "prettier --write"
   },

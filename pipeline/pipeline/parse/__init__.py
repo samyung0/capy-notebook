@@ -1,1 +1,1 @@
-"""Document parsing: Modal CPU (Marker hybrid + RapidOCR on scanned pages)."""
+"""Document parsing through the dedicated Marker and RapidOCR VM."""

@@ -3,10 +3,10 @@
 Claims jobs from the Postgres queue and turns uploads into retrievable chunks:
 
 - ``txt`` / ``md`` / ``json`` are read straight from B2 and chunked as markdown.
-  The gateway still labels those jobs ``parseMode=none`` (there is no Modal parse
+  The gateway still labels those jobs ``parseMode=none`` (there is no remote parse
   route to pick); they are indexed. ``parseMode=none`` on any other kind is
   store-only: the blob is kept, ``indexed=false``.
-- ``parseMode=fast`` parses on Modal with Marker plus PP-OCRv6 on scanned /
+- ``parseMode=fast`` parses on the VM with Marker plus PP-OCRv6 on scanned /
   thin-text pages. Unknown modes fail the job.
 
 The parse returns a bundle — a ``content_list.json`` carrying a page index and
@@ -15,7 +15,7 @@ jump to and figures that can be captioned come from the same shape.
 
 Live progress is published to Redis; the Go gateway fans it to the browser over
 SSE. A file is ``pending`` until this worker is actually parsing and holds a
-parse slot; extra jobs wait there instead of opening more Modal boxes.
+parse slot; extra jobs wait there instead of oversubscribing the VM.
 
 Run: ``python -m pipeline.ingest.worker``
 """
@@ -43,7 +43,7 @@ from ..jobs import (
     is_retryable,
     policy_for,
 )
-from ..parse import figures, modal_parser, slots
+from ..parse import figures, parser_client, slots
 from ..retrieval import accounting, indexing, store
 from ..retrieval.chunking import (
     CHUNKER_VERSION,
@@ -59,7 +59,7 @@ log = logging.getLogger("evo.worker")
 _TEXT_KINDS = {"txt", "md", "json"}
 
 _PARSE_ROUTES = {
-    "fast": modal_parser.ROUTE_FAST,
+    "fast": parser_client.ROUTE_FAST,
 }
 
 _REQUIRED_INGEST_STRINGS = (
@@ -440,7 +440,7 @@ def _pipeline_identity(*, kind: str, parse_mode: str, caption_images: bool) -> s
     route = _parse_route(parse_mode)
     cap = cfg.caption_version if caption_images else "none"
     return (
-        f"{cfg.parse_method}:{route}:{modal_parser.parser_version(route)}"
+        f"{cfg.parse_method}:{route}:{parser_client.parser_version(route)}"
         f":{cap}:{CHUNKER_VERSION}"
     )
 
@@ -577,7 +577,7 @@ async def _chunks_for(
     info = await asyncio.to_thread(blobstore.object_info, blob_path)
     if info is None:
         raise TerminalError("source blob is missing")
-    descriptor = modal_parser.source_descriptor(
+    descriptor = parser_client.source_descriptor(
         blob_path=blob_path,
         source_sha256=source_sha256,
         route=route,
@@ -593,11 +593,11 @@ async def _chunks_for(
     try:
         try:
             content_list, artifact_key, fingerprint = await asyncio.to_thread(
-                modal_parser.parse_to_bundle, descriptor, name, raw_dir
+                parser_client.parse_to_bundle, descriptor, name, raw_dir
             )
         finally:
             # Free the parse slot before captioning / indexing; those do not
-            # occupy a Modal container.
+            # occupy a parser process.
             if held_slot and job_id:
                 await asyncio.to_thread(slots.release, route, job_id)
         if artifact_key:
@@ -615,7 +615,7 @@ async def _chunks_for(
                 file_id,
                 artifact_key,
                 fingerprint,
-                modal_parser.parser_version(route),
+                parser_client.parser_version(route),
             )
         progress.publish(
             ws, file_id, "captioning" if caption_images else "indexing", 45
@@ -646,7 +646,7 @@ async def _chunks_for(
             chunk_content_list(content_list),
             artifact_key,
             fingerprint,
-            modal_parser.parser_version(route),
+            parser_client.parser_version(route),
         )
     finally:
         shutil.rmtree(raw_dir, ignore_errors=True)

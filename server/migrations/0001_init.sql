@@ -863,7 +863,7 @@ CREATE TABLE IF NOT EXISTS rag_chunks (
   page_end     int,
   -- [{page, bbox: [x0,y0,x1,y1], space}] for every source block in the chunk.
   -- `space` records the coordinate convention so a later highlight overlay does
-  -- not have to guess; MinerU emits 'mineru-1000-lefttop'.
+  -- not have to guess; parser blocks use 'page-1000-topleft'.
   regions      jsonb NOT NULL DEFAULT '[]'::jsonb,
   -- Written by the pipeline, not generated: the tokenizer bigrams CJK runs so
   -- one column serves mixed-language corpora, which no built-in text search

@@ -35,7 +35,7 @@ costs one call and is the deliberate trade for never dropping a diagram.
 Captions are cached in B2 under a source-identity key
 (``captions/{source_sha256}/{caption version}.json``), keyed by image content
 hash. The parse fingerprint is deliberately not part of this path: a re-parse
-(different MinerU route or parser version) must not recaption figures that
+(different parser route or version) must not recaption figures that
 have not changed. The key also survives file deletion and re-upload, because
 it no longer includes ``blob_path``. Ownership lives on ``artifact_cache``,
 not ``files.caption_blob_path``.
@@ -69,7 +69,7 @@ _MIN_WIDTH = 160
 _MIN_HEIGHT = 120
 _MIN_PIXELS = 40_000
 _MAX_ASPECT = 8.0
-# MinerU normalizes bboxes to a 1000x1000 page, so this is 1.2% of the page.
+# Parser bboxes use a 1000x1000 page, so this is 1.2% of the page.
 _MIN_PAGE_AREA = 12_000
 
 # --- flatness: only near-uniform crops, never merely sparse line art ------
@@ -94,7 +94,7 @@ _REPEAT_PAGE_RATIO = 0.3
 # captioned here but unknown there is money spent on text nobody indexes.
 _IMAGE_TYPES = frozenset({"image", "chart"})
 
-# Per-type caption keys, checked in order. MinerU names the field after the
+# Per-type caption keys, checked in order. The parser names the field after the
 # block type, so a chart's label lives under ``chart_caption``.
 _CAPTION_KEYS = ("image_caption", "chart_caption")
 

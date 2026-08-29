@@ -70,7 +70,7 @@ operator hostname before traffic reaches its origin.
 | `collab.abcd.com`  | Hocuspocus WebSocket (`collaboration`, :1234)      | yes        | yes                  |
 | `ops.evonotes.com` | Go ops API + static dashboard (`ops`, :8082)       | yes        | yes, Access required |
 | retrieval :8001    | Python chat/generate                               | **no**     | —                    |
-| ingest worker      | Modal parse + embed                                | **no**     | —                    |
+| ingest worker      | parser VM + embed                                  | **no**     | —                    |
 | Postgres / Redis   | —                                                  | **no**     | —                    |
 
 The browser talks to the gateway at same-origin `/api` (`src/api/client.ts`
@@ -412,7 +412,7 @@ Test both failure paths before granting an operator row:
    without opening the writer database pool.
 
 **Timeouts:** the default 100 s orange-cloud proxy read timeout will cut long
-chat streams and Modal parse waits. A Cloudflare Tunnel is not subject to it.
+chat streams. Parser traffic stays on WireGuard and does not cross Cloudflare.
 Coolify's Traefik/Caddy in front of the tunnel still has its own read timeout —
 raise that on `api.abcd.com` if streams die around a minute.
 
@@ -529,8 +529,8 @@ sweeps on a 5-minute timer while the queue is idle, not on every 2-second poll.
 `WORKER_REPLICAS` in `deploy/docker-compose.yml` (default 1) is the number of
 ingest worker containers. `claim_job` uses `FOR UPDATE SKIP LOCKED`, so replicas
 share the queue without extra coordination. Each replica runs one job at a time.
-Parse has its own cap (72 HTTP / ~24 OCR); extra parse jobs stay `pending`
-instead of opening more Modal boxes. Replicas above that cap mostly wait.
+Parse admission has its own cap (eight queued requests); the service then admits
+four digital jobs or two OCR-heavy jobs. Extra jobs stay `pending`.
 
 Connection budget after the worker's sync pool (`max_size=4`) plus the async
 retrieval pool (`max_size=8`): **12 connections per replica**. Against default
@@ -622,10 +622,10 @@ the Go application process.
    rejected row and the rendered page comparisons. Run the 1/2/4/6/8 sweep;
    production remains at two OCR-heavy jobs unless four preserves at least 3
    GiB headroom, uses no swap, and materially improves throughput.
-7. Disable the app host's `legacy-modal-worker` profile only after a real ingest
-   succeeds from the VM. Main retains the Modal deployment. Rollback stops
-   `evo-parser.service`, redeploys `main`, and re-enables its worker; different
-   parser versions and mode fingerprints prevent artifact confusion.
+7. Cut traffic over only after a real ingest succeeds from the VM. To roll back,
+   promote the previous known-good exact SHA through the same workflow. Its
+   parser, worker, migration, and app images remain revision-matched, and the
+   artifact schema plus release-derived fingerprint prevents cache confusion.
 
 ---
 

@@ -1,8 +1,7 @@
 """Persistent CPU parser for the Netcup ingest VM.
 
-The HTTP and B2 artifact contract intentionally matches the previous Modal
-service. The caller owns artifact identity and caching; this service downloads
-one presigned source, parses it, and uploads one versioned zip.
+The caller owns artifact identity and caching. This service downloads one
+presigned source, parses it, and uploads one versioned zip.
 """
 
 from __future__ import annotations
@@ -40,7 +39,7 @@ from marker_worker import (
     ping,
 )
 
-ARTIFACT_SCHEMA = "evo-mineru-bundle-v1"
+ARTIFACT_SCHEMA = "evo-parser-bundle-v2"
 PARSER_IMPLEMENTATION = "marker-2-vm-hybrid-v3"
 RELEASE_SHA = os.environ.get("RELEASE_SHA", "dev").strip() or "dev"
 if os.environ.get("APP_ENV") == "production" and not re.fullmatch(

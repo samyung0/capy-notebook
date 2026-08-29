@@ -30,7 +30,7 @@ const (
 	// inconsistently across providers.
 	microsPerCaptionCall = 2_000 // 2 credits per figure caption
 
-	// Modal CPU parsing is billed by page so concurrent jobs in one container do
+	// Parsing is billed by page so concurrent jobs on one host do
 	// not have to divide shared container time. These rates preserve the old
 	// 0.5-credit/second policy and round up the worst benchmark case: a 60-second
 	// cold start for a one-page job, 0.91 seconds of Marker, and up to 42 seconds
