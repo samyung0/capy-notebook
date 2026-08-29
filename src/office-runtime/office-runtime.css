@@ -1,0 +1,141 @@
+:root {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  color: #172033;
+  background: #f5f7fa;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+.office-runtime,
+.office-editor-host {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.office-runtime {
+  display: flex;
+  flex-direction: column;
+}
+
+.office-runtime-state {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  font-size: 14px;
+  color: #667085;
+}
+
+.office-tabs {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  min-height: 37px;
+  padding: 5px 8px;
+  overflow-x: auto;
+  background: #fff;
+  border-bottom: 1px solid #d9dee8;
+}
+
+.office-tab {
+  padding: 4px 10px;
+  white-space: nowrap;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+}
+
+.office-tab[aria-selected="true"] {
+  font-weight: 600;
+  background: #e9edf5;
+}
+
+.xlsx-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  background: #fff;
+}
+
+.xlsx-canvas-layer {
+  position: sticky;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+}
+
+.xlsx-canvas-layer canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+}
+
+.pptx-runtime {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.pptx-stage {
+  display: grid;
+  flex: 1;
+  place-items: center;
+  min-height: 0;
+  padding: 20px;
+  overflow: auto;
+  background: #e7eaf0;
+}
+
+.pptx-stage canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  background: #fff;
+  box-shadow: 0 3px 18px rgb(25 32 48 / 18%);
+}
+
+.pptx-controls {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  font-size: 13px;
+  background: #fff;
+  border-top: 1px solid #d9dee8;
+}
+
+.pptx-controls button {
+  padding: 4px 10px;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #cdd3df;
+  border-radius: 5px;
+}
+
+.pptx-controls button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}

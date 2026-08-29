@@ -313,6 +313,7 @@ function completeMockSourceImport(sourceImport: MockSourceImport) {
       sourceImport.workspaceId,
       sourceImport.chapterId
     ),
+    revision: 1,
     sizeBytes: sourceImport.sizeBytes,
     status: 'ready',
     workspaceId: sourceImport.workspaceId,
@@ -1190,6 +1191,31 @@ export const handlers = [
     const f = db.files.find((x) => x.id === params.id);
     return f ? HttpResponse.json(f) : new HttpResponse(null, { status: 404 });
   }),
+  http.post('/api/files/:id/replacement', async ({ params, request }) => {
+    const f = db.files.find((x) => x.id === params.id);
+    if (!f) return new HttpResponse(null, { status: 404 });
+    const form = await request.formData();
+    const replacement = form.get('file');
+    const expectedRevision = Number(form.get('expectedRevision'));
+    if (!(replacement instanceof File)) {
+      return HttpResponse.json(
+        { message: 'replacement file is required' },
+        { status: 400 }
+      );
+    }
+    if (f.status !== 'ready' || expectedRevision !== (f.revision ?? 1)) {
+      return HttpResponse.json(
+        { code: 'file_revision_conflict', message: 'file revision changed' },
+        { status: 409 }
+      );
+    }
+    f.indexed = false;
+    f.revision = (f.revision ?? 1) + 1;
+    f.sizeBytes = replacement.size;
+    f.status = 'pending';
+    f.url = URL.createObjectURL(replacement);
+    return HttpResponse.json(f);
+  }),
   http.patch('/api/files/:id', async ({ params, request }) => {
     const f = db.files.find((x) => x.id === params.id);
     if (!f) return new HttpResponse(null, { status: 404 });
@@ -1473,15 +1499,13 @@ export const handlers = [
     let kind: SourceKindFix = 'pdf';
     let chapterId: string | null = null;
     let chapterName: string | null = null;
+    let uploadedFile: File | null = null;
     const ct = request.headers.get('content-type') ?? '';
     if (ct.includes('multipart/form-data')) {
       const form = await request.formData();
       const file = form.get('file');
-      name = String(
-        form.get('name') ||
-          (file instanceof File ? file.name : '') ||
-          'Untitled'
-      );
+      uploadedFile = file instanceof File ? file : null;
+      name = String(form.get('name') || uploadedFile?.name || 'Untitled');
       kind = (String(form.get('kind') || '') ||
         getFileKind(name, sourceUploadPolicy)) as SourceKindFix;
       chapterId = (form.get('chapterId') as string) || null;
@@ -1547,10 +1571,13 @@ export const handlers = [
       kind,
       name,
       position: db.nextContentPosition(String(params.id), chapterId),
-      sizeBytes: Math.round(200 + Math.random() * 3000) * 1024,
+      revision: 1,
+      sizeBytes:
+        uploadedFile?.size ?? Math.round(200 + Math.random() * 3000) * 1024,
       // Mirror the real backend: uploads start 'pending' until a worker
       // claims the ingest job, then the client animates progress.
       status: 'pending',
+      url: uploadedFile ? URL.createObjectURL(uploadedFile) : undefined,
       workspaceId: String(params.id),
     };
     db.files.push(f);

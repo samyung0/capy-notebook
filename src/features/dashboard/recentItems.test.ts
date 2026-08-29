@@ -16,6 +16,7 @@ function file(id: string, addedAt: string, workspaceId = 'ws_1'): SourceFile {
     kind: 'pdf',
     name: `${id}.pdf`,
     position: 0,
+    revision: 1,
     sizeBytes: 1,
     workspaceId,
   };

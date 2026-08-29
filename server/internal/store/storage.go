@@ -476,7 +476,7 @@ func (s *Store) reconcileStorageUserTx(
 			WHERE user_id=$1 AND status='ready'), 0)
 		+ COALESCE((SELECT sum(size_bytes) FROM materials
 			WHERE owner_user_id=$1), 0),
-		COALESCE((SELECT sum(declared_size) FROM upload_sessions
+		COALESCE((SELECT sum(COALESCE(reserved_size, declared_size)) FROM upload_sessions
 			WHERE user_id=$1 AND status='pending' AND expires_at > now()), 0)`,
 		userID).Scan(&used, &reserved); err != nil {
 		return false, err

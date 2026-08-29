@@ -288,7 +288,7 @@ function FileBody({
   });
   if (isLoading) return <FileLoading />;
   if (!isLoading && isError) return <FileError />;
-  if (file && fileIsIngesting(file.status)) {
+  if (file && fileIsIngesting(file.status) && !file.url) {
     const waiting = file.status === 'pending';
     return (
       <div className="grid h-full place-items-center">
@@ -311,6 +311,20 @@ function FileBody({
   }
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      {file && fileIsIngesting(file.status) && file.url && (
+        <div className="flex shrink-0 items-center gap-3 border-divider border-b bg-surface-hover-bg px-4 py-2">
+          <p className="t-meta min-w-0 flex-1 truncate text-fg-secondary">
+            {file.status === 'pending'
+              ? m.files_pending_named({ name: file.name })
+              : m.files_processing_named({ name: file.name })}
+          </p>
+          <ProgressBar
+            className="w-28"
+            tone={color}
+            value={file.ingestPct ?? 0}
+          />
+        </div>
+      )}
       {file && <FileNotIndexedBanner file={file} />}
       <div className="relative min-h-0 flex-1 overflow-auto">
         <FileViewer

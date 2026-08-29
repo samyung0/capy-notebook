@@ -1068,6 +1068,75 @@ export function useUploadSource(wsId: string) {
   });
 }
 
+function officeContentType(file: SourceFile) {
+  const ext = file.name.split('.').pop()?.toLowerCase();
+  if (ext === 'xlsx')
+    return 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  if (ext === 'pptx')
+    return 'application/vnd.openxmlformats-officedocument.presentationml.presentation';
+  return 'application/octet-stream';
+}
+
+/** Replace a source blob without changing the logical file id. The server
+ * invalidates derived RAG data and rejects stale editor revisions. */
+export function useReplaceSource(file: SourceFile | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: async ({
+      bytes,
+      expectedRevision,
+    }: {
+      bytes: Uint8Array;
+      expectedRevision: number;
+    }) => {
+      if (!file) throw new Error('No source file is selected.');
+      const replacement = new File(
+        [bytes.slice().buffer as ArrayBuffer],
+        file.name,
+        {
+          type: officeContentType(file),
+        }
+      );
+      if (USE_MSW) {
+        const form = new FormData();
+        form.append('file', replacement, replacement.name);
+        form.append('expectedRevision', String(expectedRevision));
+        return api.upload<SourceFile>(`/files/${file.id}/replacement`, form);
+      }
+      const reservation = await api.post<{
+        uploadId: string;
+        url: string;
+        method: 'PUT';
+        headers: Record<string, string>;
+        expiresAt: string;
+      }>(`/files/${file.id}/replacement-uploads`, {
+        contentType: replacement.type,
+        expectedRevision,
+        sizeBytes: replacement.size,
+      });
+      await api.putFile(reservation.url, replacement, reservation.headers);
+      return api.post<SourceFile>(
+        `/files/${file.id}/replacement-uploads/${reservation.uploadId}/complete`
+      );
+    },
+    onSuccess: (saved) => {
+      if (!file) return;
+      qc.setQueryData<SourceFile>(qk.file(file.id), saved);
+      qc.setQueryData<SourceFile[]>(qk.files(file.workspaceId), (prev) =>
+        prev?.map((entry) => (entry.id === saved.id ? saved : entry))
+      );
+      void Promise.all([
+        qc.invalidateQueries({ queryKey: qk.accountStatus }),
+        qc.invalidateQueries({ queryKey: qk.workspaceStats(file.workspaceId) }),
+      ]);
+      if (saved.status !== 'ready') ingestTracker.markStart(saved.id);
+      if (USE_MSW && saved.status !== 'ready')
+        simulateMswProgress(qc, file.workspaceId, saved.id);
+    },
+  });
+}
+
 /** Subscribe to live ingest progress for a workspace (SSE) and patch the file
  * caches as events arrive. No-op under MSW (dev mock has no event stream). */
 export type IngestStreamState = {

@@ -43,6 +43,7 @@ export * from './createDeckReq.ts';
 export * from './createDiscussionReq.ts';
 export * from './createDiscussionReqContentRichItem.ts';
 export * from './createEventReq.ts';
+export * from './createFileReplacementUploadReq.ts';
 export * from './createMaterialReq.ts';
 export * from './createQuizReq.ts';
 export * from './createQuizReqQuestionsItem.ts';

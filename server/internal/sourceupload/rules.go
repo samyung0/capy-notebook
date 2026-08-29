@@ -37,11 +37,11 @@ func SourceMaxBytes(pro bool) int64 {
 // extensions are added below, without overriding these explicit kinds.
 var explicitKindExtensions = map[string][]string{
 	"pdf":    {"pdf"},
-	"doc":    {"doc", "docx"},
+	"doc":    {"docx"},
 	"md":     {"md", "markdown", "mdx", "mdc"},
 	"image":  {"png", "jpg", "jpeg", "jp2", "webp", "gif", "bmp", "svg", "avif"},
-	"sheet":  {"xls", "xlsx", "csv"},
-	"slides": {"ppt", "pptx"},
+	"sheet":  {"xlsx", "csv"},
+	"slides": {"pptx"},
 	"audio":  {"mp3", "wav", "m4a", "ogg", "flac", "aac"},
 	"json":   {"json", "map"},
 }
@@ -432,8 +432,8 @@ func Validate(name, kind, mode string, size, maxBytes int64) error {
 
 // parseExtensions is the format list the document parser accepts.
 var parseExtensions = map[string]bool{
-	"pdf": true, "doc": true, "docx": true, "ppt": true, "pptx": true,
-	"xls": true, "xlsx": true, "png": true, "jpg": true, "jpeg": true,
+	"pdf": true, "docx": true, "pptx": true,
+	"xlsx": true, "png": true, "jpg": true, "jpeg": true,
 	"jp2": true, "webp": true, "gif": true, "bmp": true,
 }
 

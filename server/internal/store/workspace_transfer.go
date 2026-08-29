@@ -163,7 +163,7 @@ func (s *Store) workspaceChargedBytesTx(
 			+ COALESCE((SELECT sum(size_bytes) FROM editor_assets
 				WHERE workspace_id=$1 AND status='ready'), 0)
 			+ COALESCE((SELECT sum(size_bytes) FROM materials WHERE workspace_id=$1), 0),
-			COALESCE((SELECT sum(declared_size) FROM upload_sessions
+			COALESCE((SELECT sum(COALESCE(reserved_size, declared_size)) FROM upload_sessions
 				WHERE workspace_id=$1 AND status='pending' AND expires_at > now()), 0)`,
 		workspaceID).Scan(&out.used, &out.reserved)
 	return out, err

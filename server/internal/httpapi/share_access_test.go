@@ -215,6 +215,44 @@ func TestCloudImportAuthorization(t *testing.T) {
 	}
 }
 
+func TestFileReplacementAuthorizationAndRevisionGate(t *testing.T) {
+	h := openShareHTTP(t)
+	body := map[string]any{
+		"contentType":      "application/octet-stream",
+		"expectedRevision": 1,
+		"sizeBytes":        1024,
+	}
+
+	for _, tc := range []struct {
+		name   string
+		user   string
+		status int
+	}{
+		{name: "owner", user: "u_owner", status: http.StatusCreated},
+		{name: "editor", user: "u_editor", status: http.StatusCreated},
+		{name: "commenter", user: "u_commenter", status: http.StatusNotFound},
+		{name: "viewer", user: "u_viewer", status: http.StatusNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec := doReq(t, h, http.MethodPost,
+				"/api/files/f_e2e_private/replacement-uploads", tc.user, body)
+			if rec.Code != tc.status {
+				t.Fatalf("replacement reserve by %s = %d body=%s", tc.user, rec.Code, rec.Body.String())
+			}
+		})
+	}
+
+	stale := doReq(t, h, http.MethodPost,
+		"/api/files/f_e2e_private/replacement-uploads", "u_editor", map[string]any{
+			"contentType":      "application/octet-stream",
+			"expectedRevision": 2,
+			"sizeBytes":        1024,
+		})
+	if stale.Code != http.StatusConflict {
+		t.Fatalf("stale replacement reserve = %d body=%s", stale.Code, stale.Body.String())
+	}
+}
+
 func TestShareHTTPWritesAndClone(t *testing.T) {
 	h := openShareHTTP(t)
 

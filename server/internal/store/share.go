@@ -521,7 +521,8 @@ type workspaceCloneFile struct {
 	contentHash, sourceSHA256           *string
 	sizeBytes                           int64
 	position                            int64
-	indexed                             bool
+	indexed, captionImages              bool
+	parseMode                           string
 }
 
 type workspaceCloneAsset struct {
@@ -637,7 +638,7 @@ func (s *Store) snapshotWorkspaceForClone(
 		`SELECT id, chapter_id, position, name, kind, size_bytes, status, indexed,
 			parser, engine, blob_path, url, content,
 			parsed_fingerprint, parsed_parser_version, source_etag,
-			content_hash, source_sha256
+			content_hash, source_sha256, parse_mode, caption_images
 		 FROM files WHERE workspace_id=$1 ORDER BY added_at`,
 		workspaceID,
 	)
@@ -665,6 +666,8 @@ func (s *Store) snapshotWorkspaceForClone(
 			&file.sourceETag,
 			&file.contentHash,
 			&file.sourceSHA256,
+			&file.parseMode,
+			&file.captionImages,
 		); err != nil {
 			rows.Close()
 			return workspaceCloneSnapshot{}, err
@@ -857,10 +860,10 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO files
 				(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, engine, blob_path, url, content,
-				 parsed_fingerprint, parsed_parser_version, source_etag, content_hash, source_sha256)
-				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+				 parsed_fingerprint, parsed_parser_version, source_etag, content_hash, source_sha256, parse_mode, caption_images)
+				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
 				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.indexed, f.parser, f.engine, f.blobPath, url, f.content,
-				f.parsedFingerprint, f.parsedParserVersion, f.sourceETag, f.contentHash, f.sourceSHA256); err != nil {
+				f.parsedFingerprint, f.parsedParserVersion, f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.captionImages); err != nil {
 				return Workspace{}, err
 			}
 		}

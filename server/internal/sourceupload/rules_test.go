@@ -106,8 +106,13 @@ func TestNeedsIngestJob(t *testing.T) {
 func TestParsePolicyLists(t *testing.T) {
 	fast := ParseExtensions(ParseModeFast)
 	supported := SupportedExtensions()
-	if !contains(fast, ".doc") || !contains(fast, ".pptx") {
+	if !contains(fast, ".docx") || !contains(fast, ".pptx") {
 		t.Fatalf("fast policy is missing expected extensions: %v", fast)
+	}
+	for _, legacy := range []string{".doc", ".xls", ".ppt"} {
+		if contains(fast, legacy) || contains(supported, legacy) {
+			t.Fatalf("legacy Office extension %s must be rejected", legacy)
+		}
 	}
 	if contains(ParseExtensions(ParseModeNone), ".pdf") {
 		t.Fatal("parse mode none should advertise no extensions")

@@ -96,7 +96,7 @@ func TestKindFromName(t *testing.T) {
 		"notes.pdf":       "pdf",
 		"paper.PDF":       "pdf",
 		"report.docx":     "doc",
-		"report.doc":      "doc",
+		"report.doc":      "unknown",
 		"readme.md":       "md",
 		"readme.markdown": "md",
 		"figure.png":      "image",

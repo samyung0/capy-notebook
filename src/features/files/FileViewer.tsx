@@ -1,4 +1,5 @@
-import { lazy, type ReactNode, Suspense } from 'react';
+import { lazy, type ReactNode, Suspense, useCallback } from 'react';
+import { useReplaceSource, useWorkspace } from '@/api/hooks';
 import type { SourceFile } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Icon } from '@/components/ui/Icon';
@@ -9,13 +10,14 @@ import { fileExt, IMAGE_MIN_ZOOM, isImageFile } from './fileUtils';
 
 const PdfView = lazy(() => import('./PdfView'));
 const SheetView = lazy(() => import('./SheetView'));
+const CsvView = lazy(() => import('./CsvView'));
 const DocxView = lazy(() => import('./DocxView'));
 const TextView = lazy(() => import('./TextView'));
 const PptxView = lazy(() => import('./PptxView'));
 
 const AUDIO_EXTS = new Set(['mp3', 'wav', 'm4a', 'ogg', 'flac', 'aac']);
-const SHEET_EXTS = new Set(['xlsx', 'xls', 'csv']);
-const SLIDE_EXTS = new Set(['ppt', 'pptx']);
+const SHEET_EXTS = new Set(['csv', 'xlsx']);
+const SLIDE_EXTS = new Set(['pptx']);
 const TEXT_EXTS = new Set(['txt', 'md', 'markdown', 'mdx', 'mdc', 'json']);
 
 function lazyView(node: ReactNode) {
@@ -69,6 +71,20 @@ function FileViewerContent({
   onImageZoomChange,
   page,
 }: FileViewerProps) {
+  const { data: workspace } = useWorkspace(file?.workspaceId ?? '', {
+    errorBoundary: false,
+  });
+  const replaceSource = useReplaceSource(file);
+  const saveOfficeFile = useCallback(
+    async (bytes: Uint8Array, expectedRevision: number) => {
+      const saved = await replaceSource.mutateAsync({
+        bytes,
+        expectedRevision,
+      });
+      return { revision: saved.revision ?? expectedRevision + 1 };
+    },
+    [replaceSource.mutateAsync]
+  );
   if (!file) {
     return (
       <div className="grid h-full place-items-center">
@@ -113,7 +129,15 @@ function FileViewerContent({
 
   if (file.kind === 'sheet' || SHEET_EXTS.has(ext)) {
     if (!file.url) return <FileEmpty />;
-    return lazyView(<SheetView url={file.url} />);
+    if (ext === 'csv') return lazyView(<CsvView url={file.url} />);
+    if (ext !== 'xlsx') return <UnsupportedPreview file={file} />;
+    return lazyView(
+      <SheetView
+        canEdit={workspace?.capabilities.canEdit ?? false}
+        file={file}
+        onSave={saveOfficeFile}
+      />
+    );
   }
 
   // docx renders in the browser; legacy binary .doc has no web viewer.
@@ -124,7 +148,14 @@ function FileViewerContent({
 
   if (file.kind === 'slides' || SLIDE_EXTS.has(ext)) {
     if (!file.url) return <FileEmpty />;
-    return lazyView(<PptxView url={file.url} />);
+    if (ext !== 'pptx') return <UnsupportedPreview file={file} />;
+    return lazyView(
+      <PptxView
+        canEdit={workspace?.capabilities.canEdit ?? false}
+        file={file}
+        onSave={saveOfficeFile}
+      />
+    );
   }
 
   const isMarkdown = file.kind === 'md' || ext === 'md' || ext === 'markdown';

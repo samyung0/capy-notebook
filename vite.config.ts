@@ -16,11 +16,26 @@ export default defineConfig(({ mode }) => {
         input: {
           llmRuntime: path.resolve(import.meta.dirname, 'llm-runtime.html'),
           main: path.resolve(import.meta.dirname, 'index.html'),
+          officeRuntime: path.resolve(
+            import.meta.dirname,
+            'office-runtime.html'
+          ),
         },
       },
     },
     optimizeDeps: {
-      exclude: ['@extend-ai/react-pptx', '@wllama/wllama'],
+      exclude: [
+        '@betteroffice/pptx',
+        '@betteroffice/pptx/editor',
+        '@betteroffice/pptx/viewer',
+        '@betteroffice/pptx-react',
+        '@betteroffice/xlsx',
+        '@betteroffice/xlsx/collaboration',
+        '@betteroffice/xlsx/editor',
+        '@betteroffice/xlsx/viewer',
+        '@betteroffice/xlsx-react',
+        '@wllama/wllama',
+      ],
     },
     plugins: [
       react(),
@@ -33,10 +48,99 @@ export default defineConfig(({ mode }) => {
       }),
     ],
     resolve: {
-      alias: {
-        '@': path.resolve(import.meta.dirname, './src'),
-        '@paraglide': path.resolve(import.meta.dirname, './src/i18n/paraglide'),
-      },
+      // Subpath entries must precede package roots. Vite matches string aliases
+      // by prefix, so an object sorted by a formatter turns `/viewer` into
+      // `index.ts/viewer`.
+      alias: [
+        {
+          find: '@betteroffice/pptx/editor',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/pptx/src/editor.ts'
+          ),
+        },
+        {
+          find: '@betteroffice/pptx/viewer',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/pptx/src/viewer.ts'
+          ),
+        },
+        {
+          find: '@betteroffice/xlsx/collaboration',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/xlsx/src/collaboration/index.ts'
+          ),
+        },
+        {
+          find: '@betteroffice/xlsx/editor',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/xlsx/src/editor.ts'
+          ),
+        },
+        {
+          find: '@betteroffice/xlsx/viewer',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/xlsx/src/viewer.ts'
+          ),
+        },
+        {
+          find: '@betteroffice/pptx-react',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/pptx-react/src/index.ts'
+          ),
+        },
+        {
+          find: '@betteroffice/pptx-i18n',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/pptx-i18n/src/index.ts'
+          ),
+        },
+        {
+          find: '@betteroffice/pptx',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/pptx/src/index.ts'
+          ),
+        },
+        {
+          find: '@betteroffice/xlsx-react',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/xlsx-react/src/index.ts'
+          ),
+        },
+        {
+          find: '@betteroffice/xlsx-i18n',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/xlsx-i18n/src/index.ts'
+          ),
+        },
+        {
+          find: '@betteroffice/xlsx',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/xlsx/src/index.ts'
+          ),
+        },
+        {
+          find: '@paraglide',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './src/i18n/paraglide'
+          ),
+        },
+        {
+          find: '@',
+          replacement: path.resolve(import.meta.dirname, './src'),
+        },
+      ],
     },
     server: {
       host: true,

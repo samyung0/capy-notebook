@@ -15,6 +15,7 @@
     "includes": [
       "!!**/node_modules",
       "!!**/.vscode",
+      "!!vendor",
       "!!**/src/api/gen",
       "!!**/public/mockServiceWorker.js",
       "!!**/src/styles/tailwind.css",

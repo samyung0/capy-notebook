@@ -222,6 +222,13 @@ CREATE TABLE IF NOT EXISTS files (
   -- same document into one workspace are stored twice (they are two files the
   -- user can see and delete) but indexed once.
   content_hash          text,
+  -- Browser editors replace the source behind the same logical file. The
+  -- revision is the optimistic-concurrency token carried by an edit session.
+  revision              bigint NOT NULL DEFAULT 1 CHECK (revision > 0),
+  -- Preserve the original ingest choice so a browser edit can enqueue the
+  -- replacement through the same pipeline without asking the user again.
+  parse_mode            text NOT NULL DEFAULT 'none',
+  caption_images        boolean NOT NULL DEFAULT false,
   UNIQUE (id, workspace_id),
   -- The column list on SET NULL is what makes this work: the default form would
   -- try to null workspace_id too, which is NOT NULL. Requires Postgres 15+.
@@ -1080,7 +1087,7 @@ CREATE INDEX IF NOT EXISTS editor_assets_workspace_idx
 CREATE TABLE IF NOT EXISTS upload_sessions (
   id            text PRIMARY KEY,
   target        text NOT NULL DEFAULT 'source'
-    CHECK (target IN ('source','editor_asset')),
+    CHECK (target IN ('source','source_replace','editor_asset')),
   workspace_id  text NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
   -- Storage owner (the workspace owner), which is who the reservation is
   -- charged to. created_by is the uploader, carried onto files.created_by when
@@ -1094,6 +1101,9 @@ CREATE TABLE IF NOT EXISTS upload_sessions (
   final_path    text NOT NULL UNIQUE,
   content_type  text NOT NULL DEFAULT 'application/octet-stream',
   declared_size bigint NOT NULL CHECK (declared_size >= 0),
+  -- New uploads reserve their full size. Replacements reserve only positive
+  -- growth because the current file is already charged to the same owner.
+  reserved_size bigint CHECK (reserved_size >= 0),
   status        text NOT NULL DEFAULT 'pending'
     CHECK (status IN ('pending','completed','expired')),
   -- Source-only: the file tree placement and parser selection.
@@ -1107,7 +1117,8 @@ CREATE TABLE IF NOT EXISTS upload_sessions (
   -- the choice changes the indexed text and therefore the content hash.
   caption_images boolean NOT NULL DEFAULT false,
   source_etag   text,
-  file_id       text REFERENCES files(id) ON DELETE SET NULL,
+  file_id       text REFERENCES files(id) ON DELETE CASCADE,
+  expected_revision bigint CHECK (expected_revision > 0),
   -- Editor-asset-only: the pending row in editor_assets this fills in.
   asset_id      text,
   created_at    timestamptz NOT NULL DEFAULT now(),
@@ -1120,13 +1131,18 @@ CREATE TABLE IF NOT EXISTS upload_sessions (
   FOREIGN KEY (asset_id, workspace_id)
     REFERENCES editor_assets(id, workspace_id) ON DELETE CASCADE,
   CONSTRAINT upload_sessions_source_fields CHECK (
-    target <> 'source' OR (name <> '' AND kind <> '' AND parse_mode <> '')
+    target NOT IN ('source','source_replace') OR
+      (name <> '' AND kind <> '' AND parse_mode <> '')
   ),
   CONSTRAINT upload_sessions_asset_fields CHECK (
     (target = 'editor_asset') = (asset_id IS NOT NULL)
   ),
   CONSTRAINT upload_sessions_file_target CHECK (
-    file_id IS NULL OR target = 'source'
+    file_id IS NULL OR target IN ('source','source_replace')
+  ),
+  CONSTRAINT upload_sessions_replace_fields CHECK (
+    (target = 'source_replace') =
+      (file_id IS NOT NULL AND expected_revision IS NOT NULL)
   )
 );
 CREATE INDEX IF NOT EXISTS upload_sessions_expiry_idx
@@ -1135,6 +1151,8 @@ CREATE INDEX IF NOT EXISTS upload_sessions_expiry_idx
 -- reservation per asset.
 CREATE UNIQUE INDEX IF NOT EXISTS upload_sessions_asset_uidx
   ON upload_sessions(asset_id) WHERE asset_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS upload_sessions_replace_file_idx
+  ON upload_sessions(file_id, status) WHERE target='source_replace';
 
 -- Drive/OneDrive relay state is deliberately separate from upload_sessions.
 -- The upload row owns quota and object finalization; this row is the durable
@@ -2413,19 +2431,30 @@ BEGIN
   END IF;
 
   IF old_pending AND NOT new_pending THEN
-    PERFORM adjust_user_storage_reserved(OLD.user_id, -OLD.declared_size);
+    PERFORM adjust_user_storage_reserved(
+      OLD.user_id, -COALESCE(OLD.reserved_size, OLD.declared_size)
+    );
   ELSIF NOT old_pending AND new_pending THEN
-    PERFORM adjust_user_storage_reserved(NEW.user_id, NEW.declared_size);
+    PERFORM adjust_user_storage_reserved(
+      NEW.user_id, COALESCE(NEW.reserved_size, NEW.declared_size)
+    );
   ELSIF old_pending AND new_pending
     AND OLD.user_id IS DISTINCT FROM NEW.user_id THEN
     -- Ownership transfer moves a live reservation, and the counter has to move
     -- with it or the old owner is charged for bytes they can no longer see.
-    PERFORM adjust_user_storage_reserved(OLD.user_id, -OLD.declared_size);
-    PERFORM adjust_user_storage_reserved(NEW.user_id, NEW.declared_size);
-  ELSIF old_pending AND new_pending
-    AND OLD.declared_size IS DISTINCT FROM NEW.declared_size THEN
     PERFORM adjust_user_storage_reserved(
-      NEW.user_id, NEW.declared_size - OLD.declared_size
+      OLD.user_id, -COALESCE(OLD.reserved_size, OLD.declared_size)
+    );
+    PERFORM adjust_user_storage_reserved(
+      NEW.user_id, COALESCE(NEW.reserved_size, NEW.declared_size)
+    );
+  ELSIF old_pending AND new_pending
+    AND COALESCE(OLD.reserved_size, OLD.declared_size)
+      IS DISTINCT FROM COALESCE(NEW.reserved_size, NEW.declared_size) THEN
+    PERFORM adjust_user_storage_reserved(
+      NEW.user_id,
+      COALESCE(NEW.reserved_size, NEW.declared_size)
+        - COALESCE(OLD.reserved_size, OLD.declared_size)
     );
   END IF;
   RETURN NULL;
