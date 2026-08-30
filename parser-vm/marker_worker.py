@@ -31,6 +31,11 @@ _PARSE_METHOD_ALIASES = {
     "auto": SELECTIVE_RAPIDOCR,
 }
 OFFICE_SUFFIXES = frozenset({".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"})
+OFFICE_PREVIEW_MAX_BYTES = int(
+    os.environ.get("EVO_OFFICE_PREVIEW_MAX_BYTES", str(128 << 20))
+)
+if OFFICE_PREVIEW_MAX_BYTES <= 0:
+    raise RuntimeError("EVO_OFFICE_PREVIEW_MAX_BYTES must be positive")
 _NORMALIZED_IMAGE_SUFFIXES = {".bmp", ".gif", ".jp2"}
 _DIRECT_SUFFIXES = {
     ".pdf",
@@ -104,6 +109,11 @@ def parse_document(data: bytes, name: str, parse_method: str) -> dict:
             ocr_page_indices=flagged,
         )
         result["_source_format"] = source_format
+        # Office citations are measured against the LibreOffice PDF, not the
+        # uploaded OOXML bytes. Keep that exact PDF in the parser bundle so the
+        # browser can render coordinates without running a second conversion.
+        if Path(name).suffix.lower() in OFFICE_SUFFIXES:
+            result["_preview_pdf"] = normalized_data
     except Exception as exc:  # noqa: BLE001 - parent needs measured failure data
         result = {"_worker_error": f"{type(exc).__name__}: {exc}"}
     result["_page_count"] = len(probes)
@@ -187,6 +197,12 @@ def normalize_document(data: bytes, name: str) -> tuple[bytes, str, str]:
             ).strip()
             raise RuntimeError(
                 f"LibreOffice could not convert {suffix}: {detail[:500]}"
+            )
+        rendered_size = rendered.stat().st_size
+        if rendered_size > OFFICE_PREVIEW_MAX_BYTES:
+            raise RuntimeError(
+                "LibreOffice PDF exceeds the "
+                f"{OFFICE_PREVIEW_MAX_BYTES}-byte preview limit"
             )
         return (
             rendered.read_bytes(),

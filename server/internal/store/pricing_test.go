@@ -59,10 +59,19 @@ func TestEmbeddingRatesFailsWithoutRegistry(t *testing.T) {
 }
 
 func TestCreditsForParsePagesUsesOCRRateInsteadOfAddingBoth(t *testing.T) {
-	if got := CreditsForParsePages(3, 1); got != 114_000_000 {
+	if got := CreditsForParsePages(3, 1, 31_000_000, 52_000_000); got != 114_000_000 {
 		t.Fatalf("CreditsForParsePages(3, 1) = %d, want 114000000", got)
 	}
-	if got := CreditsForParsePages(1, 9); got != 52_000_000 {
+	if got := CreditsForParsePages(1, 9, 31_000_000, 52_000_000); got != 52_000_000 {
 		t.Fatalf("CreditsForParsePages clamps OCR pages: %d", got)
+	}
+}
+
+func TestCreditsForAudioSecondsUsesRoundedProviderUnit(t *testing.T) {
+	if got := CreditsForAudioSeconds(61, 250_000); got != 15_250_000 {
+		t.Fatalf("61 audio seconds = %d, want 15250000", got)
+	}
+	if got := CreditsForAudioSeconds(-1, 250_000); got != 0 {
+		t.Fatalf("negative audio seconds = %d, want 0", got)
 	}
 }

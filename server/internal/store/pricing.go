@@ -7,12 +7,12 @@ import (
 	"github.com/evonotes/server/internal/models"
 )
 
-// Credit pricing. User charges are policy, expressed in micro-credits, where
+// Token credit pricing. User charges are expressed in micro-credits, where
 // one credit is 1000 output tokens of the 1x chat model (DeepSeek Flash).
 //
 // Per-model multipliers live on model_configs and are read through the
-// registry. The constants below are the 1x reference and the non-token rates
-// (parse pages, mail, the caption floor) that are not model-specific.
+// registry. Non-token rates live in resource_credit_rates so operators can
+// change them without a deployment.
 //
 // They are intentionally not derived from provider invoices. Provider prices
 // move, are quoted in different currencies and units, and some (cached input,
@@ -25,23 +25,57 @@ const (
 	// 1x reference: 1 credit per 1k output tokens of the standard chat model.
 	baseMicrosPerOutputToken int64 = 1_000
 	baseMicrosPerInputToken  int64 = 250
-
-	// Vision calls carry a fixed floor because image tokens are reported
-	// inconsistently across providers.
-	microsPerCaptionCall = 2_000 // 2 credits per figure caption
-
-	// Parsing is billed by page so concurrent jobs on one host do
-	// not have to divide shared container time. These rates preserve the old
-	// 0.5-credit/second policy and round up the worst benchmark case: a 60-second
-	// cold start for a one-page job, 0.91 seconds of Marker, and up to 42 seconds
-	// of RapidOCR. An OCR page uses the OCR rate instead of both rates.
-	microsPerDigitalParsePage int64 = 31_000_000
-	microsPerOCRParsePage     int64 = 52_000_000
-
-	// Mail is nearly free per message but is the easiest thing to abuse via
-	// invite spam, so it is metered.
-	microsPerEmail = 100_000 // 0.1 credits per message
 )
+
+const (
+	ResourceAudioSecond      = "audio_transcription_second"
+	ResourceDigitalParsePage = "digital_parse_page"
+	ResourceOCRParsePage     = "ocr_parse_page"
+	ResourceFigureCaption    = "figure_caption_call"
+	ResourceEmailMessage     = "email_message"
+)
+
+var ingestResourceKeys = []string{
+	ResourceAudioSecond,
+	ResourceDigitalParsePage,
+	ResourceOCRParsePage,
+	ResourceFigureCaption,
+}
+
+type ResourceRate struct {
+	ResourceKey         string `json:"resourceKey"`
+	Version             int    `json:"version"`
+	Unit                string `json:"unit"`
+	CreditMicrosPerUnit int64  `json:"creditMicrosPerUnit"`
+}
+
+func (s *Store) ActiveResourceRates(ctx context.Context, keys []string) (map[string]ResourceRate, error) {
+	rows, err := s.pool.Query(ctx, `
+		SELECT resource_key, version, unit, credit_micros_per_unit
+		FROM resource_credit_rates
+		WHERE active AND resource_key = ANY($1)`, keys)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	rates := make(map[string]ResourceRate, len(keys))
+	for rows.Next() {
+		var rate ResourceRate
+		if err := rows.Scan(&rate.ResourceKey, &rate.Version, &rate.Unit, &rate.CreditMicrosPerUnit); err != nil {
+			return nil, err
+		}
+		rates[rate.ResourceKey] = rate
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	for _, key := range keys {
+		if _, ok := rates[key]; !ok {
+			return nil, fmt.Errorf("active resource rate %q is missing", key)
+		}
+	}
+	return rates, nil
+}
 
 // TokenRates is the credit multiplier for one resolved model config.
 // Zeros stay zeros; they are not filled with the Flash 1x reference.
@@ -115,13 +149,7 @@ func CreditsForTokens(rates TokenRates, kind string, inputTokens, outputTokens, 
 	return uncached*rates.MicrosPerInputToken + cached*rates.MicrosPerCachedInputToken + outputTokens*rates.MicrosPerOutputToken
 }
 
-// CreditsForCaption prices one vision call, with the per-token component on
-// top of the fixed floor.
-func CreditsForCaption(rates TokenRates, inputTokens, outputTokens int64) int64 {
-	return microsPerCaptionCall + CreditsForTokens(rates, KindLLM, inputTokens, outputTokens, 0)
-}
-
-func CreditsForParsePages(pages, ocrPages int64) int64 {
+func CreditsForParsePages(pages, ocrPages, digitalRate, ocrRate int64) int64 {
 	if pages <= 0 {
 		return 0
 	}
@@ -131,8 +159,12 @@ func CreditsForParsePages(pages, ocrPages int64) int64 {
 	if ocrPages > pages {
 		ocrPages = pages
 	}
-	return (pages-ocrPages)*microsPerDigitalParsePage +
-		ocrPages*microsPerOCRParsePage
+	return (pages-ocrPages)*digitalRate + ocrPages*ocrRate
 }
 
-func CreditsForEmail(count int64) int64 { return count * microsPerEmail }
+func CreditsForAudioSeconds(seconds, rate int64) int64 {
+	if seconds <= 0 {
+		return 0
+	}
+	return seconds * rate
+}

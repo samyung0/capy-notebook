@@ -37,11 +37,20 @@ provider keys stay ciphertext on that hop; retrieval decrypts them with
 
 ```mermaid
 flowchart LR
-  Upload[Upload / move file] --> Jobs[(jobs)]
+  Upload[Upload / move file] --> Plan[Go format policy builds processingPlan v1]
+  Plan --> Jobs[(jobs)]
   Jobs --> Worker[Ingest worker]
-  Worker --> Parse[Netcup Marker + RapidOCR]
-  Parse --> Caption[Figure filter + caption]
+  Worker --> Download[One B2 download + SHA into shared spool]
+  Download --> Route{Contract route}
+  Route -->|PDF / modern Office| Parse[Netcup Marker + RapidOCR]
+  Route -->|image| ImageCaption[Gemini image caption]
+  Route -->|audio| AudioTranscript[Async ElevenLabs Scribe v2]
+  Route -->|CSV / TSV / text| DirectText[Direct normalization]
+  Parse --> Caption[130×130 selection + caption / DECORATIVE]
   Caption --> Chunk[Heading-aware chunker]
+  ImageCaption --> Chunk
+  AudioTranscript --> Chunk
+  DirectText --> Chunk
   Chunk --> Index[Embed + file summary + concepts]
   Index --> Store[(rag_chunks / summaries / concepts)]
   Store --> Search[Hybrid search RRF]
@@ -72,11 +81,14 @@ logical file removes its alias; a trigger removes canonical content only after
 its last alias disappears. Deleting a workspace deletes its index; there is no
 `rag_teardown` job.
 
-`files.content_hash` is the sha256 of parsed chunk text. Two uploads of the same
-document in one workspace stay as two independently selectable/deletable file
-rows, both mapped to one canonical index. Search chooses one in-scope alias for
-each content item, so duplicates do not repeat passages. Deleting either upload
-leaves the other searchable and citable under its own file id and name.
+`files.content_hash` is the sha256 of parsed chunk text plus page and bounding-box
+geometry when the parser supplies it. Two uploads of the same document in one
+workspace stay as two independently selectable/deletable file rows, both mapped
+to one canonical index. Text-identical documents with different layouts remain
+separate so one file cannot inherit another file's citation coordinates. Search
+chooses one in-scope alias for each content item, so duplicates do not repeat
+passages. Deleting either upload leaves the other searchable and citable under
+its own file id and name.
 
 `files.doc_id` is gone. Identity is always `files.id`.
 
@@ -198,16 +210,29 @@ normal attempt budget; only a missing or invalid pin is terminal. See
 
 ### Parse route
 
-Controlled by `parseMode` on the job payload:
+The Go gateway resolves every upload into a versioned `processingPlan` when it
+enqueues ingest. The plan names the exact format route, parser route, caption
+mode, Office-preview requirement, ordered stages, and required capabilities.
+The Python worker rejects unknown versions and executes this plan; it does not
+reconstruct orchestration from `kind`, `parseMode`, or the extension. Those
+legacy top-level fields may describe the saved upload choice but are not worker
+route selectors. Validation is exact: format/route, Office preview, caption
+mode, stage order, and resource list must agree with the version-1 contract.
+A malformed or manually fabricated combination fails terminally rather than
+silently taking a nearby route.
 
-| Mode | Parser | Output | Page model |
+| Source | Worker route | Searchable output | Page model |
 | --- | --- | --- | --- |
-| `fast` (default) | Persistent VM Marker + generous selective RapidOCR | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
-| `none` | — | Blob stored, not indexed | — |
-| txt / md / json kinds | Direct B2 read | Markdown | No |
+| PDF / DOCX / XLSX / PPTX with `fast` | Persistent VM Marker + generous selective RapidOCR | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
+| txt / md / json and other accepted text/code formats | Raw text | original text | No |
+| CSV / TSV | Delimiter/header normalization | explicit row/field text, including formulas | No |
+| supported image | Pinned Gemini vision call | faithful searchable caption | No |
+| supported audio | Presigned B2 source URL + asynchronous ElevenLabs Scribe v2 | transcript | No |
+| unknown or legacy DOC/XLS/PPT | Store-only | none | No |
 
-`accurate` and `advanced` are retired names. The worker rejects them instead of
-silently selecting a parser with different cost and output.
+HTML, RTF, XML, and source-code extensions have no dedicated handlers. They use
+the same raw-text chunking/indexing route as other text. CSV/TSV remain the one
+format-specific text exception.
 
 The bundle carries page-accurate citations and the figures captioning needs.
 Marker runs with RapidOCR only on pages the scan probe flags.
@@ -236,23 +261,51 @@ Each ingest replica still runs one job at a time, so `WORKER_REPLICAS` is how
 many jobs leave the pending queue at once. Do not set it above the parse cap
 you actually want to pay for.
 
-Parse zips are addressed by `(source_sha256, parse method, route, parser
-version)` and cached in B2 for the **cold start** only: retries of a job that
-has not yet produced a donor. After a
-successful ingest the zip is dropped (15-minute grace so a concurrent download
-can finish). A terminal failure keeps it so a manual retry stays cheap.
+Marker and OCR run in child processes. If a child exits abruptly or is
+OOM-killed, Python poisons the whole process pool: the parser changes its
+health state to `failed`, `/healthz` returns HTTP 503, and the parser process
+exits. Docker's `restart: unless-stopped` then starts a fresh container and a
+fresh pool; an ingest attempt that lost the parser connection follows the
+normal job retry path. A non-null pool object is not treated as healthy.
 
-The worker records the zip on `artifact_cache` as soon as the parser returns,
-**before** figure captioning. A later vision failure must not leave that object
-untracked. The worker may `blobstore.delete` only **unrecorded** zips (corrupt
-cache recovery).
+The hard parse deadline starts only after the relevant probe or child-process
+lane is acquired, so queue wait does not condemn a file. It covers both
+selective-OCR pdfium probing and the Marker child. If one file crosses it, the
+parser atomically writes a quarantine marker keyed by
+source fingerprint, parse method, and exact parser version, returns
+`parse_hard_timeout` for that file, and exits so Docker replaces the whole
+poisoned process pool. The exit is scheduled before response delivery, so a
+client disconnect cannot leave the failed pool running. The offending ingest
+is terminal and later submissions of that exact fingerprint fail immediately
+while that parser version is live; it is not retried into the pool. Other
+in-flight jobs interrupted by the container restart follow their ordinary
+retry policy. A parser-version change creates a new fingerprint and is the
+deliberate automatic way to retry the file after parser code changes.
+
+The worker downloads the raw B2 object once while calculating its trusted
+SHA-256, writing a job-scoped source file into the parser/worker shared volume.
+The parser reads that local key and atomically writes
+`artifacts/{parse_fingerprint}.zip` to the same volume. The worker extracts that
+file directly. There is no parser GET of the raw object, parser PUT of the zip,
+or worker GET of the zip.
+
+Parse bundles are ephemeral local cache entries, not durable B2 artifacts and
+not `artifact_cache` rows. The worker clears the file's diagnostic parse-bundle
+reference after successful ingest. A job stores its checksum-verified local
+source descriptor in its payload and retains that file across parser-capacity,
+external-provider, and retry requeues. This prevents another B2 download for
+the same job. It is deleted only after committed success or terminal cleanup;
+an idle sweep removes abandoned sources after two hours and fingerprint bundles
+after six hours. A later caption/index failure can reuse both the source and
+bundle during that window.
 
 `files.indexed` is true only after retrieval chunks are written, or reused from
-identical canonical content. `parseMode=none` jobs for non-text kinds (audio,
-store-only uploads) finish `ready` with `indexed=false`: the original blob stays,
-the file is viewable and downloadable, and chat/generate cannot search it. A
-failed ingest is the same shape — nothing is auto-deleted; the UI shows a banner
-on the file rather than replacing the viewer.
+identical canonical content. Direct image/audio/CSV/TSV routes get an ingest job
+even though they do not use Marker. Unknown and legacy store-only uploads finish
+`ready` with `indexed=false`: the original blob stays viewable/downloadable, and
+chat/generate cannot search it. A failed ingest keeps the original blob and
+lands `failed`/unindexed; the UI shows a banner rather than replacing the
+viewer.
 
 Browser Office saves replace the full source file under the same logical
 `files.id`. Completion uses an expected `files.revision` compare-and-swap,
@@ -263,33 +316,82 @@ when no other alias uses it. Store-only replacements return ready and unindexed.
 There is no chunk-level dirty update: the serialized OOXML file is the source of
 truth and follows the normal donor/parse/index path.
 
+The ingest payload carries the exact source revision and ETag that created it.
+Every source-derived file mutation and retrieval attachment locks and verifies
+that pair in the same transaction. Replacement also terminally supersedes older
+pending/running ingest rows and releases their credit reservations, so an old
+parse cannot publish content, geometry, previews, status, or citations for the
+new blob. A stale worker that merely lost its lease exits without closing the
+shared reservation used by its successor attempt.
+
 Nothing calls a third-party parsing API. The former service could not return
 bounding boxes or images, needed polling, and capped files at 10 MB / 20 pages.
 
+### Direct image, audio, and delimited-text ingest
+
+The Go gateway never processes source media. It enforces the plan byte limit,
+stores the object, resolves the processing plan, snapshots the model pins, and
+enqueues the job. The Netcup ingest worker downloads the B2 object once and
+performs the planned work:
+
+- images are normalized under a decoded-pixel cap, with bounded representative
+  frames for animated images, then captioned with the pinned vision model. The
+  prompt asks for every visible label, table cell, number, unit, formula,
+  diagram relationship, and uncertainty rather than a short visual summary;
+- audio duration is measured with `ffprobe`, capped at 10 hours, and submitted
+  to asynchronous ElevenLabs Scribe v2 by presigned B2 URL. A signed webhook
+  wakes the yielded job; transcript GET reconciles a missing webhook. Once
+  provider state exists, polling claims skip the local-source/B2 acquisition;
+- CSV/TSV is decoded as text, detects a likely header, and emits deterministic
+  row text with explicit field names. Formulas remain literal source values.
+
+Image and audio derived text is stored under
+`derived-text/{source_sha256}/...` and registered as `derived_text` in
+`artifact_cache`. A Postgres advisory lock on source hash plus transformation
+version ensures concurrent uploads perform at most one provider call. Deleting
+the last logical file drops its association, not the shared artifact; the same
+last-use TTL/reaper policy as figure captions handles eventual cleanup.
+
+Provider transcript deletion is a durable cleanup workflow, not best effort.
+Terminal ingest failure, file deletion (including workspace/account cascades),
+and source replacement mark the transcription row for cleanup before its file
+or job foreign keys are cleared. The worker retries provider DELETE with
+backoff; a late webhook attaches the provider id to the retained cleanup row
+without waking the deleted job, so it can still be removed.
+
+The Plate live-dictation feature and its temporary-audio route have been removed.
+
+The upload dialog reads local audio metadata and uses the active per-second
+rate returned by `GET /api/source-upload-policy`. An unreadable duration is
+shown as unavailable, never as zero. The worker's measured duration and the
+job's snapshotted rate remain authoritative for settlement.
+
 ### Figure captioning
 
-Chosen per file at upload time (`captionImages` on the job payload;
-`EVO_CAPTION_IMAGES` only covers jobs that carry no choice, such as cloud
-imports). `pipeline/parse/figures.py` describes each surviving figure with the
+Chosen per file at upload time and resolved into `processingPlan.captionMode`.
+`pipeline/parse/figures.py` describes each surviving figure with the
 vision model and writes it onto the image block **before chunking**, so the
 caption is embedded, summarized, concept-extracted and cited as part of the
 passage it belongs to. That ordering is the point of the feature: a slide deck
 whose substance is in its diagrams is otherwise nearly invisible to search.
 
-Every figure that survives filtering is captioned — the filters, not a count,
-bound the cost. Filtering is deliberately asymmetric, because a dropped figure
-is unreachable forever while a needless caption costs a fraction of a cent:
+This applies to PDF, DOCX, PPTX, and XLSX. Office files are converted to the
+coordinate-source PDF for parsing, but embedded pictures/charts are preserved
+in the parser bundle and captioned from those extracted image blocks. Legacy
+DOC/PPT/XLS remains intentionally store-only.
 
-- Absolute bounds — pixel dimensions, pixel area, aspect ratio, and normalized
-  page area from the bbox (which is what catches an icon rendered large by a
-  300 DPI scan).
-- Repetition — figures are clustered by perceptual hash (dHash, Hamming ≤ 6)
-  and a cluster spanning many pages is dropped as page furniture. This is the
-  load-bearing filter, and the only one that works regardless of language or
-  subject matter.
-- Flatness — near-uniform crops only. The naive "mostly one colour means logo"
-  rule would drop line diagrams on white, which are the most valuable images
-  there are, so the thresholds sit far below any real drawing.
+Every decodable image/chart block at least 130×130 is captioned unless the parser
+already described it. Exact image-byte duplicates share one call. Compressed
+size, pixel area, aspect ratio, page bbox, flatness/entropy, and cross-page
+repetition are not rejection rules because they can discard sparse diagrams,
+molecule drawings, and other useful scientific images.
+
+The prompt tells the vision model to return exactly `DECORATIVE` for an ornament,
+generic icon, divider, background, branding, or other image with no study value.
+That sentinel is cached by image digest but is not written onto the block, so it
+does not enter chunks or embeddings. Uncertain images are described instead of
+discarded. `EVO_CAPTION_VERSION=v2` separates these decisions from older cached
+captions.
 
 Captions are cached in B2 under a **source-identity** key
 (`captions/{source_sha256}/{caption version}.json`), keyed inside the JSON by
@@ -298,6 +400,9 @@ image content hash. The parse fingerprint is not part of the path: a re-parse
 figures, and a delete-then-re-upload of the same bytes hits the same object.
 Ownership lives on `artifact_cache` (TTL since last use), not on
 `files.caption_blob_path`, so deleting the file does not reap the cache.
+An advisory lock on source SHA plus caption version encloses cache reload,
+provider calls, merge, and save. Concurrent uploads of identical bytes therefore
+make one set of vision calls and cannot overwrite each other's cache entries.
 
 The caption prompt is built from the figure and its surrounding content only —
 no file name. Everything a globally cached or donor-copied output is generated
@@ -319,6 +424,8 @@ are copied verbatim from donors.
 - Builds `indexed_text` = heading breadcrumb + body, never a logical file
   name. Renaming a file must not change `content_hash` or fork canonical
   content. `text` is what the model and citations show.
+- Includes page and region geometry in `content_hash` when present. Documents
+  with the same text but different layouts cannot share citation coordinates.
 
 CJK runs are bigrammed in the application and indexed with Postgres `simple`
 config. The same tokenizer must run on queries (`search_query_terms`), or the
@@ -345,6 +452,11 @@ its vectors), plus summary and concepts, into a new per-workspace
 not billed for user A's original ingest. If the pins differ, chunk text is
 copied and re-embedded into the target workspace's space.
 
+Office donor reuse also requires an exact cached PDF preview from a file alias
+whose `source_sha256` matches the donor content. The worker verifies that object
+in blob storage, copies or re-embeds the donor, attaches the preview, and only
+then marks the destination ready. A missing preview forces a normal parse.
+
 `pipeline_identity` covers only what feeds chunk *text*, so it is not an
 invalidation lever for model prose: changing the ingest or vision default leaves
 existing summaries, concepts and captions in place, and a later upload of
@@ -355,8 +467,8 @@ either model and wants the prose regenerated has only the blunt lever below.
 
 A parser/caption/chunker version bump invalidates every donor and re-parses.
 Captions surviving that bump means the re-parse pays the page rate but not vision.
-Delete-and-re-upload with identical parse params also re-parses: there is no
-donor row left. That is the accepted trade for dropping parse zips on success.
+Delete-and-re-upload with identical parse params can reuse a local bundle while
+its short TTL remains; after that it re-parses if there is no donor row.
 
 ### Indexing one file
 
@@ -471,18 +583,22 @@ and are not sent back as LLM history.
    from live request compaction. A checkpoint folds old cross-message history
    through the latest completed historical message and persists in Go with
    compare-and-set so a pin cannot move backwards. The summarizer receives the previous
-   checkpoint, every completed historical message after it, and the exact current query as a
-   relevance guide. It must not answer or summarize the current query. Large
+   checkpoint and every completed historical message after it. The latest six
+   messages are separated as `recent_messages` so the prompt gives recent user
+   intent and corrections more fidelity without retaining them verbatim. The
+   exact current query may resolve references, but it must not narrow the durable
+   memory, appear in it, or be answered by the summarizer. Large
    histories fold in chronological batches with no message-count cap or prefix
-   clipping. The target is 1,200 to 1,600 tokens with a hard 2,048-token output
+   clipping. The target is 4,000 to 6,000 tokens with a hard 8,000-token output
    limit. Empty or oversized output does not advance the checkpoint.
 
    Before every agent model call, live admission measures the provider-shaped
    request against the selected model's input budget. The system prompt, tool
    schemas, current query, priming result, tool arguments and results, and
    provider continuity items remain exact. Compaction starts only when the
-   request would exceed 100% of the usable input budget after the output reserve
-   and safety margin. There is no 90% trigger and no deterministic clipping
+   request would exceed the smaller of the selected model's input budget and the
+   200,000-token effective-context cap, after the output reserve and safety
+   margin. There is no percentage trigger and no deterministic clipping
    fallback. Tool output is capped at 8,192 estimated tokens with a visible
    truncation marker. If protected context still cannot fit, the turn fails with
    `context_too_large`.
@@ -589,11 +705,17 @@ A citation is:
 
 - `fileId` is a real `files.id` (not a LightRAG doc hash).
 - Pages are 1-based and **absent** for sources with no page model (txt/md).
-- `regions` are stored and shipped; the highlight overlay that would consume
-  them is not built yet.
+- `regions` are stored, shipped, validated at the viewer boundary, and drawn as
+  a read-only overlay in `page-1000-topleft` coordinates.
 
 Chat citation chips show `p. N` / `pp. N–M` and open the file scrolled to that
-page via `OpenItem.page` → `FileViewer` → `PdfView`.
+page and centered on the first valid region. Native PDFs render their source.
+DOCX/XLSX/PPTX citations render the exact LibreOffice PDF preserved in parser
+bundle v3 because that is the coordinate surface Marker measured. Ordinary
+Office viewing and editing still use the native browser viewer; entering edit
+mode removes the citation overlay. Store-only and legacy Office files have no
+parser preview, so citation navigation falls back to the native viewer without
+an overlay instead of requesting a nonexistent derived PDF.
 
 ## Clone and teardown
 
@@ -618,14 +740,15 @@ job and pipeline `/workspace/delete` endpoint are gone.
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
-| Parse | `PARSER_URL`, `PARSER_TOKEN`, `EVO_PARSE_METHOD`, `RELEASE_SHA` | Persistent Netcup service. Modes are `marker_only`, `selective_rapidocr`, and `all_rapidocr`; mode, schema, and the exact release-derived parser version participate in the artifact fingerprint. |
+| Parse | `PARSER_URL`, `PARSER_TOKEN`, `EVO_PARSE_METHOD`, `EVO_OFFICE_PREVIEW_MAX_BYTES`, `RELEASE_SHA` | Persistent Netcup service. Modes are `marker_only`, `selective_rapidocr`, and `all_rapidocr`; mode, schema, and the exact release-derived parser version participate in the artifact fingerprint. LibreOffice preview output is capped before Python reads, bundles, stores, or reuses it (128 MiB by default). |
 | Chunk size | `EVO_CHUNK_*` | Character budgets, not tokens |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
 | Search | `EVO_SEARCH_CANDIDATES`, `EVO_SEARCH_TOP_K`, `EVO_SEARCH_PER_FILE_CAP` | |
 | Agent | `EVO_AGENT_MAX_STEPS` | Default 12. Cap is the design, not a safety valve |
-| LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `EVO_LLM_INPUT_BUDGET_TOKENS` only before model selection | Provider calls use the selected model window minus 8k for output, then subtract the greater of the 512-token protocol minimum and the model's calibrated safety margin. Admission uses 100% of what remains. The env value only bounds initial multi-file gathering before a catalog model is selected. |
-| Captions | `EVO_CAPTION_IMAGES`, `EVO_CAPTION_CONCURRENCY`, `EVO_CAPTION_MAX_EDGE`, `EVO_CAPTION_VERSION` | Per file at upload; the env flag is only a fallback |
+| LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `EVO_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 200k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
+| Captions | `EVO_CAPTION_CONCURRENCY`, `EVO_CAPTION_MAX_EDGE`, `EVO_CAPTION_VERSION` | Caption mode is resolved per file in the processing plan |
 | Caption safety valve | `EVO_CAPTION_MAX_PER_FILE` | `0` (uncapped); the filters bound the cost |
+| Direct media | `EVO_IMAGE_MAX_PIXELS`, `ELEVENLABS_API_KEY`, `ELEVENLABS_BASE_URL`, `ELEVENLABS_WEBHOOK_ID`, `EVO_ELEVENLABS_TRANSCRIPT_VERSION`, `EVO_ELEVENLABS_CONCURRENCY_UNITS`, `EVO_AUDIO_MAX_DURATION_SECONDS`, `EVO_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. Scribe v2 defaults to 12 weighted Starter units, with each file consuming `min(4, ceil(duration_seconds / 480))`; audio is capped at 10 hours. |
 
 Windows note: psycopg's async driver refuses the Proactor event loop.
 `pipeline.use_compatible_event_loop()` is called by both entrypoints and by the

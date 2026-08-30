@@ -213,6 +213,33 @@ func TestCloudImportAuthorization(t *testing.T) {
 			}
 		})
 	}
+
+	for _, endpoint := range []string{
+		"/api/workspaces/ws_e2e_private/sources/import-inspect",
+	} {
+		for _, user := range []string{"u_commenter", "u_viewer"} {
+			rec := doReq(t, h, http.MethodPost, endpoint, user, map[string]any{
+				"provider": "google",
+				"fileIds":  []string{"drive-file"},
+			})
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("cloud inspect by %s = %d body=%s", user, rec.Code, rec.Body.String())
+			}
+		}
+	}
+	for _, user := range []string{"u_commenter", "u_viewer"} {
+		rec := doReq(
+			t,
+			h,
+			http.MethodGet,
+			"/api/workspaces/ws_e2e_private/sources/import-content?provider=google&fileId=drive-file",
+			user,
+			nil,
+		)
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("cloud content by %s = %d body=%s", user, rec.Code, rec.Body.String())
+		}
+	}
 }
 
 func TestFileReplacementAuthorizationAndRevisionGate(t *testing.T) {

@@ -19,6 +19,14 @@
     "paths": {
       "@/*": ["./src/*"],
       "@paraglide/*": ["./src/i18n/paraglide/*"],
+      "@betteroffice/docx": ["./vendor/betteroffice/packages/docx/src/core.ts"],
+      "@betteroffice/docx/*": ["./vendor/betteroffice/packages/docx/src/*"],
+      "@betteroffice/docx-react": [
+        "./vendor/betteroffice/packages/docx-react/src/index.ts"
+      ],
+      "@betteroffice/docx-i18n": [
+        "./vendor/betteroffice/packages/docx-i18n/src/index.ts"
+      ],
       "@betteroffice/xlsx": [
         "./vendor/betteroffice/packages/xlsx/src/index.ts"
       ],

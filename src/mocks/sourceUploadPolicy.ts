@@ -1,14 +1,41 @@
 import type { FileKind, SourceUploadPolicy } from '@/api/types';
 
 const explicitExtensions: Record<string, string[]> = {
-  audio: ['mp3', 'wav', 'm4a', 'ogg', 'flac', 'aac'],
-  doc: ['docx'],
-  image: ['png', 'jpg', 'jpeg', 'jp2', 'webp', 'gif', 'bmp', 'svg', 'avif'],
+  audio: [
+    'mp3',
+    'wav',
+    'm4a',
+    'ogg',
+    'flac',
+    'aac',
+    'webm',
+    'mp4',
+    'mpeg',
+    'mpga',
+    'opus',
+  ],
+  doc: ['docx', 'doc'],
+  image: [
+    'png',
+    'jpg',
+    'jpeg',
+    'jp2',
+    'webp',
+    'gif',
+    'bmp',
+    'svg',
+    'avif',
+    'tif',
+    'tiff',
+    'heic',
+    'heif',
+    'ico',
+  ],
   json: ['json', 'map'],
   md: ['md', 'markdown', 'mdx', 'mdc'],
   pdf: ['pdf'],
-  sheet: ['xlsx', 'csv'],
-  slides: ['pptx'],
+  sheet: ['xlsx', 'xls', 'csv', 'tsv'],
+  slides: ['pptx', 'ppt'],
 };
 
 const textExtensions = `
@@ -49,6 +76,7 @@ const kindOrder: FileKind[] = [
   'slides',
   'audio',
   'json',
+  'unknown',
 ];
 
 function extensionsFor(kind: FileKind): string[] {
@@ -58,34 +86,22 @@ function extensionsFor(kind: FileKind): string[] {
     .sort((a, b) => a.localeCompare(b));
 }
 
-const supportedExtensions = [...extensionKinds.keys()]
-  .map((extension) => `.${extension}`)
-  .sort((a, b) => a.localeCompare(b));
-
 /** Mirrors sourceupload.parseExtensions: the document parser's format list. */
-const parseExtensions = [
-  '.bmp',
-  '.docx',
-  '.gif',
-  '.jp2',
-  '.jpeg',
-  '.jpg',
-  '.pdf',
-  '.png',
-  '.pptx',
-  '.webp',
-  '.xlsx',
-];
+const parseExtensions = ['.docx', '.pdf', '.pptx', '.xlsx'];
 
 export const sourceUploadPolicy: SourceUploadPolicy = {
-  accept: supportedExtensions.join(','),
-  allowNoExtension: false,
+  accept: '',
+  allowNoExtension: true,
+  audioMaxDurationSeconds: 36_000,
+  audioSecondCreditMicros: 250_000,
+  digitalParsePageCreditMicros: 31_000_000,
   kinds: kindOrder.map((kind) => ({
     extensions: extensionsFor(kind),
     kind,
     text: kind === 'txt' || kind === 'md' || kind === 'json',
   })),
   maxBytes: 10 * 1024 * 1024,
+  ocrParsePageCreditMicros: 52_000_000,
   parseModes: [
     {
       extensions: parseExtensions,

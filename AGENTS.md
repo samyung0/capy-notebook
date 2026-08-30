@@ -45,6 +45,7 @@ Understand the following terms so we can communicate on the same page:
 - Comments are good way to clarify functionality and how code is used, but dont comment every line, make it concise.
 - Keep documentation and comments up to date.
 - Avoid using type `any` unless absolutely necessary. Inferring types is good.
+- Avoid setting defaults and fallbacks without a human signoff, sometime failing explicitly is better than assigning a wrong behavior.
 
 ## Documentation - OpenWiki (`openwiki/`)
 
@@ -76,7 +77,8 @@ Cross-links: plate-editor defers structural ACL to authorization and editor perf
 ### Tests
 
 - Use the test scripts in the root `package.json` when available; they set up the required test harnesses. For example, run `pnpm test:go` instead of `go test` directly.
-- update `test-catalog.md`
+- Update `test-catalog.md`
+- Prefer `e2e:slow` on local machines, it uses only one worker and does not drain resources.
 
 ## I18n
 
@@ -88,7 +90,7 @@ paraglide is used for internationalization. use paraglide functions to support i
 - Always use `file-pr` when available.
 - Rebase onto main branch before opening.
 
-## Frontend Common Pitfalls
+## Frontend Pitfalls
 
 - IMPORTANT: react-hook-forms and react-query use proxying for tracking whether state/status changes have subscribers or not, you MUST use destructuring to read the values rather than useXXX().isPending or useXXX().isError
 - DO NOT directly import from `api/gen/model`, instead re-export type in `api/types.ts`. The file allows for subtle changes such as new frontend only fields on top of the auto generated types.

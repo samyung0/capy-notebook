@@ -203,14 +203,20 @@ CREATE TABLE IF NOT EXISTS files (
   parser                text,
   engine                text,
   blob_path             text,
+  -- Exact LibreOffice PDF that Office parser coordinates were measured
+  -- against. PDFs use blob_path directly and leave this null.
+  preview_blob_path     text,
   url                   text,
   content               text,
-  -- Parse-zip / caption object keys are owned by artifact_cache, not these
-  -- columns: a file delete must not reap a caption another upload can reuse.
+  -- Parse-zip / derived-text object keys are owned by artifact_cache, not
+  -- these columns: a file delete must not reap a caption or transcript another
+  -- upload can reuse.
   -- Kept as identity/debug only; the blob-refcount trigger ignores them.
   parsed_blob_path      text,
   parsed_fingerprint    text,
   parsed_parser_version text,
+  -- Source-level image captions, audio transcripts, or document figure
+  -- captions. Identity/debug only; artifact_cache owns the blob reference.
   caption_blob_path     text,
   source_etag           text,
   -- sha256 of the uploaded bytes, written by the ingest worker before parse.
@@ -763,6 +769,32 @@ CREATE TABLE IF NOT EXISTS webhook_events (
 );
 CREATE INDEX IF NOT EXISTS webhook_events_source_idx ON webhook_events(source, processed_at);
 
+-- Operator-managed product prices for resources that are not priced by model
+-- tokens. A new version is inserted when a price changes; jobs keep the
+-- version they were enqueued with so a queued upload is never repriced.
+CREATE TABLE IF NOT EXISTS resource_credit_rates (
+  resource_key            text NOT NULL,
+  version                 int NOT NULL CHECK (version > 0),
+  unit                    text NOT NULL,
+  credit_micros_per_unit  bigint NOT NULL CHECK (credit_micros_per_unit >= 0),
+  active                  boolean NOT NULL DEFAULT false,
+  created_at              timestamptz NOT NULL DEFAULT now(),
+  created_by              text REFERENCES users(id) ON DELETE SET NULL,
+  PRIMARY KEY (resource_key, version)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS resource_credit_rates_active_idx
+  ON resource_credit_rates(resource_key) WHERE active;
+
+INSERT INTO resource_credit_rates
+  (resource_key, version, unit, credit_micros_per_unit, active)
+VALUES
+  ('audio_transcription_second', 1, 'second', 250000, true),
+  ('digital_parse_page', 1, 'page', 31000000, true),
+  ('ocr_parse_page', 1, 'page', 52000000, true),
+  ('figure_caption_call', 1, 'call', 2000000, true),
+  ('email_message', 1, 'message', 100000, true)
+ON CONFLICT (resource_key, version) DO NOTHING;
+
 -- Postgres-backed job queue for async ingestion (claimed via SKIP LOCKED).
 CREATE TABLE IF NOT EXISTS jobs (
   id         text PRIMARY KEY,
@@ -790,6 +822,69 @@ CREATE INDEX IF NOT EXISTS jobs_claim_idx
 CREATE INDEX IF NOT EXISTS jobs_lease_idx
   ON jobs(lease_expires_at)
   WHERE status = 'running';
+
+-- Durable state for asynchronous ElevenLabs Scribe jobs. pending rows reserve
+-- weighted Starter-plan capacity; completed/failed rows release it. The source
+-- job is re-pended without spending an attempt while this row is pending.
+CREATE TABLE IF NOT EXISTS audio_transcriptions (
+  id                         text PRIMARY KEY,
+  -- Cleanup must survive logical file/job deletion until the provider object
+  -- is removed. Active rows still carry both ids; deletion sets them null.
+  job_id                     text UNIQUE REFERENCES jobs(id) ON DELETE SET NULL,
+  file_id                    text REFERENCES files(id) ON DELETE SET NULL,
+  source_sha256              text NOT NULL,
+  provider                   text NOT NULL DEFAULT 'elevenlabs',
+  model                      text NOT NULL DEFAULT 'scribe_v2',
+  provider_transcription_id  text UNIQUE,
+  status                     text NOT NULL DEFAULT 'submitting'
+    CHECK (status IN ('submitting','pending','completed','finalized','failed')),
+  duration_seconds           double precision NOT NULL CHECK (duration_seconds > 0),
+  billable_seconds           int NOT NULL CHECK (billable_seconds > 0),
+  concurrency_units          int NOT NULL CHECK (concurrency_units BETWEEN 1 AND 4),
+  rate_resource_key          text NOT NULL DEFAULT 'audio_transcription_second'
+    CHECK (rate_resource_key = 'audio_transcription_second'),
+  rate_version               int NOT NULL,
+  credit_micros_per_second   bigint NOT NULL CHECK (credit_micros_per_second >= 0),
+  provider_call_id           text NOT NULL,
+  result                     jsonb,
+  error                      text,
+  cleanup_requested          boolean NOT NULL DEFAULT false,
+  cleanup_attempts           int NOT NULL DEFAULT 0 CHECK (cleanup_attempts >= 0),
+  cleanup_not_before         timestamptz,
+  cleanup_error              text,
+  submitted_at               timestamptz,
+  completed_at               timestamptz,
+  created_at                 timestamptz NOT NULL DEFAULT now(),
+  updated_at                 timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (rate_resource_key, rate_version)
+    REFERENCES resource_credit_rates(resource_key, version)
+    DEFERRABLE INITIALLY DEFERRED
+);
+CREATE INDEX IF NOT EXISTS audio_transcriptions_pending_idx
+  ON audio_transcriptions(status, updated_at)
+  WHERE status IN ('submitting','pending');
+CREATE INDEX IF NOT EXISTS audio_transcriptions_cleanup_idx
+  ON audio_transcriptions(cleanup_not_before, updated_at)
+  WHERE cleanup_requested;
+
+CREATE OR REPLACE FUNCTION request_audio_cleanup_on_file_delete()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE audio_transcriptions
+  SET cleanup_requested=true,
+      status=CASE WHEN status='finalized' THEN status ELSE 'failed' END,
+      error=CASE WHEN status='finalized' THEN error ELSE 'source deleted' END,
+      completed_at=COALESCE(completed_at, now()),
+      cleanup_not_before=now(),
+      updated_at=now()
+  WHERE file_id=OLD.id;
+  RETURN OLD;
+END $$;
+
+DROP TRIGGER IF EXISTS files_request_audio_cleanup ON files;
+CREATE TRIGGER files_request_audio_cleanup
+BEFORE DELETE ON files
+FOR EACH ROW EXECUTE FUNCTION request_audio_cleanup_on_file_delete();
 
 -- ============================================================================
 -- Retrieval store — chunks, per-file summaries and the concept index
@@ -1008,12 +1103,12 @@ CREATE TABLE IF NOT EXISTS blobs (
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 
--- Platform-owned parse/caption objects, keyed by source identity rather than
--- by a file row. File-row refcounting would reap a caption when the user
--- deleted the file, which is exactly when a re-upload wants it.
+-- Platform-owned parser objects, keyed by source identity rather than by a
+-- file row. Office previews also have a live file-row reference while a file
+-- uses them, so cache expiry cannot remove a preview that is still viewable.
 CREATE TABLE IF NOT EXISTS artifact_cache (
   object_path    text PRIMARY KEY,
-  kind           text NOT NULL CHECK (kind IN ('parse_zip', 'captions')),
+  kind           text NOT NULL CHECK (kind IN ('captions', 'derived_text', 'office_preview')),
   source_sha256  text NOT NULL,
   size_bytes     bigint NOT NULL DEFAULT 0 CHECK (size_bytes >= 0),
   created_at     timestamptz NOT NULL DEFAULT now(),
@@ -1819,6 +1914,8 @@ CREATE TABLE IF NOT EXISTS provider_calls (
   thinking       text NOT NULL DEFAULT '',
   input_tokens   bigint NOT NULL DEFAULT 0,
   output_tokens  bigint NOT NULL DEFAULT 0,
+  units          bigint NOT NULL DEFAULT 0 CHECK (units >= 0),
+  unit           text NOT NULL DEFAULT '',
   cached_read_tokens bigint NOT NULL DEFAULT 0,
   cache_write_tokens bigint NOT NULL DEFAULT 0,
   reasoning_tokens bigint NOT NULL DEFAULT 0,
@@ -2189,6 +2286,82 @@ REVOKE ALL ON FUNCTION record_registry_audit(
   text, bigint, bigint, bigint, bigint, bigint, text
 ) FROM PUBLIC;
 
+CREATE OR REPLACE FUNCTION save_resource_credit_rate(
+  p_user_id text,
+  p_resource_key text,
+  p_credit_micros_per_unit bigint,
+  p_trace_id text
+)
+RETURNS TABLE (
+  resource_key text,
+  version int,
+  unit text,
+  credit_micros_per_unit bigint,
+  active boolean,
+  created_at timestamptz
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_temp
+AS $$
+DECLARE
+  v_role text;
+  v_unit text;
+  v_version int;
+BEGIN
+  IF p_credit_micros_per_unit < 0 THEN
+    RAISE EXCEPTION 'credit rate must be non-negative' USING ERRCODE = '22023';
+  END IF;
+  SELECT o.role INTO v_role
+  FROM operators o
+  JOIN users u ON u.id = o.user_id
+  WHERE o.user_id = p_user_id
+    AND u.deleted_at IS NULL
+    AND u.suspended_at IS NULL
+    AND u.deletion_requested_at IS NULL
+    AND EXISTS (
+      SELECT 1 FROM ops_permissions p
+      WHERE p.role = o.role AND p.permission = 'write_registry'
+    );
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'permission denied' USING ERRCODE = '42501';
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtext('resource-credit-rates'));
+  SELECT r.unit INTO v_unit
+  FROM resource_credit_rates r
+  WHERE r.resource_key = p_resource_key AND r.active;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'unknown resource rate' USING ERRCODE = '22023';
+  END IF;
+  SELECT COALESCE(MAX(r.version), 0) + 1 INTO v_version
+  FROM resource_credit_rates r WHERE r.resource_key = p_resource_key;
+  UPDATE resource_credit_rates r SET active=false
+  WHERE r.resource_key = p_resource_key AND r.active;
+  INSERT INTO resource_credit_rates
+    (resource_key, version, unit, credit_micros_per_unit, active, created_by)
+  VALUES
+    (p_resource_key, v_version, v_unit, p_credit_micros_per_unit, true, p_user_id);
+  INSERT INTO operator_audit_events (
+    actor_user_id, actor_role, action, target_type, target_id,
+    outcome, trace_id, metadata
+  ) VALUES (
+    p_user_id, v_role, 'resource_rate.saved', 'resource_credit_rate',
+    p_resource_key, 'committed', COALESCE(p_trace_id, ''),
+    jsonb_build_object(
+      'version', v_version,
+      'unit', v_unit,
+      'credit_micros_per_unit', p_credit_micros_per_unit
+    )
+  );
+  RETURN QUERY SELECT r.resource_key, r.version, r.unit,
+    r.credit_micros_per_unit, r.active, r.created_at
+  FROM resource_credit_rates r
+  WHERE r.resource_key = p_resource_key AND r.version = v_version;
+END;
+$$;
+REVOKE ALL ON FUNCTION save_resource_credit_rate(text, text, bigint, text) FROM PUBLIC;
+
 CREATE OR REPLACE FUNCTION set_file_storage_owner()
 RETURNS trigger
 LANGUAGE plpgsql
@@ -2508,8 +2681,8 @@ AFTER INSERT OR UPDATE OR DELETE ON files
 FOR EACH ROW EXECUTE FUNCTION account_file_storage();
 DROP TRIGGER IF EXISTS files_blob_refs_after ON files;
 CREATE TRIGGER files_blob_refs_after
-AFTER INSERT OR UPDATE OF blob_path OR DELETE ON files
-FOR EACH ROW EXECUTE FUNCTION account_blob_refs('blob_path');
+AFTER INSERT OR UPDATE OF blob_path, preview_blob_path OR DELETE ON files
+FOR EACH ROW EXECUTE FUNCTION account_blob_refs('blob_path', 'preview_blob_path');
 
 -- Parse zips are dropped on success while a concurrent worker may still be
 -- downloading the same object, so unref waits 15 minutes. Caption GC can

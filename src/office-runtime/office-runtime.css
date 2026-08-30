@@ -34,12 +34,30 @@ button {
   flex-direction: column;
 }
 
+.docx-runtime-viewer {
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+}
+
 .office-runtime-state {
   display: grid;
   place-items: center;
   height: 100%;
   font-size: 14px;
   color: #667085;
+}
+
+.office-a11y-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  white-space: nowrap;
+  border: 0;
+  clip: rect(0 0 0 0);
 }
 
 .office-tabs {
@@ -113,6 +131,15 @@ button {
   max-height: 100%;
   background: #fff;
   box-shadow: 0 3px 18px rgb(25 32 48 / 18%);
+}
+
+.pptx-canvas-layer {
+  display: grid;
+  place-items: center;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 0;
+  max-height: 100%;
 }
 
 .pptx-controls {

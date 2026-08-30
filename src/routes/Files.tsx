@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { useAllFiles } from '@/api/hooks';
-import type { SourceFile } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Badge } from '@/components/ui/Badge';
@@ -11,11 +10,27 @@ import { Icon } from '@/components/ui/Icon';
 import { FileNotIndexedBanner } from '@/features/files/FileStates';
 import { FileViewer } from '@/features/files/FileViewer';
 import { formatFileSize } from '@/features/files/fileUtils';
+import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
 import { m } from '@/i18n';
 
 export default function Files() {
   const { data, fetchStatus, isLoading } = useAllFiles();
-  const [open, setOpen] = useState<SourceFile | null>(null);
+  const [openFileId, setOpenFileId] = useState<string | null>(null);
+  const [officeEditDirty, setOfficeEditDirty] = useState(false);
+  const confirmViewerReplacement = useOfficeEditGuard(officeEditDirty);
+  const open = data?.find((file) => file.id === openFileId) ?? null;
+
+  const openFile = (fileId: string) => {
+    if (openFileId !== fileId && !confirmViewerReplacement()) return;
+    setOfficeEditDirty(false);
+    setOpenFileId(fileId);
+  };
+
+  const closeFile = () => {
+    if (!confirmViewerReplacement()) return;
+    setOfficeEditDirty(false);
+    setOpenFileId(null);
+  };
 
   return (
     <PanelWithInvertedRadius>
@@ -32,7 +47,7 @@ export default function Files() {
                 className="flex items-center gap-3 p-5.5"
                 interactive
                 key={f.id}
-                onClick={() => setOpen(f)}
+                onClick={() => openFile(f.id)}
                 radius="card-lg"
               >
                 <span className="flex h-10 w-10 items-center justify-center rounded-card bg-surface-hover-bg text-fg-secondary">
@@ -51,7 +66,7 @@ export default function Files() {
         )}
       </div>
       <SimpleDialog
-        onClose={() => setOpen(null)}
+        onClose={closeFile}
         open={!!open}
         title={open?.name}
         width={760}
@@ -59,7 +74,9 @@ export default function Files() {
         <div className="flex min-h-[50vh] flex-col">
           {open && <FileNotIndexedBanner file={open} />}
           <div className="min-h-0 flex-1">
-            {open && <FileViewer file={open} />}
+            {open && (
+              <FileViewer file={open} onDirtyChange={setOfficeEditDirty} />
+            )}
           </div>
         </div>
       </SimpleDialog>

@@ -19,6 +19,7 @@ export interface File {
   kind: FileKind;
   name: string;
   position: number;
+  previewUrl?: string;
   revision: number;
   sizeBytes: number;
   status?: FileStatus;

@@ -23,13 +23,9 @@ const (
 	blobReapInterval = time.Minute
 )
 
-// artifactTTL is how long an unused cache entry survives. Both values are read
-// from the same environment variables the ingest worker reads, because both
-// processes run the identical sweep and a disagreement would mean the TTL you
-// configured is not the TTL that applies.
+// artifactTTL is how long an unused durable B2 cache entry survives.
 type artifactTTL struct {
-	CaptionDays   int
-	ParseZipHours int
+	CaptionDays int
 }
 
 // runBlobReaper drains the deletion outbox until the ticker stops.
@@ -49,7 +45,7 @@ func runBlobReaper(ctx context.Context, st *store.Store, bs blob.Store, ttl arti
 
 // reapBlobs deletes every due batch, stopping at the first short or failed one.
 func reapBlobs(ctx context.Context, st *store.Store, bs blob.Store, ttl artifactTTL) {
-	if n, err := st.SweepArtifactCache(ctx, ttl.CaptionDays, ttl.ParseZipHours); err != nil {
+	if n, err := st.SweepArtifactCache(ctx, ttl.CaptionDays); err != nil {
 		if ctx.Err() == nil {
 			log.Printf("sweep artifact cache: %v", err)
 		}
@@ -139,7 +135,12 @@ const (
 // sweptPrefixes are the prefixes worth scanning. incoming/ is deliberately
 // excluded: a bucket lifecycle rule expires it after a day, so every key there is
 // either in flight or about to disappear on its own.
-var sweptPrefixes = []string{"sources/", "parsed/", "captions/", "editor-assets/"}
+var sweptPrefixes = []string{
+	"sources/",
+	"captions/",
+	"previews/",
+	"editor-assets/",
+}
 
 // runBlobSweep reports unreferenced objects on a long interval.
 func runBlobSweep(ctx context.Context, st *store.Store, bs blob.Store) {

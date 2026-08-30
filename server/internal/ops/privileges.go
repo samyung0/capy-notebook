@@ -29,6 +29,12 @@ type tablePrivilege struct {
 }
 
 var readRequiredPrivileges = []columnPrivilege{
+	{"resource_credit_rates", "resource_key", "SELECT"},
+	{"resource_credit_rates", "version", "SELECT"},
+	{"resource_credit_rates", "unit", "SELECT"},
+	{"resource_credit_rates", "credit_micros_per_unit", "SELECT"},
+	{"resource_credit_rates", "active", "SELECT"},
+	{"resource_credit_rates", "created_at", "SELECT"},
 	{"user_credits", "user_id", "SELECT"},
 	{"user_credits", "period_start", "SELECT"},
 	{"user_credits", "used_micros", "SELECT"},
@@ -415,8 +421,9 @@ func ValidateDatabaseRole(
 			"model_configs_thinking_ok(text[],text[],text)",
 			"request_reconciliation(text,text,text)",
 			"record_registry_audit(text,bigint,bigint,bigint,bigint,bigint,text)",
+			"save_resource_credit_rate(text,text,bigint,text)",
 		)...)
-		var canExecuteThinking, canRequestReconciliation, canRecordRegistryAudit bool
+		var canExecuteThinking, canRequestReconciliation, canRecordRegistryAudit, canSaveResourceRate bool
 		if err := pool.QueryRow(ctx,
 			`SELECT
 				has_function_privilege(
@@ -433,11 +440,17 @@ func ValidateDatabaseRole(
 					current_user,
 					'record_registry_audit(text,bigint,bigint,bigint,bigint,bigint,text)',
 					'EXECUTE'
+				),
+				has_function_privilege(
+					current_user,
+					'save_resource_credit_rate(text,text,bigint,text)',
+					'EXECUTE'
 				)`,
 		).Scan(
 			&canExecuteThinking,
 			&canRequestReconciliation,
 			&canRecordRegistryAudit,
+			&canSaveResourceRate,
 		); err != nil {
 			return fmt.Errorf("inspect admin function privileges: %w", err)
 		}
@@ -457,6 +470,12 @@ func ValidateDatabaseRole(
 			problems = append(
 				problems,
 				"cannot execute record_registry_audit(text,bigint,bigint,bigint,bigint,bigint,text)",
+			)
+		}
+		if !canSaveResourceRate {
+			problems = append(
+				problems,
+				"cannot execute save_resource_credit_rate(text,text,bigint,text)",
 			)
 		}
 		var canDelete bool

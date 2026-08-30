@@ -111,3 +111,38 @@ func (s *AdminStore) RequestReconciliation(
 	}
 	return out, err
 }
+
+func (s *AdminStore) SaveResourceCreditRate(
+	ctx context.Context,
+	principal Principal,
+	resourceKey string,
+	creditMicrosPerUnit int64,
+) (ResourceCreditRate, error) {
+	var out ResourceCreditRate
+	if !principal.Has(PermWriteRegistry) {
+		return out, ErrForbidden
+	}
+	if creditMicrosPerUnit < 0 {
+		return out, validation("creditMicrosPerUnit must be non-negative")
+	}
+	pool, err := s.writer(ctx)
+	if err != nil {
+		return out, err
+	}
+	err = pool.QueryRow(ctx, `
+		SELECT resource_key, version, unit, credit_micros_per_unit, active, created_at
+		FROM save_resource_credit_rate($1, $2, $3, $4)`,
+		principal.UserID, resourceKey, creditMicrosPerUnit, obs.TraceID(ctx),
+	).Scan(&out.ResourceKey, &out.Version, &out.Unit,
+		&out.CreditMicrosPerUnit, &out.Active, &out.CreatedAt)
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		if pgErr.Code == "42501" {
+			return out, ErrForbidden
+		}
+		if pgErr.Code == "22023" {
+			return out, validation("invalid resource rate")
+		}
+	}
+	return out, err
+}

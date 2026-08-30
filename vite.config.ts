@@ -5,6 +5,8 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 import { llmRuntimePlugin } from './vite-llm-runtime';
 
+const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   // Match src/main.tsx: MSW is on unless explicitly disabled.
@@ -25,6 +27,9 @@ export default defineConfig(({ mode }) => {
     },
     optimizeDeps: {
       exclude: [
+        '@betteroffice/docx',
+        '@betteroffice/docx-react',
+        '@betteroffice/docx/viewer',
         '@betteroffice/pptx',
         '@betteroffice/pptx/editor',
         '@betteroffice/pptx/viewer',
@@ -52,6 +57,34 @@ export default defineConfig(({ mode }) => {
       // by prefix, so an object sorted by a formatter turns `/viewer` into
       // `index.ts/viewer`.
       alias: [
+        {
+          find: '@betteroffice/docx-react',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/docx-react/src/index.ts'
+          ),
+        },
+        {
+          find: '@betteroffice/docx-i18n',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/docx-i18n/src/index.ts'
+          ),
+        },
+        {
+          find: BETTEROFFICE_DOCX_SUBPATH,
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/docx/src/$1'
+          ),
+        },
+        {
+          find: '@betteroffice/docx',
+          replacement: path.resolve(
+            import.meta.dirname,
+            './vendor/betteroffice/packages/docx/src/core.ts'
+          ),
+        },
         {
           find: '@betteroffice/pptx/editor',
           replacement: path.resolve(
@@ -185,5 +218,8 @@ export default defineConfig(({ mode }) => {
         ],
       },
     },
+    // The source-analysis worker imports PDF.js's own worker URL. ES workers
+    // support that nested module split; Vite's IIFE worker output does not.
+    worker: { format: 'es' },
   };
 });

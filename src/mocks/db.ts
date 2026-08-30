@@ -1246,6 +1246,15 @@ export const chatMessages: WireMessage[] = [
           {
             fileId: files[0].id,
             fileName: files[0].name,
+            pageEnd: 1,
+            pageStart: 1,
+            regions: [
+              {
+                bbox: [100, 100, 500, 200],
+                page: 1,
+                space: 'page-1000-topleft',
+              },
+            ],
             snippet: 'The cell is the basic unit of life…',
           },
         ]

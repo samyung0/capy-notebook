@@ -340,6 +340,7 @@ export const api = {
 /** Central query-key registry for TanStack Query. */
 export const qk = {
   accountStatus: ['account', 'status'] as const,
+  allFiles: ['files', 'all'] as const,
   attempt: (id: string) => ['attempt', id] as const,
   attempts: ['attempts'] as const,
   billing: ['billing'] as const,

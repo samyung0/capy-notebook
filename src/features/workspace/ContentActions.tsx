@@ -71,6 +71,7 @@ export function toMaterialActionTarget(
 }
 
 export function ContentActions({
+  beforeDelete,
   chapters,
   color,
   content,
@@ -89,6 +90,7 @@ export function ContentActions({
   readOnly = false,
   workspaceId,
 }: {
+  beforeDelete?: () => boolean;
   chapters: Chapter[];
   color?: UserColor;
   content?: ContentActionTarget;
@@ -181,13 +183,14 @@ export function ContentActions({
   };
 
   const deleteContent = () => {
-    if (!content) return;
+    if (!content || (beforeDelete && !beforeDelete())) return false;
     if (content.type === 'file') {
       deleteFile(content.id);
     } else {
       deleteMaterial(content.id);
     }
     onDeleted?.();
+    return true;
   };
 
   return (
@@ -284,8 +287,7 @@ export function ContentActions({
               body={m.confirm_delete_body()}
               onClose={() => setConfirmOpen(false)}
               onConfirm={() => {
-                deleteContent();
-                setConfirmOpen(false);
+                if (deleteContent()) setConfirmOpen(false);
               }}
               open={confirmOpen}
               title={m.confirm_delete_title({ name: content.name })}

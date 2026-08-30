@@ -702,16 +702,22 @@ func (s *Store) DeleteChapter(ctx context.Context, id string) error {
 	return err
 }
 
-const fileCols = `id, workspace_id, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, url, content, revision`
+const fileCols = `id, workspace_id, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, url,
+	CASE WHEN status='ready' AND ((kind='pdf' AND blob_path IS NOT NULL) OR preview_blob_path IS NOT NULL)
+		THEN '/api/files/' || id || '/preview' END,
+	content, revision`
 
 func scanFile(row pgx.Row) (File, error) {
 	var f File
-	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.URL, &f.Content, &f.Revision)
+	err := row.Scan(&f.ID, &f.WorkspaceID, &f.ChapterID, &f.Position, &f.Name, &f.Kind, &f.SizeBytes, &f.AddedAt, &f.Status, &f.Indexed, &f.URL, &f.PreviewURL, &f.Content, &f.Revision)
 	return f, err
 }
 
 func (s *Store) ListFiles(ctx context.Context, userID, wsID string) ([]File, error) {
-	const fCols = `f.id, f.workspace_id, f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.added_at, f.status, f.indexed, f.url, f.content, f.revision`
+	const fCols = `f.id, f.workspace_id, f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.added_at, f.status, f.indexed, f.url,
+		CASE WHEN f.status='ready' AND ((f.kind='pdf' AND f.blob_path IS NOT NULL) OR f.preview_blob_path IS NOT NULL)
+			THEN '/api/files/' || f.id || '/preview' END,
+		f.content, f.revision`
 	q := `SELECT ` + fileCols + ` FROM files`
 	args := []any{}
 	if wsID != "" {

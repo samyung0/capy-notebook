@@ -170,6 +170,7 @@ function MaterialViewActions({
 }
 
 export function Header({
+  beforeFileDelete,
   chapters,
   color,
   item,
@@ -184,6 +185,7 @@ export function Header({
   readOnly,
   workspaceId,
 }: {
+  beforeFileDelete?: () => boolean;
   chapters: Chapter[];
   color?: UserColor;
   item: OpenItem;
@@ -301,6 +303,7 @@ export function Header({
           </>
         )}
         <ContentActions
+          beforeDelete={file ? beforeFileDelete : undefined}
           chapters={chapters}
           color={color}
           content={

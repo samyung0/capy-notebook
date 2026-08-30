@@ -18,6 +18,7 @@ from psycopg_pool import AsyncConnectionPool
 
 from ..config import cfg
 from ..jobs import RetryableError, TerminalError
+from ..store.db import SourceSupersededError
 
 log = logging.getLogger("evo.retrieval.store")
 
@@ -120,6 +121,8 @@ async def attach_file_content(
     source_sha256: str | None = None,
     pipeline_identity: str | None = None,
     claim_job_id: str | None = None,
+    source_revision: int | None = None,
+    source_etag: str = "",
 ) -> dict[str, Any]:
     """Attach a logical file to canonical workspace content.
 
@@ -130,6 +133,24 @@ async def attach_file_content(
     content_id = f"rgc_{secrets.token_hex(8)}"
     db = await pool()
     async with db.connection() as conn, conn.transaction():
+        if source_revision is not None:
+            current = await conn.execute(
+                """
+                SELECT revision, COALESCE(source_etag, '') AS source_etag
+                FROM files WHERE id = %s FOR UPDATE
+                """,
+                (file_id,),
+            )
+            source = await current.fetchone()
+            if source is None:
+                raise SourceSupersededError("ingest source no longer exists")
+            if (
+                int(source["revision"]) != int(source_revision)
+                or str(source["source_etag"] or "") != source_etag
+            ):
+                raise SourceSupersededError(
+                    "ingest source was superseded by a newer revision"
+                )
         cur = await conn.execute(
             """
             INSERT INTO rag_contents
@@ -238,19 +259,30 @@ async def find_ready_donor(
     async with db.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT id, workspace_id, content_hash,
-                   embedding_provider_slug, embedding_model_slug,
-                   embedding_model_version, embedding_dim
-            FROM rag_contents
-            WHERE source_sha256 = %s
-              AND pipeline_identity = %s
-              AND status = 'ready'
+            SELECT rc.id, rc.workspace_id, rc.content_hash,
+                   rc.embedding_provider_slug, rc.embedding_model_slug,
+                   rc.embedding_model_version, rc.embedding_dim,
+                   preview.preview_blob_path
+            FROM rag_contents rc
+            LEFT JOIN LATERAL (
+                SELECT f.preview_blob_path
+                FROM rag_file_contents rfc
+                JOIN files f ON f.id = rfc.file_id
+                WHERE rfc.content_id = rc.id
+                  AND f.preview_blob_path IS NOT NULL
+                  AND f.source_sha256 = rc.source_sha256
+                ORDER BY f.added_at DESC, f.id
+                LIMIT 1
+            ) preview ON true
+            WHERE rc.source_sha256 = %s
+              AND rc.pipeline_identity = %s
+              AND rc.status = 'ready'
             ORDER BY (
-                embedding_provider_slug = %s
-                AND embedding_model_slug = %s
-                AND embedding_model_version = %s
-                AND embedding_dim = %s
-            ) DESC, updated_at DESC
+                rc.embedding_provider_slug = %s
+                AND rc.embedding_model_slug = %s
+                AND rc.embedding_model_version = %s
+                AND rc.embedding_dim = %s
+            ) DESC, rc.updated_at DESC
             LIMIT 1
             """,
             (

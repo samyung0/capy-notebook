@@ -19,6 +19,7 @@ carry two strings: ``text`` is what a citation shows and what the model reads;
 from __future__ import annotations
 
 import logging
+import math
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -289,7 +290,12 @@ def _bbox_coords(bbox: object) -> list[float]:
         coords = [float(x) for x in bbox]  # type: ignore[union-attr]
     except (TypeError, ValueError):
         return []
-    return coords if len(coords) == 4 else []
+    if len(coords) != 4 or not all(math.isfinite(value) for value in coords):
+        return []
+    x0, y0, x1, y1 = coords
+    if x1 <= x0 or y1 <= y0:
+        return []
+    return coords
 
 
 def _build(blocks: list[_Block], section_path: str) -> Chunk:

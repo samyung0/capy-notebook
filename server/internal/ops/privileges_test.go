@@ -212,12 +212,15 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 	}
 	if _, err := owner.Exec(ctx, fmt.Sprintf(`
 		GRANT SELECT (
+			resource_key, version, unit, credit_micros_per_unit, active, created_at
+		) ON resource_credit_rates TO %s;
+		GRANT SELECT (
 			sampled_at, host_id, active_jobs, queued_jobs, cpu_percent, load_1,
 			memory_total_bytes, memory_used_bytes, swap_used_bytes,
 			parser_memory_bytes, parser_pss_bytes,
 			network_rx_bytes, network_tx_bytes
 		) ON parse_host_samples TO %s;
-	`, readIdent)); err != nil {
+	`, readIdent, readIdent)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := owner.Exec(ctx, fmt.Sprintf(`
@@ -229,7 +232,10 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		GRANT EXECUTE ON FUNCTION record_registry_audit(
 			text, bigint, bigint, bigint, bigint, bigint, text
 		) TO %s;
-	`, readIdent, adminIdent, adminIdent)); err != nil {
+		GRANT EXECUTE ON FUNCTION save_resource_credit_rate(
+			text, text, bigint, text
+		) TO %s;
+	`, readIdent, adminIdent, adminIdent, adminIdent)); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {

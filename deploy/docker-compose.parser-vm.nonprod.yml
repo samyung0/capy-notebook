@@ -1,0 +1,176 @@
+# Local/UAT parser stack for the dedicated Netcup VM.
+#
+# Run this file as two differently named Compose projects with two environment
+# files when local and UAT are both needed. Their compute and credentials stay
+# separate, but both projects deliberately mount the same dynamically-sized
+# evo_parse_nonprod spool. Production uses evo_parse_prod and never mounts it.
+
+name: ${EVO_NONPROD_PROJECT_NAME:?set a unique local or UAT Compose project name}
+
+x-parser-env: &parser-env
+  EVO_MARKER_WORKERS: ${EVO_MARKER_WORKERS:-2}
+  EVO_DIGITAL_CONCURRENCY: ${EVO_DIGITAL_CONCURRENCY:-1}
+  EVO_OCR_CONCURRENCY: ${EVO_OCR_CONCURRENCY:-1}
+  EVO_PARSE_HARD_TIMEOUT: ${EVO_PARSE_HARD_TIMEOUT:-2300}
+  EVO_PARSE_SHARED_DIR: /var/lib/evo-parse
+  EVO_OFFICE_CONVERT_TIMEOUT: ${EVO_OFFICE_CONVERT_TIMEOUT:-180}
+  EVO_OFFICE_PREVIEW_MAX_BYTES: ${EVO_OFFICE_PREVIEW_MAX_BYTES:-134217728}
+  EVO_PARSE_ARTIFACT_MAX_BYTES: ${EVO_PARSE_ARTIFACT_MAX_BYTES:-268435456}
+  EVO_PARSE_ARTIFACT_MAX_ENTRIES: ${EVO_PARSE_ARTIFACT_MAX_ENTRIES:-4096}
+  EVO_PARSE_ARTIFACT_MAX_ENTRY_BYTES: ${EVO_PARSE_ARTIFACT_MAX_ENTRY_BYTES:-134217728}
+  EVO_PARSE_ARTIFACT_MAX_EXPANDED_BYTES: ${EVO_PARSE_ARTIFACT_MAX_EXPANDED_BYTES:-536870912}
+  EVO_PARSE_CONTENT_MAX_BYTES: ${EVO_PARSE_CONTENT_MAX_BYTES:-134217728}
+  EVO_PARSE_CONTENT_MAX_BLOCKS: ${EVO_PARSE_CONTENT_MAX_BLOCKS:-250000}
+  EVO_PARSE_IMAGE_MAX_BYTES: ${EVO_PARSE_IMAGE_MAX_BYTES:-33554432}
+  EVO_PARSE_IMAGES_MAX_BYTES: ${EVO_PARSE_IMAGES_MAX_BYTES:-268435456}
+
+x-worker-env: &worker-env
+  APP_ENV: ${APP_ENV:?set development for local or production for UAT}
+  RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
+  LOG_FORMAT: json
+  DATABASE_URL: ${DATABASE_URL:?set the selected non-production database URL}
+  REDIS_URL: ${REDIS_URL:?set the selected non-production Redis URL}
+  B2_ENDPOINT: ${B2_ENDPOINT:?set the selected non-production B2 endpoint}
+  B2_REGION: ${B2_REGION:?set the selected non-production B2 region}
+  B2_BUCKET: ${B2_BUCKET:?set the selected non-production B2 bucket}
+  B2_KEY_ID: ${B2_KEY_ID:?set the selected non-production B2 key id}
+  B2_APP_KEY: ${B2_APP_KEY:?set the selected non-production B2 app key}
+  PARSER_URL: http://127.0.0.1:${PARSER_PORT:?set a unique local or UAT parser port}/file_parse
+  PARSER_TOKEN: ${PARSER_TOKEN:?set a non-production parser token}
+  PARSER_TIMEOUT: ${PARSER_TIMEOUT:-2400}
+  EVO_PARSE_HARD_TIMEOUT: ${EVO_PARSE_HARD_TIMEOUT:-2300}
+  PARSER_SLOT_TTL: ${PARSER_SLOT_TTL:-2700}
+  EVO_PARSE_SHARED_DIR: /var/lib/evo-parse
+  EVO_INGEST_TIMEOUT: ${EVO_INGEST_TIMEOUT:-3600}
+  EVO_PARSE_SLOTS: ${EVO_PARSE_SLOTS:-2}
+  EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-selective_rapidocr}
+  EVO_OFFICE_PREVIEW_MAX_BYTES: ${EVO_OFFICE_PREVIEW_MAX_BYTES:-134217728}
+  EVO_PARSE_ARTIFACT_MAX_BYTES: ${EVO_PARSE_ARTIFACT_MAX_BYTES:-268435456}
+  EVO_PARSE_ARTIFACT_MAX_ENTRIES: ${EVO_PARSE_ARTIFACT_MAX_ENTRIES:-4096}
+  EVO_PARSE_ARTIFACT_MAX_ENTRY_BYTES: ${EVO_PARSE_ARTIFACT_MAX_ENTRY_BYTES:-134217728}
+  EVO_PARSE_ARTIFACT_MAX_EXPANDED_BYTES: ${EVO_PARSE_ARTIFACT_MAX_EXPANDED_BYTES:-536870912}
+  EVO_PARSE_CONTENT_MAX_BYTES: ${EVO_PARSE_CONTENT_MAX_BYTES:-134217728}
+  EVO_PARSE_CONTENT_MAX_BLOCKS: ${EVO_PARSE_CONTENT_MAX_BLOCKS:-250000}
+  EVO_PARSE_IMAGE_MAX_BYTES: ${EVO_PARSE_IMAGE_MAX_BYTES:-33554432}
+  EVO_PARSE_IMAGES_MAX_BYTES: ${EVO_PARSE_IMAGES_MAX_BYTES:-268435456}
+  SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
+  SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+  DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  ELEVENLABS_API_KEY: ${ELEVENLABS_API_KEY:-}
+  ELEVENLABS_BASE_URL: ${ELEVENLABS_BASE_URL:-https://api.elevenlabs.io}
+  ELEVENLABS_WEBHOOK_ID: ${ELEVENLABS_WEBHOOK_ID:-}
+  EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
+  EVO_CAPTION_CONCURRENCY: ${EVO_CAPTION_CONCURRENCY:-2}
+  EVO_CAPTION_MAX_EDGE: ${EVO_CAPTION_MAX_EDGE:-1280}
+  EVO_CAPTION_VERSION: ${EVO_CAPTION_VERSION:-v2}
+  EVO_IMAGE_MAX_PIXELS: ${EVO_IMAGE_MAX_PIXELS:-100000000}
+  EVO_ELEVENLABS_TRANSCRIPT_VERSION: ${EVO_ELEVENLABS_TRANSCRIPT_VERSION:-scribe-v2-1}
+  EVO_ELEVENLABS_CONCURRENCY_UNITS: ${EVO_ELEVENLABS_CONCURRENCY_UNITS:-2}
+  EVO_AUDIO_MAX_DURATION_SECONDS: ${EVO_AUDIO_MAX_DURATION_SECONDS:-36000}
+  EVO_TABULAR_TEXT_VERSION: ${EVO_TABULAR_TEXT_VERSION:-v1}
+  EVO_CAPTION_CACHE_TTL_DAYS: ${EVO_CAPTION_CACHE_TTL_DAYS:-90}
+  EVO_PARSE_ZIP_TTL_HOURS: ${EVO_PARSE_ZIP_TTL_HOURS:-6}
+  EVO_PARSE_SOURCE_TTL_HOURS: ${EVO_PARSE_SOURCE_TTL_HOURS:-2}
+
+services:
+  parse-spool-init:
+    image: alpine:3.20
+    command:
+      [
+        "sh",
+        "-c",
+        "mkdir -p /var/lib/evo-parse/sources /var/lib/evo-parse/artifacts /var/lib/evo-parse/quarantine && chown -R 10001:10001 /var/lib/evo-parse && chmod 2770 /var/lib/evo-parse /var/lib/evo-parse/sources /var/lib/evo-parse/artifacts /var/lib/evo-parse/quarantine",
+      ]
+    volumes:
+      - parse_spool:/var/lib/evo-parse
+    restart: "no"
+
+  parser:
+    image: evo-parser-nonprod-parser:${RELEASE_SHA:?set the exact 40-character release SHA}
+    build:
+      context: ..
+      dockerfile: parser-vm/Dockerfile
+      args:
+        RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
+    network_mode: host
+    environment:
+      <<: *parser-env
+      APP_ENV: ${APP_ENV:?set development for local or production for UAT}
+      RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
+      PARSER_BIND_ADDRESS: 127.0.0.1
+      PARSER_TOKEN: ${PARSER_TOKEN:?set a non-production parser token}
+      FAST_LAYOUT_NUM_THREADS: ${EVO_FAST_LAYOUT_NUM_THREADS:-2}
+    command:
+      [
+        "uvicorn",
+        "app:app",
+        "--app-dir",
+        "/app/parser-vm",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "${PARSER_PORT:?set a unique local or UAT parser port}",
+        "--workers",
+        "1",
+      ]
+    volumes:
+      - parser_models:/models
+      - parse_spool:/var/lib/evo-parse
+    mem_limit: ${EVO_NONPROD_PARSER_MEMORY_LIMIT:-6g}
+    cpus: ${EVO_NONPROD_PARSER_CPUS:-2.0}
+    pids_limit: ${EVO_NONPROD_PARSER_PIDS_LIMIT:-256}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "--fail",
+          "--silent",
+          "http://127.0.0.1:${PARSER_PORT:?set a unique local or UAT parser port}/healthz",
+        ]
+      interval: 15s
+      timeout: 5s
+      start_period: 15m
+      retries: 8
+    depends_on:
+      parse-spool-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  worker:
+    image: evo-parser-nonprod-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
+    build:
+      context: ..
+      dockerfile: pipeline/Dockerfile
+      args:
+        RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
+    network_mode: host
+    environment:
+      <<: *worker-env
+    command: ["python", "-m", "pipeline.ingest.worker"]
+    mem_limit: ${EVO_NONPROD_WORKER_MEMORY_LIMIT:-2g}
+    cpus: ${EVO_NONPROD_WORKER_CPUS:-1.0}
+    pids_limit: ${EVO_NONPROD_WORKER_PIDS_LIMIT:-128}
+    depends_on:
+      parse-spool-init:
+        condition: service_completed_successfully
+      parser:
+        condition: service_healthy
+    restart: unless-stopped
+    volumes:
+      - parse_spool:/var/lib/evo-parse
+
+volumes:
+  # Model files are content-addressed and safe to share with production. This
+  # avoids a second multi-gigabyte model cache; no source/artifact bytes live here.
+  parser_models:
+    name: ${EVO_PARSER_MODELS_VOLUME:-evo-parser_parser_models}
+  # Docker volumes grow with actual files and reserve no fixed disk capacity.
+  # Keep this exact same name in the local and UAT environment files.
+  parse_spool:
+    name: ${EVO_NONPROD_PARSE_SPOOL_VOLUME:-evo_parse_nonprod}

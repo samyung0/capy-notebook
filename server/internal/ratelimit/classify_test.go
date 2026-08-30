@@ -7,16 +7,18 @@ import (
 
 func TestClassifySplitsEditorFromChat(t *testing.T) {
 	cases := map[string]class{
-		"/healthz":                             classExempt,
-		"/api/internal/materials":              classExempt,
-		"/webhooks/stripe":                     classExempt,
-		"/api/workspaces/ws_1/chat/stream":     classAI,
-		"/api/workspaces/ws_1/generate":        classAI,
-		"/api/quiz-grade":                      classAI,
-		"/api/workspaces/ws_1/ai/command":      classAI,
-		"/api/workspaces/ws_1/ai/copilot":      classEditor,
-		"/api/workspaces/ws_1/sources/uploads": classUpload,
-		"/api/workspaces":                      classDefault,
+		"/healthz":                                    classExempt,
+		"/api/internal/materials":                     classExempt,
+		"/webhooks/stripe":                            classExempt,
+		"/api/workspaces/ws_1/chat/stream":            classAI,
+		"/api/workspaces/ws_1/generate":               classAI,
+		"/api/quiz-grade":                             classAI,
+		"/api/workspaces/ws_1/ai/command":             classAI,
+		"/api/workspaces/ws_1/ai/copilot":             classEditor,
+		"/api/workspaces/ws_1/sources/uploads":        classUpload,
+		"/api/workspaces/ws_1/sources/import-inspect": classUpload,
+		"/api/workspaces/ws_1/sources/import-content": classUpload,
+		"/api/workspaces":                             classDefault,
 	}
 	for path, want := range cases {
 		if got := classify(path); got != want {

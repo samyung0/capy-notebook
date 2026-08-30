@@ -16,9 +16,14 @@ from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
 from ..config import cfg
+from ..jobs import TerminalError
 
 _pool: ConnectionPool | None = None
 _pool_lock = threading.Lock()
+
+
+class SourceSupersededError(TerminalError):
+    """The job's source revision is no longer the file's current source."""
 
 
 def pool() -> ConnectionPool:
@@ -51,6 +56,39 @@ def close_pool() -> None:
         _pool = None
     if pool is not None:
         pool.close()
+
+
+def try_source_artifact_lock(identity: str):
+    """Return a pooled connection holding one session advisory lock.
+
+    Derived source text is expensive and globally reusable. Two identical
+    uploads may reach different workers before either has written its cache
+    object; this lock makes one producer win while the other waits and then
+    reads the finished artifact. The caller must pass the returned connection
+    to :func:`release_source_artifact_lock`.
+    """
+    conn = pool().getconn()
+    try:
+        row = conn.execute(
+            "SELECT pg_try_advisory_lock(hashtextextended(%s, 0))", (identity,)
+        ).fetchone()
+        conn.commit()
+        if row and bool(row[0]):
+            return conn
+    except BaseException:
+        pool().putconn(conn)
+        raise
+    pool().putconn(conn)
+    return None
+
+
+def release_source_artifact_lock(conn, identity: str) -> None:
+    """Release a lock acquired by :func:`try_source_artifact_lock`."""
+    try:
+        conn.execute("SELECT pg_advisory_unlock(hashtextextended(%s, 0))", (identity,))
+        conn.commit()
+    finally:
+        pool().putconn(conn)
 
 
 def uid(prefix: str) -> str:
@@ -195,6 +233,279 @@ def release_job_for_capacity(cur, job_id: str, attempt: int, *, backoff_s: int) 
     )
 
 
+def set_job_local_source(
+    cur, *, job_id: str, attempt: int, source_key: str, source_sha256: str
+) -> bool:
+    """Persist the shared-spool source so a requeued claim does not fetch B2 again."""
+    cur.execute(
+        """
+        UPDATE jobs
+        SET payload=jsonb_set(
+                payload,
+                '{localSource}',
+                jsonb_build_object('key', %s::text, 'sha256', %s::text),
+                true
+            ),
+            updated_at=now()
+        WHERE id=%s AND status='running' AND attempts=%s
+        """,
+        (source_key, source_sha256, job_id, attempt),
+    )
+    return bool(cur.rowcount)
+
+
+# ------------------------------------------------ asynchronous audio transcription
+
+
+def audio_transcription(cur, job_id: str) -> dict[str, Any] | None:
+    cur.execute(
+        """
+        SELECT id, provider_transcription_id, status, source_sha256, duration_seconds,
+               billable_seconds, concurrency_units, rate_version,
+               credit_micros_per_second, provider_call_id, result, error,
+               submitted_at, updated_at
+        FROM audio_transcriptions WHERE job_id=%s
+        """,
+        (job_id,),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "provider_transcription_id": row[1],
+        "status": row[2],
+        "source_sha256": row[3],
+        "duration_seconds": float(row[4]),
+        "billable_seconds": int(row[5]),
+        "concurrency_units": int(row[6]),
+        "rate_version": int(row[7]),
+        "credit_micros_per_second": int(row[8]),
+        "provider_call_id": row[9],
+        "result": row[10],
+        "error": row[11],
+        "submitted_at": row[12],
+        "updated_at": row[13],
+    }
+
+
+def create_audio_transcription(
+    cur,
+    *,
+    transcription_id: str,
+    job_id: str,
+    file_id: str,
+    source_sha256: str,
+    duration_seconds: float,
+    billable_seconds: int,
+    concurrency_units: int,
+    rate_version: int,
+    credit_micros_per_second: int,
+    provider_call_id: str,
+    capacity: int,
+) -> bool:
+    """Reserve weighted Starter capacity and insert the durable provider stub."""
+    cur.execute("SELECT pg_advisory_xact_lock(hashtext('elevenlabs:scribe:capacity'))")
+    cur.execute(
+        """
+        SELECT 1 FROM audio_transcriptions
+        WHERE source_sha256=%s AND model='scribe_v2'
+          AND status IN ('submitting','pending','completed')
+        LIMIT 1
+        """,
+        (source_sha256,),
+    )
+    if cur.fetchone() is not None:
+        return False
+    cur.execute(
+        """
+        SELECT COALESCE(SUM(concurrency_units), 0)
+        FROM audio_transcriptions
+        WHERE status IN ('submitting','pending')
+        """
+    )
+    used = int(cur.fetchone()[0])
+    if used + concurrency_units > capacity:
+        return False
+    cur.execute(
+        """
+        INSERT INTO audio_transcriptions
+          (id, job_id, file_id, source_sha256, duration_seconds,
+           billable_seconds, concurrency_units, rate_version,
+           credit_micros_per_second, provider_call_id)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        ON CONFLICT (job_id) DO NOTHING
+        """,
+        (
+            transcription_id,
+            job_id,
+            file_id,
+            source_sha256,
+            duration_seconds,
+            billable_seconds,
+            concurrency_units,
+            rate_version,
+            credit_micros_per_second,
+            provider_call_id,
+        ),
+    )
+    return bool(cur.rowcount)
+
+
+def mark_audio_submitting(cur, transcription_id: str) -> None:
+    cur.execute(
+        """
+        UPDATE audio_transcriptions
+        SET submitted_at=now(), updated_at=now(), error=NULL
+        WHERE id=%s AND status='submitting'
+        """,
+        (transcription_id,),
+    )
+
+
+def mark_audio_pending(cur, transcription_id: str, provider_id: str) -> None:
+    cur.execute(
+        """
+        UPDATE audio_transcriptions
+        SET provider_transcription_id=%s,
+            status=CASE WHEN cleanup_requested THEN status ELSE 'pending' END,
+            cleanup_not_before=CASE
+                WHEN cleanup_requested THEN now() ELSE cleanup_not_before END,
+            updated_at=now(),
+            error=CASE WHEN cleanup_requested THEN error ELSE NULL END
+        WHERE id=%s
+          AND (status IN ('submitting','pending') OR cleanup_requested)
+        """,
+        (provider_id, transcription_id),
+    )
+
+
+def complete_audio_transcription(
+    cur, transcription_id: str, result: dict[str, Any]
+) -> None:
+    cur.execute(
+        """
+        UPDATE audio_transcriptions
+        SET status='completed', result=%s, error=NULL,
+            completed_at=now(), updated_at=now()
+        WHERE id=%s AND status IN ('submitting','pending','completed')
+        """,
+        (Jsonb(result), transcription_id),
+    )
+
+
+def fail_audio_transcription(
+    cur,
+    transcription_id: str,
+    error: str,
+    *,
+    cleanup_requested: bool = False,
+) -> None:
+    cur.execute(
+        """
+        UPDATE audio_transcriptions
+        SET status='failed', error=%s,
+            cleanup_requested=cleanup_requested OR %s,
+            cleanup_not_before=CASE WHEN %s THEN now() ELSE cleanup_not_before END,
+            completed_at=now(), updated_at=now()
+        WHERE id=%s
+        """,
+        (error[:500], cleanup_requested, cleanup_requested, transcription_id),
+    )
+
+
+def fail_audio_transcription_for_job(cur, job_id: str, error: str) -> None:
+    cur.execute(
+        """
+        UPDATE audio_transcriptions
+        SET status='failed', error=%s, cleanup_requested=true,
+            cleanup_not_before=now(), completed_at=now(), updated_at=now()
+        WHERE job_id=%s AND status IN ('submitting','pending','completed')
+        """,
+        (error[:500], job_id),
+    )
+
+
+def request_audio_cleanup(cur, transcription_id: str, error: str = "") -> None:
+    cur.execute(
+        """
+        UPDATE audio_transcriptions
+        SET cleanup_requested=true,
+            cleanup_not_before=now(),
+            cleanup_error=CASE WHEN %s='' THEN cleanup_error ELSE %s END,
+            updated_at=now()
+        WHERE id=%s
+        """,
+        (error[:500], error[:500], transcription_id),
+    )
+
+
+def claim_audio_cleanup(cur) -> dict[str, Any] | None:
+    """Lease one provider deletion by advancing its retry deadline."""
+    cur.execute(
+        """
+        UPDATE audio_transcriptions SET
+            cleanup_attempts=cleanup_attempts+1,
+            cleanup_not_before=now() + make_interval(
+                secs => LEAST(3600, 30 * (2 ^ LEAST(cleanup_attempts, 7)))
+            ),
+            updated_at=now()
+        WHERE id = (
+            SELECT id FROM audio_transcriptions
+            WHERE cleanup_requested
+              AND provider_transcription_id IS NOT NULL
+              AND (cleanup_not_before IS NULL OR cleanup_not_before <= now())
+            ORDER BY updated_at
+            FOR UPDATE SKIP LOCKED LIMIT 1
+        )
+        RETURNING id, provider_transcription_id, provider_call_id, cleanup_attempts
+        """
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    return {
+        "id": row[0],
+        "provider_transcription_id": row[1],
+        "provider_call_id": row[2],
+        "attempts": int(row[3]),
+    }
+
+
+def complete_audio_cleanup(cur, transcription_id: str, provider_call_id: str) -> None:
+    abandon_provider_call(cur, provider_call_id)
+    cur.execute(
+        "DELETE FROM audio_transcriptions WHERE id=%s AND cleanup_requested",
+        (transcription_id,),
+    )
+
+
+def fail_audio_cleanup(cur, transcription_id: str, error: str) -> None:
+    cur.execute(
+        """
+        UPDATE audio_transcriptions
+        SET cleanup_error=%s, updated_at=now()
+        WHERE id=%s AND cleanup_requested
+        """,
+        (error[:500], transcription_id),
+    )
+
+
+def finalize_audio_transcription(cur, transcription_id: str) -> None:
+    cur.execute(
+        """
+        UPDATE audio_transcriptions
+        SET status='finalized', result=NULL, updated_at=now()
+        WHERE id=%s AND status='completed'
+        """,
+        (transcription_id,),
+    )
+
+
+def delete_audio_transcription(cur, transcription_id: str) -> None:
+    cur.execute("DELETE FROM audio_transcriptions WHERE id=%s", (transcription_id,))
+
+
 def reclaim_expired_leases(
     cur, *, max_attempts: dict[str, int], backoff_base_s: dict[str, int]
 ) -> list[dict[str, Any]]:
@@ -298,6 +609,38 @@ def set_file_caption_blob(cur, file_id: str, blob_path: str) -> None:
         "UPDATE files SET caption_blob_path=%s WHERE id=%s",
         (blob_path, file_id),
     )
+
+
+def set_file_preview_blob(cur, file_id: str, blob_path: str | None) -> None:
+    cur.execute(
+        "UPDATE files SET preview_blob_path=%s WHERE id=%s",
+        (blob_path, file_id),
+    )
+
+
+def require_current_file_source(
+    cur,
+    file_id: str,
+    source_revision: int,
+    source_etag: str = "",
+) -> None:
+    """Lock and fence a file mutation to the source version that queued it.
+
+    Replacement keeps the logical file id but increments ``revision`` and
+    changes ``source_etag``. Without this lock/check, an older worker can write
+    its parse outcome into the replacement after the replacement transaction
+    has cleared the old association.
+    """
+    cur.execute(
+        "SELECT revision, COALESCE(source_etag, '') FROM files WHERE id=%s FOR UPDATE",
+        (file_id,),
+    )
+    row = cur.fetchone()
+    if row is None:
+        raise SourceSupersededError("ingest source no longer exists")
+    revision, current_etag = int(row[0]), str(row[1] or "")
+    if revision != int(source_revision) or current_etag != source_etag:
+        raise SourceSupersededError("ingest source was superseded by a newer revision")
 
 
 def add_notification(
@@ -412,9 +755,7 @@ def drop_artifact_cache(cur, object_path: str) -> None:
     cur.execute("DELETE FROM artifact_cache WHERE object_path=%s", (object_path,))
 
 
-def sweep_artifact_cache(
-    cur, *, caption_ttl_days: int, parse_zip_ttl_hours: int
-) -> int:
+def sweep_artifact_cache(cur, *, caption_ttl_days: int) -> int:
     """Delete cold cache rows that no in-flight ingest still needs.
 
     Routed through the artifact_cache trigger into pending_blob_deletions.
@@ -425,8 +766,10 @@ def sweep_artifact_cache(
         WHERE (
                 (a.kind = 'captions'
                  AND a.last_used_at < now() - make_interval(days => %s))
-             OR (a.kind = 'parse_zip'
-                 AND a.last_used_at < now() - make_interval(hours => %s))
+             OR (a.kind = 'office_preview'
+                 AND a.last_used_at < now() - make_interval(days => %s))
+             OR (a.kind = 'derived_text'
+                 AND a.last_used_at < now() - make_interval(days => %s))
             )
           AND NOT EXISTS (
               SELECT 1
@@ -436,7 +779,7 @@ def sweep_artifact_cache(
                 AND f.source_sha256 = a.source_sha256
           )
         """,
-        (caption_ttl_days, parse_zip_ttl_hours),
+        (caption_ttl_days, caption_ttl_days, caption_ttl_days),
     )
     return cur.rowcount or 0
 
@@ -458,6 +801,12 @@ def set_file_source_sha256(cur, file_id: str, source_sha256: str) -> None:
     )
 
 
+def file_source_sha256(cur, file_id: str) -> str:
+    cur.execute("SELECT source_sha256 FROM files WHERE id=%s", (file_id,))
+    row = cur.fetchone()
+    return str(row[0] or "") if row else ""
+
+
 def file_owner_user_id(cur, file_id: str) -> str | None:
     cur.execute("SELECT user_id FROM files WHERE id=%s", (file_id,))
     row = cur.fetchone()
@@ -470,23 +819,17 @@ def workspace_owner_user_id(cur, workspace_id: str) -> str | None:
     return row[0] if row else None
 
 
-# Credit pricing for non-token resources. Token rates live on model_configs
-# and are applied via pipeline.registry.credits_for_tokens; they must not be
-# duplicated here or the same work costs different amounts depending on which
-# process did it.
 MICROS_PER_CREDIT = 1_000_000
-DIGITAL_PARSE_PAGE_CREDIT_MICROS = 31_000_000
-OCR_PARSE_PAGE_CREDIT_MICROS = 52_000_000
 _FREE_CREDITS_PER_MONTH = 1_000
 _PRO_CREDITS_PER_MONTH = 20_000
 
 
-def credits_for_parse_pages(pages: int, ocr_pages: int) -> int:
+def credits_for_parse_pages(
+    pages: int, ocr_pages: int, *, digital_rate: int, ocr_rate: int
+) -> int:
     pages = max(0, int(pages))
     ocr_pages = min(pages, max(0, int(ocr_pages)))
-    return (pages - ocr_pages) * DIGITAL_PARSE_PAGE_CREDIT_MICROS + (
-        ocr_pages * OCR_PARSE_PAGE_CREDIT_MICROS
-    )
+    return (pages - ocr_pages) * int(digital_rate) + ocr_pages * int(ocr_rate)
 
 
 def credit_limit_micros(plan_tier: str) -> int:
@@ -761,6 +1104,8 @@ def settle_ingest_provider_call(
     model_version: int,
     usage: Any,
     credit_micros: int,
+    units: int = 0,
+    unit: str = "tokens",
 ) -> None:
     """Atomically apply one post-paid ingest provider attempt."""
     cur.execute(
@@ -806,7 +1151,11 @@ def settle_ingest_provider_call(
         metadata["reasoningTokens"] = usage.reasoning_tokens
     if usage.anomaly:
         metadata["cacheAnomaly"] = usage.anomaly
-    if not usage.input_tokens and not usage.output_tokens:
+    if (
+        kind in {"llm", "embedding"}
+        and not usage.input_tokens
+        and not usage.output_tokens
+    ):
         metadata["usageMissing"] = True
 
     record_usage_event(
@@ -822,7 +1171,8 @@ def settle_ingest_provider_call(
         model_version=model_version,
         input_tokens=usage.input_tokens,
         output_tokens=usage.output_tokens,
-        unit="tokens",
+        units=units,
+        unit=unit,
         credit_micros=credit_micros,
         reservation_id=session_id,
         provider_call_id=call_id,
@@ -836,7 +1186,8 @@ def settle_ingest_provider_call(
           input_tokens = %s, output_tokens = %s,
           cached_read_tokens = %s, cache_write_tokens = %s,
           reasoning_tokens = %s, cache_anomaly = %s,
-          credit_micros = %s, received_at = now(), applied_at = now()
+          units = %s, unit = %s, credit_micros = %s,
+          received_at = now(), applied_at = now()
         WHERE id = %s AND reservation_id = %s AND status = 'open'
         """,
         (
@@ -848,6 +1199,8 @@ def settle_ingest_provider_call(
             usage.cache_write_tokens,
             usage.reasoning_tokens,
             usage.anomaly,
+            units,
+            unit,
             credit_micros,
             call_id,
             session_id,
@@ -862,9 +1215,16 @@ def settle_credit_reservation(cur, reservation_id: str) -> None:
         return
     cur.execute(
         """
-        UPDATE provider_sessions
-        SET status = 'settled', settled_at = now()
-        WHERE id = %s AND status = 'open'
+        WITH closed AS (
+          UPDATE provider_sessions
+          SET status = 'settled', settled_at = now()
+          WHERE id = %s AND status = 'open'
+          RETURNING actor_user_id, reserved_micros
+        )
+        UPDATE user_credits c
+        SET reserved_micros = GREATEST(0, c.reserved_micros - closed.reserved_micros),
+            updated_at = now()
+        FROM closed WHERE c.user_id = closed.actor_user_id
         """,
         (reservation_id,),
     )
@@ -875,9 +1235,16 @@ def release_credit_reservation(cur, reservation_id: str) -> None:
         return
     cur.execute(
         """
-        UPDATE provider_sessions
-        SET status = 'released', settled_at = now()
-        WHERE id = %s AND status = 'open'
+        WITH closed AS (
+          UPDATE provider_sessions
+          SET status = 'released', settled_at = now()
+          WHERE id = %s AND status = 'open'
+          RETURNING actor_user_id, reserved_micros
+        )
+        UPDATE user_credits c
+        SET reserved_micros = GREATEST(0, c.reserved_micros - closed.reserved_micros),
+            updated_at = now()
+        FROM closed WHERE c.user_id = closed.actor_user_id
         """,
         (reservation_id,),
     )
@@ -889,15 +1256,22 @@ def close_credit_reservation(cur, reservation_id: str) -> None:
         return
     cur.execute(
         """
-        UPDATE provider_sessions AS cr
-        SET status = CASE
-              WHEN EXISTS (
-                SELECT 1 FROM usage_events ue WHERE ue.reservation_id = cr.id
-              ) THEN 'settled'
-              ELSE 'released'
-            END,
-            settled_at = now()
-        WHERE cr.id = %s AND cr.status = 'open'
+        WITH closed AS (
+          UPDATE provider_sessions AS cr
+          SET status = CASE
+                WHEN EXISTS (
+                  SELECT 1 FROM usage_events ue WHERE ue.reservation_id = cr.id
+                ) THEN 'settled'
+                ELSE 'released'
+              END,
+              settled_at = now()
+          WHERE cr.id = %s AND cr.status = 'open'
+          RETURNING actor_user_id, reserved_micros
+        )
+        UPDATE user_credits c
+        SET reserved_micros = GREATEST(0, c.reserved_micros - closed.reserved_micros),
+            updated_at = now()
+        FROM closed WHERE c.user_id = closed.actor_user_id
         """,
         (reservation_id,),
     )

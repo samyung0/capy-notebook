@@ -360,6 +360,7 @@ class ParseUsage:
     io_write_bytes: int = 0
     method: str = ""
     source_format: str = ""
+    receipt_id: str = ""
 
     def is_empty(self) -> bool:
         return not (
@@ -395,6 +396,7 @@ def record_parse_usage(
     io_write_bytes: int = 0,
     method: str = "",
     source_format: str = "",
+    receipt_id: str = "",
 ) -> None:
     pages = max(0, int(pages))
     ocr_pages = min(pages, max(0, int(ocr_pages)))
@@ -422,6 +424,7 @@ def record_parse_usage(
             io_write_bytes=current.io_write_bytes + max(0, int(io_write_bytes)),
             method=method or current.method,
             source_format=source_format or current.source_format,
+            receipt_id=receipt_id or current.receipt_id,
         )
     )
 

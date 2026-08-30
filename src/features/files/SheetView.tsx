@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import type { SourceFile } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
@@ -7,24 +8,42 @@ import { useOfficeRuntime } from './useOfficeRuntime';
 export default function SheetView({
   canEdit,
   file,
+  onCancelEditing,
+  onDirtyChange,
   onSave,
+  startEditing = false,
 }: {
   canEdit: boolean;
   file: SourceFile;
+  onCancelEditing?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
   onSave?: (
     bytes: Uint8Array,
     expectedRevision: number
   ) => Promise<{
     revision: number;
   }>;
+  startEditing?: boolean;
 }) {
   const runtime = useOfficeRuntime({
     canEdit,
     file,
     format: 'xlsx',
+    initialMode: startEditing ? 'edit' : 'view',
     onSave,
     revision: file.revision,
   });
+
+  useEffect(() => {
+    onDirtyChange?.(runtime.dirty);
+  }, [onDirtyChange, runtime.dirty]);
+
+  useEffect(
+    () => () => {
+      onDirtyChange?.(false);
+    },
+    [onDirtyChange]
+  );
 
   if (runtime.error && !runtime.analysis) {
     return (
@@ -61,8 +80,10 @@ export default function SheetView({
               if (
                 !runtime.dirty ||
                 window.confirm(m.files_office_discard_changes())
-              )
-                runtime.setRuntimeMode('view');
+              ) {
+                if (onCancelEditing) onCancelEditing();
+                else runtime.setRuntimeMode('view');
+              }
             }}
             size="sm"
             variant="outline"
@@ -77,15 +98,16 @@ export default function SheetView({
         </p>
       )}
       <div className="relative min-h-0 flex-1">
-        {!runtime.analysis && (
+        {!runtime.analysis && runtime.mode === 'view' && (
           <Skeleton className="absolute inset-0 h-full w-full" />
         )}
         <iframe
           className="h-full w-full border-0"
+          key={runtime.iframeKey}
           onLoad={() => runtime.setFrameLoaded(true)}
           ref={runtime.iframeRef}
-          sandbox="allow-downloads allow-same-origin allow-scripts"
-          src="/office-runtime.html"
+          sandbox={runtime.iframeSandbox}
+          src={runtime.iframeUrl}
           title={m.files_office_workbook_frame_title({ name: file.name })}
         />
       </div>

@@ -7,6 +7,13 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const officeRoot = path.join(root, 'vendor', 'betteroffice');
 const engines = [
   {
+    build: 'build:docx-wasm',
+    files: [
+      'packages/docx/src/wasm/generated/edit/docx_edit.js',
+      'packages/docx/src/wasm/generated/viewer/docx_view_wasm.js',
+    ],
+  },
+  {
     build: 'build:xlsx-wasm',
     files: [
       'packages/xlsx/src/wasm/generated/xlsx_wasm.js',

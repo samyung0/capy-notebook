@@ -77,14 +77,14 @@ type NewReplacementUploadSession struct {
 
 // FileIngestPolicy returns the persisted processing choice that a replacement
 // inherits. Store-only files must not be blocked by an empty inference budget.
-func (s *Store) FileIngestPolicy(ctx context.Context, fileID string) (kind, parseMode string, err error) {
+func (s *Store) FileIngestPolicy(ctx context.Context, fileID string) (name, kind, parseMode string, err error) {
 	err = s.pool.QueryRow(ctx,
-		`SELECT kind, parse_mode FROM files WHERE id=$1`, fileID,
-	).Scan(&kind, &parseMode)
+		`SELECT name, kind, parse_mode FROM files WHERE id=$1`, fileID,
+	).Scan(&name, &kind, &parseMode)
 	if isNoRows(err) {
-		return "", "", ErrNotFound
+		return "", "", "", ErrNotFound
 	}
-	return kind, parseMode, err
+	return name, kind, parseMode, err
 }
 
 func (s *Store) CreateUploadSession(ctx context.Context, in NewUploadSession) (UploadSession, error) {
@@ -276,7 +276,11 @@ func (s *Store) finalizeUploadSessionTx(
 	fileID := uid("f")
 	fileURL := "/api/files/" + fileID + "/raw"
 	now := time.Now().UTC()
-	ready := !sourceupload.NeedsIngestJob(u.Kind, u.ParseMode)
+	processingPlan, err := sourceupload.BuildProcessingPlan(u.Name, u.Kind, u.ParseMode, u.CaptionImages)
+	if err != nil {
+		return File{}, err
+	}
+	ready := processingPlan.Route == sourceupload.RouteStoreOnly
 	status := "pending"
 	if ready {
 		status = "ready"
@@ -304,6 +308,7 @@ func (s *Store) finalizeUploadSessionTx(
 			"fileId": fileID, "workspaceId": u.WorkspaceID, "blobPath": u.FinalPath,
 			"kind": u.Kind, "parser": parser, "engine": engine,
 			"parseMode": u.ParseMode, "captionImages": u.CaptionImages,
+			"processingPlan": processingPlan,
 			"sourceETag":     sourceETag,
 			"sourceRevision": int64(1),
 			"reservationId":  reservationID,
@@ -323,11 +328,16 @@ func (s *Store) finalizeUploadSessionTx(
 		WHERE id=$1`, uploadID, fileID, sourceETag); err != nil {
 		return File{}, err
 	}
-	return File{
+	file := File{
 		ID: fileID, WorkspaceID: u.WorkspaceID, ChapterID: chapterID,
 		Name: u.Name, Kind: FileKind(u.Kind), SizeBytes: u.DeclaredSize,
 		AddedAt: now, Status: FileStatus(status), Indexed: false, URL: &fileURL, Revision: 1,
-	}, nil
+	}
+	if ready && FileKind(u.Kind) == FilePDF {
+		previewURL := "/api/files/" + fileID + "/preview"
+		file.PreviewURL = &previewURL
+	}
+	return file, nil
 }
 
 // FinalizeReplacementUploadSession swaps the blob behind an existing logical
@@ -390,7 +400,11 @@ func (s *Store) FinalizeReplacementUploadSession(
 		return File{}, ErrFileNotReady
 	}
 
-	ready := !sourceupload.NeedsIngestJob(u.Kind, u.ParseMode)
+	processingPlan, err := sourceupload.BuildProcessingPlan(u.Name, u.Kind, u.ParseMode, u.CaptionImages)
+	if err != nil {
+		return File{}, err
+	}
+	ready := processingPlan.Route == sourceupload.RouteStoreOnly
 	status := string(FilePending)
 	if ready {
 		status = string(FileReady)
@@ -401,13 +415,16 @@ func (s *Store) FinalizeReplacementUploadSession(
 	file, err := scanFile(tx.QueryRow(ctx, `UPDATE files SET
 		size_bytes=$3, status=$4, indexed=false, parser=$5, engine=$6,
 		blob_path=$7, source_etag=$8, source_sha256=NULL, content_hash=NULL,
-		content=NULL, parsed_blob_path=NULL, parsed_fingerprint=NULL,
+		content=NULL, preview_blob_path=NULL, parsed_blob_path=NULL, parsed_fingerprint=NULL,
 		parsed_parser_version=NULL, caption_blob_path=NULL,
 		parse_mode=$9, caption_images=$10, revision=revision+1
 		WHERE id=$1 AND revision=$2 RETURNING `+fileCols,
 		*u.FileID, *u.ExpectedRevision, u.DeclaredSize, status, parser, engine,
 		u.FinalPath, sourceETag, u.ParseMode, u.CaptionImages))
 	if err != nil {
+		return File{}, err
+	}
+	if err := supersedeOlderIngestJobsTx(ctx, tx, *u.FileID, file.Revision); err != nil {
 		return File{}, err
 	}
 
@@ -425,6 +442,7 @@ func (s *Store) FinalizeReplacementUploadSession(
 			"blobPath": u.FinalPath, "kind": u.Kind, "parser": parser,
 			"engine": engine, "parseMode": u.ParseMode,
 			"captionImages": u.CaptionImages, "sourceETag": sourceETag,
+			"processingPlan": processingPlan,
 			"sourceRevision": file.Revision, "reservationId": reservationID,
 		})
 		if err != nil {
@@ -446,6 +464,61 @@ func (s *Store) FinalizeReplacementUploadSession(
 		return File{}, err
 	}
 	return file, nil
+}
+
+// supersedeOlderIngestJobsTx fences workers for the blob that replacement just
+// retired. SKIP LOCKED avoids a file->job/job->file deadlock with a worker that
+// is inside its final transaction; that worker will instead hit the file
+// revision guard and close its own reservation on the terminal path.
+func supersedeOlderIngestJobsTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	fileID string,
+	currentRevision int64,
+) error {
+	var superseded int64
+	return tx.QueryRow(ctx, `WITH candidates AS (
+		SELECT id FROM jobs
+		WHERE type='ingest' AND payload->>'fileId'=$1
+		  AND status IN ('pending','running')
+		  AND CASE
+		    WHEN jsonb_typeof(payload->'sourceRevision')='number'
+		    THEN (payload->>'sourceRevision')::bigint
+		    ELSE 0
+		  END < $2
+		FOR UPDATE SKIP LOCKED
+	), superseded_jobs AS (
+		UPDATE jobs j SET status='failed', error='superseded by file replacement',
+			lease_expires_at=NULL, updated_at=now()
+		FROM candidates c WHERE j.id=c.id
+		RETURNING j.id, j.payload->>'reservationId' AS reservation_id
+	), audio_cleanup AS (
+		UPDATE audio_transcriptions a SET
+			cleanup_requested=true, status='failed',
+			error='superseded by file replacement',
+			completed_at=COALESCE(a.completed_at, now()),
+			cleanup_not_before=now(), updated_at=now()
+		FROM superseded_jobs sj WHERE a.job_id=sj.id
+	), closed AS (
+		UPDATE provider_sessions ps SET
+			status=CASE WHEN EXISTS (
+				SELECT 1 FROM usage_events ue WHERE ue.reservation_id=ps.id
+			) THEN 'settled' ELSE 'released' END,
+			settled_at=now()
+		FROM superseded_jobs sj
+		WHERE ps.id=sj.reservation_id AND ps.status='open'
+		RETURNING ps.actor_user_id, ps.reserved_micros
+	), totals AS (
+		SELECT actor_user_id, sum(reserved_micros) AS reserved_micros
+		FROM closed GROUP BY actor_user_id
+	), counters AS (
+		UPDATE user_credits c SET
+			reserved_micros=GREATEST(0, c.reserved_micros-t.reserved_micros),
+			updated_at=now()
+		FROM totals t WHERE c.user_id=t.actor_user_id
+		RETURNING c.user_id
+	)
+	SELECT count(*) FROM superseded_jobs`, fileID, currentRevision).Scan(&superseded)
 }
 
 // SweepExpiredUploads writes off reservations whose presigned window closed

@@ -1,6 +1,6 @@
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
-import type { CostGroup, CostRow } from '@/api';
+import { type CostGroup, type CostRow, hasPermission } from '@/api';
 import { useOpsApp } from '@/app-context';
 import {
   ErrorState,
@@ -88,7 +88,8 @@ function groupValue(row: CostRow, group: CostGroup): string {
 }
 
 export function CostsPage() {
-  const { api } = useOpsApp();
+  const { api, session } = useOpsApp();
+  const queryClient = useQueryClient();
   const month = presetRange('month');
   const [draft, setDraft] = useState<Filters>({
     ...month,
@@ -107,6 +108,26 @@ export function CostsPage() {
       filters.group,
       bucketFor(filters),
     ],
+  });
+  const { data: resourceRates } = useQuery({
+    queryFn: api.resourceCreditRates,
+    queryKey: ['resource-credit-rates'],
+  });
+  const [rateDrafts, setRateDrafts] = useState<Record<string, string>>({});
+  const [rateStatus, setRateStatus] = useState('');
+  const {
+    error: rateError,
+    isPending: ratePending,
+    mutate: saveRate,
+  } = useMutation({
+    mutationFn: ({ key, micros }: { key: string; micros: number }) =>
+      api.saveResourceCreditRate(key, micros),
+    onSuccess: async (rate) => {
+      setRateStatus(`Saved ${rate.resourceKey} version ${rate.version}.`);
+      await queryClient.invalidateQueries({
+        queryKey: ['resource-credit-rates'],
+      });
+    },
   });
 
   function apply(event: FormEvent<HTMLFormElement>) {
@@ -163,6 +184,85 @@ export function CostsPage() {
         description="Credits are Evo Notes internal credits, not USD or provider invoice costs. All period boundaries use UTC."
         title="Usage explorer"
       />
+
+      <Card className="shadow-sm">
+        <CardHeader>
+          <CardTitle>Resource credit rates</CardTitle>
+          <CardDescription>
+            Active non-token product rates. Saving creates a new version; queued
+            ingest jobs keep their existing snapshot.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Resource</TableHead>
+                <TableHead>Unit</TableHead>
+                <TableHead>Version</TableHead>
+                <TableHead>Credits per unit</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(resourceRates ?? []).map((rate) => {
+                const value =
+                  rateDrafts[rate.resourceKey] ??
+                  String(rate.creditMicrosPerUnit / 1_000_000);
+                const credits = Number(value);
+                return (
+                  <TableRow key={rate.resourceKey}>
+                    <TableCell className="font-mono text-xs">
+                      {rate.resourceKey}
+                    </TableCell>
+                    <TableCell>{rate.unit}</TableCell>
+                    <TableCell>v{rate.version}</TableCell>
+                    <TableCell>
+                      <Input
+                        disabled={!hasPermission(session, 'write_registry')}
+                        min="0"
+                        onChange={(event) =>
+                          setRateDrafts((current) => ({
+                            ...current,
+                            [rate.resourceKey]: event.target.value,
+                          }))
+                        }
+                        step="0.001"
+                        type="number"
+                        value={value}
+                      />
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        disabled={
+                          !hasPermission(session, 'write_registry') ||
+                          ratePending ||
+                          !Number.isFinite(credits) ||
+                          credits < 0
+                        }
+                        onClick={() =>
+                          saveRate({
+                            key: rate.resourceKey,
+                            micros: Math.round(credits * 1_000_000),
+                          })
+                        }
+                        size="sm"
+                      >
+                        Save
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+          {(rateStatus || rateError) && (
+            <p className="mt-3 text-muted-foreground text-sm">
+              {rateError instanceof Error ? rateError.message : rateStatus}
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card className="shadow-sm">
         <CardContent className="p-5">

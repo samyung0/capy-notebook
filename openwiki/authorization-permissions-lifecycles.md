@@ -381,6 +381,14 @@ also apply the configured `daysFromHidingToDeleting` lifecycle rule. Without
 that rule, a successful reaper deletion can leave hidden versions consuming
 bucket storage.
 
+Asynchronous audio has a separate provider-side deletion obligation. Its
+`audio_transcriptions` row deliberately survives file/job cascades with nullable
+foreign keys. File deletion, account/workspace cascade, replacement, or terminal
+ingest failure first marks `cleanup_requested`; the Netcup worker retries the
+provider DELETE and removes the row only after success (provider 404 also counts
+as success). A webhook arriving after deletion records only the provider id and
+cleanup deadline. It never restores the file, transcript result, or ingest job.
+
 Sources: [deletion outbox and reference re-check](../server/internal/store/blobs.go#L9),
 [reaper loop and retry behavior](../server/cmd/api/blob_workers.go#L26),
 [reference-count lifecycle test](../server/internal/store/blobs_test.go#L51), and
@@ -396,7 +404,7 @@ can enqueue that object for the normal reaper.
 The sweep:
 
 - runs once at server startup and then every 30 days;
-- lists `sources/`, `parsed/`, `captions/`, and `editor-assets/`;
+- lists `sources/`, `captions/`, `previews/`, and `editor-assets/`;
 - ignores objects newer than 48 hours so in-flight finalization is not reported;
 - treats both live blob rows and upload-session source/destination paths as
   known references; and

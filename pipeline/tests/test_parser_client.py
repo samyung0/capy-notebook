@@ -1,16 +1,11 @@
-"""Offline unit tests for the parser VM client, with no network.
-
-The client never sees document bytes — it brokers presigned URLs and then
-unpacks a zip that a remote service produced. Everything worth testing is in
-that handoff: artifact addressing (which is what makes re-ingest free), the
-validation of an artifact that arrived from outside this process, and the
-recovery path when a cached artifact turns out to be corrupt.
-"""
+"""Offline tests for the parser client's shared-spool trust boundary."""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
+import time
 import zipfile
 from pathlib import Path
 
@@ -23,16 +18,12 @@ FAST_VERSION = parser_client.parser_version(parser_client.ROUTE_FAST)
 
 def _descriptor(**overrides) -> dict:
     base = {
-        "blob_path": "sources/blob_1.pdf",
+        "source_key": "sources/source-1",
         "source_sha256": "aa" * 32,
         "route": parser_client.ROUTE_FAST,
     }
     base.update(overrides)
-    return parser_client.source_descriptor(
-        blob_path=base["blob_path"],
-        source_sha256=base["source_sha256"],
-        route=base["route"],
-    )
+    return parser_client.source_descriptor(**base)
 
 
 def _artifact_zip(
@@ -40,10 +31,13 @@ def _artifact_zip(
     *,
     fingerprint: str,
     content_list=None,
-    extra: dict[str, str] | None = None,
+    extra: dict[str, str | bytes] | None = None,
     parser_version: str | None = None,
     schema: str | None = None,
+    receipt_request_id: str = "",
+    measurements: dict | None = None,
 ) -> bytes:
+    path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr(
             "manifest.json",
@@ -52,6 +46,17 @@ def _artifact_zip(
                     "schema": schema or parser_client.ARTIFACT_SCHEMA,
                     "parser_version": parser_version or FAST_VERSION,
                     "source_fingerprint": fingerprint,
+                    **(
+                        {
+                            "parse_receipt": {
+                                "id": fingerprint,
+                                "request_id": receipt_request_id,
+                                "measurements": measurements or {},
+                            }
+                        }
+                        if receipt_request_id
+                        else {}
+                    ),
                 }
             ),
         )
@@ -68,71 +73,43 @@ def _artifact_zip(
     return path.read_bytes()
 
 
-# --------------------------------------------------------------- addressing
-
-
-def test_artifact_key_is_stable_and_versioned():
+def test_artifact_key_is_stable_and_fingerprint_addressed():
     descriptor = _descriptor()
     key1, fingerprint1 = parser_client.artifact_identity(descriptor)
     key2, fingerprint2 = parser_client.artifact_identity(descriptor)
 
     assert (key1, fingerprint1) == (key2, fingerprint2)
-    assert (
-        key1
-        == f"parsed/{descriptor['source_sha256']}/{FAST_VERSION}/{fingerprint1}.zip"
-    )
+    assert key1 == f"artifacts/{fingerprint1}.zip"
 
 
-def test_a_changed_source_addresses_a_different_artifact():
-    """The source hash is what stops a different document replaying a stale parse."""
+def test_source_method_schema_and_release_all_participate_in_identity(monkeypatch):
     _, original = parser_client.artifact_identity(_descriptor())
-    _, reuploaded = parser_client.artifact_identity(
+    _, other_source = parser_client.artifact_identity(
         _descriptor(source_sha256="bb" * 32)
     )
-
-    assert original != reuploaded
-
-
-def test_parse_method_participates_in_the_fingerprint(monkeypatch):
-    _, before = parser_client.artifact_identity(_descriptor())
-    monkeypatch.setattr(parser_client.cfg, "parse_method", "txt")
-    _, after = parser_client.artifact_identity(_descriptor())
-
-    assert before != after
-
-
-def test_artifact_schema_participates_in_the_fingerprint(monkeypatch):
-    _, before = parser_client.artifact_identity(_descriptor())
-    monkeypatch.setattr(parser_client, "ARTIFACT_SCHEMA", "evo-parser-bundle-v3")
-    _, after = parser_client.artifact_identity(_descriptor())
-
-    assert before != after
-
-
-def test_release_sha_participates_in_parser_and_artifact_identity(monkeypatch):
-    _, before = parser_client.artifact_identity(_descriptor())
+    monkeypatch.setattr(parser_client.cfg, "parse_method", "marker_only")
+    _, other_method = parser_client.artifact_identity(_descriptor())
+    monkeypatch.setattr(parser_client, "ARTIFACT_SCHEMA", "evo-parser-bundle-v4")
+    _, other_schema = parser_client.artifact_identity(_descriptor())
     monkeypatch.setattr(parser_client.cfg, "release_sha", "b" * 40)
-    version = parser_client.parser_version(parser_client.ROUTE_FAST)
-    _, after = parser_client.artifact_identity(_descriptor())
+    _, other_release = parser_client.artifact_identity(_descriptor())
 
-    assert version.endswith("+" + "b" * 40)
-    assert before != after
+    assert len({original, other_source, other_method, other_schema, other_release}) == 5
 
 
-def test_an_unknown_route_is_rejected():
+def test_unknown_or_missing_route_is_rejected():
     with pytest.raises(parser_client.ParserClientError, match="unknown parse route"):
         parser_client.artifact_identity(_descriptor(route="turbo"))
-
-
-def test_a_missing_route_is_rejected_rather_than_read_as_fast():
-    """A blank route must not address (and bill) a parser nobody picked."""
     with pytest.raises(parser_client.ParserClientError, match="unknown parse route"):
         parser_client.artifact_identity({"source_sha256": "aa" * 32})
-    with pytest.raises(parser_client.ParserClientError, match="unknown parse route"):
-        parser_client.artifact_identity(_descriptor(route=""))
 
 
-# ------------------------------------------------------------- request path
+def test_shared_keys_cannot_escape_the_spool(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+
+    for key in ("/etc/passwd", "../outside", "artifacts/../../outside"):
+        with pytest.raises(parser_client.ParserClientError, match="shared spool key"):
+            parser_client._shared_path(key)
 
 
 class _Resp:
@@ -146,50 +123,15 @@ class _Resp:
 
 
 @pytest.fixture
-def parser_urls(monkeypatch):
+def parser_url(monkeypatch):
     monkeypatch.setattr(
         parser_client.cfg, "parser_url", "http://10.77.0.2:8090/file_parse"
     )
 
 
-def test_a_cache_hit_never_calls_remote_parser(monkeypatch, parser_urls):
-    key, fingerprint = parser_client.artifact_identity(_descriptor())
-    monkeypatch.setattr(
-        parser_client.blobstore, "object_info", lambda _k: {"size": 10, "etag": "e"}
-    )
-
-    def _explode(*_a, **_k):
-        raise AssertionError("parser must not be called on a cache hit")
-
-    monkeypatch.setattr(parser_client.requests, "post", _explode)
-
-    artifact = parser_client._request_artifact(_descriptor(), "doc.pdf")
-
-    assert artifact["key"] == key
-    assert artifact["fingerprint"] == fingerprint
-    assert artifact["cached"] is True
-
-
-def test_missing_parser_url_is_a_configuration_error(monkeypatch):
-    monkeypatch.setattr(parser_client.cfg, "parser_url", "")
-
-    with pytest.raises(parser_client.ParserClientError, match="PARSER_URL"):
-        parser_client._request_artifact(_descriptor(), "doc.pdf")
-
-
-def _stub_presign(monkeypatch, response) -> list[dict]:
+def _stub_request(monkeypatch, response) -> list[dict]:
     calls: list[dict] = []
-    monkeypatch.setattr(parser_client.blobstore, "object_info", lambda _k: None)
-    monkeypatch.setattr(
-        parser_client.blobstore,
-        "presign_get",
-        lambda _k, *, expires: f"https://get/{expires}",
-    )
-    monkeypatch.setattr(
-        parser_client.blobstore,
-        "presign_put",
-        lambda _k, _t, *, expires: f"https://put/{expires}",
-    )
+    monkeypatch.setattr(parser_client, "_local_artifact", lambda *_a: None)
 
     def _post(url, **kwargs):
         calls.append({"url": url, **kwargs})
@@ -199,161 +141,247 @@ def _stub_presign(monkeypatch, response) -> list[dict]:
     return calls
 
 
-def test_the_request_uses_the_fast_endpoint_and_version(monkeypatch, parser_urls):
-    key, _ = parser_client.artifact_identity(_descriptor())
-    calls = _stub_presign(monkeypatch, _Resp(200, {"artifact": {"key": key}}))
-
-    parser_client._request_artifact(_descriptor(), "d.pdf")
-
-    assert calls[0]["url"] == "http://10.77.0.2:8090/file_parse"
-    assert calls[0]["json"]["parser_version"] == FAST_VERSION
-    assert calls[0]["json"]["source_url"].endswith(
-        f"/{parser_client.cfg.parser_presign_ttl}"
+def test_a_local_cache_hit_never_calls_parser(tmp_path: Path, monkeypatch, parser_url):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    key, fingerprint = parser_client.artifact_identity(_descriptor())
+    path = parser_client._shared_path(key)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"cached")
+    monkeypatch.setattr(
+        parser_client.requests,
+        "post",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("parser called on cache hit")
+        ),
     )
-    assert calls[0]["json"]["output_url"].endswith(
-        f"/{parser_client.cfg.parser_presign_ttl}"
+
+    artifact = parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
+
+    assert artifact["key"] == key
+    assert artifact["fingerprint"] == fingerprint
+    assert artifact["sha256"] == hashlib.sha256(b"cached").hexdigest()
+    assert artifact["cached"] is True
+
+
+def test_local_cache_replays_a_lost_receipt_only_to_its_creating_job(
+    tmp_path: Path, monkeypatch, parser_url
+):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    key, fingerprint = parser_client.artifact_identity(_descriptor())
+    _artifact_zip(
+        parser_client._shared_path(key),
+        fingerprint=fingerprint,
+        receipt_request_id="job-1",
+        measurements={
+            "_page_count": 4,
+            "_ocr_page_count": 1,
+            "_worker_cpu_ms": 3200,
+            "_server_parse_ms": 4100,
+        },
     )
-    assert calls[0]["timeout"] == parser_client.cfg.parser_timeout
-
-
-def test_http_error_is_wrapped(monkeypatch, parser_urls):
-    _stub_presign(monkeypatch, _Resp(500, text="boom"))
-
-    with pytest.raises(parser_client.ParserClientError, match="remote parse 500"):
-        parser_client._request_artifact(_descriptor(), "doc.pdf")
-
-
-def test_success_records_page_and_child_cpu_measurement(monkeypatch, parser_urls):
-    key, _ = parser_client.artifact_identity(_descriptor())
     measured: list[dict] = []
     monkeypatch.setattr(
         parser_client.obs,
         "record_parse_usage",
         lambda **values: measured.append(values),
     )
-    _stub_presign(
+
+    parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
+    parser_client._request_artifact(_descriptor(), "doc.pdf", "another-job")
+
+    assert len(measured) == 1
+    assert measured[0]["pages"] == 4
+    assert measured[0]["receipt_id"] == fingerprint
+
+
+def test_connection_loss_after_publication_recovers_receipt_immediately(
+    tmp_path: Path, monkeypatch, parser_url
+):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    key, fingerprint = parser_client.artifact_identity(_descriptor())
+    measured: list[dict] = []
+    monkeypatch.setattr(
+        parser_client.obs,
+        "record_parse_usage",
+        lambda **values: measured.append(values),
+    )
+
+    def _publish_then_disconnect(*_args, **_kwargs):
+        _artifact_zip(
+            parser_client._shared_path(key),
+            fingerprint=fingerprint,
+            receipt_request_id="job-final",
+            measurements={"_page_count": 2, "_server_parse_ms": 100},
+        )
+        raise parser_client.requests.ConnectionError("response lost")
+
+    monkeypatch.setattr(parser_client.requests, "post", _publish_then_disconnect)
+
+    artifact = parser_client._request_artifact(_descriptor(), "doc.pdf", "job-final")
+
+    assert artifact["key"] == key
+    assert measured[0]["pages"] == 2
+    assert measured[0]["receipt_id"] == fingerprint
+
+
+def test_local_hard_timeout_quarantine_fails_without_calling_parser(
+    tmp_path: Path, monkeypatch, parser_url
+):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    _, fingerprint = parser_client.artifact_identity(_descriptor())
+    marker = tmp_path / "quarantine" / f"{fingerprint}.json"
+    marker.parent.mkdir(parents=True)
+    marker.write_text(
+        json.dumps(
+            {
+                "reason": "parse_hard_timeout",
+                "detail": "too slow",
+                "source_fingerprint": fingerprint,
+                "parser_version": FAST_VERSION,
+            }
+        )
+    )
+    monkeypatch.setattr(
+        parser_client.requests,
+        "post",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("quarantined fingerprint called the parser")
+        ),
+    )
+
+    with pytest.raises(parser_client.ParserHardTimeoutError, match="too slow"):
+        parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
+
+
+def test_missing_parser_url_is_a_configuration_error(monkeypatch):
+    monkeypatch.setattr(parser_client.cfg, "parser_url", "")
+    with pytest.raises(parser_client.ParserClientError, match="PARSER_URL"):
+        parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
+
+
+def test_request_passes_relative_source_and_fingerprint(monkeypatch, parser_url):
+    key, fingerprint = parser_client.artifact_identity(_descriptor())
+    calls = _stub_request(
         monkeypatch,
         _Resp(
             200,
             {
-                "artifact": {"key": key},
-                "_page_count": 4,
-                "_ocr_page_count": 1,
-                "_worker_cpu_ms": 3200,
-                "_server_parse_ms": 4100,
-                "_queue_ms": 250,
-                "_worker_pss_bytes": 1234,
-                "_parse_method": "all_rapidocr",
-                "_source_format": "pdf",
+                "artifact": {
+                    "key": key,
+                    "size": 10,
+                    "sha256": "cc" * 32,
+                }
             },
         ),
     )
 
-    parser_client._request_artifact(_descriptor(), "doc.pdf")
+    parser_client._request_artifact(_descriptor(), "d.pdf", "job-1")
 
-    assert measured[0]["pages"] == 4
-    assert measured[0]["ocr_pages"] == 1
-    assert measured[0]["cpu_milliseconds"] == 3200
-    assert measured[0]["elapsed_milliseconds"] == 4100
-    assert measured[0]["queue_milliseconds"] == 250
-    assert measured[0]["worker_pss_bytes"] == 1234
-    assert measured[0]["method"] == "all_rapidocr"
-    assert measured[0]["source_format"] == "pdf"
+    request = calls[0]
+    assert request["url"].endswith("/file_parse")
+    assert request["json"]["source_key"] == "sources/source-1"
+    assert request["json"]["source_sha256"] == "aa" * 32
+    assert request["json"]["output_key"] == f"artifacts/{fingerprint}.zip"
+    assert request["json"]["request_id"] == "job-1"
+    assert "source_url" not in request["json"]
+    assert "output_url" not in request["json"]
+    assert request["timeout"] == parser_client.cfg.parser_timeout
 
 
-def test_failed_parse_records_measurement_before_raising(monkeypatch, parser_urls):
+def test_http_error_is_wrapped(monkeypatch, parser_url):
+    _stub_request(monkeypatch, _Resp(500, {"detail": "boom"}))
+    with pytest.raises(parser_client.ParserClientError, match="remote parse 500"):
+        parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
+
+
+def test_hard_timeout_response_is_terminally_classified(monkeypatch, parser_url):
+    _stub_request(
+        monkeypatch,
+        _Resp(422, {"code": "parse_hard_timeout", "detail": "too slow"}),
+    )
+    with pytest.raises(parser_client.ParserHardTimeoutError, match="too slow"):
+        parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
+
+
+def test_success_and_failure_both_record_parser_measurements(monkeypatch, parser_url):
     measured: list[dict] = []
     monkeypatch.setattr(
         parser_client.obs,
         "record_parse_usage",
         lambda **values: measured.append(values),
     )
-    _stub_presign(
+    key, _ = parser_client.artifact_identity(_descriptor())
+    _stub_request(
+        monkeypatch,
+        _Resp(
+            200,
+            {
+                "artifact": {"key": key, "size": 10, "sha256": "cc" * 32},
+                "_page_count": 4,
+                "_ocr_page_count": 1,
+                "_worker_cpu_ms": 3200,
+                "_server_parse_ms": 4100,
+                "_download_ms": 7,
+                "_upload_ms": 8,
+            },
+        ),
+    )
+    parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
+
+    _stub_request(
         monkeypatch,
         _Resp(
             500,
             {
-                "detail": "remote parse failed",
+                "detail": "parse failed",
                 "_page_count": 2,
-                "_ocr_page_count": 2,
                 "_worker_cpu_ms": 900,
                 "_server_parse_ms": 1200,
             },
         ),
     )
+    with pytest.raises(parser_client.ParserClientError, match="parse failed"):
+        parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
 
-    with pytest.raises(parser_client.ParserClientError, match="remote parse failed"):
-        parser_client._request_artifact(_descriptor(), "doc.pdf")
+    assert measured[0]["pages"] == 4
+    assert measured[0]["download_milliseconds"] == 7
+    assert measured[0]["upload_milliseconds"] == 8
+    assert measured[1]["pages"] == 2
+    assert measured[1]["cpu_milliseconds"] == 900
 
-    assert measured[0]["pages"] == 2
-    assert measured[0]["ocr_pages"] == 2
-    assert measured[0]["cpu_milliseconds"] == 900
 
-
-def test_failed_parse_records_cpu_without_inventing_a_page(monkeypatch, parser_urls):
-    measured: list[dict] = []
-    monkeypatch.setattr(
-        parser_client.obs,
-        "record_parse_usage",
-        lambda **values: measured.append(values),
-    )
-    _stub_presign(
+def test_mismatched_key_or_missing_checksum_is_rejected(monkeypatch, parser_url):
+    _stub_request(
         monkeypatch,
         _Resp(
-            500,
-            {
-                "detail": "page probing failed",
-                "_page_count": 0,
-                "_ocr_page_count": 0,
-                "_worker_cpu_ms": 90,
-                "_server_parse_ms": 120,
-            },
+            200,
+            {"artifact": {"key": "artifacts/elsewhere.zip", "size": 10}},
         ),
     )
+    with pytest.raises(parser_client.ParserClientError, match="unexpected artifact"):
+        parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
 
-    with pytest.raises(parser_client.ParserClientError, match="page probing failed"):
-        parser_client._request_artifact(_descriptor(), "broken.pdf")
-
-    assert measured[0]["pages"] == 0
-    assert measured[0]["ocr_pages"] == 0
-    assert measured[0]["cpu_milliseconds"] == 90
-    assert measured[0]["elapsed_milliseconds"] == 120
-
-
-def test_a_mismatched_artifact_key_is_rejected(monkeypatch, parser_urls):
-    """The key is derived locally; a service returning a different one is either
-    misconfigured or writing somewhere we would never read."""
-    _stub_presign(
-        monkeypatch, _Resp(200, {"artifact": {"key": "parsed/somewhere/else.zip"}})
-    )
-
-    with pytest.raises(
-        parser_client.ParserClientError, match="unexpected artifact key"
-    ):
-        parser_client._request_artifact(_descriptor(), "doc.pdf")
-
-
-# -------------------------------------------------------------- unpacking
+    key, _ = parser_client.artifact_identity(_descriptor())
+    _stub_request(monkeypatch, _Resp(200, {"artifact": {"key": key, "size": 10}}))
+    with pytest.raises(parser_client.ParserClientError, match="checksum"):
+        parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
 
 
 def _install_artifact(monkeypatch, tmp_path: Path, **zip_kwargs) -> dict:
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
     fingerprint = zip_kwargs.pop("fingerprint", "fp-1")
-    blob = _artifact_zip(
-        tmp_path / "artifact.zip", fingerprint=fingerprint, **zip_kwargs
-    )
-    monkeypatch.setattr(
-        parser_client.blobstore,
-        "download_to",
-        lambda _key, destination: destination.write_bytes(blob),
-    )
+    key = f"artifacts/{fingerprint}.zip"
+    path = parser_client._shared_path(key)
+    blob = _artifact_zip(path, fingerprint=fingerprint, **zip_kwargs)
     return {
-        "key": "parsed/f_1/x.zip",
+        "key": key,
         "fingerprint": fingerprint,
+        "size": len(blob),
         "sha256": hashlib.sha256(blob).hexdigest(),
     }
 
 
-def test_extract_writes_the_bundle(tmp_path: Path, monkeypatch):
+def test_extract_writes_and_validates_the_bundle(tmp_path: Path, monkeypatch):
     artifact = _install_artifact(
         monkeypatch, tmp_path, extra={"images/fig1.png": "not-really-a-png"}
     )
@@ -366,98 +394,148 @@ def test_extract_writes_the_bundle(tmp_path: Path, monkeypatch):
     assert (raw / "images" / "fig1.png").is_file()
 
 
+def test_office_bundle_requires_a_valid_preview(tmp_path: Path, monkeypatch):
+    artifact = _install_artifact(monkeypatch, tmp_path)
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    with pytest.raises(parser_client.ParserClientError, match="preview.pdf"):
+        parser_client._extract(artifact, raw, FAST_VERSION, require_office_preview=True)
+
+    artifact = _install_artifact(
+        monkeypatch,
+        tmp_path,
+        fingerprint="fp-2",
+        extra={"preview.pdf": b"%PDF-exact"},
+    )
+    parser_client._extract(artifact, raw, FAST_VERSION, require_office_preview=True)
+    assert (raw / "preview.pdf").read_bytes() == b"%PDF-exact"
+
+
 def test_extract_rejects_path_traversal(tmp_path: Path, monkeypatch):
     artifact = _install_artifact(
         monkeypatch, tmp_path, extra={"../outside.txt": "owned"}
     )
     raw = tmp_path / "raw"
     raw.mkdir()
-
     with pytest.raises(parser_client.ParserClientError, match="unsafe path"):
         parser_client._extract(artifact, raw, FAST_VERSION)
     assert not (tmp_path / "outside.txt").exists()
 
 
-def test_extract_rejects_a_checksum_mismatch(tmp_path: Path, monkeypatch):
+def test_extract_rejects_checksum_size_and_expansion_mismatches(
+    tmp_path: Path, monkeypatch
+):
     artifact = _install_artifact(monkeypatch, tmp_path)
-    artifact["sha256"] = "0" * 64
     raw = tmp_path / "raw"
     raw.mkdir()
-
+    with pytest.raises(parser_client.ParserClientError, match="size mismatch"):
+        parser_client._extract(
+            {**artifact, "size": artifact["size"] + 1}, raw, FAST_VERSION
+        )
     with pytest.raises(parser_client.ParserClientError, match="checksum mismatch"):
+        parser_client._extract({**artifact, "sha256": "0" * 64}, raw, FAST_VERSION)
+
+    monkeypatch.setattr(parser_client.cfg, "parse_artifact_max_entry_bytes", 16)
+    artifact = _install_artifact(
+        monkeypatch,
+        tmp_path,
+        fingerprint="fp-large",
+        extra={"document.md": "x" * 17},
+    )
+    with pytest.raises(parser_client.ParserClientError, match="entry exceeds"):
         parser_client._extract(artifact, raw, FAST_VERSION)
 
 
-def test_extract_rejects_a_stale_parser_version(tmp_path: Path, monkeypatch):
-    """A bundle from an older parser would silently degrade citations, so it is
-    a cache miss rather than a usable artifact."""
-    artifact = _install_artifact(monkeypatch, tmp_path, parser_version="legacy-0.1")
+def test_extract_rejects_stale_version_and_wrong_source(tmp_path: Path, monkeypatch):
     raw = tmp_path / "raw"
     raw.mkdir()
-
+    stale = _install_artifact(
+        monkeypatch, tmp_path, fingerprint="stale", parser_version="legacy-0.1"
+    )
     with pytest.raises(parser_client.ParserClientError, match="version mismatch"):
-        parser_client._extract(artifact, raw, FAST_VERSION)
+        parser_client._extract(stale, raw, FAST_VERSION)
 
-
-def test_extract_rejects_an_artifact_from_another_source(tmp_path: Path, monkeypatch):
-    artifact = _install_artifact(monkeypatch, tmp_path, fingerprint="fp-other")
-    artifact["fingerprint"] = "fp-expected"
-    raw = tmp_path / "raw"
-    raw.mkdir()
-
+    wrong = _install_artifact(monkeypatch, tmp_path, fingerprint="actual")
     with pytest.raises(parser_client.ParserClientError, match="source mismatch"):
-        parser_client._extract(artifact, raw, FAST_VERSION)
+        parser_client._extract({**wrong, "fingerprint": "expected"}, raw, FAST_VERSION)
 
 
-def test_parse_to_bundle_discards_a_corrupt_cached_artifact(
+def test_parse_to_bundle_replaces_a_corrupt_cached_artifact(
     tmp_path: Path, monkeypatch
 ):
-    """A cached zip that will not open must be deleted, not retried forever."""
-    good = _artifact_zip(tmp_path / "good.zip", fingerprint="ignored")
-    deleted: list[str] = []
-    attempts = {"n": 0}
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    key = "artifacts/cached.zip"
+    path = parser_client._shared_path(key)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"not a zip")
+    calls = 0
 
-    def _download(_key, destination: Path):
-        attempts["n"] += 1
-        destination.write_bytes(b"not a zip" if attempts["n"] == 1 else good)
+    def _request(*_args):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            _artifact_zip(path, fingerprint="fp")
+        blob = path.read_bytes()
+        return {
+            "key": key,
+            "fingerprint": "fp",
+            "size": len(blob),
+            "sha256": hashlib.sha256(blob).hexdigest(),
+            "cached": calls == 1,
+        }
 
-    monkeypatch.setattr(parser_client.blobstore, "download_to", _download)
-    monkeypatch.setattr(
-        parser_client.blobstore, "delete", lambda key: deleted.append(key)
+    monkeypatch.setattr(parser_client, "_request_artifact", _request)
+    content, returned_key, _ = parser_client.parse_to_bundle(
+        _descriptor(), "doc.pdf", tmp_path / "raw", request_id="job-1"
     )
+
+    assert calls == 2
+    assert content[0]["text"] == "Hello"
+    assert returned_key == key
+
+
+def test_fresh_broken_artifact_is_not_retried(tmp_path: Path, monkeypatch):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    key = "artifacts/fresh.zip"
+    path = parser_client._shared_path(key)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"not a zip")
+    blob = path.read_bytes()
     monkeypatch.setattr(
         parser_client,
         "_request_artifact",
-        lambda *_a: {"key": "parsed/f_1/x.zip", "cached": attempts["n"] == 0},
-    )
-
-    content_list, key, _fingerprint = parser_client.parse_to_bundle(
-        _descriptor(), "doc.pdf", tmp_path / "raw"
-    )
-
-    assert deleted == ["parsed/f_1/x.zip"]
-    assert content_list[0]["text"] == "Hello"
-    assert key == "parsed/f_1/x.zip"
-
-
-def test_parse_to_bundle_propagates_a_fresh_artifact_failure(
-    tmp_path: Path, monkeypatch
-):
-    """Only a *cached* artifact is worth discarding and retrying; a freshly
-    produced broken one means the parser is broken."""
-    monkeypatch.setattr(
-        parser_client.blobstore,
-        "download_to",
-        lambda _key, destination: destination.write_bytes(b"not a zip"),
-    )
-    monkeypatch.setattr(
-        parser_client,
-        "_request_artifact",
-        lambda *_a: {"key": "parsed/f_1/x.zip", "cached": False},
+        lambda *_a: {
+            "key": key,
+            "fingerprint": "fp",
+            "size": len(blob),
+            "sha256": hashlib.sha256(blob).hexdigest(),
+            "cached": False,
+        },
     )
 
     with pytest.raises(zipfile.BadZipFile):
-        parser_client.parse_to_bundle(_descriptor(), "doc.pdf", tmp_path / "raw")
+        parser_client.parse_to_bundle(
+            _descriptor(), "doc.pdf", tmp_path / "raw", request_id="job-1"
+        )
+
+
+def test_local_spool_sweep_uses_separate_source_and_artifact_ttls(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    monkeypatch.setattr(parser_client.cfg, "parse_source_ttl_hours", 2)
+    monkeypatch.setattr(parser_client.cfg, "parse_zip_ttl_hours", 6)
+    source = tmp_path / "sources" / "source-old"
+    artifact = tmp_path / "artifacts" / "artifact-old.zip"
+    source.parent.mkdir(parents=True)
+    artifact.parent.mkdir(parents=True)
+    source.write_bytes(b"source")
+    artifact.write_bytes(b"artifact")
+    old = time.time() - 7 * 60 * 60
+    os.utime(source, (old, old))
+    os.utime(artifact, (old, old))
+
+    assert parser_client.sweep_local_spool() == {"sources": 1, "artifacts": 1}
 
 
 def test_empty_env_is_treated_as_unset(monkeypatch):

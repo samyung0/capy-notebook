@@ -233,6 +233,19 @@ type ReconciliationRequest struct {
 	RequestedAt   time.Time `json:"requestedAt"`
 }
 
+type ResourceCreditRate struct {
+	ResourceKey         string    `json:"resourceKey"`
+	Version             int       `json:"version"`
+	Unit                string    `json:"unit"`
+	CreditMicrosPerUnit int64     `json:"creditMicrosPerUnit"`
+	Active              bool      `json:"active"`
+	CreatedAt           time.Time `json:"createdAt"`
+}
+
+type SaveResourceCreditRateRequest struct {
+	CreditMicrosPerUnit int64 `json:"creditMicrosPerUnit"`
+}
+
 type OperatorAuditEvent struct {
 	ID          int64           `json:"id"`
 	OccurredAt  time.Time       `json:"occurredAt"`

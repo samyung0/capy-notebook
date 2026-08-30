@@ -219,6 +219,18 @@ export const reconciliationRequestSchema = z.object({
   runId: countSchema,
 });
 
+export const resourceCreditRateSchema = z.object({
+  active: z.boolean(),
+  createdAt: dateTimeSchema,
+  creditMicrosPerUnit: countSchema,
+  resourceKey: z.string(),
+  unit: z.string(),
+  version: z.number().int().positive(),
+});
+
+export const resourceCreditRatesSchema = z.array(resourceCreditRateSchema);
+export type ResourceCreditRate = z.infer<typeof resourceCreditRateSchema>;
+
 export const operatorAuditEventSchema = z.object({
   action: z.string().min(1),
   actorRole: z.string().min(1),
@@ -581,11 +593,25 @@ export function createOpsApi({ getToken, fetcher = fetch }: ApiOptions) {
       request(`/reconciliation/${jobType}`, reconciliationRequestSchema, {
         method: 'POST',
       }),
+    resourceCreditRates: () =>
+      request('/resource-rates', resourceCreditRatesSchema),
     saveRegistry: (body: RegistrySaveRequest) =>
       request('/registry/save', registrySchema, {
         body: JSON.stringify(body),
         method: 'POST',
       }),
+    saveResourceCreditRate: (
+      resourceKey: string,
+      creditMicrosPerUnit: number
+    ) =>
+      request(
+        `/resource-rates/${encodeURIComponent(resourceKey)}`,
+        resourceCreditRateSchema,
+        {
+          body: JSON.stringify({ creditMicrosPerUnit }),
+          method: 'POST',
+        }
+      ),
     searchUsers: (query: string) =>
       request(
         `/users/search?${new URLSearchParams({ q: query })}`,

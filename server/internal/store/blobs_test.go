@@ -153,7 +153,7 @@ func TestArtifactCacheRefsSurviveFileDelete(t *testing.T) {
 	if blobQueued(t, s, captionPath) {
 		t.Error("caption cache was queued when its file was deleted")
 	}
-	n, err := s.SweepArtifactCache(ctx, 0, 0)
+	n, err := s.SweepArtifactCache(ctx, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +162,7 @@ func TestArtifactCacheRefsSurviveFileDelete(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `UPDATE artifact_cache SET last_used_at = now() - interval '200 days'`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.SweepArtifactCache(ctx, 90, 6); err != nil {
+	if _, err := s.SweepArtifactCache(ctx, 90); err != nil {
 		t.Fatal(err)
 	}
 	if got := blobRefCount(t, s, captionPath); got != 0 {
@@ -170,6 +170,100 @@ func TestArtifactCacheRefsSurviveFileDelete(t *testing.T) {
 	}
 	if !blobQueued(t, s, captionPath) {
 		t.Error("caption cache was not queued by GC")
+	}
+}
+
+func TestFileDeleteRetainsPendingAudioUntilProviderCleanup(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_audio_cleanup")
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Audio cleanup", ColorGreen, []TagRef{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := s.CreateSourceReady(ctx, ws.ID, ownerID, "lecture.mp3", "audio",
+		nil, "", 100, "sources/"+uid("audio"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobID := uid("job")
+	transcriptionID := uid("at")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO jobs (id, type, payload)
+		VALUES ($1, 'ingest', jsonb_build_object('fileId', $2::text))`, jobID, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO audio_transcriptions
+		(id, job_id, file_id, source_sha256, provider_transcription_id,
+		 duration_seconds, billable_seconds, concurrency_units, rate_version,
+		 credit_micros_per_second, provider_call_id, status)
+		VALUES ($1,$2,$3,$4,$5,10,10,1,1,250000,$6,'pending')`,
+		transcriptionID, jobID, file.ID, "ab", "provider-1", "pc-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.DeleteFile(ctx, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	var fileID *string
+	var cleanup bool
+	var status string
+	if err := s.pool.QueryRow(ctx, `SELECT file_id, cleanup_requested, status
+		FROM audio_transcriptions WHERE id=$1`, transcriptionID).Scan(&fileID, &cleanup, &status); err != nil {
+		t.Fatal(err)
+	}
+	if fileID != nil || !cleanup || status != "failed" {
+		t.Fatalf("audio cleanup state = file %v cleanup %t status %q", fileID, cleanup, status)
+	}
+}
+
+func TestDeletedAudioWebhookRecordsProviderIDWithoutWakingJob(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ownerID := newBlobTestUser(t, s, "u_audio_webhook")
+	ws, err := s.CreateWorkspace(ctx, ownerID, "Audio webhook", ColorGreen, []TagRef{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	file, err := s.CreateSourceReady(ctx, ws.ID, ownerID, "lecture.mp3", "audio",
+		nil, "", 100, "sources/"+uid("audio"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobID := uid("job")
+	transcriptionID := uid("at")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO jobs
+		(id, type, payload, not_before) VALUES ($1, 'ingest', '{}', now() + interval '1 hour')`, jobID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO audio_transcriptions
+		(id, job_id, file_id, source_sha256, duration_seconds, billable_seconds,
+		 concurrency_units, rate_version, credit_micros_per_second,
+		 provider_call_id, status, cleanup_requested)
+		VALUES ($1,$2,$3,$4,10,10,1,1,250000,$5,'failed',true)`,
+		transcriptionID, jobID, file.ID, "ab", "pc-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.CompleteAudioTranscriptionWebhook(
+		ctx, transcriptionID, "provider-late", map[string]any{"text": "late"},
+	); err != nil {
+		t.Fatal(err)
+	}
+	var providerID string
+	var result map[string]any
+	if err := s.pool.QueryRow(ctx, `SELECT provider_transcription_id, result
+		FROM audio_transcriptions WHERE id=$1`, transcriptionID).Scan(&providerID, &result); err != nil {
+		t.Fatal(err)
+	}
+	if providerID != "provider-late" || result != nil {
+		t.Fatalf("late cleanup webhook = provider %q result %#v", providerID, result)
+	}
+	var due bool
+	if err := s.pool.QueryRow(ctx, `SELECT not_before > now() FROM jobs WHERE id=$1`, jobID).Scan(&due); err != nil {
+		t.Fatal(err)
+	}
+	if !due {
+		t.Fatal("cleanup-only webhook woke the deleted audio job")
 	}
 }
 
@@ -244,8 +338,19 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := "sources/" + uid("blob")
-	if _, err := s.CreateSourceReady(ctx, source.ID, ownerID, "shared.pdf", "pdf",
-		nil, "", 2048, path); err != nil {
+	previewPath := "previews/" + uid("blob") + ".pdf"
+	file, err := s.CreateSourceReady(ctx, source.ID, ownerID, "shared.pptx", "slides",
+		nil, "", 2048, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE files SET preview_blob_path=$2 WHERE id=$1`,
+		file.ID, previewPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO artifact_cache
+		(object_path, kind, source_sha256) VALUES ($1, 'office_preview', 'clone-source')`,
+		previewPath); err != nil {
 		t.Fatal(err)
 	}
 
@@ -255,6 +360,17 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 	}
 	if got := blobRefCount(t, s, path); got != 2 {
 		t.Fatalf("refs after clone = %d, want the original and the clone", got)
+	}
+	if got := blobRefCount(t, s, previewPath); got != 3 {
+		t.Fatalf("preview refs after clone = %d, want cache plus both files", got)
+	}
+	var clonedPreview *string
+	if err := s.pool.QueryRow(ctx, `SELECT preview_blob_path FROM files
+		WHERE workspace_id=$1`, clone.ID).Scan(&clonedPreview); err != nil {
+		t.Fatal(err)
+	}
+	if clonedPreview == nil || *clonedPreview != previewPath {
+		t.Fatalf("clone preview = %v, want %q", clonedPreview, previewPath)
 	}
 
 	if err := s.DeleteWorkspace(ctx, ownerID, source.ID); err != nil {
@@ -266,12 +382,35 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 	if blobQueued(t, s, path) {
 		t.Error("the clone's object was queued for deletion with the original")
 	}
+	if got := blobRefCount(t, s, previewPath); got != 2 {
+		t.Errorf("preview refs after deleting original = %d, want cache plus clone", got)
+	}
 
 	if err := s.DeleteWorkspace(ctx, clonerID, clone.ID); err != nil {
 		t.Fatal(err)
 	}
 	if !blobQueued(t, s, path) {
 		t.Error("object was not queued once no workspace referenced it")
+	}
+	if got := blobRefCount(t, s, previewPath); got != 1 {
+		t.Errorf("preview refs after deleting clone = %d, want cache only", got)
+	}
+	if blobQueued(t, s, previewPath) {
+		t.Error("preview was queued while its cache reference remained")
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE artifact_cache
+		SET last_used_at=now() - interval '200 days' WHERE object_path=$1`,
+		previewPath); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SweepArtifactCache(ctx, 90); err != nil {
+		t.Fatal(err)
+	}
+	if got := blobRefCount(t, s, previewPath); got != 0 {
+		t.Errorf("preview refs after cache expiry = %d, want 0", got)
+	}
+	if !blobQueued(t, s, previewPath) {
+		t.Error("preview was not queued after its file and cache references expired")
 	}
 }
 

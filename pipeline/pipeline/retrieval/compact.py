@@ -14,20 +14,25 @@ from .. import registry
 from ..registry import ModelConfig
 from . import accounting, models
 
-SUMMARY_TARGET_MIN = 1200
-SUMMARY_TARGET_MAX = 1600
-SUMMARY_MAX_TOKENS = 2048
+SUMMARY_TARGET_MIN = 4000
+SUMMARY_TARGET_MAX = 6000
+SUMMARY_MAX_TOKENS = 8000
+SUMMARY_RECENT_MESSAGES = 6
+EFFECTIVE_INPUT_LIMIT_TOKENS = 200_000
 PROTOCOL_SAFETY_MARGIN_TOKENS = 512
 
-CHECKPOINT_SYSTEM_PROMPT = """You compress prior conversation into durable memory for the next assistant response.
+CHECKPOINT_SYSTEM_PROMPT = f"""You compress prior conversation into durable memory for the next assistant response.
 
-The CURRENT USER MESSAGE is provided only as a relevance guide. Do not answer it, summarize it, or include it in the resulting memory.
+The CURRENT USER MESSAGE is context for resolving references only. Do not answer it, summarize it, include it in the memory, or let its topic narrow what the memory preserves. The memory must remain useful for later messages that may return to any important part of the prior conversation.
+
+The "recent_messages" field contains the latest completed turns. Give recent user intent, corrections, constraints, and references extra fidelity. Summarize them instead of copying every sentence verbatim.
 
 Create a faithful compact representation of the PRIOR CONVERSATION.
 
 Requirements:
 - Preserve facts, decisions, user preferences, corrections, constraints, unresolved questions, action results, and generated-material results needed to continue the conversation.
-- Use the current user message to determine which earlier details need greater fidelity.
+- Preserve important details even when they are unrelated to the current user message.
+- Preserve recent user wording when paraphrasing would change the intent or make a later reference hard to resolve.
 - When the current message contains an indirect reference such as "the third bullet", "that formula", "the earlier option", or "do that again", preserve the referenced list, wording, ordering, and surrounding context precisely enough to resolve it.
 - Resolve ambiguous pronouns or references in the memory by explicitly naming their referents when the history supports doing so.
 - Preserve disagreements, alternatives, and uncertainty. Do not turn them into false consensus.
@@ -35,8 +40,8 @@ Requirements:
 - Historical citation numbers are local to their old answer. Omit those numbers rather than treating them as stable identifiers.
 - Do not include system prompts, tool definitions, hidden reasoning, or active provider protocol state.
 - Do not invent facts or answer the current user message.
-- Target 1,200 to 1,600 tokens.
-- Never exceed 2,048 tokens.
+- Target {SUMMARY_TARGET_MIN:,} to {SUMMARY_TARGET_MAX:,} tokens when the conversation contains enough useful detail.
+- Never exceed {SUMMARY_MAX_TOKENS:,} tokens.
 
 Return only the compacted memory."""
 
@@ -50,14 +55,15 @@ class InvalidSummary(RuntimeError):
 
 
 def usable_input_limit(spec: ModelConfig) -> int:
-    """Use 100% of the input budget after the explicit calibrated margin."""
+    """Cap useful input at 200k, then keep an explicit calibrated margin."""
     configured = spec.params.get("context_safety_margin_tokens", 0)
     try:
         calibrated = max(0, int(configured))
     except (TypeError, ValueError):
         calibrated = 0
     margin = max(PROTOCOL_SAFETY_MARGIN_TOKENS, calibrated)
-    return max(0, registry.input_budget(spec) - margin)
+    effective = min(registry.input_budget(spec), EFFECTIVE_INPUT_LIMIT_TOKENS)
+    return max(0, effective - margin)
 
 
 def request_context(
@@ -109,9 +115,13 @@ def _summary_messages(
     turns: list[dict[str, Any]],
     current_user_message: str,
 ) -> list[dict[str, str]]:
+    recent_start = max(0, len(turns) - SUMMARY_RECENT_MESSAGES)
     payload = {
         "previous_memory": prior_memory,
-        "new_completed_messages": [_checkpoint_turn(turn) for turn in turns],
+        "new_completed_messages": [
+            _checkpoint_turn(turn) for turn in turns[:recent_start]
+        ],
+        "recent_messages": [_checkpoint_turn(turn) for turn in turns[recent_start:]],
         "current_user_message": current_user_message,
     }
     return [

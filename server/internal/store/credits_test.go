@@ -219,6 +219,44 @@ func TestProviderSessionSettlesEachCallOnceAndReportsTerminalState(t *testing.T)
 	}
 }
 
+func TestAudioProviderCallSettlesRoundedSecondsOnce(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	sessionID := mustBeginPlatformSession(t, ctx, s, userID)
+	call := ProviderCallUsage{
+		CallID:   "pc_audio",
+		Kind:     KindAudio,
+		Purpose:  "transcription",
+		Provider: "elevenlabs",
+		Model:    "transcribe-1",
+		Units:    4,
+		Unit:     "seconds",
+	}
+	mustInsertProviderCall(t, s, sessionID, call)
+
+	if _, err := s.SettleProviderCall(ctx, sessionID, call); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SettleProviderCall(ctx, sessionID, call); err != nil {
+		t.Fatal(err)
+	}
+	var kind, unit string
+	var units, credits int64
+	if err := s.pool.QueryRow(ctx, `
+		SELECT kind, units, unit, credit_micros FROM usage_events
+		WHERE reservation_id=$1 AND provider_call_id=$2`, sessionID, call.CallID,
+	).Scan(&kind, &units, &unit, &credits); err != nil {
+		t.Fatal(err)
+	}
+	if kind != KindAudio || units != 4 || unit != "seconds" || credits != 1_000_000 {
+		t.Fatalf("audio usage = %q %d %q %d", kind, units, unit, credits)
+	}
+	if n := eventCount(t, s, userID, sessionID); n != 1 {
+		t.Fatalf("audio provider rows = %d, want 1", n)
+	}
+}
+
 func TestUserKeyProviderSessionRecordsZeroCreditCallsPastPlatformLimit(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -739,15 +777,19 @@ func TestCreateSourceWithJobTakesIngestLease(t *testing.T) {
 		t.Fatalf("after ingest enqueue: %#v", slots)
 	}
 
-	var reservationID string
+	var reservationID, processingRoute string
 	if err := s.pool.QueryRow(ctx,
-		`SELECT payload->>'reservationId' FROM jobs WHERE payload->>'fileId'=$1`,
+		`SELECT payload->>'reservationId', payload->'processingPlan'->>'route'
+		 FROM jobs WHERE payload->>'fileId'=$1`,
 		f.ID,
-	).Scan(&reservationID); err != nil {
+	).Scan(&reservationID, &processingRoute); err != nil {
 		t.Fatal(err)
 	}
 	if reservationID == "" {
 		t.Fatal("job payload missing reservationId")
+	}
+	if processingRoute != "raw_text" {
+		t.Fatalf("processing route = %q, want raw_text", processingRoute)
 	}
 
 	if _, err := s.CreateSourceReady(ctx, ws.ID, owner, "clip.mp3", "audio",

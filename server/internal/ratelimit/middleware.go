@@ -41,6 +41,8 @@ var uploadSuffixes = []string{
 	"/sources",
 	"/sources/uploads",
 	"/sources/import",
+	"/sources/import-inspect",
+	"/sources/import-content",
 	"/editor-assets/uploads",
 }
 

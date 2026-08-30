@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/evonotes/server/internal/obs"
+	"github.com/evonotes/server/internal/sourceupload"
 )
 
 // CreateSourceWithJob inserts an uploaded file as 'pending' and enqueues an
@@ -20,6 +21,13 @@ import (
 // Text kinds ignore it and are inserted directly. captionImages asks the
 // worker to describe the figures that parse extracted.
 func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, engine, parseMode string, captionImages bool) (File, string, error) {
+	processingPlan, err := sourceupload.BuildProcessingPlan(name, kind, parseMode, captionImages)
+	if err != nil || processingPlan.Route == sourceupload.RouteStoreOnly {
+		if err == nil {
+			err = fmt.Errorf("file %q does not have an ingest route", name)
+		}
+		return File{}, "", err
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return File{}, "", err
@@ -59,6 +67,8 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 		"fileId": fileID, "workspaceId": wsID, "blobPath": blobPath, "kind": kind,
 		"parser": parser, "engine": engine, "parseMode": parseMode,
 		"captionImages":  captionImages,
+		"processingPlan": processingPlan,
+		"sourceETag":     "",
 		"sourceRevision": int64(1),
 		"reservationId":  reservationID,
 	})
@@ -113,7 +123,12 @@ func (s *Store) CreateSourceReady(ctx context.Context, wsID, createdBy, name, ki
 	if err := tx.Commit(ctx); err != nil {
 		return File{}, err
 	}
-	return File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "ready", Indexed: false, URL: &url, Revision: 1}, nil
+	file := File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "ready", Indexed: false, URL: &url, Revision: 1}
+	if FileKind(kind) == FilePDF && blobPath != "" {
+		previewURL := "/api/files/" + fileID + "/preview"
+		file.PreviewURL = &previewURL
+	}
+	return file, nil
 }
 
 // FileBlob returns the B2 object key and kind for a raw file.
@@ -127,6 +142,27 @@ func (s *Store) FileBlob(ctx context.Context, id string) (blobPath string, kind 
 		blobPath = *bp
 	}
 	return blobPath, kind, content, url, err
+}
+
+// FilePreviewBlob returns the PDF bytes whose page coordinates match citation
+// regions. Native PDFs use their source object. Office files use the exact PDF
+// emitted by LibreOffice before Marker parsed it.
+func (s *Store) FilePreviewBlob(ctx context.Context, id string) (string, error) {
+	var path *string
+	err := s.pool.QueryRow(ctx, `SELECT CASE
+		WHEN kind='pdf' THEN blob_path
+		ELSE preview_blob_path
+	END FROM files WHERE id=$1 AND status='ready'`, id).Scan(&path)
+	if isNoRows(err) {
+		return "", ErrNotFound
+	}
+	if err != nil {
+		return "", err
+	}
+	if path == nil || *path == "" {
+		return "", ErrNotFound
+	}
+	return *path, nil
 }
 
 // ErrIngestUnpinnable means an ingest job could not be given the identity it
@@ -169,5 +205,51 @@ func (s *Store) ingestJobPayload(ctx context.Context, actorUserID string, base m
 	base["visionProviderSlug"] = vision.ProviderSlug
 	base["visionModelSlug"] = vision.ModelSlug
 	base["visionModelVersion"] = vision.Version
+	rates, err := s.ActiveResourceRates(ctx, ingestResourceKeys)
+	if err != nil {
+		obs.CaptureErr(ctx, err, map[string]string{"stage": "ingest_resource_rates"})
+		return nil, fmt.Errorf("%w: %v", ErrIngestUnpinnable, err)
+	}
+	base["resourceRates"] = rates
 	return json.Marshal(base)
+}
+
+// CompleteAudioTranscriptionWebhook records the provider result and wakes the
+// yielded ingest job. Duplicate webhook deliveries are idempotent.
+func (s *Store) CompleteAudioTranscriptionWebhook(ctx context.Context, internalID, providerID string, result map[string]any) error {
+	if internalID == "" {
+		return errors.New("audio transcription id is required")
+	}
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var cleanupRequested bool
+	err = tx.QueryRow(ctx, `
+		UPDATE audio_transcriptions
+		SET provider_transcription_id=COALESCE(NULLIF($2, ''), provider_transcription_id),
+		    status=CASE WHEN cleanup_requested THEN status ELSE 'completed' END,
+		    result=CASE WHEN cleanup_requested THEN NULL ELSE $3::jsonb END,
+		    error=CASE WHEN cleanup_requested THEN error ELSE NULL END,
+		    cleanup_not_before=CASE WHEN cleanup_requested THEN now() ELSE cleanup_not_before END,
+		    completed_at=now(), updated_at=now()
+		WHERE id=$1 AND (status IN ('submitting','pending','completed') OR cleanup_requested)
+		RETURNING cleanup_requested`, internalID, providerID, result).Scan(&cleanupRequested)
+	if err != nil {
+		if isNoRows(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if cleanupRequested {
+		return tx.Commit(ctx)
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE jobs SET not_before=now(), updated_at=now()
+		WHERE id=(SELECT job_id FROM audio_transcriptions WHERE id=$1)
+		  AND status='pending'`, internalID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }

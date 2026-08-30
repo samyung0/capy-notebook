@@ -1,8 +1,8 @@
-"""Offline unit tests for the ingest worker's parse routing (no network).
+"""Offline unit tests for the ingest worker's processing-plan execution.
 
 Figure selection and captioning live in ``parse/figures.py`` and are tested
-there. What is left here is the branching the worker owns: which parse route a
-job's ``parseMode`` maps to, whether captioning runs at all, and — the ordering
+there. What is left here is the branching the worker owns: which contract route
+is executed, whether captioning runs at all, and the ordering
 the whole feature rests on — that captions are on the blocks before chunking, so
 they reach embedding, summarization and concept extraction rather than arriving
 after the passage they belong to has already been built.
@@ -10,11 +10,13 @@ after the passage they belong to has already been built.
 
 from __future__ import annotations
 
+import io
 from pathlib import Path
 from typing import Any
 
 import pytest
 
+from pipeline.ingest import plan as ingest_plan
 from pipeline.ingest import worker
 from pipeline.parse import parser_client
 
@@ -32,10 +34,18 @@ def parse_stub(monkeypatch):
         {"type": "image", "img_path": "images/fig.png", "page_idx": 0},
     ]
 
-    def _parse(descriptor, _name, raw_dir: Path):
+    def _parse(
+        descriptor,
+        _name,
+        raw_dir: Path,
+        _require_preview: bool,
+        *,
+        request_id: str,
+    ):
         state["descriptor"] = descriptor
+        state["request_id"] = request_id
         raw_dir.mkdir(parents=True, exist_ok=True)
-        return content_list, "parsed/f_1/x.zip", "fp-1"
+        return content_list, "artifacts/fp-1.zip", "fp-1"
 
     async def _caption(*, content_list, raw_dir, file_name, source_sha256):
         state["captioned"] += 1
@@ -44,6 +54,7 @@ def parse_stub(monkeypatch):
             "selected": 1,
             "cached": 0,
             "captioned": 1,
+            "decorative": 0,
             "applied": 1,
             "key": "captions/k.json",
         }
@@ -52,9 +63,6 @@ def parse_stub(monkeypatch):
         state["chunked"] = [dict(item) for item in items]
         return ["chunk"]
 
-    monkeypatch.setattr(
-        worker.blobstore, "object_info", lambda _p: {"etag": "e", "size": 9}
-    )
     monkeypatch.setattr(worker.parser_client, "parse_to_bundle", _parse)
     monkeypatch.setattr(worker.figures, "caption_figures", _caption)
     monkeypatch.setattr(worker, "chunk_content_list", _chunk)
@@ -65,13 +73,39 @@ def parse_stub(monkeypatch):
     return state
 
 
-async def _run(parse_mode: str, *, caption_images: bool = False):
+def _plan(
+    route: str = ingest_plan.DOCUMENT_PARSE,
+    *,
+    caption_images: bool = False,
+    format_name: str = "pdf",
+    office_preview: bool = False,
+    parser_route: str | None = None,
+) -> ingest_plan.ProcessingPlan:
+    if parser_route is None:
+        parser_route = "fast" if route == ingest_plan.DOCUMENT_PARSE else ""
+    return ingest_plan.ProcessingPlan(
+        version=1,
+        format=format_name,
+        route=route,
+        parser_route=parser_route,
+        caption_mode="embedded"
+        if caption_images
+        else "standalone"
+        if route == ingest_plan.IMAGE_CAPTION
+        else "none",
+        office_preview=office_preview,
+        stages=(),
+        resources=(),
+    )
+
+
+async def _run(*, caption_images: bool = False):
     return await worker._chunks_for(
         payload={"blobPath": "sources/blob_1.pdf"},
         name="lecture.pdf",
-        kind="pdf",
-        parse_mode=parse_mode,
-        caption_images=caption_images,
+        processing_plan=_plan(caption_images=caption_images),
+        local_path="/shared/sources/source-1",
+        source_key="sources/source-1",
         ws="ws_1",
         file_id="f_1",
         source_sha256="aa" * 32,
@@ -86,6 +120,28 @@ def _ingest_payload(**overrides):
         "kind": "pdf",
         "parseMode": "fast",
         "captionImages": False,
+        "processingPlan": {
+            "version": 1,
+            "format": "pdf",
+            "route": "document_parse",
+            "parserRoute": "fast",
+            "captionMode": "none",
+            "officePreview": False,
+            "stages": [
+                "fetch_source",
+                "parse_document",
+                "chunk",
+                "index",
+                "generate_derivatives",
+            ],
+            "resources": [
+                "object_storage_read",
+                "embedding_model",
+                "ingest_model",
+                "document_parser",
+                "shared_parse_spool",
+            ],
+        },
         "actorUserId": "u_1",
         "reservationId": "cr_1",
         "ingestProviderSlug": "deepseek",
@@ -94,33 +150,87 @@ def _ingest_payload(**overrides):
         "visionProviderSlug": "gemini",
         "visionModelSlug": "vision",
         "visionModelVersion": 1,
+        "sourceRevision": 1,
+        "sourceETag": "etag-a",
+        "resourceRates": {
+            "audio_transcription_second": {
+                "version": 1,
+                "unit": "second",
+                "creditMicrosPerUnit": 250_000,
+            },
+            "digital_parse_page": {
+                "version": 1,
+                "unit": "page",
+                "creditMicrosPerUnit": 31_000_000,
+            },
+            "ocr_parse_page": {
+                "version": 1,
+                "unit": "page",
+                "creditMicrosPerUnit": 52_000_000,
+            },
+            "figure_caption_call": {
+                "version": 1,
+                "unit": "call",
+                "creditMicrosPerUnit": 2_000_000,
+            },
+        },
     }
     payload.update(overrides)
     return payload
 
 
-async def test_the_parse_mode_selects_the_route(parse_stub):
-    _, _, _, version = await _run("fast")
+def test_reaped_superseded_final_attempt_releases_its_reservation(monkeypatch):
+    finished: list[tuple[str, int, str]] = []
+    monkeypatch.setattr(
+        worker,
+        "_notify_ingest_terminal",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            worker.db.SourceSupersededError("source replaced")
+        ),
+    )
+    monkeypatch.setattr(
+        worker,
+        "_finish_superseded",
+        lambda job_id, attempt, reservation_id: finished.append(
+            (job_id, attempt, reservation_id)
+        ),
+    )
+
+    worker._announce_reclaimed(
+        {
+            "id": "job_old_source",
+            "type": "ingest",
+            "attempts": 3,
+            "outcome": "failed",
+            "payload": _ingest_payload(reservationId="cr_old_source"),
+        }
+    )
+
+    assert finished == [("job_old_source", 3, "cr_old_source")]
+
+
+async def test_the_processing_plan_selects_the_route(parse_stub):
+    _, _, _, version = await _run()
 
     assert parse_stub["descriptor"]["route"] == parser_client.ROUTE_FAST
     assert version == parser_client.parser_version(parser_client.ROUTE_FAST)
 
 
-@pytest.mark.parametrize("parse_mode", ["accurate", "advanced"])
-async def test_retired_parse_modes_fail(parse_stub, parse_mode):
+@pytest.mark.parametrize("parser_route", ["accurate", "advanced", "bogus"])
+async def test_unknown_contract_parser_routes_fail(parse_stub, parser_route):
     from pipeline.jobs import TerminalError
 
     with pytest.raises(TerminalError, match="unknown parse mode"):
-        await _run(parse_mode)
-
-    assert parse_stub["descriptor"] is None
-
-
-async def test_an_unknown_parse_mode_fails_before_paying_for_a_parse(parse_stub):
-    from pipeline.jobs import TerminalError
-
-    with pytest.raises(TerminalError, match="unknown parse mode"):
-        await _run("bogus")
+        await worker._chunks_for(
+            payload={"blobPath": "sources/blob_1.pdf"},
+            name="lecture.pdf",
+            processing_plan=_plan(parser_route=parser_route),
+            local_path="/shared/sources/source-1",
+            source_key="sources/source-1",
+            ws="ws_1",
+            file_id="f_1",
+            source_sha256="aa" * 32,
+        )
 
     assert parse_stub["descriptor"] is None
 
@@ -196,19 +306,42 @@ async def test_a_missing_actor_fails_the_file_without_retry(monkeypatch):
     assert failed == []
 
 
-async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatch):
+async def test_lost_claim_does_not_publish_a_stale_terminal_progress(monkeypatch):
+    events: list[tuple] = []
+    payload = _ingest_payload()
+    monkeypatch.setattr(worker, "_file_exists", lambda *_a: True)
+    monkeypatch.setattr(worker, "_read_name", lambda *_a: "notes.pdf")
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
+    monkeypatch.setattr(worker, "_account_allows_ingest", lambda *_a: True)
+    monkeypatch.setattr(worker, "_finish_ok", lambda *_a, **_k: False)
     monkeypatch.setattr(
-        worker.blobstore, "fetch_local", lambda _p: ("/tmp/notes.md", lambda: None)
+        worker.progress,
+        "publish",
+        lambda *args, **kwargs: events.append((args, kwargs)),
     )
+
+    await worker._process_ingest_job(
+        {"id": "job_lost", "attempts": 1},
+        payload,
+        "f_1",
+        "ws_1",
+        "pdf",
+        _plan(ingest_plan.STORE_ONLY),
+    )
+
+    assert all(args[2] != "done" for args, _kwargs in events)
+
+
+async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatch):
     monkeypatch.setattr(worker, "_read_text", lambda _p: "# Notes")
     monkeypatch.setattr(worker, "chunk_markdown", lambda text: [text])
 
     chunks, artifact_key, fingerprint, version = await worker._chunks_for(
         payload={"blobPath": "sources/notes.md"},
         name="notes.md",
-        kind="md",
-        parse_mode="fast",
-        caption_images=True,
+        processing_plan=_plan(ingest_plan.RAW_TEXT, format_name="md"),
+        local_path="/shared/sources/source-1",
+        source_key="sources/source-1",
         ws="ws_1",
         file_id="f_1",
         source_sha256="aa" * 32,
@@ -221,18 +354,15 @@ async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatc
 
 
 async def test_json_sources_are_ingested_as_text(parse_stub, monkeypatch):
-    monkeypatch.setattr(
-        worker.blobstore, "fetch_local", lambda _p: ("/tmp/data.json", lambda: None)
-    )
     monkeypatch.setattr(worker, "_read_text", lambda _p: '{"topic": "osmosis"}')
     monkeypatch.setattr(worker, "chunk_markdown", lambda text: [text])
 
     chunks, artifact_key, fingerprint, version = await worker._chunks_for(
         payload={"blobPath": "sources/data.json"},
         name="data.json",
-        kind="json",
-        parse_mode="none",
-        caption_images=True,
+        processing_plan=_plan(ingest_plan.RAW_TEXT, format_name="json"),
+        local_path="/shared/sources/source-1",
+        source_key="sources/source-1",
         ws="ws_1",
         file_id="f_1",
         source_sha256="aa" * 32,
@@ -245,7 +375,7 @@ async def test_json_sources_are_ingested_as_text(parse_stub, monkeypatch):
 
 
 async def test_captioning_is_off_unless_the_upload_asked_for_it(parse_stub):
-    await _run("fast")
+    await _run()
 
     assert parse_stub["captioned"] == 0
     assert "description" not in parse_stub["chunked"][1]
@@ -254,7 +384,30 @@ async def test_captioning_is_off_unless_the_upload_asked_for_it(parse_stub):
 async def test_captions_reach_the_chunker(parse_stub):
     """The ordering the feature depends on: chunking must see the description,
     otherwise the figure is embedded as an empty block and stays unsearchable."""
-    await _run("fast", caption_images=True)
+    await _run(caption_images=True)
+
+    assert parse_stub["captioned"] == 1
+    assert parse_stub["chunked"][1]["description"] == "A labelled chloroplast."
+
+
+@pytest.mark.parametrize("format_name", ["docx", "pptx", "xlsx"])
+async def test_supported_office_routes_caption_parser_image_blocks(
+    parse_stub, format_name: str
+):
+    await worker._chunks_for(
+        payload={"blobPath": f"sources/lesson.{format_name}"},
+        name=f"lesson.{format_name}",
+        processing_plan=_plan(
+            caption_images=True,
+            format_name=format_name,
+            office_preview=True,
+        ),
+        local_path="/shared/sources/source-1",
+        source_key="sources/source-1",
+        ws="ws_1",
+        file_id="f_1",
+        source_sha256="aa" * 32,
+    )
 
     assert parse_stub["captioned"] == 1
     assert parse_stub["chunked"][1]["description"] == "A labelled chloroplast."
@@ -271,30 +424,339 @@ async def test_a_successful_parse_is_recorded_before_captioning(
 
     async def _caption(**_k):
         order.append("caption")
-        return {"selected": 0, "cached": 0, "captioned": 0, "applied": 0, "key": ""}
+        return {
+            "selected": 0,
+            "cached": 0,
+            "captioned": 0,
+            "decorative": 0,
+            "applied": 0,
+            "key": "",
+        }
 
     monkeypatch.setattr(worker, "_record_parse_artifact", _record)
     monkeypatch.setattr(worker.figures, "caption_figures", _caption)
 
-    await _run("fast", caption_images=True)
+    await _run(caption_images=True)
 
     assert order == ["parse", "caption"]
 
 
-async def test_a_missing_source_blob_fails_before_paying_for_a_parse(
-    parse_stub, monkeypatch
+def test_office_preview_is_shared_and_uploaded_as_pdf(tmp_path, monkeypatch):
+    preview = tmp_path / "preview.pdf"
+    preview.write_bytes(b"%PDF-coordinate-source")
+    writes: list[tuple[str, bytes, str]] = []
+    cache_rows: list[dict] = []
+    file_rows: list[tuple[str, str]] = []
+    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: None)
+    monkeypatch.setattr(
+        worker.blobstore,
+        "write_bytes",
+        lambda key, data, content_type: writes.append((key, data, content_type)),
+    )
+    monkeypatch.setattr(
+        worker, "_touch_or_upsert_artifact", lambda **values: cache_rows.append(values)
+    )
+    monkeypatch.setattr(
+        worker,
+        "_record_preview_blob",
+        lambda file_id, key, *_source: file_rows.append((file_id, key)),
+    )
+
+    key = worker._cache_office_preview(
+        raw_dir=tmp_path,
+        file_id="f_1",
+        source_sha256="aa" * 32,
+        parser_version="marker-v1",
+        fingerprint="fp-1",
+        source_revision=1,
+        source_etag="etag-a",
+    )
+
+    assert key == f"previews/{'aa' * 32}/marker-v1/fp-1.pdf"
+    assert writes == [(key, b"%PDF-coordinate-source", "application/pdf")]
+    assert cache_rows[0]["kind"] == "office_preview"
+    assert file_rows == [("f_1", key)]
+
+
+def test_oversized_office_preview_is_not_read_uploaded_or_recorded(
+    tmp_path, monkeypatch
 ):
-    from pipeline.jobs import TerminalError
+    preview = tmp_path / "preview.pdf"
+    preview.write_bytes(b"%PDF-too-large")
+    events: list[str] = []
+    monkeypatch.setattr(
+        worker.cfg, "office_preview_max_bytes", preview.stat().st_size - 1
+    )
+    monkeypatch.setattr(
+        worker.Path,
+        "read_bytes",
+        lambda _path: events.append("read") or b"",
+    )
+    monkeypatch.setattr(
+        worker.blobstore,
+        "object_info",
+        lambda _key: events.append("inspect") or None,
+    )
+    monkeypatch.setattr(
+        worker.blobstore,
+        "write_bytes",
+        lambda *_args: events.append("write"),
+    )
+    monkeypatch.setattr(
+        worker, "_touch_or_upsert_artifact", lambda **_values: events.append("touch")
+    )
+    monkeypatch.setattr(
+        worker, "_record_preview_blob", lambda *_args: events.append("record")
+    )
 
-    monkeypatch.setattr(worker.blobstore, "object_info", lambda _p: None)
+    key = worker._cache_office_preview(
+        raw_dir=tmp_path,
+        file_id="f_1",
+        source_sha256="aa" * 32,
+        parser_version="marker-v1",
+        fingerprint="fp-1",
+        source_revision=1,
+        source_etag="etag-a",
+    )
 
-    with pytest.raises(TerminalError, match="source blob is missing"):
-        await _run("fast")
-
-    assert parse_stub["descriptor"] is None
+    assert key is None
+    assert events == []
 
 
-def test_the_source_hash_comes_from_the_bytes_not_the_stored_checksum(monkeypatch):
+def test_office_preview_growth_during_read_is_not_uploaded_or_recorded(
+    tmp_path, monkeypatch
+):
+    preview = tmp_path / "preview.pdf"
+    original = b"%PDF-safe"
+    preview.write_bytes(original)
+    reads: list[int] = []
+    events: list[str] = []
+
+    class ChangedPreview(io.BytesIO):
+        def read(self, size=-1):
+            reads.append(size)
+            return super().read(size)
+
+    monkeypatch.setattr(worker.cfg, "office_preview_max_bytes", len(original))
+    monkeypatch.setattr(
+        worker.Path,
+        "open",
+        lambda *_args, **_kwargs: ChangedPreview(original + b"-grown"),
+    )
+    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: None)
+    monkeypatch.setattr(
+        worker.blobstore,
+        "write_bytes",
+        lambda *_args: events.append("write"),
+    )
+    monkeypatch.setattr(
+        worker, "_touch_or_upsert_artifact", lambda **_values: events.append("touch")
+    )
+    monkeypatch.setattr(
+        worker, "_record_preview_blob", lambda *_args: events.append("record")
+    )
+
+    key = worker._cache_office_preview(
+        raw_dir=tmp_path,
+        file_id="f_1",
+        source_sha256="aa" * 32,
+        parser_version="marker-v1",
+        fingerprint="fp-1",
+        source_revision=1,
+        source_etag="etag-a",
+    )
+
+    assert key is None
+    assert reads == [len(original) + 1]
+    assert events == []
+
+
+def test_office_donor_requires_an_existing_exact_preview(monkeypatch):
+    donor = {"preview_blob_path": "previews/source/marker/fingerprint.pdf"}
+
+    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: None)
+    assert worker._donor_office_preview("lesson.docx", donor) is None
+
+    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: {"size": 2048})
+    assert (
+        worker._donor_office_preview("lesson.docx", donor) == donor["preview_blob_path"]
+    )
+    assert worker._donor_office_preview("lesson.pdf", {}) == ""
+
+
+def test_reused_preview_is_attached_only_when_the_object_exists(monkeypatch):
+    touched: list[dict] = []
+    attached: list[tuple[str, str]] = []
+    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: None)
+    monkeypatch.setattr(
+        worker, "_touch_or_upsert_artifact", lambda **values: touched.append(values)
+    )
+    monkeypatch.setattr(
+        worker,
+        "_record_preview_blob",
+        lambda file_id, key, *_source: attached.append((file_id, key)),
+    )
+
+    values = {
+        "file_id": "f_1",
+        "source_sha256": "aa" * 32,
+        "preview_blob_path": "previews/source/marker/fingerprint.pdf",
+        "source_revision": 1,
+        "source_etag": "etag-a",
+    }
+    assert not worker._reuse_office_preview(**values)
+    assert touched == []
+    assert attached == []
+
+    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: {"size": 2048})
+    assert worker._reuse_office_preview(**values)
+    assert touched == [
+        {
+            "object_path": values["preview_blob_path"],
+            "kind": "office_preview",
+            "source_sha256": values["source_sha256"],
+            "size_bytes": 2048,
+        }
+    ]
+    assert attached == [("f_1", values["preview_blob_path"])]
+
+
+def test_oversized_cached_preview_is_not_reused_or_recorded(monkeypatch):
+    touched: list[dict] = []
+    attached: list[tuple] = []
+    monkeypatch.setattr(worker.cfg, "office_preview_max_bytes", 1024)
+    monkeypatch.setattr(worker.blobstore, "object_info", lambda _key: {"size": 1025})
+    monkeypatch.setattr(
+        worker, "_touch_or_upsert_artifact", lambda **values: touched.append(values)
+    )
+    monkeypatch.setattr(
+        worker, "_record_preview_blob", lambda *values: attached.append(values)
+    )
+
+    assert not worker._reuse_office_preview(
+        file_id="f_1",
+        source_sha256="aa" * 32,
+        preview_blob_path="previews/source/marker/fingerprint.pdf",
+        source_revision=1,
+        source_etag="etag-a",
+    )
+    assert (
+        worker._donor_office_preview(
+            "lesson.docx",
+            {"preview_blob_path": "previews/source/marker/fingerprint.pdf"},
+        )
+        is None
+    )
+    assert touched == []
+    assert attached == []
+
+
+async def test_donor_preview_is_attached_before_the_destination_becomes_ready(
+    monkeypatch,
+):
+    order: list[str] = []
+
+    async def _pin(_workspace_id):
+        return {
+            "embedding_provider_slug": "openrouter",
+            "embedding_model_slug": "qwen/qwen3-embedding-4b",
+            "embedding_model_version": 1,
+            "embedding_dim": 2560,
+        }
+
+    async def _attach(**_kwargs):
+        return {"content_id": "rgc_dest", "created": True, "ready": False}
+
+    async def _wait(association, **_kwargs):
+        return association
+
+    async def _copy(**_kwargs):
+        order.append("copy")
+        return True
+
+    async def _ready(*_args, **_kwargs):
+        order.append("ready")
+
+    monkeypatch.setattr(worker.store, "workspace_embedding_pin", _pin)
+    monkeypatch.setattr(worker.store, "attach_file_content", _attach)
+    monkeypatch.setattr(worker, "_wait_for_content", _wait)
+    monkeypatch.setattr(worker.store, "copy_content_from_donor", _copy)
+    monkeypatch.setattr(worker.store, "mark_content_ready", _ready)
+    monkeypatch.setattr(
+        worker,
+        "_reuse_office_preview",
+        lambda **_kwargs: order.append("preview") or True,
+    )
+    monkeypatch.setattr(
+        worker,
+        "_finish_ok",
+        lambda *_args, **_kwargs: order.append("file-ready") or True,
+    )
+    monkeypatch.setattr(worker.progress, "publish", lambda *_args, **_kwargs: None)
+
+    reused = await worker._reuse_donor(
+        job={"id": "job_1", "attempts": 1},
+        payload={
+            "actorUserId": "u_1",
+            "reservationId": "cr_1",
+            "sourceRevision": 1,
+            "sourceETag": "etag-a",
+        },
+        file_id="f_1",
+        ws="ws_1",
+        name="lesson.docx",
+        kind="doc",
+        route=ingest_plan.DOCUMENT_PARSE,
+        donor={
+            "id": "rgc_donor",
+            "content_hash": "content-hash",
+            "embedding_provider_slug": "openrouter",
+            "embedding_model_slug": "qwen/qwen3-embedding-4b",
+            "embedding_model_version": 1,
+            "embedding_dim": 2560,
+        },
+        identity="pipeline-v1",
+        source_sha256="aa" * 32,
+        preview_blob_path="previews/source/marker/fingerprint.pdf",
+    )
+
+    assert reused
+    assert order == ["copy", "preview", "ready", "file-ready"]
+
+
+def test_content_hash_includes_citation_geometry():
+    from pipeline.retrieval.chunking import Chunk, Region
+
+    first = [
+        Chunk(
+            text="Identical words",
+            page_start=1,
+            page_end=1,
+            regions=[Region(page=1, bbox=[10, 20, 30, 40])],
+        )
+    ]
+    same = [
+        Chunk(
+            text="Identical words",
+            page_start=1,
+            page_end=1,
+            regions=[Region(page=1, bbox=[10, 20, 30, 40])],
+        )
+    ]
+    moved = [
+        Chunk(
+            text="Identical words",
+            page_start=2,
+            page_end=2,
+            regions=[Region(page=2, bbox=[100, 200, 300, 400])],
+        )
+    ]
+
+    assert worker.indexing.content_hash(first) == worker.indexing.content_hash(same)
+    assert worker.indexing.content_hash(first) != worker.indexing.content_hash(moved)
+
+
+def test_the_source_is_downloaded_once_while_hashing_real_bytes(monkeypatch, tmp_path):
     """The uploader controls the checksum header, so it cannot be the cache key.
 
     Browsers PUT through a presigned URL that signs host and content-type only,
@@ -319,12 +781,20 @@ def test_the_source_hash_comes_from_the_bytes_not_the_stored_checksum(monkeypatc
 
     monkeypatch.setattr(blobstore, "_s3_client", FakeS3)
 
-    assert (
-        blobstore.sha256_object("sources/f_1.pdf") == hashlib.sha256(body).hexdigest()
+    local_path, source_key, digest, cleanup = blobstore.fetch_local_hashed(
+        "sources/f_1.pdf", str(tmp_path)
     )
+    try:
+        assert Path(local_path).read_bytes() == body
+        assert source_key.startswith("sources/source-")
+        assert digest == hashlib.sha256(body).hexdigest()
+    finally:
+        cleanup()
 
 
-def test_a_vanished_source_reads_as_missing_rather_than_an_s3_error(monkeypatch):
+def test_a_vanished_source_reads_as_missing_rather_than_an_s3_error(
+    monkeypatch, tmp_path
+):
     from botocore.exceptions import ClientError
 
     from pipeline.store import blobstore
@@ -336,16 +806,41 @@ def test_a_vanished_source_reads_as_missing_rather_than_an_s3_error(monkeypatch)
     monkeypatch.setattr(blobstore, "_s3_client", FakeS3)
 
     with pytest.raises(FileNotFoundError):
-        blobstore.sha256_object("sources/gone.pdf")
+        blobstore.fetch_local_hashed("sources/gone.pdf", str(tmp_path))
+
+
+def test_persisted_local_source_is_checksum_verified_before_reuse(tmp_path):
+    import hashlib
+
+    from pipeline.store import blobstore
+
+    source = tmp_path / "sources" / "source-1"
+    source.parent.mkdir()
+    source.write_bytes(b"document")
+    digest = hashlib.sha256(b"document").hexdigest()
+
+    local_path, key, actual, cleanup = blobstore.reuse_local_hashed(
+        "sources/source-1", digest, str(tmp_path)
+    )
+    assert Path(local_path) == source
+    assert key == "sources/source-1"
+    assert actual == digest
+
+    source.write_bytes(b"tampered")
+    with pytest.raises(ValueError, match="checksum mismatch"):
+        blobstore.reuse_local_hashed("sources/source-1", digest, str(tmp_path))
+    assert not source.exists()
+    cleanup()
 
 
 async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
-    parse_stub, monkeypatch
+    parse_stub, monkeypatch, tmp_path
 ):
     """When every parser slot is taken, the file stays pending and the attempt is undone."""
     from pipeline.jobs import CapacityWait
 
     yielded: list[str] = []
+    downloads = 0
 
     async def _pin(_ws):
         return object()
@@ -371,31 +866,40 @@ async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
     monkeypatch.setattr(worker, "_read_name", lambda *_a, **_k: "notes.pdf")
     monkeypatch.setattr(worker, "_account_allows_ingest", lambda *_a, **_k: True)
     monkeypatch.setattr(worker, "_record_source_sha", lambda *_a, **_k: None)
-    monkeypatch.setattr(worker.blobstore, "sha256_object", lambda *_a: "aa" * 32)
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a, **_k: None)
+
+    class FakeS3:
+        def get_object(self, **_kwargs):
+            nonlocal downloads
+            downloads += 1
+            return {"Body": io.BytesIO(b"document")}
+
+    monkeypatch.setattr(worker.cfg, "parse_shared_dir", str(tmp_path))
+    monkeypatch.setattr(worker.blobstore, "_s3_client", FakeS3)
+    monkeypatch.setattr(worker, "_remember_local_source", lambda *_a, **_k: None)
     monkeypatch.setattr(worker.store, "find_ready_donor", _no_donor)
     monkeypatch.setattr(worker.slots, "try_acquire", lambda *_a, **_k: False)
     monkeypatch.setattr(
         worker, "_yield_for_capacity", lambda job, *_a, **_k: yielded.append(job["id"])
     )
 
-    with pytest.raises(CapacityWait):
-        await worker.process_ingest_job(
-            {
-                "id": "job_wait",
-                "attempts": 1,
-                "payload": _ingest_payload(),
-            }
-        )
+    job = {
+        "id": "job_wait",
+        "attempts": 1,
+        "payload": _ingest_payload(),
+    }
+    for _ in range(2):
+        with pytest.raises(CapacityWait):
+            await worker.process_ingest_job(job)
 
-    assert yielded == ["job_wait"]
+    assert yielded == ["job_wait", "job_wait"]
+    assert downloads == 1
     assert parse_stub["descriptor"] is None
+    worker._cleanup_payload_source(job["payload"])
 
 
 async def test_text_sources_do_not_take_a_gpu_slot(parse_stub, monkeypatch):
     taken: list[tuple] = []
-    monkeypatch.setattr(
-        worker.blobstore, "fetch_local", lambda _p: ("/tmp/notes.md", lambda: None)
-    )
     monkeypatch.setattr(worker, "_read_text", lambda _p: "# Notes")
     monkeypatch.setattr(worker, "chunk_markdown", lambda text: [text])
     monkeypatch.setattr(worker, "_set_file_status", lambda *_a, **_k: None)
@@ -406,9 +910,9 @@ async def test_text_sources_do_not_take_a_gpu_slot(parse_stub, monkeypatch):
     await worker._chunks_for(
         payload={"blobPath": "sources/notes.md"},
         name="notes.md",
-        kind="md",
-        parse_mode="fast",
-        caption_images=True,
+        processing_plan=_plan(ingest_plan.RAW_TEXT, format_name="md"),
+        local_path="/shared/sources/source-1",
+        source_key="sources/source-1",
         ws="ws_1",
         file_id="f_1",
         source_sha256="aa" * 32,
@@ -418,18 +922,83 @@ async def test_text_sources_do_not_take_a_gpu_slot(parse_stub, monkeypatch):
     assert taken == []
 
 
+async def test_pending_audio_resumes_without_downloading_the_source(monkeypatch):
+    from pipeline.jobs import ExternalWait
+
+    async def _pin(_workspace_id):
+        return {
+            "embedding_dim": 2560,
+            "embedding_provider_slug": "openrouter",
+            "embedding_model_slug": "qwen/qwen3-embedding-4b",
+            "embedding_model_version": 1,
+        }
+
+    async def _chunks(**values):
+        assert values["local_path"] is None
+        assert values["source_key"] == ""
+        assert values["source_sha256"] == "aa" * 32
+        raise ExternalWait("provider is still transcribing")
+
+    monkeypatch.setattr(worker, "_file_exists", lambda *_a: True)
+    monkeypatch.setattr(worker, "_read_name", lambda *_a: "lecture.mp3")
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
+    monkeypatch.setattr(worker, "_account_allows_ingest", lambda *_a: True)
+    monkeypatch.setattr(worker, "_record_source_sha", lambda *_a: None)
+    monkeypatch.setattr(worker.store, "workspace_embedding_pin", _pin)
+    monkeypatch.setattr(
+        worker.source_text,
+        "audio_state",
+        lambda _job_id: {"source_sha256": "aa" * 32, "status": "pending"},
+    )
+    monkeypatch.setattr(
+        worker,
+        "_acquire_local_source",
+        lambda *_a: (_ for _ in ()).throw(
+            AssertionError("pending audio fetched B2 again")
+        ),
+    )
+    monkeypatch.setattr(worker, "_chunks_for", _chunks)
+    monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
+
+    payload = _ingest_payload(
+        blobPath="sources/lecture.mp3",
+        kind="audio",
+    )
+    plan = _plan(ingest_plan.AUDIO_TRANSCRIPTION, format_name="mp3")
+    with pytest.raises(ExternalWait):
+        await worker._process_ingest_job(
+            {"id": "job_audio", "attempts": 1},
+            payload,
+            "f_1",
+            "ws_1",
+            "audio",
+            plan,
+        )
+
+
 async def test_a_missing_ingest_field_fails_without_retry():
     from pipeline.jobs import TerminalError
 
     payload = _ingest_payload()
-    del payload["parseMode"]
-    with pytest.raises(TerminalError, match="parseMode"):
+    del payload["processingPlan"]
+    with pytest.raises(TerminalError, match="processing plan"):
         await worker.process_ingest_job(
             {"id": "job_1", "attempts": 1, "payload": payload}
         )
 
 
-async def test_caption_images_false_is_not_treated_as_missing(monkeypatch):
+async def test_a_missing_source_etag_fails_explicitly():
+    from pipeline.jobs import TerminalError
+
+    payload = _ingest_payload()
+    del payload["sourceETag"]
+    with pytest.raises(TerminalError, match="sourceETag"):
+        await worker.process_ingest_job(
+            {"id": "job_1", "attempts": 1, "payload": payload}
+        )
+
+
+async def test_legacy_route_hints_are_not_required(monkeypatch):
     from pipeline.jobs import TerminalError
 
     async def _pin(_ws):
@@ -441,7 +1010,11 @@ async def test_caption_images_false_is_not_treated_as_missing(monkeypatch):
             {
                 "id": "job_1",
                 "attempts": 1,
-                "payload": _ingest_payload(captionImages=False),
+                "payload": {
+                    key: value
+                    for key, value in _ingest_payload().items()
+                    if key not in {"captionImages", "parseMode"}
+                },
             }
         )
 
@@ -474,6 +1047,7 @@ async def test_retry_records_parse_attempt_before_requeue(monkeypatch):
 
     monkeypatch.setattr(worker, "_record_parse_attempt", _record)
     monkeypatch.setattr(worker, "_requeue", _requeue)
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a, **_k: None)
     job = {
         "id": "job_metered_retry",
         "type": "ingest",
@@ -487,3 +1061,51 @@ async def test_retry_records_parse_attempt_before_requeue(monkeypatch):
         ("record", "retrying"),
         ("requeue", "job_metered_retry"),
     ]
+
+
+@pytest.mark.parametrize("during", ["requeue", "terminal"])
+async def test_replacement_between_failure_check_and_job_write_closes_job(
+    monkeypatch, during
+):
+    from pipeline.jobs import RetryableError, TerminalError
+
+    finished: list[tuple[str, int, str]] = []
+    job = {
+        "id": "job_raced_replacement",
+        "type": "ingest",
+        "attempts": 1,
+        "payload": _ingest_payload(),
+    }
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
+    monkeypatch.setattr(worker, "_record_parse_attempt", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        worker,
+        "_finish_superseded",
+        lambda job_id, attempt, reservation_id: finished.append(
+            (job_id, attempt, reservation_id)
+        ),
+    )
+
+    if during == "requeue":
+        monkeypatch.setattr(
+            worker,
+            "_requeue",
+            lambda *_a: (_ for _ in ()).throw(
+                worker.db.SourceSupersededError("replaced during requeue")
+            ),
+        )
+        error = RetryableError("temporary")
+    else:
+        monkeypatch.setattr(worker.obs, "capture_error", lambda *_a, **_k: None)
+        monkeypatch.setattr(
+            worker,
+            "_notify_ingest_terminal",
+            lambda *_a, **_k: (_ for _ in ()).throw(
+                worker.db.SourceSupersededError("replaced during terminal write")
+            ),
+        )
+        error = TerminalError("permanent")
+
+    await worker._handle_job_failure(job, error)
+
+    assert finished == [("job_raced_replacement", 1, "cr_1")]

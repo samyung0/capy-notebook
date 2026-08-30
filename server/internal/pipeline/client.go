@@ -28,7 +28,7 @@ func New(base, secret string) *Client {
 	return &Client{
 		base:   strings.TrimRight(base, "/"),
 		secret: secret,
-		hc:     &http.Client{Timeout: 90 * time.Second},
+		hc:     &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -76,6 +76,10 @@ func errorBodyFrom(raw map[string]any) ErrorBody {
 
 func (c *Client) applyHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
+	c.applySecret(req)
+}
+
+func (c *Client) applySecret(req *http.Request) {
 	if c.secret != "" {
 		req.Header.Set(SecretHeader, c.secret)
 	}

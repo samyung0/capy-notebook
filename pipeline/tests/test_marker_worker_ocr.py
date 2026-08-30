@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import sys
+import zipfile
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -62,6 +63,32 @@ def test_office_is_normalized_to_one_paginated_pdf(
     assert data == b"%PDF-converted"
     assert name == "lesson.pdf"
     assert source_format == "pptx"
+
+
+def test_oversized_office_pdf_is_rejected_before_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import marker_worker as mw
+
+    reads: list[Path] = []
+
+    def _convert(command, **_kwargs):
+        outdir = Path(command[command.index("--outdir") + 1])
+        (outdir / "source.pdf").write_bytes(b"%PDF-too-large")
+        return SimpleNamespace(returncode=0, stderr="", stdout="")
+
+    monkeypatch.setattr(mw, "OFFICE_PREVIEW_MAX_BYTES", 8)
+    monkeypatch.setattr(mw.subprocess, "run", _convert)
+    monkeypatch.setattr(
+        Path,
+        "read_bytes",
+        lambda path: reads.append(path) or b"",
+    )
+
+    with pytest.raises(RuntimeError, match="preview limit"):
+        normalize_document(b"office", "lesson.pptx")
+
+    assert reads == []
 
 
 @pytest.mark.parametrize("extension", ["doc", "ppt", "xls"])
@@ -144,6 +171,73 @@ def test_parse_document_returns_child_cpu_and_page_measurements(
     assert result["_ocr_pages"] == [1]
     assert isinstance(result["_worker_cpu_ms"], int)
     assert result["_worker_cpu_ms"] >= 0
+    assert "_preview_pdf" not in result
+
+
+def test_parse_document_retains_the_exact_office_pdf(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import marker_worker as mw
+    import scan_pages
+
+    normalized = b"%PDF-exact-libreoffice-output"
+    monkeypatch.setattr(
+        mw,
+        "normalize_document",
+        lambda *_a: (normalized, "lesson.pdf", "pptx"),
+    )
+    monkeypatch.setattr(scan_pages, "probe_pages", lambda _data: [])
+    monkeypatch.setattr(mw, "_MODELS", {})
+    monkeypatch.setattr(mw, "_marker_converter", lambda *_a, **_k: object())
+    monkeypatch.setattr(
+        mw,
+        "parse_fast",
+        lambda *_a, **_k: {"content_list": [], "images": {}, "md": ""},
+    )
+
+    result = mw.parse_document(b"ooxml", "lesson.pptx", "marker_only")
+
+    assert result["_preview_pdf"] == normalized
+
+
+def test_parser_bundle_carries_the_exact_office_pdf() -> None:
+    from app import _bundle_bytes
+
+    normalized = b"%PDF-exact-libreoffice-output"
+    bundle = _bundle_bytes(
+        {
+            "content_list": [],
+            "images": {},
+            "md": "",
+            "_preview_pdf": normalized,
+        },
+        "fp-1",
+        "job-1",
+        {},
+    )
+
+    with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
+        assert archive.read("preview.pdf") == normalized
+
+
+def test_parser_bundle_rejects_an_oversized_office_pdf(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app as parser_app
+
+    monkeypatch.setattr(parser_app, "OFFICE_PREVIEW_MAX_BYTES", 8)
+    with pytest.raises(ValueError, match="byte limit"):
+        parser_app._bundle_bytes(
+            {
+                "content_list": [],
+                "images": {},
+                "md": "",
+                "_preview_pdf": b"%PDF-too-large",
+            },
+            "fp-1",
+            "job-1",
+            {},
+        )
 
 
 def test_parse_document_preserves_measurements_on_failure(

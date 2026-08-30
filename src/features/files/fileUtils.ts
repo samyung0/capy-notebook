@@ -10,6 +10,11 @@ const IMAGE_EXTS = new Set([
   'bmp',
   'svg',
   'avif',
+  'tif',
+  'tiff',
+  'heic',
+  'heif',
+  'ico',
 ]);
 
 export const IMAGE_MIN_ZOOM = 1;

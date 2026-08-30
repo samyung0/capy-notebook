@@ -1,6 +1,6 @@
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useRef, useState } from 'react';
-import { USE_MSW } from '@/api/auth';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { authHeaders, USE_MSW } from '@/api/auth';
 import {
   api,
   isCreditsExhaustedError,
@@ -13,6 +13,7 @@ import {
   useChapters,
   useImportSources,
   useIngestSlots,
+  useInspectSourceImports,
   useIntegrations,
   useSourceUploadPolicy,
   useUploadSource,
@@ -20,13 +21,14 @@ import {
 } from '@/api/hooks';
 import type {
   Chapter,
+  FileKind,
+  InspectSourceImportsResponse,
   MicrosoftDriveHost,
   SourceFile,
   SourceUploadPolicy,
 } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import {
-  ConfirmDialog,
   DialogClose,
   DialogFooter,
   SimpleDialog,
@@ -62,13 +64,28 @@ import {
   isPickerUserCancelled,
   openOneDrivePicker,
   pickerLocale,
-  toImportRequest,
 } from '@/lib/onedrivePicker';
 import {
   useMicrosoftLoginHint,
   useProviderConnect,
 } from '@/lib/useProviderConnect';
-import { analyzeOfficeUpload } from './officeUploadAnalysis';
+
+import {
+  calculateParseCreditMicros,
+  localSourceAnalysisInput,
+  SourceAnalysisCancelledError,
+  type SourceAnalysisInput,
+  type SourceAnalysisProgress,
+  SourceAnalysisQueue,
+  type SourceAnalysisResult,
+} from './sourceAnalysis';
+import {
+  aggregateSourceAnalysis,
+  remoteSourceAnalysisInput,
+  type SourceAnalysisStatus,
+  sourceAnalysisBlocksSubmit,
+  validateLocalSourceSelection,
+} from './sourceDetails';
 import {
   collectSourceImportResponses,
   parseSourceImportAcceptedResponse,
@@ -80,8 +97,8 @@ import {
 import {
   aggregateUploadPct,
   capSourceUploads,
+  chunkItems,
   defaultParseMode,
-  fileExt,
   fileReachedTerminal,
   getFileKind,
   isTextKind,
@@ -98,28 +115,87 @@ import {
   withUploadRetry,
 } from './sourceUpload';
 
-/** Count a PDF's pages with pdfjs (already bundled via react-pdf, loaded on
- * demand). Returns null for non-PDFs and unreadable/encrypted files. */
-async function pdfPageCount(file: File): Promise<number | null> {
-  if (fileExt(file.name) !== 'pdf') return null;
-  try {
-    const { pdfjs } = await import('react-pdf');
-    if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-      pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.mjs`;
-    }
-    const doc = await pdfjs.getDocument({ data: await file.arrayBuffer() })
-      .promise;
-    const n = doc.numPages;
-    void doc.destroy();
-    return n;
-  } catch {
-    return null;
+interface GooglePickerBuilder {
+  addView: (view: unknown) => GooglePickerBuilder;
+  build: () => { setVisible: (visible: boolean) => void };
+  setAppId: (id: string) => GooglePickerBuilder;
+  setCallback: (
+    callback: (data: { action: string; docs?: { id: string }[] }) => void
+  ) => GooglePickerBuilder;
+  setDeveloperKey: (key: string) => GooglePickerBuilder;
+  setOAuthToken: (token: string) => GooglePickerBuilder;
+}
+
+declare global {
+  interface Window {
+    google?: {
+      picker: {
+        DocsView: new (
+          viewId: string
+        ) => {
+          setIncludeFolders: (include: boolean) => unknown;
+        };
+        PickerBuilder: new () => GooglePickerBuilder;
+        ViewId: { DOCS: string };
+      };
+    };
   }
 }
 
-function formatSize(bytes: number) {
-  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-  return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+type Provider = 'google' | 'microsoft';
+interface PendingSource {
+  analysisInput?: SourceAnalysisInput;
+  analysisProgress?: SourceAnalysisProgress;
+  analysisResult?: SourceAnalysisResult;
+  analysisStatus: SourceAnalysisStatus;
+  audioDurationPending?: boolean;
+  audioDurationSeconds?: number | null;
+  captionImages: boolean;
+  chapterId: string | null;
+  chapterName: string | null;
+  contentType: string;
+  driveId?: string;
+  file?: File;
+  fileId?: string;
+  key: string;
+  kind: FileKind;
+  name: string;
+  origin: 'local' | 'remote';
+  parseMode: ParseMode;
+  provider?: Provider;
+  sizeBytes: number;
+  sizeEstimate: boolean;
+  uploadPct?: number;
+}
+
+function formatSize(bytes: number, estimated = false) {
+  const value =
+    bytes >= 1024 * 1024
+      ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+      : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return estimated ? `~${value}` : value;
+}
+
+function readAudioDuration(file: File): Promise<number | null> {
+  return new Promise((resolve) => {
+    const audio = document.createElement('audio');
+    const url = URL.createObjectURL(file);
+    const finish = (duration: number | null) => {
+      audio.removeAttribute('src');
+      audio.load();
+      URL.revokeObjectURL(url);
+      resolve(duration);
+    };
+    audio.preload = 'metadata';
+    audio.onloadedmetadata = () =>
+      finish(
+        Number.isFinite(audio.duration) && audio.duration > 0
+          ? audio.duration
+          : null
+      );
+    audio.onerror = () => finish(null);
+    audio.src = url;
+  });
 }
 
 function useUnsentBeforeUnload(unsentCount: number) {
@@ -135,21 +211,22 @@ function useUnsentBeforeUnload(unsentCount: number) {
 }
 
 async function waitForFileTerminal(
-  qc: QueryClient,
+  queryClient: QueryClient,
   workspaceId: string,
   fileId: string,
   signal?: AbortSignal
 ) {
-  const files = () => qc.getQueryData<SourceFile[]>(qk.files(workspaceId));
+  const files = () =>
+    queryClient.getQueryData<SourceFile[]>(qk.files(workspaceId));
   if (signal?.aborted || fileReachedTerminal(files(), fileId)) return;
   await new Promise<void>((resolve) => {
-    let unsub = () => {};
+    let unsubscribe: () => void = () => undefined;
     const finish = () => {
       signal?.removeEventListener('abort', finish);
-      unsub();
+      unsubscribe();
       resolve();
     };
-    unsub = qc.getQueryCache().subscribe(() => {
+    unsubscribe = queryClient.getQueryCache().subscribe(() => {
       if (fileReachedTerminal(files(), fileId)) finish();
     });
     signal?.addEventListener('abort', finish);
@@ -158,12 +235,7 @@ async function waitForFileTerminal(
 }
 
 function workspaceFileRoom(
-  workspace:
-    | {
-        fileCount: number;
-        filesLimit: number;
-      }
-    | undefined
+  workspace: { fileCount: number; filesLimit: number } | undefined
 ) {
   const filesUsed = workspace?.fileCount ?? 0;
   const filesLimit = workspace?.filesLimit ?? MAX_FILES_PER_WORKSPACE;
@@ -226,30 +298,20 @@ function sourceImportFailureReason(code: string) {
   }
 }
 
-interface GooglePickerBuilder {
-  addView: (v: unknown) => GooglePickerBuilder;
-  build: () => { setVisible: (v: boolean) => void };
-  setAppId: (id: string) => GooglePickerBuilder;
-  setCallback: (
-    cb: (data: { action: string; docs?: { id: string }[] }) => void
-  ) => GooglePickerBuilder;
-  setDeveloperKey: (key: string) => GooglePickerBuilder;
-  setOAuthToken: (t: string) => GooglePickerBuilder;
-}
-
-declare global {
-  interface Window {
-    google?: {
-      picker: {
-        ViewId: { DOCS: string };
-        DocsView: new (
-          viewId: string
-        ) => {
-          setIncludeFolders: (v: boolean) => unknown;
-        };
-        PickerBuilder: new () => GooglePickerBuilder;
-      };
-    };
+function reportRejectedImports(rejected: { code: string; fileId: string }[]) {
+  const counts = new Map<string, number>();
+  for (const item of rejected) {
+    counts.set(item.code, (counts.get(item.code) ?? 0) + 1);
+  }
+  for (const [code, count] of counts) {
+    userToast({
+      description: m.source_import_rejected_count({
+        count,
+        reason: sourceImportFailureReason(code),
+      }),
+      title: m.source_import_failed(),
+      variant: 'error',
+    });
   }
 }
 
@@ -265,9 +327,9 @@ function loadGooglePicker(): Promise<void> {
       try {
         (
           window as unknown as {
-            gapi: { load: (n: string, cb: () => void) => void };
+            gapi: { load: (name: string, callback: () => void) => void };
           }
-        ).gapi.load('picker', () => resolve());
+        ).gapi.load('picker', resolve);
       } catch (error) {
         reject(error);
       }
@@ -280,27 +342,49 @@ function loadGooglePicker(): Promise<void> {
 const NO_CHAPTER = '__none__';
 const CREATE_CHAPTER = '__create__';
 
-function ChapterSelect({
+export interface SourceInspectionGuard {
+  begin: () => () => boolean;
+  invalidate: () => void;
+}
+
+export function createSourceInspectionGuard(): SourceInspectionGuard {
+  let generation = 0;
+  return {
+    begin: () => {
+      generation += 1;
+      const startedAt = generation;
+      return () => generation === startedAt;
+    },
+    invalidate: () => {
+      generation += 1;
+    },
+  };
+}
+
+export function ChapterSelect({
   chapters,
   value,
   chapterName,
   onChange,
   onCreateRequest,
+  disabled = false,
 }: {
   chapters: Chapter[];
   value: string | null;
   chapterName?: string | null;
-  onChange: (v: string | null) => void;
+  onChange: (value: string | null) => void;
   onCreateRequest?: () => void;
+  disabled?: boolean;
 }) {
   return (
     <Select
-      onValueChange={(v) => {
-        if (v === CREATE_CHAPTER) {
+      disabled={disabled}
+      onValueChange={(value) => {
+        if (value === CREATE_CHAPTER) {
           onCreateRequest?.();
           return;
         }
-        onChange(v === NO_CHAPTER ? null : v);
+        onChange(value === NO_CHAPTER ? null : value);
       }}
       value={value ?? NO_CHAPTER}
     >
@@ -318,9 +402,11 @@ function ChapterSelect({
           <SelectItem size="sm" value={NO_CHAPTER}>
             <span className="text-fg-muted">{m.source_no_chapter()}</span>
           </SelectItem>
-          {chapters.map((o) => (
-            <SelectItem key={o.id} size="sm" value={o.id}>
-              <span className="line-clamp-1 translate-y-px">{o.name}</span>
+          {chapters.map((chapter) => (
+            <SelectItem key={chapter.id} size="sm" value={chapter.id}>
+              <span className="line-clamp-1 translate-y-px">
+                {chapter.name}
+              </span>
             </SelectItem>
           ))}
         </SelectGroup>
@@ -342,41 +428,28 @@ function ChapterSelect({
   );
 }
 
-interface PendingFile {
-  captionImages: boolean;
-  chapterId: string | null;
-  chapterName: string | null;
-  file: File;
-  key: string;
-  kind: SourceFile['kind'];
-  officeAnalysis?: Awaited<ReturnType<typeof analyzeOfficeUpload>>;
-  officeAnalysisStatus?: 'pending' | 'ready' | 'error';
-  /** PDF page count via pdfjs; undefined = still counting, null = unknown. */
-  pageCount?: number | null;
-  parseMode: ParseMode;
-  uploadPct?: number;
-}
-
-function ParseModeSelect({
+export function ParseModeSelect({
   pending,
   policy,
   onChange,
+  disabled = false,
 }: {
-  pending: PendingFile;
+  pending: PendingSource;
   policy: SourceUploadPolicy;
   onChange: (mode: ParseMode) => void;
+  disabled?: boolean;
 }) {
-  if (pending.kind === 'unknown') return;
-  if (isTextKind(pending.kind, policy)) return;
+  if (pending.kind === 'unknown' || isTextKind(pending.kind, policy)) return;
   const issues = parseModeIssues(
-    pending.file,
+    { name: pending.name, size: pending.sizeBytes },
     pending.kind,
     policy,
-    pending.pageCount
+    pending.analysisResult?.pageCount
   );
   return (
     <Select
-      onValueChange={(v) => onChange(v as ParseMode)}
+      disabled={disabled}
+      onValueChange={(value) => onChange(value as ParseMode)}
       value={pending.parseMode}
     >
       <SelectTrigger className="w-fit" size="sm" variant="underline">
@@ -384,7 +457,7 @@ function ParseModeSelect({
       </SelectTrigger>
       <SelectContent>
         <SelectGroup>
-          <SelectItem disabled={!!issues.fast} size="sm" value="fast">
+          <SelectItem disabled={Boolean(issues.fast)} size="sm" value="fast">
             {m.source_fast_parsing()}
             {issues.fast ? ` (${issues.fast})` : ''}
           </SelectItem>
@@ -397,21 +470,24 @@ function ParseModeSelect({
   );
 }
 
-function CaptionImagesToggle({
+export function CaptionImagesToggle({
   pending,
   policy,
   onChange,
+  disabled = false,
 }: {
-  pending: PendingFile;
+  pending: PendingSource;
   policy: SourceUploadPolicy;
   onChange: (captionImages: boolean) => void;
+  disabled?: boolean;
 }) {
   if (!supportsFigures(pending.parseMode, pending.kind, policy)) return;
   return (
     <div className="flex shrink-0 items-center gap-1.5">
       <Switch
-        aria-label={m.source_describe_images_file({ name: pending.file.name })}
+        aria-label={m.source_describe_images_file({ name: pending.name })}
         checked={pending.captionImages}
+        disabled={disabled}
         onCheckedChange={onChange}
         size="sm"
       />
@@ -420,52 +496,77 @@ function CaptionImagesToggle({
   );
 }
 
-function UploadFiles({
+function localRows(
+  selections: ReturnType<typeof validateLocalSourceSelection>['accepted'],
+  policy: SourceUploadPolicy
+): PendingSource[] {
+  const now = Date.now();
+  return selections.map(({ file, kind }, index) => {
+    const key = `local-${now}-${index}-${file.name}`;
+    const input = localSourceAnalysisInput(file);
+    return {
+      analysisInput: input
+        ? { ...input, key: `${key}\0${input.key}` }
+        : undefined,
+      analysisStatus: 'idle',
+      audioDurationPending: kind === 'audio',
+      captionImages: false,
+      chapterId: null,
+      chapterName: null,
+      contentType: file.type || 'application/octet-stream',
+      file,
+      key,
+      kind,
+      name: file.name,
+      origin: 'local',
+      parseMode: defaultParseMode(file, kind, policy),
+      sizeBytes: file.size,
+      sizeEstimate: false,
+    };
+  });
+}
+
+function SourceChooser({
+  open,
+  onClose,
+  onSelected,
+  inspectionGuard,
   workspaceId,
   workspaceRoom,
   filesLimit,
-  onClose,
-  className,
+  filesUsed,
+  uploadPolicy,
 }: {
+  open: boolean;
+  onClose: () => void;
+  onSelected: (sources: PendingSource[]) => void;
+  inspectionGuard: SourceInspectionGuard;
   workspaceId: string;
   workspaceRoom: number;
   filesLimit: number;
-  onClose?: () => void;
-  className?: string;
+  filesUsed: number;
+  uploadPolicy?: SourceUploadPolicy;
 }) {
-  const { mutateAsync: uploadSource } = useUploadSource(workspaceId);
-  const { data: ingestSlots } = useIngestSlots({
-    errorBoundary: false,
-  });
-  const qc = useQueryClient();
-  const { data: uploadPolicy } = useSourceUploadPolicy(workspaceId, {
-    errorBoundary: false,
-  });
-  const { data: chapters } = useChapters(workspaceId, {
-    errorBoundary: false,
-  });
+  const [mode, setMode] = useState('upload');
   const inputRef = useRef<HTMLInputElement>(null);
-  const uploadControllers = useRef(new Map<string, AbortController>());
-  const drainAbort = useRef(new AbortController());
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [unsentCount, setUnsentCount] = useState(0);
-  const [files, setFiles] = useState<PendingFile[]>([]);
-  useUnsentBeforeUnload(unsentCount);
-  // Row currently typing a new chapter name (replaces its chapter select).
-  const [creatingKey, setCreatingKey] = useState<string | null>(null);
-  const [newChapterName, setNewChapterName] = useState('');
-  const [confirmOpen, setConfirmOpen] = useState(false);
+  const { data: integrations } = useIntegrations({ errorBoundary: false });
+  const { mutateAsync: inspectSources, isPending: isInspecting } =
+    useInspectSourceImports(workspaceId, { errorToast: false });
+  const connectProvider = useProviderConnect();
+  const microsoftLoginHint = useMicrosoftLoginHint();
 
   useEffect(() => {
-    drainAbort.current = new AbortController();
-    return () => {
-      drainAbort.current.abort();
-      for (const controller of uploadControllers.current.values())
-        controller.abort();
-    };
-  }, []);
+    if (!open) inspectionGuard.invalidate();
+  }, [inspectionGuard, open]);
 
-  function handleFiles(list: FileList | null) {
+  useEffect(() => () => inspectionGuard.invalidate(), [inspectionGuard]);
+
+  function closeChooser() {
+    inspectionGuard.invalidate();
+    onClose();
+  }
+
+  function acceptLocalFiles(list: FileList | null) {
     if (!list?.length) return;
     if (!uploadPolicy) {
       userToast({
@@ -475,747 +576,119 @@ function UploadFiles({
       });
       return;
     }
-    const candidates = Array.from(list).map((f, i) => {
-      const kind = getFileKind(f.name, uploadPolicy);
-      const officeFile = ['xlsx', 'pptx'].includes(fileExt(f.name));
-      return {
-        captionImages: false,
-        chapterId: null,
-        chapterName: null,
-        file: f,
-        key: `${Date.now()}-${i}-${f.name}`,
-        kind,
-        officeAnalysisStatus: officeFile ? ('pending' as const) : undefined,
-        parseMode: defaultParseMode(f, kind, uploadPolicy),
-      };
-    });
-    const added = candidates.filter((file) => file.kind !== 'unknown');
-    const rejected = candidates.filter((file) => file.kind === 'unknown');
-    if (rejected.length) {
-      userToast({
-        description: rejected.map((file) => file.file.name).join(', '),
-        title: m.source_unsupported_format(),
-        variant: 'error',
-      });
-    }
-    if (!added.length) {
-      if (inputRef.current) inputRef.current.value = '';
-      return;
-    }
-    setFiles((prev) => {
-      const { accepted, rejected } = capSourceUploads(
-        prev.length,
-        added,
-        workspaceRoom
-      );
-      if (rejected > 0) {
-        workspaceRoomToast(workspaceRoom, filesLimit);
-      }
-      return [...prev, ...accepted];
-    });
-    if (inputRef.current) inputRef.current.value = '';
-    // Count PDF pages in the background; if the count invalidates the row's
-    // current mode, fall back to the best valid one.
-    for (const row of added) {
-      if (fileExt(row.file.name) !== 'pdf') continue;
-      void pdfPageCount(row.file).then((n) => {
-        setFiles((prev) =>
-          prev.map((f) => {
-            if (f.key !== row.key) return f;
-            const next: PendingFile = { ...f, pageCount: n };
-            if (
-              f.parseMode !== 'none' &&
-              parseModeIssues(f.file, f.kind, uploadPolicy, n)[f.parseMode]
-            ) {
-              next.parseMode = defaultParseMode(
-                f.file,
-                f.kind,
-                uploadPolicy,
-                n
-              );
-            }
-            return next;
-          })
-        );
-      });
-    }
-    for (const row of added) {
-      if (row.officeAnalysisStatus !== 'pending') continue;
-      void analyzeOfficeUpload(row.file).then(
-        (officeAnalysis) => {
-          setFiles((prev) =>
-            prev.map((file) =>
-              file.key === row.key
-                ? {
-                    ...file,
-                    officeAnalysis,
-                    officeAnalysisStatus: 'ready',
-                  }
-                : file
-            )
-          );
-        },
-        () => {
-          setFiles((prev) =>
-            prev.map((file) =>
-              file.key === row.key
-                ? { ...file, officeAnalysisStatus: 'error' }
-                : file
-            )
-          );
-          userToast({
-            description: row.file.name,
-            title: m.source_office_invalid(),
-            variant: 'error',
-          });
-        }
-      );
-    }
-  }
-
-  function patchFile(key: string, patch: Partial<PendingFile>) {
-    setFiles((prev) =>
-      prev.map((f) => (f.key === key ? { ...f, ...patch } : f))
+    const selected = validateLocalSourceSelection(
+      Array.from(list),
+      uploadPolicy
     );
-  }
-
-  function confirmCreateChapter(key: string) {
-    const name = newChapterName.trim();
-    if (!name) return;
-    // Reuse an existing chapter when it is already loaded. New names travel
-    // with the upload and are resolved atomically by the backend.
-    const existing = chapters?.find(
-      (c) => c.name.toLowerCase() === name.toLowerCase()
+    const oversized = selected.rejected.filter(
+      (item) => item.reason === 'file_too_large'
     );
-    patchFile(key, {
-      chapterId: existing?.id ?? null,
-      chapterName: existing ? null : name,
-    });
-    setCreatingKey(null);
-    setNewChapterName('');
-  }
-
-  const handleUpload = async () => {
-    if (
-      isSubmitting ||
-      files.length === 0 ||
-      files.some((file) =>
-        ['pending', 'error'].includes(file.officeAnalysisStatus ?? '')
-      )
-    )
-      return;
-    const drainController = new AbortController();
-    drainAbort.current = drainController;
-    setIsSubmitting(true);
-    setFiles((prev) => prev.map((file) => ({ ...file, uploadPct: 0 })));
-    let remaining = [...files];
-    setUnsentCount(remaining.length);
-    const failed: PendingFile[] = [];
-    let sawError: unknown;
-    while (remaining.length > 0 && !drainController.signal.aborted) {
-      // A zero slot snapshot can be stale by the time this batch starts. Send
-      // one item and let the server's 429 retry contract provide backpressure
-      // instead of leaving the client queue parked forever.
-      const slotsFree = Math.max(
-        1,
-        USE_MSW
-          ? MAX_FILES_PER_UPLOAD
-          : (ingestSlots?.slotsFree ?? MAX_FILES_PER_UPLOAD)
-      );
-      const { wave, rest } = splitSourceWave(
-        remaining,
-        (file) => needsIngestJob(file.kind, file.parseMode),
-        slotsFree
-      );
-      if (wave.length === 0) {
-        userToast({
-          title: m.source_ingest_waiting(),
-        });
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-        continue;
-      }
-      setUnsentCount(rest.length);
-      const results = await mapWithConcurrency(
-        wave,
-        SOURCE_UPLOAD_CONCURRENCY,
-        (f) => {
-          const controller = new AbortController();
-          uploadControllers.current.set(f.key, controller);
-          return withUploadRetry(() =>
-            uploadSource({
-              captionImages: f.captionImages,
-              chapterId: f.chapterId,
-              chapterName: f.chapterName,
-              file: f.file,
-              kind: f.kind,
-              onUploadProgress: (uploadPct) => patchFile(f.key, { uploadPct }),
-              parseMode: f.parseMode,
-              signal: controller.signal,
-            })
-          ).finally(() => uploadControllers.current.delete(f.key));
-        }
-      );
-      const ingestWaits: Promise<void>[] = [];
-      results.forEach((result, index) => {
-        const row = wave[index];
-        if (!row) return;
-        if (result.status === 'rejected') {
-          failed.push(row);
-          sawError ??= result.reason;
-          return;
-        }
-        if (needsIngestJob(row.kind, row.parseMode)) {
-          ingestWaits.push(
-            waitForFileTerminal(
-              qc,
-              workspaceId,
-              result.value.id,
-              drainController.signal
-            )
-          );
-        }
-      });
-      await Promise.all(ingestWaits);
-      remaining = rest;
-    }
-    if (drainController.signal.aborted) return;
-    setUnsentCount(0);
-    setIsSubmitting(false);
-    if (failed.length === 0) {
-      setFiles([]);
-      setConfirmOpen(false);
-      onClose?.();
-      return;
-    }
-    setFiles(failed);
-    const fileToast = fileLimitToast(sawError);
-    trackQuotaBlocked(sawError, 'upload');
-    userToast({
-      description: isCreditsExhaustedError(sawError)
-        ? m.error_credits_body()
-        : isTooManyIngestLeasesError(sawError)
-          ? m.error_ingest_slots_body()
-          : isStorageQuotaError(sawError)
-            ? m.error_quota_body()
-            : fileToast?.description,
-      title: isCreditsExhaustedError(sawError)
-        ? m.error_credits_title()
-        : isTooManyIngestLeasesError(sawError)
-          ? m.error_ingest_slots_title()
-          : isStorageQuotaError(sawError)
-            ? m.error_quota_title()
-            : (fileToast?.title ?? m.source_upload_failed()),
-      variant: 'error',
-    });
-  };
-  const formatFileSizes = () => {
-    const totalBytes = files.reduce((acc, file) => acc + file.file.size, 0);
-    if (totalBytes < 1024) return `${totalBytes} bytes`;
-    if (totalBytes < 1024 * 1024) return `${(totalBytes / 1024).toFixed(1)} KB`;
-    return `${(totalBytes / 1024 / 1024).toFixed(1)} MB`;
-  };
-  const parseMaxMb = Math.round(
-    (uploadPolicy?.maxBytes ?? 10 * 1024 * 1024) / 1024 / 1024
-  );
-  const aggregateProgress = aggregateUploadPct(
-    files.map((file) => ({ size: file.file.size, uploadPct: file.uploadPct }))
-  );
-  const completedUploads = files.filter(
-    (file) => file.uploadPct === 100
-  ).length;
-
-  return (
-    <div
-      className={cn('flex h-full flex-col justify-between gap-4', className)}
-    >
-      <div className="flex flex-col gap-4">
-        <button
-          className={cn(
-            'flex flex-col items-center gap-2 rounded-card border-2 border-line border-dashed px-6 py-8 transition-colors hover:bg-surface-hover-bg',
-            files.length > 0 && 'py-4'
-          )}
-          disabled={!uploadPolicy || workspaceRoom <= 0}
-          onClick={() => inputRef.current?.click()}
-          type="button"
-        >
-          <Icon className="size-7" name="upload" />
-          <p className="t-subtitle">{m.source_upload_computer()}</p>
-          <p className="t-meta text-fg-muted">{m.source_upload_hint()}</p>
-        </button>
-        <input
-          accept={uploadPolicy?.accept}
-          hidden
-          multiple
-          onChange={(e) => handleFiles(e.target.files)}
-          ref={inputRef}
-          type="file"
-        />
-
-        {files.length > 0 && (
-          <ul className="flex max-h-88 flex-col gap-2 overflow-y-auto pr-1">
-            {files.map((f) => (
-              <li className="flex flex-col gap-2 px-1.5 pt-0.5" key={f.key}>
-                <div className="flex flex-col gap-0">
-                  <div className="flex flex-1 justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <Icon
-                        className="size-4 shrink-0 -translate-y-px"
-                        name="files"
-                      />
-                      <span
-                        className="t-subtitle min-w-0 flex-1 truncate"
-                        title={f.file.name}
-                      >
-                        {f.file.name}
-                      </span>
-                    </div>
-                    <IconButton
-                      icon="x"
-                      label={m.source_remove_file()}
-                      onClick={() => {
-                        uploadControllers.current.get(f.key)?.abort();
-                        setFiles((prev) =>
-                          prev.filter((pf) => pf.key !== f.key)
-                        );
-                      }}
-                      size="xs"
-                      variant="ghost-hover"
-                    />
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="t-meta shrink-0 text-fg-muted">
-                      {formatSize(f.file.size)}
-                      {f.pageCount != null &&
-                        ` · ${f.pageCount === 1 ? m.source_page({ count: f.pageCount }) : m.source_pages({ count: f.pageCount })}`}
-                      {f.officeAnalysis?.format === 'xlsx' &&
-                        ` · ${m.source_office_sheets({ count: f.officeAnalysis.sheetCount })}`}
-                      {f.officeAnalysis?.format === 'pptx' &&
-                        ` · ${m.source_office_slides({ count: f.officeAnalysis.slideCount })}`}
-                      {` · ${f.kind.toUpperCase()}`}
-                    </span>
-                    <div className="flex flex-1 items-center justify-end gap-2">
-                      <div className="min-w-0">
-                        {creatingKey === f.key ? (
-                          <div className="flex items-center gap-0">
-                            <Input
-                              autoFocus
-                              onChange={(e) =>
-                                setNewChapterName(e.target.value)
-                              }
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter')
-                                  void confirmCreateChapter(f.key);
-                                if (e.key === 'Escape') setCreatingKey(null);
-                              }}
-                              placeholder={m.source_new_chapter_name()}
-                              size="sm"
-                              value={newChapterName}
-                              variant="underline"
-                            />
-                            <IconButton
-                              className="p-1.5"
-                              disabled={!newChapterName.trim()}
-                              icon="check"
-                              label={m.source_create_chapter()}
-                              onClick={() => void confirmCreateChapter(f.key)}
-                              size="xs"
-                              variant="ghost-hover"
-                            />
-                            <IconButton
-                              className="p-1.5"
-                              icon="x"
-                              label={m.action_cancel()}
-                              onClick={() => setCreatingKey(null)}
-                              size="xs"
-                              variant="ghost-hover"
-                            />
-                          </div>
-                        ) : (
-                          <ChapterSelect
-                            chapterName={f.chapterName}
-                            chapters={chapters ?? []}
-                            onChange={(v) =>
-                              patchFile(f.key, {
-                                chapterId: v,
-                                chapterName: null,
-                              })
-                            }
-                            onCreateRequest={() => {
-                              setCreatingKey(f.key);
-                              setNewChapterName('');
-                            }}
-                            value={f.chapterId}
-                          />
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        {uploadPolicy && (
-                          <ParseModeSelect
-                            onChange={(mode) =>
-                              patchFile(f.key, {
-                                captionImages:
-                                  mode === 'none' ? false : f.captionImages,
-                                parseMode: mode,
-                              })
-                            }
-                            pending={f}
-                            policy={uploadPolicy}
-                          />
-                        )}
-                      </div>
-                      {uploadPolicy && (
-                        <CaptionImagesToggle
-                          onChange={(captionImages) =>
-                            patchFile(f.key, { captionImages })
-                          }
-                          pending={f}
-                          policy={uploadPolicy}
-                        />
-                      )}
-                    </div>
-                  </div>
-                  {f.officeAnalysisStatus === 'pending' && (
-                    <p className="t-meta text-fg-muted">
-                      {m.source_office_analyzing()}
-                    </p>
-                  )}
-                  {f.officeAnalysisStatus === 'error' && (
-                    <p className="t-meta text-tint-error-fg">
-                      {m.source_office_invalid()}
-                    </p>
-                  )}
-                  {f.uploadPct != null && (
-                    <ProgressBar
-                      className="mt-1.5 w-full"
-                      height={4}
-                      value={f.uploadPct}
-                    />
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-
-        <p className="t-meta pt-3 text-fg-muted">
-          {m.source_parse_hint({ mb: parseMaxMb })}
-        </p>
-        {workspaceRoom <= 0 && (
-          <p className="t-meta text-fg-muted">
-            {m.source_workspace_file_full({ limit: filesLimit })}
-          </p>
-        )}
-      </div>
-      <ConfirmDialog
-        body={m.source_confirm_body({
-          count: files.length,
-          size: formatFileSizes(),
-        })}
-        closeOnConfirm={false}
-        danger={false}
-        disabled={
-          !uploadPolicy ||
-          files.length === 0 ||
-          isSubmitting ||
-          files.some(
-            (file) =>
-              file.officeAnalysisStatus !== 'ready' &&
-              file.officeAnalysisStatus != null
-          )
-        }
-        isSubmitting={isSubmitting}
-        onClose={() => {
-          if (!isSubmitting) setConfirmOpen(false);
-        }}
-        onConfirm={handleUpload}
-        open={confirmOpen}
-        title={m.source_confirm_upload()}
-      >
-        {isSubmitting && (
-          <div className="mt-3 flex flex-col gap-1.5">
-            <ProgressBar showLabel value={aggregateProgress} />
-            <p className="t-meta text-fg-muted">
-              {m.source_uploading({
-                done: completedUploads,
-                total: files.length,
-              })}
-            </p>
-            {unsentCount > 0 && (
-              <p className="t-meta text-fg-muted">
-                {m.source_queue_progress({ remaining: unsentCount })}
-              </p>
-            )}
-          </div>
-        )}
-      </ConfirmDialog>
-      <DialogFooter>
-        <DialogClose asChild>
-          <Button
-            disabled={isSubmitting}
-            onClick={onClose}
-            size="lg"
-            variant="ghost-hover"
-          >
-            {m.action_cancel()}
-          </Button>
-        </DialogClose>
-        <Button
-          disabled={
-            !uploadPolicy ||
-            files.length === 0 ||
-            isSubmitting ||
-            files.some(
-              (file) =>
-                file.officeAnalysisStatus !== 'ready' &&
-                file.officeAnalysisStatus != null
-            )
-          }
-          onClick={() => setConfirmOpen(true)}
-          size="lg"
-        >
-          <span>{m.action_upload()}</span>
-          {/* <span>
-            <Spinner />
-          </span> */}
-        </Button>
-      </DialogFooter>
-    </div>
-  );
-}
-
-function ImportFiles({
-  workspaceId,
-  workspaceRoom,
-  filesLimit,
-  onClose,
-  className,
-}: {
-  workspaceId: string;
-  workspaceRoom: number;
-  filesLimit: number;
-  onClose: () => void;
-  className?: string;
-}) {
-  const { data: integrations } = useIntegrations({ errorBoundary: false });
-  const { mutateAsync: importSources } = useImportSources(workspaceId, {
-    errorToast: false,
-  });
-  const { refetch: refetchIngestSlots } = useIngestSlots({
-    errorBoundary: false,
-  });
-  const qc = useQueryClient();
-  const connectProvider = useProviderConnect();
-  const microsoftLoginHint = useMicrosoftLoginHint();
-  const [unsentCount, setUnsentCount] = useState(0);
-  const [isDraining, setIsDraining] = useState(false);
-  const drainAbort = useRef(new AbortController());
-  const importRequestIds = useRef(new Map<string, string>());
-  useUnsentBeforeUnload(unsentCount);
-  useEffect(() => () => drainAbort.current.abort(), []);
-
-  function handleImportError(error: unknown, fileName?: string) {
-    const fileToast = fileLimitToast(error);
-    const sourceImportError =
-      error instanceof SourceImportFailedError ? error : null;
-    const importFailure = sourceImportError
-      ? sourceImportFailureReason(sourceImportError.code)
-      : null;
-    const description = importFailure
-      ? fileName || sourceImportError?.fileName
-        ? m.source_import_file_error({
-            name: fileName ?? sourceImportError?.fileName ?? '',
-            reason: importFailure,
-          })
-        : importFailure
-      : null;
-    trackQuotaBlocked(error, 'upload');
-    userToast({
-      description: isCreditsExhaustedError(error)
-        ? m.error_credits_body()
-        : isTooManyIngestLeasesError(error)
-          ? m.error_ingest_slots_body()
-          : isStorageQuotaError(error)
-            ? m.error_quota_body()
-            : fileToast
-              ? fileToast.description
-              : (description ?? m.source_try_again()),
-      title: isCreditsExhaustedError(error)
-        ? m.error_credits_title()
-        : isTooManyIngestLeasesError(error)
-          ? m.error_ingest_slots_title()
-          : isStorageQuotaError(error)
-            ? m.error_quota_title()
-            : fileToast
-              ? fileToast.title
-              : m.source_import_failed(),
-      variant: 'error',
-    });
-  }
-
-  function reportRejectedImports(rejected: { code: string; fileId: string }[]) {
-    const counts = new Map<string, number>();
-    for (const item of rejected) {
-      counts.set(item.code, (counts.get(item.code) ?? 0) + 1);
-    }
-    for (const [code, count] of counts) {
+    if (oversized.length > 0) {
       userToast({
-        description: m.source_import_rejected_count({
-          count,
-          reason: sourceImportFailureReason(code),
+        description: oversized.map((item) => item.file.name).join(', '),
+        title: m.source_files_too_large({
+          mb: Math.round(uploadPolicy.maxBytes / 1024 / 1024),
         }),
-        title: m.source_import_failed(),
         variant: 'error',
       });
     }
+    const capped = capSourceUploads(0, selected.accepted, workspaceRoom);
+    if (capped.rejected > 0) workspaceRoomToast(workspaceRoom, filesLimit);
+    if (capped.accepted.length > 0) {
+      onSelected(localRows(capped.accepted, uploadPolicy));
+    }
+    if (inputRef.current) inputRef.current.value = '';
   }
 
-  async function drainImport(
-    provider: 'google' | 'microsoft',
-    refs: ImportSourceRef[]
-  ) {
-    setIsDraining(true);
-    let remaining = [...refs];
-    let hadIssue = false;
-    setUnsentCount(remaining.length);
-    try {
-      while (remaining.length > 0 && !drainAbort.current.signal.aborted) {
-        const { data: slots } = await refetchIngestSlots();
-        const slotsFree = slots?.slotsFree ?? MAX_FILES_PER_UPLOAD;
-        const { wave, rest } = splitSourceWave(
-          remaining,
-          () => true,
-          slotsFree
-        );
-        if (wave.length === 0) {
-          userToast({ title: m.source_ingest_waiting() });
-          await new Promise((resolve) => setTimeout(resolve, 2000));
-          continue;
-        }
-        setUnsentCount(rest.length);
-        const chunks = wave.map((ref) => [ref]);
-        const requests = chunks.map((chunk) => {
-          const key = JSON.stringify([
-            provider,
-            chunk.map((ref) => [ref.id, ref.driveId ?? '']),
-          ]);
-          let requestId = importRequestIds.current.get(key);
-          if (!requestId) {
-            requestId = crypto.randomUUID();
-            importRequestIds.current.set(key, requestId);
-          }
-          return {
-            body: { ...toImportRequest(provider, chunk, null), requestId },
-            key,
-          };
-        });
-        const results = await mapWithConcurrency(
-          requests,
-          SOURCE_UPLOAD_CONCURRENCY,
-          (request) =>
-            withSourceImportRequestRetry(
-              async () =>
-                parseSourceImportAcceptedResponse(
-                  await importSources({
-                    ...request.body,
-                    signal: drainAbort.current.signal,
-                  }),
-                  request.body.fileIds[0]
-                ),
-              undefined,
-              drainAbort.current.signal
-            )
-        );
-        const jobRequestKeys = new Map<string, string>();
-        results.forEach((result, index) => {
-          const request = requests[index];
-          if (result.status === 'fulfilled' && request) {
-            if (result.value.jobs.length === 0) {
-              importRequestIds.current.delete(request.key);
-            }
-            for (const job of result.value.jobs) {
-              jobRequestKeys.set(job.jobId, request.key);
-            }
-          }
-        });
-        const { jobs, rejected, requestErrors } =
-          collectSourceImportResponses(results);
-        if (requestErrors.length > 0 || rejected.length > 0) {
-          hadIssue = true;
-        }
-        for (const error of requestErrors) handleImportError(error);
-        reportRejectedImports(rejected);
+  function handlePickerError(error: unknown) {
+    userToast({
+      description: error instanceof Error ? error.message : undefined,
+      title: m.source_import_failed(),
+      variant: 'error',
+    });
+  }
 
-        const { completedJobIds, failures } = await waitForSourceImportWave(
-          (jobId, signal) =>
-            api.get(`/workspaces/${workspaceId}/sources/imports/${jobId}`, {
-              signal,
-            }),
-          jobs,
-          { signal: drainAbort.current.signal }
-        );
-        for (const jobId of completedJobIds) {
-          const requestKey = jobRequestKeys.get(jobId);
-          if (requestKey) importRequestIds.current.delete(requestKey);
-        }
-        if (jobs.length > 0) {
-          await Promise.all([
-            qc.invalidateQueries({ queryKey: qk.files(workspaceId) }),
-            qc.invalidateQueries({ queryKey: qk.ingestSlots }),
-            qc.invalidateQueries({ queryKey: qk.workspace(workspaceId) }),
-            qc.invalidateQueries({ queryKey: qk.workspaceStats(workspaceId) }),
-          ]);
-        }
-        const timedOutNames: string[] = [];
-        for (const failure of failures) {
-          if (drainAbort.current.signal.aborted) break;
-          hadIssue = true;
-          if (failure.error instanceof SourceImportPollingTimeoutError) {
-            timedOutNames.push(failure.job.name);
-            continue;
-          }
-          if (
-            failure.error instanceof SourceImportFailedError &&
-            failure.error.code !== 'invalid_import_response' &&
-            failure.error.code !== 'unknown_import_status' &&
-            failure.error.code !== 'import_result_missing'
-          ) {
-            const requestKey = jobRequestKeys.get(failure.job.jobId);
-            if (requestKey) importRequestIds.current.delete(requestKey);
-          }
-          handleImportError(failure.error, failure.job.name);
-        }
-        if (timedOutNames.length > 0) {
-          userToast({
-            description: m.source_import_background_files({
-              names: timedOutNames.join(', '),
-            }),
-            title: m.source_import_background_title(),
-          });
-        }
-        remaining = rest;
+  async function inspect(
+    provider: Provider,
+    refs: ImportSourceRef[],
+    isCurrent = inspectionGuard.begin()
+  ) {
+    if (!uploadPolicy) return;
+    const capped = capSourceUploads(0, refs, workspaceRoom);
+    if (capped.rejected > 0) workspaceRoomToast(workspaceRoom, filesLimit);
+    if (capped.accepted.length === 0) return;
+    const inspectionKey = crypto.randomUUID();
+    try {
+      const inspections: InspectSourceImportsResponse[] = [];
+      for (const batch of chunkItems(capped.accepted, MAX_FILES_PER_UPLOAD)) {
+        const driveIds = batch.map((ref) => ref.driveId ?? '');
+        const result = await inspectSources({
+          ...(provider === 'microsoft' && driveIds.some(Boolean)
+            ? { driveIds }
+            : {}),
+          fileIds: batch.map((ref) => ref.id),
+          provider,
+        });
+        if (!isCurrent()) return;
+        inspections.push(result);
       }
-      if (drainAbort.current.signal.aborted) return;
-      if (!hadIssue) onClose();
+      const inspection = {
+        items: inspections.flatMap((result) => result.items),
+        rejected: inspections.flatMap((result) => result.rejected),
+      };
+      reportRejectedImports(inspection.rejected);
+      if (inspection.items.length === 0) return;
+      const headers = await authHeaders();
+      if (!isCurrent()) return;
+      const rows: PendingSource[] = inspection.items.map((item) => {
+        const kind = getFileKind(item.name, uploadPolicy);
+        return {
+          analysisInput: remoteSourceAnalysisInput(
+            item,
+            provider,
+            headers,
+            inspectionKey
+          ),
+          analysisStatus: 'idle',
+          captionImages: false,
+          chapterId: null,
+          chapterName: null,
+          contentType: item.contentType,
+          driveId: item.driveId,
+          fileId: item.fileId,
+          key: `remote-${provider}-${item.driveId ?? ''}-${item.fileId}`,
+          kind,
+          name: item.name,
+          origin: 'remote',
+          parseMode: defaultParseMode(
+            { name: item.name, size: item.sizeBytes },
+            kind,
+            uploadPolicy
+          ),
+          provider,
+          sizeBytes: item.sizeBytes,
+          sizeEstimate: item.sizeEstimate,
+        };
+      });
+      if (!isCurrent()) return;
+      onSelected(rows);
     } catch (error) {
-      if (!drainAbort.current.signal.aborted) handleImportError(error);
-    } finally {
-      setUnsentCount(0);
-      setIsDraining(false);
+      if (!isCurrent()) return;
+      handlePickerError(error);
     }
   }
 
-  async function connect(provider: 'google' | 'microsoft') {
+  async function connect(provider: Provider) {
     if (USE_MSW) {
-      await drainImport(provider, [{ id: 'mock_drive_file' }]);
+      await inspect(provider, [{ id: 'mock_drive_file' }]);
       return;
     }
     try {
-      // Clerk links the external account, then redirects to the provider's
-      // consent screen and back here.
       await connectProvider(provider);
-    } catch (err) {
+    } catch (error) {
       userToast({
-        description: err instanceof Error ? err.message : m.source_try_again(),
+        description:
+          error instanceof Error ? error.message : m.source_try_again(),
         title: m.source_connect_failed({ provider }),
         variant: 'error',
       });
@@ -1224,45 +697,39 @@ function ImportFiles({
 
   async function openGooglePicker() {
     if (USE_MSW) {
-      await drainImport('google', [{ id: 'mock_drive_file' }]);
+      await inspect('google', [{ id: 'mock_drive_file' }]);
       return;
     }
+    const isCurrent = inspectionGuard.begin();
     try {
       const { apiKey, appId } = googlePickerEnv();
       const { accessToken } = await api.get<{ accessToken: string }>(
         '/integrations/google/picker-token'
       );
       await loadGooglePicker();
-      const g = window.google?.picker;
-      if (!g) throw new Error('Google Picker did not finish loading.');
-      const view = new g.DocsView(g.ViewId.DOCS);
+      if (!isCurrent()) return;
+      const google = window.google?.picker;
+      if (!google) throw new Error('Google Picker did not finish loading.');
+      const view = new google.DocsView(google.ViewId.DOCS);
       view.setIncludeFolders(true);
-      const picker = new g.PickerBuilder()
+      const picker = new google.PickerBuilder()
         .addView(view)
         .setDeveloperKey(apiKey)
         .setAppId(appId)
         .setOAuthToken(accessToken)
-        .setCallback((data: { action: string; docs?: { id: string }[] }) => {
-          if (data.action === 'picked' && data.docs?.length) {
-            const ids = data.docs.map((d: { id: string }) => d.id);
-            const { accepted, rejected } = capSourceUploads(
-              0,
-              ids,
-              workspaceRoom
-            );
-            if (rejected > 0) {
-              workspaceRoomToast(workspaceRoom, filesLimit);
-            }
-            if (!accepted.length) return;
-            void drainImport(
-              'google',
-              accepted.map((id) => ({ id }))
-            );
-          }
+        .setCallback((data) => {
+          if (!isCurrent() || data.action !== 'picked' || !data.docs?.length)
+            return;
+          void inspect(
+            'google',
+            data.docs.map((document) => ({ id: document.id })),
+            isCurrent
+          );
         })
-        .build() as { setVisible: (v: boolean) => void };
+        .build();
       picker.setVisible(true);
     } catch (error) {
+      if (!isCurrent()) return;
       if (error instanceof Error && error.message === 'GOOGLE_PICKER_CONFIG') {
         userToast({
           title: m.source_google_picker_missing_config(),
@@ -1270,13 +737,13 @@ function ImportFiles({
         });
         return;
       }
-      handleImportError(error);
+      handlePickerError(error);
     }
   }
 
   async function onGoogleClick() {
     if (!integrations?.google && !USE_MSW) {
-      connect('google');
+      await connect('google');
       return;
     }
     await openGooglePicker();
@@ -1284,34 +751,36 @@ function ImportFiles({
 
   async function openMicrosoftPicker() {
     if (USE_MSW) {
-      await drainImport('microsoft', [{ id: 'mock_drive_file' }]);
+      await inspect('microsoft', [{ id: 'mock_drive_file' }]);
       return;
     }
-    let pickerWin: Window | null = null;
+    const isCurrent = inspectionGuard.begin();
+    let pickerWindow: Window | null = null;
     try {
       assertMsalConfigured();
-      pickerWin = window.open('', 'OneDrivePicker', 'width=1080,height=680');
-      if (!pickerWin) throw new Error('POPUP_BLOCKED');
+      pickerWindow = window.open('', 'OneDrivePicker', 'width=1080,height=680');
+      if (!pickerWindow) throw new Error('POPUP_BLOCKED');
       const drive = await api.get<MicrosoftDriveHost>(
         '/integrations/microsoft/drive'
       );
+      if (!isCurrent()) {
+        pickerWindow.close();
+        return;
+      }
       const items = await openOneDrivePicker({
         acquireToken: acquirePickerToken,
         clearAuth: clearPickerAuth,
         drive,
         locale: pickerLocale(getLocale()),
         loginHint: microsoftLoginHint ?? undefined,
-        openWindow: () => pickerWin,
+        openWindow: () => pickerWindow,
       });
-      if (!items.length) return;
-      const { accepted, rejected } = capSourceUploads(0, items, workspaceRoom);
-      if (rejected > 0) {
-        workspaceRoomToast(workspaceRoom, filesLimit);
+      if (items.length > 0 && isCurrent()) {
+        await inspect('microsoft', items, isCurrent);
       }
-      if (!accepted.length) return;
-      await drainImport('microsoft', accepted);
     } catch (error) {
-      if (pickerWin && !pickerWin.closed) pickerWin.close();
+      if (pickerWindow && !pickerWindow.closed) pickerWindow.close();
+      if (!isCurrent()) return;
       if (isPickerUserCancelled(error)) return;
       if (isPickerConsentBlocked(error)) {
         userToast({
@@ -1335,73 +804,14 @@ function ImportFiles({
         });
         return;
       }
-      handleImportError(error);
+      handlePickerError(error);
     }
   }
 
-  function onMicrosoftClick() {
-    if (!integrations?.microsoft && !USE_MSW) {
-      connect('microsoft');
-      return;
-    }
-    void openMicrosoftPicker();
-  }
-  return (
-    <div className={cn(className)}>
-      <div className="grid grid-cols-2 gap-3">
-        <Button
-          disabled={isDraining || workspaceRoom <= 0}
-          iconLeft="files"
-          onClick={onGoogleClick}
-          variant="outline"
-        >
-          Google Drive
-        </Button>
-        <Button
-          disabled={isDraining || workspaceRoom <= 0}
-          iconLeft="files"
-          onClick={onMicrosoftClick}
-          variant="outline"
-        >
-          OneDrive
-        </Button>
-      </div>
-      {unsentCount > 0 && (
-        <p className="t-meta text-center text-fg-muted">
-          {m.source_queue_progress({ remaining: unsentCount })}
-        </p>
-      )}
-      {!integrations?.google && !integrations?.microsoft && !USE_MSW && (
-        <p className="t-meta text-center text-fg-muted">
-          {m.source_cloud_connect_hint()}
-        </p>
-      )}
-    </div>
-  );
-}
-
-function CreateFile({ className }: { className?: string }) {
-  return <div className={cn(className)}>dummy</div>;
-}
-
-export function AddSourceDialog({
-  open,
-  onClose,
-  workspaceId,
-}: {
-  open: boolean;
-  onClose: () => void;
-  workspaceId: string;
-}) {
-  const [mode, setMode] = useState('upload');
-  const { data: workspace } = useWorkspace(workspaceId, {
-    errorBoundary: false,
-  });
-  const { filesLimit, filesUsed, workspaceRoom } = workspaceFileRoom(workspace);
   return (
     <SimpleDialog
       className="min-h-150 max-w-3xl"
-      onClose={onClose}
+      onClose={closeChooser}
       open={open}
       title={m.action_add_file()}
     >
@@ -1421,24 +831,793 @@ export function AddSourceDialog({
             used: filesUsed,
           })}
         </p>
-        <div className="h-full flex-1 overflow-hidden">
-          <UploadFiles
-            className={cn({ hidden: mode !== 'upload' })}
-            filesLimit={filesLimit}
-            onClose={onClose}
-            workspaceId={workspaceId}
-            workspaceRoom={workspaceRoom}
-          />
-          <ImportFiles
-            className={cn({ hidden: mode !== 'import' })}
-            filesLimit={filesLimit}
-            onClose={onClose}
-            workspaceId={workspaceId}
-            workspaceRoom={workspaceRoom}
-          />
-          <CreateFile className={cn({ hidden: mode !== 'create' })} />
-        </div>
+        {mode === 'upload' && (
+          <div className="flex flex-1 flex-col gap-4">
+            <button
+              className="flex flex-col items-center gap-2 rounded-card border-2 border-line border-dashed px-6 py-8 transition-colors hover:bg-surface-hover-bg"
+              disabled={!uploadPolicy || workspaceRoom <= 0}
+              onClick={() => inputRef.current?.click()}
+              type="button"
+            >
+              <Icon className="size-7" name="upload" />
+              <p className="t-subtitle">{m.source_upload_computer()}</p>
+              <p className="t-meta text-fg-muted">{m.source_upload_hint()}</p>
+            </button>
+            <input
+              accept={uploadPolicy?.accept}
+              hidden
+              multiple
+              onChange={(event) => acceptLocalFiles(event.target.files)}
+              ref={inputRef}
+              type="file"
+            />
+          </div>
+        )}
+        {mode === 'import' && (
+          <div className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-3">
+              <Button
+                disabled={isInspecting || workspaceRoom <= 0}
+                iconLeft="files"
+                onClick={() => void onGoogleClick()}
+                variant="outline"
+              >
+                Google Drive
+              </Button>
+              <Button
+                disabled={isInspecting || workspaceRoom <= 0}
+                iconLeft="files"
+                onClick={() => {
+                  if (!integrations?.microsoft && !USE_MSW) {
+                    void connect('microsoft');
+                  } else {
+                    void openMicrosoftPicker();
+                  }
+                }}
+                variant="outline"
+              >
+                OneDrive
+              </Button>
+            </div>
+            {isInspecting && (
+              <p className="t-meta text-center text-fg-muted">
+                {m.source_cloud_inspecting()}
+              </p>
+            )}
+            {!integrations?.google && !integrations?.microsoft && !USE_MSW && (
+              <p className="t-meta text-center text-fg-muted">
+                {m.source_cloud_connect_hint()}
+              </p>
+            )}
+          </div>
+        )}
+        {mode === 'create' && <div>dummy</div>}
       </div>
     </SimpleDialog>
+  );
+}
+
+function SourceDetailsDialog({
+  initialSources,
+  onClose,
+  onEmpty,
+  open,
+  uploadPolicy,
+  workspaceId,
+}: {
+  initialSources: PendingSource[];
+  onClose: () => void;
+  onEmpty: () => void;
+  open: boolean;
+  uploadPolicy: SourceUploadPolicy;
+  workspaceId: string;
+}) {
+  const { mutateAsync: uploadSource } = useUploadSource(workspaceId);
+  const { mutateAsync: importSources } = useImportSources(workspaceId, {
+    errorToast: false,
+  });
+  const { data: ingestSlots, refetch: refetchIngestSlots } = useIngestSlots({
+    errorBoundary: false,
+  });
+  const { data: chapters } = useChapters(workspaceId, {
+    errorBoundary: false,
+  });
+  const queryClient = useQueryClient();
+  const [sources, setSources] = useState(initialSources);
+  const [creatingKey, setCreatingKey] = useState<string | null>(null);
+  const [newChapterName, setNewChapterName] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [unsentCount, setUnsentCount] = useState(0);
+  const queueRef = useRef<SourceAnalysisQueue | null>(null);
+  const uploadControllers = useRef(new Map<string, AbortController>());
+  const drainAbort = useRef(new AbortController());
+  const importRequestIds = useRef(new Map<string, string>());
+  useUnsentBeforeUnload(unsentCount);
+
+  const patchSource = useCallback(
+    (key: string, patch: Partial<PendingSource>) => {
+      setSources((current) =>
+        current.map((source) =>
+          source.key === key ? { ...source, ...patch } : source
+        )
+      );
+    },
+    []
+  );
+
+  const enqueueAnalysis = useCallback(
+    (source: PendingSource) => {
+      if (!source.analysisInput || source.parseMode !== 'fast') return;
+      const cached = queueRef.current?.getCached(source.analysisInput.key);
+      if (cached) {
+        patchSource(source.key, {
+          analysisProgress: undefined,
+          analysisResult: cached,
+          analysisStatus: 'ready',
+        });
+        return;
+      }
+      patchSource(source.key, {
+        analysisProgress: {
+          completed: 0,
+          percent: 0,
+          phase: 'reading',
+          total: 1,
+        },
+        analysisStatus: 'queued',
+      });
+      const job = queueRef.current?.enqueue({
+        id: source.key,
+        input: source.analysisInput,
+        onProgress: (progress) =>
+          patchSource(source.key, {
+            analysisProgress: progress,
+            analysisStatus: 'analyzing',
+          }),
+      });
+      void job?.promise.then(
+        (result) => {
+          setSources((current) =>
+            current.map((item) =>
+              item.key === source.key && item.parseMode === 'fast'
+                ? {
+                    ...item,
+                    analysisProgress: undefined,
+                    analysisResult: result,
+                    analysisStatus: 'ready',
+                  }
+                : item
+            )
+          );
+        },
+        (error) => {
+          if (error instanceof SourceAnalysisCancelledError) return;
+          patchSource(source.key, {
+            analysisProgress: undefined,
+            analysisStatus: 'error',
+          });
+        }
+      );
+    },
+    [patchSource]
+  );
+
+  useEffect(() => {
+    const queue = new SourceAnalysisQueue();
+    const drainController = new AbortController();
+    queueRef.current = queue;
+    drainAbort.current = drainController;
+    for (const source of initialSources) {
+      enqueueAnalysis(source);
+      if (source.kind === 'audio' && source.file) {
+        void readAudioDuration(source.file).then((duration) =>
+          patchSource(source.key, {
+            audioDurationPending: false,
+            audioDurationSeconds: duration,
+          })
+        );
+      }
+    }
+    return () => {
+      queue.dispose();
+      if (queueRef.current === queue) queueRef.current = null;
+      drainAbort.current.abort();
+      drainController.abort();
+      for (const controller of uploadControllers.current.values()) {
+        controller.abort();
+      }
+    };
+  }, [enqueueAnalysis, initialSources]);
+
+  function updateParseMode(source: PendingSource, parseMode: ParseMode) {
+    if (parseMode === 'none') {
+      queueRef.current?.cancel(source.key);
+      patchSource(source.key, {
+        analysisProgress: undefined,
+        analysisStatus: source.analysisResult ? 'ready' : 'idle',
+        captionImages: false,
+        parseMode,
+      });
+      return;
+    }
+    const next = { ...source, parseMode };
+    patchSource(source.key, { parseMode });
+    enqueueAnalysis(next);
+  }
+
+  function removeSource(source: PendingSource) {
+    queueRef.current?.cancel(source.key);
+    uploadControllers.current.get(source.key)?.abort();
+    if (sources.length === 1) {
+      onEmpty();
+      return;
+    }
+    setSources((current) => current.filter((item) => item.key !== source.key));
+  }
+
+  function confirmCreateChapter(key: string) {
+    const name = newChapterName.trim();
+    if (!name) return;
+    const existing = chapters?.find(
+      (chapter) => chapter.name.toLowerCase() === name.toLowerCase()
+    );
+    patchSource(key, {
+      chapterId: existing?.id ?? null,
+      chapterName: existing ? null : name,
+    });
+    setCreatingKey(null);
+    setNewChapterName('');
+  }
+
+  function handleSubmitError(error: unknown, operation: 'import' | 'upload') {
+    const fileToast = fileLimitToast(error);
+    const importError =
+      error instanceof SourceImportFailedError ? error : undefined;
+    trackQuotaBlocked(error, 'upload');
+    userToast({
+      description: isCreditsExhaustedError(error)
+        ? m.error_credits_body()
+        : isTooManyIngestLeasesError(error)
+          ? m.error_ingest_slots_body()
+          : isStorageQuotaError(error)
+            ? m.error_quota_body()
+            : (fileToast?.description ??
+              (importError
+                ? sourceImportFailureReason(importError.code)
+                : undefined)),
+      title: isCreditsExhaustedError(error)
+        ? m.error_credits_title()
+        : isTooManyIngestLeasesError(error)
+          ? m.error_ingest_slots_title()
+          : isStorageQuotaError(error)
+            ? m.error_quota_title()
+            : (fileToast?.title ??
+              (operation === 'import'
+                ? m.source_import_failed()
+                : m.source_upload_failed())),
+      variant: 'error',
+    });
+  }
+
+  async function submitLocal(localSources: PendingSource[]) {
+    let remaining = [...localSources];
+    const failed: PendingSource[] = [];
+    while (remaining.length > 0 && !drainAbort.current.signal.aborted) {
+      const slotsFree = Math.max(
+        1,
+        USE_MSW
+          ? MAX_FILES_PER_UPLOAD
+          : (ingestSlots?.slotsFree ?? MAX_FILES_PER_UPLOAD)
+      );
+      const { wave, rest } = splitSourceWave(
+        remaining,
+        (source) => needsIngestJob(source.name, source.kind, source.parseMode),
+        slotsFree
+      );
+      if (wave.length === 0) continue;
+      const results = await mapWithConcurrency(
+        wave,
+        SOURCE_UPLOAD_CONCURRENCY,
+        (source) => {
+          if (!source.file) throw new Error('missing local file');
+          const file = source.file;
+          const controller = new AbortController();
+          uploadControllers.current.set(source.key, controller);
+          return withUploadRetry(() =>
+            uploadSource({
+              captionImages: source.captionImages,
+              chapterId: source.chapterId,
+              chapterName: source.chapterName,
+              file,
+              kind: source.kind,
+              onUploadProgress: (uploadPct) =>
+                patchSource(source.key, { uploadPct }),
+              parseMode: source.parseMode,
+              signal: controller.signal,
+            })
+          ).finally(() => uploadControllers.current.delete(source.key));
+        }
+      );
+      const waits: Promise<void>[] = [];
+      results.forEach((result, index) => {
+        const source = wave[index];
+        if (!source) return;
+        if (result.status === 'rejected') {
+          failed.push(source);
+          handleSubmitError(result.reason, 'upload');
+        } else if (needsIngestJob(source.name, source.kind, source.parseMode)) {
+          waits.push(
+            waitForFileTerminal(
+              queryClient,
+              workspaceId,
+              result.value.id,
+              drainAbort.current.signal
+            )
+          );
+        }
+      });
+      await Promise.all(waits);
+      remaining = rest;
+    }
+    return failed;
+  }
+
+  async function submitRemote(remoteSources: PendingSource[]) {
+    let remaining = [...remoteSources];
+    const failed: PendingSource[] = [];
+    while (remaining.length > 0 && !drainAbort.current.signal.aborted) {
+      const { data: slots } = await refetchIngestSlots();
+      const { wave, rest } = splitSourceWave(
+        remaining,
+        () => true,
+        Math.max(1, slots?.slotsFree ?? MAX_FILES_PER_UPLOAD)
+      );
+      const requests = wave.map((source) => {
+        const key = JSON.stringify([
+          source.provider,
+          source.fileId,
+          source.driveId ?? '',
+          source.chapterId ?? '',
+          source.chapterName ?? '',
+          source.parseMode,
+          source.captionImages,
+        ]);
+        let requestId = importRequestIds.current.get(key);
+        if (!requestId) {
+          requestId = crypto.randomUUID();
+          importRequestIds.current.set(key, requestId);
+        }
+        return { key, requestId, source };
+      });
+      const results = await mapWithConcurrency(
+        requests,
+        SOURCE_UPLOAD_CONCURRENCY,
+        ({ requestId, source }) =>
+          withSourceImportRequestRetry(
+            async () =>
+              parseSourceImportAcceptedResponse(
+                await importSources({
+                  captionImages: source.captionImages,
+                  chapterId: source.chapterId,
+                  chapterName: source.chapterName,
+                  ...(source.driveId ? { driveIds: [source.driveId] } : {}),
+                  fileIds: [source.fileId ?? ''],
+                  parseMode: source.parseMode,
+                  provider: source.provider ?? 'google',
+                  requestId,
+                  signal: drainAbort.current.signal,
+                }),
+                source.fileId
+              ),
+            undefined,
+            drainAbort.current.signal
+          )
+      );
+      const jobSources = new Map<string, PendingSource>();
+      const jobRequestKeys = new Map<string, string>();
+      results.forEach((result, index) => {
+        const request = requests[index];
+        if (!request || result.status !== 'fulfilled') return;
+        if (result.value.jobs.length === 0) {
+          importRequestIds.current.delete(request.key);
+        }
+        for (const job of result.value.jobs) {
+          jobSources.set(job.jobId, request.source);
+          jobRequestKeys.set(job.jobId, request.key);
+        }
+      });
+      const { jobs, rejected, requestErrors } =
+        collectSourceImportResponses(results);
+      reportRejectedImports(rejected);
+      for (const error of requestErrors) handleSubmitError(error, 'import');
+      results.forEach((result, index) => {
+        if (result.status === 'rejected' && requests[index]) {
+          failed.push(requests[index].source);
+        }
+      });
+      const rejectedIds = new Set(rejected.map((item) => item.fileId));
+      failed.push(
+        ...wave.filter((source) =>
+          source.fileId ? rejectedIds.has(source.fileId) : false
+        )
+      );
+      const { completedJobIds, failures } = await waitForSourceImportWave(
+        (jobId, signal) =>
+          api.get(`/workspaces/${workspaceId}/sources/imports/${jobId}`, {
+            signal,
+          }),
+        jobs,
+        { signal: drainAbort.current.signal }
+      );
+      for (const jobId of completedJobIds) {
+        const requestKey = jobRequestKeys.get(jobId);
+        if (requestKey) importRequestIds.current.delete(requestKey);
+      }
+      for (const failure of failures) {
+        const source = jobSources.get(failure.job.jobId);
+        if (source) failed.push(source);
+        if (failure.error instanceof SourceImportPollingTimeoutError) {
+          userToast({
+            description: m.source_import_background_files({
+              names: failure.job.name,
+            }),
+            title: m.source_import_background_title(),
+          });
+        } else {
+          const requestKey = jobRequestKeys.get(failure.job.jobId);
+          if (requestKey) importRequestIds.current.delete(requestKey);
+          handleSubmitError(failure.error, 'import');
+        }
+      }
+      if (jobs.length > 0) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: qk.files(workspaceId) }),
+          queryClient.invalidateQueries({ queryKey: qk.ingestSlots }),
+          queryClient.invalidateQueries({
+            queryKey: qk.workspace(workspaceId),
+          }),
+          queryClient.invalidateQueries({
+            queryKey: qk.workspaceStats(workspaceId),
+          }),
+        ]);
+      }
+      remaining = rest;
+    }
+    return failed;
+  }
+
+  async function handleSubmit() {
+    if (isSubmitting || sources.length === 0) return;
+    const controller = new AbortController();
+    drainAbort.current = controller;
+    setIsSubmitting(true);
+    setSources((current) =>
+      current.map((source) =>
+        source.origin === 'local' ? { ...source, uploadPct: 0 } : source
+      )
+    );
+    setUnsentCount(sources.length);
+    try {
+      const localFailed = await submitLocal(
+        sources.filter((source) => source.origin === 'local')
+      );
+      const remoteFailed = await submitRemote(
+        sources.filter((source) => source.origin === 'remote')
+      );
+      if (controller.signal.aborted) return;
+      const failed = [...localFailed, ...remoteFailed];
+      if (failed.length > 0) {
+        setSources([
+          ...new Map(failed.map((source) => [source.key, source])).values(),
+        ]);
+      } else onClose();
+    } finally {
+      if (!controller.signal.aborted) {
+        setIsSubmitting(false);
+        setUnsentCount(0);
+      }
+    }
+  }
+
+  const analysisTotals = aggregateSourceAnalysis(
+    sources
+      .filter((source) => source.parseMode === 'fast')
+      .map((source) => source.analysisResult)
+  );
+  const estimatedCreditMicros = sources.reduce((total, source) => {
+    if (source.kind === 'audio' && source.audioDurationSeconds != null) {
+      return (
+        total +
+        Math.ceil(source.audioDurationSeconds) *
+          uploadPolicy.audioSecondCreditMicros
+      );
+    }
+    if (source.parseMode !== 'fast' || !source.analysisResult) return total;
+    return (
+      total +
+      calculateParseCreditMicros(source.analysisResult, {
+        digitalPageRateMicros: uploadPolicy.digitalParsePageCreditMicros,
+        ocrPageRateMicros: uploadPolicy.ocrParsePageCreditMicros,
+      })
+    );
+  }, 0);
+  const waitingForAnalysis = sources.some(
+    (source) =>
+      source.audioDurationPending ||
+      (source.audioDurationSeconds != null &&
+        source.audioDurationSeconds > uploadPolicy.audioMaxDurationSeconds) ||
+      sourceAnalysisBlocksSubmit(source, uploadPolicy)
+  );
+  const aggregateProgress = aggregateUploadPct(
+    sources
+      .filter((source) => source.origin === 'local')
+      .map((source) => ({
+        size: source.sizeBytes,
+        uploadPct: source.uploadPct,
+      }))
+  );
+  const parseMaxMb = Math.round(uploadPolicy.maxBytes / 1024 / 1024);
+
+  return (
+    <SimpleDialog
+      className="min-h-150 max-w-3xl"
+      onClose={() => {
+        if (!isSubmitting) onClose();
+      }}
+      open={open}
+      showCloseButton={!isSubmitting}
+      title={m.source_selected_files()}
+    >
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
+        <ul className="flex max-h-[54dvh] flex-col gap-3 overflow-y-auto pr-1">
+          {sources.map((source) => (
+            <li
+              className="flex flex-col gap-2 rounded-card border border-line px-3 py-2.5"
+              key={source.key}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <Icon className="size-4 shrink-0" name="files" />
+                  <span className="t-subtitle truncate" title={source.name}>
+                    {source.name}
+                  </span>
+                </div>
+                <IconButton
+                  disabled={isSubmitting}
+                  icon="x"
+                  label={m.source_remove_file()}
+                  onClick={() => removeSource(source)}
+                  size="xs"
+                  variant="ghost-hover"
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="t-meta text-fg-muted">
+                  {formatSize(source.sizeBytes, source.sizeEstimate)} ·{' '}
+                  {source.kind.toUpperCase()}
+                </span>
+                <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+                  {creatingKey === source.key ? (
+                    <div className="flex items-center">
+                      <Input
+                        autoFocus
+                        disabled={isSubmitting}
+                        onChange={(event) =>
+                          setNewChapterName(event.target.value)
+                        }
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter') {
+                            confirmCreateChapter(source.key);
+                          }
+                          if (event.key === 'Escape') setCreatingKey(null);
+                        }}
+                        placeholder={m.source_new_chapter_name()}
+                        size="sm"
+                        value={newChapterName}
+                        variant="underline"
+                      />
+                      <IconButton
+                        disabled={isSubmitting || !newChapterName.trim()}
+                        icon="check"
+                        label={m.source_create_chapter()}
+                        onClick={() => confirmCreateChapter(source.key)}
+                        size="xs"
+                        variant="ghost-hover"
+                      />
+                    </div>
+                  ) : (
+                    <ChapterSelect
+                      chapterName={source.chapterName}
+                      chapters={chapters ?? []}
+                      disabled={isSubmitting}
+                      onChange={(chapterId) =>
+                        patchSource(source.key, {
+                          chapterId,
+                          chapterName: null,
+                        })
+                      }
+                      onCreateRequest={() => {
+                        setCreatingKey(source.key);
+                        setNewChapterName('');
+                      }}
+                      value={source.chapterId}
+                    />
+                  )}
+                  <ParseModeSelect
+                    disabled={isSubmitting}
+                    onChange={(mode) => updateParseMode(source, mode)}
+                    pending={source}
+                    policy={uploadPolicy}
+                  />
+                  <CaptionImagesToggle
+                    disabled={isSubmitting}
+                    onChange={(captionImages) =>
+                      patchSource(source.key, { captionImages })
+                    }
+                    pending={source}
+                    policy={uploadPolicy}
+                  />
+                </div>
+              </div>
+              {source.parseMode === 'fast' &&
+                source.analysisStatus !== 'idle' && (
+                  <div className="flex flex-col gap-1">
+                    {source.analysisStatus !== 'ready' &&
+                      source.analysisStatus !== 'error' && (
+                        <ProgressBar
+                          height={4}
+                          value={source.analysisProgress?.percent ?? 0}
+                        />
+                      )}
+                    <p
+                      className={cn('t-meta text-fg-muted', {
+                        'text-tint-error-fg': source.analysisStatus === 'error',
+                      })}
+                    >
+                      {source.analysisStatus === 'ready' &&
+                        source.analysisResult &&
+                        m.source_analysis_result({
+                          ocr: source.analysisResult.ocrPageCount,
+                          text: source.analysisResult.textPageCount,
+                        })}
+                      {source.analysisStatus === 'error' &&
+                        m.source_analysis_failed()}
+                      {source.analysisStatus !== 'ready' &&
+                        source.analysisStatus !== 'error' &&
+                        m.source_analyzing_progress({
+                          percent: Math.round(
+                            source.analysisProgress?.percent ?? 0
+                          ),
+                        })}
+                    </p>
+                  </div>
+                )}
+              {source.kind === 'audio' && (
+                <p
+                  className={cn('t-meta text-fg-muted', {
+                    'text-tint-error-fg':
+                      source.audioDurationSeconds != null &&
+                      source.audioDurationSeconds >
+                        uploadPolicy.audioMaxDurationSeconds,
+                  })}
+                >
+                  {source.audioDurationPending
+                    ? m.source_audio_reading_duration()
+                    : source.audioDurationSeconds == null
+                      ? m.source_audio_estimate_unavailable()
+                      : source.audioDurationSeconds >
+                          uploadPolicy.audioMaxDurationSeconds
+                        ? m.source_audio_too_long({
+                            hours: uploadPolicy.audioMaxDurationSeconds / 3600,
+                          })
+                        : m.source_audio_estimate({
+                            cost: (
+                              (Math.ceil(source.audioDurationSeconds) *
+                                uploadPolicy.audioSecondCreditMicros) /
+                              1_000_000
+                            ).toLocaleString(),
+                            minutes: Math.ceil(
+                              source.audioDurationSeconds / 60
+                            ),
+                          })}
+                </p>
+              )}
+              {source.uploadPct != null && (
+                <ProgressBar height={4} value={source.uploadPct} />
+              )}
+            </li>
+          ))}
+        </ul>
+        <p className="t-meta text-fg-muted">
+          {m.source_parse_hint({ mb: parseMaxMb })}
+        </p>
+        {isSubmitting && <ProgressBar showLabel value={aggregateProgress} />}
+      </div>
+      <DialogFooter className="items-center sm:justify-between">
+        <div className="t-meta flex-1 text-fg-muted">
+          {analysisTotals.pages > 0 &&
+            m.source_analysis_summary({
+              cost: (estimatedCreditMicros / 1_000_000).toLocaleString(),
+              ocr: analysisTotals.ocrPages,
+              text: analysisTotals.textPages,
+            })}
+        </div>
+        <div className="flex gap-2">
+          <DialogClose asChild>
+            <Button disabled={isSubmitting} size="lg" variant="ghost-hover">
+              {m.action_cancel()}
+            </Button>
+          </DialogClose>
+          <Button
+            disabled={
+              sources.length === 0 ||
+              isSubmitting ||
+              waitingForAnalysis ||
+              sources.some((source) => source.analysisStatus === 'error')
+            }
+            onClick={() => void handleSubmit()}
+            size="lg"
+          >
+            {sources.every((source) => source.origin === 'remote')
+              ? m.action_import()
+              : m.action_upload()}
+          </Button>
+        </div>
+      </DialogFooter>
+    </SimpleDialog>
+  );
+}
+
+export function AddSourceDialog({
+  open,
+  onClose,
+  workspaceId,
+}: {
+  open: boolean;
+  onClose: () => void;
+  workspaceId: string;
+}) {
+  const { data: workspace } = useWorkspace(workspaceId, {
+    errorBoundary: false,
+  });
+  const { data: uploadPolicy } = useSourceUploadPolicy(workspaceId, {
+    errorBoundary: false,
+  });
+  const [selectedSources, setSelectedSources] = useState<PendingSource[]>([]);
+  const [inspectionGuard] = useState(createSourceInspectionGuard);
+  const { filesLimit, filesUsed, workspaceRoom } = workspaceFileRoom(workspace);
+
+  function closeAll() {
+    inspectionGuard.invalidate();
+    setSelectedSources([]);
+    onClose();
+  }
+
+  return (
+    <>
+      {selectedSources.length === 0 && (
+        <SourceChooser
+          filesLimit={filesLimit}
+          filesUsed={filesUsed}
+          inspectionGuard={inspectionGuard}
+          onClose={closeAll}
+          onSelected={setSelectedSources}
+          open={open}
+          uploadPolicy={uploadPolicy}
+          workspaceId={workspaceId}
+          workspaceRoom={workspaceRoom}
+        />
+      )}
+      {uploadPolicy && selectedSources.length > 0 && (
+        <SourceDetailsDialog
+          initialSources={selectedSources}
+          onClose={closeAll}
+          onEmpty={() => setSelectedSources([])}
+          open={open}
+          uploadPolicy={uploadPolicy}
+          workspaceId={workspaceId}
+        />
+      )}
+    </>
   );
 }

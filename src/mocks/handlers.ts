@@ -1,3 +1,4 @@
+import { zipSync } from 'fflate';
 import { delay, HttpResponse, http } from 'msw';
 import type {
   Chapter,
@@ -2625,13 +2626,57 @@ export const handlers = [
     })
   ),
   http.post(
+    '/api/workspaces/:id/sources/import-inspect',
+    async ({ params, request }) => {
+      const body = (await request.json()) as {
+        driveIds?: string[];
+        fileIds: string[];
+        provider: string;
+      };
+      return HttpResponse.json({
+        items: body.fileIds.map((fileId, index) => ({
+          analysisUrl: `/api/workspaces/${params.id}/sources/import-content?provider=${body.provider}&fileId=${encodeURIComponent(fileId)}`,
+          contentType:
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          ...(body.driveIds?.[index] ? { driveId: body.driveIds[index] } : {}),
+          fileId,
+          kind: 'doc',
+          name: `cloud-notes-${index + 1}.docx`,
+          sizeBytes: 2048,
+          sizeEstimate: false,
+        })),
+        rejected: [],
+      });
+    }
+  ),
+  http.get('/api/workspaces/:id/sources/import-content', async () => {
+    const encoder = new TextEncoder();
+    const document = zipSync({
+      'docProps/app.xml': encoder.encode(
+        '<Properties><Pages>2</Pages></Properties>'
+      ),
+      'word/document.xml': encoder.encode(
+        `<w:document><w:t>${'Searchable mock document text. '.repeat(80)}</w:t></w:document>`
+      ),
+    });
+    return new HttpResponse(document, {
+      headers: {
+        'Content-Type':
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      },
+    });
+  }),
+  http.post(
     '/api/workspaces/:id/sources/import',
     async ({ params, request }) => {
       const wsId = params.id as string;
       const body = (await request.json()) as {
         chapterId?: string | null;
+        chapterName?: string | null;
+        captionImages?: boolean;
         driveIds?: string[];
         fileIds: string[];
+        parseMode?: 'fast' | 'none';
         provider: string;
         requestId?: string;
       };

@@ -55,12 +55,22 @@ def test_a_malformed_bbox_is_dropped_rather_than_crashing_the_job():
         [
             _block("Photosynthesis", 0, level=1),
             _block("Bad coords " * 20, 0, bbox=["x", "y", "w", "h"]),
+            _block("NaN coords " * 20, 0, bbox=[0, 0, float("nan"), 20]),
+            _block("Infinite coords " * 20, 0, bbox=[0, 0, float("inf"), 20]),
+            _block("Reversed coords " * 20, 0, bbox=[20, 20, 10, 30]),
+            _block("Empty coords " * 20, 0, bbox=[10, 10, 10, 20]),
             _block("Good coords " * 20, 0, bbox=[1, 2, 3, 4]),
         ]
     )
 
     assert len(chunks) == 1
     assert [r.bbox for r in chunks[0].regions] == [[1.0, 2.0, 3.0, 4.0]]
+
+    # Canonical identity must remain serializable even when parser geometry is
+    # malformed; bad regions are advisory and must not fail the whole ingest.
+    from pipeline.retrieval.indexing import content_hash
+
+    assert len(content_hash(chunks)) == 64
 
 
 def test_heading_change_starts_a_new_chunk():

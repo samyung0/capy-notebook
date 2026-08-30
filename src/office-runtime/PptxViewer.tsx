@@ -8,9 +8,10 @@ import {
   type SlideDisplayList,
   sizeCanvasForSlide,
 } from '@betteroffice/pptx/viewer';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { m } from '@/i18n';
 import { loadPptxFonts } from './pptxFonts';
+import { PptxImageCache } from './pptxImageCache';
 
 export function PptxViewer({
   bytes,
@@ -24,17 +25,23 @@ export function PptxViewer({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const handleRef = useRef<PresentationViewerHandle | null>(null);
-  const imagesRef = useRef(
-    new Map<string, Promise<CanvasImageSource | null>>()
-  );
+  const imagesRef = useRef(new PptxImageCache());
+  const paintGenerationRef = useRef(0);
   const [slideIndex, setSlideIndex] = useState(0);
   const [slideCount, setSlideCount] = useState(0);
   const [frame, setFrame] = useState<SlideDisplayList | null>(null);
   const [stageSize, setStageSize] = useState({ height: 0, width: 0 });
+  const accessibleItems = useMemo(
+    () => (frame ? slideA11yItems(frame) : []),
+    [frame]
+  );
 
   useEffect(() => {
     let disposed = false;
     let handle: PresentationViewerHandle | null = null;
+    setSlideCount(0);
+    setSlideIndex(0);
+    setFrame(null);
     void Promise.all([initWasm(), loadPptxFonts()]).then(
       ([, fonts]) => {
         if (disposed) return;
@@ -50,17 +57,15 @@ export function PptxViewer({
           onError(toError(value));
         }
       },
-      (value: unknown) => onError(toError(value))
+      (value: unknown) => {
+        if (!disposed) onError(toError(value));
+      }
     );
     return () => {
       disposed = true;
+      paintGenerationRef.current += 1;
       handleRef.current = null;
       handle?.dispose();
-      for (const image of imagesRef.current.values()) {
-        void image.then((source) => {
-          if (source instanceof ImageBitmap) source.close();
-        });
-      }
       imagesRef.current.clear();
     };
   }, [bytes, onAnalysis, onError]);
@@ -88,6 +93,7 @@ export function PptxViewer({
   }, []);
 
   useEffect(() => {
+    const generation = ++paintGenerationRef.current;
     const canvas = canvasRef.current;
     if (!canvas || !frame || stageSize.height === 0 || stageSize.width === 0)
       return;
@@ -96,13 +102,27 @@ export function PptxViewer({
       (stageSize.height - 40) / frame.height,
       1
     );
-    const context = canvas.getContext('2d');
-    if (!context) return;
     const dpr = window.devicePixelRatio || 1;
-    sizeCanvasForSlide(canvas, frame, dpr, scale);
-    void paintSlide(context, frame, dpr, scale, { resolveImage }).catch(
-      (value: unknown) => onError(toError(value))
+    const renderCanvas = document.createElement('canvas');
+    sizeCanvasForSlide(renderCanvas, frame, dpr, scale);
+    const context = renderCanvas.getContext('2d');
+    if (!context) return;
+    void paintSlide(context, frame, dpr, scale, { resolveImage }).then(
+      () => {
+        if (generation !== paintGenerationRef.current) return;
+        const visibleCanvas = canvasRef.current;
+        if (!visibleCanvas) return;
+        sizeCanvasForSlide(visibleCanvas, frame, dpr, scale);
+        const visibleContext = visibleCanvas.getContext('2d');
+        if (visibleContext) visibleContext.drawImage(renderCanvas, 0, 0);
+      },
+      (value: unknown) => {
+        if (generation === paintGenerationRef.current) onError(toError(value));
+      }
     );
+    return () => {
+      paintGenerationRef.current += 1;
+    };
   }, [frame, onError, resolveImage, stageSize]);
 
   const selectSlide = (next: number) => {
@@ -120,7 +140,47 @@ export function PptxViewer({
     <div className="pptx-runtime">
       <div className="pptx-stage" ref={stageRef}>
         {frame ? (
-          <canvas ref={canvasRef} />
+          <>
+            <div aria-hidden="true" className="pptx-canvas-layer">
+              <canvas ref={canvasRef} />
+            </div>
+            <div
+              aria-label={m.files_office_slide_content({
+                current: slideIndex + 1,
+                total: slideCount,
+              })}
+              className="office-a11y-only"
+              role="region"
+            >
+              {accessibleItems.length > 0 ? (
+                accessibleItems.map((item, index) => {
+                  const key = `${item.kind}:${index}:${item.text}`;
+                  if (item.kind === 'chart') {
+                    return (
+                      <div
+                        aria-label={m.files_office_slide_chart({
+                          label: item.text,
+                        })}
+                        key={key}
+                        role="img"
+                      />
+                    );
+                  }
+                  return (
+                    <p key={key}>
+                      {item.kind === 'placeholder'
+                        ? m.files_office_slide_placeholder({
+                            label: item.text,
+                          })
+                        : item.text}
+                    </p>
+                  );
+                })
+              ) : (
+                <p>{m.files_office_slide_no_accessible_content()}</p>
+              )}
+            </div>
+          </>
         ) : (
           <p>{m.files_office_no_slides()}</p>
         )}
@@ -134,7 +194,7 @@ export function PptxViewer({
           >
             {m.files_office_previous_slide()}
           </button>
-          <span>
+          <span aria-atomic="true" aria-live="polite" role="status">
             {m.files_office_slide_position({
               current: slideIndex + 1,
               total: slideCount,
@@ -151,6 +211,40 @@ export function PptxViewer({
       )}
     </div>
   );
+}
+
+type SlideA11yItem = {
+  kind: 'chart' | 'placeholder' | 'text';
+  text: string;
+};
+
+function slideA11yItems(frame: SlideDisplayList): SlideA11yItem[] {
+  const items: SlideA11yItem[] = [];
+  const add = (kind: SlideA11yItem['kind'], text: string) => {
+    const normalized = text.replace(/\s+/g, ' ').trim();
+    if (!normalized) return;
+    items.push({ kind, text: normalized });
+  };
+
+  for (const primitive of frame.primitives) {
+    switch (primitive.kind) {
+      case 'textBox':
+        for (const paragraph of primitive.paragraphs) {
+          add('text', paragraph.runs.map((run) => run.text).join(''));
+        }
+        break;
+      case 'placeholder':
+        add('placeholder', primitive.label ?? primitive.name);
+        break;
+      case 'chart':
+        add('chart', primitive.label || primitive.name);
+        break;
+      default:
+        break;
+    }
+  }
+
+  return items;
 }
 
 function toError(value: unknown) {

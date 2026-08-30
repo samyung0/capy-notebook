@@ -26,6 +26,62 @@ from pipeline.store import db
 pytestmark = pytest.mark.integration
 
 
+def test_audio_age_out_and_submission_race_retain_cleanup_identity(workspace):
+    import psycopg
+
+    file_id = f"f_{secrets.token_hex(6)}"
+    job_id = f"job_{secrets.token_hex(6)}"
+    transcription_id = f"at_{secrets.token_hex(6)}"
+    provider_call_id = f"pc_{secrets.token_hex(6)}"
+    with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO files (id, workspace_id, user_id, name, kind, blob_path)
+            VALUES (%s, %s, %s, 'lecture.mp3', 'audio', 'sources/audio')
+            """,
+            (file_id, workspace.id, workspace.user_id),
+        )
+        cur.execute(
+            "INSERT INTO jobs (id, type, payload) VALUES (%s, 'ingest', '{}')",
+            (job_id,),
+        )
+        cur.execute(
+            """
+            INSERT INTO audio_transcriptions (
+              id, job_id, file_id, source_sha256, duration_seconds,
+              billable_seconds, concurrency_units, rate_version,
+              credit_micros_per_second, provider_call_id, status
+            ) VALUES (%s,%s,%s,%s,10,10,1,1,250000,%s,'submitting')
+            """,
+            (transcription_id, job_id, file_id, "ab" * 32, provider_call_id),
+        )
+        db.fail_audio_transcription(
+            cur,
+            transcription_id,
+            "submission could not be reconciled",
+            cleanup_requested=True,
+        )
+        db.mark_audio_pending(cur, transcription_id, "provider-late")
+        cur.execute(
+            """
+            SELECT provider_transcription_id, status, cleanup_requested
+            FROM audio_transcriptions WHERE id=%s
+            """,
+            (transcription_id,),
+        )
+        assert cur.fetchone() == ("provider-late", "failed", True)
+
+        candidate = db.claim_audio_cleanup(cur)
+        assert candidate is not None
+        assert candidate["id"] == transcription_id
+        assert candidate["provider_transcription_id"] == "provider-late"
+        db.complete_audio_cleanup(cur, transcription_id, provider_call_id)
+        cur.execute(
+            "SELECT 1 FROM audio_transcriptions WHERE id=%s", (transcription_id,)
+        )
+        assert cur.fetchone() is None
+
+
 def test_ingest_provider_call_links_context_and_usage_atomically(workspace):
     import psycopg
 
@@ -187,7 +243,9 @@ def test_parse_attempt_page_charge_is_idempotent_and_settles_session(workspace):
                 parse_ocr_pages=1,
                 parse_cpu_milliseconds=1200,
                 parse_elapsed_milliseconds=2000,
-                credit_micros=db.credits_for_parse_pages(2, 1),
+                credit_micros=db.credits_for_parse_pages(
+                    2, 1, digital_rate=31_000_000, ocr_rate=52_000_000
+                ),
                 reservation_id=reservation_id,
                 idempotency_key=idempotency_key,
             )
@@ -711,6 +769,26 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
         """,
         (sha, identity, donor_id),
     )
+    preview_path = "previews/donor.pdf"
+    workspace.scalar(
+        """UPDATE files
+        SET preview_blob_path = %s, source_sha256 = %s
+        WHERE id = %s RETURNING id""",
+        (preview_path, sha, src_file),
+    )
+    mismatched_file = workspace.add_file("other-layout.txt")
+    mismatched_preview = "previews/other-layout.pdf"
+    workspace.scalar(
+        """UPDATE files
+        SET preview_blob_path = %s, source_sha256 = %s, added_at = now() + interval '1 hour'
+        WHERE id = %s RETURNING id""",
+        (mismatched_preview, "cd" * 32, mismatched_file),
+    )
+    workspace.scalar(
+        """INSERT INTO rag_file_contents (file_id, workspace_id, content_id)
+        VALUES (%s, %s, %s) RETURNING file_id""",
+        (mismatched_file, workspace.id, donor_id),
+    )
     await store.upsert_content_summary(
         workspace_id=workspace.id,
         content_id=donor_id,
@@ -738,6 +816,7 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
     )
     assert donor is not None
     assert donor["id"] == donor_id
+    assert donor["preview_blob_path"] == preview_path
     association = await store.attach_file_content(
         workspace_id=other.id,
         file_id=dest_file,
@@ -994,6 +1073,200 @@ def test_a_stale_worker_does_not_finish_the_successors_job(workspace):
     )
 
 
+def test_lost_attempt_does_not_close_the_successors_reservation(workspace):
+    """Lease fencing is not source supersession; both attempts share billing."""
+    import json
+
+    from pipeline.ingest import worker
+
+    file_id = workspace.add_file("retry.txt")
+    job_id = f"job_retry_{workspace.id[-6:]}"
+    reservation_id = f"cr_retry_{workspace.id[-6:]}"
+    workspace.scalar(
+        "UPDATE files SET source_etag='etag-a', status='processing' WHERE id=%s RETURNING id",
+        (file_id,),
+    )
+    workspace.scalar(
+        """
+        INSERT INTO provider_sessions
+          (id, actor_user_id, workspace_id, surface, expires_at)
+        VALUES (%s,%s,%s,'ingest',now()+interval '1 hour')
+        RETURNING id
+        """,
+        (reservation_id, workspace.user_id, workspace.id),
+    )
+    workspace.scalar(
+        """
+        INSERT INTO jobs (id, type, payload, status, attempts)
+        VALUES (%s,'ingest',%s::jsonb,'running',2) RETURNING id
+        """,
+        (
+            job_id,
+            json.dumps(
+                {
+                    "fileId": file_id,
+                    "workspaceId": workspace.id,
+                    "sourceRevision": 1,
+                    "sourceETag": "etag-a",
+                    "reservationId": reservation_id,
+                }
+            ),
+        ),
+    )
+
+    # Attempt 1 resumes after the reaper and successor claim. It must not close
+    # the reservation shared with attempt 2 or change the successor's job.
+    worker._finish_ok(
+        file_id,
+        "retry.txt",
+        job_id,
+        "attempt-one",
+        attempt=1,
+        reservation_id=reservation_id,
+        source_revision=1,
+        source_etag="etag-a",
+    )
+    assert workspace.scalar("SELECT status FROM jobs WHERE id=%s", (job_id,)) == (
+        "running"
+    )
+    assert workspace.scalar(
+        "SELECT status FROM provider_sessions WHERE id=%s", (reservation_id,)
+    ) == ("open")
+
+    worker._finish_ok(
+        file_id,
+        "retry.txt",
+        job_id,
+        "attempt-two",
+        attempt=2,
+        reservation_id=reservation_id,
+        source_revision=1,
+        source_etag="etag-a",
+    )
+    assert workspace.scalar("SELECT status FROM jobs WHERE id=%s", (job_id,)) == (
+        "done"
+    )
+    assert workspace.scalar(
+        "SELECT status FROM provider_sessions WHERE id=%s", (reservation_id,)
+    ) == ("settled")
+
+
+async def test_replaced_source_rejects_a_paused_ingests_stale_writes(workspace):
+    """An A worker resumed after A->B cannot attach A's result to logical file B."""
+    import json
+
+    from pipeline.ingest import worker
+    from pipeline.jobs import TerminalError
+
+    file_id = workspace.add_file("replacement.docx")
+    job_id = f"job_replace_{workspace.id[-6:]}"
+    reservation_id = f"cr_replace_{workspace.id[-6:]}"
+    old_revision = 1
+    old_etag = "etag-a"
+    workspace.scalar(
+        """
+        UPDATE files SET source_etag=%s, status='processing'
+        WHERE id=%s RETURNING id
+        """,
+        (old_etag, file_id),
+    )
+    workspace.scalar(
+        """
+        INSERT INTO provider_sessions
+          (id, actor_user_id, workspace_id, surface, expires_at)
+        VALUES (%s,%s,%s,'ingest',now()+interval '1 hour')
+        RETURNING id
+        """,
+        (reservation_id, workspace.user_id, workspace.id),
+    )
+    job_payload = {
+        "fileId": file_id,
+        "workspaceId": workspace.id,
+        "sourceRevision": old_revision,
+        "sourceETag": old_etag,
+        "reservationId": reservation_id,
+    }
+    workspace.scalar(
+        """
+        INSERT INTO jobs (id, type, payload, status, attempts)
+        VALUES (%s, 'ingest', %s::jsonb, 'running', 1)
+        RETURNING id
+        """,
+        (
+            job_id,
+            json.dumps(job_payload),
+        ),
+    )
+
+    # Replacement B commits while the A worker is paused outside a DB
+    # transaction. This is the state FinalizeReplacementUploadSession creates.
+    workspace.scalar(
+        """
+        UPDATE files SET revision=2, source_etag='etag-b', status='pending',
+          indexed=false, source_sha256=NULL, content_hash=NULL,
+          preview_blob_path=NULL, parsed_blob_path=NULL
+        WHERE id=%s RETURNING id
+        """,
+        (file_id,),
+    )
+
+    with pytest.raises(TerminalError, match="superseded"):
+        worker._record_source_sha(file_id, "a" * 64, old_revision, old_etag)
+    with pytest.raises(TerminalError, match="superseded"):
+        worker._record_preview_blob(file_id, "previews/a.pdf", old_revision, old_etag)
+    with pytest.raises(TerminalError, match="superseded"):
+        await store.attach_file_content(
+            workspace_id=workspace.id,
+            file_id=file_id,
+            content_hash="content-a",
+            source_sha256="a" * 64,
+            pipeline_identity="pipeline-a",
+            claim_job_id=job_id,
+            source_revision=old_revision,
+            source_etag=old_etag,
+        )
+    with pytest.raises(TerminalError, match="superseded"):
+        worker._finish_ok(
+            file_id,
+            "replacement.docx",
+            job_id,
+            "content-a",
+            attempt=1,
+            source_revision=old_revision,
+            source_etag=old_etag,
+        )
+    await worker._handle_job_failure(
+        {"id": job_id, "type": "ingest", "attempts": 1, "payload": job_payload},
+        db.SourceSupersededError("ingest source was superseded"),
+    )
+
+    with workspace._connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT revision, source_etag, status, indexed, source_sha256,
+                   content_hash, preview_blob_path, parsed_blob_path
+            FROM files WHERE id=%s
+            """,
+            (file_id,),
+        )
+        state = cur.fetchone()
+        cur.execute(
+            "SELECT count(*) FROM rag_file_contents WHERE file_id=%s", (file_id,)
+        )
+        associations = cur.fetchone()[0]
+        cur.execute("SELECT status FROM jobs WHERE id=%s", (job_id,))
+        job_status = cur.fetchone()[0]
+        cur.execute(
+            "SELECT status FROM provider_sessions WHERE id=%s", (reservation_id,)
+        )
+        reservation_status = cur.fetchone()[0]
+
+    assert state == (2, "etag-b", "pending", False, None, None, None, None)
+    assert associations == 0
+    assert job_status == "failed"
+    assert reservation_status == "released"
+
+
 async def test_a_waiter_cannot_keep_the_creators_claim_alive(workspace):
     """Heartbeats refresh only the claim their own job created.
 
@@ -1189,9 +1462,7 @@ async def test_artifact_gc_skips_in_flight_jobs(workspace):
     )
     with workspace._connect() as conn:
         cur = conn.cursor()
-        deleted = db.sweep_artifact_cache(
-            cur, caption_ttl_days=90, parse_zip_ttl_hours=6
-        )
+        deleted = db.sweep_artifact_cache(cur, caption_ttl_days=90)
         conn.commit()
     assert deleted == 0
     assert workspace.scalar(

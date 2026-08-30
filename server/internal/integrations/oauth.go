@@ -6,9 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 
@@ -17,6 +20,7 @@ import (
 
 var (
 	ErrImportFileUnavailable = errors.New("provider file is unavailable")
+	ErrImportFileTooLarge    = errors.New("provider file exceeds the source upload limit")
 	ErrUnsupportedImportFile = errors.New("provider file type is not supported")
 )
 
@@ -78,12 +82,283 @@ const googleExportMaxBytes = int64(10_000_000)
 
 var providerHTTP = &http.Client{Timeout: 30 * time.Second}
 
+const (
+	importDownloadResolveTimeout = 5 * time.Second
+	importDownloadDialTimeout    = 10 * time.Second
+	importDownloadMaxRedirects   = 5
+)
+
+// importHostResolver is a variable so the URL boundary can be tested without
+// making network requests. Production downloads resolve the host again in the
+// dialer, so a DNS answer cannot be changed between validation and connect.
+var importHostResolver = func(ctx context.Context, host string) ([]netip.Addr, error) {
+	return net.DefaultResolver.LookupNetIP(ctx, "ip", host)
+}
+
+// These ranges are not usable public destinations. IsPrivate and the other
+// netip predicates cover the common cases; the explicit prefixes cover IANA
+// special-purpose ranges that otherwise report as global unicast.
+var blockedImportPrefixes = [...]netip.Prefix{
+	netip.MustParsePrefix("0.0.0.0/8"),
+	netip.MustParsePrefix("100.64.0.0/10"),
+	netip.MustParsePrefix("192.0.0.0/24"),
+	netip.MustParsePrefix("192.0.2.0/24"),
+	netip.MustParsePrefix("192.88.99.0/24"),
+	netip.MustParsePrefix("198.18.0.0/15"),
+	netip.MustParsePrefix("198.51.100.0/24"),
+	netip.MustParsePrefix("203.0.113.0/24"),
+	netip.MustParsePrefix("240.0.0.0/4"),
+	netip.MustParsePrefix("::/96"),
+	netip.MustParsePrefix("100::/64"),
+	netip.MustParsePrefix("2001:2::/48"),
+	netip.MustParsePrefix("2001:10::/28"),
+	netip.MustParsePrefix("2001::/32"),
+	netip.MustParsePrefix("2001:db8::/32"),
+	netip.MustParsePrefix("2002::/16"),
+	netip.MustParsePrefix("3fff::/20"),
+	netip.MustParsePrefix("64:ff9b::/96"),
+	netip.MustParsePrefix("fec0::/10"),
+}
+
+func validateImportDownloadURL(ctx context.Context, rawURL string) error {
+	downloadURL, err := url.Parse(rawURL)
+	if err != nil || !strings.EqualFold(downloadURL.Scheme, "https") ||
+		downloadURL.Host == "" || downloadURL.User != nil {
+		return ErrImportFileUnavailable
+	}
+	host := downloadURL.Hostname()
+	if host == "" || strings.Contains(host, "%") ||
+		strings.EqualFold(strings.TrimSuffix(host, "."), "localhost") {
+		return ErrImportFileUnavailable
+	}
+	if port := downloadURL.Port(); port != "" {
+		parsedPort, err := strconv.ParseUint(port, 10, 16)
+		if err != nil || parsedPort == 0 {
+			return ErrImportFileUnavailable
+		}
+	}
+	addresses, err := resolveImportHost(ctx, host)
+	if err != nil || len(addresses) == 0 {
+		return ErrImportFileUnavailable
+	}
+	if err := validateImportAddresses(addresses); err != nil {
+		return err
+	}
+	return nil
+}
+
+func resolveImportHost(ctx context.Context, host string) ([]netip.Addr, error) {
+	if host == "" || strings.Contains(host, "%") {
+		return nil, ErrImportFileUnavailable
+	}
+	if address, err := netip.ParseAddr(host); err == nil {
+		if address.Zone() != "" {
+			return nil, ErrImportFileUnavailable
+		}
+		return []netip.Addr{address.Unmap()}, nil
+	}
+	lookupCtx, cancel := context.WithTimeout(ctx, importDownloadResolveTimeout)
+	defer cancel()
+	addresses, err := importHostResolver(lookupCtx, host)
+	if err != nil {
+		return nil, err
+	}
+	for index := range addresses {
+		if addresses[index].Zone() != "" {
+			return nil, ErrImportFileUnavailable
+		}
+		addresses[index] = addresses[index].Unmap()
+	}
+	return addresses, nil
+}
+
+func validateImportAddresses(addresses []netip.Addr) error {
+	for _, address := range addresses {
+		if blockedImportAddress(address) {
+			return ErrImportFileUnavailable
+		}
+	}
+	return nil
+}
+
+func blockedImportAddress(address netip.Addr) bool {
+	if !address.IsValid() || address.Zone() != "" {
+		return true
+	}
+	address = address.Unmap()
+	if !address.IsGlobalUnicast() || address.IsPrivate() || address.IsLoopback() ||
+		address.IsLinkLocalUnicast() || address.IsLinkLocalMulticast() ||
+		address.IsUnspecified() || address.IsMulticast() {
+		return true
+	}
+	for _, prefix := range blockedImportPrefixes {
+		if prefix.Contains(address) {
+			return true
+		}
+	}
+	return false
+}
+
+func importDownloadClient() *http.Client {
+	base := providerHTTP
+	if base == nil {
+		base = http.DefaultClient
+	}
+	client := *base
+	client.Jar = nil
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= importDownloadMaxRedirects {
+			return ErrImportFileUnavailable
+		}
+		if err := validateImportDownloadURL(req.Context(), req.URL.String()); err != nil {
+			return err
+		}
+		// Microsoft preauthenticated URLs carry credentials in their query
+		// string. Never let net/http turn one into a cross-origin Referer.
+		req.Header.Del("Referer")
+		if len(via) > 0 && !sameImportOrigin(via[len(via)-1].URL, req.URL) {
+			req.Header.Del("Authorization")
+		}
+		return nil
+	}
+	client.Transport = hardenedImportTransport(base.Transport)
+	return &client
+}
+
+func sameImportOrigin(left, right *url.URL) bool {
+	return strings.EqualFold(left.Scheme, right.Scheme) &&
+		strings.EqualFold(left.Hostname(), right.Hostname()) &&
+		left.Port() == right.Port()
+}
+
+func hardenedImportTransport(base http.RoundTripper) http.RoundTripper {
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	transport, ok := base.(*http.Transport)
+	if !ok {
+		return base
+	}
+	clone := transport.Clone()
+	// A proxy would resolve the destination outside the guarded dialer.
+	clone.Proxy = nil
+	clone.DialContext = importDialContext
+	clone.DialTLSContext = nil
+	clone.DialTLS = nil
+	return clone
+}
+
+func importDialContext(ctx context.Context, network, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, ErrImportFileUnavailable
+	}
+	addresses, err := resolveImportHost(ctx, host)
+	if err != nil {
+		return nil, ErrImportFileUnavailable
+	}
+	if err := validateImportAddresses(addresses); err != nil {
+		return nil, err
+	}
+	dialer := net.Dialer{Timeout: importDownloadDialTimeout}
+	var lastErr error
+	for _, resolved := range addresses {
+		if (network == "tcp4" && !resolved.Is4()) ||
+			(network == "tcp6" && !resolved.Is6()) {
+			continue
+		}
+		connection, err := dialer.DialContext(
+			ctx,
+			network,
+			net.JoinHostPort(resolved.String(), port),
+		)
+		if err == nil {
+			return connection, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		return nil, ErrImportFileUnavailable
+	}
+	return nil, lastErr
+}
+
 type ImportFileMetadata struct {
 	Name        string
 	MIMEType    string
 	Size        *int64
 	DownloadURL string
 	ExportPDF   bool
+}
+
+// DownloadImportFile retrieves one provider object for browser-side analysis.
+// The caller supplies the workspace upload cap so an export with no metadata
+// size cannot make the gateway buffer an unbounded response.
+func DownloadImportFile(
+	ctx context.Context,
+	provider, accessToken string,
+	ref ImportRef,
+	maxBytes int64,
+) ([]byte, string, error) {
+	var (
+		meta ImportFileMetadata
+		err  error
+	)
+	switch provider {
+	case ProviderGoogle:
+		meta, err = GetGoogleFileMetadata(ctx, accessToken, ref.ID)
+	case ProviderMicrosoft:
+		meta, err = GetMicrosoftFileMetadata(ctx, accessToken, ref.ID, ref.DriveID)
+	default:
+		return nil, "", ErrImportFileUnavailable
+	}
+	if err != nil {
+		return nil, "", err
+	}
+	if maxBytes < 0 || (meta.Size != nil && *meta.Size > maxBytes) {
+		return nil, "", ErrImportFileTooLarge
+	}
+
+	downloadURL := meta.DownloadURL
+	if provider == ProviderGoogle {
+		downloadURL = GoogleDownloadURL(ref.ID, meta.ExportPDF)
+	}
+	if err := validateImportDownloadURL(ctx, downloadURL); err != nil {
+		return nil, "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	if provider == ProviderGoogle {
+		req.Header.Set("Authorization", "Bearer "+accessToken)
+	}
+	resp, err := importDownloadClient().Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		return nil, "", providerMetadataStatusError(
+			provider,
+			resp.StatusCode,
+			provider == ProviderGoogle && resp.StatusCode == http.StatusForbidden &&
+				googleRateLimitResponse(body),
+		)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	if err != nil {
+		return nil, "", err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, "", ErrImportFileTooLarge
+	}
+	contentType := strings.TrimSpace(resp.Header.Get("Content-Type"))
+	if contentType == "" {
+		contentType = meta.MIMEType
+	}
+	return data, contentType, nil
 }
 
 func GoogleExportMaxBytes() int64 { return googleExportMaxBytes }
@@ -219,10 +494,8 @@ func GetMicrosoftFileMetadata(
 		body.Size == nil || *body.Size < 0 || body.DownloadURL == "" {
 		return ImportFileMetadata{}, ErrUnsupportedImportFile
 	}
-	downloadURL, err := url.Parse(body.DownloadURL)
-	if err != nil || downloadURL.Scheme != "https" || downloadURL.Host == "" ||
-		downloadURL.User != nil {
-		return ImportFileMetadata{}, ErrImportFileUnavailable
+	if err := validateImportDownloadURL(ctx, body.DownloadURL); err != nil {
+		return ImportFileMetadata{}, err
 	}
 	return ImportFileMetadata{
 		Name:        body.Name,

@@ -299,7 +299,10 @@ async def test_ingest_settlement_stays_per_call_and_local(monkeypatch):
 
     monkeypatch.setattr(accounting.asyncio, "to_thread", capture_to_thread)
     usage = NormalizedUsage(input_tokens=13, output_tokens=5)
-    token = accounting.bind_ingest("cr_ingest")
+    token = accounting.bind_ingest(
+        "cr_ingest",
+        {"figure_caption_call": {"creditMicrosPerUnit": 2_000_000}},
+    )
     try:
         state = await accounting.settle(
             call_id="pc_ingest",
@@ -325,6 +328,7 @@ async def test_ingest_settlement_stays_per_call_and_local(monkeypatch):
                 "instant",
                 _spec(),
                 usage,
+                {"figure_caption_call": {"creditMicrosPerUnit": 2_000_000}},
             ),
         )
     ]

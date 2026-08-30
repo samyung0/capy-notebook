@@ -14,6 +14,7 @@ import { fileIsIngesting } from './fileUtils';
  * ingest progress, and exposes a hover action menu (rename / properties /
  * delete) mirroring the chapter row pattern. */
 export function FileListItem({
+  beforeDelete,
   file,
   active,
   onOpen,
@@ -23,6 +24,7 @@ export function FileListItem({
   onDeleted,
   readOnly = false,
 }: {
+  beforeDelete?: () => boolean;
   file: SourceFile;
   active: boolean;
   onOpen: (id: string) => void;
@@ -77,6 +79,7 @@ export function FileListItem({
         )}
         {!readOnly && (
           <ContentActions
+            beforeDelete={beforeDelete}
             chapters={chapters}
             color={color}
             content={toFileActionTarget(file)}

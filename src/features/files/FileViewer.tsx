@@ -1,12 +1,14 @@
-import { lazy, type ReactNode, Suspense, useCallback } from 'react';
+import { lazy, type ReactNode, Suspense, useCallback, useState } from 'react';
 import { useReplaceSource, useWorkspace } from '@/api/hooks';
-import type { SourceFile } from '@/api/types';
+import type { Region, SourceFile } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
+import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { ImageViewer } from '@/features/files/ImageViewer';
 import { m } from '@/i18n';
 import { FileEmpty, FileLoading } from './FileStates';
 import { fileExt, IMAGE_MIN_ZOOM, isImageFile } from './fileUtils';
+import { officeRuntimeKey } from './useOfficeRuntime';
 
 const PdfView = lazy(() => import('./PdfView'));
 const SheetView = lazy(() => import('./SheetView'));
@@ -15,13 +17,110 @@ const DocxView = lazy(() => import('./DocxView'));
 const TextView = lazy(() => import('./TextView'));
 const PptxView = lazy(() => import('./PptxView'));
 
-const AUDIO_EXTS = new Set(['mp3', 'wav', 'm4a', 'ogg', 'flac', 'aac']);
-const SHEET_EXTS = new Set(['csv', 'xlsx']);
+const AUDIO_EXTS = new Set([
+  'mp3',
+  'wav',
+  'm4a',
+  'ogg',
+  'flac',
+  'aac',
+  'webm',
+  'mp4',
+  'mpeg',
+  'mpga',
+  'opus',
+]);
+const SHEET_EXTS = new Set(['csv', 'tsv', 'xlsx']);
 const SLIDE_EXTS = new Set(['pptx']);
 const TEXT_EXTS = new Set(['txt', 'md', 'markdown', 'mdx', 'mdc', 'json']);
+const OFFICE_PREVIEW_EXTS = new Set(['docx', 'pptx', 'xlsx']);
+
+export function officeCitationPreviewUrl(
+  file: Pick<SourceFile, 'name' | 'previewUrl'>,
+  page?: number,
+  regions?: readonly Region[]
+): string | undefined {
+  const citationRequested = page != null || Boolean(regions?.length);
+  if (!citationRequested || !OFFICE_PREVIEW_EXTS.has(fileExt(file.name))) {
+    return;
+  }
+  // Store-only and legacy Office files have no parser-derived PDF. Keep them
+  // on the native viewer instead of guessing an endpoint that will return 404.
+  return file.previewUrl || undefined;
+}
 
 function lazyView(node: ReactNode) {
   return <Suspense fallback={<FileLoading />}>{node}</Suspense>;
+}
+
+function OfficeCitationPreview({
+  canEdit,
+  fileRevision,
+  onSave,
+  page,
+  previewUrl,
+  regions,
+  previewReady,
+  renderOffice,
+}: {
+  canEdit: boolean;
+  fileRevision: number;
+  onSave: (
+    bytes: Uint8Array,
+    expectedRevision: number
+  ) => Promise<{ revision: number }>;
+  page?: number;
+  previewUrl: string;
+  regions: Region[];
+  previewReady: boolean;
+  renderOffice: (options: {
+    onCancelEditing?: () => void;
+    onSave: (
+      bytes: Uint8Array,
+      expectedRevision: number
+    ) => Promise<{ revision: number }>;
+    startEditing: boolean;
+  }) => ReactNode;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [awaitingPreviewRevision, setAwaitingPreviewRevision] = useState<
+    number | null
+  >(null);
+  const awaitingFreshPreview =
+    awaitingPreviewRevision != null &&
+    (!previewReady || fileRevision < awaitingPreviewRevision);
+  const saveAndAwaitPreview = useCallback(
+    async (bytes: Uint8Array, expectedRevision: number) => {
+      const saved = await onSave(bytes, expectedRevision);
+      setEditing(false);
+      setAwaitingPreviewRevision(saved.revision);
+      return saved;
+    },
+    [onSave]
+  );
+
+  if (editing || awaitingFreshPreview || !previewReady) {
+    return renderOffice({
+      onCancelEditing: editing ? () => setEditing(false) : undefined,
+      onSave: saveAndAwaitPreview,
+      startEditing: editing,
+    });
+  }
+
+  return (
+    <div className="flex h-full min-h-[60vh] flex-col">
+      {canEdit && (
+        <div className="flex min-h-10 shrink-0 justify-end border-line border-b px-2 py-1">
+          <Button onClick={() => setEditing(true)} size="sm">
+            {m.action_edit()}
+          </Button>
+        </div>
+      )}
+      <div className="relative min-h-0 flex-1 overflow-auto">
+        <PdfView page={page} regions={regions} url={previewUrl} />
+      </div>
+    </div>
+  );
 }
 
 function UnsupportedPreview({ file }: { file: SourceFile }) {
@@ -52,9 +151,12 @@ function UnsupportedPreview({ file }: { file: SourceFile }) {
 interface FileViewerProps {
   file: SourceFile | null;
   imageZoom?: number;
+  onDirtyChange?: (dirty: boolean) => void;
   onImageZoomChange?: (next: number) => void;
-  /** 1-based page to scroll to, from a chat citation. PDFs only. */
+  /** 1-based page to scroll to in a paginated citation preview. */
   page?: number;
+  /** Parser coordinates to highlight in read-only paginated previews. */
+  regions?: Region[];
 }
 
 export function FileViewer(props: FileViewerProps) {
@@ -69,7 +171,9 @@ function FileViewerContent({
   file,
   imageZoom = IMAGE_MIN_ZOOM,
   onImageZoomChange,
+  onDirtyChange,
   page,
+  regions,
 }: FileViewerProps) {
   const { data: workspace } = useWorkspace(file?.workspaceId ?? '', {
     errorBoundary: false,
@@ -97,10 +201,12 @@ function FileViewerContent({
   }
 
   const ext = fileExt(file.name);
+  const officeRuntimeIdentity = officeRuntimeKey(file, file.revision);
+  const citationPreviewUrl = officeCitationPreviewUrl(file, page, regions);
 
   if (file.kind === 'pdf' || ext === 'pdf') {
     if (!file.url) return <FileEmpty />;
-    return lazyView(<PdfView page={page} url={file.url} />);
+    return lazyView(<PdfView page={page} regions={regions} url={file.url} />);
   }
 
   if (isImageFile(file)) {
@@ -129,30 +235,118 @@ function FileViewerContent({
 
   if (file.kind === 'sheet' || SHEET_EXTS.has(ext)) {
     if (!file.url) return <FileEmpty />;
-    if (ext === 'csv') return lazyView(<CsvView url={file.url} />);
+    if (ext === 'csv' || ext === 'tsv')
+      return lazyView(<CsvView url={file.url} />);
     if (ext !== 'xlsx') return <UnsupportedPreview file={file} />;
+    if (citationPreviewUrl) {
+      return lazyView(
+        <OfficeCitationPreview
+          canEdit={workspace?.capabilities.canEdit ?? false}
+          fileRevision={file.revision}
+          key={file.id}
+          onSave={saveOfficeFile}
+          page={page}
+          previewReady={file.status === 'ready'}
+          previewUrl={citationPreviewUrl}
+          regions={regions ?? []}
+          renderOffice={({ onCancelEditing, onSave, startEditing }) => (
+            <SheetView
+              canEdit={workspace?.capabilities.canEdit ?? false}
+              file={file}
+              key={officeRuntimeIdentity}
+              onCancelEditing={onCancelEditing}
+              onDirtyChange={onDirtyChange}
+              onSave={onSave}
+              startEditing={startEditing}
+            />
+          )}
+        />
+      );
+    }
     return lazyView(
       <SheetView
         canEdit={workspace?.capabilities.canEdit ?? false}
         file={file}
+        key={officeRuntimeIdentity}
+        onDirtyChange={onDirtyChange}
         onSave={saveOfficeFile}
       />
     );
   }
 
-  // docx renders in the browser; legacy binary .doc has no web viewer.
+  // DOCX uses the same read-first Office runtime; legacy binary .doc stays downloadable.
   if (ext === 'docx') {
     if (!file.url) return <FileEmpty />;
-    return lazyView(<DocxView url={file.url} />);
+    if (citationPreviewUrl) {
+      return lazyView(
+        <OfficeCitationPreview
+          canEdit={workspace?.capabilities.canEdit ?? false}
+          fileRevision={file.revision}
+          key={file.id}
+          onSave={saveOfficeFile}
+          page={page}
+          previewReady={file.status === 'ready'}
+          previewUrl={citationPreviewUrl}
+          regions={regions ?? []}
+          renderOffice={({ onCancelEditing, onSave, startEditing }) => (
+            <DocxView
+              canEdit={workspace?.capabilities.canEdit ?? false}
+              file={file}
+              key={officeRuntimeIdentity}
+              onCancelEditing={onCancelEditing}
+              onDirtyChange={onDirtyChange}
+              onSave={onSave}
+              startEditing={startEditing}
+            />
+          )}
+        />
+      );
+    }
+    return lazyView(
+      <DocxView
+        canEdit={workspace?.capabilities.canEdit ?? false}
+        file={file}
+        key={officeRuntimeIdentity}
+        onDirtyChange={onDirtyChange}
+        onSave={saveOfficeFile}
+      />
+    );
   }
 
   if (file.kind === 'slides' || SLIDE_EXTS.has(ext)) {
     if (!file.url) return <FileEmpty />;
     if (ext !== 'pptx') return <UnsupportedPreview file={file} />;
+    if (citationPreviewUrl) {
+      return lazyView(
+        <OfficeCitationPreview
+          canEdit={workspace?.capabilities.canEdit ?? false}
+          fileRevision={file.revision}
+          key={file.id}
+          onSave={saveOfficeFile}
+          page={page}
+          previewReady={file.status === 'ready'}
+          previewUrl={citationPreviewUrl}
+          regions={regions ?? []}
+          renderOffice={({ onCancelEditing, onSave, startEditing }) => (
+            <PptxView
+              canEdit={workspace?.capabilities.canEdit ?? false}
+              file={file}
+              key={officeRuntimeIdentity}
+              onCancelEditing={onCancelEditing}
+              onDirtyChange={onDirtyChange}
+              onSave={onSave}
+              startEditing={startEditing}
+            />
+          )}
+        />
+      );
+    }
     return lazyView(
       <PptxView
         canEdit={workspace?.capabilities.canEdit ?? false}
         file={file}
+        key={officeRuntimeIdentity}
+        onDirtyChange={onDirtyChange}
         onSave={saveOfficeFile}
       />
     );

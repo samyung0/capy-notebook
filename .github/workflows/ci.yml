@@ -13,6 +13,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: ./vendor/betteroffice/.github/actions/wasm-toolchain
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.15.0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -23,6 +35,7 @@ jobs:
       - run: git diff --exit-code -- src/api/gen ops/src/api-gen
       - run: pnpm run email:check
       - run: pnpm run check
+      - run: pnpm run build
       - run: pnpm review:validate-boundaries
       - run: pnpm test
       - run: pnpm --filter @evo-notes/ops typecheck
@@ -33,6 +46,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.14"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: ./vendor/betteroffice/.github/actions/wasm-toolchain
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.15.0
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

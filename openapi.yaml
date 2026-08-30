@@ -1144,6 +1144,8 @@ components:
         position:
           format: int64
           type: integer
+        previewUrl:
+          type: string
         revision:
           format: int64
           type: integer
@@ -1342,7 +1344,12 @@ components:
           format: uri
           readOnly: true
           type: string
+        captionImages:
+          type: boolean
         chapterId:
+          type: string
+        chapterName:
+          maxLength: 255
           type: string
         driveIds:
           items:
@@ -1353,6 +1360,11 @@ components:
             type: string
           minItems: 1
           type: array
+        parseMode:
+          enum:
+            - fast
+            - none
+          type: string
         provider:
           enum:
             - google
@@ -1387,6 +1399,95 @@ components:
         - slotsFree
         - slotsUsed
         - slotsLimit
+      type: object
+    InspectSourceImportRejected:
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+        fileId:
+          type: string
+      required:
+        - fileId
+        - code
+      type: object
+    InspectSourceImportsReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/InspectSourceImportsReq.json
+          format: uri
+          readOnly: true
+          type: string
+        driveIds:
+          items:
+            type: string
+          type: array
+        fileIds:
+          items:
+            type: string
+          maxItems: 20
+          minItems: 1
+          type: array
+        provider:
+          enum:
+            - google
+            - microsoft
+          type: string
+      required:
+        - provider
+        - fileIds
+      type: object
+    InspectSourceImportsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/InspectSourceImportsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/InspectedSourceImport"
+          type: array
+        rejected:
+          items:
+            $ref: "#/components/schemas/InspectSourceImportRejected"
+          type: array
+      required:
+        - items
+        - rejected
+      type: object
+    InspectedSourceImport:
+      additionalProperties: false
+      properties:
+        analysisUrl:
+          type: string
+        contentType:
+          type: string
+        driveId:
+          type: string
+        fileId:
+          type: string
+        kind:
+          type: string
+        name:
+          type: string
+        sizeBytes:
+          format: int64
+          type: integer
+        sizeEstimate:
+          type: boolean
+      required:
+        - fileId
+        - name
+        - kind
+        - contentType
+        - sizeBytes
+        - sizeEstimate
+        - analysisUrl
       type: object
     IntegrationsStatus:
       additionalProperties: false
@@ -2496,11 +2597,23 @@ components:
           type: string
         allowNoExtension:
           type: boolean
+        audioMaxDurationSeconds:
+          format: int64
+          type: integer
+        audioSecondCreditMicros:
+          format: int64
+          type: integer
+        digitalParsePageCreditMicros:
+          format: int64
+          type: integer
         kinds:
           items:
             $ref: "#/components/schemas/SourceUploadKindPolicy"
           type: array
         maxBytes:
+          format: int64
+          type: integer
+        ocrParsePageCreditMicros:
           format: int64
           type: integer
         parseModes:
@@ -2513,6 +2626,10 @@ components:
         - accept
         - maxBytes
         - allowNoExtension
+        - audioSecondCreditMicros
+        - audioMaxDurationSeconds
+        - digitalParsePageCreditMicros
+        - ocrParsePageCreditMicros
       type: object
     SourceUploadReservation:
       additionalProperties: false
@@ -6097,6 +6214,37 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Queue sources from a connected drive
+      tags:
+        - Content
+  /api/workspaces/{id}/sources/import-inspect:
+    post:
+      operationId: inspectSourceImports
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InspectSourceImportsReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InspectSourceImportsResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Inspect sources selected from a connected drive
       tags:
         - Content
   /api/workspaces/{id}/sources/imports/{jobId}:

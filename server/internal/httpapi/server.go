@@ -49,16 +49,17 @@ type Config struct {
 	AuthDisabled       bool
 	DevUserID          string
 	// E2EAuth enables X-E2E-User-Id identity headers (disposable E2E only).
-	E2EAuth                bool
-	E2ESecret              string
-	E2EUserIDs             []string
-	StripeSecretKey        string
-	StripeWebhookSecret    string
-	StripePricePro         string
-	AppURL                 string
-	EmailUnsubscribeSecret string
-	CollaborationSecret    string
-	CollaborationURL       string
+	E2EAuth                 bool
+	E2ESecret               string
+	E2EUserIDs              []string
+	StripeSecretKey         string
+	StripeWebhookSecret     string
+	ElevenLabsWebhookSecret string
+	StripePricePro          string
+	AppURL                  string
+	EmailUnsubscribeSecret  string
+	CollaborationSecret     string
+	CollaborationURL        string
 	// AllowedOrigins is the CORS allowlist. Empty means "*", which is what dev
 	// and e2e run with; production sets it once the SPA and API live on
 	// different hostnames.
@@ -175,6 +176,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	r.Get("/healthz", healthHandler(cfg.ReleaseSHA))
 	r.Post("/webhooks/clerk", a.clerkWebhook)
 	r.Post("/webhooks/stripe", a.stripeWebhook)
+	r.Post("/webhooks/elevenlabs", a.elevenLabsWebhook)
 	r.Get("/api/notifications/stream", a.notificationEvents)
 	r.Get("/api/email/unsubscribe", a.emailUnsubscribe)
 	r.Post("/api/email/unsubscribe", a.emailUnsubscribe)
@@ -202,6 +204,8 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/import-relay/dead-letter", a.internalDeadLetterSourceImport)
 	}
 	r.Get("/api/files/{id}/raw", a.getFileRaw)
+	r.Get("/api/files/{id}/preview", a.getFilePreview)
+	r.Get("/api/workspaces/{id}/sources/import-content", a.getSourceImportContent)
 
 	return r
 }
@@ -564,7 +568,7 @@ func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
 	}
 	captionImages := sourceupload.NormalizeCaptionImages(kind, parseMode, r.FormValue("captionImages") == "true")
 
-	if sourceupload.NeedsIngestJob(kind, parseMode) {
+	if sourceupload.NeedsIngestJob(name, kind, parseMode) {
 		if err := a.s.AssertCreditsAvailable(r.Context(), uid(r)); err != nil {
 			a.fail(w, err)
 			return
@@ -576,7 +580,7 @@ func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	if !sourceupload.NeedsIngestJob(kind, parseMode) {
+	if !sourceupload.NeedsIngestJob(name, kind, parseMode) {
 		res, err := a.s.CreateSourceReady(r.Context(), id(r), uid(r), name, kind, chapterID, chapterName, size, blobPath)
 		if err != nil {
 			_ = a.blob.Delete(r.Context(), blobPath)
@@ -624,6 +628,30 @@ func (a *api) getFileRaw(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "no content"})
 	}
+}
+
+func (a *api) getFilePreview(w http.ResponseWriter, r *http.Request) {
+	// Preview visibility follows the source file. Private workspace existence is
+	// still hidden behind fileRead's not-found response.
+	if _, err := a.fileRead(r.Context(), id(r)); err != nil {
+		a.fail(w, err)
+		return
+	}
+	path, err := a.s.FilePreviewBlob(r.Context(), id(r))
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	if a.blob == nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"message": "no preview"})
+		return
+	}
+	signed, err := a.blob.PresignGet(r.Context(), path)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	http.Redirect(w, r, signed, http.StatusFound)
 }
 
 func kindFromName(name string) string {

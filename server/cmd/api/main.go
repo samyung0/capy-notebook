@@ -356,8 +356,7 @@ func main() {
 	}()
 
 	go runBlobReaper(ctx, st, blobStore, artifactTTL{
-		CaptionDays:   envInt("EVO_CAPTION_CACHE_TTL_DAYS", 90),
-		ParseZipHours: envInt("EVO_PARSE_ZIP_TTL_HOURS", 6),
+		CaptionDays: envInt("EVO_CAPTION_CACHE_TTL_DAYS", 90),
 	})
 	go runBlobSweep(ctx, st, blobStore)
 	go runAccountPurgeWorker(ctx, st, env("CLERK_SECRET_KEY", "") != "")
@@ -378,27 +377,28 @@ func main() {
 	}
 
 	cfg := httpapi.Config{
-		ReleaseSHA:             env("RELEASE_SHA", ""),
-		ClerkSecretKey:         env("CLERK_SECRET_KEY", ""),
-		ClerkWebhookSecret:     env("CLERK_WEBHOOK_SECRET", ""),
-		AuthDisabled:           envBool("AUTH_DISABLED"),
-		DevUserID:              env("DEV_USER_ID", "u_1"),
-		E2EAuth:                e2eAuth,
-		E2ESecret:              e2eSecret,
-		E2EUserIDs:             e2eUserIDs,
-		StripeSecretKey:        env("STRIPE_SECRET_KEY", ""),
-		StripeWebhookSecret:    env("STRIPE_WEBHOOK_SECRET", ""),
-		StripePricePro:         env("STRIPE_PRICE_PRO", ""),
-		AppURL:                 appURL,
-		EmailUnsubscribeSecret: emailUnsubscribeSecret,
-		CollaborationSecret:    env("COLLABORATION_SECRET", "dev-collaboration-secret"),
-		CollaborationURL:       env("COLLABORATION_URL", "ws://localhost:1234"),
-		PipelineSecret:         pipeSecret,
-		ImportRelaySecret:      importRelaySecret,
-		ImportRelayEnqueueURL:  importRelayEnqueueURL,
-		AllowedOrigins:         envList("CORS_ALLOWED_ORIGINS"),
-		RateLimit:              rateLimitConfig(appEnv),
-		ModelRegistry:          modelReg,
+		ReleaseSHA:              env("RELEASE_SHA", ""),
+		ClerkSecretKey:          env("CLERK_SECRET_KEY", ""),
+		ClerkWebhookSecret:      env("CLERK_WEBHOOK_SECRET", ""),
+		AuthDisabled:            envBool("AUTH_DISABLED"),
+		DevUserID:               env("DEV_USER_ID", "u_1"),
+		E2EAuth:                 e2eAuth,
+		E2ESecret:               e2eSecret,
+		E2EUserIDs:              e2eUserIDs,
+		StripeSecretKey:         env("STRIPE_SECRET_KEY", ""),
+		StripeWebhookSecret:     env("STRIPE_WEBHOOK_SECRET", ""),
+		ElevenLabsWebhookSecret: env("ELEVENLABS_WEBHOOK_SECRET", ""),
+		StripePricePro:          env("STRIPE_PRICE_PRO", ""),
+		AppURL:                  appURL,
+		EmailUnsubscribeSecret:  emailUnsubscribeSecret,
+		CollaborationSecret:     env("COLLABORATION_SECRET", "dev-collaboration-secret"),
+		CollaborationURL:        env("COLLABORATION_URL", "ws://localhost:1234"),
+		PipelineSecret:          pipeSecret,
+		ImportRelaySecret:       importRelaySecret,
+		ImportRelayEnqueueURL:   importRelayEnqueueURL,
+		AllowedOrigins:          envList("CORS_ALLOWED_ORIGINS"),
+		RateLimit:               rateLimitConfig(appEnv),
+		ModelRegistry:           modelReg,
 	}
 	if mailRecorder != nil {
 		cfg.MailRecorder = mailRecorder

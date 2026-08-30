@@ -1,17 +1,15 @@
 """Offline unit tests for figure selection and captioning (no network).
 
-Selection is where the judgement is. Every rejection here is permanent — a
-figure that is filtered out is never described, so it is unreachable by search
-for the life of the document — which makes the false-negative cases (a line
-diagram, a duplicated figure, a one-off logo) more interesting than the obvious
-rejections. The captioning half is tested for the two properties the rest of the
-pipeline depends on: captions land on the ``content_list`` before chunking, and
-a second ingest of the same source reuses them so ``content_hash`` is stable.
+Selection is intentionally permissive because every rejection is permanent.
+Tests cover the 130×130 floor, exact deduplication, and decorative decisions
+made by the model and retained in the caption cache.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -83,9 +81,7 @@ def _text_block(text: str, page: int, level: int | None = None) -> dict[str, Any
 # ---------------------------------------------------------------- selection
 
 
-def test_a_line_diagram_survives_the_flatness_filters(tmp_path: Path):
-    """The naive "mostly one colour means logo" rule would drop this, and it is
-    the single most valuable image on a lecture slide."""
+def test_a_line_diagram_survives_selection(tmp_path: Path):
     _write(tmp_path / "images" / "fig.png", _diagram())
     content_list = [_image_block("images/fig.png", 0)]
 
@@ -99,13 +95,9 @@ def test_a_line_diagram_survives_the_flatness_filters(tmp_path: Path):
     [
         ("tiny", _diagram((80, 60))),
         ("sliver", _diagram((900, 60))),
-        ("solid", _solid()),
-        ("blank", Image.new("RGB", (600, 400), "white")),
     ],
 )
-def test_page_furniture_and_undersized_crops_are_rejected(
-    tmp_path: Path, name: str, image: Image.Image
-):
+def test_undersized_crops_are_rejected(tmp_path: Path, name: str, image: Image.Image):
     _write(tmp_path / "images" / f"{name}.png", image)
     content_list = [_image_block(f"images/{name}.png", 0)]
 
@@ -143,15 +135,26 @@ def test_chart_blocks_are_selected_and_use_their_own_caption_key(tmp_path: Path)
     assert "Figure 4: glucose uptake" in selected[0].context
 
 
-def test_a_thumbnail_sized_bbox_is_rejected_even_when_the_crop_is_large(
+def test_page_bbox_does_not_reject_a_large_decodable_crop(
     tmp_path: Path,
 ):
-    """A high-DPI scan renders a 1cm icon as a perfectly large PNG. The bbox is
-    what says how much of the page it actually occupies."""
     _write(tmp_path / "images" / "fig.png", _diagram())
     content_list = [_image_block("images/fig.png", 0, bbox=[10, 10, 60, 60])]
 
-    assert figures.select_figures(content_list, tmp_path) == []
+    assert len(figures.select_figures(content_list, tmp_path)) == 1
+
+
+def test_the_130_pixel_floor_is_inclusive(tmp_path: Path):
+    _write(tmp_path / "images" / "keep.png", _diagram((130, 130)))
+    _write(tmp_path / "images" / "drop.png", _diagram((129, 130)))
+    content_list = [
+        _image_block("images/keep.png", 0),
+        _image_block("images/drop.png", 0),
+    ]
+
+    assert [
+        item.path.name for item in figures.select_figures(content_list, tmp_path)
+    ] == ["keep.png"]
 
 
 def test_the_same_picture_used_twice_is_captioned_once(tmp_path: Path):
@@ -168,9 +171,7 @@ def test_the_same_picture_used_twice_is_captioned_once(tmp_path: Path):
     assert selected[0].items == content_list
 
 
-def test_an_image_recurring_across_pages_is_dropped_as_page_furniture(tmp_path: Path):
-    """A crest in the corner of every slide. Distinct bytes per page (different
-    JPEG noise, a shifted crop), so only the perceptual hash catches it."""
+def test_near_duplicate_images_are_left_for_the_model(tmp_path: Path):
     content_list = []
     for page in range(8):
         crest = _diagram()
@@ -178,7 +179,7 @@ def test_an_image_recurring_across_pages_is_dropped_as_page_furniture(tmp_path: 
         _write(tmp_path / "images" / f"crest{page}.png", crest)
         content_list.append(_image_block(f"images/crest{page}.png", page))
 
-    assert figures.select_figures(content_list, tmp_path) == []
+    assert len(figures.select_figures(content_list, tmp_path)) == 8
 
 
 def test_distinct_figures_on_many_pages_all_survive(tmp_path: Path):
@@ -237,12 +238,30 @@ def captioning(monkeypatch):
     """Stub the vision model and the caption cache; record what each did."""
     calls: list[str] = []
     store: dict[str, bytes] = {}
+    gate = threading.Lock()
+    lock_state = {"held": False}
+
+    class Connection:
+        pass
+
+    def try_lock(_identity: str):
+        with gate:
+            if lock_state["held"]:
+                return None
+            lock_state["held"] = True
+            return Connection()
+
+    def release_lock(_connection: Connection, _identity: str) -> None:
+        with gate:
+            lock_state["held"] = False
 
     async def _caption(_data_url: str, prompt: str) -> str:
         calls.append(prompt)
         return f"description {len(calls)}"
 
     monkeypatch.setattr(figures.models, "caption_image", _caption)
+    monkeypatch.setattr(figures.db, "try_source_artifact_lock", try_lock)
+    monkeypatch.setattr(figures.db, "release_source_artifact_lock", release_lock)
     monkeypatch.setattr(figures.blobstore, "read_bytes", lambda key: store.get(key))
     monkeypatch.setattr(
         figures.blobstore,
@@ -299,10 +318,31 @@ async def test_a_reingest_replays_the_cache_so_the_content_hash_is_stable(
         "selected": 1,
         "cached": 1,
         "captioned": 0,
+        "decorative": 0,
         "applied": 1,
         "key": _caption_key(),
     }
     assert second[0]["description"] == first[0]["description"]
+
+
+async def test_concurrent_ingests_share_one_embedded_caption_cache(
+    tmp_path: Path, captioning
+):
+    first_dir = tmp_path / "first"
+    second_dir = tmp_path / "second"
+    _write(first_dir / "images" / "a.png", _diagram(seed=1))
+    _write(second_dir / "images" / "a.png", _diagram(seed=1))
+    first = [_image_block("images/a.png", 0)]
+    second = [_image_block("images/a.png", 0)]
+
+    first_stats, second_stats = await asyncio.gather(
+        _caption_all(first_dir, first),
+        _caption_all(second_dir, second),
+    )
+
+    assert len(captioning["calls"]) == 1
+    assert first[0]["description"] == second[0]["description"]
+    assert {first_stats["captioned"], second_stats["captioned"]} == {0, 1}
 
 
 async def test_a_bumped_caption_version_invalidates_the_cache(
@@ -311,12 +351,12 @@ async def test_a_bumped_caption_version_invalidates_the_cache(
     _write(tmp_path / "images" / "a.png", _diagram(seed=1))
     await _caption_all(tmp_path, [_image_block("images/a.png", 0)])
 
-    monkeypatch.setattr(figures.cfg, "caption_version", "v2")
+    monkeypatch.setattr(figures.cfg, "caption_version", "v3")
     await _caption_all(tmp_path, [_image_block("images/a.png", 0)])
 
     assert len(captioning["calls"]) == 2
     assert set(captioning["store"]) == {
-        _caption_key().replace("v2", "v1"),
+        _caption_key().replace("v3", "v2"),
         _caption_key(),
     }
 
@@ -338,6 +378,7 @@ async def test_the_prompt_carries_the_page_but_not_the_file_name(
     prompt = captioning["calls"][0]
     assert "lecture.pdf" not in prompt
     assert "Page: 4" in prompt
+    assert "return exactly DECORATIVE" in prompt
 
 
 async def test_the_context_preamble_is_absent_when_there_is_no_context(
@@ -392,15 +433,28 @@ async def test_an_unreadable_cache_is_not_a_failed_ingest(
     assert content_list[0]["description"] == "description 1"
 
 
-async def test_nothing_to_caption_makes_no_calls(tmp_path: Path, captioning):
+async def test_a_decorative_result_is_cached_but_not_added_to_chunks(
+    tmp_path: Path, captioning, monkeypatch
+):
+    async def _decorative(_data_url: str, prompt: str) -> str:
+        captioning["calls"].append(prompt)
+        return "DECORATIVE"
+
+    monkeypatch.setattr(figures.models, "caption_image", _decorative)
     _write(tmp_path / "images" / "logo.png", _solid((200, 200)))
     content_list = [_image_block("images/logo.png", 0), _text_block("Hello", 0)]
 
-    stats = await _caption_all(tmp_path, content_list)
+    first = await _caption_all(tmp_path, content_list)
+    second_content = [_image_block("images/logo.png", 0)]
+    second = await _caption_all(tmp_path, second_content)
 
-    assert stats["selected"] == 0
-    assert captioning["calls"] == []
+    assert first["decorative"] == 1
+    assert first["applied"] == 0
+    assert second["cached"] == 1
+    assert second["decorative"] == 1
+    assert len(captioning["calls"]) == 1
     assert "description" not in content_list[0]
+    assert "description" not in second_content[0]
 
 
 async def test_the_caption_cache_follows_the_source_blob_not_the_parse_route(

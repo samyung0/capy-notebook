@@ -1,9 +1,26 @@
 package sourceupload
 
 import (
+	"encoding/json"
+	"os"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestWorkerTextFormatContractMatchesServerPolicy(t *testing.T) {
+	raw, err := os.ReadFile("text_extensions.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var workerFormats []string
+	if err := json.Unmarshal(raw, &workerFormats); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(workerFormats, textExtensions) {
+		t.Fatal("worker text-format contract is out of sync with the server policy")
+	}
+}
 
 func TestKindFromNameUsesFrontendExtensionMap(t *testing.T) {
 	tests := map[string]string{
@@ -15,6 +32,10 @@ func TestKindFromNameUsesFrontendExtensionMap(t *testing.T) {
 		"state.json":        "json",
 		"no-extension":      "unknown",
 		"archive.zip":       "unknown",
+		"legacy.doc":        "doc",
+		"legacy.xls":        "sheet",
+		"legacy.ppt":        "slides",
+		"table.tsv":         "sheet",
 		"component.h++":     "txt",
 		"configuration.YML": "txt",
 	}
@@ -42,7 +63,8 @@ func TestValidate(t *testing.T) {
 		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: ProSourceMaxBytes, maxBytes: ProSourceMaxBytes},
 		{name: "song.mp3", kind: "audio", mode: ParseModeFast, size: 1, wantError: "does not support"},
 		{name: "notes.pdf", kind: "txt", mode: ParseModeFast, size: 1, wantError: "does not match"},
-		{name: "archive.zip", kind: "unknown", mode: ParseModeNone, size: 1, wantError: "not supported"},
+		{name: "archive.zip", kind: "unknown", mode: ParseModeNone, size: 1},
+		{name: "no-extension", kind: "unknown", mode: ParseModeNone, size: 1},
 		{name: "notes.pdf", kind: "pdf", mode: "invalid", size: 1, wantError: "unknown parse mode"},
 	}
 	for _, test := range tests {
@@ -85,21 +107,71 @@ func TestDefaultParseMode(t *testing.T) {
 
 func TestNeedsIngestJob(t *testing.T) {
 	tests := []struct {
-		kind, mode string
-		want       bool
+		name, kind, mode string
+		want             bool
 	}{
-		{kind: "txt", mode: ParseModeNone, want: true},
-		{kind: "md", mode: ParseModeNone, want: true},
-		{kind: "json", mode: ParseModeNone, want: true},
-		{kind: "pdf", mode: ParseModeFast, want: true},
-		{kind: "pdf", mode: ParseModeNone, want: false},
-		{kind: "audio", mode: ParseModeNone, want: false},
+		{name: "notes.txt", kind: "txt", mode: ParseModeNone, want: true},
+		{name: "notes.md", kind: "md", mode: ParseModeNone, want: true},
+		{name: "data.json", kind: "json", mode: ParseModeNone, want: true},
+		{name: "paper.pdf", kind: "pdf", mode: ParseModeFast, want: true},
+		{name: "paper.pdf", kind: "pdf", mode: ParseModeNone, want: false},
+		{name: "song.mp3", kind: "audio", mode: ParseModeNone, want: true},
+		{name: "scan.svg", kind: "image", mode: ParseModeNone, want: true},
+		{name: "data.csv", kind: "sheet", mode: ParseModeNone, want: true},
+		{name: "data.tsv", kind: "sheet", mode: ParseModeNone, want: true},
+		{name: "legacy.xls", kind: "sheet", mode: ParseModeNone, want: false},
+		{name: "archive.zip", kind: "unknown", mode: ParseModeNone, want: false},
 	}
 	for _, test := range tests {
-		if got := NeedsIngestJob(test.kind, test.mode); got != test.want {
-			t.Errorf("NeedsIngestJob(%q, %q) = %t, want %t",
-				test.kind, test.mode, got, test.want)
+		if got := NeedsIngestJob(test.name, test.kind, test.mode); got != test.want {
+			t.Errorf("NeedsIngestJob(%q, %q, %q) = %t, want %t",
+				test.name, test.kind, test.mode, got, test.want)
 		}
+	}
+}
+
+func TestBuildProcessingPlan(t *testing.T) {
+	tests := []struct {
+		name, kind, mode string
+		caption          bool
+		wantRoute        string
+		wantCaption      string
+		wantParser       string
+		wantPreview      bool
+		wantStages       []string
+	}{
+		{name: "notes.txt", kind: "txt", mode: ParseModeNone, wantRoute: RouteRawText, wantCaption: CaptionNone},
+		{name: "page.html", kind: "txt", mode: ParseModeNone, wantRoute: RouteRawText, wantCaption: CaptionNone},
+		{name: "data.csv", kind: "sheet", mode: ParseModeNone, wantRoute: RouteDelimitedText, wantCaption: CaptionNone, wantStages: []string{"fetch_source", "normalize_delimited", "chunk", "index", "generate_derivatives"}},
+		{name: "photo.png", kind: "image", mode: ParseModeNone, wantRoute: RouteImageCaption, wantCaption: CaptionStandalone},
+		{name: "lecture.mp3", kind: "audio", mode: ParseModeNone, wantRoute: RouteAudioTranscript, wantCaption: CaptionNone},
+		{name: "paper.pdf", kind: "pdf", mode: ParseModeFast, caption: true, wantRoute: RouteDocumentParse, wantCaption: CaptionEmbedded, wantParser: ParseModeFast, wantStages: []string{"fetch_source", "parse_document", "caption_images", "persist_captions", "chunk", "index", "generate_derivatives"}},
+		{name: "book.xlsx", kind: "sheet", mode: ParseModeFast, wantRoute: RouteDocumentParse, wantCaption: CaptionNone, wantParser: ParseModeFast, wantPreview: true, wantStages: []string{"fetch_source", "parse_document", "persist_office_preview", "chunk", "index", "generate_derivatives"}},
+		{name: "legacy.xls", kind: "sheet", mode: ParseModeNone, wantRoute: RouteStoreOnly, wantCaption: CaptionNone},
+		{name: "archive.zip", kind: "unknown", mode: ParseModeNone, wantRoute: RouteStoreOnly, wantCaption: CaptionNone},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			plan, err := BuildProcessingPlan(test.name, test.kind, test.mode, test.caption)
+			if err != nil {
+				t.Fatalf("BuildProcessingPlan returned unexpected error: %v", err)
+			}
+			if plan.Version != ProcessingPlanVersion || plan.Format != extensionKey(test.name) || plan.Route != test.wantRoute || plan.CaptionMode != test.wantCaption || plan.ParserRoute != test.wantParser || plan.OfficePreview != test.wantPreview {
+				t.Fatalf("BuildProcessingPlan(%q) = %#v", test.name, plan)
+			}
+			if test.wantStages != nil && !reflect.DeepEqual(plan.Stages, test.wantStages) {
+				t.Fatalf("BuildProcessingPlan(%q).Stages = %v, want %v", test.name, plan.Stages, test.wantStages)
+			}
+		})
+	}
+}
+
+func TestBuildProcessingPlanRejectsInvalidContractInput(t *testing.T) {
+	if _, err := BuildProcessingPlan("paper.pdf", "txt", ParseModeFast, false); err == nil {
+		t.Fatal("expected a kind mismatch error")
+	}
+	if _, err := BuildProcessingPlan("paper.pdf", "pdf", "accurate", false); err == nil {
+		t.Fatal("expected an unknown parse mode error")
 	}
 }
 
@@ -110,8 +182,8 @@ func TestParsePolicyLists(t *testing.T) {
 		t.Fatalf("fast policy is missing expected extensions: %v", fast)
 	}
 	for _, legacy := range []string{".doc", ".xls", ".ppt"} {
-		if contains(fast, legacy) || contains(supported, legacy) {
-			t.Fatalf("legacy Office extension %s must be rejected", legacy)
+		if contains(fast, legacy) || !contains(supported, legacy) {
+			t.Fatalf("legacy Office extension %s must be store-only", legacy)
 		}
 	}
 	if contains(ParseExtensions(ParseModeNone), ".pdf") {

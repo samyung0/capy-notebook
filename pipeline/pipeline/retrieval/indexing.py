@@ -29,9 +29,31 @@ def _uid(prefix: str) -> str:
 
 
 def content_hash(chunks: list[Chunk]) -> str:
+    """Hash the parsed passage text and any citation geometry it carries.
+
+    Geometry is part of canonical content identity. Otherwise two documents
+    with the same words but different pagination or layout would share chunks,
+    and citations for one upload could point at coordinates from the other.
+    """
     digest = hashlib.sha256()
     for chunk in chunks:
         digest.update(chunk.text.encode("utf-8"))
+        digest.update(b"\x00")
+        geometry = {
+            "page_start": chunk.page_start,
+            "page_end": chunk.page_end,
+            "regions": [region.as_dict() for region in chunk.regions],
+        }
+        if chunk.page_start is not None or chunk.page_end is not None or chunk.regions:
+            digest.update(
+                json.dumps(
+                    geometry,
+                    ensure_ascii=False,
+                    allow_nan=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode("utf-8")
+            )
         digest.update(b"\x00")
     return digest.hexdigest()
 
@@ -118,11 +140,13 @@ async def embed_copied_chunks(
     workspace_id: str,
     content_id: str,
     claim_job_id: str | None = None,
+    mark_ready: bool = True,
 ) -> dict[str, Any]:
     """Re-embed chunk text copied from a donor in a different vector space."""
     chunks = await store.load_content_chunks(content_id)
     if not chunks:
-        await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
+        if mark_ready:
+            await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
         return {"chunks": 0, "reembedded": True}
     texts = [str(row["indexed_text"] or row["text"]) for row in chunks]
     vectors = await models.embed(texts, spec=embedding_spec())
@@ -151,7 +175,8 @@ async def embed_copied_chunks(
         rows=rows,
         claim_job_id=claim_job_id,
     )
-    await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
+    if mark_ready:
+        await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
     return {"chunks": len(rows), "reembedded": True}
 
 

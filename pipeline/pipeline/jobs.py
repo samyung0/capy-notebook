@@ -31,6 +31,10 @@ class CapacityWait(Exception):
     """
 
 
+class ExternalWait(Exception):
+    """An asynchronous provider owns the work; yield without spending an attempt."""
+
+
 @dataclass(frozen=True)
 class JobPolicy:
     max_attempts: int
@@ -39,9 +43,8 @@ class JobPolicy:
     lease_s: int
 
 
-# The whole job outlives the parser request and its presigned URLs. This leaves
-# a ten-minute post-parse budget at the defaults for captions, embeddings, and
-# recording the usage receipt.
+# The whole job outlives the parser request. This leaves a ten-minute post-parse
+# budget at the defaults for captions, embeddings, and the usage receipt.
 POLICIES: dict[str, JobPolicy] = {
     "ingest": JobPolicy(
         max_attempts=3,
@@ -79,7 +82,7 @@ def backoff_s(policy: JobPolicy, attempts: int) -> int:
 
 
 def is_retryable(exc: BaseException) -> bool:
-    if isinstance(exc, (TerminalError, CapacityWait)):
+    if isinstance(exc, (TerminalError, CapacityWait, ExternalWait)):
         return False
     if isinstance(exc, RetryableError):
         return True

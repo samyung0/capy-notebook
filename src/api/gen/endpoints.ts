@@ -45,6 +45,8 @@ import type {
   ImportSourcesAccepted,
   ImportSourcesReq,
   IngestSlots,
+  InspectSourceImportsReq,
+  InspectSourceImportsResponse,
   IntegrationsStatus,
   LLMCredentialsResponse,
   Label,
@@ -5864,6 +5866,57 @@ export const importSources = async (id: string,
 
   const data: importSourcesResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as importSourcesResponse
+}
+
+
+
+export type inspectSourceImportsResponse200 = {
+  data: InspectSourceImportsResponse
+  status: 200
+}
+
+export type inspectSourceImportsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type inspectSourceImportsResponseSuccess = (inspectSourceImportsResponse200) & {
+  headers: Headers;
+};
+export type inspectSourceImportsResponseError = (inspectSourceImportsResponseDefault) & {
+  headers: Headers;
+};
+
+export type inspectSourceImportsResponse = (inspectSourceImportsResponseSuccess | inspectSourceImportsResponseError)
+
+export const getInspectSourceImportsUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/sources/import-inspect`
+}
+
+/**
+ * @summary Inspect sources selected from a connected drive
+ */
+export const inspectSourceImports = async (id: string,
+    inspectSourceImportsReq: NonReadonly<InspectSourceImportsReq>, options?: RequestInit): Promise<inspectSourceImportsResponse> => {
+
+  const res = await fetch(getInspectSourceImportsUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(inspectSourceImportsReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: inspectSourceImportsResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as inspectSourceImportsResponse
 }
 
 

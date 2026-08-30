@@ -106,10 +106,13 @@ type File struct {
 	// Indexed is true after ingest has written retrieval chunks. Ready files
 	// stored without parsing stay false: they are viewable but invisible to
 	// chat and generate.
-	Indexed  bool    `json:"indexed"`
-	URL      *string `json:"url,omitempty"`
-	Content  *string `json:"content,omitempty"`
-	Revision int64   `json:"revision"`
+	Indexed bool    `json:"indexed"`
+	URL     *string `json:"url,omitempty"`
+	// PreviewURL renders the exact paginated bytes used for citation regions.
+	// It is absent until ingest has finished.
+	PreviewURL *string `json:"previewUrl,omitempty"`
+	Content    *string `json:"content,omitempty"`
+	Revision   int64   `json:"revision"`
 }
 
 type Quiz struct {

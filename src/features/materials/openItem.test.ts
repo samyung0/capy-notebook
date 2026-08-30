@@ -27,4 +27,21 @@ describe('searchFromOpenItem', () => {
       material: 'mat_1',
     });
   });
+
+  it('keeps citation regions transient', () => {
+    expect(
+      searchFromOpenItem({
+        id: 'file_1',
+        kind: 'file',
+        page: 2,
+        regions: [
+          {
+            bbox: [100, 200, 300, 400],
+            page: 2,
+            space: 'page-1000-topleft',
+          },
+        ],
+      })
+    ).toEqual({ file: 'file_1', page: 2 });
+  });
 });

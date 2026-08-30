@@ -23,7 +23,38 @@ const (
 	// before we look up the owner's plan. Must be >= ProSourceMaxBytes.
 	ParseMaxBytes  = ProSourceMaxBytes
 	UploadMaxBytes = ParseMaxBytes + (4 << 20)
+
+	// ProcessingPlanVersion changes whenever the enqueue-time contract changes
+	// incompatibly. Workers reject versions they do not understand instead of
+	// guessing from a file kind or extension.
+	ProcessingPlanVersion = 1
+
+	RouteStoreOnly       = "store_only"
+	RouteRawText         = "raw_text"
+	RouteDelimitedText   = "delimited_text"
+	RouteImageCaption    = "image_caption"
+	RouteAudioTranscript = "audio_transcription"
+	RouteDocumentParse   = "document_parse"
+
+	CaptionNone       = "none"
+	CaptionStandalone = "standalone"
+	CaptionEmbedded   = "embedded"
 )
+
+// ProcessingPlan is the server-owned, versioned contract consumed by ingest
+// workers. Format selection happens once, when the job is enqueued. The stages
+// and resources are declarative: the worker still owns retries, telemetry, and
+// the implementation of each stage.
+type ProcessingPlan struct {
+	Version       int      `json:"version"`
+	Format        string   `json:"format"`
+	Route         string   `json:"route"`
+	ParserRoute   string   `json:"parserRoute,omitempty"`
+	CaptionMode   string   `json:"captionMode"`
+	OfficePreview bool     `json:"officePreview"`
+	Stages        []string `json:"stages"`
+	Resources     []string `json:"resources"`
+}
 
 // SourceMaxBytes is the per-file cap for the workspace owner's plan.
 func SourceMaxBytes(pro bool) int64 {
@@ -37,12 +68,12 @@ func SourceMaxBytes(pro bool) int64 {
 // extensions are added below, without overriding these explicit kinds.
 var explicitKindExtensions = map[string][]string{
 	"pdf":    {"pdf"},
-	"doc":    {"docx"},
+	"doc":    {"docx", "doc"},
 	"md":     {"md", "markdown", "mdx", "mdc"},
-	"image":  {"png", "jpg", "jpeg", "jp2", "webp", "gif", "bmp", "svg", "avif"},
-	"sheet":  {"xlsx", "csv"},
-	"slides": {"pptx"},
-	"audio":  {"mp3", "wav", "m4a", "ogg", "flac", "aac"},
+	"image":  {"png", "jpg", "jpeg", "jp2", "webp", "gif", "bmp", "svg", "avif", "tif", "tiff", "heic", "heif", "ico"},
+	"sheet":  {"xlsx", "xls", "csv", "tsv"},
+	"slides": {"pptx", "ppt"},
+	"audio":  {"mp3", "wav", "m4a", "ogg", "flac", "aac", "webm", "mp4", "mpeg", "mpga", "opus"},
 	"json":   {"json", "map"},
 }
 
@@ -344,9 +375,10 @@ func Extension(name string) string {
 	return ext
 }
 
-// KindFromName returns the server-owned kind for an allowed extension.
-// Unsupported names, including names without an extension, return "unknown"
-// and are rejected by Validate.
+// KindFromName returns the server-owned kind for a recognized extension.
+// Unrecognized names intentionally remain "unknown": they are valid
+// store-only sources, so adding a viewer later does not require users to
+// upload the bytes again.
 func KindFromName(name string) string {
 	ext := extensionKey(name)
 	if ext == "" {
@@ -374,12 +406,104 @@ func DefaultParseMode(name, kind string) string {
 	return ParseModeNone
 }
 
-// NeedsIngestJob is whether an upload should be queued for indexing rather than
-// stored as a view-only blob. Text always is — there is nothing to parse, but
-// the file still has to be chunked and embedded. Everything else follows the
-// chosen parse mode: none means store only.
-func NeedsIngestJob(kind, mode string) bool {
-	return IsTextKind(kind) || mode != ParseModeNone
+// BuildProcessingPlan resolves a file into one ingest route. It deliberately
+// keys the exceptional routes by normalized format instead of broad category:
+// CSV/TSV are normalized as delimited text, while legacy Office files remain
+// store-only even though they share a category with supported OOXML files.
+func BuildProcessingPlan(name, kind, mode string, captionImages bool) (ProcessingPlan, error) {
+	ext := extensionKey(name)
+	expectedKind := KindFromName(name)
+	if kind == "" {
+		kind = expectedKind
+	}
+	if kind != expectedKind {
+		return ProcessingPlan{}, fmt.Errorf("file kind %q does not match extension %q", kind, Extension(name))
+	}
+	if mode != ParseModeNone && mode != ParseModeFast {
+		return ProcessingPlan{}, fmt.Errorf("unknown parse mode %q", mode)
+	}
+
+	plan := ProcessingPlan{
+		Version:     ProcessingPlanVersion,
+		Format:      ext,
+		Route:       RouteStoreOnly,
+		CaptionMode: CaptionNone,
+		Stages:      []string{},
+		Resources:   []string{},
+	}
+	directStages := []string{"fetch_source", "chunk", "index", "generate_derivatives"}
+	directResources := []string{"object_storage_read", "embedding_model", "ingest_model"}
+
+	switch {
+	case ext == "csv" || ext == "tsv":
+		plan.Route = RouteDelimitedText
+		plan.Stages = insertStage(directStages, 1, "normalize_delimited")
+		plan.Resources = directResources
+	case IsTextKind(kind):
+		plan.Route = RouteRawText
+		plan.Stages = directStages
+		plan.Resources = directResources
+	case kind == "image":
+		plan.Route = RouteImageCaption
+		plan.CaptionMode = CaptionStandalone
+		plan.Stages = []string{"fetch_source", "caption_image", "persist_derived_text", "chunk", "index", "generate_derivatives"}
+		plan.Resources = appendResource(directResources, "vision_model", "object_storage_write")
+	case kind == "audio":
+		plan.Route = RouteAudioTranscript
+		plan.Stages = []string{"fetch_source", "transcribe_audio", "persist_derived_text", "chunk", "index", "generate_derivatives"}
+		plan.Resources = appendResource(directResources, "audio_transcription", "object_storage_write")
+	case mode == ParseModeFast && parseExtensions[ext]:
+		plan.Route = RouteDocumentParse
+		plan.ParserRoute = ParseModeFast
+		plan.OfficePreview = ext == "docx" || ext == "pptx" || ext == "xlsx"
+		plan.Stages = []string{"fetch_source", "parse_document"}
+		if plan.OfficePreview {
+			plan.Stages = append(plan.Stages, "persist_office_preview")
+		}
+		plan.Resources = appendResource(directResources, "document_parser", "shared_parse_spool")
+		if plan.OfficePreview {
+			plan.Resources = appendResource(plan.Resources, "object_storage_write")
+		}
+		if captionImages {
+			plan.CaptionMode = CaptionEmbedded
+			plan.Stages = append(plan.Stages, "caption_images", "persist_captions")
+			plan.Resources = appendResource(plan.Resources, "vision_model", "object_storage_write")
+		}
+		plan.Stages = append(plan.Stages, "chunk", "index", "generate_derivatives")
+	}
+	return plan, nil
+}
+
+func insertStage(stages []string, at int, stage string) []string {
+	out := make([]string, 0, len(stages)+1)
+	out = append(out, stages[:at]...)
+	out = append(out, stage)
+	out = append(out, stages[at:]...)
+	return out
+}
+
+func appendResource(resources []string, values ...string) []string {
+	out := append([]string{}, resources...)
+	seen := make(map[string]bool, len(out)+len(values))
+	for _, resource := range out {
+		seen[resource] = true
+	}
+	for _, value := range values {
+		if !seen[value] {
+			out = append(out, value)
+			seen[value] = true
+		}
+	}
+	return out
+}
+
+// NeedsIngestJob is whether an upload should be queued for searchable derived
+// content. This is deliberately separate from parse mode: images are
+// captioned, audio is transcribed, and CSV/TSV is normalized without using the
+// document parser.
+func NeedsIngestJob(name, kind, mode string) bool {
+	plan, err := BuildProcessingPlan(name, kind, mode, false)
+	return err == nil && plan.Route != RouteStoreOnly
 }
 
 // NormalizeCaptionImages clears a caption request that has nothing to act on.
@@ -395,13 +519,6 @@ func NormalizeCaptionImages(kind, mode string, requested bool) bool {
 
 func Validate(name, kind, mode string, size, maxBytes int64) error {
 	expectedKind := KindFromName(name)
-	if expectedKind == "unknown" {
-		ext := Extension(name)
-		if ext == "" {
-			ext = "(none)"
-		}
-		return fmt.Errorf("file extension %q is not supported", ext)
-	}
 	if kind == "" {
 		kind = expectedKind
 	}
@@ -413,6 +530,12 @@ func Validate(name, kind, mode string, size, maxBytes int64) error {
 	}
 	if size < 0 || size > maxBytes {
 		return fmt.Errorf("uploads support files up to %d MB", maxBytes>>20)
+	}
+	if expectedKind == "unknown" {
+		if mode != ParseModeNone {
+			return fmt.Errorf("parsing does not support %s files", Extension(name))
+		}
+		return nil
 	}
 	if IsTextKind(kind) {
 		return nil
@@ -433,8 +556,7 @@ func Validate(name, kind, mode string, size, maxBytes int64) error {
 // parseExtensions is the format list the document parser accepts.
 var parseExtensions = map[string]bool{
 	"pdf": true, "docx": true, "pptx": true,
-	"xlsx": true, "png": true, "jpg": true, "jpeg": true,
-	"jp2": true, "webp": true, "gif": true, "bmp": true,
+	"xlsx": true,
 }
 
 func ExtensionsByKind() map[string][]string {

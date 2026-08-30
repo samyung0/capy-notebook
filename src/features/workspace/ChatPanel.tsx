@@ -37,10 +37,8 @@ function Citations({
   onOpen,
 }: {
   msg: ChatMessage;
-  onOpen?: (fileId: string, page?: number) => void;
+  onOpen?: (citation: Citation) => void;
 }) {
-  // TODO: highlight the cited region on the page — the bbox is already stored
-  // on each citation, only the overlay is missing.
   if (!msg.citations?.length) return null;
   return (
     <div className="mt-2 flex flex-wrap gap-1.5">
@@ -50,7 +48,7 @@ function Citations({
           <button
             className="inline-flex items-center gap-1 rounded-full bg-tint-info px-2 py-0.5 font-medium text-[11px] text-tint-info-fg hover:brightness-97"
             key={`${c.fileId}:${i}`}
-            onClick={() => onOpen?.(c.fileId, c.pageStart ?? undefined)}
+            onClick={() => onOpen?.(c)}
             title={c.snippet}
             type="button"
           >
@@ -129,7 +127,7 @@ function AssistantBubble({
 }: {
   msg: ChatMessage;
   streaming: boolean;
-  onOpenCitation?: (fileId: string, page?: number) => void;
+  onOpenCitation?: (citation: Citation) => void;
 }) {
   const runningTool = msg.activity?.some(
     (block) => block.kind === 'tool' && block.status === 'running'
@@ -210,8 +208,8 @@ export function ChatPanel({
 }: {
   workspaceId: string;
   color?: UserColor;
-  /** Opens a cited source in the center pane, scrolled to the cited page. */
-  onOpenCitation?: (fileId: string, page?: number) => void;
+  /** Opens and highlights a cited source in the center pane. */
+  onOpenCitation?: (citation: Citation) => void;
 }) {
   const { messages, conversationId, streaming, send, stop, startNew, hydrate } =
     useChatStream(workspaceId);

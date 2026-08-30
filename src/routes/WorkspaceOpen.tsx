@@ -25,9 +25,11 @@ import {
   useWorkspace,
 } from '@/api/hooks';
 import type {
+  Citation,
   ContentOrderItem,
   MaterialRef,
   MaterialRefType,
+  Region,
   SourceFile,
   UserColor,
 } from '@/api/types';
@@ -52,6 +54,7 @@ import { Tabs } from '@/components/ui/Tabs';
 import { userToast } from '@/components/ui/userToast';
 import { FileListItem } from '@/features/files/FileListItem';
 import { fileIsIngesting } from '@/features/files/fileUtils';
+import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
 import { CenterContent } from '@/features/materials/CenterContent';
 import { MaterialListItem } from '@/features/materials/MaterialListItem';
 import {
@@ -133,12 +136,41 @@ export default function WorkspaceOpen() {
   const { isPending: updateSharingIsPending, mutateAsync: updateSharing } =
     useUpdateWorkspaceSharing();
 
-  const openItem = openItemFromSearch(search);
+  const searchedOpenItem = openItemFromSearch(search);
+  const [citationTarget, setCitationTarget] = useState<{
+    fileId: string;
+    regions: Region[];
+  } | null>(null);
+  const [officeEditDirty, setOfficeEditDirty] = useState(false);
+  const confirmViewerReplacement = useOfficeEditGuard(officeEditDirty);
+  const openItem =
+    searchedOpenItem?.kind === 'file' &&
+    citationTarget?.fileId === searchedOpenItem.id
+      ? { ...searchedOpenItem, regions: citationTarget.regions }
+      : searchedOpenItem;
 
   function setOpenItem(item: OpenItem | null) {
+    if (!confirmViewerReplacement()) return;
+    setCitationTarget(null);
     navigate({
       replace: true,
       search: searchFromOpenItem(item),
+      to: '.',
+    });
+  }
+
+  function openCitation(citation: Citation) {
+    if (!confirmViewerReplacement()) return;
+    const regions = citation.regions ?? [];
+    const regionPage = regions.find((region) => region.page > 0)?.page;
+    setCitationTarget({ fileId: citation.fileId, regions });
+    navigate({
+      replace: true,
+      search: searchFromOpenItem({
+        id: citation.fileId,
+        kind: 'file',
+        page: regionPage ?? citation.pageStart ?? undefined,
+      }),
       to: '.',
     });
   }
@@ -380,6 +412,9 @@ export default function WorkspaceOpen() {
         {item.type === 'file' ? (
           <FileListItem
             active={isFileActive(item.id)}
+            beforeDelete={
+              isFileActive(item.id) ? confirmViewerReplacement : undefined
+            }
             chapters={chapters}
             color={ws?.color}
             file={item.data}
@@ -742,10 +777,12 @@ export default function WorkspaceOpen() {
             <StorageOwnerBanner workspace={ws} />
             <AppErrorBoundary resetKeys={[openItem?.kind, openItem?.id]}>
               <CenterContent
+                beforeFileDelete={confirmViewerReplacement}
                 chapters={chapters ?? []}
                 color={ws?.color}
                 item={openItem}
                 onDeleted={() => setOpenItem(null)}
+                onFileViewerDirtyChange={setOfficeEditDirty}
                 readOnly={readOnly}
                 requestedMode={search.mode ?? null}
                 workspaceId={workspaceId}
@@ -788,9 +825,7 @@ export default function WorkspaceOpen() {
                       <AppErrorBoundary resetKeys={[workspaceId, mode]}>
                         <ChatPanel
                           color={ws?.color}
-                          onOpenCitation={(fileId, page) =>
-                            setOpenItem({ id: fileId, kind: 'file', page })
-                          }
+                          onOpenCitation={openCitation}
                           workspaceId={workspaceId}
                         />
                       </AppErrorBoundary>

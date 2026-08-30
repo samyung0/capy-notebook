@@ -398,7 +398,12 @@ def context_components(
 
 
 def _timeout() -> float:
-    return cfg.provider_timeout_s
+    from ..retrieval import accounting
+
+    state = accounting.current()
+    if state is not None and state.settlement_mode == "ingest":
+        return cfg.ingest_provider_timeout_s
+    return cfg.interactive_provider_timeout_s
 
 
 def jsonable(value: Any) -> Any:

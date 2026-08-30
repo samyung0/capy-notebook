@@ -65,6 +65,7 @@ operator hostname before traffic reaches its origin.
 | ------------------ | -------------------------------------------------- | ---------- | -------------------- |
 | `abcd.com`         | SPA (Cloudflare Pages / static)                    | yes        | yes                  |
 | `llm.abcd.com`     | optional; only if `VITE_LLM_RUNTIME_ORIGIN` is set | optional   | yes                  |
+| `office.abcd.com`  | isolated Office file runtime                       | yes        | yes                  |
 | `www.abcd.com`     | redirect to apex                                   | yes        | yes                  |
 | `api.abcd.com`     | Go gateway (`server`, :8080)                       | yes        | yes                  |
 | `collab.abcd.com`  | Hocuspocus WebSocket (`collaboration`, :1234)      | yes        | yes                  |
@@ -96,6 +97,14 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    add the SPA origin to `frame-ancestors` and set `VITE_APP_URL`. Do not
    set `Cross-Origin-Resource-Policy: same-origin` on the runtime document
    or the parent cannot embed it.
+   The Office viewer/editor is different: production requires a separate
+   cookie-less hostname such as `office.abcd.com`. Serve only the built
+   `office-runtime.html` and its `/assets/*` there (404 other routes), set
+   `VITE_OFFICE_RUNTIME_ORIGIN=https://office.abcd.com` when building the SPA,
+   and set `Content-Security-Policy: frame-ancestors https://abcd.com` on the
+   runtime response. Do not proxy `/api`, issue authentication cookies, or set
+   parent-domain cookies on this hostname. The Office host transfers protected
+   bytes by exact-origin `postMessage`; it does not need CORS access to the API.
 2. **API + collab.** Pick one of §1.1 Coolify (typical), §1.2 bare compose, or
    §1.3 public A records. Retrieval, worker, Postgres, and Redis stay off
    public DNS in every option.
@@ -260,6 +269,19 @@ are `http://`; these vars stay `https://` / `wss://`. Copy the rest from
 `RATE_LIMIT_AI_PER_HOUR` defaults to 200; the 15/minute AI burst and
 120/minute editor class are not env-overridable.
 
+`ELEVENLABS_API_KEY` and `ELEVENLABS_WEBHOOK_ID` are needed only by the Netcup
+ingest worker. `ELEVENLABS_WEBHOOK_SECRET` is needed only by the gateway, which
+serves `POST /webhooks/elevenlabs`. Do not add these values to any `VITE_*`
+variable. Subscribe the ElevenLabs webhook to **Transcription completed** and
+set its public HTTPS callback to that gateway route.
+
+Disable provider training in the ElevenLabs Data Use settings. Starter does not
+offer zero-retention mode: the app privacy policy must disclose ElevenLabs as an
+audio transcription processor and its retention before audio upload is enabled.
+Evo Notes deletes the provider transcript after the durable derived artifact and
+usage receipt are written, but must not claim that provider logs or backups are
+immediately erased. Do not process PHI without an enterprise agreement.
+
 Gateway env once those hostnames exist:
 
 ```
@@ -337,10 +359,9 @@ Action: Block, 60s timeout
 The window on the free tier is fixed at 10 seconds, which is why anything
 expressed in requests-per-hour lives in the application instead.
 
-**Excluding `/webhooks/` is not optional.** Stripe and Clerk burst deliveries
-and retries from a small set of IPs. Rate limiting them produces subscription
-and identity state that silently drifts out of sync, and the failure surfaces
-days later as a user on the wrong plan.
+**Excluding `/webhooks/` is not optional.** Stripe, Clerk, and ElevenLabs burst
+deliveries and retries from small sets of IPs. Rate limiting them can lose
+subscription, identity, or transcription completion events.
 
 **WAF custom rules:**
 
@@ -512,17 +533,17 @@ Pick one:
    versioning on, the blob reaper's deletes only hide objects and storage grows
    without bound.
 
-Do **not** put a B2 lifecycle rule on `parsed/` or `captions/`. Those prefixes
-are owned by `artifact_cache` and the blob reaper: a lifecycle rule would
-delete objects the `blobs` table still believes are live. Caption entries
-expire by TTL-since-last-use (default 90 days); parse zips are dropped on
-successful ingest, with the same sweeper as an orphan reaper.
+Do **not** put a B2 lifecycle rule on `captions/` or `derived-text/`. Those
+prefixes are owned by `artifact_cache` and the blob reaper: a lifecycle rule
+would delete objects the database still believes are live. Caption and
+derived-text entries expire by TTL-since-last-use (default 90 days).
 
-Both TTLs come from `EVO_CAPTION_CACHE_TTL_DAYS` and `EVO_PARSE_ZIP_TTL_HOURS`.
-The gateway and the ingest worker each run the same sweep, so give both services
-the same values — whichever process sweeps first applies its own, and a
-disagreement means the configured TTL is not the one in effect. The worker
-sweeps on a 5-minute timer while the queue is idle, not on every 2-second poll.
+Parse zips no longer use B2. `EVO_PARSE_ZIP_TTL_HOURS` controls fingerprint
+bundles in the parser/worker shared local volume, and
+`EVO_PARSE_SOURCE_TTL_HOURS` controls abandoned job-scoped source files. The
+worker sweeps both on a 5-minute timer while the queue is idle. A job retains
+its verified source across capacity waits and retries, then deletes it after
+committed success or terminal failure.
 
 ### Ingest worker replicas
 
@@ -584,8 +605,10 @@ delete a live creator's `rag_contents` row.
 ## 7. Dedicated parser VM
 
 The Netcup VM runs the ingest workers, parser, and host sampler. Uploaded bytes
-move from the Cloudflare relay to B2 and from B2 to this VM; they do not traverse
-the Go application process.
+move from the Cloudflare relay to B2 and once from B2 to this VM; they do not
+traverse the Go application process. Worker and parser containers mount the
+same `parse_spool` volume. The compose init service gives the unprivileged parser
+user access before either service starts.
 
 1. Apply `deploy/ansible/app-host/playbook.yml` to build the app side of the
    point-to-point WireGuard service network, then put its displayed public key
@@ -606,26 +629,95 @@ the Go application process.
    branch names are rejected. The first pass keeps password SSH enabled. Verify
    key login in a second terminal before setting `parser_harden_ssh: true`.
 4. Store the values from `deploy/parser-vm.env.example` in encrypted
-   `parser_env`. The parser binds only to `PARSER_BIND_ADDRESS`; its bearer token
-   remains defense in depth. The measured default is generous selective OCR.
+   `parser_env`, including `ELEVENLABS_API_KEY` and `ELEVENLABS_WEBHOOK_ID` for uploaded-audio
+   transcription. The worker also needs the Gemini key/model registry pin for
+   standalone-image captions; those calls happen on this VM after it downloads
+   the B2 object, never in Go. The parser binds only to
+   `PARSER_BIND_ADDRESS`; its bearer token remains defense in depth. The
+   measured default is generous selective OCR.
    Initial limits are eight queued HTTP requests, four digital Marker slots, and
-   two OCR-heavy slots. The default time hierarchy is a 40-minute parser request,
-   45-minute Redis slot, 50-minute presigned URL, and 60-minute ingest job; the
-   process rejects contradictory overrides. All-page OCR remains an explicit
+   two OCR-heavy slots. The default time hierarchy is a 2,300-second hard parse
+   deadline after lane admission, 40-minute parser request, 45-minute Redis slot,
+   and 60-minute ingest job; the process rejects contradictory overrides. The
+   worker writes the raw source to `parse_spool`
+   while hashing it, the parser atomically publishes the fingerprint zip there,
+   and the worker extracts it locally. All-page OCR remains an explicit
    benchmark/retry mode.
 5. Apply the app migration before starting `host-sampler`, because it writes
    `parse_host_samples`. Start `evo-parser.service`, wait for model warmup, and
-   verify `/healthz` through WireGuard. Its `release_sha` must equal the app's
-   deployed revision. No parser port may listen on the public address.
+   verify `/healthz` through WireGuard. It must return HTTP 200 with `ok=true`,
+   `state=ready`, and a `release_sha` equal to the app's deployed revision. No
+   parser port may listen on the public address.
 6. Run `bench/parsers/accuracy_report.py` across representative PDF, image,
    DOC/DOCX, PPT/PPTX, and XLS/XLSX inputs in all three modes. Review every
    rejected row and the rendered page comparisons. Run the 1/2/4/6/8 sweep;
    production remains at two OCR-heavy jobs unless four preserves at least 3
    GiB headroom, uses no swap, and materially improves throughput.
-7. Cut traffic over only after a real ingest succeeds from the VM. To roll back,
-   promote the previous known-good exact SHA through the same workflow. Its
-   parser, worker, migration, and app images remain revision-matched, and the
-   artifact schema plus release-derived fingerprint prevents cache confusion.
+7. Production deployment builds the candidate parser and pipeline images under
+   immutable full-SHA tags while the current ingest services keep running. At
+   cutover, `parser-vm-release.sh prepare` records the previous and candidate
+   SHAs in `/opt/evo-parser/release.pending`, pauses the worker and sampler, and
+   starts the candidate parser without rebuilding. A failed candidate health
+   check triggers the prepare script's exit trap and restores the previous
+   parser, worker, and sampler images. After the app deployment and exact-SHA
+   verification succeed, `activate` starts the matching worker and sampler and
+   removes the pending marker. The workflow has an unconditional final cleanup
+   that calls `rollback-if-pending`; therefore any failure after prepare but
+   before committed activation restores ingest. After activation, roll back by
+   promoting the previous known-good exact SHA through the same workflow. The
+   parser, worker, migration, and app remain revision-matched, and the artifact
+   schema plus release-derived fingerprint prevents cache confusion.
+
+### 7.1 Production and non-production parser storage
+
+Production keeps the existing explicitly named `evo-parser_parse_spool` volume.
+Local and UAT must never mount it. They both use `evo_parse_nonprod` through
+`deploy/docker-compose.parser-vm.nonprod.yml`. Docker named volumes grow only as
+files are written; this setup reserves no fixed number of bytes for nonproduction.
+The ordinary source/artifact sweeper bounds retained data by age instead.
+
+Local and UAT remain separate Compose projects, processes, release SHAs,
+databases, Redis instances, B2 buckets, parser tokens, and provider credentials.
+Only their nonproduction spool is shared. This lets both run concurrently when
+needed without making a dirty local parser satisfy UAT's exact-release contract.
+The default nonproduction cap is one ingest worker, two Marker processes, one
+digital lane, one OCR lane, 2 CPUs/6 GiB for the parser, and 1 CPU/2 GiB for the
+worker. These are hard container ceilings, not reservations. Stop either Compose
+project when it is unused so production gets the host's idle CPU and memory.
+
+Copy `deploy/parser-vm.nonprod.env.example` twice on the Netcup VM. Use unique
+project names and ports, but leave the shared volume name unchanged:
+
+```text
+local: EVO_NONPROD_PROJECT_NAME=evo-parser-local, PARSER_PORT=8091
+UAT:   EVO_NONPROD_PROJECT_NAME=evo-parser-uat,   PARSER_PORT=8092
+both:  EVO_NONPROD_PARSE_SPOOL_VOLUME=evo_parse_nonprod
+```
+
+Start or stop either environment by selecting its environment file:
+
+```bash
+docker compose --env-file /opt/evo-parser/local.env \
+  -f deploy/docker-compose.parser-vm.nonprod.yml up -d --build
+docker compose --env-file /opt/evo-parser/uat.env \
+  -f deploy/docker-compose.parser-vm.nonprod.yml up -d --build
+docker compose --env-file /opt/evo-parser/local.env \
+  -f deploy/docker-compose.parser-vm.nonprod.yml down
+```
+
+Do not add `-v` to `down`: that would request deletion of project volumes. The
+shared spool has an explicit name, but treating destructive volume flags as safe
+would be a bad operational habit. The default app-host Compose worker is behind
+the `app-host-ingest` profile; normal local ingest must use this VM stack so the
+worker and parser actually see the same filesystem.
+
+A hard-timeout marker lives under `quarantine/{fingerprint}.json` in the owning
+spool. It makes the offending file terminal for that exact parser version while
+Docker restarts the parser container for collateral jobs. Do not manually clear
+the marker just to force a retry. Reproduce and fix the parser, then deploy a new
+release; the versioned fingerprint changes automatically. Manual removal is only
+for an operator-confirmed false marker where the underlying parser version has
+not changed.
 
 ---
 
@@ -733,6 +825,9 @@ the Go application process.
      micros_per_cached_input_token, micros_per_output_token, enabled,
      is_default_for, created_at, updated_at, created_by, updated_by
    ) ON model_configs TO evo_ops;
+   GRANT SELECT (
+     resource_key, version, unit, credit_micros_per_unit, active, created_at
+   ) ON resource_credit_rates TO evo_ops;
    GRANT SELECT (id, version, updated_at) ON model_registry_state TO evo_ops;
    GRANT SELECT ON ops_assistant_turns TO evo_ops;
    GRANT SELECT (id, workspace_id)
@@ -767,6 +862,9 @@ the Go application process.
      text, bigint, bigint, bigint, bigint, bigint, text
    )
      TO evo_ops_admin;
+   GRANT EXECUTE ON FUNCTION save_resource_credit_rate(
+     text, text, bigint, text
+   ) TO evo_ops_admin;
 
    GRANT SELECT (
      version, provider_name, model_name, provider_slug, model_slug,
@@ -1043,13 +1141,17 @@ human actions.
 
 ### 12.1 Isolation model
 
-UAT should resemble production without sharing state or credentials with it.
+UAT should resemble production without sharing durable application state or
+credentials with it. The only local/UAT exception is the short-lived,
+fingerprint-addressed nonproduction parser spool described in §7.1; production
+never mounts that volume.
 
 | Resource            | Local development    | UAT                                             | Production                                   |
 | ------------------- | -------------------- | ----------------------------------------------- | -------------------------------------------- |
 | App compute         | local compose        | separate Coolify environment/resource           | production Coolify environment/resource      |
 | Postgres and Redis  | disposable/local     | dedicated UAT instances/volumes                 | production instances/volumes                 |
 | Blob storage        | local/test bucket    | dedicated private UAT bucket and key            | production private bucket and key            |
+| Parser VM           | capped local nonprod Compose project | capped UAT nonprod Compose project; shares only `evo_parse_nonprod` with local | production project and `evo-parser_parse_spool` |
 | Clerk               | development instance | separate Clerk application, Production instance | production application's Production instance |
 | Stripe              | sandbox/test data    | named UAT sandbox                               | live mode                                    |
 | Users and content   | developer fixtures   | synthetic accounts and fixtures only            | real users and content                       |

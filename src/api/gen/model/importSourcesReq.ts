@@ -4,15 +4,20 @@
  * Evo Notes API
  * OpenAPI spec version: 0.1.0
  */
+import type { ImportSourcesReqParseMode } from './importSourcesReqParseMode.ts';
 import type { ImportSourcesReqProvider } from './importSourcesReqProvider.ts';
 
 export interface ImportSourcesReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  captionImages?: boolean;
   chapterId?: string;
+  /** @maxLength 255 */
+  chapterName?: string;
   driveIds?: string[];
   /** @minItems 1 */
   fileIds: string[];
+  parseMode?: ImportSourcesReqParseMode;
   provider: ImportSourcesReqProvider;
   /** @maxLength 128 */
   requestId?: string;

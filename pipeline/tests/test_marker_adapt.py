@@ -77,6 +77,40 @@ def test_from_marker_keeps_heading_depth_and_scales_bbox():
     assert all(0 <= v <= 1000 for item in items for v in item["bbox"])
 
 
+@pytest.mark.parametrize(
+    "bbox",
+    [
+        [10, 10, float("nan"), 20],
+        [10, 10, float("inf"), 20],
+        [10, 10, 10, 20],
+    ],
+)
+def test_from_marker_drops_non_finite_or_invalid_bbox_without_dropping_text(bbox):
+    rendered = {
+        "block_type": "Document",
+        "children": [
+            _page(
+                {
+                    "id": "/page/0/Text/1",
+                    "block_type": "Text",
+                    "html": "<p>Still index this text</p>",
+                    "bbox": bbox,
+                    "children": None,
+                }
+            )
+        ],
+    }
+
+    assert from_marker(rendered) == [
+        {
+            "type": "text",
+            "text": "Still index this text",
+            "page_idx": 0,
+            "bbox": None,
+        }
+    ]
+
+
 def test_from_marker_drops_running_headers_and_names_figure_crops():
     rendered = {
         "children": [
@@ -234,3 +268,15 @@ def test_ocr_line_bbox_accepts_numpy_shaped_polygons():
 
     box = ocr_line_bbox(_Array(), 200, 400)
     assert box == ocr_line_bbox([[10, 20], [110, 20], [110, 40], [10, 40]], 200, 400)
+
+
+@pytest.mark.parametrize(
+    "poly",
+    [
+        [[10, 20], [float("nan"), 40]],
+        [[10, 20], [float("inf"), 40]],
+        [[10, 20], [10, 40]],
+    ],
+)
+def test_ocr_line_bbox_rejects_non_finite_or_zero_width_geometry(poly):
+    assert ocr_line_bbox(poly, 200, 400) is None

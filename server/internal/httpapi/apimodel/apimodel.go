@@ -179,11 +179,15 @@ type SourceUploadParseModePolicy struct {
 }
 
 type SourceUploadPolicy struct {
-	Kinds            []SourceUploadKindPolicy      `json:"kinds" nullable:"false"`
-	ParseModes       []SourceUploadParseModePolicy `json:"parseModes" nullable:"false"`
-	Accept           string                        `json:"accept"`
-	MaxBytes         int64                         `json:"maxBytes"`
-	AllowNoExtension bool                          `json:"allowNoExtension"`
+	Kinds                        []SourceUploadKindPolicy      `json:"kinds" nullable:"false"`
+	ParseModes                   []SourceUploadParseModePolicy `json:"parseModes" nullable:"false"`
+	Accept                       string                        `json:"accept"`
+	MaxBytes                     int64                         `json:"maxBytes"`
+	AllowNoExtension             bool                          `json:"allowNoExtension"`
+	AudioSecondCreditMicros      int64                         `json:"audioSecondCreditMicros"`
+	AudioMaxDurationSeconds      int                           `json:"audioMaxDurationSeconds"`
+	DigitalParsePageCreditMicros int64                         `json:"digitalParsePageCreditMicros"`
+	OCRParsePageCreditMicros     int64                         `json:"ocrParsePageCreditMicros"`
 }
 
 type Material struct {

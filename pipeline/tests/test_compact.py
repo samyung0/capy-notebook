@@ -39,6 +39,22 @@ def test_compaction_uses_full_usable_budget_not_a_ratio(monkeypatch):
     assert compact.needs_compact([{"role": "user", "content": "q"}], spec)
 
 
+def test_compaction_caps_large_model_input_at_200k():
+    usable = compact.usable_input_limit(_spec(context_window_tokens=1_000_000))
+
+    assert usable == (
+        compact.EFFECTIVE_INPUT_LIMIT_TOKENS - compact.PROTOCOL_SAFETY_MARGIN_TOKENS
+    )
+
+
+def test_checkpoint_summary_has_8000_token_budget():
+    assert compact.SUMMARY_TARGET_MIN == 4000
+    assert compact.SUMMARY_TARGET_MAX == 6000
+    assert compact.SUMMARY_MAX_TOKENS == 8000
+    assert "Target 4,000 to 6,000 tokens" in compact.CHECKPOINT_SYSTEM_PROMPT
+    assert "Never exceed 8,000 tokens" in compact.CHECKPOINT_SYSTEM_PROMPT
+
+
 def test_catalog_margin_can_apply_calibrated_estimation_error():
     plain = compact.usable_input_limit(_spec())
     calibrated = compact.usable_input_limit(
@@ -48,7 +64,7 @@ def test_catalog_margin_can_apply_calibrated_estimation_error():
 
 
 @pytest.mark.asyncio
-async def test_checkpoint_prompt_uses_current_message_only_as_relevance_lens(
+async def test_checkpoint_prompt_uses_current_message_only_to_resolve_references(
     monkeypatch,
 ):
     seen = {}
@@ -76,8 +92,49 @@ async def test_checkpoint_prompt_uses_current_message_only_as_relevance_lens(
     assert seen["payload"]["current_user_message"] == (
         "What did you mean by the third bullet?"
     )
+    assert seen["payload"]["new_completed_messages"] == []
+    assert seen["payload"]["recent_messages"] == [
+        {
+            "role": "assistant",
+            "content": "1. Keep it. 2. Rename it. 3. Reject every invalid id.",
+        }
+    ]
     assert "third bullet" in seen["system"]
+    assert "let its topic narrow" in seen["system"]
     assert seen["max_tokens"] == compact.SUMMARY_MAX_TOKENS
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_separates_six_recent_messages(monkeypatch):
+    seen = {}
+
+    async def fake_complete(messages, **_kwargs):
+        seen.update(json.loads(messages[1]["content"]))
+        return "memory"
+
+    monkeypatch.setattr(compact.models, "complete_text", fake_complete)
+    turns = [
+        {
+            "role": "user" if index % 2 == 0 else "assistant",
+            "content": f"turn-{index}",
+        }
+        for index in range(8)
+    ]
+
+    await compact.summarize_checkpoint(
+        prior_summary="prior",
+        turns=turns,
+        current_user_message="current",
+        spec=_spec(context_window_tokens=100_000),
+    )
+
+    assert [turn["content"] for turn in seen["new_completed_messages"]] == [
+        "turn-0",
+        "turn-1",
+    ]
+    assert [turn["content"] for turn in seen["recent_messages"]] == [
+        f"turn-{index}" for index in range(2, 8)
+    ]
 
 
 @pytest.mark.asyncio
@@ -88,7 +145,11 @@ async def test_checkpoint_folds_every_turn_in_chronological_batches(monkeypatch)
         payload = json.loads(messages[1]["content"])
         payloads.append(payload)
         labels = [
-            turn["content"].split()[0] for turn in payload["new_completed_messages"]
+            turn["content"].split()[0]
+            for turn in [
+                *payload["new_completed_messages"],
+                *payload["recent_messages"],
+            ]
         ]
         return (payload["previous_memory"] + " " + " ".join(labels)).strip()
 

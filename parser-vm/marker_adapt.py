@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import base64
 import io
+import math
 import os
 import re
 from html.parser import HTMLParser
@@ -69,6 +70,8 @@ def html_to_text(html: str) -> str:
 def _scaled_bbox(
     x0: float, y0: float, x1: float, y1: float, width: float, height: float
 ) -> list[float] | None:
+    if not all(math.isfinite(value) for value in (x0, y0, x1, y1, width, height)):
+        return None
     if width <= 0 or height <= 0:
         return None
     sx, sy = _PAGE_SCALE / width, _PAGE_SCALE / height
@@ -78,7 +81,10 @@ def _scaled_bbox(
         max(x0, x1) * sx,
         max(y0, y1) * sy,
     ]
-    return [round(min(max(value, 0.0), _PAGE_SCALE), 2) for value in box]
+    scaled = [round(min(max(value, 0.0), _PAGE_SCALE), 2) for value in box]
+    if scaled[2] <= scaled[0] or scaled[3] <= scaled[1]:
+        return None
+    return scaled
 
 
 def image_filename(block_id: str) -> str:

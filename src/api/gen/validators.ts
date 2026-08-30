@@ -836,6 +836,7 @@ export const ListAllFilesResponseItem = zod.object({
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
+  "previewUrl": zod.string().optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
@@ -872,6 +873,7 @@ export const GetFileResponse = zod.object({
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
+  "previewUrl": zod.string().optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
@@ -906,6 +908,7 @@ export const UpdateFileResponse = zod.object({
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
+  "previewUrl": zod.string().optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
@@ -960,6 +963,7 @@ export const CompleteFileReplacementUploadResponse = zod.object({
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
+  "previewUrl": zod.string().optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
@@ -1808,12 +1812,16 @@ export const GetSourceUploadPolicyResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "accept": zod.string(),
   "allowNoExtension": zod.boolean(),
+  "audioMaxDurationSeconds": zod.int(),
+  "audioSecondCreditMicros": zod.int(),
+  "digitalParsePageCreditMicros": zod.int(),
   "kinds": zod.array(zod.object({
   "extensions": zod.array(zod.string()),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "text": zod.boolean()
 })),
   "maxBytes": zod.int(),
+  "ocrParsePageCreditMicros": zod.int(),
   "parseModes": zod.array(zod.object({
   "extensions": zod.array(zod.string()),
   "maxBytes": zod.int(),
@@ -2423,6 +2431,7 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
+  "previewUrl": zod.string().optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),
@@ -2664,15 +2673,20 @@ export const ImportSourcesParams = zod.object({
   "id": zod.string()
 })
 
+export const importSourcesBodyChapterNameMax = 255;
+
 
 export const importSourcesBodyRequestIdMax = 128;
 
 
 
 export const ImportSourcesBody = zod.object({
+  "captionImages": zod.boolean().optional(),
   "chapterId": zod.string().optional(),
+  "chapterName": zod.string().max(importSourcesBodyChapterNameMax).optional(),
   "driveIds": zod.array(zod.string()).optional(),
   "fileIds": zod.array(zod.string()).min(1),
+  "parseMode": zod.enum(['fast', 'none']).optional(),
   "provider": zod.enum(['google', 'microsoft']),
   "requestId": zod.string().max(importSourcesBodyRequestIdMax).optional()
 })
@@ -2683,6 +2697,42 @@ export const ImportSourcesResponse = zod.object({
   "jobId": zod.string(),
   "name": zod.string(),
   "uploadId": zod.string()
+})),
+  "rejected": zod.array(zod.object({
+  "code": zod.string(),
+  "fileId": zod.string()
+}))
+})
+
+
+/**
+ * @summary Inspect sources selected from a connected drive
+ */
+export const InspectSourceImportsParams = zod.object({
+  "id": zod.string()
+})
+
+export const inspectSourceImportsBodyFileIdsMax = 20;
+
+
+
+export const InspectSourceImportsBody = zod.object({
+  "driveIds": zod.array(zod.string()).optional(),
+  "fileIds": zod.array(zod.string()).min(1).max(inspectSourceImportsBodyFileIdsMax),
+  "provider": zod.enum(['google', 'microsoft'])
+})
+
+export const InspectSourceImportsResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "items": zod.array(zod.object({
+  "analysisUrl": zod.string(),
+  "contentType": zod.string(),
+  "driveId": zod.string().optional(),
+  "fileId": zod.string(),
+  "kind": zod.string(),
+  "name": zod.string(),
+  "sizeBytes": zod.int(),
+  "sizeEstimate": zod.boolean()
 })),
   "rejected": zod.array(zod.object({
   "code": zod.string(),
@@ -2755,6 +2805,7 @@ export const CompleteSourceUploadResponse = zod.object({
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
   "position": zod.int(),
+  "previewUrl": zod.string().optional(),
   "revision": zod.int(),
   "sizeBytes": zod.int(),
   "status": zod.enum(['pending', 'processing', 'ready', 'failed']).optional(),

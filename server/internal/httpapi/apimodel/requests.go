@@ -207,11 +207,14 @@ type CreateFileReplacementUploadReq struct {
 
 // ImportSourcesReq pulls files from a connected Drive/OneDrive account.
 type ImportSourcesReq struct {
-	Provider  string   `json:"provider" enum:"google,microsoft"`
-	FileIds   []string `json:"fileIds" minItems:"1" nullable:"false"`
-	DriveIds  []string `json:"driveIds,omitempty" nullable:"false"`
-	ChapterID *string  `json:"chapterId,omitempty"`
-	RequestID string   `json:"requestId,omitempty" maxLength:"128"`
+	Provider      string   `json:"provider" enum:"google,microsoft"`
+	FileIds       []string `json:"fileIds" minItems:"1" nullable:"false"`
+	DriveIds      []string `json:"driveIds,omitempty" nullable:"false"`
+	ChapterID     *string  `json:"chapterId,omitempty"`
+	ChapterName   string   `json:"chapterName,omitempty" maxLength:"255"`
+	ParseMode     string   `json:"parseMode,omitempty" enum:"fast,none"`
+	CaptionImages bool     `json:"captionImages,omitempty"`
+	RequestID     string   `json:"requestId,omitempty" maxLength:"128"`
 }
 
 type SourceImportAccepted struct {

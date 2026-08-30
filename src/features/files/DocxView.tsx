@@ -1,43 +1,49 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect } from 'react';
+import type { SourceFile } from '@/api/types';
+import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
+import { useOfficeRuntime } from './useOfficeRuntime';
 
-/** Word (.docx) viewer. docx-preview is imported on demand so it stays out of
- * the main bundle. Legacy binary .doc files are not supported. */
-export default function DocxView({ url }: { url: string }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+export default function DocxView({
+  canEdit,
+  file,
+  onCancelEditing,
+  onDirtyChange,
+  onSave,
+  startEditing = false,
+}: {
+  canEdit: boolean;
+  file: SourceFile;
+  onCancelEditing?: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
+  onSave?: (
+    bytes: Uint8Array,
+    expectedRevision: number
+  ) => Promise<{ revision: number }>;
+  startEditing?: boolean;
+}) {
+  const runtime = useOfficeRuntime({
+    canEdit,
+    file,
+    format: 'docx',
+    initialMode: startEditing ? 'edit' : 'view',
+    onSave,
+    revision: file.revision,
+  });
 
   useEffect(() => {
-    let cancelled = false;
-    setState('loading');
-    (async () => {
-      try {
-        const [{ renderAsync }, buf] = await Promise.all([
-          import('docx-preview'),
-          fetch(url).then((r) => {
-            if (!r.ok) throw new Error(`HTTP ${r.status}`);
-            return r.arrayBuffer();
-          }),
-        ]);
-        if (cancelled || !containerRef.current) return;
-        containerRef.current.innerHTML = '';
-        await renderAsync(buf, containerRef.current, undefined, {
-          ignoreHeight: true,
-          ignoreWidth: false,
-          inWrapper: true,
-        });
-        if (!cancelled) setState('ready');
-      } catch {
-        if (!cancelled) setState('error');
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [url]);
+    onDirtyChange?.(runtime.dirty);
+  }, [onDirtyChange, runtime.dirty]);
 
-  if (state === 'error') {
+  useEffect(
+    () => () => {
+      onDirtyChange?.(false);
+    },
+    [onDirtyChange]
+  );
+
+  if (runtime.error && !runtime.analysis) {
     return (
       <p className="py-8 text-center text-tint-error-fg">
         {m.files_docx_failed()}
@@ -45,12 +51,62 @@ export default function DocxView({ url }: { url: string }) {
     );
   }
   return (
-    <div className="mx-auto max-w-full">
-      {state === 'loading' && <Skeleton className="h-[60vh] w-full" />}
-      <div
-        className="[&_.docx-wrapper>section.docx]:mb-4 [&_.docx-wrapper>section.docx]:max-w-full [&_.docx-wrapper>section.docx]:shadow-none [&_.docx-wrapper]:bg-transparent [&_.docx-wrapper]:p-0"
-        ref={containerRef}
-      />
+    <div className="flex h-full min-h-[60vh] flex-col">
+      <div className="flex min-h-10 items-center gap-2 border-line border-b px-2">
+        <span className="t-meta flex-1 text-fg-muted">
+          {runtime.analysis?.format === 'docx'
+            ? m.files_office_page_count({ count: runtime.analysis.pageCount })
+            : m.files_office_opening_document()}
+        </span>
+        {runtime.saving && (
+          <span className="t-meta">{m.files_office_saving()}</span>
+        )}
+        {canEdit &&
+          file.status === 'ready' &&
+          onSave &&
+          runtime.mode === 'view' &&
+          runtime.analysis && (
+            <Button onClick={() => runtime.setRuntimeMode('edit')} size="sm">
+              {m.action_edit()}
+            </Button>
+          )}
+        {runtime.mode === 'edit' && (
+          <Button
+            onClick={() => {
+              if (
+                !runtime.dirty ||
+                window.confirm(m.files_office_discard_changes())
+              ) {
+                if (onCancelEditing) onCancelEditing();
+                else runtime.setRuntimeMode('view');
+              }
+            }}
+            size="sm"
+            variant="outline"
+          >
+            {m.files_office_cancel_editing()}
+          </Button>
+        )}
+      </div>
+      {runtime.error && runtime.analysis && (
+        <p className="border-line border-b px-3 py-2 text-sm text-tint-error-fg">
+          {runtime.error}
+        </p>
+      )}
+      <div className="relative min-h-0 flex-1">
+        {!runtime.analysis && runtime.mode === 'view' && (
+          <Skeleton className="absolute inset-0 h-full w-full" />
+        )}
+        <iframe
+          className="h-full w-full border-0"
+          key={runtime.iframeKey}
+          onLoad={() => runtime.setFrameLoaded(true)}
+          ref={runtime.iframeRef}
+          sandbox={runtime.iframeSandbox}
+          src={runtime.iframeUrl}
+          title={m.files_office_document_frame_title({ name: file.name })}
+        />
+      </div>
     </div>
   );
 }

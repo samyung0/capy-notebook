@@ -20,7 +20,6 @@ export function getFileKind(
   policy: SourceUploadPolicy
 ): FileKind {
   const ext = extensionWithDot(name);
-  if (!ext && policy.allowNoExtension) return 'txt';
   return (
     policy.kinds.find((kind) =>
       kind.extensions.some((candidate) => candidate.toLowerCase() === ext)
@@ -115,10 +114,21 @@ export const MAX_FILES_PER_WORKSPACE = 100;
 export const SOURCE_UPLOAD_CONCURRENCY = 3;
 
 export function needsIngestJob(
+  name: string,
   kind: FileKind | string,
   mode: ParseMode
 ): boolean {
-  return kind === 'txt' || kind === 'md' || kind === 'json' || mode !== 'none';
+  const ext = fileExt(name);
+  return (
+    kind === 'txt' ||
+    kind === 'md' ||
+    kind === 'json' ||
+    kind === 'image' ||
+    kind === 'audio' ||
+    ext === 'csv' ||
+    ext === 'tsv' ||
+    mode !== 'none'
+  );
 }
 
 export function capSourceUploads<T>(

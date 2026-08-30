@@ -138,24 +138,21 @@ func (s *Store) KnownObjectPaths(ctx context.Context, paths []string) (map[strin
 	return known, rows.Err()
 }
 
-// SweepArtifactCache drops cold parse-zip and caption objects that no in-flight
-// ingest still needs. The artifact_cache trigger queues B2 deletion through the
-// existing outbox. Parse zips are also dropped on ingest success; this pass is
-// the orphan reaper for a worker that died between success and that drop.
-func (s *Store) SweepArtifactCache(ctx context.Context, captionTTLDays, parseZipTTLHours int) (int64, error) {
+// SweepArtifactCache drops cold durable derived artifacts that no in-flight
+// ingest still needs. Parse bundles are local spool files, not B2 cache rows.
+func (s *Store) SweepArtifactCache(ctx context.Context, captionTTLDays int) (int64, error) {
 	if captionTTLDays < 1 {
 		captionTTLDays = 90
-	}
-	if parseZipTTLHours < 1 {
-		parseZipTTLHours = 6
 	}
 	tag, err := s.pool.Exec(ctx, `
 		DELETE FROM artifact_cache a
 		WHERE (
 		        (a.kind = 'captions'
 		         AND a.last_used_at < now() - make_interval(days => $1))
-		     OR (a.kind = 'parse_zip'
-		         AND a.last_used_at < now() - make_interval(hours => $2))
+		     OR (a.kind = 'office_preview'
+		         AND a.last_used_at < now() - make_interval(days => $1))
+		     OR (a.kind = 'derived_text'
+		         AND a.last_used_at < now() - make_interval(days => $1))
 		    )
 		  AND NOT EXISTS (
 		      SELECT 1
@@ -163,7 +160,7 @@ func (s *Store) SweepArtifactCache(ctx context.Context, captionTTLDays, parseZip
 		      JOIN files f ON f.id = j.payload->>'fileId'
 		      WHERE j.status IN ('pending', 'running')
 		        AND f.source_sha256 = a.source_sha256
-		  )`, captionTTLDays, parseZipTTLHours)
+		  )`, captionTTLDays)
 	if err != nil {
 		return 0, err
 	}

@@ -366,7 +366,8 @@ stored on `provider_calls`; prompt, schema, tool argument, and response content
 are not stored. Provider-reported `input_tokens` remains authoritative, and Ops
 shows the actual-minus-estimated delta. Operators can set a model catalog
 `context_safety_margin_tokens` from that observed error. Chat admission uses
-the greater of that value and the 512-token protocol minimum. Keeping this
+the smaller of the selected model's input budget and a 200,000-token effective
+cap, minus the greater of that value and the 512-token protocol minimum. Keeping this
 telemetry on the pre-call row means failed and retried attempts remain visible
 too.
 
@@ -490,22 +491,36 @@ response returns. The worker records each parse attempt before it marks the job
 for retry, failure, or success. Either path can push a user past their limit;
 the next interactive request is what refuses.
 
-The parse event uses `kind='parse'`, `unit='pages'`, and one row per job attempt.
-`parse:{job id}:{attempt}` is the idempotency key. A repeated bookkeeping write
-does not add a second event or increment `user_credits` twice. Cache and donor
-hits do not create parse events because they did not run Marker.
+The parse event uses `kind='parse'`, `unit='pages'`, and one row per actual
+fingerprint parse. The parser embeds a creator-job-owned receipt inside the
+atomically published local bundle. `parse-receipt:{fingerprint}` is the
+idempotency key for that work, so a lost HTTP response can be recovered from the
+bundle without charging again. Concurrent waiters receive the artifact but not
+the creator's receipt. Legacy responses without a receipt retain
+`parse:{job id}:{attempt}` as their compatibility key. Cache and donor hits do
+not create parse events because they did not run Marker.
 
 The charge is per page, not per container time. Every page gets exactly one of
-two rates: 31 credits for a digital page or 52 credits for a page routed through
-RapidOCR. The OCR rate replaces the digital rate. It is not a surcharge added
-on top.
+two active database rates: the digital-page rate or the RapidOCR-page rate. The
+OCR rate replaces the digital rate. It is not a surcharge added on top.
 
-The 31/52 rates remain the provisional user policy during the VM benchmark.
-They must be reviewed after measured throughput is available against the fixed
-€20.20 monthly VM cost; a deployment change does not silently reprice users.
+`GET /api/source-upload-policy` returns both page rates and the audio-second
+rate in microcredits. The browser
+details dialog applies them to its serial worker's digital/OCR page estimate so
+the user sees an expected cost before submit. It is not a reservation or ledger
+write. PDF page count is exact but OCR routing remains estimated; OOXML counts
+can also be estimated. Only the parser receipt creates `usage_events` and
+settles the actual charge.
+
+The seeded 31/52-credit page rates remain provisional during the VM benchmark.
+Operators can create a new active version without deploying. Enqueue snapshots
+the applicable versions and microcredit amounts into the job, so an edit never
+reprices work already waiting in the queue.
 
 The persistent parser returns attributable child-process CPU, wall time, queue
-time, B2 download/upload time, current RSS/PSS, and I/O bytes. CPU includes the
+time, shared-spool source-read/bundle-write time, current RSS/PSS, and I/O
+bytes. The historical database column names still say parse download/upload,
+but those values no longer measure B2 transfers. CPU includes the
 LibreOffice child used to normalize DOC/DOCX, PPT/PPTX, and XLS/XLSX. Those fields are operational
 telemetry only. Page counts determine the charge.
 
@@ -519,16 +534,17 @@ as distinct series.
 
 ### Pricing is policy
 
-`server/internal/store/pricing.go` prices from the resolved `model_configs` row.
-The pipeline uses the same rows via `pipeline/pipeline/registry.py`. There is no
-mirrored rate table in `db.py`.
+Token work is priced from the resolved `model_configs` row. Non-token policy
+(`audio_transcription_second`, digital/OCR pages, the figure-caption floor, and
+email) is versioned in `resource_credit_rates`. The Ops usage page edits these
+rates by inserting a new active version and recording an operator audit event.
+There are no numeric non-token rate fallbacks in Go or Python.
 
 LLM rates are deliberately not derived from provider invoices. Provider prices
 move and are quoted in units the product does not copy, including supplier cache
 prices and reasoning tokens. Cache-read tokens are billed from the catalog
-rate, not the invoice. The two fixed parse page rates were calibrated from the
-former hosted deployment. They change only in code, with a new policy review and
-tests after the VM benchmark is accepted.
+rate, not the invoice. Jobs settle with their enqueue-time resource-rate
+snapshot, while new work uses the active version.
 
 ### Background workers
 
@@ -694,9 +710,10 @@ Worth knowing before trusting a dashboard:
 - **Exact shared-CPU attribution.** `parse_cpu_milliseconds` measures the child
   that owns one document, including Office-converter children. Shared layout
   helper work appears in host saturation, not in a guessed per-job split.
-- **A lost parser response.** A measured parser exception returns its page and
-  CPU receipt and is charged before the job retries. If the network loses the
-  whole response after the parser did work, the pipeline has no receipt to record.
+- **A parser failure before artifact publication.** A completed local artifact
+  carries a recoverable receipt even if its HTTP response is lost. A process
+  crash or hard timeout before publication can still consume CPU without a
+  page receipt because no trustworthy completed page count exists.
 - **Provider-side retries.** A provider that retries internally bills once and
   reports once; a client-side retry in `caption_image` bills twice and reports
   twice, correctly.
@@ -716,10 +733,11 @@ Worth knowing before trusting a dashboard:
   still per-replica and unrelated to the Redis limiter.
 - **Reindexing a workspace into a different embedding model.** Not implemented,
   deliberately: see [agentic-retrieval.md](agentic-retrieval.md).
-- **Ingest retries.** Each parse attempt with a receipt gets one idempotent page
-  charge, including attempts followed by later-stage failure. A retry that hits
-  the parse-zip or caption cache is not billed for parse or vision a second
-  time; a retry that re-embeds is.
+- **Ingest retries.** Each published parse fingerprint has one idempotent page
+  charge, including work followed by later-stage failure. The creating job can
+  recover the receipt from the local bundle; another job reusing that bundle is
+  not billed for the parse. Caption-cache hits likewise avoid a second vision
+  charge; a retry that re-embeds is still billed for that new provider call.
   A stream of lease-reclaimed jobs after a worker crash can still over-count
   if the original process was alive and writing. Heartbeat + a lease well
   above typical duration is the mitigation.

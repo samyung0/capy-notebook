@@ -45,14 +45,7 @@ export function PptxEditorHost({
       </div>
     );
   return (
-    <div
-      className="office-editor-host"
-      onInputCapture={onDirty}
-      onKeyDownCapture={(event) => {
-        if (event.key.length === 1 || event.key === 'Backspace') onDirty();
-      }}
-      onPointerDownCapture={onDirty}
-    >
+    <div className="office-editor-host">
       <PptxEditor
         className="office-editor-host"
         file={bytes}

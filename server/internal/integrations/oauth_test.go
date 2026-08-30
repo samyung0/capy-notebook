@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/netip"
 	"strings"
 	"testing"
 )
@@ -168,5 +169,278 @@ func TestProviderMetadataKeepsTransientStatusRetryable(t *testing.T) {
 				t.Fatalf("transient provider status was classified terminal: %v", err)
 			}
 		})
+	}
+}
+
+func TestDownloadImportFileBoundsGoogleExport(t *testing.T) {
+	previous := providerHTTP
+	t.Cleanup(func() { providerHTTP = previous })
+	usePublicImportHostResolver(t)
+	call := 0
+	providerHTTP = &http.Client{Transport: roundTripFunc(
+		func(req *http.Request) (*http.Response, error) {
+			call++
+			if req.Header.Get("Authorization") != "Bearer token" {
+				t.Fatalf("authorization = %q", req.Header.Get("Authorization"))
+			}
+			if call == 1 {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(
+						`{"name":"Notes","mimeType":"application/vnd.google-apps.document","capabilities":{"canDownload":true}}`,
+					)),
+				}, nil
+			}
+			if !strings.Contains(req.URL.Path, "/export") {
+				t.Fatalf("download URL = %q", req.URL.String())
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/pdf"}},
+				Body:       io.NopCloser(strings.NewReader("12345")),
+			}, nil
+		},
+	)}
+
+	_, _, err := DownloadImportFile(
+		context.Background(),
+		ProviderGoogle,
+		"token",
+		ImportRef{ID: "file_1"},
+		4,
+	)
+	if !errors.Is(err, ErrImportFileTooLarge) {
+		t.Fatalf("error = %v, want ErrImportFileTooLarge", err)
+	}
+}
+
+func TestDownloadImportFileUsesMicrosoftPreauthenticatedURL(t *testing.T) {
+	previous := providerHTTP
+	t.Cleanup(func() { providerHTTP = previous })
+	usePublicImportHostResolver(t)
+	call := 0
+	providerHTTP = &http.Client{Transport: roundTripFunc(
+		func(req *http.Request) (*http.Response, error) {
+			call++
+			if call == 1 {
+				if req.Header.Get("Authorization") != "Bearer token" {
+					t.Fatalf("metadata authorization = %q", req.Header.Get("Authorization"))
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(
+						`{"name":"deck.pptx","size":4,"file":{"mimeType":"application/vnd.openxmlformats-officedocument.presentationml.presentation"},"@microsoft.graph.downloadUrl":"https://download.example/deck"}`,
+					)),
+				}, nil
+			}
+			if req.URL.Host != "download.example" {
+				t.Fatalf("download host = %q", req.URL.Host)
+			}
+			if req.Header.Get("Authorization") != "" {
+				t.Fatal("provider bearer token leaked to preauthenticated URL")
+			}
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body:       io.NopCloser(strings.NewReader("pptx")),
+			}, nil
+		},
+	)}
+
+	data, contentType, err := DownloadImportFile(
+		context.Background(),
+		ProviderMicrosoft,
+		"token",
+		ImportRef{ID: "item", DriveID: "drive"},
+		4,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "pptx" || !strings.Contains(contentType, "presentationml") {
+		t.Fatalf("data=%q contentType=%q", data, contentType)
+	}
+}
+
+func TestMicrosoftMetadataRejectsUnsafeDownloadDestinations(t *testing.T) {
+	cases := []struct {
+		name string
+		url  string
+	}{
+		{name: "loopback", url: "https://127.0.0.1/file"},
+		{name: "private", url: "https://10.0.0.8/file"},
+		{name: "link local", url: "https://169.254.169.254/file"},
+		{name: "reserved", url: "https://203.0.113.8/file"},
+		{name: "userinfo", url: "https://user:pass@example.com/file"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			previous := providerHTTP
+			t.Cleanup(func() { providerHTTP = previous })
+			providerHTTP = &http.Client{Transport: roundTripFunc(
+				func(*http.Request) (*http.Response, error) {
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     make(http.Header),
+						Body: io.NopCloser(strings.NewReader(
+							`{"name":"file.pdf","size":12,"file":{"mimeType":"application/pdf"},"@microsoft.graph.downloadUrl":"` + tc.url + `"}`,
+						)),
+					}, nil
+				},
+			)}
+
+			if _, err := GetMicrosoftFileMetadata(
+				context.Background(), "token", "item", "",
+			); !errors.Is(err, ErrImportFileUnavailable) {
+				t.Fatalf("error = %v, want ErrImportFileUnavailable", err)
+			}
+		})
+	}
+}
+
+func TestMicrosoftMetadataRejectsPrivateDNSResolution(t *testing.T) {
+	previousHTTP := providerHTTP
+	previousResolver := importHostResolver
+	t.Cleanup(func() {
+		providerHTTP = previousHTTP
+		importHostResolver = previousResolver
+	})
+	providerHTTP = &http.Client{Transport: roundTripFunc(
+		func(*http.Request) (*http.Response, error) {
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     make(http.Header),
+				Body: io.NopCloser(strings.NewReader(
+					`{"name":"file.pdf","size":12,"file":{"mimeType":"application/pdf"},"@microsoft.graph.downloadUrl":"https://download.example/file"}`,
+				)),
+			}, nil
+		},
+	)}
+	importHostResolver = func(context.Context, string) ([]netip.Addr, error) {
+		return []netip.Addr{netip.MustParseAddr("192.168.1.5")}, nil
+	}
+
+	if _, err := GetMicrosoftFileMetadata(
+		context.Background(), "token", "item", "",
+	); !errors.Is(err, ErrImportFileUnavailable) {
+		t.Fatalf("error = %v, want ErrImportFileUnavailable", err)
+	}
+}
+
+func TestDownloadImportFileRejectsUnsafeRedirect(t *testing.T) {
+	previousHTTP := providerHTTP
+	t.Cleanup(func() { providerHTTP = previousHTTP })
+	usePublicImportHostResolver(t)
+	call := 0
+	providerHTTP = &http.Client{Transport: roundTripFunc(
+		func(req *http.Request) (*http.Response, error) {
+			call++
+			switch call {
+			case 1:
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(
+						`{"name":"deck.pptx","size":4,"file":{"mimeType":"application/vnd.openxmlformats-officedocument.presentationml.presentation"},"@microsoft.graph.downloadUrl":"https://download.example/deck"}`,
+					)),
+				}, nil
+			case 2:
+				return &http.Response{
+					StatusCode: http.StatusFound,
+					Header: http.Header{
+						"Location": []string{"https://127.0.0.1/internal"},
+					},
+					Body:    io.NopCloser(strings.NewReader("")),
+					Request: req,
+				}, nil
+			default:
+				t.Fatalf("unexpected provider request %d: %s", call, req.URL)
+				return nil, nil
+			}
+		},
+	)}
+
+	if _, _, err := DownloadImportFile(
+		context.Background(), ProviderMicrosoft, "token",
+		ImportRef{ID: "item"}, 4,
+	); !errors.Is(err, ErrImportFileUnavailable) {
+		t.Fatalf("error = %v, want ErrImportFileUnavailable", err)
+	}
+	if call != 2 {
+		t.Fatalf("provider calls = %d, want 2", call)
+	}
+}
+
+func TestDownloadImportFileStripsGoogleBearerOnCrossOriginRedirect(t *testing.T) {
+	previousHTTP := providerHTTP
+	t.Cleanup(func() { providerHTTP = previousHTTP })
+	usePublicImportHostResolver(t)
+	call := 0
+	providerHTTP = &http.Client{Transport: roundTripFunc(
+		func(req *http.Request) (*http.Response, error) {
+			call++
+			switch call {
+			case 1:
+				if req.Header.Get("Authorization") != "Bearer token" {
+					t.Fatalf("metadata authorization = %q", req.Header.Get("Authorization"))
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     make(http.Header),
+					Body: io.NopCloser(strings.NewReader(
+						`{"name":"Notes.txt","mimeType":"text/plain","size":"4","capabilities":{"canDownload":true}}`,
+					)),
+				}, nil
+			case 2:
+				if req.Header.Get("Authorization") != "Bearer token" {
+					t.Fatalf("download authorization = %q", req.Header.Get("Authorization"))
+				}
+				return &http.Response{
+					StatusCode: http.StatusFound,
+					Header: http.Header{
+						"Location": []string{"https://cdn.example/file"},
+					},
+					Body:    io.NopCloser(strings.NewReader("")),
+					Request: req,
+				}, nil
+			case 3:
+				if req.Header.Get("Authorization") != "" {
+					t.Fatalf("cross-origin authorization leaked: %q", req.Header.Get("Authorization"))
+				}
+				if req.Header.Get("Referer") != "" {
+					t.Fatalf("cross-origin referer leaked: %q", req.Header.Get("Referer"))
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"text/plain"}},
+					Body:       io.NopCloser(strings.NewReader("text")),
+					Request:    req,
+				}, nil
+			default:
+				t.Fatalf("unexpected provider request %d: %s", call, req.URL)
+				return nil, nil
+			}
+		},
+	)}
+
+	data, contentType, err := DownloadImportFile(
+		context.Background(), ProviderGoogle, "token", ImportRef{ID: "file_1"}, 4,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "text" || contentType != "text/plain" {
+		t.Fatalf("data=%q contentType=%q", data, contentType)
+	}
+}
+
+func usePublicImportHostResolver(t *testing.T) {
+	t.Helper()
+	previous := importHostResolver
+	t.Cleanup(func() { importHostResolver = previous })
+	importHostResolver = func(context.Context, string) ([]netip.Addr, error) {
+		return []netip.Addr{netip.MustParseAddr("93.184.216.34")}, nil
 	}
 }

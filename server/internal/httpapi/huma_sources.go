@@ -35,6 +35,7 @@ func (a *api) registerSourceUploads(api huma.API) {
 	regWithMaxBody(api, http.MethodPost, "/api/files/{id}/replacement-uploads", "createFileReplacementUpload", tag, "Reserve a direct file replacement", http.StatusCreated, 64<<10, a.createFileReplacementUpload)
 	reg(api, http.MethodPost, "/api/files/{id}/replacement-uploads/{uploadId}/complete", "completeFileReplacementUpload", tag, "Complete a direct file replacement", http.StatusOK, a.completeFileReplacementUpload)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/sources/import", "importSources", tag, "Queue sources from a connected drive", http.StatusAccepted, a.importSources)
+	regWithMaxBody(api, http.MethodPost, "/api/workspaces/{id}/sources/import-inspect", "inspectSourceImports", tag, "Inspect sources selected from a connected drive", http.StatusOK, 64<<10, a.inspectSourceImports)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/sources/imports/{jobId}", "getSourceImport", tag, "Get source import status", http.StatusOK, a.getSourceImport)
 }
 
@@ -66,6 +67,7 @@ func (a *api) getSourceUploadPolicy(
 		store.FileSlides,
 		store.FileAudio,
 		store.FileJson,
+		store.FileUnknown,
 	}
 	textKinds := map[store.FileKind]bool{
 		store.FileMD:   true,
@@ -94,28 +96,31 @@ func (a *api) getSourceUploadPolicy(
 			MaxBytes:   maxBytes,
 		},
 	}
-	accept := sourceupload.SupportedExtensions()
+	rates, err := a.s.ActiveResourceRates(ctx, []string{
+		store.ResourceAudioSecond,
+		store.ResourceDigitalParsePage,
+		store.ResourceOCRParsePage,
+	})
+	if err != nil {
+		return nil, hErr(err)
+	}
 
 	return &sourceUploadPolicyOutput{
 		Body: apimodel.SourceUploadPolicy{
-			Kinds:            kinds,
-			ParseModes:       parseModes,
-			Accept:           joinExtensions(accept),
-			MaxBytes:         maxBytes,
-			AllowNoExtension: false,
+			Kinds:      kinds,
+			ParseModes: parseModes,
+			// An empty accept filter lets the native picker select unrecognized
+			// formats. The server still owns the size cap and stores those as
+			// kind=unknown with no ingest job.
+			Accept:                       "",
+			MaxBytes:                     maxBytes,
+			AllowNoExtension:             true,
+			AudioSecondCreditMicros:      rates[store.ResourceAudioSecond].CreditMicrosPerUnit,
+			AudioMaxDurationSeconds:      10 * 60 * 60,
+			DigitalParsePageCreditMicros: rates[store.ResourceDigitalParsePage].CreditMicrosPerUnit,
+			OCRParsePageCreditMicros:     rates[store.ResourceOCRParsePage].CreditMicrosPerUnit,
 		},
 	}, nil
-}
-
-func joinExtensions(extensions []string) string {
-	result := ""
-	for i, ext := range extensions {
-		if i > 0 {
-			result += ","
-		}
-		result += ext
-	}
-	return result
 }
 
 type createSourceUploadInput struct {
@@ -202,7 +207,7 @@ func (a *api) createSourceUpload(ctx context.Context, in *createSourceUploadInpu
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	body.CaptionImages = sourceupload.NormalizeCaptionImages(body.Kind, body.ParseMode, body.CaptionImages)
-	if sourceupload.NeedsIngestJob(body.Kind, body.ParseMode) {
+	if sourceupload.NeedsIngestJob(body.Name, body.Kind, body.ParseMode) {
 		if err := a.s.AssertCreditsAvailable(ctx, userID(ctx)); err != nil {
 			return nil, hErr(err)
 		}
@@ -342,11 +347,11 @@ func (a *api) createFileReplacementUpload(
 	if _, _, err := mime.ParseMediaType(body.ContentType); err != nil || strings.ContainsAny(body.ContentType, "\r\n") {
 		return nil, huma.Error400BadRequest("invalid content type")
 	}
-	kind, parseMode, err := a.s.FileIngestPolicy(ctx, in.ID)
+	name, kind, parseMode, err := a.s.FileIngestPolicy(ctx, in.ID)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	if sourceupload.NeedsIngestJob(kind, parseMode) {
+	if sourceupload.NeedsIngestJob(name, kind, parseMode) {
 		if err := a.s.AssertCreditsAvailable(ctx, userID(ctx)); err != nil {
 			return nil, hErr(err)
 		}
@@ -459,6 +464,11 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 	if len(in.Body.FileIds) == 0 {
 		return nil, huma.Error400BadRequest("provider and fileIds required")
 	}
+	in.Body.ChapterName = strings.TrimSpace(in.Body.ChapterName)
+	in.Body.ParseMode = strings.ToLower(strings.TrimSpace(in.Body.ParseMode))
+	if in.Body.ChapterID != nil && in.Body.ChapterName != "" {
+		return nil, huma.Error400BadRequest("chapterId and chapterName cannot both be set")
+	}
 	requestID := strings.TrimSpace(in.Body.RequestID)
 	if requestID == "" {
 		requestID = randID("ireq")
@@ -486,13 +496,19 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 		return nil, huma.Error400BadRequest("unknown provider")
 	}
 	fingerprintBody, err := json.Marshal(struct {
-		ChapterID *string
-		Provider  string
-		Refs      []integrations.ImportRef
+		CaptionImages bool
+		ChapterID     *string
+		ChapterName   string
+		ParseMode     string
+		Provider      string
+		Refs          []integrations.ImportRef
 	}{
-		ChapterID: in.Body.ChapterID,
-		Provider:  in.Body.Provider,
-		Refs:      refs,
+		CaptionImages: in.Body.CaptionImages,
+		ChapterID:     in.Body.ChapterID,
+		ChapterName:   in.Body.ChapterName,
+		ParseMode:     in.Body.ParseMode,
+		Provider:      in.Body.Provider,
+		Refs:          refs,
 	})
 	if err != nil {
 		return nil, hErr(err)
@@ -609,7 +625,10 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 			continue
 		}
 		kind := integrations.KindFromName(meta.Name)
-		mode := defaultParseMode(meta.Name, kind)
+		mode := in.Body.ParseMode
+		if mode == "" {
+			mode = defaultParseMode(meta.Name, kind)
+		}
 		if err := validateParseMode(mode, meta.Name, kind, reservedSize, maxBytes); err != nil {
 			rejected = append(rejected, apimodel.SourceImportRejected{
 				FileID: ref.ID,
@@ -625,9 +644,14 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 			strings.ContainsAny(contentType, "\r\n") {
 			contentType = "application/octet-stream"
 		}
-		if sourceupload.NeedsIngestJob(kind, mode) {
+		if sourceupload.NeedsIngestJob(meta.Name, kind, mode) {
 			needsCredits = true
 		}
+		captionImages := sourceupload.NormalizeCaptionImages(
+			kind,
+			mode,
+			in.Body.CaptionImages,
+		)
 
 		uploadID := randID("up")
 		jobID := randID("imp")
@@ -640,11 +664,11 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 			JobID: jobID,
 			Upload: store.NewUploadSession{
 				ID: uploadID, WorkspaceID: wsID, CreatedBy: actor,
-				ChapterID:  in.Body.ChapterID,
+				ChapterID: in.Body.ChapterID, ChapterName: in.Body.ChapterName,
 				ObjectPath: incomingObjectKey(uploadID, blobID+ext),
 				FinalPath:  sourceObjectKey(blobID + ext),
 				Name:       meta.Name, Kind: kind, ContentType: contentType,
-				DeclaredSize: reservedSize, ParseMode: mode,
+				DeclaredSize: reservedSize, ParseMode: mode, CaptionImages: captionImages,
 				ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
 			},
 			Provider: in.Body.Provider, ProviderFileID: ref.ID,

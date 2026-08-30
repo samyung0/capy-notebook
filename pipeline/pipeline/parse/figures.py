@@ -12,23 +12,11 @@ part of the passage it belongs to.
 
 ## Filtering
 
-Two kinds of image come out of a parse: figures, and page furniture. Rejecting
-the furniture matters more for latency than for money — a caption is a fraction
-of a cent, but a few hundred of them are a minute of wall clock, and a caption of
-a university crest is noise in the index forever.
-
-The load-bearing filter is *repetition*. A crest, header rule or footer logo
-appears on nearly every page of a deck; a real figure does not. Grouping by
-perceptual hash and dropping whatever recurs across pages catches this
-independently of language, script or subject matter, which the cheaper
-per-image heuristics cannot do.
-
-The flatness heuristics are deliberately timid. The obvious rule — "mostly one
-colour means it is a logo" — is wrong here: a line diagram on a white background
-is also 95% one colour, and those are exactly the images worth captioning. So
-flatness only rejects images that are *almost entirely* uniform (blank crops,
-rules, solid blocks). A one-off logo on a title page still gets captioned; that
-costs one call and is the deliberate trade for never dropping a diagram.
+Selection rejects only unreadable images, images below 130×130, images already
+described by the parser, and exact duplicates. Aspect ratio, compressed size,
+page area, flatness, entropy, and cross-page repetition all produced plausible
+false negatives for sparse scientific diagrams. Decorative classification is
+left to the caption model and cached with the same image digest as a caption.
 
 ## Caching
 
@@ -55,37 +43,12 @@ from typing import Any
 
 from ..config import cfg
 from ..retrieval import models
-from ..store import blobstore
+from ..store import blobstore, db
 
 log = logging.getLogger("evo.parse.figures")
 
-# --- absolute bounds: too small to carry information at all ---------------
-# Encoded size is a poor proxy for content: a bar chart exported from slideware
-# is a 600x400 PNG of flat fills that compresses to under 2 KB, while a scanned
-# smudge is far larger. So this floor only skips spacers and truncated files,
-# and the pixel bounds below do the real work.
-_MIN_BYTES = 512
-_MIN_WIDTH = 160
-_MIN_HEIGHT = 120
-_MIN_PIXELS = 40_000
-_MAX_ASPECT = 8.0
-# Parser bboxes use a 1000x1000 page, so this is 1.2% of the page.
-_MIN_PAGE_AREA = 12_000
-
-# --- flatness: only near-uniform crops, never merely sparse line art ------
-_FLAT_SAMPLE = 128
-_FLAT_DOMINANT_RATIO = 0.97
-_FLAT_MAX_COLORS = 8
-# Uniform fills and smooth backgrounds measure 0.0 here; the sparsest drawing
-# worth keeping (a single labelled arrow) measures about 0.28. The threshold
-# sits far below that, because the colour-count test above already rejects
-# rules and solid blocks and this only has to catch gradients it cannot see.
-_MIN_ENTROPY = 0.15
-
-# --- repetition: page furniture recurs, figures do not --------------------
-_HASH_DISTANCE = 6
-_REPEAT_MIN_PAGES = 3
-_REPEAT_PAGE_RATIO = 0.3
+_MIN_WIDTH = 130
+_MIN_HEIGHT = 130
 
 # Picture blocks arrive under two labels: ``image`` and ``chart`` (a plot the
 # layout model recognised as a data graphic). A chart is the single most
@@ -98,9 +61,11 @@ _IMAGE_TYPES = frozenset({"image", "chart"})
 # block type, so a chart's label lives under ``chart_caption``.
 _CAPTION_KEYS = ("image_caption", "chart_caption")
 
-_CAPTION_PROMPT = """You are describing a figure from a study document so that a student's search query can find it.
-Caption the image in brief and easy to understand way. List out facts/data/formulas clearly visible in the image (if any)
-Focus on the facts and drop all unnecessary opinions. Make the sentences short and drop all the fillers, preamble or pleasantries"""
+_DECORATIVE = "DECORATIVE"
+
+_CAPTION_PROMPT = """Describe this figure from a study document so a student's search can find the information it carries.
+Use brief, clear sentences. Include visible facts, data, labels, formulas, relationships, and conclusions. Do not add facts that are not visible or supported by the supplied context.
+If the image is likely only decorative, such as an ornament, generic icon, divider, background, or branding with no useful study information, return exactly DECORATIVE in all caps and nothing else. If uncertain, describe the potentially useful information instead."""
 
 # Appended only when there is context to introduce. Left dangling on a figure
 # with no surrounding text, the trailing colon reads as a promise of material
@@ -122,15 +87,6 @@ class Figure:
 
 
 # ------------------------------------------------------------------ selection
-
-
-def _page_count(content_list: list[dict[str, Any]]) -> int:
-    pages = [
-        int(item["page_idx"])
-        for item in content_list
-        if isinstance(item, dict) and isinstance(item.get("page_idx"), int)
-    ]
-    return (max(pages) + 1) if pages else 1
 
 
 def _context_for(content_list: list[dict[str, Any]], index: int) -> str:
@@ -193,77 +149,11 @@ def _bbox_area(item: dict[str, Any]) -> float | None:
     return max(0.0, width) * max(0.0, height)
 
 
-def _is_flat(image: Any) -> bool:
-    from PIL import Image
-
-    sample = image.convert("RGB")
-    sample.thumbnail((_FLAT_SAMPLE, _FLAT_SAMPLE), Image.Resampling.BILINEAR)
-    if sample.convert("L").entropy() < _MIN_ENTROPY:
-        return True
-    colors = sample.getcolors(maxcolors=_FLAT_MAX_COLORS * 8)
-    if colors is None:
-        return False
-    total = sum(count for count, _ in colors)
-    if not total:
-        return True
-    dominant = max(count for count, _ in colors)
-    return dominant / total >= _FLAT_DOMINANT_RATIO and len(colors) <= _FLAT_MAX_COLORS
-
-
-def _dhash(image: Any) -> int:
-    """64-bit difference hash: adjacent-pixel gradients of a 9x8 grayscale."""
-    from PIL import Image
-
-    small = image.convert("L").resize((9, 8), Image.Resampling.LANCZOS)
-    pixels = small.tobytes()
-    bits = 0
-    for row in range(8):
-        base = row * 9
-        for col in range(8):
-            bits = (bits << 1) | int(pixels[base + col] < pixels[base + col + 1])
-    return bits
-
-
-def _drop_recurring(
-    figures: list[Figure], hashes: dict[str, int], pages: int
-) -> list[Figure]:
-    """Drop figures whose near-identical twin appears across many pages.
-
-    Greedy clustering on Hamming distance rather than exact equality, because a
-    logo re-cropped by a page or two off differs in a handful of bits.
-    """
-    threshold = max(_REPEAT_MIN_PAGES, int(pages * _REPEAT_PAGE_RATIO))
-    clusters: list[tuple[int, set[int | None]]] = []
-    membership: list[int] = []
-    for figure in figures:
-        value = hashes[figure.digest]
-        for index, (representative, seen) in enumerate(clusters):
-            if (representative ^ value).bit_count() <= _HASH_DISTANCE:
-                seen.add(figure.page)
-                membership.append(index)
-                break
-        else:
-            clusters.append((value, {figure.page}))
-            membership.append(len(clusters) - 1)
-
-    kept: list[Figure] = []
-    for figure, cluster in zip(figures, membership):
-        if len(clusters[cluster][1]) >= threshold:
-            continue
-        kept.append(figure)
-    dropped = len(figures) - len(kept)
-    if dropped:
-        log.info("dropped %s recurring page-furniture images", dropped)
-    return kept
-
-
 def select_figures(content_list: list[dict[str, Any]], raw_dir: Path) -> list[Figure]:
     """Figures worth captioning, deduplicated by image content."""
     from PIL import Image, UnidentifiedImageError
 
-    pages = _page_count(content_list)
     by_digest: dict[str, Figure] = {}
-    hashes: dict[str, int] = {}
     order: list[str] = []
 
     for index, item in enumerate(content_list):
@@ -275,7 +165,7 @@ def select_figures(content_list: list[dict[str, Any]], raw_dir: Path) -> list[Fi
         if not img_path:
             continue
         target = raw_dir.joinpath(*Path(img_path).parts)
-        if not target.is_file() or target.stat().st_size < _MIN_BYTES:
+        if not target.is_file():
             continue
 
         try:
@@ -293,19 +183,8 @@ def select_figures(content_list: list[dict[str, Any]], raw_dir: Path) -> list[Fi
         try:
             with Image.open(io.BytesIO(data)) as image:
                 width, height = image.size
-                if (
-                    width < _MIN_WIDTH
-                    or height < _MIN_HEIGHT
-                    or width * height < _MIN_PIXELS
-                    or max(width, height) / max(1, min(width, height)) > _MAX_ASPECT
-                ):
+                if width < _MIN_WIDTH or height < _MIN_HEIGHT:
                     continue
-                area = _bbox_area(item)
-                if area is not None and area < _MIN_PAGE_AREA:
-                    continue
-                if _is_flat(image):
-                    continue
-                hashes[digest] = _dhash(image)
         except (OSError, UnidentifiedImageError):
             continue
 
@@ -319,7 +198,7 @@ def select_figures(content_list: list[dict[str, Any]], raw_dir: Path) -> list[Fi
         )
         order.append(digest)
 
-    figures = _drop_recurring([by_digest[d] for d in order], hashes, pages)
+    figures = [by_digest[digest] for digest in order]
     if cfg.caption_max_per_file > 0 and len(figures) > cfg.caption_max_per_file:
         # A safety valve for a pathological document, not a quality knob. The
         # largest figures survive, since page area is the best cheap proxy for
@@ -378,6 +257,26 @@ def _save_cache(key: str, captions: dict[str, str]) -> bool:
         # to fail a parse that already succeeded.
         log.warning("could not write caption cache", exc_info=True)
         return False
+
+
+class _CaptionCacheLock:
+    def __init__(self, identity: str):
+        self.identity = identity
+        self.connection = None
+
+    async def __aenter__(self) -> None:
+        while self.connection is None:
+            self.connection = await asyncio.to_thread(
+                db.try_source_artifact_lock, self.identity
+            )
+            if self.connection is None:
+                await asyncio.sleep(max(0.1, cfg.poll_interval))
+
+    async def __aexit__(self, *_exc: object) -> None:
+        if self.connection is not None:
+            await asyncio.to_thread(
+                db.release_source_artifact_lock, self.connection, self.identity
+            )
 
 
 # ---------------------------------------------------------------- captioning
@@ -443,40 +342,57 @@ async def caption_figures(
     """Describe every figure worth describing, in place on ``content_list``."""
     figures = select_figures(content_list, raw_dir)
     key = cache_key(source_sha256)
-    empty = {"selected": 0, "cached": 0, "captioned": 0, "applied": 0, "key": ""}
+    empty = {
+        "selected": 0,
+        "cached": 0,
+        "captioned": 0,
+        "decorative": 0,
+        "applied": 0,
+        "key": "",
+    }
     if not figures:
         return empty
 
-    cached = await asyncio.to_thread(_load_cache, key)
-    loaded = bool(cached)
-    pending = [figure for figure in figures if figure.digest not in cached]
-    log.info(
-        "captioning %s figures for %s (%s already cached)",
-        len(pending),
-        file_name,
-        len(figures) - len(pending),
-    )
+    identity = f"figure-caption:{source_sha256}:{cfg.caption_version}"
+    async with _CaptionCacheLock(identity):
+        # Load inside the lock. A competing ingest may have populated the cache
+        # while this one waited, in which case no second vision call is needed.
+        cached = await asyncio.to_thread(_load_cache, key)
+        loaded = bool(cached)
+        pending = [figure for figure in figures if figure.digest not in cached]
+        log.info(
+            "captioning %s figures for %s (%s already cached)",
+            len(pending),
+            file_name,
+            len(figures) - len(pending),
+        )
 
-    semaphore = asyncio.Semaphore(max(1, cfg.caption_concurrency))
+        semaphore = asyncio.Semaphore(max(1, cfg.caption_concurrency))
 
-    async def describe(figure: Figure) -> tuple[str, str]:
-        async with semaphore:
-            data_url = await asyncio.to_thread(_encode, figure.path)
-            if data_url is None:
-                return figure.digest, ""
-            return figure.digest, await models.caption_image(data_url, _prompt(figure))
+        async def describe(figure: Figure) -> tuple[str, str]:
+            async with semaphore:
+                data_url = await asyncio.to_thread(_encode, figure.path)
+                if data_url is None:
+                    return figure.digest, ""
+                return figure.digest, await models.caption_image(
+                    data_url, _prompt(figure)
+                )
 
-    fresh = await asyncio.gather(*(describe(figure) for figure in pending))
-    written = {digest: text for digest, text in fresh if text}
-    saved = False
-    if written:
-        cached.update(written)
-        saved = await asyncio.to_thread(_save_cache, key, cached)
+        fresh = await asyncio.gather(*(describe(figure) for figure in pending))
+        written = {digest: text.strip() for digest, text in fresh if text.strip()}
+        saved = False
+        if written:
+            cached.update(written)
+            saved = await asyncio.to_thread(_save_cache, key, cached)
 
     applied = 0
+    decorative = 0
     for figure in figures:
         description = cached.get(figure.digest)
         if not description:
+            continue
+        if description.strip() == _DECORATIVE:
+            decorative += 1
             continue
         for item in figure.items:
             item["description"] = description
@@ -485,6 +401,7 @@ async def caption_figures(
         "selected": len(figures),
         "cached": len(figures) - len(pending),
         "captioned": len(written),
+        "decorative": decorative,
         "applied": applied,
         "key": key if (loaded or saved) else "",
     }

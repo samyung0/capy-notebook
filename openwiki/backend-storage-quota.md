@@ -37,6 +37,13 @@ owner's** plan, create-only (no retroactive invalidation): **10 MiB** free,
 elsewhere. `GET /api/source-upload-policy?workspaceId=` returns the cap the
 dialog should enforce.
 
+The parser-generated Office citation PDF is a platform artifact and does not
+increase `files.size_bytes` or user storage usage. Its object path is held by
+both `artifact_cache` for cross-file reuse and `files.preview_blob_path` while a
+ready file needs it. Blob refcounting keeps a live preview through cache expiry,
+clone, and donor reuse, then queues deletion after its last file/cache reference
+is gone. Native PDFs reuse `blob_path` and do not create another preview object.
+
 Per-workspace **file count** is a separate bound from byte quota: it exists so
 the chat catalogue (`list_sources`) fits in one tool result. `MaxFilesPerWorkspace`
 is 100. Open unexpired source upload sessions count toward the cap so concurrent

@@ -1,9 +1,9 @@
-"""Download a B2 job blob to a readable local file.
+"""Read and write durable B2 objects used by the ingest pipeline.
 
 The Go gateway records a B2 object key in ``files.blob_path`` and echoes it
-into each ingest job as ``blobPath``. This module downloads the object to a
-temporary file so existing readers and the remote parser client
-keep working untouched, then deletes it once ingest is done.
+into each ingest job as ``blobPath``. The worker downloads that object once
+into the Netcup VM's shared spool while calculating its trusted SHA-256. The
+parser container reads the same local file.
 
 ``fetch_local`` is synchronous (boto3 + file IO block); the worker calls it via
 ``asyncio.to_thread`` so the event loop is never blocked.
@@ -11,11 +11,14 @@ keep working untouched, then deletes it once ingest is done.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import logging
 import os
+import re
 import tempfile
 from collections.abc import Callable
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from ..config import cfg
 
@@ -39,42 +42,115 @@ def _s3_client():
     return _client
 
 
-def fetch_local(blob_path: str) -> tuple[str, Callable[[], None]]:
-    """Return ``(local_path, cleanup)`` for ``blob_path``.
+def fetch_local_hashed(
+    blob_path: str, shared_dir: str
+) -> tuple[str, str, str, Callable[[], None]]:
+    """Download once into the shared spool and hash the bytes as they arrive.
 
-    Downloads the B2 object to a temp file; ``cleanup`` deletes it.
+    Returns ``(local_path, source_key, sha256, cleanup)``. ``source_key`` is the
+    relative identifier passed to the parser, never an arbitrary host path.
     """
-    fd, tmp = tempfile.mkstemp(prefix="evo_blob_")
+    root = Path(shared_dir).resolve()
+    source_dir = root / "sources"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix="source-", dir=source_dir)
     os.close(fd)
+    path = Path(tmp)
+    digest = hashlib.sha256()
+    body = None
     try:
-        _s3_client().download_file(cfg.b2_bucket, blob_path, tmp)
+        try:
+            response = _s3_client().get_object(Bucket=cfg.b2_bucket, Key=blob_path)
+        except Exception as exc:
+            from botocore.exceptions import ClientError
+
+            if isinstance(exc, ClientError):
+                code = str(exc.response.get("Error", {}).get("Code", ""))
+                if code in {"404", "NoSuchKey", "NotFound"}:
+                    raise FileNotFoundError(blob_path) from exc
+            raise
+        body = response["Body"]
+        with path.open("wb") as handle:
+            while chunk := body.read(1024 * 1024):
+                digest.update(chunk)
+                handle.write(chunk)
+        # The production spool directory is setgid to the parser's group. Keep
+        # each source private to the worker/parser pair while allowing the
+        # unprivileged parser container to read it.
+        path.chmod(0o640)
     except Exception:
-        _safe_unlink(tmp)
+        _safe_unlink(str(path))
         raise
+    finally:
+        close = getattr(body, "close", None)
+        if callable(close):
+            close()
 
     def _cleanup() -> None:
-        _safe_unlink(tmp)
+        _safe_unlink(str(path))
 
-    log.info("downloaded blob %s -> %s", blob_path, tmp)
-    return tmp, _cleanup
+    source_key = path.relative_to(root).as_posix()
+    log.info("downloaded and hashed blob %s -> %s", blob_path, source_key)
+    return str(path), source_key, digest.hexdigest(), _cleanup
+
+
+def reuse_local_hashed(
+    source_key: str, expected_sha256: str, shared_dir: str
+) -> tuple[str, str, str, Callable[[], None]]:
+    """Open a job's prior spool source after verifying its key and checksum."""
+    relative = PurePosixPath(source_key)
+    if (
+        relative.is_absolute()
+        or len(relative.parts) != 2
+        or relative.parts[0] != "sources"
+        or relative.parts[1] in {"", ".", ".."}
+        or not re.fullmatch(r"[0-9a-f]{64}", expected_sha256)
+    ):
+        raise ValueError("invalid local source descriptor")
+    root = Path(shared_dir).resolve()
+    path = root.joinpath(*relative.parts).resolve()
+    if root not in path.parents:
+        raise ValueError("invalid local source descriptor")
+
+    digest = hashlib.sha256()
+    with path.open("rb") as source:
+        while chunk := source.read(1024 * 1024):
+            digest.update(chunk)
+    if not hmac.compare_digest(digest.hexdigest(), expected_sha256):
+        _safe_unlink(str(path))
+        raise ValueError("local source checksum mismatch")
+    try:
+        path.touch()
+    except OSError:
+        log.debug("could not touch local source %s", source_key, exc_info=True)
+
+    def _cleanup() -> None:
+        _safe_unlink(str(path))
+
+    log.info("reused local source %s", source_key)
+    return str(path), source_key, expected_sha256, _cleanup
+
+
+def cleanup_local_source(source_key: str, shared_dir: str) -> None:
+    """Remove a previously persisted source descriptor if it is well formed."""
+    relative = PurePosixPath(source_key)
+    if (
+        relative.is_absolute()
+        or len(relative.parts) != 2
+        or relative.parts[0] != "sources"
+        or relative.parts[1] in {"", ".", ".."}
+    ):
+        return
+    root = Path(shared_dir).resolve()
+    path = root.joinpath(*relative.parts).resolve()
+    if root in path.parents:
+        _safe_unlink(str(path))
 
 
 def presign_get(blob_path: str, expires: int = 900) -> str:
     return _s3_client().generate_presigned_url(
         "get_object",
         Params={"Bucket": cfg.b2_bucket, "Key": blob_path},
-        ExpiresIn=expires,
-    )
-
-
-def presign_put(blob_path: str, content_type: str, expires: int = 900) -> str:
-    return _s3_client().generate_presigned_url(
-        "put_object",
-        Params={
-            "Bucket": cfg.b2_bucket,
-            "Key": blob_path,
-            "ContentType": content_type,
-        },
         ExpiresIn=expires,
     )
 
@@ -98,47 +174,6 @@ def _object_info_from_head(out: dict) -> dict:
         "etag": str(out.get("ETag") or "").strip('"'),
         "content_type": str(out.get("ContentType") or ""),
     }
-
-
-def sha256_object(blob_path: str) -> str:
-    """sha256 of the object bytes, read from the bytes themselves.
-
-    Deliberately *not* taken from the object's stored ``x-amz-checksum-sha256``.
-    The browser uploads through a presigned PUT that signs only host and
-    content-type, so a client can attach any checksum header it likes, and
-    whether the bucket validates that header against the body is the bucket's
-    behaviour rather than something this code can assert. Since this hash is the
-    global cache key, a value the uploader can choose would let anyone claim the
-    hash of a document they do not have and be handed its chunk text, summary
-    and concepts from another user's ingest.
-
-    One GET per ingest is the price, which is far below a GPU parse and is what
-    the reuse design already budgets for.
-    """
-    import hashlib
-
-    digest = hashlib.sha256()
-    try:
-        body = _s3_client().get_object(Bucket=cfg.b2_bucket, Key=blob_path)["Body"]
-    except Exception as exc:
-        from botocore.exceptions import ClientError
-
-        if isinstance(exc, ClientError):
-            code = str(exc.response.get("Error", {}).get("Code", ""))
-            if code in {"404", "NoSuchKey", "NotFound"}:
-                raise FileNotFoundError(blob_path) from exc
-        raise
-    while True:
-        chunk = body.read(1024 * 1024)
-        if not chunk:
-            break
-        digest.update(chunk)
-    return digest.hexdigest()
-
-
-def download_to(blob_path: str, destination: Path) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    _s3_client().download_file(cfg.b2_bucket, blob_path, str(destination))
 
 
 def read_bytes(blob_path: str) -> bytes | None:

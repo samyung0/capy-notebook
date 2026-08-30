@@ -636,10 +636,26 @@ async def caption_image(data_url: str, prompt: str) -> str:
     ]
     for attempt in range(_CAPTION_ATTEMPTS):
         try:
-            resp = await elitellm.complete(spec, messages)
-            obs.record_completion(spec.provider_slug, _record_name(spec), resp)
-            message = elitellm.message_from_response(resp)
-            return (getattr(message, "content", "") or "").strip()
+            context = measure_request_context(messages, model=spec)
+            async with _tracked_call(
+                kind=accounting.KIND_LLM,
+                purpose="image_caption",
+                context=context,
+            ) as call_id:
+                resp = await elitellm.complete(spec, messages)
+                obs.record_completion(spec.provider_slug, _record_name(spec), resp)
+                await accounting.settle(
+                    call_id=call_id,
+                    kind=accounting.KIND_LLM,
+                    purpose="image_caption",
+                    thinking="",
+                    spec=spec,
+                    usage=extract_usage(
+                        getattr(resp, "usage", None), provider=spec.provider_slug
+                    ),
+                )
+                message = elitellm.message_from_response(resp)
+                return (getattr(message, "content", "") or "").strip()
         except asyncio.CancelledError:
             raise
         except Exception:

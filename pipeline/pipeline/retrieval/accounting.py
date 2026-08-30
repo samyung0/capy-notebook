@@ -26,6 +26,7 @@ log = logging.getLogger("evo.accounting")
 
 KIND_LLM = "llm"
 KIND_EMBEDDING = "embedding"
+KIND_AUDIO = "audio"
 
 PURPOSE_AGENT = "agent"
 PURPOSE_TERMINAL = "terminal"
@@ -138,6 +139,7 @@ class RequestAccounting:
     credits_exhausted: bool = False
     terminal_call_allowed: bool = False
     settled_calls: int = 0
+    resource_rates: dict[str, dict[str, Any]] | None = None
 
 
 _accounting: contextvars.ContextVar[RequestAccounting | None] = contextvars.ContextVar(
@@ -153,14 +155,20 @@ def bind(session_id: str) -> contextvars.Token[RequestAccounting | None]:
     return _accounting.set(RequestAccounting(session_id=session_id))
 
 
-def bind_ingest(session_id: str) -> contextvars.Token[RequestAccounting | None]:
+def bind_ingest(
+    session_id: str, resource_rates: dict[str, dict[str, Any]]
+) -> contextvars.Token[RequestAccounting | None]:
     """Bind a post-paid ingest reservation for per-call local settlement."""
     if not session_id:
         raise AccountingError("ingest spend session is required")
     if not cfg.dsn:
         raise AccountingError("ingest provider accounting requires a database")
     return _accounting.set(
-        RequestAccounting(session_id=session_id, settlement_mode="ingest")
+        RequestAccounting(
+            session_id=session_id,
+            settlement_mode="ingest",
+            resource_rates=resource_rates,
+        )
     )
 
 
@@ -281,6 +289,7 @@ async def settle(
             thinking,
             spec,
             usage,
+            state.resource_rates or {},
         )
         state.settled_calls += 1
         return state
@@ -301,6 +310,59 @@ async def settle(
     return state
 
 
+async def settle_units(
+    *,
+    call_id: str,
+    kind: str,
+    purpose: str,
+    provider: str,
+    model: str,
+    units: int,
+    unit: str,
+    credit_micros: int | None = None,
+) -> RequestAccounting | None:
+    """Settle a provider resource measured in non-token units."""
+    state = current()
+    if state is None:
+        return None
+    if units < 0 or not unit:
+        raise AccountingError("provider units must be non-negative and named")
+    if state.settlement_mode == "ingest":
+        if credit_micros is None or credit_micros < 0:
+            raise AccountingError("ingest unit settlement requires snapshotted credits")
+        await asyncio.to_thread(
+            _settle_ingest_units_sync,
+            state.session_id,
+            call_id,
+            kind,
+            purpose,
+            provider,
+            model,
+            units,
+            unit,
+            credit_micros,
+        )
+        state.settled_calls += 1
+        return state
+    response = await _post_settlement(
+        {
+            "sessionId": state.session_id,
+            "callId": call_id,
+            "kind": kind,
+            "purpose": purpose,
+            "thinking": "",
+            "provider": provider,
+            "model": model,
+            "units": units,
+            "unit": unit,
+        }
+    )
+    state.credits_exhausted = bool(response.get("creditsExhausted"))
+    state.terminal_call_allowed = bool(response.get("terminalCallAllowed"))
+    state.settled_calls += 1
+    return state
+
+
 def _settle_ingest_call_sync(
     session_id: str,
     call_id: str,
@@ -309,6 +371,7 @@ def _settle_ingest_call_sync(
     thinking: str,
     spec: ModelConfig,
     usage: NormalizedUsage,
+    resource_rates: dict[str, dict[str, Any]],
 ) -> None:
     from .. import registry
     from ..store import db
@@ -320,6 +383,11 @@ def _settle_ingest_call_sync(
         usage.output_tokens,
         usage.cached_read_tokens,
     )
+    if purpose == "image_caption":
+        rate = resource_rates.get("figure_caption_call")
+        if not isinstance(rate, dict) or "creditMicrosPerUnit" not in rate:
+            raise AccountingError("ingest caption settlement has no rate snapshot")
+        credit_micros += int(rate["creditMicrosPerUnit"])
     with db.connect() as conn:
         with conn.cursor() as cur:
             db.settle_ingest_provider_call(
@@ -336,6 +404,41 @@ def _settle_ingest_call_sync(
                 model_version=spec.version,
                 usage=usage,
                 credit_micros=credit_micros,
+            )
+        conn.commit()
+
+
+def _settle_ingest_units_sync(
+    session_id: str,
+    call_id: str,
+    kind: str,
+    purpose: str,
+    provider: str,
+    model: str,
+    units: int,
+    unit: str,
+    credit_micros: int,
+) -> None:
+    from ..store import db
+
+    with db.connect() as conn:
+        with conn.cursor() as cur:
+            db.settle_ingest_provider_call(
+                cur,
+                session_id=session_id,
+                call_id=call_id,
+                kind=kind,
+                purpose=purpose,
+                thinking="",
+                provider=provider,
+                model=model,
+                catalog_provider_slug="",
+                catalog_model_slug="",
+                model_version=0,
+                usage=NormalizedUsage(),
+                credit_micros=credit_micros,
+                units=units,
+                unit=unit,
             )
         conn.commit()
 

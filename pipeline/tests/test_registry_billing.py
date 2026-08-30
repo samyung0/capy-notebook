@@ -191,6 +191,7 @@ def test_ingest_closes_the_actor_reservation_after_page_billing(monkeypatch):
     monkeypatch.setattr(db, "set_file_status", lambda *_a, **_k: None)
     monkeypatch.setattr(db, "set_file_indexed", lambda *_a, **_k: None)
     monkeypatch.setattr(db, "set_job", lambda *_a, **_k: None)
+    monkeypatch.setattr(db, "fail_audio_transcription_for_job", lambda *_a, **_k: None)
     monkeypatch.setattr(db, "add_notification", lambda *_a, **_k: None)
 
     worker.obs.start_usage()
@@ -229,15 +230,30 @@ def test_ingest_closes_the_actor_reservation_after_page_billing(monkeypatch):
     monkeypatch.setattr(
         db, "settle_credit_reservation", lambda _cur, rid: settled.append(rid)
     )
-    worker._finish_ok(
-        "f_1",
-        "notes.pdf",
-        "job_1",
-        attempt=1,
-        actor_user_id="u_actor",
-        workspace_id="ws_1",
-        reservation_id="cr_1",
+    token = worker._resource_rates.set(
+        {
+            worker._RESOURCE_DIGITAL_PAGE: {
+                "version": 1,
+                "creditMicrosPerUnit": 31_000_000,
+            },
+            worker._RESOURCE_OCR_PAGE: {
+                "version": 1,
+                "creditMicrosPerUnit": 52_000_000,
+            },
+        }
     )
+    try:
+        worker._finish_ok(
+            "f_1",
+            "notes.pdf",
+            "job_1",
+            attempt=1,
+            actor_user_id="u_actor",
+            workspace_id="ws_1",
+            reservation_id="cr_1",
+        )
+    finally:
+        worker._resource_rates.reset(token)
     assert billed and billed[0]["actor_user_id"] == "u_actor"
     assert billed[0]["reservation_id"] == "cr_1"
     assert billed[0]["kind"] == "parse"
@@ -250,21 +266,66 @@ def test_ingest_closes_the_actor_reservation_after_page_billing(monkeypatch):
     assert settled == ["cr_1"]
 
 
+def test_parser_receipt_uses_fingerprint_idempotency(monkeypatch):
+    billed = []
+    monkeypatch.setattr(
+        db, "record_usage_event", lambda _cur, **kwargs: billed.append(kwargs)
+    )
+    token = worker._resource_rates.set(
+        {
+            worker._RESOURCE_DIGITAL_PAGE: {
+                "version": 1,
+                "creditMicrosPerUnit": 31_000_000,
+            },
+            worker._RESOURCE_OCR_PAGE: {
+                "version": 1,
+                "creditMicrosPerUnit": 52_000_000,
+            },
+        }
+    )
+    try:
+        worker._record_parse_usage_tx(
+            None,
+            usage=worker.obs.ParseUsage(pages=1, receipt_id="fingerprint-1"),
+            file_id="f_1",
+            workspace_id="ws_1",
+            actor_user_id="u_1",
+            reservation_id="cr_1",
+            job_id="job_1",
+            attempt=2,
+            outcome="succeeded",
+        )
+    finally:
+        worker._resource_rates.reset(token)
+
+    assert billed[0]["idempotency_key"] == "parse-receipt:fingerprint-1"
+    assert billed[0]["metadata"]["parseReceiptId"] == "fingerprint-1"
+
+
 def test_finish_fail_closes_reservation_from_recorded_spend(monkeypatch):
     closed: list[str] = []
+    previews: list[tuple[str, str | None]] = []
     monkeypatch.setattr(db, "connect", lambda: _Conn())
     monkeypatch.setattr(worker, "_lost_claim", lambda *_a, **_k: False)
     monkeypatch.setattr(db, "set_file_status", lambda *_a, **_k: None)
     monkeypatch.setattr(db, "set_file_indexed", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        db,
+        "set_file_preview_blob",
+        lambda _cur, file_id, path: previews.append((file_id, path)),
+    )
     monkeypatch.setattr(db, "set_job", lambda *_a, **_k: None)
+    monkeypatch.setattr(db, "fail_audio_transcription_for_job", lambda *_a, **_k: None)
     monkeypatch.setattr(
         db, "close_credit_reservation", lambda _cur, rid: closed.append(rid)
     )
     worker._finish_fail("f_1", "j_1", "boom", 1, "cr_fail")
     assert closed == ["cr_fail"]
+    assert previews == [("f_1", None)]
 
 
 def test_parse_page_rates_are_worst_case_and_ocr_replaces_digital_rate():
-    assert db.credits_for_parse_pages(1, 0) == 31_000_000
-    assert db.credits_for_parse_pages(1, 1) == 52_000_000
-    assert db.credits_for_parse_pages(3, 1) == 114_000_000
+    rates = {"digital_rate": 31_000_000, "ocr_rate": 52_000_000}
+    assert db.credits_for_parse_pages(1, 0, **rates) == 31_000_000
+    assert db.credits_for_parse_pages(1, 1, **rates) == 52_000_000
+    assert db.credits_for_parse_pages(3, 1, **rates) == 114_000_000

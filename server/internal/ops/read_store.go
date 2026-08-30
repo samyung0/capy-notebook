@@ -31,6 +31,26 @@ type ReadStore struct {
 	overviewCache    Overview
 }
 
+func (s *ReadStore) ResourceCreditRates(ctx context.Context) ([]ResourceCreditRate, error) {
+	out := []ResourceCreditRate{}
+	rows, err := s.db.Query(ctx, `
+		SELECT resource_key, version, unit, credit_micros_per_unit, active, created_at
+		FROM resource_credit_rates WHERE active ORDER BY resource_key`)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var rate ResourceCreditRate
+		if err := rows.Scan(&rate.ResourceKey, &rate.Version, &rate.Unit,
+			&rate.CreditMicrosPerUnit, &rate.Active, &rate.CreatedAt); err != nil {
+			return out, err
+		}
+		out = append(out, rate)
+	}
+	return out, rows.Err()
+}
+
 func (s *ReadStore) AuditEvents(
 	ctx context.Context,
 	beforeID int64,

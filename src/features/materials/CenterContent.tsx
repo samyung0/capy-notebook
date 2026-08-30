@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { isMaterialContentUnreadable } from '@/api/client';
 import { useFile, useMaterial, useMaterials } from '@/api/hooks';
-import type { Chapter, UserColor } from '@/api/types';
+import type { Chapter, Region, UserColor } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -44,19 +44,23 @@ const MaterialPreview = lazy(() =>
  * flashcards materials get view actions in the header; mindmaps/diagrams render inline.
  * User-authored notes take over the whole pane with the editable Plate editor. */
 export function CenterContent({
+  beforeFileDelete,
   chapters,
   item,
   readOnly = false,
   color,
   onDeleted,
+  onFileViewerDirtyChange,
   requestedMode = null,
   workspaceId,
 }: {
+  beforeFileDelete?: () => boolean;
   chapters: Chapter[];
   item: OpenItem | null;
   readOnly?: boolean;
   color?: UserColor;
   onDeleted: () => void;
+  onFileViewerDirtyChange?: (dirty: boolean) => void;
   requestedMode?: MaterialMode | null;
   workspaceId: string;
 }) {
@@ -92,6 +96,7 @@ export function CenterContent({
       )}
     >
       <Header
+        beforeFileDelete={beforeFileDelete}
         chapters={chapters}
         color={color}
         editorStatus={editorStatus}
@@ -130,7 +135,9 @@ export function CenterContent({
             fileId={item.id}
             imageZoom={imageZoom}
             onImageZoomChange={setImageZoom}
+            onViewerDirtyChange={onFileViewerDirtyChange}
             page={item.page}
+            regions={item.regions}
           />
         )}
       </div>
@@ -271,13 +278,17 @@ function FileBody({
   color,
   imageZoom,
   onImageZoomChange,
+  onViewerDirtyChange,
   page,
+  regions,
 }: {
   fileId: string;
   color?: UserColor;
   imageZoom: number;
   onImageZoomChange: (next: number) => void;
+  onViewerDirtyChange?: (dirty: boolean) => void;
   page?: number;
+  regions?: Region[];
 }) {
   const {
     data: file,
@@ -330,8 +341,10 @@ function FileBody({
         <FileViewer
           file={file ?? null}
           imageZoom={imageZoom}
+          onDirtyChange={onViewerDirtyChange}
           onImageZoomChange={onImageZoomChange}
           page={page}
+          regions={regions}
         />
       </div>
     </div>

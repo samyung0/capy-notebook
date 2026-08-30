@@ -148,6 +148,32 @@ func NewHandler(
 			)
 			respond(w, value, err)
 		})
+		api.Get("/resource-rates", func(w http.ResponseWriter, r *http.Request) {
+			if _, ok := requirePermission(w, r, PermReadAll); !ok {
+				return
+			}
+			value, err := read.ResourceCreditRates(r.Context())
+			respond(w, value, err)
+		})
+		api.Post("/resource-rates/{resourceKey}", func(w http.ResponseWriter, r *http.Request) {
+			principal, ok := requirePermission(w, r, PermWriteRegistry)
+			if !ok {
+				return
+			}
+			if actions == nil || !actions.Configured() {
+				writeError(w, http.StatusServiceUnavailable, "actions_unavailable", "operator actions unavailable")
+				return
+			}
+			var request SaveResourceCreditRateRequest
+			if err := decodeJSON(w, r, &request); err != nil {
+				respond(w, nil, err)
+				return
+			}
+			value, err := actions.SaveResourceCreditRate(
+				r.Context(), principal, chi.URLParam(r, "resourceKey"), request.CreditMicrosPerUnit,
+			)
+			respond(w, value, err)
+		})
 		api.Get("/providers", func(w http.ResponseWriter, r *http.Request) {
 			if _, ok := requirePermission(w, r, PermReadAll); !ok {
 				return

@@ -51,6 +51,8 @@ import type {
   Flashcard,
   GenerateOptions,
   IngestSlots,
+  InspectSourceImportsReq,
+  InspectSourceImportsResponse,
   IntegrationsStatus,
   Label,
   LLMCredentialsResponse,
@@ -563,9 +565,12 @@ export function useImportSources(
   return useMutation({
     meta: mutationMeta(options),
     mutationFn: (body: {
+      captionImages?: boolean;
       chapterId?: string | null;
+      chapterName?: string | null;
       driveIds?: string[];
       fileIds: string[];
+      parseMode?: 'fast' | 'none';
       provider: 'google' | 'microsoft';
       requestId?: string;
       signal?: AbortSignal;
@@ -577,6 +582,20 @@ export function useImportSources(
         { signal }
       );
     },
+  });
+}
+
+export function useInspectSourceImports(
+  workspaceId: string,
+  options?: MutationUiOptions
+) {
+  return useMutation({
+    meta: mutationMeta(options),
+    mutationFn: (body: InspectSourceImportsReq) =>
+      api.post<InspectSourceImportsResponse>(
+        `/workspaces/${workspaceId}/sources/import-inspect`,
+        body
+      ),
   });
 }
 
@@ -739,7 +758,7 @@ export const useFile = (id: string | null, options?: QueryUiOptions) =>
 export const allFilesQuery = () =>
   queryOptions({
     queryFn: () => api.get<SourceFile[]>('/files'),
-    queryKey: ['files', 'all'],
+    queryKey: qk.allFiles,
   });
 export const useAllFiles = (options?: QueryUiOptions) =>
   useQuery({ ...allFilesQuery(), meta: queryMeta(options) });
@@ -1077,6 +1096,49 @@ function officeContentType(file: SourceFile) {
   return 'application/octet-stream';
 }
 
+export function updateSourceFileCaches(qc: QueryClient, saved: SourceFile) {
+  const replaceSaved = (prev: SourceFile[] | undefined) =>
+    prev?.map((entry) => (entry.id === saved.id ? saved : entry));
+  qc.setQueryData<SourceFile>(qk.file(saved.id), saved);
+  qc.setQueryData<SourceFile[]>(qk.files(saved.workspaceId), replaceSaved);
+  qc.setQueryData<SourceFile[]>(qk.allFiles, replaceSaved);
+}
+
+export async function replaceSourceFile(
+  file: SourceFile,
+  bytes: Uint8Array,
+  expectedRevision: number
+) {
+  const replacement = new File(
+    [bytes.slice().buffer as ArrayBuffer],
+    file.name,
+    {
+      type: officeContentType(file),
+    }
+  );
+  if (USE_MSW) {
+    const form = new FormData();
+    form.append('file', replacement, replacement.name);
+    form.append('expectedRevision', String(expectedRevision));
+    return api.upload<SourceFile>(`/files/${file.id}/replacement`, form);
+  }
+  const reservation = await api.post<{
+    uploadId: string;
+    url: string;
+    method: 'PUT';
+    headers: Record<string, string>;
+    expiresAt: string;
+  }>(`/files/${file.id}/replacement-uploads`, {
+    contentType: replacement.type,
+    expectedRevision,
+    sizeBytes: replacement.size,
+  });
+  await api.putFile(reservation.url, replacement, reservation.headers);
+  return api.post<SourceFile>(
+    `/files/${file.id}/replacement-uploads/${reservation.uploadId}/complete`
+  );
+}
+
 /** Replace a source blob without changing the logical file id. The server
  * invalidates derived RAG data and rejects stale editor revisions. */
 export function useReplaceSource(file: SourceFile | null) {
@@ -1091,48 +1153,19 @@ export function useReplaceSource(file: SourceFile | null) {
       expectedRevision: number;
     }) => {
       if (!file) throw new Error('No source file is selected.');
-      const replacement = new File(
-        [bytes.slice().buffer as ArrayBuffer],
-        file.name,
-        {
-          type: officeContentType(file),
-        }
-      );
-      if (USE_MSW) {
-        const form = new FormData();
-        form.append('file', replacement, replacement.name);
-        form.append('expectedRevision', String(expectedRevision));
-        return api.upload<SourceFile>(`/files/${file.id}/replacement`, form);
-      }
-      const reservation = await api.post<{
-        uploadId: string;
-        url: string;
-        method: 'PUT';
-        headers: Record<string, string>;
-        expiresAt: string;
-      }>(`/files/${file.id}/replacement-uploads`, {
-        contentType: replacement.type,
-        expectedRevision,
-        sizeBytes: replacement.size,
-      });
-      await api.putFile(reservation.url, replacement, reservation.headers);
-      return api.post<SourceFile>(
-        `/files/${file.id}/replacement-uploads/${reservation.uploadId}/complete`
-      );
+      return replaceSourceFile(file, bytes, expectedRevision);
     },
     onSuccess: (saved) => {
-      if (!file) return;
-      qc.setQueryData<SourceFile>(qk.file(file.id), saved);
-      qc.setQueryData<SourceFile[]>(qk.files(file.workspaceId), (prev) =>
-        prev?.map((entry) => (entry.id === saved.id ? saved : entry))
-      );
+      updateSourceFileCaches(qc, saved);
       void Promise.all([
         qc.invalidateQueries({ queryKey: qk.accountStatus }),
-        qc.invalidateQueries({ queryKey: qk.workspaceStats(file.workspaceId) }),
+        qc.invalidateQueries({
+          queryKey: qk.workspaceStats(saved.workspaceId),
+        }),
       ]);
       if (saved.status !== 'ready') ingestTracker.markStart(saved.id);
       if (USE_MSW && saved.status !== 'ready')
-        simulateMswProgress(qc, file.workspaceId, saved.id);
+        simulateMswProgress(qc, saved.workspaceId, saved.id);
     },
   });
 }

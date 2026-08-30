@@ -1,3 +1,4 @@
+import type { Region } from '@/api/types';
 import type { MaterialMode } from './modePolicy';
 
 /** What the center content pane is currently showing. A source file or a
@@ -5,10 +6,11 @@ import type { MaterialMode } from './modePolicy';
  *
  * `page` is a 1-based page in the open file, set when a chat citation is
  * clicked. It lives in the URL rather than in component state so a cited page
- * survives a reload and can be linked to. `mode` is an optional initial
- * material mode (dashboard links force view). */
+ * survives a reload and can be linked to. `regions` is deliberately transient:
+ * regular file navigation and reloads clear the citation highlight. `mode` is
+ * an optional initial material mode (dashboard links force view). */
 export type OpenItem =
-  | { kind: 'file'; id: string; page?: number }
+  | { kind: 'file'; id: string; page?: number; regions?: Region[] }
   | { kind: 'material'; id: string };
 
 /** URL search params for the open item — mutually exclusive `file` | `material`. */
@@ -56,5 +58,7 @@ export function openItemFromSearch(
 export function searchFromOpenItem(item: OpenItem | null): WorkspaceOpenSearch {
   if (!item) return {};
   if (item.kind === 'material') return { material: item.id };
+  // Bounding boxes stay in memory. Putting them in search params would create
+  // long links and make highlights survive ordinary file navigation.
   return item.page ? { file: item.id, page: item.page } : { file: item.id };
 }
