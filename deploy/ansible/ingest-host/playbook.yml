@@ -1,0 +1,316 @@
+---
+- name: Provision the dedicated Evo ingest host
+  hosts: all
+  become: true
+  vars:
+    ingest_hostname: evo-ingest-1
+    ingest_service_user: evo-ingest
+    ingest_repo_dir: /opt/evo-ingest/app
+    ingest_env_path: /etc/evo-ingest/ingest.env
+    ingest_release_env_path: /opt/evo-ingest/release.env
+    ingest_compose_file: deploy/docker-compose.ingest-host.yml
+    ingest_wireguard_interface: wg0
+    ingest_wireguard_listen_port: 51820
+
+  pre_tasks:
+    - name: Refuse a mutable parser revision
+      ansible.builtin.assert:
+        that:
+          - ingest_repo_version | default('') is match('^[0-9a-f]{40}$')
+          - "'RELEASE_SHA' not in (ingest_env | default({}))"
+        fail_msg: Use the app release's full Git SHA; RELEASE_SHA is managed separately.
+      when: ingest_repo_url != 'CHANGE_ME'
+
+    - name: Refuse incomplete WireGuard configuration
+      ansible.builtin.assert:
+        that:
+          - ingest_wireguard_peer_public_key | default('') | length > 20
+          - ingest_wireguard_peer_endpoint | default('') is match('^[^:]+:[0-9]+$')
+          - ingest_wireguard_address | default('') is match('^[0-9.]+/[0-9]+$')
+          - ingest_wireguard_peer_address | default('') is match('^[0-9.]+/[0-9]+$')
+        fail_msg: Fill the WireGuard peer values in the ignored inventory first.
+      when: ingest_configure_wireguard | default(true)
+
+  tasks:
+    - name: Set the ingest host name
+      ansible.builtin.hostname:
+        name: "{{ ingest_hostname }}"
+
+    - name: Install VM packages
+      ansible.builtin.apt:
+        name:
+          - ca-certificates
+          - curl
+          - docker.io
+          - docker-compose
+          - fail2ban
+          - git
+          - nftables
+          - unattended-upgrades
+          - wireguard
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create the ingest service account
+      ansible.builtin.user:
+        name: "{{ ingest_service_user }}"
+        groups: docker
+        append: true
+        create_home: true
+        shell: /bin/bash
+
+    - name: Install the administrator SSH key
+      ansible.posix.authorized_key:
+        user: "{{ ingest_service_user }}"
+        key: "{{ ingest_admin_public_key | default('') }}"
+        state: present
+      when: ingest_admin_public_key | default('') | length > 0
+
+    - name: Create protected service directories
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: directory
+        owner: "{{ item.owner }}"
+        group: "{{ item.group }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - { path: /etc/evo-ingest, owner: root, group: root, mode: "0700" }
+        - {
+            path: /opt/evo-ingest,
+            owner: "{{ ingest_service_user }}",
+            group: "{{ ingest_service_user }}",
+            mode: "0750",
+          }
+        - { path: /etc/docker, owner: root, group: root, mode: "0755" }
+
+    - name: Configure bounded Docker logs
+      ansible.builtin.copy:
+        dest: /etc/docker/daemon.json
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          {
+            "log-driver": "json-file",
+            "log-opts": {
+              "max-size": "20m",
+              "max-file": "5"
+            }
+          }
+      notify: Restart Docker
+
+    - name: Enable Docker
+      ansible.builtin.systemd_service:
+        name: docker
+        enabled: true
+        state: started
+
+    - name: Create the WireGuard private key once
+      ansible.builtin.shell:
+        cmd: umask 077 && wg genkey > /etc/wireguard/privatekey
+        creates: /etc/wireguard/privatekey
+      no_log: true
+      when: ingest_configure_wireguard | default(true)
+
+    - name: Read the WireGuard private key
+      ansible.builtin.slurp:
+        src: /etc/wireguard/privatekey
+      register: ingest_wireguard_private_key_file
+      no_log: true
+      when: ingest_configure_wireguard | default(true)
+
+    - name: Configure the private WireGuard service link
+      ansible.builtin.template:
+        src: wg0.conf.j2
+        dest: "/etc/wireguard/{{ ingest_wireguard_interface }}.conf"
+        owner: root
+        group: root
+        mode: "0600"
+      no_log: true
+      notify: Restart WireGuard
+      when: ingest_configure_wireguard | default(true)
+
+    - name: Enable the WireGuard service link
+      ansible.builtin.systemd_service:
+        name: "wg-quick@{{ ingest_wireguard_interface }}"
+        enabled: true
+        state: started
+      when: ingest_configure_wireguard | default(true)
+
+    - name: Configure the host firewall
+      ansible.builtin.template:
+        src: nftables.conf.j2
+        dest: /etc/nftables.conf
+        owner: root
+        group: root
+        mode: "0644"
+        validate: nft -c -f %s
+      notify: Reload nftables
+
+    - name: Enable the firewall
+      ansible.builtin.systemd_service:
+        name: nftables
+        enabled: true
+        state: started
+
+    - name: Enable automatic security updates
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+
+    - name: Check out the exact ingest release
+      ansible.builtin.git:
+        repo: "{{ ingest_repo_url }}"
+        dest: "{{ ingest_repo_dir }}"
+        version: "{{ ingest_repo_version }}"
+        update: true
+        force: false
+      register: ingest_checkout
+      become_user: "{{ ingest_service_user }}"
+      when: ingest_repo_url != 'CHANGE_ME'
+      notify: Restart ingest stack
+
+    - name: Verify the ingest checkout revision
+      ansible.builtin.assert:
+        that:
+          - ingest_checkout.after == ingest_repo_version
+        fail_msg: Ingest checkout does not match the requested release SHA.
+      when: ingest_repo_url != 'CHANGE_ME'
+
+    - name: Write the immutable ingest release identity
+      ansible.builtin.copy:
+        dest: "{{ ingest_release_env_path }}"
+        owner: "{{ ingest_service_user }}"
+        group: "{{ ingest_service_user }}"
+        mode: "0640"
+        content: "RELEASE_SHA={{ ingest_repo_version }}\n"
+      when: ingest_repo_url != 'CHANGE_ME'
+      notify: Restart ingest stack
+
+    - name: Write the protected ingest environment
+      ansible.builtin.copy:
+        dest: "{{ ingest_env_path }}"
+        owner: root
+        group: "{{ ingest_service_user }}"
+        mode: "0640"
+        content: |-
+          {% for key, value in ingest_env | default({}) | dictsort %}
+          {{ key }}={{ value }}
+          {% endfor %}
+      no_log: true
+      when: ingest_env | default({}) | length > 0
+      notify: Restart ingest stack
+
+    - name: Install the ingest stack systemd unit
+      ansible.builtin.template:
+        src: evo-ingest.service.j2
+        dest: /etc/systemd/system/evo-ingest.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart ingest stack
+
+    - name: Install the ingest parser watchdog
+      ansible.builtin.copy:
+        src: files/evo_ingest_watchdog.py
+        dest: /usr/local/sbin/evo-ingest-watchdog
+        owner: root
+        group: root
+        mode: "0755"
+      notify: Restart ingest watchdog
+
+    - name: Install the ingest parser watchdog unit
+      ansible.builtin.template:
+        src: evo-ingest-watchdog.service.j2
+        dest: /etc/systemd/system/evo-ingest-watchdog.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify:
+        - Reload systemd
+        - Restart ingest watchdog
+
+    - name: Enable the ingest stack when code and secrets exist
+      ansible.builtin.systemd_service:
+        name: evo-ingest
+        enabled: true
+        state: started
+        daemon_reload: true
+      when:
+        - ingest_repo_url != 'CHANGE_ME'
+        - ingest_env | default({}) | length > 0
+
+    - name: Enable the ingest parser watchdog when the stack exists
+      ansible.builtin.systemd_service:
+        name: evo-ingest-watchdog
+        enabled: true
+        state: started
+        daemon_reload: true
+      when:
+        - ingest_repo_url != 'CHANGE_ME'
+        - ingest_env | default({}) | length > 0
+
+    - name: Keep SSH password login enabled
+      ansible.builtin.copy:
+        dest: /etc/ssh/sshd_config.d/90-evo-ingest.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          PermitRootLogin yes
+          PasswordAuthentication yes
+          KbdInteractiveAuthentication no
+          X11Forwarding no
+      notify: Restart SSH
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+
+    - name: Restart Docker
+      ansible.builtin.systemd_service:
+        name: docker
+        state: restarted
+
+    - name: Restart WireGuard
+      ansible.builtin.systemd_service:
+        name: "wg-quick@{{ ingest_wireguard_interface }}"
+        state: restarted
+      when: ingest_configure_wireguard | default(true)
+
+    - name: Reload nftables
+      ansible.builtin.systemd_service:
+        name: nftables
+        state: reloaded
+
+    - name: Restart ingest stack
+      ansible.builtin.systemd_service:
+        name: evo-ingest
+        state: restarted
+        daemon_reload: true
+      when:
+        - ingest_repo_url != 'CHANGE_ME'
+        - ingest_env | default({}) | length > 0
+
+    - name: Restart ingest watchdog
+      ansible.builtin.systemd_service:
+        name: evo-ingest-watchdog
+        state: restarted
+        daemon_reload: true
+      when:
+        - ingest_repo_url != 'CHANGE_ME'
+        - ingest_env | default({}) | length > 0
+
+    - name: Restart SSH
+      ansible.builtin.systemd_service:
+        name: ssh
+        state: restarted

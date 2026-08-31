@@ -18,7 +18,12 @@ OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_RESPONSES_URL = "https://api.openai.com/v1/responses"
 DEEPSEEK_CHAT_URL = "https://api.deepseek.com/chat/completions"
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
-OPENROUTER_EMBED_URL = "https://openrouter.ai/api/v1/embeddings"
+DEEPINFRA_CHAT_URL = "https://api.deepinfra.com/v1/openai/chat/completions"
+DEEPINFRA_EMBED_URL = "https://api.deepinfra.com/v1/openai/embeddings"
+
+DEEPINFRA_QWEN_EMBED_MODEL = "Qwen/Qwen3-Embedding-4B"
+ZAI_GLM_FLASH_MODEL = "glm-5.3-flash"
+DEEPINFRA_GLM_FLASH_MODEL = "zai-org/GLM-5.3-Flash"
 
 CONTINUITY_KEYS = (
     "thinking_blocks",
@@ -44,6 +49,10 @@ _ANTHROPIC_BUDGET = {
     "high": 16384,
     "max": 32000,
 }
+
+
+def _is_routed_zai_glm(spec: ModelConfig) -> bool:
+    return spec.provider_slug == "zai" and spec.model_slug == ZAI_GLM_FLASH_MODEL
 
 
 class ProviderError(RuntimeError):
@@ -115,6 +124,34 @@ def deepseek_thinking_body(thinking: str) -> dict[str, Any]:
     if effort == "mid":
         effort = "medium"
     return {"thinking": {"type": "enabled"}, "reasoning_effort": effort}
+
+
+def zai_thinking_body(thinking: str) -> dict[str, Any]:
+    if thinking not in ("low", "high", "max"):
+        raise RegistryError(
+            "Z.ai GLM-5.3-Flash supports only low, high, or max reasoning"
+        )
+    return {"reasoning_effort": thinking}
+
+
+def transport_provider_slug(spec: ModelConfig) -> str:
+    if _is_routed_zai_glm(spec):
+        return "deepinfra"
+    return spec.provider_slug
+
+
+def transport_model_slug(spec: ModelConfig) -> str:
+    if _is_routed_zai_glm(spec):
+        return DEEPINFRA_GLM_FLASH_MODEL
+    return spec.model_slug
+
+
+def gemini_thinking_config(model_slug: str, thinking: str) -> dict[str, str | int]:
+    if model_slug.startswith("gemini-2.5-"):
+        budgets = {"low": 1024, "mid": 8192, "high": 24576, "max": 24576}
+        return {"thinkingBudget": budgets.get(thinking, 0)}
+    level = "minimal" if thinking in ("", "instant") else thinking
+    return {"thinkingLevel": "medium" if level == "mid" else level}
 
 
 def anthropic_endpoint(spec: ModelConfig) -> tuple[str, dict[str, str]]:
@@ -308,6 +345,38 @@ def deepseek_request(
         "messages": messages,
     }
     body.update(deepseek_thinking_body(thinking))
+    if temperature is not None:
+        body["temperature"] = temperature
+    if tools:
+        body["tools"] = tools
+        body["tool_choice"] = tool_choice if tool_choice is not None else "auto"
+    if response_format:
+        body["response_format"] = response_format
+    if max_tokens is not None:
+        body["max_tokens"] = max_tokens
+    if stream:
+        body["stream"] = True
+        body["stream_options"] = {"include_usage": True}
+    return body
+
+
+def zai_request(
+    spec: ModelConfig,
+    messages: list[dict[str, Any]],
+    *,
+    temperature: float | None,
+    tools: list[dict[str, Any]] | None,
+    response_format: dict[str, Any] | None,
+    max_tokens: int | None,
+    thinking: str,
+    stream: bool,
+    tool_choice: Any | None,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "model": transport_model_slug(spec),
+        "messages": messages,
+    }
+    body.update(zai_thinking_body(thinking))
     if temperature is not None:
         body["temperature"] = temperature
     if tools:
@@ -536,6 +605,19 @@ async def complete(
             tool_choice=tool_choice,
         )
         return _as_obj(await _post_json(DEEPSEEK_CHAT_URL, _bearer(key), body))
+    if _is_routed_zai_glm(spec):
+        body = zai_request(
+            spec,
+            messages,
+            temperature=temperature,
+            tools=tools,
+            response_format=response_format,
+            max_tokens=max_tokens,
+            thinking=thinking,
+            stream=False,
+            tool_choice=tool_choice,
+        )
+        return _as_obj(await _post_json(DEEPINFRA_CHAT_URL, _bearer(key), body))
     if spec.provider_slug == "gemini":
         return _as_obj(await _gemini_complete(spec, messages, thinking, max_tokens))
     raise RegistryError(f"elitellm has no chat route for {spec.provider_slug}")
@@ -617,6 +699,21 @@ async def stream(
         async for event in _stream_sse(DEEPSEEK_CHAT_URL, _bearer(key), body):
             yield _as_obj(event)
         return
+    if _is_routed_zai_glm(spec):
+        body = zai_request(
+            spec,
+            messages,
+            temperature=temperature,
+            tools=tools,
+            response_format=None,
+            max_tokens=max_tokens,
+            thinking=thinking,
+            stream=True,
+            tool_choice=tool_choice,
+        )
+        async for event in _stream_sse(DEEPINFRA_CHAT_URL, _bearer(key), body):
+            yield _as_obj(event)
+        return
     raise RegistryError(f"elitellm has no stream route for {spec.provider_slug}")
 
 
@@ -626,25 +723,32 @@ async def embed_batch(
     *,
     dimensions: int,
 ) -> Any:
-    if spec.provider_slug != "openrouter":
+    if (
+        spec.provider_slug != "deepinfra"
+        or spec.model_slug != DEEPINFRA_QWEN_EMBED_MODEL
+    ):
         raise RegistryError(f"elitellm has no embedding route for {spec.provider_slug}")
-    key = platform_api_key("openrouter")
+    key = platform_api_key("deepinfra")
     if not key:
-        raise RegistryError("missing OPENROUTER_API_KEY")
+        raise RegistryError("missing DEEPINFRA_API_KEY")
     raw = await _post_json(
-        OPENROUTER_EMBED_URL,
+        DEEPINFRA_EMBED_URL,
         _bearer(key),
-        {"model": spec.model_slug, "input": texts, "dimensions": dimensions},
+        {
+            "model": spec.model_slug,
+            "input": texts,
+            "dimensions": dimensions,
+            "encoding_format": "float",
+        },
     )
     return _as_obj(raw)
 
 
 def _thinking_for_call(spec: ModelConfig, reasoning: bool | None) -> str:
     if reasoning is False:
-        requested = (
-            "instant" if "instant" in spec.thinking_levels else spec.default_thinking
-        )
-        return spec.resolve_thinking(requested)
+        if _is_routed_zai_glm(spec):
+            return "low"
+        return ""
     return spec.resolve_thinking(_request_thinking())
 
 
@@ -701,10 +805,7 @@ async def _gemini_complete(
     config: dict[str, Any] = {}
     if max_tokens is not None:
         config["maxOutputTokens"] = max_tokens
-    if thinking and thinking != "instant":
-        config["thinkingConfig"] = {
-            "thinkingLevel": thinking if thinking != "mid" else "medium"
-        }
+    config["thinkingConfig"] = gemini_thinking_config(spec.model_slug, thinking)
     if config:
         body["generationConfig"] = config
     async with httpx.AsyncClient(timeout=_timeout()) as client:

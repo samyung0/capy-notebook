@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "subject": "{{.FromName}} is no longer available on Evo Notes",
+  "preview": "New messages will use {{.ToName}}.",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              { "type": "bold" },
+              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
+            ],
+            "text": "Evo Notes"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "attrs": { "level": 1 },
+        "content": [{ "type": "text", "text": "Your chat model changed" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [{ "type": "text", "text": "Hello," }]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "FromName",
+              "label": "Previous model",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": " was retired. Your next chat message and generate request will use "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "ToName",
+              "label": "Replacement model",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": ". You can pick a different model in Settings."
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "Open LLM settings",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      { "type": "horizontalRule" },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "You received this message because an Evo Notes model you selected was retired."
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ],
+            "text": "Manage product email preferences"
+          }
+        ]
+      }
+    ]
+  }
+}

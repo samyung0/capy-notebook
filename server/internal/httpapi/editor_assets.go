@@ -60,9 +60,9 @@ var editorAssetRules = map[string]editorAssetRule{
 	},
 }
 
-func editorAssetMaxBytes(rule editorAssetRule) int64 {
-	if rule.maxBytes > store.FreeStorageLimitBytes {
-		return store.FreeStorageLimitBytes
+func editorAssetMaxBytes(rule editorAssetRule, storageCeiling int64) int64 {
+	if rule.maxBytes > storageCeiling {
+		return storageCeiling
 	}
 	return rule.maxBytes
 }
@@ -85,7 +85,10 @@ func normalizeMediaType(value string) (string, error) {
 	return strings.ToLower(mediaType), nil
 }
 
-func validateEditorAssetMetadata(in reserveEditorAssetRequest) (name, ext, contentType string, err error) {
+func validateEditorAssetMetadata(
+	in reserveEditorAssetRequest,
+	storageCeiling int64,
+) (name, ext, contentType string, err error) {
 	name = strings.TrimSpace(in.Name)
 	name = path.Base(strings.ReplaceAll(name, `\`, "/"))
 	hasControl := strings.IndexFunc(name, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0
@@ -96,7 +99,7 @@ func validateEditorAssetMetadata(in reserveEditorAssetRequest) (name, ext, conte
 	if !ok {
 		return "", "", "", errors.New("purpose must be image, audio, pdf, or file")
 	}
-	maxBytes := editorAssetMaxBytes(rule)
+	maxBytes := editorAssetMaxBytes(rule, storageCeiling)
 	if in.SizeBytes <= 0 || in.SizeBytes > maxBytes {
 		return "", "", "", fmt.Errorf("%s uploads must be between 1 byte and %d MB", in.Purpose, maxBytes>>20)
 	}
@@ -132,7 +135,12 @@ func (a *api) reserveEditorAsset(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "invalid asset metadata"})
 		return
 	}
-	name, ext, contentType, err := validateEditorAssetMetadata(in)
+	freeLimits, err := a.s.PlanLimits(store.PlanFree)
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	name, ext, contentType, err := validateEditorAssetMetadata(in, freeLimits.StorageBytes)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 		return

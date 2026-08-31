@@ -65,14 +65,14 @@
       notify: Restart WireGuard
       when: app_wireguard_private_key_stat.stat.exists or not ansible_check_mode
 
-    - name: Allow WireGuard only from the parser VM
+    - name: Allow WireGuard only from the ingest host
       community.general.ufw:
         rule: allow
         direction: in
         proto: udp
         from_ip: "{{ app_wireguard_peer_public_ip }}"
         to_port: "{{ app_wireguard_listen_port }}"
-        comment: Evo parser private service link
+        comment: Evo ingest-host private service link
 
     - name: Stop the unused native PostgreSQL cluster
       ansible.builtin.systemd_service:
@@ -119,7 +119,7 @@
         to_port: "55432"
         delete: true
 
-    - name: Allow parser access to private app services
+    - name: Allow ingest-host access to private app services
       community.general.ufw:
         rule: allow
         direction: in
@@ -128,7 +128,7 @@
         from_ip: "{{ app_wireguard_peer_address | regex_replace('/.*$', '') }}"
         to_ip: "{{ app_wireguard_address | regex_replace('/.*$', '') }}"
         to_port: "{{ item }}"
-        comment: Evo parser private app service
+        comment: Evo ingest-host private app service
       loop: "{{ app_wireguard_service_ports }}"
 
     - name: Enable the private service link
@@ -146,7 +146,7 @@
       check_mode: false
       when: app_wireguard_private_key_stat.stat.exists or not ansible_check_mode
 
-    - name: Show the public key for the parser peer
+    - name: Show the public key for the ingest-host peer
       ansible.builtin.debug:
         msg: "App host WireGuard public key: {{ app_wireguard_public_key.stdout }}"
       when: app_wireguard_private_key_stat.stat.exists or not ansible_check_mode

@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "subject": "你的 Evo Notes 账户删除已取消",
+  "preview": "你的账户已重新激活。",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              { "type": "bold" },
+              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
+            ],
+            "text": "Evo Notes"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "attrs": { "level": 1 },
+        "content": [{ "type": "text", "text": "账户已重新激活" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [{ "type": "text", "text": "你好，" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "支持已取消你的 Evo Notes 账户删除请求，账户已重新激活。"
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "打开设置",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      { "type": "horizontalRule" },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "你收到这封邮件是因为支持取消了你的 Evo Notes 账户删除请求。"
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ],
+            "text": "管理产品邮件偏好"
+          }
+        ]
+      }
+    ]
+  }
+}

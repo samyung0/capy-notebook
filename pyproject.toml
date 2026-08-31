@@ -10,7 +10,7 @@ dependencies = [
   # Provider HTTP is hand-rolled in pipeline.elitellm (httpx).
   "cryptography>=42",
   "httpx>=0.27",
-  # Parser VM client + Redis progress + retrieval API.
+  # Parser client + Redis progress + retrieval API.
   "requests>=2.31",
   "redis>=5.0",
   # Backblaze B2 source-object downloads in the ingest worker.

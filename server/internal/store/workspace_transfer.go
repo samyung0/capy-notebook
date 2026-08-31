@@ -52,6 +52,10 @@ func (s *Store) TransferWorkspace(
 		return Workspace{}, err
 	}
 	defer tx.Rollback(ctx)
+	recipientLimits, err := s.gateOwnedWorkspacesTx(ctx, tx, recipientID, 1)
+	if err != nil {
+		return Workspace{}, err
+	}
 
 	// Both counter rows are locked up front, in a fixed order. Two transfers
 	// crossing between the same pair of users would otherwise deadlock.
@@ -94,6 +98,19 @@ func (s *Store) TransferWorkspace(
 	}
 	if err != nil {
 		return Workspace{}, err
+	}
+	files, reservedFiles, err := s.workspaceFileUsageTx(ctx, tx, workspaceID)
+	if err != nil {
+		return Workspace{}, err
+	}
+	if files+reservedFiles > recipientLimits.FilesPerWorkspace {
+		return Workspace{}, &FileLimitExceededError{
+			WorkspaceID: workspaceID,
+			Used:        files,
+			Reserved:    reservedFiles,
+			Limit:       recipientLimits.FilesPerWorkspace,
+			Kind:        "workspace",
+		}
 	}
 
 	bytes, err := s.workspaceChargedBytesTx(ctx, tx, workspaceID)
@@ -217,7 +234,7 @@ func (s *Store) ownedWorkspaces(
 	defer rows.Close()
 	out := []Workspace{}
 	for rows.Next() {
-		w, err := scanWorkspace(rows)
+		w, err := s.scanWorkspace(rows)
 		if err != nil {
 			return nil, err
 		}

@@ -1,0 +1,108 @@
+{
+  "schema": "evo-ingest-benchmark-supplement-v1",
+  "machine": "evo-ingest-1",
+  "date": "2026-08-31",
+  "provenance": "Structured from captured console output because the first versions of the memory and overlap harnesses did not persist summaries.",
+  "host_swap_idle_baseline_bytes": 1323008,
+  "content_list_memory_sweep": [
+    {
+      "content_mib": 32,
+      "input_bytes": 33555211,
+      "blocks": 7804,
+      "chunks": 23412,
+      "worker_memory_limit": "512m",
+      "worker_memory_swap_limit": "768m",
+      "sampled_peak_bytes": 175689728,
+      "max_rss_bytes": 186351616,
+      "exit_code": 0,
+      "oom_killed": false
+    },
+    {
+      "content_mib": 64,
+      "input_bytes": 67112721,
+      "blocks": 15605,
+      "chunks": 46815,
+      "worker_memory_limit": "512m",
+      "worker_memory_swap_limit": "768m",
+      "sampled_peak_bytes": 307838976,
+      "max_rss_bytes": 318197760,
+      "exit_code": 0,
+      "oom_killed": false
+    },
+    {
+      "content_mib": 96,
+      "input_bytes": 100664019,
+      "blocks": 23404,
+      "chunks": 70212,
+      "worker_memory_limit": "512m",
+      "worker_memory_swap_limit": "768m",
+      "sampled_peak_bytes": 440135680,
+      "max_rss_bytes": 450646016,
+      "exit_code": 0,
+      "oom_killed": false
+    }
+  ],
+  "content_list_120_mib_limit_comparison": [
+    {
+      "worker_memory_limit": "512m",
+      "worker_memory_swap_limit": "768m",
+      "sampled_peak_bytes": 536875008,
+      "sampled_swap_peak_bytes": 2576384,
+      "max_rss_bytes": 547569664,
+      "exit_code": 0,
+      "oom_killed": false
+    },
+    {
+      "worker_memory_limit": "512m",
+      "worker_memory_swap_limit": "512m",
+      "sampled_peak_bytes": 536870912,
+      "sampled_swap_peak_bytes": 0,
+      "max_rss_bytes_before_kill": 549388288,
+      "exit_code": 137,
+      "oom_killed": true
+    },
+    {
+      "worker_memory_limit": "1g",
+      "worker_memory_swap_limit": "1g",
+      "sampled_peak_bytes": 543191040,
+      "sampled_swap_peak_bytes": 0,
+      "max_rss_bytes": 549785600,
+      "exit_code": 0,
+      "oom_killed": false
+    }
+  ],
+  "content_list_120_mib_replica_scaling": [
+    {
+      "replicas": 4,
+      "worker_memory_limit": "1g",
+      "worker_memory_swap_limit": "1g",
+      "minimum_host_available_bytes": 13125627904,
+      "maximum_host_swap_bytes": 1323008,
+      "all_exit_zero": true,
+      "worker_max_rss_bytes_min": 549326848,
+      "worker_max_rss_bytes_max": 549470208
+    },
+    {
+      "replicas": 8,
+      "worker_memory_limit": "1g",
+      "worker_memory_swap_limit": "1g",
+      "minimum_host_available_bytes": 10624917504,
+      "maximum_host_swap_bytes": 1323008,
+      "all_exit_zero": true,
+      "worker_max_rss_bytes_min": 549244928,
+      "worker_max_rss_bytes_max": 549552128
+    }
+  ],
+  "parser_worker_overlap_upper_bound": {
+    "active_parser_slices": 4,
+    "worker_replicas": 8,
+    "worker_content_mib_each": 120,
+    "minimum_host_available_bytes": 3721621504,
+    "maximum_host_swap_bytes": 1323008,
+    "parser_memory_peak_bytes": 11521781760,
+    "parser_swap_peak_bytes": 0,
+    "parse_elapsed_seconds": [130.177, 125.425, 119.682, 125.299],
+    "all_parser_jobs_exit_zero": true,
+    "all_worker_jobs_exit_zero": true
+  }
+}

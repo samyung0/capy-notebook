@@ -195,7 +195,7 @@ func main() {
 
 	ctx, cancelRuntime := context.WithCancel(context.Background())
 	defer cancelRuntime()
-	st, err := store.New(ctx, dsn)
+	st, err := store.Open(ctx, dsn)
 	if err != nil {
 		log.Fatalf("db connect: %v", err)
 	}
@@ -238,6 +238,9 @@ func main() {
 			}
 		}
 		log.Println("migrations applied")
+	}
+	if err := st.LoadPlanLimits(ctx); err != nil {
+		log.Fatalf("plan limits: %v", err)
 	}
 	if err := st.AbortOrphanedStreams(ctx); err != nil {
 		log.Fatalf("abort orphaned streams: %v", err)

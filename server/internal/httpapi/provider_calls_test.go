@@ -38,7 +38,7 @@ func TestInternalProviderCallSettlementAuthenticatesAndDeduplicates(t *testing.T
 		store.SurfaceChat,
 		models.PaidByUser,
 		store.TokenRates{Model: models.Ref{ProviderSlug: "openai", ModelSlug: "gpt-byok"}, ModelVersion: 1},
-		store.TokenRates{Model: models.Ref{ProviderSlug: "openrouter", ModelSlug: "qwen/qwen3-embedding-4b"}, ModelVersion: 1},
+		store.TokenRates{Model: models.Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}, ModelVersion: 1},
 		"",
 	)
 	if err != nil {

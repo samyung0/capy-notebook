@@ -477,13 +477,8 @@ func (a *api) importSources(ctx context.Context, in *importSourcesInput) (*sourc
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
-	if len(refs) > store.MaxFilesPerUpload {
-		return nil, hErr(&store.FileLimitExceededError{
-			WorkspaceID: wsID,
-			Requested:   len(refs),
-			Limit:       store.MaxFilesPerUpload,
-			Kind:        "batch",
-		})
+	if err := a.s.AssertWorkspaceFileRoom(ctx, wsID, len(refs)); err != nil {
+		return nil, hErr(err)
 	}
 	if in.Body.ChapterID != nil {
 		chapterWorkspace, err := a.s.ChapterWorkspaceID(ctx, *in.Body.ChapterID)

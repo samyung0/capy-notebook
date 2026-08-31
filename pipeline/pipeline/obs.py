@@ -352,6 +352,8 @@ class ParseUsage:
     cpu_milliseconds: int = 0
     elapsed_milliseconds: int = 0
     queue_milliseconds: int = 0
+    execution_milliseconds: int = 0
+    slices: int = 0
     download_milliseconds: int = 0
     upload_milliseconds: int = 0
     worker_rss_bytes: int = 0
@@ -388,6 +390,8 @@ def record_parse_usage(
     cpu_milliseconds: int,
     elapsed_milliseconds: int,
     queue_milliseconds: int = 0,
+    execution_milliseconds: int = 0,
+    slices: int = 0,
     download_milliseconds: int = 0,
     upload_milliseconds: int = 0,
     worker_rss_bytes: int = 0,
@@ -410,6 +414,9 @@ def record_parse_usage(
             + max(0, int(elapsed_milliseconds)),
             queue_milliseconds=current.queue_milliseconds
             + max(0, int(queue_milliseconds)),
+            execution_milliseconds=current.execution_milliseconds
+            + max(0, int(execution_milliseconds)),
+            slices=current.slices + max(0, int(slices)),
             download_milliseconds=current.download_milliseconds
             + max(0, int(download_milliseconds)),
             upload_milliseconds=current.upload_milliseconds

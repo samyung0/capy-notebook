@@ -114,7 +114,7 @@ func TestFileReplacementReusesIngestPolicy(t *testing.T) {
 	}
 	var raw []byte
 	if err := s.pool.QueryRow(ctx, `SELECT payload FROM jobs
-		WHERE type='ingest' AND payload->>'fileId'=$1 AND status='pending'`, file.ID).Scan(&raw); err != nil {
+		WHERE type='parse' AND payload->>'fileId'=$1 AND status='pending'`, file.ID).Scan(&raw); err != nil {
 		t.Fatal(err)
 	}
 	var payload map[string]any

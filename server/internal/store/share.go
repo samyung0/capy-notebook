@@ -363,7 +363,7 @@ func (s *Store) ChapterWorkspaceID(ctx context.Context, chapterID string) (strin
 // GetWorkspaceShared reads a workspace without asserting ownership (the caller
 // must have verified access via WorkspaceAccess).
 func (s *Store) GetWorkspaceShared(ctx context.Context, id string) (Workspace, error) {
-	w, err := scanWorkspace(s.pool.QueryRow(ctx, "SELECT "+wsCols+" FROM workspaces w WHERE w.id=$1", id))
+	w, err := s.scanWorkspace(s.pool.QueryRow(ctx, "SELECT "+wsCols+" FROM workspaces w WHERE w.id=$1", id))
 	if isNoRows(err) {
 		return w, ErrNotFound
 	}
@@ -386,10 +386,17 @@ func (s *Store) ListPublicWorkspaces(ctx context.Context) ([]PublicWorkspace, er
 	out := []PublicWorkspace{}
 	for rows.Next() {
 		var w PublicWorkspace
-		if err := rows.Scan(&w.ID, &w.Name, &w.Color, &w.Privacy, &w.ShareRole, &w.Tags, &w.OwnerUserID, &w.OwnerName, &w.ChapterCount, &w.FileCount, &w.CreatedAt, &w.LastAccessedAt, &w.Author, &w.Clones); err != nil {
+		if err := rows.Scan(&w.ID, &w.Name, &w.Color, &w.Privacy, &w.ShareRole,
+			&w.Tags, &w.OwnerUserID, &w.OwnerName, &w.OwnerPlanTier,
+			&w.ChapterCount, &w.FileCount, &w.CreatedAt, &w.LastAccessedAt,
+			&w.Author, &w.Clones); err != nil {
 			return nil, err
 		}
-		w.FilesLimit = MaxFilesPerWorkspace
+		limits, err := s.PlanLimits(w.OwnerPlanTier)
+		if err != nil {
+			return nil, err
+		}
+		w.FilesLimit = limits.FilesPerWorkspace
 		out = append(out, w)
 	}
 	return out, rows.Err()
@@ -456,7 +463,7 @@ func rewriteCardIDsWithMap(content string, idMap map[string]string) (newContent 
 	return materialdoc.RewriteFlashcardIDs(content, idMap, func() string { return uid("c") })
 }
 
-func cloneMaterialRelations(
+func (s *Store) cloneMaterialRelations(
 	ctx context.Context,
 	tx pgx.Tx,
 	sourceID, targetID string,
@@ -497,7 +504,7 @@ func cloneMaterialRelations(
 		}
 		row.MaterialID = targetID
 		row.Content = content
-		if err := upsertMaterialRevisionTx(ctx, tx, row); err != nil {
+		if err := s.upsertMaterialRevisionTx(ctx, tx, row); err != nil {
 			return err
 		}
 	}
@@ -785,6 +792,19 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 		return Workspace{}, err
 	}
 	defer tx.Rollback(ctx)
+	limits, err := s.gateOwnedWorkspacesTx(ctx, tx, userID, 1)
+	if err != nil {
+		return Workspace{}, err
+	}
+	if len(snapshot.files) > limits.FilesPerWorkspace {
+		return Workspace{}, &FileLimitExceededError{
+			WorkspaceID: srcID,
+			Used:        0,
+			Requested:   len(snapshot.files),
+			Limit:       limits.FilesPerWorkspace,
+			Kind:        "workspace",
+		}
+	}
 	if err := s.gateStorageTx(ctx, tx, userID, snapshot.bytes); err != nil {
 		return Workspace{}, err
 	}
@@ -919,7 +939,7 @@ func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Works
 					return rewritten, err
 				}
 			}
-			if err := cloneMaterialRelations(ctx, tx, mt.ID, nid, rewrite); err != nil {
+			if err := s.cloneMaterialRelations(ctx, tx, mt.ID, nid, rewrite); err != nil {
 				return Workspace{}, err
 			}
 			for _, cid := range materialSnapshot.cardIDs {
@@ -1134,7 +1154,7 @@ func (s *Store) CloneMaterial(ctx context.Context, userID, matID string) (Materi
 			return rewritten, err
 		}
 	}
-	if err := cloneMaterialRelations(ctx, tx, src.ID, nid, rewrite); err != nil {
+	if err := s.cloneMaterialRelations(ctx, tx, src.ID, nid, rewrite); err != nil {
 		return Material{}, err
 	}
 	for _, cid := range cardIDs {

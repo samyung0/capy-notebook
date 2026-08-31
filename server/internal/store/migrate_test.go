@@ -39,7 +39,7 @@ func openMigrateTestStore(t *testing.T) *Store {
 	t.Helper()
 	dsn := testdb.URL(t)
 	ctx := context.Background()
-	s, err := New(ctx, dsn)
+	s, err := Open(ctx, dsn)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}

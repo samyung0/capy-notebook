@@ -100,6 +100,7 @@ async def test_concurrent_image_uploads_share_one_caption_artifact(
     assert state["calls"] == 1
     assert first[0] == second[0]
     assert first[1] == second[1]
+    assert sorted((first[3], second[3])) == [False, True]
 
 
 def test_audio_artifact_identity_uses_elevenlabs_version(monkeypatch) -> None:

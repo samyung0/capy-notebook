@@ -14,12 +14,15 @@ import (
 func TestEmailUnsubscribeGETDoesNotMutate(t *testing.T) {
 	dsn := testdb.URL(t)
 	ctx := context.Background()
-	st, err := store.New(ctx, dsn)
+	st, err := store.Open(ctx, dsn)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(st.Close)
 	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.LoadPlanLimits(ctx); err != nil {
 		t.Fatal(err)
 	}
 

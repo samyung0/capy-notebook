@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import pytest
 
+from pipeline import plan_limits
 from pipeline.ingest import worker
 from pipeline.registry import (
     JobPins,
@@ -37,8 +38,8 @@ def test_credits_for_tokens_keeps_zeros():
     spec = _spec(micros_per_input_token=0, micros_per_output_token=0)
     assert credits_for_tokens(spec, "llm", 1000, 1000) == 0
     embed = _spec(
-        provider_slug="openrouter",
-        model_slug="qwen/qwen3-embedding-4b",
+        provider_slug="deepinfra",
+        model_slug="Qwen/Qwen3-Embedding-4B",
         surfaces=("embedding",),
         micros_per_input_token=0,
         micros_per_output_token=0,
@@ -48,8 +49,8 @@ def test_credits_for_tokens_keeps_zeros():
 
 def test_embedding_credits_ignore_cached_rate():
     embed = _spec(
-        provider_slug="openrouter",
-        model_slug="qwen/qwen3-embedding-4b",
+        provider_slug="deepinfra",
+        model_slug="Qwen/Qwen3-Embedding-4B",
         surfaces=("embedding",),
         micros_per_input_token=10,
         micros_per_cached_input_token=1,
@@ -119,14 +120,14 @@ def test_no_surface_resolves_its_own_default(monkeypatch, surface):
 
 def test_job_pins_keep_embedding_after_default_would_move():
     pinned = _spec(
-        provider_slug="openrouter",
+        provider_slug="deepinfra",
         surfaces=("embedding",),
         model_slug="old-embed-id",
     )
     set_job_pins(JobPins(embedding=pinned))
     try:
         got = embedding_spec()
-        assert got.provider_slug == "openrouter"
+        assert got.provider_slug == "deepinfra"
         assert got.litellm_model_id == "old-embed-id"
     finally:
         set_job_pins(None)
@@ -178,6 +179,19 @@ def test_claim_gating_matrix(monkeypatch):
     assert worker._account_allows_ingest("f_1", payload) is True
 
 
+def test_plan_limit_catalog_uses_seeded_product_values():
+    catalog = plan_limits._catalog_from_rows(
+        [
+            ("free", 100_000_000, 1_000_000_000, 10 << 20, 3, None, 100, 20),
+            ("pro", 1_000_000_000, 20_000_000_000, 30 << 20, 30, None, 100, 20),
+        ]
+    )
+    assert catalog.free.storage_bytes == 100_000_000
+    assert catalog.free.material_revisions == 3
+    assert catalog.pro.storage_bytes == 1_000_000_000
+    assert catalog.free.owned_workspaces is None
+
+
 def test_ingest_closes_the_actor_reservation_after_page_billing(monkeypatch):
     billed = []
 
@@ -211,8 +225,8 @@ def test_ingest_closes_the_actor_reservation_after_page_billing(monkeypatch):
         worker.registry,
         "embedding_spec",
         lambda: _spec(
-            provider_slug="openrouter",
-            model_slug="qwen/qwen3-embedding-4b",
+            provider_slug="deepinfra",
+            model_slug="Qwen/Qwen3-Embedding-4B",
             surfaces=("embedding",),
         ),
     )

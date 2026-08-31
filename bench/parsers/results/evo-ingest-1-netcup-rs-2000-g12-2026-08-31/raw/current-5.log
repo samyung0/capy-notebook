@@ -1,0 +1,16 @@
+payload: slice-01-p0001-p0026.pdf (19541531 bytes)
+
+=== fast  http://127.0.0.1:18090/file_parse
+healthz: 0.03s  uptime_s=1.395  version=mineru-3.4.5-pipeline-sliced-v1+2725da1cbe39407786c9b3bdcd40fe68e0149046
+-- one job --
+  wall=86.46s  server_parse=86.352  uptime_s=None  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=3621MB/3procs
+-- 5 jobs at once --
+  wall=168.37s  server_parse=168.173  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=11814MB/5procs
+  wall=168.67s  server_parse=168.434  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=11756MB/5procs
+  wall=168.92s  server_parse=168.731  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=11803MB/5procs
+  wall=169.21s  server_parse=169.043  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=11803MB/5procs
+  wall=173.91s  server_parse=173.692  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=11338MB/5procs
+burst wall (all done): 173.92s  errors=0
+per-job wall median=168.92s  max=173.91s
+per-job server_parse median=168.73s  max=173.69s  sum=848.07s
+effective parallelism: 4.88x

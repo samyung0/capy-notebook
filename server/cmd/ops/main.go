@@ -77,6 +77,9 @@ func main() {
 	readPool := openPool(ctx, cfg.DatabaseURL, "OPS_DATABASE_URL")
 	readApp := store.NewWithPool(readPool)
 	defer readApp.Close()
+	if err := readApp.LoadPlanLimits(ctx); err != nil {
+		log.Fatalf("plan limits: %v", err)
+	}
 	if !cfg.AllowOwnerDSN() {
 		if err := ops.ValidateDatabaseRole(ctx, readPool, ops.ReadDatabaseRole); err != nil {
 			log.Fatalf("OPS_DATABASE_URL: %v", err)
@@ -88,6 +91,41 @@ func main() {
 		}
 	}
 	read := ops.NewReadStore(readApp)
+	ingestSources := []ops.IngestReadSource{{
+		Environment: cfg.IngestPrimaryEnv,
+		DB:          readPool,
+	}}
+	secondaryPools := []*pgxpool.Pool{}
+	for _, source := range []struct {
+		environment string
+		dsn         string
+		name        string
+	}{
+		{environment: "uat", dsn: cfg.IngestUATDatabaseURL, name: "OPS_INGEST_UAT_DATABASE_URL"},
+		{environment: "local", dsn: cfg.IngestLocalDatabaseURL, name: "OPS_INGEST_LOCAL_DATABASE_URL"},
+	} {
+		if source.dsn == "" {
+			continue
+		}
+		pool := openPool(ctx, source.dsn, source.name)
+		if !cfg.AllowOwnerDSN() {
+			if err := ops.ValidateDatabaseRole(ctx, pool, ops.ReadDatabaseRole); err != nil {
+				pool.Close()
+				log.Fatalf("%s: %v", source.name, err)
+			}
+		}
+		secondaryPools = append(secondaryPools, pool)
+		ingestSources = append(ingestSources, ops.IngestReadSource{
+			Environment: source.environment,
+			DB:          pool,
+		})
+	}
+	defer func() {
+		for _, pool := range secondaryPools {
+			pool.Close()
+		}
+	}()
+	read.SetIngestSources(ingestSources)
 	admin := ops.NewLazyAdminStore(cfg.AdminDatabaseURL)
 	if cfg.AllowOwnerDSN() {
 		admin.SkipRoleValidation()

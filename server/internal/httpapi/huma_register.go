@@ -165,6 +165,22 @@ func hErr(err error) error {
 			}},
 		}
 	}
+	var workspaceLimit *store.WorkspaceLimitExceededError
+	if errors.As(err, &workspaceLimit) {
+		return &huma.ErrorModel{
+			Status: http.StatusForbidden,
+			Title:  http.StatusText(http.StatusForbidden),
+			Detail: "owned workspace limit exceeded",
+			Errors: []*huma.ErrorDetail{{
+				Message: "workspace_limit_exceeded",
+				Value: map[string]any{
+					"workspacesUsed":      workspaceLimit.Used,
+					"workspacesRequested": workspaceLimit.Requested,
+					"workspacesLimit":     workspaceLimit.Limit,
+				},
+			}},
+		}
+	}
 	var locked *store.AccountLockedError
 	if errors.As(err, &locked) {
 		return &huma.ErrorModel{

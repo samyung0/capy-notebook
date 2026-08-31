@@ -1,5 +1,5 @@
-# Pipeline image — ingest worker or retrieval service (compose overrides
-# `command`). CPU Marker and RapidOCR run in the separate persistent parser
+# Pipeline image — parse coordinator, ingest worker, or retrieval service
+# (compose overrides `command`). CPU MinerU runs in the separate persistent parser
 # image, so this image does not include those models. Build from the repository
 # root so uv can copy the lockfile.
 FROM python:3.11-slim
@@ -23,7 +23,8 @@ COPY pipeline ./pipeline
 COPY server/internal/models/elitellm_providers.json ./server/internal/models/elitellm_providers.json
 COPY server/internal/sourceupload/text_extensions.json ./server/internal/sourceupload/text_extensions.json
 RUN uv sync --frozen --no-dev --no-editable
-ENV PATH="/app/.venv/bin:$PATH"
+ENV PATH="/app/.venv/bin:$PATH" \
+    PYTHONPATH="/app/pipeline"
 
 # Default role: the ingest worker (compose overrides for the retrieval service).
 CMD ["python", "-m", "pipeline.ingest.worker"]

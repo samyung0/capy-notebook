@@ -16,7 +16,7 @@ No explict roadmap items or planning. Current application is unfinished and not 
 
 **PostHog feature flags.** Flags today are Vite env (`VITE_FEATURE_EXPLORE`, `VITE_FEATURE_THINKING`). You want schedule/tasks gated the same way on the first box, compile-time is enough. PostHog (and “kill switch without redeploy”) waits until you have more than one deploy and a reason to flip a flag for one user. Empty `VITE_POSTHOG_KEY` already disables analytics.
 
-**China product.** Clerk + Cloudflare + B2 and the current overseas parser VM fail or degrade from the mainland. Alipay/WeChat via Airwallex needs the right merchant entity (HK can do some of that later). CAC filings if you offer genAI there. Parked: one international codebase, zh as a UI language only. A later China deploy swaps vendors (auth, payments, models, storage), not a second Vite app.
+**China product.** Clerk + Cloudflare + B2 and the current overseas ingest host fail or degrade from the mainland. Alipay/WeChat via Airwallex needs the right merchant entity (HK can do some of that later). CAC filings if you offer genAI there. Parked: one international codebase, zh as a UI language only. A later China deploy swaps vendors (auth, payments, models, storage), not a second Vite app.
 
 **Airwallex.** Can sit next to Stripe as the account that holds money and does FX. Two processors both owning subscriptions is a mess. Replacing Stripe is a rewrite of checkout, portal, webhooks, reconcile. Parked: no revenue, Stripe already wired, Airwallex Billing’s hosted portal was still missing when we looked. Revisit when you have a first paid user Stripe cannot charge.
 

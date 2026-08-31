@@ -3,14 +3,29 @@ import {
   formatBytes,
   formatCredits,
   MICROS_PER_CREDIT,
+  storageLimitLabel,
   usagePercent,
 } from './format';
+import { PLAN_LIMITS } from './planLimits';
 
 describe('billing formatters', () => {
-  it('formats byte counts with binary units', () => {
+  it('formats byte counts with decimal units', () => {
     expect(formatBytes(512)).toBe('512 B');
-    expect(formatBytes(2048)).toBe('2 KiB');
-    expect(formatBytes(2.5 * 1024 ** 2)).toBe('2.5 MiB');
+    expect(formatBytes(2000)).toBe('2 KB');
+    expect(formatBytes(2_500_000)).toBe('2.5 MB');
+  });
+
+  it('formats the plan limits as 100 MB and 1 GB', () => {
+    expect(storageLimitLabel(PLAN_LIMITS.free.storageLimitBytes)).toBe(
+      '100 MB'
+    );
+    expect(storageLimitLabel(PLAN_LIMITS.pro.storageLimitBytes)).toBe('1 GB');
+  });
+
+  it('keeps both plans unlimited for owned workspaces', () => {
+    expect(PLAN_LIMITS.free.ownedWorkspaceLimit).toBeNull();
+    expect(PLAN_LIMITS.pro.ownedWorkspaceLimit).toBeNull();
+    expect(PLAN_LIMITS.free.materialRevisionLimit).toBe(3);
   });
 
   it('formats micro-credits as whole credits once the number is large', () => {

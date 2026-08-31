@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "subject": "你的 Evo Notes 账户已被冻结",
+  "preview": "账户已冻结，请释放空间或重新订阅。",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              { "type": "bold" },
+              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
+            ],
+            "text": "Evo Notes"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "attrs": { "level": 1 },
+        "content": [{ "type": "text", "text": "账户已冻结" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [{ "type": "text", "text": "你好，" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "存储缓冲期已结束，你的账户已被冻结。在释放空间或重新订阅之前，你无法创建新内容。"
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "管理订阅",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      { "type": "horizontalRule" },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "你收到这封邮件是因为存储缓冲期结束后你的 Evo Notes 账户被冻结。"
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ],
+            "text": "管理产品邮件偏好"
+          }
+        ]
+      }
+    ]
+  }
+}

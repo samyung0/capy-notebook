@@ -8,6 +8,7 @@ import {
   isModelUnavailableError,
   isStorageQuotaError,
   isTooManyIngestLeasesError,
+  isWorkspaceLimitError,
 } from '@/api/client';
 import { m } from '@/i18n';
 
@@ -63,6 +64,7 @@ export function errorKind(error: unknown): ErrorKind {
   if (browserIsOffline()) return 'offline';
   if (isStorageQuotaError(error)) return 'quota';
   if (isFileLimitError(error)) return 'files';
+  if (isWorkspaceLimitError(error)) return 'quota';
   if (isCreditsExhaustedError(error)) return 'credits';
   if (isTooManyIngestLeasesError(error)) return 'ingest';
   if (isModelUnavailableError(error)) return 'model';

@@ -1,6 +1,7 @@
 packages:
   - .
   - collaboration
+  - emails/editor
   - ops
   - workers/*
 

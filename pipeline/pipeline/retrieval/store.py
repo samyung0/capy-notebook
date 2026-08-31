@@ -31,7 +31,7 @@ async def pool() -> AsyncConnectionPool:
         _pool = AsyncConnectionPool(
             cfg.dsn,
             min_size=1,
-            max_size=8,
+            max_size=cfg.db_async_pool_max_size,
             open=False,
             kwargs={
                 "row_factory": dict_row,
@@ -58,9 +58,7 @@ def vector_literal(values: list[float]) -> str:
 # Per pin, not per width. rag_chunk_vectors_2560 is the historical name for
 # qwen-embed v1. A later model, including another 2560-d one, gets its own
 # table and a new entry here.
-_VECTOR_TABLES = {
-    ("openrouter", "qwen/qwen3-embedding-4b", 1): "rag_chunk_vectors_2560"
-}
+_VECTOR_TABLES = {("deepinfra", "Qwen/Qwen3-Embedding-4B", 1): "rag_chunk_vectors_2560"}
 
 
 def vector_table(provider_slug: str, model_slug: str, version: int) -> str:

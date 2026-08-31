@@ -467,7 +467,7 @@ func TestRegistryCompileRefusesMissingDefaultAliasAndEmbeddingRewrite(t *testing
 		ID:              "new-embedding",
 		ProviderName:    "New",
 		ModelName:       "Embedding",
-		ProviderSlug:    "openrouter",
+		ProviderSlug:    "deepinfra",
 		ModelSlug:       "qwen/qwen3-embedding-8b",
 		PlatformEnabled: true,
 		Params: json.RawMessage(
@@ -487,7 +487,7 @@ func TestActiveDraftRejectsEmbeddingHopChange(t *testing.T) {
 	t.Parallel()
 	current := CatalogConfig{
 		Version: 1, ProviderName: "Qwen", ModelName: "Embed",
-		ProviderSlug:        "openrouter",
+		ProviderSlug:        "deepinfra",
 		ModelSlug:           models.SeededHopEmbedSlug,
 		PlatformEnabled:     true,
 		ContextWindowTokens: 8192,
@@ -521,7 +521,7 @@ func TestEmbeddingDefaultEligibilityRefusesInvalidPinsAndTables(t *testing.T) {
 	_, tx := openRegistryTestTx(t)
 	ctx := context.Background()
 	base := CatalogConfig{
-		ProviderSlug: "openrouter", ModelSlug: models.SeededHopEmbedSlug,
+		ProviderSlug: "deepinfra", ModelSlug: models.SeededHopEmbedSlug,
 		Version: 1, Enabled: true,
 		Surfaces: []string{models.SurfaceEmbedding},
 		Params: json.RawMessage(
@@ -639,7 +639,7 @@ func TestRegistrySaveMovesEmbeddingDefaultOnlyToPreShippedAllowedRow(t *testing.
 		WHERE (provider_slug=$1 AND model_slug=$2)
 		   OR (provider_slug=$3 AND model_slug=$4)
 		ORDER BY provider_slug, model_slug`,
-		"openrouter", models.SeededHopEmbedSlug, modelRef.ProviderSlug, modelRef.ModelSlug)
+		"deepinfra", models.SeededHopEmbedSlug, modelRef.ProviderSlug, modelRef.ModelSlug)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -658,7 +658,7 @@ func TestRegistrySaveMovesEmbeddingDefaultOnlyToPreShippedAllowedRow(t *testing.
 	if err := rows.Err(); err != nil {
 		t.Fatal(err)
 	}
-	old := seen[models.Ref{ProviderSlug: "openrouter", ModelSlug: models.SeededHopEmbedSlug}]
+	old := seen[models.Ref{ProviderSlug: "deepinfra", ModelSlug: models.SeededHopEmbedSlug}]
 	moved := seen[modelRef]
 	if !old.Enabled || !moved.Enabled {
 		t.Fatalf("embedding rows were disabled: old=%v new=%v", old.Enabled, moved.Enabled)
@@ -676,7 +676,7 @@ func TestRegistrySaveMovesEmbeddingDefaultOnlyToPreShippedAllowedRow(t *testing.
 
 func TestBindEliteLLMDraftRejectsMarketplaceHop(t *testing.T) {
 	draft := gridDraft{
-		ProviderSlug:    "openrouter",
+		ProviderSlug:    "deepinfra",
 		ModelSlug:       "deepseek/deepseek-v4-flash",
 		PlatformEnabled: true,
 	}
@@ -692,7 +692,7 @@ func TestBindEliteLLMDraftRejectsMarketplaceHop(t *testing.T) {
 
 func TestBindEliteLLMDraftAllowsFirstPartyAndSeededEmbed(t *testing.T) {
 	t.Setenv("DEEPSEEK_API_KEY", "sk-test")
-	t.Setenv("OPENROUTER_API_KEY", "sk-test")
+	t.Setenv("DEEPINFRA_API_KEY", "sk-test")
 	flash := gridDraft{
 		ProviderSlug:    "deepseek",
 		ModelSlug:       "deepseek-v4-flash",
@@ -705,12 +705,30 @@ func TestBindEliteLLMDraftAllowsFirstPartyAndSeededEmbed(t *testing.T) {
 		t.Fatalf("flash bind: %v", err)
 	}
 	embed := gridDraft{
-		ProviderSlug:    models.ProviderOpenRouter,
+		ProviderSlug:    models.ProviderDeepInfra,
 		ModelSlug:       models.SeededHopEmbedSlug,
 		PlatformEnabled: true,
 	}
 	if err := bindEliteLLMDraft(&embed, []string{models.SurfaceEmbedding}); err != nil {
 		t.Fatalf("seeded embed bind: %v", err)
+	}
+}
+
+func TestBindEliteLLMDraftAllowsOnlyPlatformRoutedGLM(t *testing.T) {
+	t.Setenv("DEEPINFRA_API_KEY", "sk-test")
+	glm := gridDraft{
+		ProviderSlug:    "zai",
+		ModelSlug:       "glm-5.3-flash",
+		PlatformEnabled: true,
+		ThinkingLevels:  []string{"low", "high", "max"},
+		DefaultThinking: "max",
+	}
+	if err := bindEliteLLMDraft(&glm, nil); err != nil {
+		t.Fatalf("routed GLM bind: %v", err)
+	}
+	glm.ByokEnabled = true
+	if err := bindEliteLLMDraft(&glm, nil); !IsValidation(err) {
+		t.Fatalf("routed GLM BYOK bind = %v, want validation", err)
 	}
 }
 

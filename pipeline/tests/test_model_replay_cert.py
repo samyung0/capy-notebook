@@ -95,6 +95,7 @@ def test_chat_provider_entries_only_include_chat_providers():
 
 def test_require_chat_provider_rejects_non_chat_provider():
     assert require_chat_provider(" openai ") == "openai"
+    assert require_chat_provider("zai") == "zai"
     with pytest.raises(ValueError, match="not a supported chat provider"):
         require_chat_provider("gemini")
 
@@ -169,6 +170,21 @@ def test_fetch_available_model_slugs_rejects_provider_error():
 
     with pytest.raises(ModelListError, match="401 Unauthorized"):
         fetch_available_model_slugs("openai", "bad-key", get=get)
+
+
+def test_zai_model_list_maps_deepinfra_wire_slug_to_catalog_slug():
+    captured = {}
+
+    def get(url: str, **_kwargs):
+        captured["url"] = url
+        return httpx.Response(
+            200,
+            request=httpx.Request("GET", url),
+            json={"data": [{"id": "zai-org/GLM-5.3-Flash"}]},
+        )
+
+    assert fetch_available_model_slugs("zai", "sk-test", get=get) == ["glm-5.3-flash"]
+    assert captured["url"] == "https://api.deepinfra.com/v1/models"
 
 
 def test_selectable_models_retain_certified_slugs_missing_from_provider():
@@ -470,9 +486,9 @@ def test_sync_keeps_certification_scoped_to_provider(tmp_path: Path):
     write_manifest(
         {
             "deepseek": {"shared": {"cassette": cassette}},
-            "openrouter": {
+            "deepinfra": {
                 "shared": {
-                    "cassette": "pipeline/tests/cassettes/replay/openrouter__shared.yaml"
+                    "cassette": "pipeline/tests/cassettes/replay/deepinfra__shared.yaml"
                 }
             },
         },

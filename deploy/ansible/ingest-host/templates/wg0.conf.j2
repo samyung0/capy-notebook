@@ -1,0 +1,10 @@
+[Interface]
+Address = {{ ingest_wireguard_address }}
+ListenPort = {{ ingest_wireguard_listen_port }}
+PrivateKey = {{ ingest_wireguard_private_key_file.content | b64decode | trim }}
+
+[Peer]
+PublicKey = {{ ingest_wireguard_peer_public_key }}
+Endpoint = {{ ingest_wireguard_peer_endpoint }}
+AllowedIPs = {{ ingest_wireguard_peer_address }}
+PersistentKeepalive = 25

@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "subject": "你在 {{.WorkspaceName}} 中的角色已更改",
+  "preview": "{{.WorkspaceName}} 中的角色已更改。",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              { "type": "bold" },
+              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
+            ],
+            "text": "Evo Notes"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "attrs": { "level": 1 },
+        "content": [{ "type": "text", "text": "工作区角色已更改" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "WorkspaceName",
+              "label": "工作区名称",
+              "required": true
+            }
+          },
+          { "type": "text", "text": " 中的角色已由工作区所有者更改。" }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          { "type": "text", "text": "工作区：" },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "WorkspaceName",
+              "label": "工作区名称",
+              "required": true
+            },
+            "marks": [{ "type": "bold" }]
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          { "type": "text", "text": "新角色：" },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "RoleName",
+              "label": "角色名称",
+              "required": true
+            },
+            "marks": [{ "type": "bold" }]
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "打开 Evo Notes",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      { "type": "horizontalRule" },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "你收到这封邮件是因为 Evo Notes 工作区成员身份发生了变化。"
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ],
+            "text": "管理产品邮件偏好"
+          }
+        ]
+      }
+    ]
+  }
+}

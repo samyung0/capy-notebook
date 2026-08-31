@@ -1,0 +1,19 @@
+payload: slice-01-p0001-p0026.pdf (19541531 bytes)
+
+=== fast  http://127.0.0.1:18090/file_parse
+healthz: 0.03s  uptime_s=1.048  version=mineru-3.4.5-pipeline-sliced-v1+2725da1cbe39407786c9b3bdcd40fe68e0149046
+-- one job --
+  wall=94.42s  server_parse=94.294  uptime_s=None  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=3868MB/3procs
+-- 8 jobs at once --
+  wall=298.24s  server_parse=297.501  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=14301MB/5procs
+  wall=299.20s  server_parse=298.31  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=14298MB/5procs
+  wall=313.10s  server_parse=312.243  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=14301MB/5procs
+  wall=313.65s  server_parse=313.332  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=14305MB/5procs
+  wall=313.89s  server_parse=313.55  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=14306MB/5procs
+  wall=314.26s  server_parse=313.719  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=14312MB/5procs
+  wall=316.81s  server_parse=316.428  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=14002MB/5procs
+  wall=317.16s  server_parse=316.688  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=14002MB/5procs
+burst wall (all done): 317.20s  errors=0
+per-job wall median=313.77s  max=317.16s
+per-job server_parse median=313.44s  max=316.69s  sum=2481.77s
+effective parallelism: 7.82x

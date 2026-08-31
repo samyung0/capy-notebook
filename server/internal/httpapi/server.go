@@ -306,6 +306,17 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		})
 		return
 	}
+	var workspaceLimit *store.WorkspaceLimitExceededError
+	if errors.As(err, &workspaceLimit) {
+		writeJSON(w, http.StatusForbidden, map[string]any{
+			"code":                "workspace_limit_exceeded",
+			"message":             "owned workspace limit exceeded",
+			"workspacesUsed":      workspaceLimit.Used,
+			"workspacesRequested": workspaceLimit.Requested,
+			"workspacesLimit":     workspaceLimit.Limit,
+		})
+		return
+	}
 	if errors.Is(err, store.ErrInvalidLLMKey) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{
 			"code":    "invalid_llm_key",
@@ -478,13 +489,6 @@ func (a *api) addSource(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 201, res)
 }
 
-// Multipart body ceiling. Per-file source caps are plan-aware (10 MB free /
-// 30 MB Pro) and enforced after we know the workspace owner; this limit only
-// stops an oversized request before that lookup.
-const (
-	uploadMaxBytes = sourceupload.UploadMaxBytes // multipart overhead headroom
-)
-
 func defaultParseMode(name, kind string) string {
 	return sourceupload.DefaultParseMode(name, kind)
 }
@@ -499,13 +503,21 @@ func (a *api) sourceMaxBytes(ctx context.Context, wsID string) (int64, error) {
 		if err != nil {
 			return 0, err
 		}
-		return sourceupload.SourceMaxBytes(tier == store.PlanPro), nil
+		limits, err := a.s.PlanLimits(tier)
+		if err != nil {
+			return 0, err
+		}
+		return limits.SourceFileBytes, nil
 	}
 	me, err := a.s.Me(ctx, userID(ctx))
 	if err != nil {
 		return 0, err
 	}
-	return sourceupload.SourceMaxBytes(me.PlanTier == store.PlanPro), nil
+	limits, err := a.s.PlanLimits(me.PlanTier)
+	if err != nil {
+		return 0, err
+	}
+	return limits.SourceFileBytes, nil
 }
 
 func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
@@ -513,7 +525,14 @@ func (a *api) uploadSource(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, errors.New("blob store not configured"))
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, uploadMaxBytes)
+	maxSourceBytes, err := a.s.MaxSourceFileBytes()
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
+	// The plan-aware per-file check happens after owner lookup. This absolute
+	// process snapshot plus multipart headroom rejects impossible bodies early.
+	r.Body = http.MaxBytesReader(w, r.Body, maxSourceBytes+(4<<20))
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": "upload too large or malformed: " + err.Error()})
 		return

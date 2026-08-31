@@ -16,7 +16,7 @@ func pushOverQuota(t *testing.T, s *Store, userID, workspaceID string) {
 		t.Fatal(err)
 	}
 	if _, err := s.CreateSourceReady(ctx, workspaceID, userID, "big.pdf", "pdf", nil, "",
-		FreeStorageLimitBytes+1, "sources/"+uid("blob")); err != nil {
+		mustPlanLimits(t, s, PlanFree).StorageBytes+1, "sources/"+uid("blob")); err != nil {
 		t.Fatal(err)
 	}
 	lapsed := time.Now().Add(-2 * 24 * time.Hour).UTC()

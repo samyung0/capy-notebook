@@ -324,7 +324,7 @@ func FromWorkspace(w store.Workspace, ownerState store.AccountState) Workspace {
 	out := Workspace{
 		ID: w.ID, Name: w.Name, Color: w.Color, Privacy: w.Privacy, ShareRole: w.ShareRole,
 		Tags: WrapTags(w.Tags), ChapterCount: w.ChapterCount, FileCount: w.FileCount,
-		FilesLimit: store.MaxFilesPerWorkspace,
+		FilesLimit: w.FilesLimit,
 		CreatedAt:  w.CreatedAt, LastAccessedAt: w.LastAccessedAt, IsOwner: true,
 		Role: &role, Capabilities: store.CapabilitiesForRole(role, true),
 		StorageOwnerName: w.OwnerName,

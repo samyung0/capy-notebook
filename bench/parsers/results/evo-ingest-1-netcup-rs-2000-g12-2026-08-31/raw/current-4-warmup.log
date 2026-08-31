@@ -1,0 +1,6 @@
+payload: biology-ib-sample-16-pages.pdf (17449334 bytes)
+
+=== fast  http://127.0.0.1:18090/file_parse
+healthz: 0.01s  uptime_s=39.516  version=mineru-3.4.5-pipeline-sliced-v1+2725da1cbe39407786c9b3bdcd40fe68e0149046
+-- one job --
+  wall=90.27s  server_parse=90.169  uptime_s=None  blocks=419 chars=40696 headings=41 images=28  ocr_pages=[]  lane=digital  rss=3350MB/3procs

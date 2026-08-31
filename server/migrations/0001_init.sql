@@ -17,6 +17,31 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- Identity, workspaces, content tree
 -- ============================================================================
 
+-- Product limits that vary by subscription plan. Gateway and ingest-worker
+-- processes load the complete table once at startup; request paths never use
+-- this table as a live configuration lookup. NULL owned_workspace_limit means
+-- unlimited. The frontend keeps an explicit translated-display copy rather
+-- than exposing this catalog through a public API.
+CREATE TABLE IF NOT EXISTS plan_limits (
+  plan_tier                 text PRIMARY KEY
+    CHECK (plan_tier IN ('free', 'pro')),
+  storage_limit_bytes       bigint NOT NULL CHECK (storage_limit_bytes > 0),
+  credit_limit_micros       bigint NOT NULL CHECK (credit_limit_micros > 0),
+  source_file_max_bytes     bigint NOT NULL CHECK (source_file_max_bytes > 0),
+  material_revision_limit   int NOT NULL CHECK (material_revision_limit > 0),
+  owned_workspace_limit     int CHECK (owned_workspace_limit > 0),
+  files_per_workspace       int NOT NULL CHECK (files_per_workspace > 0),
+  files_per_upload          int NOT NULL CHECK (files_per_upload > 0)
+);
+INSERT INTO plan_limits (
+  plan_tier, storage_limit_bytes, credit_limit_micros,
+  source_file_max_bytes, material_revision_limit, owned_workspace_limit,
+  files_per_workspace, files_per_upload
+) VALUES
+  ('free', 100000000, 1000000000, 10485760, 3, NULL, 100, 20),
+  ('pro', 1000000000, 20000000000, 31457280, 30, NULL, 100, 20)
+ON CONFLICT (plan_tier) DO NOTHING;
+
 -- The user row is a durable tombstone: application logic never deletes it.
 -- Deletion soft-flags the row and scrubs its PII, which keeps preserved
 -- authorship (comments, revisions, materials authored inside other people's
@@ -35,7 +60,7 @@ CREATE TABLE IF NOT EXISTS users (
   streak                int  NOT NULL DEFAULT 0,
   stripe_customer_id    text UNIQUE,
   subscription_status   text NOT NULL DEFAULT 'none',
-  plan_tier             text NOT NULL DEFAULT 'free'
+  plan_tier             text NOT NULL DEFAULT 'free' REFERENCES plan_limits(plan_tier)
     CHECK (plan_tier IN ('free', 'pro')),
   locale                text NOT NULL DEFAULT 'en',
   -- Per-surface user model preference. The provider/model pair names the
@@ -145,8 +170,8 @@ CREATE TABLE IF NOT EXISTS workspaces (
   -- insert a workspace without wiring a registry. It is a self-consistent
   -- choice, not a fallback: whatever value lands here is what ingest embeds
   -- with, so a stale default yields an older space, never a mixed one.
-  embedding_provider_slug text NOT NULL DEFAULT 'openrouter',
-  embedding_model_slug    text NOT NULL DEFAULT 'qwen/qwen3-embedding-4b',
+  embedding_provider_slug text NOT NULL DEFAULT 'deepinfra',
+  embedding_model_slug    text NOT NULL DEFAULT 'Qwen/Qwen3-Embedding-4B',
   embedding_model_version int  NOT NULL DEFAULT 1,
   -- Width the pinned model emits. Selects the halfvec column size. The vector
   -- table itself is chosen by the exact provider/model/version pin,
@@ -741,7 +766,7 @@ CREATE TABLE IF NOT EXISTS user_subscriptions (
   user_id                text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   status                 text NOT NULL,
   price_id               text NOT NULL DEFAULT '',
-  plan_tier              text NOT NULL DEFAULT 'free'
+  plan_tier              text NOT NULL DEFAULT 'free' REFERENCES plan_limits(plan_tier)
     CHECK (plan_tier IN ('free', 'pro')),
   current_period_end     timestamptz,
   cancel_at_period_end   boolean NOT NULL DEFAULT false,
@@ -812,15 +837,89 @@ CREATE TABLE IF NOT EXISTS jobs (
   -- the reaper turns the row pending (or failed, once the attempt budget is
   -- spent) instead of leaving it running forever.
   lease_expires_at timestamptz,
+  -- Reset whenever the row re-enters the queue. Unlike created_at, this gives
+  -- each retry an honest queue-wait duration.
+  queued_at  timestamptz NOT NULL DEFAULT now(),
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS jobs_status_idx ON jobs(status, created_at);
 CREATE INDEX IF NOT EXISTS jobs_claim_idx
-  ON jobs(status, created_at)
+  ON jobs(type, status, created_at)
   WHERE status = 'pending';
 CREATE INDEX IF NOT EXISTS jobs_lease_idx
   ON jobs(lease_expires_at)
+  WHERE status = 'running';
+
+-- One durable row for every queue claim. A capacity or external-provider wait
+-- may undo jobs.attempts, so the generated id is the identity rather than the
+-- visible attempt number. The lease reaper closes rows left running by a dead
+-- process. Commonly charted values stay typed; stage_timings and details are
+-- numeric/enum diagnostics only and never contain source content or file names.
+CREATE TABLE IF NOT EXISTS ingest_job_attempts (
+  id                    bigserial PRIMARY KEY,
+  job_id                text NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+  operation_id          text NOT NULL,
+  attempt               integer NOT NULL CHECK (attempt > 0),
+  job_type              text NOT NULL CHECK (job_type IN ('parse', 'ingest')),
+  environment           text NOT NULL,
+  host_id               text NOT NULL,
+  worker_instance_id    text NOT NULL,
+  release_sha           text NOT NULL DEFAULT '',
+  trace_id              text NOT NULL,
+  route                 text NOT NULL DEFAULT '',
+  source_format         text NOT NULL DEFAULT '',
+  status                text NOT NULL DEFAULT 'running'
+    CHECK (status IN (
+      'running', 'succeeded', 'retrying', 'failed', 'superseded',
+      'lease_expired', 'capacity_wait', 'external_wait'
+    )),
+  stage                 text NOT NULL DEFAULT 'claimed',
+  error_category        text NOT NULL DEFAULT '',
+  error_code            text NOT NULL DEFAULT '',
+  error_detail          text NOT NULL DEFAULT '',
+  retryable             boolean NOT NULL DEFAULT false,
+  queued_at             timestamptz NOT NULL,
+  claimed_at            timestamptz NOT NULL DEFAULT now(),
+  finished_at           timestamptz,
+  next_retry_at         timestamptz,
+  queue_milliseconds    bigint NOT NULL DEFAULT 0 CHECK (queue_milliseconds >= 0),
+  duration_milliseconds bigint NOT NULL DEFAULT 0 CHECK (duration_milliseconds >= 0),
+  source_bytes          bigint NOT NULL DEFAULT 0 CHECK (source_bytes >= 0),
+  artifact_bytes        bigint NOT NULL DEFAULT 0 CHECK (artifact_bytes >= 0),
+  parse_pages           bigint NOT NULL DEFAULT 0 CHECK (parse_pages >= 0),
+  parse_ocr_pages       bigint NOT NULL DEFAULT 0 CHECK (
+    parse_ocr_pages >= 0 AND parse_ocr_pages <= parse_pages
+  ),
+  parse_slices          integer NOT NULL DEFAULT 0 CHECK (parse_slices >= 0),
+  parser_queue_milliseconds bigint NOT NULL DEFAULT 0
+    CHECK (parser_queue_milliseconds >= 0),
+  parser_execution_milliseconds bigint NOT NULL DEFAULT 0
+    CHECK (parser_execution_milliseconds >= 0),
+  figures_selected      integer NOT NULL DEFAULT 0 CHECK (figures_selected >= 0),
+  figures_cached        integer NOT NULL DEFAULT 0 CHECK (figures_cached >= 0),
+  figures_captioned     integer NOT NULL DEFAULT 0 CHECK (figures_captioned >= 0),
+  figures_decorative    integer NOT NULL DEFAULT 0 CHECK (figures_decorative >= 0),
+  figures_applied       integer NOT NULL DEFAULT 0 CHECK (figures_applied >= 0),
+  figures_failed        integer NOT NULL DEFAULT 0 CHECK (figures_failed >= 0),
+  chunks_created        integer NOT NULL DEFAULT 0 CHECK (chunks_created >= 0),
+  concepts_created      integer NOT NULL DEFAULT 0 CHECK (concepts_created >= 0),
+  donor_reused          boolean NOT NULL DEFAULT false,
+  stage_timings         jsonb NOT NULL DEFAULT '{}'::jsonb,
+  details               jsonb NOT NULL DEFAULT '{}'::jsonb,
+  CONSTRAINT ingest_job_attempts_trace_check CHECK (trace_id <> ''),
+  CONSTRAINT ingest_job_attempts_worker_check CHECK (
+    environment <> '' AND host_id <> '' AND worker_instance_id <> ''
+  )
+);
+CREATE INDEX IF NOT EXISTS ingest_job_attempts_operation_idx
+  ON ingest_job_attempts(operation_id, claimed_at DESC);
+CREATE INDEX IF NOT EXISTS ingest_job_attempts_status_idx
+  ON ingest_job_attempts(status, claimed_at DESC);
+CREATE INDEX IF NOT EXISTS ingest_job_attempts_environment_idx
+  ON ingest_job_attempts(environment, claimed_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS ingest_job_attempts_running_claim_idx
+  ON ingest_job_attempts(job_id, attempt)
   WHERE status = 'running';
 
 -- Durable state for asynchronous ElevenLabs Scribe jobs. pending rows reserve
@@ -1408,8 +1507,8 @@ $$;
 -- ============================================================================
 
 -- LLM rows (chat/generate/editor/quiz/ingest) must list thinking levels
--- from the product set. Instant is "no thinking". Embedding and vision
--- rows omit thinking. OpenRouter is only legal for the seeded embed hop.
+-- from the product set. Instant is "no thinking". Embedding and vision-only
+-- rows omit thinking. DeepInfra is only legal for the seeded embed hop.
 CREATE OR REPLACE FUNCTION model_configs_thinking_ok(
   surfaces text[],
   thinking_levels text[],
@@ -1536,11 +1635,11 @@ CREATE TABLE IF NOT EXISTS model_configs (
     NOT ('embedding' = ANY(surfaces))
     OR params->>'vector_table' ~ '^rag_chunk_vectors_[a-z0-9_]+$'
   ),
-  -- OpenRouter is only the seeded qwen-embed hop. No other marketplace rows.
-  CONSTRAINT model_configs_openrouter_embed_check CHECK (
-    provider_slug <> 'openrouter'
+  -- DeepInfra is only the seeded qwen-embed hop. No other router rows.
+  CONSTRAINT model_configs_deepinfra_embed_check CHECK (
+    provider_slug <> 'deepinfra'
     OR (
-      model_slug = 'qwen/qwen3-embedding-4b'
+      model_slug = 'Qwen/Qwen3-Embedding-4B'
       AND surfaces = ARRAY['embedding']::text[]
       AND NOT byok_enabled
     )
@@ -1694,19 +1793,19 @@ INSERT INTO model_configs (
    ARRAY['generate','quiz'],
    0, 0, 0, true,
    ARRAY[]::text[]),
-  (1, 'Qwen', 'Embedding 4B', 'openrouter', 'qwen/qwen3-embedding-4b',
+  (1, 'Qwen', 'Embedding 4B', 'deepinfra', 'Qwen/Qwen3-Embedding-4B',
    true, false, 0,
    ARRAY[]::text[], '',
    '{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}'::jsonb,
    ARRAY['embedding'],
    50, 50, 0, true,
    ARRAY['embedding']),
-  (1, 'Gemini', 'Flash Lite', 'gemini', 'gemini-3.1-flash-lite-preview',
-   true, true, 0,
-   ARRAY[]::text[], '',
-   '{"temperature": 0.2}'::jsonb,
-   ARRAY['vision'],
-   250, 1000, 250, true,
+  (1, 'Z.ai', 'GLM-5.3-Flash', 'zai', 'glm-5.3-flash',
+   true, false, 1048576,
+   ARRAY['low','high','max']::text[], 'max',
+   '{"temperature": 0.2, "modalities": {"vision": true}}'::jsonb,
+   ARRAY['chat','vision'],
+   150, 500, 30, true,
    ARRAY['vision'])
 ON CONFLICT (provider_slug, model_slug, version) DO NOTHING;
 
@@ -1813,14 +1912,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS usage_events_provider_call_idx
 CREATE UNIQUE INDEX IF NOT EXISTS usage_events_idempotency_idx
   ON usage_events(idempotency_key) WHERE idempotency_key IS NOT NULL;
 
--- Permanent, compact host telemetry for parser capacity analysis. The sampler
+-- Compact ingest-host telemetry and parser capacity analysis. The sampler
 -- writes every five seconds while jobs are active and every sixty seconds when
 -- idle. It deliberately carries no file, user, or document identifiers.
-CREATE TABLE IF NOT EXISTS parse_host_samples (
+CREATE TABLE IF NOT EXISTS ingest_host_samples (
   sampled_at          timestamptz NOT NULL DEFAULT now(),
+  environment         text NOT NULL,
   host_id             text NOT NULL,
+  release_sha         text NOT NULL DEFAULT '',
+  host_metrics_available boolean NOT NULL DEFAULT true,
   active_jobs         smallint NOT NULL DEFAULT 0,
   queued_jobs         smallint NOT NULL DEFAULT 0,
+  active_slices       smallint NOT NULL DEFAULT 0,
+  queued_slices       integer NOT NULL DEFAULT 0,
+  oldest_active_slice_ms bigint NOT NULL DEFAULT 0,
+  oldest_queued_slice_ms bigint NOT NULL DEFAULT 0,
+  last_slice_completed_age_ms bigint NOT NULL DEFAULT 0,
+  parser_oom_kill_events bigint NOT NULL DEFAULT 0,
   cpu_percent         real NOT NULL DEFAULT 0,
   load_1              real NOT NULL DEFAULT 0,
   memory_total_bytes  bigint NOT NULL DEFAULT 0,
@@ -1833,9 +1941,27 @@ CREATE TABLE IF NOT EXISTS parse_host_samples (
   network_tx_bytes    bigint NOT NULL DEFAULT 0,
   parser_memory_bytes bigint NOT NULL DEFAULT 0,
   parser_pss_bytes    bigint NOT NULL DEFAULT 0,
-  CONSTRAINT parse_host_samples_identity UNIQUE (host_id, sampled_at),
-  CONSTRAINT parse_host_samples_values_check CHECK (
-    active_jobs >= 0 AND queued_jobs >= 0
+  parser_memory_peak_bytes bigint NOT NULL DEFAULT 0,
+  parse_ready_jobs     integer NOT NULL DEFAULT 0,
+  parse_delayed_jobs   integer NOT NULL DEFAULT 0,
+  parse_running_jobs   integer NOT NULL DEFAULT 0,
+  ingest_ready_jobs    integer NOT NULL DEFAULT 0,
+  ingest_delayed_jobs  integer NOT NULL DEFAULT 0,
+  ingest_running_jobs  integer NOT NULL DEFAULT 0,
+  expired_leases       integer NOT NULL DEFAULT 0,
+  oldest_queued_job_ms bigint NOT NULL DEFAULT 0,
+  disk_free_bytes      bigint NOT NULL DEFAULT 0,
+  spool_bytes          bigint NOT NULL DEFAULT 0,
+  spool_files          integer NOT NULL DEFAULT 0,
+  CONSTRAINT ingest_host_samples_identity UNIQUE (
+    environment, host_id, sampled_at
+  ),
+  CONSTRAINT ingest_host_samples_values_check CHECK (
+    environment <> '' AND host_id <> ''
+    AND active_jobs >= 0 AND queued_jobs >= 0
+    AND active_slices >= 0 AND queued_slices >= 0
+    AND oldest_active_slice_ms >= 0 AND oldest_queued_slice_ms >= 0
+    AND last_slice_completed_age_ms >= 0 AND parser_oom_kill_events >= 0
     AND cpu_percent >= 0 AND cpu_percent <= 100
     AND load_1 >= 0
     AND memory_total_bytes >= 0 AND memory_used_bytes >= 0
@@ -1843,10 +1969,121 @@ CREATE TABLE IF NOT EXISTS parse_host_samples (
     AND disk_read_bytes >= 0 AND disk_write_bytes >= 0
     AND network_rx_bytes >= 0 AND network_tx_bytes >= 0
     AND parser_memory_bytes >= 0 AND parser_pss_bytes >= 0
+    AND parser_memory_peak_bytes >= 0
+    AND parse_ready_jobs >= 0 AND parse_delayed_jobs >= 0
+    AND parse_running_jobs >= 0 AND ingest_ready_jobs >= 0
+    AND ingest_delayed_jobs >= 0 AND ingest_running_jobs >= 0
+    AND expired_leases >= 0 AND oldest_queued_job_ms >= 0
+    AND disk_free_bytes >= 0 AND spool_bytes >= 0 AND spool_files >= 0
   )
 );
-CREATE INDEX IF NOT EXISTS parse_host_samples_sampled_brin_idx
-  ON parse_host_samples USING brin(sampled_at);
+CREATE INDEX IF NOT EXISTS ingest_host_samples_sampled_brin_idx
+  ON ingest_host_samples USING brin(sampled_at);
+
+-- The sampler refreshes the current minute after every raw write. Raw rows are
+-- kept for 30 days; these minute rows keep one year of capacity history.
+CREATE TABLE IF NOT EXISTS ingest_host_sample_rollups (
+  bucket              timestamptz NOT NULL,
+  environment         text NOT NULL,
+  host_id             text NOT NULL,
+  release_sha         text NOT NULL DEFAULT '',
+  host_metrics_available boolean NOT NULL DEFAULT true,
+  samples             integer NOT NULL CHECK (samples > 0),
+  active_jobs_max     integer NOT NULL DEFAULT 0,
+  queued_jobs_max     integer NOT NULL DEFAULT 0,
+  active_slices_max   integer NOT NULL DEFAULT 0,
+  queued_slices_max   integer NOT NULL DEFAULT 0,
+  oldest_active_slice_ms_max bigint NOT NULL DEFAULT 0,
+  oldest_queued_slice_ms_max bigint NOT NULL DEFAULT 0,
+  parser_oom_kill_events_max bigint NOT NULL DEFAULT 0,
+  cpu_percent_avg     real NOT NULL DEFAULT 0,
+  cpu_percent_max     real NOT NULL DEFAULT 0,
+  load_1_avg          real NOT NULL DEFAULT 0,
+  memory_used_bytes_avg bigint NOT NULL DEFAULT 0,
+  memory_used_bytes_max bigint NOT NULL DEFAULT 0,
+  memory_total_bytes_max bigint NOT NULL DEFAULT 0,
+  swap_used_bytes_max bigint NOT NULL DEFAULT 0,
+  parser_memory_bytes_avg bigint NOT NULL DEFAULT 0,
+  parser_memory_bytes_max bigint NOT NULL DEFAULT 0,
+  parser_pss_bytes_max bigint NOT NULL DEFAULT 0,
+  parser_memory_peak_bytes_max bigint NOT NULL DEFAULT 0,
+  parse_ready_jobs_max integer NOT NULL DEFAULT 0,
+  parse_delayed_jobs_max integer NOT NULL DEFAULT 0,
+  parse_running_jobs_max integer NOT NULL DEFAULT 0,
+  ingest_ready_jobs_max integer NOT NULL DEFAULT 0,
+  ingest_delayed_jobs_max integer NOT NULL DEFAULT 0,
+  ingest_running_jobs_max integer NOT NULL DEFAULT 0,
+  expired_leases_max integer NOT NULL DEFAULT 0,
+  oldest_queued_job_ms_max bigint NOT NULL DEFAULT 0,
+  disk_free_bytes_min bigint NOT NULL DEFAULT 0,
+  spool_bytes_max bigint NOT NULL DEFAULT 0,
+  spool_files_max integer NOT NULL DEFAULT 0,
+  PRIMARY KEY (bucket, environment, host_id)
+);
+CREATE INDEX IF NOT EXISTS ingest_host_sample_rollups_bucket_brin_idx
+  ON ingest_host_sample_rollups USING brin(bucket);
+
+-- Each one-job worker reports its own cgroup. CPU is stored as cores used over
+-- the interval rather than a percentage so a future worker with a wider quota
+-- can exceed one core without corrupting the metric.
+CREATE TABLE IF NOT EXISTS ingest_worker_samples (
+  sampled_at          timestamptz NOT NULL DEFAULT now(),
+  environment         text NOT NULL,
+  host_id             text NOT NULL,
+  worker_instance_id  text NOT NULL,
+  role                text NOT NULL CHECK (role IN ('parse', 'ingest')),
+  release_sha         text NOT NULL DEFAULT '',
+  state               text NOT NULL CHECK (state IN ('idle', 'busy')),
+  stage               text NOT NULL DEFAULT '',
+  job_attempt_id      bigint REFERENCES ingest_job_attempts(id) ON DELETE SET NULL,
+  cpu_cores           real NOT NULL DEFAULT 0 CHECK (cpu_cores >= 0),
+  cpu_usage_usec      bigint NOT NULL DEFAULT 0 CHECK (cpu_usage_usec >= 0),
+  memory_bytes        bigint NOT NULL DEFAULT 0 CHECK (memory_bytes >= 0),
+  memory_peak_bytes   bigint NOT NULL DEFAULT 0 CHECK (memory_peak_bytes >= 0),
+  memory_limit_bytes  bigint NOT NULL DEFAULT 0 CHECK (memory_limit_bytes >= 0),
+  io_read_bytes       bigint NOT NULL DEFAULT 0 CHECK (io_read_bytes >= 0),
+  io_write_bytes      bigint NOT NULL DEFAULT 0 CHECK (io_write_bytes >= 0),
+  pids_current        integer NOT NULL DEFAULT 0 CHECK (pids_current >= 0),
+  pids_limit          integer NOT NULL DEFAULT 0 CHECK (pids_limit >= 0),
+  oom_events          bigint NOT NULL DEFAULT 0 CHECK (oom_events >= 0),
+  oom_kill_events     bigint NOT NULL DEFAULT 0 CHECK (oom_kill_events >= 0),
+  CONSTRAINT ingest_worker_samples_identity UNIQUE (
+    environment, worker_instance_id, sampled_at
+  ),
+  CONSTRAINT ingest_worker_samples_identity_check CHECK (
+    environment <> '' AND host_id <> '' AND worker_instance_id <> ''
+  )
+);
+CREATE INDEX IF NOT EXISTS ingest_worker_samples_sampled_brin_idx
+  ON ingest_worker_samples USING brin(sampled_at);
+CREATE INDEX IF NOT EXISTS ingest_worker_samples_latest_idx
+  ON ingest_worker_samples(environment, role, sampled_at DESC);
+
+CREATE TABLE IF NOT EXISTS ingest_worker_sample_rollups (
+  bucket              timestamptz NOT NULL,
+  environment         text NOT NULL,
+  host_id             text NOT NULL,
+  worker_instance_id  text NOT NULL,
+  role                text NOT NULL CHECK (role IN ('parse', 'ingest')),
+  release_sha         text NOT NULL DEFAULT '',
+  samples             integer NOT NULL CHECK (samples > 0),
+  busy_samples        integer NOT NULL DEFAULT 0 CHECK (busy_samples >= 0),
+  cpu_cores_avg       real NOT NULL DEFAULT 0,
+  cpu_cores_max       real NOT NULL DEFAULT 0,
+  memory_bytes_avg    bigint NOT NULL DEFAULT 0,
+  memory_bytes_max    bigint NOT NULL DEFAULT 0,
+  memory_peak_bytes_max bigint NOT NULL DEFAULT 0,
+  memory_limit_bytes_max bigint NOT NULL DEFAULT 0,
+  io_read_bytes_max   bigint NOT NULL DEFAULT 0,
+  io_write_bytes_max  bigint NOT NULL DEFAULT 0,
+  pids_current_max    integer NOT NULL DEFAULT 0,
+  pids_limit_max      integer NOT NULL DEFAULT 0,
+  oom_events_max      bigint NOT NULL DEFAULT 0,
+  oom_kill_events_max bigint NOT NULL DEFAULT 0,
+  PRIMARY KEY (bucket, environment, worker_instance_id)
+);
+CREATE INDEX IF NOT EXISTS ingest_worker_sample_rollups_bucket_brin_idx
+  ON ingest_worker_sample_rollups USING brin(bucket);
 
 -- The counter the spend gate locks. period_start makes the monthly allowance
 -- reset lazily on first read of a new month rather than needing a cron that
@@ -1905,6 +2142,8 @@ CREATE TABLE IF NOT EXISTS provider_calls (
   id             text PRIMARY KEY,
   reservation_id text NOT NULL REFERENCES provider_sessions(id) ON DELETE CASCADE,
   actor_user_id  text NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  job_attempt_id bigint REFERENCES ingest_job_attempts(id) ON DELETE SET NULL,
+  job_stage      text NOT NULL DEFAULT '',
   kind           text NOT NULL,
   purpose        text NOT NULL DEFAULT '',
   status         text NOT NULL DEFAULT 'open'
@@ -1934,6 +2173,12 @@ CREATE TABLE IF NOT EXISTS provider_calls (
   opened_at      timestamptz NOT NULL DEFAULT now(),
   received_at    timestamptz,
   applied_at     timestamptz,
+  abandoned_at   timestamptz,
+  error_category text NOT NULL DEFAULT '',
+  error_code     text NOT NULL DEFAULT '',
+  provider_status integer CHECK (
+    provider_status IS NULL OR provider_status BETWEEN 100 AND 599
+  ),
   CONSTRAINT provider_calls_context_total_check CHECK (
     context_total_tokens = context_system_tokens
       + context_tool_tokens + context_conversation_tokens
@@ -1944,6 +2189,9 @@ CREATE INDEX IF NOT EXISTS provider_calls_unbilled_idx
   WHERE status = 'open';
 CREATE INDEX IF NOT EXISTS provider_calls_reservation_idx
   ON provider_calls(reservation_id, kind, status, opened_at DESC);
+CREATE INDEX IF NOT EXISTS provider_calls_job_attempt_idx
+  ON provider_calls(job_attempt_id, opened_at)
+  WHERE job_attempt_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS provider_calls_context_idx
   ON provider_calls(opened_at)
   WHERE kind = 'llm' AND context_window_tokens > 0;

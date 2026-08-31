@@ -21,6 +21,7 @@ import type {
   Workspace,
   WorkspaceMember,
 } from '@/api/types';
+import { PLAN_LIMITS } from '@/features/billing/planLimits';
 import { parseFlashcardsBlock } from '@/features/materials/blocks';
 import {
   createMaterialDocument,
@@ -762,7 +763,7 @@ export const handlers = [
       color: (body.color as UserColor) ?? 'graphite',
       createdAt: new Date().toISOString(),
       fileCount: 0,
-      filesLimit: 100,
+      filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
       id: uid('ws'),
       isOwner: true,
       lastAccessedAt: new Date().toISOString(),
@@ -2541,7 +2542,7 @@ export const handlers = [
   http.get('/api/billing', async () =>
     HttpResponse.json({
       cancelAtPeriodEnd: false,
-      creditsLimitMicros: 20_000 * 1_000_000,
+      creditsLimitMicros: PLAN_LIMITS.pro.creditLimitMicros,
       creditsPeriodStart: new Date(
         Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)
       ).toISOString(),
@@ -2591,9 +2592,9 @@ export const handlers = [
           creditMicros: 80_000,
           inputTokens: 0,
           kind: 'embedding',
-          modelSlug: 'qwen/qwen3-embedding-4b',
+          modelSlug: 'Qwen/Qwen3-Embedding-4B',
           outputTokens: 0,
-          providerSlug: 'openrouter',
+          providerSlug: 'deepinfra',
           surface: 'ingest',
           unit: 'tokens',
           units: 1200,

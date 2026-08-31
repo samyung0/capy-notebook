@@ -19,6 +19,9 @@ type Config struct {
 	CloudflareAccessJWKS   string
 	DatabaseURL            string
 	AdminDatabaseURL       string
+	IngestPrimaryEnv       string
+	IngestUATDatabaseURL   string
+	IngestLocalDatabaseURL string
 }
 
 func ConfigFromEnv() Config {
@@ -34,6 +37,9 @@ func ConfigFromEnv() Config {
 		CloudflareAccessJWKS:   os.Getenv("OPS_CF_ACCESS_JWKS_URL"),
 		DatabaseURL:            os.Getenv("OPS_DATABASE_URL"),
 		AdminDatabaseURL:       os.Getenv("OPS_ADMIN_DATABASE_URL"),
+		IngestPrimaryEnv:       envOr("OPS_INGEST_PRIMARY_ENVIRONMENT", "production"),
+		IngestUATDatabaseURL:   os.Getenv("OPS_INGEST_UAT_DATABASE_URL"),
+		IngestLocalDatabaseURL: os.Getenv("OPS_INGEST_LOCAL_DATABASE_URL"),
 	}
 }
 
@@ -101,6 +107,17 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.AdminDatabaseURL) == "" {
 		return errors.New("OPS_ADMIN_DATABASE_URL is required")
+	}
+	primaryEnvironment := strings.TrimSpace(c.IngestPrimaryEnv)
+	if primaryEnvironment != "" && primaryEnvironment != "production" &&
+		primaryEnvironment != "uat" && primaryEnvironment != "local" {
+		return errors.New("OPS_INGEST_PRIMARY_ENVIRONMENT must be production, uat, or local")
+	}
+	if primaryEnvironment == "uat" && strings.TrimSpace(c.IngestUATDatabaseURL) != "" {
+		return errors.New("OPS_INGEST_UAT_DATABASE_URL duplicates the primary database")
+	}
+	if primaryEnvironment == "local" && strings.TrimSpace(c.IngestLocalDatabaseURL) != "" {
+		return errors.New("OPS_INGEST_LOCAL_DATABASE_URL duplicates the primary database")
 	}
 	return nil
 }

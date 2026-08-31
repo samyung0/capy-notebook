@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "subject": "你的 Evo Notes 账户删除已安排",
+  "preview": "你的账户已安排删除。",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              { "type": "bold" },
+              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
+            ],
+            "text": "Evo Notes"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "attrs": { "level": 1 },
+        "content": [{ "type": "text", "text": "账户删除已安排" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [{ "type": "text", "text": "你好，" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "我们已收到你删除 Evo Notes 账户的请求。删除将在 "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "GraceDays",
+              "label": "宽限天数",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": " 天后执行。如需取消，请在此之前联系支持。"
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "联系支持",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      { "type": "horizontalRule" },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "你收到这封邮件是因为你请求删除 Evo Notes 账户。"
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ],
+            "text": "管理产品邮件偏好"
+          }
+        ]
+      }
+    ]
+  }
+}

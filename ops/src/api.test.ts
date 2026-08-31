@@ -1,7 +1,83 @@
 import { describe, expect, it, vi } from 'vitest';
-import { createOpsApi, OpsApiError } from './api';
+import { createOpsApi, ingestHostMetricsSchema, OpsApiError } from './api';
 
 describe('ops API errors', () => {
+  it('accepts environment-separated ingest telemetry with no customer content', () => {
+    expect(
+      ingestHostMetricsSchema.parse({
+        dataAsOf: '2026-08-31T12:00:00Z',
+        environments: [
+          {
+            attempts: {
+              abandonedProviderCalls: 1,
+              attempts: 4,
+              averageDurationMilliseconds: 1200,
+              averageQueueMilliseconds: 200,
+              capacityWaits: 1,
+              chunksCreated: 20,
+              conceptsCreated: 3,
+              externalWaits: 0,
+              failed: 1,
+              figuresCached: 0,
+              figuresCaptioned: 2,
+              figuresFailed: 0,
+              figuresSelected: 2,
+              inputTokens: 100,
+              leaseExpired: 0,
+              ocrPages: 2,
+              outputTokens: 40,
+              p95DurationMilliseconds: 1800,
+              p95QueueMilliseconds: 300,
+              pages: 10,
+              providerCalls: 3,
+              retrying: 0,
+              slices: 1,
+              succeeded: 2,
+            },
+            dataAsOf: '2026-08-31T12:00:00Z',
+            environment: 'uat',
+            errors: [],
+            lastJobActivityAt: '2026-08-31T11:59:00Z',
+            queue: {
+              expiredLeases: 0,
+              ingestDelayed: 0,
+              ingestReady: 0,
+              ingestRunning: 1,
+              oldestQueuedMilliseconds: 0,
+              parseDelayed: 0,
+              parseReady: 0,
+              parseRunning: 0,
+            },
+            recentAttempts: [],
+            samples: [],
+            workerSamples: [],
+            workers: [
+              {
+                cpuCores: 0.5,
+                hostId: 'ingest-1',
+                jobAttemptId: 42,
+                memoryBytes: 1024,
+                memoryLimitBytes: 2048,
+                oomEvents: 0,
+                oomKillEvents: 0,
+                pidsCurrent: 4,
+                pidsLimit: 64,
+                releaseSha: 'a'.repeat(40),
+                role: 'ingest',
+                sampledAt: '2026-08-31T12:00:00Z',
+                stage: 'indexing',
+                stale: false,
+                state: 'busy',
+                workerInstanceId: 'ingest:worker-1',
+              },
+            ],
+          },
+        ],
+        hours: 24,
+      })
+    ).toMatchObject({ environments: [{ environment: 'uat' }] });
+  });
+
   it('requires a Clerk token before sending a request', async () => {
     const fetcher = vi.fn<typeof fetch>();
     const api = createOpsApi({ fetcher, getToken: async () => null });

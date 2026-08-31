@@ -26,9 +26,15 @@ const (
 type ReadStore struct {
 	app              *store.Store
 	db               *pgxpool.Pool
+	ingestSources    []IngestReadSource
 	overviewMu       sync.Mutex
 	overviewCachedAt time.Time
 	overviewCache    Overview
+}
+
+type IngestReadSource struct {
+	Environment string
+	DB          *pgxpool.Pool
 }
 
 func (s *ReadStore) ResourceCreditRates(ctx context.Context) ([]ResourceCreditRate, error) {
@@ -99,7 +105,18 @@ func (s *ReadStore) AuditEvents(
 }
 
 func NewReadStore(app *store.Store) *ReadStore {
-	return &ReadStore{app: app, db: app.Pool()}
+	return &ReadStore{
+		app: app,
+		db:  app.Pool(),
+		ingestSources: []IngestReadSource{{
+			Environment: "production",
+			DB:          app.Pool(),
+		}},
+	}
+}
+
+func (s *ReadStore) SetIngestSources(sources []IngestReadSource) {
+	s.ingestSources = append([]IngestReadSource(nil), sources...)
 }
 
 func (s *ReadStore) Operator(ctx context.Context, userID string) (Session, error) {
@@ -241,77 +258,374 @@ func (s *ReadStore) overview(ctx context.Context) (Overview, error) {
 	return out, err
 }
 
-func (s *ReadStore) ParserMetrics(ctx context.Context, hours int) (ParserMetrics, error) {
-	out := ParserMetrics{
-		Hours:    hours,
-		Samples:  []ParserHostSample{},
-		DataAsOf: time.Now().UTC(),
+func (s *ReadStore) IngestHostMetrics(ctx context.Context, hours int) (IngestHostMetrics, error) {
+	out := IngestHostMetrics{
+		Hours:        hours,
+		Environments: []IngestEnvironmentMetrics{},
+		DataAsOf:     time.Now().UTC(),
 	}
 	if hours < 1 || hours > 24*7 {
-		return out, validation("parser metrics range must be between 1 and 168 hours")
+		return out, validation("ingest host metrics range must be between 1 and 168 hours")
 	}
-	err := s.db.QueryRow(ctx, `
+	for _, source := range s.ingestSources {
+		environment, err := ingestEnvironmentMetrics(
+			ctx, source.DB, strings.TrimSpace(source.Environment), hours,
+		)
+		if err != nil {
+			return out, fmt.Errorf("ingest telemetry %s: %w", source.Environment, err)
+		}
+		out.Environments = append(out.Environments, environment)
+	}
+	return out, nil
+}
+
+func ingestEnvironmentMetrics(
+	ctx context.Context,
+	db *pgxpool.Pool,
+	environment string,
+	hours int,
+) (IngestEnvironmentMetrics, error) {
+	out := IngestEnvironmentMetrics{
+		Environment:    environment,
+		Samples:        []IngestHostSample{},
+		WorkerSamples:  []IngestWorkerSample{},
+		Workers:        []IngestWorkerCurrent{},
+		Errors:         []IngestErrorCount{},
+		RecentAttempts: []IngestRecentAttempt{},
+		DataAsOf:       time.Now().UTC(),
+	}
+	err := db.QueryRow(ctx, `
 		SELECT count(*)::bigint,
+		       count(*) FILTER (WHERE status = 'succeeded')::bigint,
+		       count(*) FILTER (WHERE status = 'retrying')::bigint,
+		       count(*) FILTER (WHERE status = 'failed')::bigint,
+		       count(*) FILTER (WHERE status = 'capacity_wait')::bigint,
+		       count(*) FILTER (WHERE status = 'external_wait')::bigint,
+		       count(*) FILTER (WHERE status = 'lease_expired')::bigint,
 		       COALESCE(sum(parse_pages), 0)::bigint,
 		       COALESCE(sum(parse_ocr_pages), 0)::bigint,
-		       COALESCE(sum(parse_cpu_milliseconds), 0)::bigint,
-		       COALESCE(sum(parse_elapsed_milliseconds), 0)::bigint,
-		       COALESCE(sum(parse_queue_milliseconds), 0)::bigint,
-		       COALESCE(sum(parse_download_milliseconds), 0)::bigint,
-		       COALESCE(sum(parse_upload_milliseconds), 0)::bigint,
-		       COALESCE(max(parse_worker_rss_bytes), 0)::bigint,
-		       COALESCE(max(parse_worker_pss_bytes), 0)::bigint,
-		       COALESCE(sum(parse_io_read_bytes), 0)::bigint,
-		       COALESCE(sum(parse_io_write_bytes), 0)::bigint
-		FROM usage_events
-		WHERE kind = 'parse' AND created_at >= now() - make_interval(hours => $1)
-	`, hours).Scan(
-		&out.Attempts.Attempts, &out.Attempts.Pages, &out.Attempts.OCRPages,
-		&out.Attempts.CPUMilliseconds, &out.Attempts.ElapsedMilliseconds,
-		&out.Attempts.QueueMilliseconds, &out.Attempts.DownloadMilliseconds,
-		&out.Attempts.UploadMilliseconds, &out.Attempts.PeakWorkerRSSBytes,
-		&out.Attempts.PeakWorkerPSSBytes, &out.Attempts.IOReadBytes,
-		&out.Attempts.IOWriteBytes,
+		       COALESCE(sum(parse_slices), 0)::bigint,
+		       COALESCE(sum(figures_selected), 0)::bigint,
+		       COALESCE(sum(figures_cached), 0)::bigint,
+		       COALESCE(sum(figures_captioned), 0)::bigint,
+		       COALESCE(sum(figures_failed), 0)::bigint,
+		       COALESCE(sum(chunks_created), 0)::bigint,
+		       COALESCE(sum(concepts_created), 0)::bigint,
+		       COALESCE(round(avg(queue_milliseconds)), 0)::bigint,
+		       COALESCE(round(percentile_cont(0.95) WITHIN GROUP (
+		         ORDER BY queue_milliseconds)), 0)::bigint,
+		       COALESCE(round(avg(duration_milliseconds) FILTER (
+		         WHERE finished_at IS NOT NULL)), 0)::bigint,
+		       COALESCE(round(percentile_cont(0.95) WITHIN GROUP (
+		         ORDER BY duration_milliseconds) FILTER (
+		           WHERE finished_at IS NOT NULL)), 0)::bigint
+		  FROM ingest_job_attempts
+		 WHERE environment = $2
+		   AND claimed_at >= now() - make_interval(hours => $1)
+	`, hours, environment).Scan(
+		&out.Attempts.Attempts, &out.Attempts.Succeeded, &out.Attempts.Retrying,
+		&out.Attempts.Failed, &out.Attempts.CapacityWaits, &out.Attempts.ExternalWaits,
+		&out.Attempts.LeaseExpired, &out.Attempts.Pages, &out.Attempts.OCRPages,
+		&out.Attempts.Slices, &out.Attempts.FiguresSelected,
+		&out.Attempts.FiguresCached, &out.Attempts.FiguresCaptioned,
+		&out.Attempts.FiguresFailed,
+		&out.Attempts.ChunksCreated, &out.Attempts.ConceptsCreated,
+		&out.Attempts.AverageQueueMilliseconds, &out.Attempts.P95QueueMilliseconds,
+		&out.Attempts.AverageDurationMilliseconds, &out.Attempts.P95DurationMilliseconds,
 	)
 	if err != nil {
 		return out, err
 	}
-	if out.Attempts.ElapsedMilliseconds > 0 {
-		out.Attempts.AverageAttributedCPUCores = float64(out.Attempts.CPUMilliseconds) /
-			float64(out.Attempts.ElapsedMilliseconds)
+	err = db.QueryRow(ctx, `
+		SELECT count(*)::bigint,
+		       count(*) FILTER (WHERE p.status = 'abandoned')::bigint,
+		       COALESCE(sum(input_tokens), 0)::bigint,
+		       COALESCE(sum(output_tokens), 0)::bigint
+		  FROM provider_calls p
+		  JOIN ingest_job_attempts a ON a.id = p.job_attempt_id
+		 WHERE a.environment = $2
+		   AND p.opened_at >= now() - make_interval(hours => $1)
+	`, hours, environment).Scan(
+		&out.Attempts.ProviderCalls, &out.Attempts.AbandonedProviderCalls,
+		&out.Attempts.InputTokens, &out.Attempts.OutputTokens,
+	)
+	if err != nil {
+		return out, err
 	}
-	rows, err := s.db.Query(ctx, `
+	err = db.QueryRow(ctx, `
+		SELECT count(*) FILTER (
+		         WHERE type = 'parse' AND status = 'pending'
+		           AND COALESCE(not_before, now()) <= now())::bigint,
+		       count(*) FILTER (
+		         WHERE type = 'parse' AND status = 'pending'
+		           AND not_before > now())::bigint,
+		       count(*) FILTER (WHERE type = 'parse' AND status = 'running')::bigint,
+		       count(*) FILTER (
+		         WHERE type = 'ingest' AND status = 'pending'
+		           AND COALESCE(not_before, now()) <= now())::bigint,
+		       count(*) FILTER (
+		         WHERE type = 'ingest' AND status = 'pending'
+		           AND not_before > now())::bigint,
+		       count(*) FILTER (WHERE type = 'ingest' AND status = 'running')::bigint,
+		       count(*) FILTER (
+		         WHERE status = 'running' AND lease_expires_at < now())::bigint,
+		       COALESCE(extract(epoch FROM now() - min(queued_at) FILTER (
+		         WHERE status = 'pending')) * 1000, 0)::bigint
+		  FROM jobs
+		 WHERE type IN ('parse', 'ingest')
+	`).Scan(
+		&out.Queue.ParseReady, &out.Queue.ParseDelayed, &out.Queue.ParseRunning,
+		&out.Queue.IngestReady, &out.Queue.IngestDelayed, &out.Queue.IngestRunning,
+		&out.Queue.ExpiredLeases, &out.Queue.OldestQueuedMS,
+	)
+	if err != nil {
+		return out, err
+	}
+	rows, err := db.Query(ctx, `
 		SELECT date_bin('1 minute', sampled_at, timestamptz '1970-01-01') AS bucket,
-		       host_id, max(active_jobs)::bigint, max(queued_jobs)::bigint,
+		       host_id, max(release_sha), bool_or(host_metrics_available),
+		       max(active_jobs)::bigint, max(queued_jobs)::bigint,
+		       max(active_slices)::bigint, max(queued_slices)::bigint,
+		       max(oldest_active_slice_ms)::bigint,
+		       max(oldest_queued_slice_ms)::bigint,
+		       max(last_slice_completed_age_ms)::bigint,
+		       max(parser_oom_kill_events)::bigint,
 		       avg(cpu_percent)::float8, avg(load_1)::float8,
 		       avg(memory_used_bytes)::bigint, max(memory_total_bytes)::bigint,
 		       max(swap_used_bytes)::bigint, max(parser_memory_bytes)::bigint,
-		       max(parser_pss_bytes)::bigint, max(network_rx_bytes)::bigint,
-		       max(network_tx_bytes)::bigint
-		FROM parse_host_samples
+		       max(parser_pss_bytes)::bigint, max(parser_memory_peak_bytes)::bigint,
+		       max(network_rx_bytes)::bigint, max(network_tx_bytes)::bigint,
+		       max(parse_ready_jobs)::bigint, max(parse_delayed_jobs)::bigint,
+		       max(parse_running_jobs)::bigint, max(ingest_ready_jobs)::bigint,
+		       max(ingest_delayed_jobs)::bigint, max(ingest_running_jobs)::bigint,
+		       max(expired_leases)::bigint, max(oldest_queued_job_ms)::bigint,
+		       min(disk_free_bytes)::bigint, max(spool_bytes)::bigint,
+		       max(spool_files)::bigint
+		FROM ingest_host_samples
 		WHERE sampled_at >= now() - make_interval(hours => $1)
+		  AND environment = $2
 		GROUP BY bucket, host_id
 		ORDER BY bucket, host_id
-	`, hours)
+	`, hours, environment)
 	if err != nil {
 		return out, err
 	}
 	defer rows.Close()
 	for rows.Next() {
-		var sample ParserHostSample
+		var sample IngestHostSample
 		if err := rows.Scan(
-			&sample.SampledAt, &sample.HostID, &sample.ActiveJobs,
-			&sample.QueuedJobs, &sample.CPUPercent, &sample.Load1,
+			&sample.SampledAt, &sample.HostID, &sample.ReleaseSHA,
+			&sample.HostMetricsAvailable, &sample.ActiveJobs,
+			&sample.QueuedJobs, &sample.ActiveSlices, &sample.QueuedSlices,
+			&sample.OldestActiveSliceMilliseconds,
+			&sample.OldestQueuedSliceMilliseconds,
+			&sample.LastSliceCompletedAgeMilliseconds,
+			&sample.ParserOOMKillEvents, &sample.CPUPercent, &sample.Load1,
 			&sample.MemoryUsedBytes, &sample.MemoryTotalBytes,
 			&sample.SwapUsedBytes, &sample.ParserMemoryBytes,
-			&sample.ParserPSSBytes, &sample.NetworkRXBytes,
-			&sample.NetworkTXBytes,
+			&sample.ParserPSSBytes, &sample.ParserMemoryPeakBytes,
+			&sample.NetworkRXBytes, &sample.NetworkTXBytes,
+			&sample.ParseReadyJobs, &sample.ParseDelayedJobs,
+			&sample.ParseRunningJobs, &sample.IngestReadyJobs,
+			&sample.IngestDelayedJobs, &sample.IngestRunningJobs,
+			&sample.ExpiredLeases, &sample.OldestQueuedJobMilliseconds,
+			&sample.DiskFreeBytes, &sample.SpoolBytes, &sample.SpoolFiles,
 		); err != nil {
+			rows.Close()
 			return out, err
 		}
 		out.Samples = append(out.Samples, sample)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return out, err
+	}
+	rows.Close()
+	rows, err = db.Query(ctx, `
+		WITH latest AS (
+		  SELECT worker_instance_id, max(sampled_at) AS sampled_at
+		    FROM ingest_worker_samples
+		   WHERE environment = $1
+		   GROUP BY worker_instance_id
+		)
+		SELECT DISTINCT ON (s.worker_instance_id)
+		       s.sampled_at, s.host_id, s.worker_instance_id, s.role, s.release_sha,
+		       state, stage, job_attempt_id, cpu_cores::float8,
+		       memory_bytes, memory_limit_bytes, pids_current, pids_limit,
+		       oom_events, oom_kill_events,
+		       s.sampled_at < now() - interval '2 minutes'
+		  FROM ingest_worker_samples s
+		  JOIN latest l USING (worker_instance_id)
+		 WHERE s.environment = $1
+		   AND s.sampled_at >= l.sampled_at - interval '15 seconds'
+		 ORDER BY s.worker_instance_id, (state = 'busy') DESC, s.sampled_at DESC
+	`, environment)
+	if err != nil {
+		return out, err
+	}
+	for rows.Next() {
+		var item IngestWorkerCurrent
+		if err := rows.Scan(
+			&item.SampledAt, &item.HostID, &item.WorkerInstanceID, &item.Role,
+			&item.ReleaseSHA, &item.State, &item.Stage, &item.JobAttemptID,
+			&item.CPUCores, &item.MemoryBytes, &item.MemoryLimitBytes,
+			&item.PIDsCurrent, &item.PIDsLimit, &item.OOMEvents,
+			&item.OOMKillEvents, &item.Stale,
+		); err != nil {
+			rows.Close()
+			return out, err
+		}
+		out.Workers = append(out.Workers, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return out, err
+	}
+	rows.Close()
+	rows, err = db.Query(ctx, `
+		WITH workers AS (
+		  SELECT date_bin('1 minute', sampled_at, timestamptz '1970-01-01') AS bucket,
+		         role, worker_instance_id,
+		         bool_or(state = 'busy') AS busy,
+		         avg(cpu_cores)::float8 AS cpu_cores,
+		         avg(memory_bytes)::bigint AS memory_bytes,
+		         max(memory_limit_bytes)::bigint AS memory_limit_bytes,
+		         max(oom_kill_events)::bigint AS oom_kill_events
+		    FROM ingest_worker_samples
+		   WHERE sampled_at >= now() - make_interval(hours => $1)
+		     AND environment = $2
+		   GROUP BY bucket, role, worker_instance_id
+		)
+		SELECT bucket, role, count(*)::bigint,
+		       count(*) FILTER (WHERE busy)::bigint,
+		       COALESCE(sum(cpu_cores), 0)::float8,
+		       COALESCE(sum(memory_bytes), 0)::bigint,
+		       COALESCE(sum(memory_limit_bytes), 0)::bigint,
+		       COALESCE(sum(oom_kill_events), 0)::bigint
+		  FROM workers
+		 GROUP BY bucket, role
+		 ORDER BY bucket, role
+	`, hours, environment)
+	if err != nil {
+		return out, err
+	}
+	for rows.Next() {
+		var sample IngestWorkerSample
+		if err := rows.Scan(
+			&sample.SampledAt, &sample.Role, &sample.WorkerCount,
+			&sample.BusyWorkers, &sample.CPUCores, &sample.MemoryBytes,
+			&sample.MemoryLimitBytes, &sample.OOMKillEvents,
+		); err != nil {
+			rows.Close()
+			return out, err
+		}
+		out.WorkerSamples = append(out.WorkerSamples, sample)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return out, err
+	}
+	rows.Close()
+	rows, err = db.Query(ctx, `
+		WITH failures AS (
+		  SELECT error_category, error_code, stage
+		    FROM ingest_job_attempts
+		   WHERE environment = $2
+		     AND claimed_at >= now() - make_interval(hours => $1)
+		     AND status IN ('retrying', 'failed', 'lease_expired')
+		  UNION ALL
+		  SELECT COALESCE(NULLIF(p.error_category, ''), 'provider'),
+		         COALESCE(NULLIF(p.error_code, ''), 'provider_abandoned'),
+		         p.job_stage
+		    FROM provider_calls p
+		    JOIN ingest_job_attempts a ON a.id = p.job_attempt_id
+		   WHERE a.environment = $2
+		     AND p.opened_at >= now() - make_interval(hours => $1)
+		     AND p.status = 'abandoned'
+		)
+		SELECT error_category, error_code, stage, count(*)::bigint
+		  FROM failures
+		 GROUP BY error_category, error_code, stage
+		 ORDER BY count(*) DESC, error_category, error_code, stage
+		 LIMIT 25
+	`, hours, environment)
+	if err != nil {
+		return out, err
+	}
+	for rows.Next() {
+		var item IngestErrorCount
+		if err := rows.Scan(&item.Category, &item.Code, &item.Stage, &item.Count); err != nil {
+			rows.Close()
+			return out, err
+		}
+		out.Errors = append(out.Errors, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return out, err
+	}
+	rows.Close()
+	rows, err = db.Query(ctx, `
+		SELECT a.id, a.job_id, a.operation_id, a.attempt, a.job_type,
+		       a.status, a.stage, a.error_category, a.error_code, a.retryable,
+		       a.route, a.source_format, a.claimed_at, a.finished_at,
+		       a.next_retry_at, a.queue_milliseconds,
+		       CASE WHEN a.finished_at IS NULL THEN GREATEST(
+		         0, round(extract(epoch FROM (now() - a.claimed_at)) * 1000)
+		       )::bigint ELSE a.duration_milliseconds END, a.stage_timings,
+		       a.parse_pages, a.parse_ocr_pages, a.parse_slices,
+		       a.figures_captioned, a.figures_failed, a.chunks_created,
+		       COALESCE(p.calls, 0)::bigint, COALESCE(p.abandoned, 0)::bigint
+		  FROM ingest_job_attempts a
+		  LEFT JOIN LATERAL (
+		    SELECT count(*) AS calls,
+		           count(*) FILTER (WHERE status = 'abandoned') AS abandoned
+		      FROM provider_calls
+		     WHERE job_attempt_id = a.id
+		  ) p ON true
+		 WHERE a.environment = $1
+		 ORDER BY a.claimed_at DESC
+		 LIMIT 50
+	`, environment)
+	if err != nil {
+		return out, err
+	}
+	for rows.Next() {
+		var item IngestRecentAttempt
+		if err := rows.Scan(
+			&item.ID, &item.JobID, &item.OperationID, &item.Attempt,
+			&item.JobType, &item.Status, &item.Stage, &item.ErrorCategory,
+			&item.ErrorCode, &item.Retryable, &item.Route, &item.SourceFormat,
+			&item.ClaimedAt, &item.FinishedAt, &item.NextRetryAt,
+			&item.QueueMilliseconds, &item.DurationMilliseconds,
+			&item.StageTimings, &item.Pages, &item.OCRPages, &item.Slices,
+			&item.FiguresCaptioned,
+			&item.FiguresFailed, &item.ChunksCreated, &item.ProviderCalls,
+			&item.AbandonedProviderCalls,
+		); err != nil {
+			rows.Close()
+			return out, err
+		}
+		out.RecentAttempts = append(out.RecentAttempts, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return out, err
+	}
+	rows.Close()
+	err = db.QueryRow(ctx, `
+		SELECT max(activity_at) FROM (
+		  SELECT max(claimed_at) AS activity_at
+		    FROM ingest_job_attempts WHERE environment=$1
+		  UNION ALL
+		  SELECT max(updated_at)
+		    FROM jobs WHERE type IN ('parse', 'ingest')
+		) activity
+	`, environment).Scan(&out.LastJobActivityAt)
+	if err != nil {
+		return out, err
+	}
+	return out, nil
 }
 
 func (s *ReadStore) usageSeries(
@@ -670,7 +984,11 @@ func (s *ReadStore) User(ctx context.Context, userID string) (UserDetail, error)
 	if err != nil {
 		return out, err
 	}
-	out.Storage.LimitBytes = store.StorageLimitBytes(store.PlanTier(out.PlanTier))
+	limits, err := s.app.PlanLimits(store.PlanTier(out.PlanTier))
+	if err != nil {
+		return out, err
+	}
+	out.Storage.LimitBytes = limits.StorageBytes
 	rows, err := s.db.Query(ctx, `
 		SELECT (created_at AT TIME ZONE 'UTC')::date AS day,
 		       kind, sum(credit_micros)::bigint

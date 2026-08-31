@@ -5,7 +5,7 @@ the extracted text beside it. Native text is used as a reference only when its
 encoding looks healthy; scan accuracy comes from explicit canaries supplied in
 JSON. This keeps a broken PDF cmap from being treated as ground truth.
 
-Example on the parser VM:
+Example on the ingest host:
 
     python accuracy_report.py \
       --url http://10.77.0.2:8090/file_parse \
@@ -34,9 +34,9 @@ import requests
 from PIL import ImageDraw
 
 ROOT = Path(__file__).resolve().parents[2]
-PARSER_VM = ROOT / "parser-vm"
-if str(PARSER_VM) not in sys.path:
-    sys.path.insert(0, str(PARSER_VM))
+PARSER = ROOT / "parser"
+if str(PARSER) not in sys.path:
+    sys.path.insert(0, str(PARSER))
 
 from marker_adapt import html_to_text
 from marker_worker import normalize_document
@@ -428,9 +428,9 @@ def write_html(
             f"<section><h2>{html.escape(item.document)} — {item.mode}</h2>{page_html}</section>"
         )
     target.write_text(
-        "<!doctype html><meta charset='utf-8'><title>Parser VM benchmark</title>"
+        "<!doctype html><meta charset='utf-8'><title>Ingest host benchmark</title>"
         "<style>body{font:14px system-ui;margin:24px;color:#17202a}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccd1d1;padding:7px;text-align:left;vertical-align:top}.good{color:#087830}.bad{color:#b42318}section{margin-top:36px}article{display:grid;grid-template-columns:minmax(320px,1fr) minmax(320px,1fr);gap:16px;margin:20px 0}article h4{grid-column:1/-1}img{width:100%;height:auto;border:1px solid #aaa}pre{white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:12px;background:#f5f6f7;max-height:80vh;overflow:auto}</style>"
-        "<h1>Parser VM benchmark</h1><p>Red rows require visual review or reject the mode. Inaccuracies below the listed rejection thresholds remain visible in the page comparisons.</p>"
+        "<h1>Ingest host benchmark</h1><p>Red rows require visual review or reject the mode. Inaccuracies below the listed rejection thresholds remain visible in the page comparisons.</p>"
         "<table><thead><tr><th>Document</th><th>Mode</th><th>Wall</th><th>Pages</th><th>OCR pages</th><th>Characters</th><th>Tables</th><th>Decision</th></tr></thead>"
         f"<tbody>{score_rows}</tbody></table>"
         f"<h2>Concurrency sweep</h2><pre>{html.escape(json.dumps(sweep, indent=2))}</pre>"

@@ -143,41 +143,159 @@ export const healthSchema = z.object({
   turnsMissingApplied24h: countSchema,
 });
 
-export const parserMetricsSchema = z.object({
-  attempts: z.object({
-    attempts: countSchema,
-    averageAttributedCpuCores: z.number().nonnegative(),
-    cpuMilliseconds: countSchema,
-    downloadMilliseconds: countSchema,
-    elapsedMilliseconds: countSchema,
-    ioReadBytes: countSchema,
-    ioWriteBytes: countSchema,
-    ocrPages: countSchema,
-    pages: countSchema,
-    peakWorkerPssBytes: countSchema,
-    peakWorkerRssBytes: countSchema,
-    queueMilliseconds: countSchema,
-    uploadMilliseconds: countSchema,
-  }),
+export const ingestHostMetricsSchema = z.object({
   dataAsOf: dateTimeSchema,
-  hours: z.number().int().min(1).max(168),
-  samples: z.array(
+  environments: z.array(
     z.object({
-      activeJobs: countSchema,
-      cpuPercent: z.number().min(0).max(100),
-      hostId: z.string(),
-      load1: z.number().nonnegative(),
-      memoryTotalBytes: countSchema,
-      memoryUsedBytes: countSchema,
-      networkRxBytes: countSchema,
-      networkTxBytes: countSchema,
-      parserMemoryBytes: countSchema,
-      parserPssBytes: countSchema,
-      queuedJobs: countSchema,
-      sampledAt: dateTimeSchema,
-      swapUsedBytes: countSchema,
+      attempts: z.object({
+        abandonedProviderCalls: countSchema,
+        attempts: countSchema,
+        averageDurationMilliseconds: countSchema,
+        averageQueueMilliseconds: countSchema,
+        capacityWaits: countSchema,
+        chunksCreated: countSchema,
+        conceptsCreated: countSchema,
+        externalWaits: countSchema,
+        failed: countSchema,
+        figuresCached: countSchema,
+        figuresCaptioned: countSchema,
+        figuresFailed: countSchema,
+        figuresSelected: countSchema,
+        inputTokens: countSchema,
+        leaseExpired: countSchema,
+        ocrPages: countSchema,
+        outputTokens: countSchema,
+        p95DurationMilliseconds: countSchema,
+        p95QueueMilliseconds: countSchema,
+        pages: countSchema,
+        providerCalls: countSchema,
+        retrying: countSchema,
+        slices: countSchema,
+        succeeded: countSchema,
+      }),
+      dataAsOf: dateTimeSchema,
+      environment: z.string().min(1),
+      errors: z.array(
+        z.object({
+          category: z.string(),
+          code: z.string(),
+          count: countSchema,
+          stage: z.string(),
+        })
+      ),
+      lastJobActivityAt: dateTimeSchema.nullable(),
+      queue: z.object({
+        expiredLeases: countSchema,
+        ingestDelayed: countSchema,
+        ingestReady: countSchema,
+        ingestRunning: countSchema,
+        oldestQueuedMilliseconds: countSchema,
+        parseDelayed: countSchema,
+        parseReady: countSchema,
+        parseRunning: countSchema,
+      }),
+      recentAttempts: z.array(
+        z.object({
+          abandonedProviderCalls: countSchema,
+          attempt: countSchema,
+          chunksCreated: countSchema,
+          claimedAt: dateTimeSchema,
+          durationMilliseconds: countSchema,
+          errorCategory: z.string(),
+          errorCode: z.string(),
+          figuresCaptioned: countSchema,
+          figuresFailed: countSchema,
+          finishedAt: dateTimeSchema.nullable(),
+          id: countSchema,
+          jobId: z.string(),
+          jobType: z.string(),
+          nextRetryAt: dateTimeSchema.nullable(),
+          ocrPages: countSchema,
+          operationId: z.string(),
+          pages: countSchema,
+          providerCalls: countSchema,
+          queueMilliseconds: countSchema,
+          retryable: z.boolean(),
+          route: z.string(),
+          slices: countSchema,
+          sourceFormat: z.string(),
+          stage: z.string(),
+          stageTimings: z.record(z.string(), countSchema),
+          status: z.string(),
+        })
+      ),
+      samples: z.array(
+        z.object({
+          activeJobs: countSchema,
+          activeSlices: countSchema,
+          cpuPercent: z.number().min(0).max(100),
+          diskFreeBytes: countSchema,
+          expiredLeases: countSchema,
+          hostId: z.string(),
+          hostMetricsAvailable: z.boolean(),
+          ingestDelayedJobs: countSchema,
+          ingestReadyJobs: countSchema,
+          ingestRunningJobs: countSchema,
+          lastSliceCompletedAgeMilliseconds: countSchema,
+          load1: z.number().nonnegative(),
+          memoryTotalBytes: countSchema,
+          memoryUsedBytes: countSchema,
+          networkRxBytes: countSchema,
+          networkTxBytes: countSchema,
+          oldestActiveSliceMilliseconds: countSchema,
+          oldestQueuedJobMilliseconds: countSchema,
+          oldestQueuedSliceMilliseconds: countSchema,
+          parseDelayedJobs: countSchema,
+          parseReadyJobs: countSchema,
+          parseRunningJobs: countSchema,
+          parserMemoryBytes: countSchema,
+          parserMemoryPeakBytes: countSchema,
+          parserOomKillEvents: countSchema,
+          parserPssBytes: countSchema,
+          queuedJobs: countSchema,
+          queuedSlices: countSchema,
+          releaseSha: z.string(),
+          sampledAt: dateTimeSchema,
+          spoolBytes: countSchema,
+          spoolFiles: countSchema,
+          swapUsedBytes: countSchema,
+        })
+      ),
+      workerSamples: z.array(
+        z.object({
+          busyWorkers: countSchema,
+          cpuCores: z.number().nonnegative(),
+          memoryBytes: countSchema,
+          memoryLimitBytes: countSchema,
+          oomKillEvents: countSchema,
+          role: z.string(),
+          sampledAt: dateTimeSchema,
+          workerCount: countSchema,
+        })
+      ),
+      workers: z.array(
+        z.object({
+          cpuCores: z.number().nonnegative(),
+          hostId: z.string(),
+          jobAttemptId: countSchema.nullable(),
+          memoryBytes: countSchema,
+          memoryLimitBytes: countSchema,
+          oomEvents: countSchema,
+          oomKillEvents: countSchema,
+          pidsCurrent: countSchema,
+          pidsLimit: countSchema,
+          releaseSha: z.string(),
+          role: z.string(),
+          sampledAt: dateTimeSchema,
+          stage: z.string(),
+          stale: z.boolean(),
+          state: z.string(),
+          workerInstanceId: z.string(),
+        })
+      ),
     })
   ),
+  hours: z.number().int().min(1).max(168),
 });
 
 const reconciliationReportSchema = z.object({
@@ -479,7 +597,7 @@ export const eliteLLMProviderPageSchema = z.object({
 export type Session = z.infer<typeof sessionSchema>;
 export type Overview = z.infer<typeof overviewSchema>;
 export type Health = z.infer<typeof healthSchema>;
-export type ParserMetrics = z.infer<typeof parserMetricsSchema>;
+export type IngestHostMetrics = z.infer<typeof ingestHostMetricsSchema>;
 export type ReconciliationStatus = z.infer<typeof reconciliationStatusSchema>;
 export type ReconciliationRequest = z.infer<typeof reconciliationRequestSchema>;
 export type OperatorAuditEvent = z.infer<typeof operatorAuditEventSchema>;
@@ -579,12 +697,12 @@ export function createOpsApi({ getToken, fetcher = fetch }: ApiOptions) {
       return request(`/costs?${search}`, costReportSchema);
     },
     health: () => request('/health', healthSchema),
-    overview: () => request('/overview', overviewSchema),
-    parserMetrics: (hours = 24) =>
+    ingestHostMetrics: (hours = 24) =>
       request(
-        `/parser?${new URLSearchParams({ hours: String(hours) })}`,
-        parserMetricsSchema
+        `/ingest-host?${new URLSearchParams({ hours: String(hours) })}`,
+        ingestHostMetricsSchema
       ),
+    overview: () => request('/overview', overviewSchema),
     providers: () => request('/providers', eliteLLMProviderPageSchema),
     reconciliation: () =>
       request('/reconciliation', reconciliationStatusSchema),

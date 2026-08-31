@@ -10,19 +10,70 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from PIL import Image, ImageDraw
 
 from pipeline.parse import figures
+from pipeline.registry import ModelConfig
+from pipeline.retrieval import models
 
 _SOURCE_BLOB = "sources/lecture.pdf"
 _SOURCE_ETAG = "etag-1"
 
 
 _SOURCE_SHA = "ab" * 32
+
+
+@pytest.mark.asyncio
+async def test_caption_call_forces_zai_low_reasoning(monkeypatch: pytest.MonkeyPatch):
+    seen: dict[str, Any] = {}
+    settled: dict[str, Any] = {}
+    spec = ModelConfig(
+        version=1,
+        provider_name="Z.ai",
+        model_name="GLM-5.3-Flash",
+        provider_slug="zai",
+        model_slug="glm-5.3-flash",
+        surfaces=("chat", "vision"),
+        thinking_levels=("low", "high", "max"),
+        default_thinking="max",
+    )
+
+    @asynccontextmanager
+    async def tracked_call(**kwargs):
+        seen["opened_thinking"] = kwargs.get("thinking")
+        yield "call-1"
+
+    async def complete(_spec, _messages, **kwargs):
+        seen.update(kwargs)
+        return object()
+
+    async def settle(**kwargs):
+        settled.update(kwargs)
+
+    monkeypatch.setattr(models.registry, "vision_spec", lambda: spec)
+    monkeypatch.setattr(models, "measure_request_context", lambda *_a, **_k: None)
+    monkeypatch.setattr(models, "_tracked_call", tracked_call)
+    monkeypatch.setattr(models.elitellm, "complete", complete)
+    monkeypatch.setattr(
+        models.elitellm,
+        "message_from_response",
+        lambda _response: SimpleNamespace(content="cell diagram"),
+    )
+    monkeypatch.setattr(models.obs, "record_completion", lambda *_a, **_k: None)
+    monkeypatch.setattr(models.accounting, "settle", settle)
+
+    assert await models.caption_image("data:image/png;base64,eA==", "caption") == (
+        "cell diagram"
+    )
+    assert seen["reasoning"] is False
+    assert seen["opened_thinking"] == "low"
+    assert settled["thinking"] == "low"
 
 
 def _caption_key() -> str:

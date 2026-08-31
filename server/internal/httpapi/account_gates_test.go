@@ -98,7 +98,7 @@ func overQuotaFixture(t *testing.T) quotaFixture {
 		t.Fatal(err)
 	}
 	if _, err := st.CreateSourceReady(ctx, ws.ID, userID, "ballast.pdf", "pdf", nil, "",
-		store.FreeStorageLimitBytes+1, "sources/"+userID); err != nil {
+		mustPlanLimits(t, st, store.PlanFree).StorageBytes+1, "sources/"+userID); err != nil {
 		t.Fatal(err)
 	}
 	lapsed := time.Now().Add(-2 * 24 * time.Hour).UTC()

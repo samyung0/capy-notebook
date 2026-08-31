@@ -1,0 +1,10 @@
+payload: slice-01-p0001-p0026.pdf (19541531 bytes)
+
+=== fast  http://127.0.0.1:18090/file_parse
+healthz: 0.03s  uptime_s=124.484  version=mineru-3.4.5-pipeline-sliced-v1+2725da1cbe39407786c9b3bdcd40fe68e0149046
+-- 4 jobs at once --
+  FAILED: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+  FAILED: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+  FAILED: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+  FAILED: ('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))
+burst wall (all done): 3.36s  errors=4

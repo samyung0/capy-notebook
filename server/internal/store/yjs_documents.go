@@ -130,7 +130,7 @@ func (s *Store) ProjectMaterialContent(
 		return Material{}, err
 	}
 	parentRevision := revision
-	if err := upsertMaterialRevisionTx(ctx, tx, MaterialRevision{
+	if err := s.upsertMaterialRevisionTx(ctx, tx, MaterialRevision{
 		MaterialID:     materialID,
 		Revision:       nextRevision,
 		ParentRevision: &parentRevision,

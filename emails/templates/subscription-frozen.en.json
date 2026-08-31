@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "subject": "Your Evo Notes account is frozen",
+  "preview": "Your account is frozen until you free space or resubscribe.",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              { "type": "bold" },
+              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
+            ],
+            "text": "Evo Notes"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "attrs": { "level": 1 },
+        "content": [{ "type": "text", "text": "Account frozen" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [{ "type": "text", "text": "Hello," }]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Your storage buffer has expired and your account is frozen. You cannot create new content until you free up space or resubscribe."
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "Manage subscription",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      { "type": "horizontalRule" },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "You received this message because your Evo Notes account was frozen after the storage buffer expired."
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ],
+            "text": "Manage product email preferences"
+          }
+        ]
+      }
+    ]
+  }
+}

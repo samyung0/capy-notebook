@@ -13,7 +13,7 @@ func TestEliteLLMProvidersLoad(t *testing.T) {
 	if catalog.SchemaVersion != EliteLLMProvidersSchemaVersion {
 		t.Fatalf("schema %d", catalog.SchemaVersion)
 	}
-	for _, slug := range []string{"anthropic", "openai", "deepseek", "gemini", "openrouter"} {
+	for _, slug := range []string{"anthropic", "openai", "deepseek", "gemini", "zai", "deepinfra"} {
 		if !catalog.Known(slug) {
 			t.Fatalf("missing provider %s", slug)
 		}
@@ -28,17 +28,23 @@ func TestEliteLLMProvidersRejectUnknownAndHops(t *testing.T) {
 	if ok, _ := catalog.AllowsModel("novita", "anything"); ok {
 		t.Fatal("novita hop must be rejected")
 	}
-	if ok, _ := catalog.AllowsModel("openrouter", "deepseek/deepseek-v4-flash"); ok {
-		t.Fatal("openrouter chat hop must be rejected")
+	if ok, _ := catalog.AllowsModel("deepinfra", "deepseek/deepseek-v4-flash"); ok {
+		t.Fatal("deepinfra chat hop must be rejected")
 	}
-	if ok, reason := catalog.AllowsModel("openrouter", SeededHopEmbedSlug); !ok {
+	if ok, reason := catalog.AllowsModel("deepinfra", SeededHopEmbedSlug); !ok {
 		t.Fatalf("seeded qwen embed: %s", reason)
 	}
-	if !IsSeededHopException("openrouter", SeededHopEmbedSlug) {
+	if ok, reason := catalog.AllowsModel("zai", "glm-5.3-flash"); !ok {
+		t.Fatalf("routed GLM: %s", reason)
+	}
+	if ok, _ := catalog.AllowsModel("zai", "other"); ok {
+		t.Fatal("zai must be limited to the routed GLM exception")
+	}
+	if !IsSeededHopException("deepinfra", SeededHopEmbedSlug) {
 		t.Fatal("seeded hop exception")
 	}
-	if IsSeededHopException("openrouter", "other") {
-		t.Fatal("other openrouter models are not the exception")
+	if IsSeededHopException("deepinfra", "other") {
+		t.Fatal("other deepinfra models are not the exception")
 	}
 }
 
@@ -50,7 +56,7 @@ func TestEliteLLMProvidersThinking(t *testing.T) {
 	if ok, _ := catalog.AllowsThinking("deepseek", []string{"medium"}); ok {
 		t.Fatal("product mid is not wire medium")
 	}
-	if ok, _ := catalog.AllowsThinking("openrouter", []string{"instant"}); ok {
+	if ok, _ := catalog.AllowsThinking("deepinfra", []string{"instant"}); ok {
 		t.Fatal("embed provider has no thinking")
 	}
 }
@@ -68,8 +74,14 @@ func TestEliteLLMProvidersEnforceImplementedModesPerSurface(t *testing.T) {
 	if ok, reason := catalog.AllowsSurface("gemini", SurfaceVision); !ok {
 		t.Fatalf("gemini vision: %s", reason)
 	}
-	if ok, reason := catalog.AllowsSurface("openrouter", SurfaceEmbedding); !ok {
-		t.Fatalf("openrouter embedding: %s", reason)
+	if ok, reason := catalog.AllowsSurface("zai", SurfaceVision); !ok {
+		t.Fatalf("zai vision: %s", reason)
+	}
+	if ok, reason := catalog.AllowsSurface("zai", SurfaceChat); !ok {
+		t.Fatalf("zai chat: %s", reason)
+	}
+	if ok, reason := catalog.AllowsSurface("deepinfra", SurfaceEmbedding); !ok {
+		t.Fatalf("deepinfra embedding: %s", reason)
 	}
 }
 
@@ -85,6 +97,12 @@ func TestEliteLLMProvidersPlatformEnv(t *testing.T) {
 	}
 	if catalog.CredentialEnv("anthropic") != "ANTHROPIC_API_KEY" {
 		t.Fatal(catalog.CredentialEnv("anthropic"))
+	}
+	if !IsFirstPartyProvider("zai") {
+		t.Fatal("zai must be treated as a first-party provider")
+	}
+	if catalog.CredentialEnv("zai") != "DEEPINFRA_API_KEY" {
+		t.Fatal(catalog.CredentialEnv("zai"))
 	}
 }
 

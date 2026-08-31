@@ -62,6 +62,14 @@ class Config:
 
     # ---- worker -----------------------------------------------------------
     poll_interval: float = float(_env("EVO_POLL_INTERVAL", "2.0"))
+    # Optional host-wide locks let isolated local and UAT queue consumers share
+    # one active parse job and one active ingest job without sharing databases.
+    shared_capacity_lock_dir: str = _env("EVO_SHARED_CAPACITY_LOCK_DIR", "")
+    parse_coordinator_concurrency: int = int(
+        _env("EVO_PARSE_COORDINATOR_CONCURRENCY", "4")
+    )
+    db_sync_pool_max_size: int = int(_env("EVO_DB_SYNC_POOL_MAX_SIZE", "4"))
+    db_async_pool_max_size: int = int(_env("EVO_DB_ASYNC_POOL_MAX_SIZE", "8"))
     # Durable caption artifacts are swept from B2 when unused. Parse bundles
     # live only in the VM's shared spool and have a much shorter local TTL.
     caption_cache_ttl_days: int = int(_env("EVO_CAPTION_CACHE_TTL_DAYS", "90"))
@@ -77,28 +85,30 @@ class Config:
     )
 
     # ---- persistent parse service ----------------------------------------
-    # In production the ingest worker and parser both run on the Netcup VM.
+    # In production the ingest worker and parser both run on the Netcup ingest host.
     parser_url: str = _env("PARSER_URL", "")
     parser_token: str = _env("PARSER_TOKEN", "")
-    # Includes queue time behind the measured two-job OCR-heavy lane.
+    # Includes the entire document request, including time its slices spend in
+    # the parser's fair queue.
     parser_timeout: int = int(_env("PARSER_TIMEOUT", "2400"))
-    # Starts only after the parser acquires a process lane. Crossing it
-    # quarantines the fingerprint and restarts the parser container.
-    parse_hard_timeout: int = int(_env("EVO_PARSE_HARD_TIMEOUT", "2300"))
-    # The parser and ingest worker mount this same directory on the Netcup VM.
+    # Starts independently for each slice when a MinerU lane begins execution.
+    # Queue wait and the execution time of other slices do not spend this budget.
+    parse_slice_timeout: int = int(_env("EVO_PARSE_SLICE_TIMEOUT", "600"))
+    # The parser and ingest worker mount this directory on the Netcup ingest host.
     # Sources are job-scoped; parse bundles are fingerprint-addressed caches.
     parse_shared_dir: str = _env("EVO_PARSE_SHARED_DIR", "/tmp/evo-parse-spool")
     # These are deliberately separate deadlines. A parser call must finish
-    # before its Redis admission lease, and the ingest job needs time afterwards
-    # for captions, embeddings, and its billing receipt.
+    # before its Redis admission lease and parse-job bound. The continuation has
+    # its own smaller budget for captions, embeddings, and final bookkeeping.
     parser_slot_ttl: int = int(_env("PARSER_SLOT_TTL", str(parser_timeout + 300)))
-    ingest_timeout: int = int(_env("EVO_INGEST_TIMEOUT", "3600"))
-    # Up to eight ingest workers may queue a parse. The parser independently
-    # admits four Marker-only/selective digital jobs or two OCR-heavy jobs.
-    parse_fast_slots: int = int(_env("EVO_PARSE_SLOTS", "8"))
-    # Part of the parse artifact fingerprint. Never silently fall back between
-    # these modes: their output and resource profile are intentionally distinct.
-    parse_method: str = _env("EVO_PARSE_METHOD", "selective_rapidocr")
+    parse_job_timeout: int = int(_env("EVO_PARSE_JOB_TIMEOUT", "3600"))
+    ingest_timeout: int = int(_env("EVO_INGEST_TIMEOUT", "1200"))
+    # Match the parser's hard cap: at most four document jobs can enqueue
+    # independently sliced MinerU work at once.
+    parse_fast_slots: int = int(_env("EVO_PARSE_SLOTS", "4"))
+    # MinerU pipeline chooses text extraction or OCR for each slice in auto mode.
+    # The method remains part of the artifact fingerprint.
+    parse_method: str = _env("EVO_PARSE_METHOD", "auto")
     # LibreOffice output can be much larger than the compressed Office source.
     # Bound both the worker allocation and the platform preview object.
     office_preview_max_bytes: int = int(
@@ -218,7 +228,7 @@ if cfg.image_max_pixels <= 0:
     raise ValueError("EVO_IMAGE_MAX_PIXELS must be positive")
 
 for key, value in (
-    ("EVO_PARSE_HARD_TIMEOUT", cfg.parse_hard_timeout),
+    ("EVO_PARSE_SLICE_TIMEOUT", cfg.parse_slice_timeout),
     ("EVO_INTERACTIVE_PROVIDER_TIMEOUT_S", cfg.interactive_provider_timeout_s),
     ("EVO_INGEST_PROVIDER_TIMEOUT_S", cfg.ingest_provider_timeout_s),
     ("EVO_ELEVENLABS_CONCURRENCY_UNITS", cfg.elevenlabs_concurrency_units),
@@ -233,11 +243,23 @@ if cfg.parse_zip_ttl_hours <= 0 or cfg.parse_source_ttl_hours <= 0:
 if not cfg.parse_shared_dir.strip():
     raise ValueError("EVO_PARSE_SHARED_DIR must not be empty")
 
+if cfg.shared_capacity_lock_dir and not os.path.isabs(cfg.shared_capacity_lock_dir):
+    raise ValueError("EVO_SHARED_CAPACITY_LOCK_DIR must be an absolute path")
+
 if not (
-    cfg.parse_hard_timeout < cfg.parser_timeout
+    cfg.parse_slice_timeout < cfg.parser_timeout
     and cfg.parser_timeout < cfg.parser_slot_ttl
-    and cfg.parser_slot_ttl < cfg.ingest_timeout
+    and cfg.parser_slot_ttl < cfg.parse_job_timeout
 ):
     raise ValueError(
-        "parse time budgets must satisfy hard timeout < parser timeout < slot TTL < ingest timeout"
+        "parse time budgets must satisfy slice timeout < parser timeout < slot TTL < parse job timeout"
     )
+
+if cfg.ingest_timeout <= 0:
+    raise ValueError("EVO_INGEST_TIMEOUT must be positive")
+
+if not 1 <= cfg.parse_coordinator_concurrency <= 4:
+    raise ValueError("EVO_PARSE_COORDINATOR_CONCURRENCY must be between 1 and 4")
+
+if cfg.db_sync_pool_max_size <= 0 or cfg.db_async_pool_max_size <= 0:
+    raise ValueError("pipeline database pool limits must be positive")

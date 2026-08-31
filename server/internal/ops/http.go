@@ -54,7 +54,7 @@ func NewHandler(
 			value, err := read.Health(r.Context(), config.StuckJobMinutes)
 			respond(w, value, err)
 		})
-		api.Get("/parser", func(w http.ResponseWriter, r *http.Request) {
+		api.Get("/ingest-host", func(w http.ResponseWriter, r *http.Request) {
 			if _, ok := requirePermission(w, r, PermReadAll); !ok {
 				return
 			}
@@ -67,7 +67,7 @@ func NewHandler(
 				}
 				hours = value
 			}
-			value, err := read.ParserMetrics(r.Context(), hours)
+			value, err := read.IngestHostMetrics(r.Context(), hours)
 			respond(w, value, err)
 		})
 		api.Get("/reconciliation", func(w http.ResponseWriter, r *http.Request) {

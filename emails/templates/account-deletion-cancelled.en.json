@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "subject": "Your Evo Notes account deletion was cancelled",
+  "preview": "Your account has been reactivated.",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              { "type": "bold" },
+              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
+            ],
+            "text": "Evo Notes"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "attrs": { "level": 1 },
+        "content": [{ "type": "text", "text": "Account reactivated" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [{ "type": "text", "text": "Hello," }]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Support cancelled your Evo Notes account deletion request. Your account is active again."
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "Open Settings",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      { "type": "horizontalRule" },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "You received this message because support cancelled your Evo Notes account deletion request."
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ],
+            "text": "Manage product email preferences"
+          }
+        ]
+      }
+    ]
+  }
+}

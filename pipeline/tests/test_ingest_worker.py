@@ -23,7 +23,7 @@ from pipeline.parse import parser_client
 
 @pytest.fixture
 def parse_stub(monkeypatch):
-    """Stand in for the parser and captioner; record how both were called."""
+    """Stand in for artifact extraction and captioning; record both calls."""
     state: dict[str, Any] = {
         "descriptor": None,
         "captioned": 0,
@@ -34,18 +34,18 @@ def parse_stub(monkeypatch):
         {"type": "image", "img_path": "images/fig.png", "page_idx": 0},
     ]
 
-    def _parse(
-        descriptor,
-        _name,
+    def _extract(
+        artifact,
         raw_dir: Path,
-        _require_preview: bool,
         *,
-        request_id: str,
+        route: str,
+        require_office_preview: bool,
     ):
-        state["descriptor"] = descriptor
-        state["request_id"] = request_id
+        state["descriptor"] = artifact
+        state["route"] = route
+        state["require_office_preview"] = require_office_preview
         raw_dir.mkdir(parents=True, exist_ok=True)
-        return content_list, "artifacts/fp-1.zip", "fp-1"
+        return content_list
 
     async def _caption(*, content_list, raw_dir, file_name, source_sha256):
         state["captioned"] += 1
@@ -63,7 +63,7 @@ def parse_stub(monkeypatch):
         state["chunked"] = [dict(item) for item in items]
         return ["chunk"]
 
-    monkeypatch.setattr(worker.parser_client, "parse_to_bundle", _parse)
+    monkeypatch.setattr(worker.parser_client, "extract_artifact", _extract)
     monkeypatch.setattr(worker.figures, "caption_figures", _caption)
     monkeypatch.setattr(worker, "chunk_content_list", _chunk)
     monkeypatch.setattr(worker, "_record_parse_artifact", lambda *a, **k: None)
@@ -101,7 +101,10 @@ def _plan(
 
 async def _run(*, caption_images: bool = False):
     return await worker._chunks_for(
-        payload={"blobPath": "sources/blob_1.pdf"},
+        payload={
+            "blobPath": "sources/blob_1.pdf",
+            "parseArtifact": _artifact(),
+        },
         name="lecture.pdf",
         processing_plan=_plan(caption_images=caption_images),
         local_path="/shared/sources/source-1",
@@ -152,6 +155,8 @@ def _ingest_payload(**overrides):
         "visionModelVersion": 1,
         "sourceRevision": 1,
         "sourceETag": "etag-a",
+        "parseArtifact": _artifact(),
+        "parseJobId": "job_parse",
         "resourceRates": {
             "audio_transcription_second": {
                 "version": 1,
@@ -177,6 +182,105 @@ def _ingest_payload(**overrides):
     }
     payload.update(overrides)
     return payload
+
+
+def _artifact() -> dict:
+    fingerprint = "a" * 64
+    return {
+        "key": f"artifacts/{fingerprint}.zip",
+        "size": 1024,
+        "sha256": "b" * 64,
+        "fingerprint": fingerprint,
+        "version": parser_client.parser_version(parser_client.ROUTE_FAST),
+    }
+
+
+class _Conn:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def cursor(self):
+        return self
+
+    def commit(self):
+        return None
+
+
+def test_parse_handoff_atomically_enqueues_an_immutable_ingest_continuation(
+    monkeypatch,
+):
+    events: list[tuple] = []
+    payload = _ingest_payload()
+    payload.pop("parseArtifact")
+    payload.pop("parseJobId")
+    artifact = _artifact()
+    monkeypatch.setattr(worker.db, "connect", lambda: _Conn())
+    monkeypatch.setattr(worker, "_lost_claim", lambda *_a: False)
+    monkeypatch.setattr(
+        worker.db,
+        "require_current_file_source",
+        lambda *_a: events.append(("source",)),
+    )
+    monkeypatch.setattr(
+        worker.db,
+        "enqueue_job",
+        lambda _cur, job_id, job_type, queued: events.append(
+            ("enqueue", job_id, job_type, queued)
+        ),
+    )
+    monkeypatch.setattr(
+        worker.db,
+        "set_job",
+        lambda _cur, job_id, status: events.append(("set", job_id, status)),
+    )
+    monkeypatch.setattr(worker.obs, "take_parse_usage", worker.obs.ParseUsage)
+
+    assert worker._handoff_parsed_artifact(
+        job={"id": "job_parse", "attempts": 1},
+        payload=payload,
+        file_id="f_1",
+        workspace_id="ws_1",
+        artifact=artifact,
+    )
+
+    enqueue = next(event for event in events if event[0] == "enqueue")
+    assert enqueue[1:3] == ("job_parse_ingest", "ingest")
+    assert enqueue[3]["parseArtifact"] == artifact
+    assert enqueue[3]["parseJobId"] == "job_parse"
+    assert "parseArtifact" not in payload
+    assert events[-1] == ("set", "job_parse", "done")
+
+
+def test_invalid_artifact_returns_to_parse_only_once(monkeypatch):
+    events: list[tuple] = []
+    payload = _ingest_payload()
+    monkeypatch.setattr(worker.db, "connect", lambda: _Conn())
+    monkeypatch.setattr(worker, "_lost_claim", lambda *_a: False)
+    monkeypatch.setattr(worker.db, "require_current_file_source", lambda *_a: None)
+    monkeypatch.setattr(worker.db, "clear_file_parse_artifact", lambda *_a: None)
+    monkeypatch.setattr(worker.db, "set_file_status", lambda *_a: None)
+    monkeypatch.setattr(
+        worker.db,
+        "enqueue_job",
+        lambda _cur, job_id, job_type, queued: events.append(
+            (job_id, job_type, queued)
+        ),
+    )
+    monkeypatch.setattr(worker.db, "set_job", lambda *_a: None)
+
+    assert worker._handoff_for_artifact_repair(
+        job={"id": "job_ingest", "attempts": 1},
+        payload=payload,
+        file_id="f_1",
+    )
+
+    job_id, job_type, queued = events[0]
+    assert (job_id, job_type) == ("job_ingest_parse", "parse")
+    assert "parseArtifact" not in queued
+    assert queued["artifactRepairAttempts"] == 1
 
 
 def test_reaped_superseded_final_attempt_releases_its_reservation(monkeypatch):
@@ -212,7 +316,7 @@ def test_reaped_superseded_final_attempt_releases_its_reservation(monkeypatch):
 async def test_the_processing_plan_selects_the_route(parse_stub):
     _, _, _, version = await _run()
 
-    assert parse_stub["descriptor"]["route"] == parser_client.ROUTE_FAST
+    assert parse_stub["route"] == parser_client.ROUTE_FAST
     assert version == parser_client.parser_version(parser_client.ROUTE_FAST)
 
 
@@ -222,7 +326,7 @@ async def test_unknown_contract_parser_routes_fail(parse_stub, parser_route):
 
     with pytest.raises(TerminalError, match="unknown parse mode"):
         await worker._chunks_for(
-            payload={"blobPath": "sources/blob_1.pdf"},
+            payload={"blobPath": "sources/blob_1.pdf", "parseArtifact": _artifact()},
             name="lecture.pdf",
             processing_plan=_plan(parser_route=parser_route),
             local_path="/shared/sources/source-1",
@@ -332,6 +436,63 @@ async def test_lost_claim_does_not_publish_a_stale_terminal_progress(monkeypatch
     assert all(args[2] != "done" for args, _kwargs in events)
 
 
+async def test_parsed_document_continuation_does_not_repeat_credit_admission(
+    monkeypatch,
+):
+    class ReachedPostProcessing(RuntimeError):
+        pass
+
+    async def _pin(_workspace_id):
+        return {
+            "embedding_dim": 2560,
+            "embedding_provider_slug": "deepinfra",
+            "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+            "embedding_model_version": 1,
+        }
+
+    async def _chunks(**_values):
+        raise ReachedPostProcessing
+
+    async def _no_donor(**_values):
+        return None
+
+    monkeypatch.setattr(worker, "_file_exists", lambda *_a: True)
+    monkeypatch.setattr(worker, "_read_name", lambda *_a: "notes.pdf")
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
+    monkeypatch.setattr(
+        worker,
+        "_account_allows_ingest",
+        lambda *_a: (_ for _ in ()).throw(
+            AssertionError("parsed continuation repeated credit admission")
+        ),
+    )
+    monkeypatch.setattr(worker, "_record_source_sha", lambda *_a: None)
+    monkeypatch.setattr(worker.store, "workspace_embedding_pin", _pin)
+    monkeypatch.setattr(worker.store, "find_ready_donor", _no_donor)
+    monkeypatch.setattr(
+        worker,
+        "_acquire_local_source",
+        lambda *_a: (
+            "/shared/sources/source-1",
+            "sources/source-1",
+            "aa" * 32,
+            lambda: None,
+        ),
+    )
+    monkeypatch.setattr(worker, "_chunks_for", _chunks)
+    monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
+
+    with pytest.raises(ReachedPostProcessing):
+        await worker._process_ingest_job(
+            {"id": "job_ingest", "type": "ingest", "attempts": 1},
+            _ingest_payload(),
+            "f_1",
+            "ws_1",
+            "pdf",
+            _plan(),
+        )
+
+
 async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatch):
     monkeypatch.setattr(worker, "_read_text", lambda _p: "# Notes")
     monkeypatch.setattr(worker, "chunk_markdown", lambda text: [text])
@@ -395,7 +556,10 @@ async def test_supported_office_routes_caption_parser_image_blocks(
     parse_stub, format_name: str
 ):
     await worker._chunks_for(
-        payload={"blobPath": f"sources/lesson.{format_name}"},
+        payload={
+            "blobPath": f"sources/lesson.{format_name}",
+            "parseArtifact": _artifact(),
+        },
         name=f"lesson.{format_name}",
         processing_plan=_plan(
             caption_images=True,
@@ -658,8 +822,8 @@ async def test_donor_preview_is_attached_before_the_destination_becomes_ready(
 
     async def _pin(_workspace_id):
         return {
-            "embedding_provider_slug": "openrouter",
-            "embedding_model_slug": "qwen/qwen3-embedding-4b",
+            "embedding_provider_slug": "deepinfra",
+            "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
             "embedding_model_version": 1,
             "embedding_dim": 2560,
         }
@@ -710,8 +874,8 @@ async def test_donor_preview_is_attached_before_the_destination_becomes_ready(
         donor={
             "id": "rgc_donor",
             "content_hash": "content-hash",
-            "embedding_provider_slug": "openrouter",
-            "embedding_model_slug": "qwen/qwen3-embedding-4b",
+            "embedding_provider_slug": "deepinfra",
+            "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
             "embedding_model_version": 1,
             "embedding_dim": 2560,
         },
@@ -848,8 +1012,8 @@ async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
     async def _embed_pin(_ws):
         return {
             "embedding_dim": 2560,
-            "embedding_provider_slug": "openrouter",
-            "embedding_model_slug": "qwen/qwen3-embedding-4b",
+            "embedding_provider_slug": "deepinfra",
+            "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
             "embedding_model_version": 1,
         }
 
@@ -885,6 +1049,7 @@ async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
 
     job = {
         "id": "job_wait",
+        "type": "parse",
         "attempts": 1,
         "payload": _ingest_payload(),
     }
@@ -896,6 +1061,41 @@ async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
     assert downloads == 1
     assert parse_stub["descriptor"] is None
     worker._cleanup_payload_source(job["payload"])
+
+
+async def test_confirmed_parser_oom_is_terminal_and_releases_its_slot(monkeypatch):
+    from pipeline.jobs import TerminalError
+
+    released: list[tuple[str, str]] = []
+    monkeypatch.setattr(worker.slots, "try_acquire", lambda *_a: True)
+    monkeypatch.setattr(
+        worker.slots,
+        "release",
+        lambda route, job_id: released.append((route, job_id)),
+    )
+    monkeypatch.setattr(worker, "_set_file_status", lambda *_a: None)
+    monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        worker.parser_client,
+        "ensure_artifact",
+        lambda *_a: (_ for _ in ()).throw(
+            parser_client.ParserOOMError("memory exhausted")
+        ),
+    )
+
+    with pytest.raises(TerminalError, match="terminal parser resource limit"):
+        await worker._ensure_document_artifact(
+            job={"id": "job_parse", "attempts": 1},
+            payload=_ingest_payload(),
+            name="notes.pdf",
+            processing_plan=_plan(),
+            source_key="sources/source-1",
+            source_sha256="aa" * 32,
+            workspace_id="ws_1",
+            file_id="f_1",
+        )
+
+    assert released == [(parser_client.ROUTE_FAST, "job_parse")]
 
 
 async def test_text_sources_do_not_take_a_gpu_slot(parse_stub, monkeypatch):
@@ -928,8 +1128,8 @@ async def test_pending_audio_resumes_without_downloading_the_source(monkeypatch)
     async def _pin(_workspace_id):
         return {
             "embedding_dim": 2560,
-            "embedding_provider_slug": "openrouter",
-            "embedding_model_slug": "qwen/qwen3-embedding-4b",
+            "embedding_provider_slug": "deepinfra",
+            "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
             "embedding_model_version": 1,
         }
 
@@ -1041,7 +1241,7 @@ async def test_retry_records_parse_attempt_before_requeue(monkeypatch):
     def _record(*_args, **kwargs):
         order.append(("record", kwargs.get("outcome", _args[-1])))
 
-    def _requeue(job, _error):
+    def _requeue(job, _error, **_classification):
         order.append(("requeue", job["id"]))
         return "pending"
 
@@ -1050,7 +1250,7 @@ async def test_retry_records_parse_attempt_before_requeue(monkeypatch):
     monkeypatch.setattr(worker, "_require_current_source", lambda *_a, **_k: None)
     job = {
         "id": "job_metered_retry",
-        "type": "ingest",
+        "type": "parse",
         "attempts": 1,
         "payload": _ingest_payload(),
     }
@@ -1061,6 +1261,39 @@ async def test_retry_records_parse_attempt_before_requeue(monkeypatch):
         ("record", "retrying"),
         ("requeue", "job_metered_retry"),
     ]
+
+
+async def test_post_parse_resource_failure_retries_without_parse_quarantine(
+    monkeypatch,
+):
+    from pipeline.jobs import RetryableError
+
+    events: list[tuple[str, str]] = []
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
+    monkeypatch.setattr(
+        worker,
+        "_record_parse_attempt",
+        lambda *_a, **_k: events.append(("parse", "recorded")),
+    )
+    monkeypatch.setattr(
+        worker,
+        "_requeue",
+        lambda job, _error, **_classification: (
+            events.append(("requeue", job["id"])) or "pending"
+        ),
+    )
+
+    await worker._handle_job_failure(
+        {
+            "id": "job_ingest",
+            "type": "ingest",
+            "attempts": 1,
+            "payload": _ingest_payload(),
+        },
+        RetryableError("worker exceeded its memory allowance"),
+    )
+
+    assert events == [("requeue", "job_ingest")]
 
 
 @pytest.mark.parametrize("during", ["requeue", "terminal"])
@@ -1090,7 +1323,7 @@ async def test_replacement_between_failure_check_and_job_write_closes_job(
         monkeypatch.setattr(
             worker,
             "_requeue",
-            lambda *_a: (_ for _ in ()).throw(
+            lambda *_a, **_k: (_ for _ in ()).throw(
                 worker.db.SourceSupersededError("replaced during requeue")
             ),
         )

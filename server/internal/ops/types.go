@@ -81,43 +81,163 @@ type JobCounters struct {
 	Failed24h int64 `json:"failed24h"`
 }
 
-type ParserHostSample struct {
-	SampledAt         time.Time `json:"sampledAt"`
-	HostID            string    `json:"hostId"`
-	ActiveJobs        int64     `json:"activeJobs"`
-	QueuedJobs        int64     `json:"queuedJobs"`
-	CPUPercent        float64   `json:"cpuPercent"`
-	Load1             float64   `json:"load1"`
-	MemoryUsedBytes   int64     `json:"memoryUsedBytes"`
-	MemoryTotalBytes  int64     `json:"memoryTotalBytes"`
-	SwapUsedBytes     int64     `json:"swapUsedBytes"`
-	ParserMemoryBytes int64     `json:"parserMemoryBytes"`
-	ParserPSSBytes    int64     `json:"parserPssBytes"`
-	NetworkRXBytes    int64     `json:"networkRxBytes"`
-	NetworkTXBytes    int64     `json:"networkTxBytes"`
+type IngestHostSample struct {
+	SampledAt                         time.Time `json:"sampledAt"`
+	HostID                            string    `json:"hostId"`
+	ReleaseSHA                        string    `json:"releaseSha"`
+	HostMetricsAvailable              bool      `json:"hostMetricsAvailable"`
+	ActiveJobs                        int64     `json:"activeJobs"`
+	QueuedJobs                        int64     `json:"queuedJobs"`
+	ActiveSlices                      int64     `json:"activeSlices"`
+	QueuedSlices                      int64     `json:"queuedSlices"`
+	OldestActiveSliceMilliseconds     int64     `json:"oldestActiveSliceMilliseconds"`
+	OldestQueuedSliceMilliseconds     int64     `json:"oldestQueuedSliceMilliseconds"`
+	LastSliceCompletedAgeMilliseconds int64     `json:"lastSliceCompletedAgeMilliseconds"`
+	ParserOOMKillEvents               int64     `json:"parserOomKillEvents"`
+	CPUPercent                        float64   `json:"cpuPercent"`
+	Load1                             float64   `json:"load1"`
+	MemoryUsedBytes                   int64     `json:"memoryUsedBytes"`
+	MemoryTotalBytes                  int64     `json:"memoryTotalBytes"`
+	SwapUsedBytes                     int64     `json:"swapUsedBytes"`
+	ParserMemoryBytes                 int64     `json:"parserMemoryBytes"`
+	ParserPSSBytes                    int64     `json:"parserPssBytes"`
+	ParserMemoryPeakBytes             int64     `json:"parserMemoryPeakBytes"`
+	NetworkRXBytes                    int64     `json:"networkRxBytes"`
+	NetworkTXBytes                    int64     `json:"networkTxBytes"`
+	ParseReadyJobs                    int64     `json:"parseReadyJobs"`
+	ParseDelayedJobs                  int64     `json:"parseDelayedJobs"`
+	ParseRunningJobs                  int64     `json:"parseRunningJobs"`
+	IngestReadyJobs                   int64     `json:"ingestReadyJobs"`
+	IngestDelayedJobs                 int64     `json:"ingestDelayedJobs"`
+	IngestRunningJobs                 int64     `json:"ingestRunningJobs"`
+	ExpiredLeases                     int64     `json:"expiredLeases"`
+	OldestQueuedJobMilliseconds       int64     `json:"oldestQueuedJobMilliseconds"`
+	DiskFreeBytes                     int64     `json:"diskFreeBytes"`
+	SpoolBytes                        int64     `json:"spoolBytes"`
+	SpoolFiles                        int64     `json:"spoolFiles"`
 }
 
-type ParserAttemptSummary struct {
-	Attempts                  int64   `json:"attempts"`
-	Pages                     int64   `json:"pages"`
-	OCRPages                  int64   `json:"ocrPages"`
-	CPUMilliseconds           int64   `json:"cpuMilliseconds"`
-	ElapsedMilliseconds       int64   `json:"elapsedMilliseconds"`
-	QueueMilliseconds         int64   `json:"queueMilliseconds"`
-	DownloadMilliseconds      int64   `json:"downloadMilliseconds"`
-	UploadMilliseconds        int64   `json:"uploadMilliseconds"`
-	PeakWorkerRSSBytes        int64   `json:"peakWorkerRssBytes"`
-	PeakWorkerPSSBytes        int64   `json:"peakWorkerPssBytes"`
-	IOReadBytes               int64   `json:"ioReadBytes"`
-	IOWriteBytes              int64   `json:"ioWriteBytes"`
-	AverageAttributedCPUCores float64 `json:"averageAttributedCpuCores"`
+type IngestAttemptSummary struct {
+	Attempts                    int64 `json:"attempts"`
+	Succeeded                   int64 `json:"succeeded"`
+	Retrying                    int64 `json:"retrying"`
+	Failed                      int64 `json:"failed"`
+	CapacityWaits               int64 `json:"capacityWaits"`
+	ExternalWaits               int64 `json:"externalWaits"`
+	LeaseExpired                int64 `json:"leaseExpired"`
+	Pages                       int64 `json:"pages"`
+	OCRPages                    int64 `json:"ocrPages"`
+	Slices                      int64 `json:"slices"`
+	FiguresSelected             int64 `json:"figuresSelected"`
+	FiguresCached               int64 `json:"figuresCached"`
+	FiguresCaptioned            int64 `json:"figuresCaptioned"`
+	FiguresFailed               int64 `json:"figuresFailed"`
+	ChunksCreated               int64 `json:"chunksCreated"`
+	ConceptsCreated             int64 `json:"conceptsCreated"`
+	AverageQueueMilliseconds    int64 `json:"averageQueueMilliseconds"`
+	P95QueueMilliseconds        int64 `json:"p95QueueMilliseconds"`
+	AverageDurationMilliseconds int64 `json:"averageDurationMilliseconds"`
+	P95DurationMilliseconds     int64 `json:"p95DurationMilliseconds"`
+	ProviderCalls               int64 `json:"providerCalls"`
+	AbandonedProviderCalls      int64 `json:"abandonedProviderCalls"`
+	InputTokens                 int64 `json:"inputTokens"`
+	OutputTokens                int64 `json:"outputTokens"`
 }
 
-type ParserMetrics struct {
-	Hours    int                  `json:"hours"`
-	Attempts ParserAttemptSummary `json:"attempts"`
-	Samples  []ParserHostSample   `json:"samples"`
-	DataAsOf time.Time            `json:"dataAsOf"`
+type IngestQueueSummary struct {
+	ParseReady     int64 `json:"parseReady"`
+	ParseDelayed   int64 `json:"parseDelayed"`
+	ParseRunning   int64 `json:"parseRunning"`
+	IngestReady    int64 `json:"ingestReady"`
+	IngestDelayed  int64 `json:"ingestDelayed"`
+	IngestRunning  int64 `json:"ingestRunning"`
+	ExpiredLeases  int64 `json:"expiredLeases"`
+	OldestQueuedMS int64 `json:"oldestQueuedMilliseconds"`
+}
+
+type IngestWorkerSample struct {
+	SampledAt        time.Time `json:"sampledAt"`
+	Role             string    `json:"role"`
+	WorkerCount      int64     `json:"workerCount"`
+	BusyWorkers      int64     `json:"busyWorkers"`
+	CPUCores         float64   `json:"cpuCores"`
+	MemoryBytes      int64     `json:"memoryBytes"`
+	MemoryLimitBytes int64     `json:"memoryLimitBytes"`
+	OOMKillEvents    int64     `json:"oomKillEvents"`
+}
+
+type IngestWorkerCurrent struct {
+	SampledAt        time.Time `json:"sampledAt"`
+	HostID           string    `json:"hostId"`
+	WorkerInstanceID string    `json:"workerInstanceId"`
+	Role             string    `json:"role"`
+	ReleaseSHA       string    `json:"releaseSha"`
+	State            string    `json:"state"`
+	Stage            string    `json:"stage"`
+	JobAttemptID     *int64    `json:"jobAttemptId"`
+	CPUCores         float64   `json:"cpuCores"`
+	MemoryBytes      int64     `json:"memoryBytes"`
+	MemoryLimitBytes int64     `json:"memoryLimitBytes"`
+	PIDsCurrent      int64     `json:"pidsCurrent"`
+	PIDsLimit        int64     `json:"pidsLimit"`
+	OOMEvents        int64     `json:"oomEvents"`
+	OOMKillEvents    int64     `json:"oomKillEvents"`
+	Stale            bool      `json:"stale"`
+}
+
+type IngestErrorCount struct {
+	Category string `json:"category"`
+	Code     string `json:"code"`
+	Stage    string `json:"stage"`
+	Count    int64  `json:"count"`
+}
+
+type IngestRecentAttempt struct {
+	ID                     int64            `json:"id"`
+	JobID                  string           `json:"jobId"`
+	OperationID            string           `json:"operationId"`
+	Attempt                int              `json:"attempt"`
+	JobType                string           `json:"jobType"`
+	Status                 string           `json:"status"`
+	Stage                  string           `json:"stage"`
+	ErrorCategory          string           `json:"errorCategory"`
+	ErrorCode              string           `json:"errorCode"`
+	Retryable              bool             `json:"retryable"`
+	Route                  string           `json:"route"`
+	SourceFormat           string           `json:"sourceFormat"`
+	ClaimedAt              time.Time        `json:"claimedAt"`
+	FinishedAt             *time.Time       `json:"finishedAt"`
+	NextRetryAt            *time.Time       `json:"nextRetryAt"`
+	QueueMilliseconds      int64            `json:"queueMilliseconds"`
+	DurationMilliseconds   int64            `json:"durationMilliseconds"`
+	StageTimings           map[string]int64 `json:"stageTimings"`
+	Pages                  int64            `json:"pages"`
+	OCRPages               int64            `json:"ocrPages"`
+	Slices                 int64            `json:"slices"`
+	FiguresCaptioned       int64            `json:"figuresCaptioned"`
+	FiguresFailed          int64            `json:"figuresFailed"`
+	ChunksCreated          int64            `json:"chunksCreated"`
+	ProviderCalls          int64            `json:"providerCalls"`
+	AbandonedProviderCalls int64            `json:"abandonedProviderCalls"`
+}
+
+type IngestEnvironmentMetrics struct {
+	Environment       string                `json:"environment"`
+	Attempts          IngestAttemptSummary  `json:"attempts"`
+	Queue             IngestQueueSummary    `json:"queue"`
+	Samples           []IngestHostSample    `json:"samples"`
+	WorkerSamples     []IngestWorkerSample  `json:"workerSamples"`
+	Workers           []IngestWorkerCurrent `json:"workers"`
+	Errors            []IngestErrorCount    `json:"errors"`
+	RecentAttempts    []IngestRecentAttempt `json:"recentAttempts"`
+	LastJobActivityAt *time.Time            `json:"lastJobActivityAt"`
+	DataAsOf          time.Time             `json:"dataAsOf"`
+}
+
+type IngestHostMetrics struct {
+	Hours        int                        `json:"hours"`
+	Environments []IngestEnvironmentMetrics `json:"environments"`
+	DataAsOf     time.Time                  `json:"dataAsOf"`
 }
 
 type Overview struct {

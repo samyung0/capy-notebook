@@ -1,4 +1,4 @@
-"""Time the parser VM endpoint: one job, then a concurrent burst.
+"""Time the ingest host endpoint: one job, then a concurrent burst.
 
 Warm the container first (a cheap /healthz), then:
 

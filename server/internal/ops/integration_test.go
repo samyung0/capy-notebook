@@ -13,7 +13,7 @@ func TestMain(m *testing.M) {
 		"DEEPSEEK_API_KEY",
 		"OPENAI_API_KEY",
 		"GEMINI_API_KEY",
-		"OPENROUTER_API_KEY",
+		"DEEPINFRA_API_KEY",
 	} {
 		if os.Getenv(key) == "" {
 			_ = os.Setenv(key, "test-"+key)

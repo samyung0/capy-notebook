@@ -1,0 +1,273 @@
+# Shared local/UAT ingest stack for the dedicated Netcup ingest host.
+#
+# Local and UAT keep separate databases, Redis instances, B2 buckets, and
+# provider credentials. Their queue consumers run in this one Compose project
+# and use locks on the shared spool to allow one active parse job and one active
+# ingest job across both environments. Production uses a separate project and
+# never mounts the non-production spool.
+
+name: ${EVO_INGEST_NONPROD_PROJECT_NAME:-evo-ingest-nonprod}
+
+x-parser-env: &parser-env
+  EVO_PARSE_CONCURRENCY: "1"
+  EVO_MINERU_SLICE_PAGES: ${EVO_MINERU_SLICE_PAGES:-26}
+  MINERU_PROCESSING_WINDOW_SIZE: ${EVO_MINERU_PROCESSING_WINDOW_SIZE:-26}
+  MINERU_INTRA_OP_NUM_THREADS: ${EVO_MINERU_INTRA_OP_NUM_THREADS:-2}
+  MINERU_INTER_OP_NUM_THREADS: ${EVO_MINERU_INTER_OP_NUM_THREADS:-1}
+  EVO_PARSE_SLICE_TIMEOUT: ${EVO_PARSE_SLICE_TIMEOUT:-600}
+  EVO_PARSE_SHARED_DIR: /var/lib/evo-parse
+  EVO_OFFICE_CONVERT_TIMEOUT: ${EVO_OFFICE_CONVERT_TIMEOUT:-180}
+  EVO_OFFICE_PREVIEW_MAX_BYTES: ${EVO_OFFICE_PREVIEW_MAX_BYTES:-134217728}
+  EVO_PARSE_ARTIFACT_MAX_BYTES: ${EVO_PARSE_ARTIFACT_MAX_BYTES:-268435456}
+  EVO_PARSE_ARTIFACT_MAX_ENTRIES: ${EVO_PARSE_ARTIFACT_MAX_ENTRIES:-4096}
+  EVO_PARSE_ARTIFACT_MAX_ENTRY_BYTES: ${EVO_PARSE_ARTIFACT_MAX_ENTRY_BYTES:-134217728}
+  EVO_PARSE_ARTIFACT_MAX_EXPANDED_BYTES: ${EVO_PARSE_ARTIFACT_MAX_EXPANDED_BYTES:-536870912}
+  EVO_PARSE_CONTENT_MAX_BYTES: ${EVO_PARSE_CONTENT_MAX_BYTES:-134217728}
+  EVO_PARSE_CONTENT_MAX_BLOCKS: ${EVO_PARSE_CONTENT_MAX_BLOCKS:-250000}
+  EVO_PARSE_IMAGE_MAX_BYTES: ${EVO_PARSE_IMAGE_MAX_BYTES:-33554432}
+  EVO_PARSE_IMAGES_MAX_BYTES: ${EVO_PARSE_IMAGES_MAX_BYTES:-268435456}
+
+x-worker-env: &worker-env
+  RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
+  EVO_INGEST_HOST_ID: ${EVO_INGEST_HOST_ID:-netcup-ingest-nonprod}
+  LOG_FORMAT: json
+  PARSER_URL: http://127.0.0.1:${PARSER_PORT:-8091}/file_parse
+  PARSER_TOKEN: ${PARSER_TOKEN:?set the shared non-production parser token}
+  PARSER_TIMEOUT: ${PARSER_TIMEOUT:-2400}
+  EVO_PARSE_SLICE_TIMEOUT: ${EVO_PARSE_SLICE_TIMEOUT:-600}
+  PARSER_SLOT_TTL: ${PARSER_SLOT_TTL:-2700}
+  EVO_PARSE_SHARED_DIR: /var/lib/evo-parse
+  EVO_SHARED_CAPACITY_LOCK_DIR: /var/lib/evo-parse/capacity
+  EVO_PARSE_JOB_TIMEOUT: ${EVO_PARSE_JOB_TIMEOUT:-3600}
+  EVO_INGEST_TIMEOUT: ${EVO_INGEST_TIMEOUT:-1200}
+  EVO_PARSE_SLOTS: "1"
+  EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-auto}
+  EVO_OFFICE_PREVIEW_MAX_BYTES: ${EVO_OFFICE_PREVIEW_MAX_BYTES:-134217728}
+  EVO_PARSE_ARTIFACT_MAX_BYTES: ${EVO_PARSE_ARTIFACT_MAX_BYTES:-268435456}
+  EVO_PARSE_ARTIFACT_MAX_ENTRIES: ${EVO_PARSE_ARTIFACT_MAX_ENTRIES:-4096}
+  EVO_PARSE_ARTIFACT_MAX_ENTRY_BYTES: ${EVO_PARSE_ARTIFACT_MAX_ENTRY_BYTES:-134217728}
+  EVO_PARSE_ARTIFACT_MAX_EXPANDED_BYTES: ${EVO_PARSE_ARTIFACT_MAX_EXPANDED_BYTES:-536870912}
+  EVO_PARSE_CONTENT_MAX_BYTES: ${EVO_PARSE_CONTENT_MAX_BYTES:-134217728}
+  EVO_PARSE_CONTENT_MAX_BLOCKS: ${EVO_PARSE_CONTENT_MAX_BLOCKS:-250000}
+  EVO_PARSE_IMAGE_MAX_BYTES: ${EVO_PARSE_IMAGE_MAX_BYTES:-33554432}
+  EVO_PARSE_IMAGES_MAX_BYTES: ${EVO_PARSE_IMAGES_MAX_BYTES:-268435456}
+  SENTRY_TRACES_SAMPLE_RATE: ${SENTRY_TRACES_SAMPLE_RATE:-0.1}
+  EMBEDDING_DIM: ${EMBEDDING_DIM:-2560}
+  EVO_CAPTION_CONCURRENCY: ${EVO_CAPTION_CONCURRENCY:-2}
+  EVO_CAPTION_MAX_EDGE: ${EVO_CAPTION_MAX_EDGE:-1280}
+  EVO_CAPTION_VERSION: ${EVO_CAPTION_VERSION:-v2}
+  EVO_IMAGE_MAX_PIXELS: ${EVO_IMAGE_MAX_PIXELS:-100000000}
+  EVO_ELEVENLABS_TRANSCRIPT_VERSION: ${EVO_ELEVENLABS_TRANSCRIPT_VERSION:-scribe-v2-1}
+  EVO_ELEVENLABS_CONCURRENCY_UNITS: ${EVO_ELEVENLABS_CONCURRENCY_UNITS:-2}
+  EVO_AUDIO_MAX_DURATION_SECONDS: ${EVO_AUDIO_MAX_DURATION_SECONDS:-36000}
+  EVO_TABULAR_TEXT_VERSION: ${EVO_TABULAR_TEXT_VERSION:-v1}
+  EVO_CAPTION_CACHE_TTL_DAYS: ${EVO_CAPTION_CACHE_TTL_DAYS:-90}
+  EVO_PARSE_ZIP_TTL_HOURS: ${EVO_PARSE_ZIP_TTL_HOURS:-6}
+  EVO_PARSE_SOURCE_TTL_HOURS: ${EVO_PARSE_SOURCE_TTL_HOURS:-2}
+
+x-pipeline-service: &pipeline-service
+  image: evo-ingest-nonprod-pipeline:${RELEASE_SHA:?set the exact 40-character release SHA}
+  build:
+    context: ..
+    dockerfile: pipeline/Dockerfile
+    args:
+      RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
+  network_mode: host
+  restart: unless-stopped
+  volumes:
+    - parse_spool:/var/lib/evo-parse
+
+x-coordinator-resources: &coordinator-resources
+  mem_limit: ${EVO_INGEST_NONPROD_COORDINATOR_MEMORY_LIMIT:-384m}
+  memswap_limit: ${EVO_INGEST_NONPROD_COORDINATOR_MEMORY_SWAP_LIMIT:-512m}
+  cpus: ${EVO_INGEST_NONPROD_COORDINATOR_CPUS:-0.5}
+  pids_limit: ${EVO_INGEST_NONPROD_COORDINATOR_PIDS_LIMIT:-64}
+
+x-worker-resources: &worker-resources
+  mem_limit: ${EVO_INGEST_NONPROD_WORKER_MEMORY_LIMIT:-1g}
+  memswap_limit: ${EVO_INGEST_NONPROD_WORKER_MEMORY_SWAP_LIMIT:-1280m}
+  cpus: ${EVO_INGEST_NONPROD_WORKER_CPUS:-1.0}
+  pids_limit: ${EVO_INGEST_NONPROD_WORKER_PIDS_LIMIT:-128}
+
+services:
+  parse-spool-init:
+    image: alpine:3.20
+    command:
+      [
+        "sh",
+        "-c",
+        "mkdir -p /var/lib/evo-parse/sources /var/lib/evo-parse/artifacts /var/lib/evo-parse/quarantine /var/lib/evo-parse/capacity && chown -R 10001:10001 /var/lib/evo-parse && chmod 2770 /var/lib/evo-parse /var/lib/evo-parse/sources /var/lib/evo-parse/artifacts /var/lib/evo-parse/quarantine /var/lib/evo-parse/capacity",
+      ]
+    volumes:
+      - parse_spool:/var/lib/evo-parse
+    restart: "no"
+
+  parser:
+    image: evo-ingest-nonprod-parser:${RELEASE_SHA:?set the exact 40-character release SHA}
+    build:
+      context: ..
+      dockerfile: parser/Dockerfile
+      args:
+        RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
+    network_mode: host
+    environment:
+      <<: *parser-env
+      APP_ENV: production
+      RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
+      PARSER_BIND_ADDRESS: 127.0.0.1
+      PARSER_TOKEN: ${PARSER_TOKEN:?set the shared non-production parser token}
+    command:
+      [
+        "uvicorn",
+        "app:app",
+        "--app-dir",
+        "/app/parser",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "${PARSER_PORT:-8091}",
+        "--workers",
+        "1",
+      ]
+    volumes:
+      - parser_models:/models
+      - parse_spool:/var/lib/evo-parse
+    mem_limit: ${EVO_INGEST_NONPROD_PARSER_MEMORY_LIMIT:-6g}
+    memswap_limit: ${EVO_INGEST_NONPROD_PARSER_MEMORY_SWAP_LIMIT:-8g}
+    cpus: ${EVO_INGEST_NONPROD_PARSER_CPUS:-2.0}
+    pids_limit: ${EVO_INGEST_NONPROD_PARSER_PIDS_LIMIT:-256}
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "curl",
+          "--fail",
+          "--silent",
+          "http://127.0.0.1:${PARSER_PORT:-8091}/healthz",
+        ]
+      interval: 15s
+      timeout: 5s
+      start_period: 15m
+      retries: 8
+    depends_on:
+      parse-spool-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  parse-coordinator-local:
+    <<: [*pipeline-service, *coordinator-resources]
+    profiles: [local]
+    env_file:
+      - ${EVO_INGEST_LOCAL_ENV_FILE:-/opt/evo-ingest/local.queue.env}
+    environment:
+      <<: *worker-env
+      APP_ENV: development
+      EVO_INGEST_ENVIRONMENT: local
+      EVO_PARSE_COORDINATOR_CONCURRENCY: "1"
+      EVO_DB_SYNC_POOL_MAX_SIZE: "2"
+      EVO_DB_ASYNC_POOL_MAX_SIZE: "2"
+    command: ["python", "-m", "pipeline.ingest.parse_worker"]
+    depends_on:
+      parse-spool-init:
+        condition: service_completed_successfully
+      parser:
+        condition: service_healthy
+
+  parse-coordinator-uat:
+    <<: [*pipeline-service, *coordinator-resources]
+    profiles: [uat]
+    env_file:
+      - ${EVO_INGEST_UAT_ENV_FILE:-/opt/evo-ingest/uat.queue.env}
+    environment:
+      <<: *worker-env
+      APP_ENV: production
+      EVO_INGEST_ENVIRONMENT: uat
+      EVO_PARSE_COORDINATOR_CONCURRENCY: "1"
+      EVO_DB_SYNC_POOL_MAX_SIZE: "2"
+      EVO_DB_ASYNC_POOL_MAX_SIZE: "2"
+    command: ["python", "-m", "pipeline.ingest.parse_worker"]
+    depends_on:
+      parse-spool-init:
+        condition: service_completed_successfully
+      parser:
+        condition: service_healthy
+
+  worker-local:
+    <<: [*pipeline-service, *worker-resources]
+    profiles: [local]
+    env_file:
+      - ${EVO_INGEST_LOCAL_ENV_FILE:-/opt/evo-ingest/local.queue.env}
+    environment:
+      <<: *worker-env
+      APP_ENV: development
+      EVO_INGEST_ENVIRONMENT: local
+    command: ["python", "-m", "pipeline.ingest.worker"]
+    depends_on:
+      parse-spool-init:
+        condition: service_completed_successfully
+
+  worker-uat:
+    <<: [*pipeline-service, *worker-resources]
+    profiles: [uat]
+    env_file:
+      - ${EVO_INGEST_UAT_ENV_FILE:-/opt/evo-ingest/uat.queue.env}
+    environment:
+      <<: *worker-env
+      APP_ENV: production
+      EVO_INGEST_ENVIRONMENT: uat
+    command: ["python", "-m", "pipeline.ingest.worker"]
+    depends_on:
+      parse-spool-init:
+        condition: service_completed_successfully
+
+  host-sampler-local:
+    <<: *pipeline-service
+    profiles: [local]
+    env_file:
+      - ${EVO_INGEST_LOCAL_ENV_FILE:-/opt/evo-ingest/local.queue.env}
+    read_only: true
+    environment:
+      <<: *worker-env
+      APP_ENV: development
+      EVO_INGEST_ENVIRONMENT: local
+      EVO_HOST_PROC: /host/proc
+      EVO_HOST_METRICS_ENABLED: "false"
+      PARSER_HEALTH_URL: http://127.0.0.1:${PARSER_PORT:-8091}/healthz
+      EVO_HOST_SAMPLE_ACTIVE_SECONDS: ${EVO_HOST_SAMPLE_ACTIVE_SECONDS:-5}
+      EVO_HOST_SAMPLE_IDLE_SECONDS: ${EVO_HOST_SAMPLE_IDLE_SECONDS:-60}
+    command: ["python", "-m", "pipeline.ingest.host_sampler"]
+    volumes:
+      - /proc:/host/proc:ro
+      - parse_spool:/var/lib/evo-parse:ro
+    depends_on:
+      parser:
+        condition: service_healthy
+
+  host-sampler-uat:
+    <<: *pipeline-service
+    profiles: [uat]
+    env_file:
+      - ${EVO_INGEST_UAT_ENV_FILE:-/opt/evo-ingest/uat.queue.env}
+    read_only: true
+    environment:
+      <<: *worker-env
+      APP_ENV: production
+      EVO_INGEST_ENVIRONMENT: uat
+      EVO_HOST_PROC: /host/proc
+      EVO_HOST_METRICS_ENABLED: "false"
+      PARSER_HEALTH_URL: http://127.0.0.1:${PARSER_PORT:-8091}/healthz
+      EVO_HOST_SAMPLE_ACTIVE_SECONDS: ${EVO_HOST_SAMPLE_ACTIVE_SECONDS:-5}
+      EVO_HOST_SAMPLE_IDLE_SECONDS: ${EVO_HOST_SAMPLE_IDLE_SECONDS:-60}
+    command: ["python", "-m", "pipeline.ingest.host_sampler"]
+    volumes:
+      - /proc:/host/proc:ro
+      - parse_spool:/var/lib/evo-parse:ro
+    depends_on:
+      parser:
+        condition: service_healthy
+
+volumes:
+  parser_models:
+    name: ${EVO_INGEST_PARSER_MODELS_VOLUME:-evo-ingest_parser_models}
+  parse_spool:
+    name: ${EVO_INGEST_NONPROD_PARSE_SPOOL_VOLUME:-evo-ingest_nonprod_parse_spool}

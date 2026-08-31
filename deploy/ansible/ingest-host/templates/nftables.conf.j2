@@ -1,0 +1,29 @@
+#!/usr/sbin/nft -f
+
+destroy table inet evo_ingest_filter
+
+table inet evo_ingest_filter {
+  chain input {
+    type filter hook input priority filter; policy drop;
+    ct state established,related accept
+    iifname "lo" accept
+    ip protocol icmp accept
+    ip6 nexthdr ipv6-icmp accept
+    tcp dport 22 accept
+    udp dport {{ ingest_wireguard_listen_port }} accept
+    iifname "{{ ingest_wireguard_interface }}" accept
+  }
+
+  chain forward {
+    type filter hook forward priority filter; policy drop;
+    ct state established,related accept
+    iifname "docker0" udp dport 53 accept
+    iifname "docker0" tcp dport { 53, 80, 443 } accept
+    iifname "br-*" udp dport 53 accept
+    iifname "br-*" tcp dport { 53, 80, 443 } accept
+  }
+
+  chain output {
+    type filter hook output priority filter; policy accept;
+  }
+}

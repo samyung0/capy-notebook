@@ -166,8 +166,8 @@ export function DraftFields({
           value={draft.modelSlug}
         />
         <p className="text-muted-foreground text-xs">
-          Exact provider model id. OpenRouter is only valid for
-          qwen/qwen3-embedding-4b.
+          Exact provider model id. DeepInfra is only valid for
+          Qwen/Qwen3-Embedding-4B.
         </p>
       </div>
       <div className="space-y-2">

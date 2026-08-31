@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "subject": "Your role changed in {{.WorkspaceName}}",
+  "preview": "Your role in {{.WorkspaceName}} changed.",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              { "type": "bold" },
+              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
+            ],
+            "text": "Evo Notes"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "attrs": { "level": 1 },
+        "content": [{ "type": "text", "text": "Workspace role changed" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          { "type": "text", "text": "Your role in " },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "WorkspaceName",
+              "label": "Workspace name",
+              "required": true
+            }
+          },
+          { "type": "text", "text": " was changed by a workspace owner." }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          { "type": "text", "text": "Workspace: " },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "WorkspaceName",
+              "label": "Workspace name",
+              "required": true
+            },
+            "marks": [{ "type": "bold" }]
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          { "type": "text", "text": "New role: " },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "RoleName",
+              "label": "Role name",
+              "required": true
+            },
+            "marks": [{ "type": "bold" }]
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "Open Evo Notes",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      { "type": "horizontalRule" },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "You received this message because your Evo Notes workspace membership changed."
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ],
+            "text": "Manage product email preferences"
+          }
+        ]
+      }
+    ]
+  }
+}

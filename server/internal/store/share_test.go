@@ -106,7 +106,7 @@ func TestCloneMaterialUsesTargetTierForDailyVersionRetention(t *testing.T) {
 			value := revision - 1
 			parent = &value
 		}
-		if err := upsertMaterialRevisionTx(ctx, tx, MaterialRevision{
+		if err := s.upsertMaterialRevisionTx(ctx, tx, MaterialRevision{
 			MaterialID: source.ID, Revision: revision, ParentRevision: parent,
 			EventType: RevisionEdit, Title: source.Title, Content: content,
 			EventMetadata: []byte(`{"changedFields":["content"]}`),
@@ -131,8 +131,9 @@ func TestCloneMaterialUsesTargetTierForDailyVersionRetention(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(versions) != freeMaterialRevisionLimit {
-		t.Fatalf("free clone retained %d versions, want %d", len(versions), freeMaterialRevisionLimit)
+	freeLimit := mustPlanLimits(t, s, PlanFree).MaterialRevisions
+	if len(versions) != freeLimit {
+		t.Fatalf("free clone retained %d versions, want %d", len(versions), freeLimit)
 	}
 	clonedCards, err := materialdoc.ExtractFlashcards(cloned.Content)
 	if err != nil {

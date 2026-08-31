@@ -100,7 +100,7 @@ func TestProviderSessionSettlesEachCallOnceAndReportsTerminalState(t *testing.T)
 	}
 	s.SetModelRegistry(reg)
 	userID := newCreditsTestUser(t, s)
-	limit := CreditLimitMicros(PlanFree)
+	limit := mustPlanLimits(t, s, PlanFree).CreditMicros
 	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, reserved_micros)
 		VALUES ($1, $2)`, userID, limit-1); err != nil {
 		t.Fatal(err)
@@ -110,7 +110,7 @@ func TestProviderSessionSettlesEachCallOnceAndReportsTerminalState(t *testing.T)
 		t.Fatal(err)
 	}
 	llm := RatesFromConfig(llmCfg)
-	embed := TokenRates{Model: models.Ref{ProviderSlug: "openrouter", ModelSlug: "qwen/qwen3-embedding-4b"}, ModelVersion: 1}
+	embed := TokenRates{Model: models.Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}, ModelVersion: 1}
 	sessionID, err := s.BeginProviderSession(
 		ctx,
 		userID,
@@ -179,8 +179,8 @@ func TestProviderSessionSettlesEachCallOnceAndReportsTerminalState(t *testing.T)
 		CallID:      "pc_embed",
 		Kind:        KindEmbedding,
 		Purpose:     "embedding",
-		Provider:    "openrouter",
-		Model:       "qwen/qwen3-embedding-4b",
+		Provider:    "deepinfra",
+		Model:       "Qwen/Qwen3-Embedding-4B",
 		InputTokens: 20,
 	}
 	mustInsertProviderCall(t, s, sessionID, embeddingCall)
@@ -261,7 +261,7 @@ func TestUserKeyProviderSessionRecordsZeroCreditCallsPastPlatformLimit(t *testin
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
-	limit := CreditLimitMicros(PlanFree)
+	limit := mustPlanLimits(t, s, PlanFree).CreditMicros
 	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros)
 		VALUES ($1, $2)`, userID, limit); err != nil {
 		t.Fatal(err)
@@ -273,7 +273,7 @@ func TestUserKeyProviderSessionRecordsZeroCreditCallsPastPlatformLimit(t *testin
 		SurfaceChat,
 		models.PaidByUser,
 		TokenRates{Model: models.Ref{ProviderSlug: "openai", ModelSlug: "gpt-byok"}, ModelVersion: 1},
-		TokenRates{Model: models.Ref{ProviderSlug: "openrouter", ModelSlug: "qwen/qwen3-embedding-4b"}, ModelVersion: 1},
+		TokenRates{Model: models.Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}, ModelVersion: 1},
 		"",
 	)
 	if err != nil {
@@ -309,7 +309,7 @@ func TestClosedProviderSessionAcceptsLateReceiptWithoutContinuation(t *testing.T
 	}
 	s.SetModelRegistry(reg)
 	userID := newCreditsTestUser(t, s)
-	limit := CreditLimitMicros(PlanFree)
+	limit := mustPlanLimits(t, s, PlanFree).CreditMicros
 	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros)
 		VALUES ($1, $2)`, userID, limit-1); err != nil {
 		t.Fatal(err)
@@ -325,7 +325,7 @@ func TestClosedProviderSessionAcceptsLateReceiptWithoutContinuation(t *testing.T
 		SurfaceChat,
 		models.PaidByPlatform,
 		RatesFromConfig(llmCfg),
-		TokenRates{Model: models.Ref{ProviderSlug: "openrouter", ModelSlug: "qwen/qwen3-embedding-4b"}, ModelVersion: 1},
+		TokenRates{Model: models.Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}, ModelVersion: 1},
 		"",
 	)
 	if err != nil {
@@ -388,7 +388,7 @@ func providerCallStatus(t *testing.T, s *Store, callID string) (status string, c
 func TestBeginProviderSessionRejectsWhenUsedOrReservedAtLimit(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	limit := CreditLimitMicros(PlanFree)
+	limit := mustPlanLimits(t, s, PlanFree).CreditMicros
 	llm, embed := platformSessionRates()
 
 	usedID := newCreditsTestUser(t, s)
@@ -485,7 +485,7 @@ func TestSweepThenLateProviderCallChargesOnce(t *testing.T) {
 		SurfaceChat,
 		models.PaidByPlatform,
 		RatesFromConfig(llmCfg),
-		TokenRates{Model: models.Ref{ProviderSlug: "openrouter", ModelSlug: "qwen/qwen3-embedding-4b"}, ModelVersion: 1},
+		TokenRates{Model: models.Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}, ModelVersion: 1},
 		"",
 	)
 	if err != nil {
@@ -543,7 +543,7 @@ func TestStalePeriodDoesNotBlockTheNewMonth(t *testing.T) {
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
 
-	limit := CreditLimitMicros(PlanFree)
+	limit := mustPlanLimits(t, s, PlanFree).CreditMicros
 	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits
 		(user_id, period_start, used_micros)
 		VALUES ($1, date_trunc('month', now())::date - interval '1 month', $2)`,
@@ -575,7 +575,7 @@ func TestGetBillingIncludesCreditCounters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.CreditsLimitMicros != CreditLimitMicros(PlanFree) {
+	if info.CreditsLimitMicros != mustPlanLimits(t, s, PlanFree).CreditMicros {
 		t.Fatalf("limit=%d, want free allowance", info.CreditsLimitMicros)
 	}
 	if info.CreditsUsedMicros != 0 || info.CreditsReservedMicros != 0 {
@@ -700,7 +700,7 @@ func TestBeginIngestSpendRejectsWhenUsedAtLimit(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
-	limit := CreditLimitMicros(PlanFree)
+	limit := mustPlanLimits(t, s, PlanFree).CreditMicros
 	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros)
 		VALUES ($1, $2)`, userID, limit); err != nil {
 		t.Fatal(err)
@@ -747,6 +747,38 @@ func TestSweepReleasesOrphanIngestReservation(t *testing.T) {
 	}
 	if slots.SlotsUsed != 0 {
 		t.Fatalf("orphan still counted: %#v", slots)
+	}
+}
+
+func TestSweepKeepsReservationOwnedByPendingParseStage(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	id, err := s.BeginIngestSpend(ctx, userID, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	jobID := uid("job")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO jobs (id, type, payload)
+		VALUES ($1, 'parse', jsonb_build_object('reservationId', $2::text))`, jobID, id); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = s.pool.Exec(context.Background(), `DELETE FROM jobs WHERE id=$1`, jobID)
+	})
+	if _, err := s.pool.Exec(ctx, `UPDATE provider_sessions
+		SET created_at = now() - interval '25 hours' WHERE id=$1`, id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SweepExpiredReservations(ctx); err != nil {
+		t.Fatal(err)
+	}
+	var status string
+	if err := s.pool.QueryRow(ctx, `SELECT status FROM provider_sessions WHERE id=$1`, id).Scan(&status); err != nil {
+		t.Fatal(err)
+	}
+	if status != "open" {
+		t.Fatalf("parse reservation status = %q, want open", status)
 	}
 }
 

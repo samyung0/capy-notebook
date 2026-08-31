@@ -236,7 +236,7 @@ def test_parse_attempt_page_charge_is_idempotent_and_settles_session(workspace):
                 workspace_id=workspace.id,
                 kind="parse",
                 surface="ingest",
-                provider="parser-vm",
+                provider="ingest-host",
                 units=2,
                 unit="pages",
                 parse_pages=2,
@@ -659,11 +659,46 @@ def test_claim_honours_not_before(workspace):
     with workspace._connect() as conn:
         cur = conn.cursor()
         _isolate_job(cur, job_id)
-        claimed = db.claim_job(cur, {"ingest": 180})
+        claimed = db.claim_job(cur, "ingest", 180)
         conn.commit()
     assert claimed is None
     assert (
         workspace.scalar("SELECT status FROM jobs WHERE id = %s", (job_id,))
+        == "pending"
+    )
+
+
+def test_claim_selects_only_the_requested_stage(workspace):
+    from pipeline.store import db
+
+    suffix = workspace.id[-8:]
+    parse_job = f"job_parse_{suffix}"
+    ingest_job = f"job_ingest_{suffix}"
+    workspace.scalar(
+        """
+        INSERT INTO jobs (id, type, payload)
+        VALUES (%s, 'parse', '{}'::jsonb), (%s, 'ingest', '{}'::jsonb)
+        RETURNING id
+        """,
+        (parse_job, ingest_job),
+    )
+    with workspace._connect() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            UPDATE jobs SET not_before = now() + interval '7 days'
+            WHERE status = 'pending' AND id NOT IN (%s, %s)
+            """,
+            (parse_job, ingest_job),
+        )
+        claimed = db.claim_job(cur, "parse", 180)
+        conn.commit()
+
+    assert claimed is not None
+    assert claimed["id"] == parse_job
+    assert claimed["type"] == "parse"
+    assert (
+        workspace.scalar("SELECT status FROM jobs WHERE id = %s", (ingest_job,))
         == "pending"
     )
 
@@ -694,7 +729,7 @@ def test_requeue_then_claim(workspace):
             == "pending"
         )
         _isolate_job(cur, job_id)
-        claimed = db.claim_job(cur, {"ingest": 180})
+        claimed = db.claim_job(cur, "ingest", 180)
         conn.commit()
     assert claimed is not None
     assert claimed["id"] == job_id
@@ -717,11 +752,88 @@ def test_capacity_yield_does_not_spend_an_attempt(workspace):
         cur = conn.cursor()
         db.release_job_for_capacity(cur, job_id, 1, backoff_s=0)
         _isolate_job(cur, job_id)
-        claimed = db.claim_job(cur, {"ingest": 180})
+        claimed = db.claim_job(cur, "ingest", 180)
         conn.commit()
     assert claimed is not None
     assert claimed["id"] == job_id
     assert claimed["attempts"] == 1
+
+
+def test_job_attempt_records_claim_metrics_and_terminal_outcome(workspace):
+    from pipeline.store import db
+
+    job_id = f"job_telemetry_{workspace.id[-8:]}"
+    workspace.scalar(
+        """
+        INSERT INTO jobs (id, type, payload)
+        VALUES (%s, 'parse', %s::jsonb)
+        RETURNING id
+        """,
+        (
+            job_id,
+            '{"reservationId":"op-1","processingPlan":{"route":"mineru","format":"pdf"}}',
+        ),
+    )
+    with workspace._connect() as conn:
+        cur = conn.cursor()
+        _isolate_job(cur, job_id)
+        claimed = db.claim_job(cur, "parse", 180)
+        assert claimed is not None
+        attempt_id = db.start_job_attempt(
+            cur,
+            job=claimed,
+            trace_id="trace-1",
+            environment="uat",
+            host_id="ingest-1",
+            worker_instance_id="parse-1",
+            release_sha="a" * 40,
+        )
+        db.record_job_parse_metrics(
+            cur,
+            attempt_id=attempt_id,
+            pages=40,
+            ocr_pages=7,
+            slices=2,
+            queue_milliseconds=120,
+            execution_milliseconds=900,
+        )
+        db.finish_job_attempt(
+            cur,
+            attempt_id=attempt_id,
+            outcome="succeeded",
+            snapshot={
+                "stage": "parse_handoff",
+                "stage_timings": {"mineru_parse": 900},
+                "stats": {"artifact_bytes": 2048},
+            },
+        )
+        conn.commit()
+
+    with workspace._connect() as conn:
+        row = conn.execute(
+            """
+            SELECT environment, route, source_format, status, stage,
+                   parse_pages, parse_ocr_pages, parse_slices,
+                   parser_queue_milliseconds, parser_execution_milliseconds,
+                   artifact_bytes, stage_timings->>'mineru_parse'
+            FROM ingest_job_attempts WHERE id=%s
+            """,
+            (attempt_id,),
+        ).fetchone()
+    assert row == (
+        "uat",
+        "mineru",
+        "pdf",
+        "succeeded",
+        "parse_handoff",
+        40,
+        7,
+        2,
+        120,
+        900,
+        2048,
+        "900",
+    )
 
 
 def test_lease_reclaim_fails_after_budget(workspace):
@@ -1028,7 +1140,7 @@ def test_only_the_claiming_attempt_may_write_its_outcome(workspace):
             (job_id,),
         )
         _isolate_job(cur, job_id)
-        successor = db.claim_job(cur, {"ingest": 180})
+        successor = db.claim_job(cur, "ingest", 180)
         # The reclaimed worker still believes it holds attempt 1.
         stale = db.claim_is_current(cur, job_id, 1)
         current = db.claim_is_current(cur, job_id, successor["attempts"])

@@ -14,7 +14,7 @@ import (
 var (
 	flashModelRef = models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}
 	proModelRef   = models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-pro"}
-	embedModelRef = models.Ref{ProviderSlug: "openrouter", ModelSlug: "qwen/qwen3-embedding-4b"}
+	embedModelRef = models.Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}
 )
 
 func TestAssistantMessagePinsTheResolvedChatModel(t *testing.T) {

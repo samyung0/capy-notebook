@@ -10,7 +10,6 @@ import (
 
 	"github.com/evonotes/server/internal/models"
 	"github.com/evonotes/server/internal/obs"
-	"github.com/evonotes/server/internal/store"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -63,7 +62,7 @@ func TestOperatorAuditRecordsActionsAndRollsBackUnauditedRegistrySave(t *testing
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	read := NewReadStore(store.NewWithPool(pool))
+	read := newReadStoreForTest(t, pool)
 	registry := NewRegistryStore(pool, pool)
 	snapshot, err := registry.Snapshot(ctx)
 	if err != nil {

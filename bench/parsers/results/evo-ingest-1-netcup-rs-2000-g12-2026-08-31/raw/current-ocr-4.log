@@ -1,0 +1,15 @@
+payload: newspaper-scan-26.pdf (551770 bytes)
+
+=== fast  http://127.0.0.1:18090/file_parse
+healthz: 0.01s  uptime_s=32.783  version=mineru-3.4.5-pipeline-sliced-v1+2725da1cbe39407786c9b3bdcd40fe68e0149046
+-- one job --
+  wall=143.11s  server_parse=143.073  uptime_s=None  blocks=780 chars=92044 headings=52 images=0  ocr_pages=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]  lane=ocr  rss=3227MB/3procs
+-- 4 jobs at once --
+  wall=209.72s  server_parse=209.633  blocks=780 chars=92044 headings=52 images=0  ocr_pages=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]  lane=ocr  rss=10881MB/5procs
+  wall=211.10s  server_parse=211.047  blocks=780 chars=92044 headings=52 images=0  ocr_pages=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]  lane=ocr  rss=10707MB/5procs
+  wall=214.07s  server_parse=214.014  blocks=780 chars=92044 headings=52 images=0  ocr_pages=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]  lane=ocr  rss=10514MB/5procs
+  wall=218.80s  server_parse=218.748  blocks=780 chars=92044 headings=52 images=0  ocr_pages=[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25]  lane=ocr  rss=10164MB/5procs
+burst wall (all done): 218.81s  errors=0
+per-job wall median=212.59s  max=218.80s
+per-job server_parse median=212.53s  max=218.75s  sum=853.44s
+effective parallelism: 3.90x

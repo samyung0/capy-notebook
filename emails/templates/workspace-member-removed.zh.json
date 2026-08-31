@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "subject": "你已被移出 {{.WorkspaceName}}",
+  "preview": "{{.WorkspaceName}} 的成员身份已更改。",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              { "type": "bold" },
+              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
+            ],
+            "text": "Evo Notes"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "attrs": { "level": 1 },
+        "content": [{ "type": "text", "text": "已移出工作区" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          { "type": "text", "text": "你已被工作区所有者移出 " },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "WorkspaceName",
+              "label": "工作区名称",
+              "required": true
+            }
+          },
+          { "type": "text", "text": "。" }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "WorkspaceName",
+              "label": "工作区名称",
+              "required": true
+            },
+            "marks": [{ "type": "bold" }]
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "打开 Evo Notes",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      { "type": "horizontalRule" },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "你收到这封邮件是因为 Evo Notes 工作区成员身份发生了变化。"
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ],
+            "text": "管理产品邮件偏好"
+          }
+        ]
+      }
+    ]
+  }
+}

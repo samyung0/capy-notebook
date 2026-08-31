@@ -8,11 +8,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const (
-	freeMaterialRevisionLimit    = 7
-	premiumMaterialRevisionLimit = 30
-)
-
 func utcDate(value time.Time) time.Time {
 	year, month, day := value.UTC().Date()
 	return time.Date(year, month, day, 0, 0, 0, 0, time.UTC)
@@ -21,7 +16,7 @@ func utcDate(value time.Time) time.Time {
 // upsertMaterialRevisionTx keeps one full material snapshot per UTC day. The
 // material's revision counter still advances on every mutation; the daily row
 // is simply moved to the latest revision and content saved during that day.
-func upsertMaterialRevisionTx(
+func (s *Store) upsertMaterialRevisionTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	revision MaterialRevision,
@@ -59,11 +54,19 @@ func upsertMaterialRevisionTx(
 	if err != nil {
 		return err
 	}
-	return pruneMaterialRevisionsTx(ctx, tx, revision.MaterialID)
+	return s.pruneMaterialRevisionsTx(ctx, tx, revision.MaterialID)
 }
 
-func pruneMaterialRevisionsTx(ctx context.Context, tx pgx.Tx, materialID string) error {
-	_, err := tx.Exec(ctx, `WITH ranked AS (
+func (s *Store) pruneMaterialRevisionsTx(ctx context.Context, tx pgx.Tx, materialID string) error {
+	free, err := s.PlanLimits(PlanFree)
+	if err != nil {
+		return err
+	}
+	pro, err := s.PlanLimits(PlanPro)
+	if err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `WITH ranked AS (
 		SELECT mr.version_date,
 			row_number() OVER (ORDER BY mr.version_date DESC) AS position,
 			CASE WHEN u.plan_tier = 'pro'
@@ -80,8 +83,8 @@ func pruneMaterialRevisionsTx(ctx context.Context, tx pgx.Tx, materialID string)
 	  AND mr.version_date=ranked.version_date
 	  AND ranked.position>ranked.retention_limit`,
 		materialID,
-		premiumMaterialRevisionLimit,
-		freeMaterialRevisionLimit,
+		pro.MaterialRevisions,
+		free.MaterialRevisions,
 	)
 	return err
 }
@@ -89,6 +92,14 @@ func pruneMaterialRevisionsTx(ctx context.Context, tx pgx.Tx, materialID string)
 // PruneMaterialRevisions applies the current owner's tier to all materials.
 // It covers tier downgrades and data inserted outside the normal save path.
 func (s *Store) PruneMaterialRevisions(ctx context.Context) (int64, error) {
+	free, err := s.PlanLimits(PlanFree)
+	if err != nil {
+		return 0, err
+	}
+	pro, err := s.PlanLimits(PlanPro)
+	if err != nil {
+		return 0, err
+	}
 	result, err := s.pool.Exec(ctx, `WITH ranked AS (
 		SELECT mr.material_id, mr.version_date,
 			row_number() OVER (
@@ -106,8 +117,8 @@ func (s *Store) PruneMaterialRevisions(ctx context.Context) (int64, error) {
 	WHERE mr.material_id=ranked.material_id
 	  AND mr.version_date=ranked.version_date
 	  AND ranked.position>ranked.retention_limit`,
-		premiumMaterialRevisionLimit,
-		freeMaterialRevisionLimit,
+		pro.MaterialRevisions,
+		free.MaterialRevisions,
 	)
 	if err != nil {
 		return 0, err

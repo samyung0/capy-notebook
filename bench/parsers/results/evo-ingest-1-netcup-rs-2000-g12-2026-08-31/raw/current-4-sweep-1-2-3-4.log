@@ -1,0 +1,30 @@
+payload: slice-01-p0001-p0026.pdf (19541531 bytes)
+
+=== fast  http://127.0.0.1:18090/file_parse
+healthz: 0.03s  uptime_s=159.928  version=mineru-3.4.5-pipeline-sliced-v1+2725da1cbe39407786c9b3bdcd40fe68e0149046
+-- one job --
+  wall=82.86s  server_parse=82.751  uptime_s=None  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=3720MB/3procs
+-- 2 jobs at once --
+  wall=89.61s  server_parse=89.508  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=6448MB/4procs
+  wall=95.10s  server_parse=94.993  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=6001MB/4procs
+burst wall (all done): 95.10s  errors=0
+per-job wall median=92.35s  max=95.10s
+per-job server_parse median=92.25s  max=94.99s  sum=184.50s
+effective parallelism: 1.94x
+-- 3 jobs at once --
+  wall=92.98s  server_parse=92.858  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=8698MB/5procs
+  wall=97.62s  server_parse=97.501  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=8650MB/5procs
+  wall=102.22s  server_parse=102.111  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=8236MB/5procs
+burst wall (all done): 102.24s  errors=0
+per-job wall median=97.62s  max=102.22s
+per-job server_parse median=97.50s  max=102.11s  sum=292.47s
+effective parallelism: 2.86x
+-- 4 jobs at once --
+  wall=109.61s  server_parse=109.431  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=11286MB/5procs
+  wall=116.23s  server_parse=116.048  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=11289MB/5procs
+  wall=116.50s  server_parse=116.314  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=11289MB/5procs
+  wall=123.10s  server_parse=122.925  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=10624MB/5procs
+burst wall (all done): 123.11s  errors=0
+per-job wall median=116.37s  max=123.10s
+per-job server_parse median=116.18s  max=122.92s  sum=464.72s
+effective parallelism: 3.77x

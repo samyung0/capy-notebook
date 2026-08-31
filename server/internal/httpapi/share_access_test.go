@@ -402,7 +402,7 @@ func TestShareHTTPExploreAndAttempts(t *testing.T) {
 	}
 }
 
-func TestMaterialRevisionHTTPCapsFreeOwnerAtSevenDailyVersions(t *testing.T) {
+func TestMaterialRevisionHTTPCapsFreeOwnerAtThreeDailyVersions(t *testing.T) {
 	dsn := testdb.URL(t)
 	ctx := context.Background()
 	st, err := store.New(ctx, dsn)
@@ -411,6 +411,9 @@ func TestMaterialRevisionHTTPCapsFreeOwnerAtSevenDailyVersions(t *testing.T) {
 	}
 	t.Cleanup(st.Close)
 	if err := st.Migrate(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.LoadPlanLimits(ctx); err != nil {
 		t.Fatal(err)
 	}
 	pool, err := pgxpool.New(ctx, dsn)
@@ -532,9 +535,9 @@ func TestMaterialRevisionHTTPCapsFreeOwnerAtSevenDailyVersions(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &revisions); err != nil {
 		t.Fatal(err)
 	}
-	if len(revisions) != 7 ||
+	if len(revisions) != 3 ||
 		revisions[0]["revision"] != float64(10) ||
-		revisions[6]["revision"] != float64(4) {
+		revisions[2]["revision"] != float64(8) {
 		t.Fatalf("free revision response = %#v", revisions)
 	}
 }

@@ -143,7 +143,7 @@ func awaitPostgres(ctx context.Context, dsn string, timeout time.Duration) error
 	deadline := time.Now().Add(timeout)
 	var last error
 	for time.Now().Before(deadline) {
-		store, err := store.New(ctx, dsn)
+		store, err := store.Open(ctx, dsn)
 		if err == nil {
 			err = store.Pool().Ping(ctx)
 			store.Close()
@@ -162,7 +162,7 @@ func awaitPostgres(ctx context.Context, dsn string, timeout time.Duration) error
 }
 
 func prepareDatabase(ctx context.Context, dsn, repositoryRoot string) error {
-	store, err := store.New(ctx, dsn)
+	store, err := store.Open(ctx, dsn)
 	if err != nil {
 		return fmt.Errorf("open disposable Postgres: %w", err)
 	}

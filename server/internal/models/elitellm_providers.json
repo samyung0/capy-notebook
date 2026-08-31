@@ -29,12 +29,20 @@
       "platformEnv": "GEMINI_API_KEY",
       "thinking": ["instant", "low", "mid", "high", "max"]
     },
-    "openrouter": {
-      "name": "OpenRouter",
+    "zai": {
+      "name": "Z.ai",
+      "modes": ["chat", "vision"],
+      "byok": false,
+      "platformEnv": "DEEPINFRA_API_KEY",
+      "allowedModelSlugs": ["glm-5.3-flash"],
+      "thinking": ["low", "high", "max"]
+    },
+    "deepinfra": {
+      "name": "DeepInfra",
       "modes": ["embedding"],
       "byok": false,
-      "platformEnv": "OPENROUTER_API_KEY",
-      "allowedModelSlugs": ["qwen/qwen3-embedding-4b"],
+      "platformEnv": "DEEPINFRA_API_KEY",
+      "allowedModelSlugs": ["Qwen/Qwen3-Embedding-4B"],
       "thinking": []
     }
   }

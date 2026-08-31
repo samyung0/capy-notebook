@@ -1,0 +1,113 @@
+{
+  "schemaVersion": 1,
+  "subject": "邀请你加入 Evo Notes 工作区 {{.WorkspaceName}}",
+  "preview": "你有一个新的 Evo Notes 工作区邀请。",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              { "type": "bold" },
+              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
+            ],
+            "text": "Evo Notes"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "attrs": { "level": 1 },
+        "content": [{ "type": "text", "text": "你有一个工作区邀请" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [{ "type": "text", "text": "你好，" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          { "type": "text", "text": "你已受邀加入 Evo Notes 工作区 " },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "WorkspaceName",
+              "label": "工作区名称",
+              "required": true
+            }
+          },
+          { "type": "text", "text": "。" }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "查看邀请",
+          "url": "InviteURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          { "type": "text", "text": "如果按钮无法使用，请打开此链接：" },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "InviteURL",
+              "label": "邀请链接",
+              "required": true
+            },
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "InviteURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      { "type": "horizontalRule" },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "你收到这封邮件是因为有人邀请你加入 Evo Notes 工作区。"
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ],
+            "text": "管理产品邮件偏好"
+          }
+        ]
+      }
+    ]
+  }
+}

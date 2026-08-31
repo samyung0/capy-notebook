@@ -179,6 +179,22 @@ func TestConfigRequiresAdminDatabaseURL(t *testing.T) {
 	}
 }
 
+func TestConfigRejectsAmbiguousIngestDatabaseLabels(t *testing.T) {
+	t.Parallel()
+	unknown := validOpsConfig("production")
+	unknown.IngestPrimaryEnv = "preview"
+	if err := unknown.Validate(); err == nil {
+		t.Fatal("accepted an unknown primary ingest environment")
+	}
+
+	duplicate := validOpsConfig("production")
+	duplicate.IngestPrimaryEnv = "uat"
+	duplicate.IngestUATDatabaseURL = "postgres://evo_ops@uat-db/evo"
+	if err := duplicate.Validate(); err == nil {
+		t.Fatal("accepted a duplicate UAT ingest database")
+	}
+}
+
 func TestConfigFromEnvReadsDocumentedNames(t *testing.T) {
 	t.Setenv("APP_ENV", "development")
 	t.Setenv("OPS_UNSAFE_DEVELOPMENT", "true")
@@ -191,6 +207,9 @@ func TestConfigFromEnvReadsDocumentedNames(t *testing.T) {
 	t.Setenv("OPS_CF_ACCESS_JWKS_URL", "")
 	t.Setenv("OPS_DATABASE_URL", "postgres://evo@db/evo")
 	t.Setenv("OPS_ADMIN_DATABASE_URL", "postgres://evo_admin@db/evo")
+	t.Setenv("OPS_INGEST_PRIMARY_ENVIRONMENT", "production")
+	t.Setenv("OPS_INGEST_UAT_DATABASE_URL", "postgres://evo@uat-db/evo")
+	t.Setenv("OPS_INGEST_LOCAL_DATABASE_URL", "postgres://evo@local-db/evo")
 
 	config := ConfigFromEnv()
 	if err := config.Validate(); err != nil {
@@ -198,6 +217,11 @@ func TestConfigFromEnvReadsDocumentedNames(t *testing.T) {
 	}
 	if config.AdminDatabaseURL != "postgres://evo_admin@db/evo" {
 		t.Fatalf("AdminDatabaseURL = %q", config.AdminDatabaseURL)
+	}
+	if config.IngestPrimaryEnv != "production" ||
+		config.IngestUATDatabaseURL != "postgres://evo@uat-db/evo" ||
+		config.IngestLocalDatabaseURL != "postgres://evo@local-db/evo" {
+		t.Fatalf("ingest database config = %+v", config)
 	}
 	if config.DevUserID != "dev-operator" || !config.AllowOwnerDSN() {
 		t.Fatalf("config = %+v", config)

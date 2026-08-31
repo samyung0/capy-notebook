@@ -87,8 +87,8 @@ async def _tracked_call(
     )
     try:
         yield call_id
-    except BaseException:
-        await accounting.abandon_call(call_id)
+    except BaseException as exc:
+        await accounting.abandon_call(call_id, exc)
         raise
 
 
@@ -625,6 +625,7 @@ async def caption_image(data_url: str, prompt: str) -> str:
     permanently missing from the index.
     """
     spec = registry.vision_spec()
+    caption_thinking = elitellm.resolve_thinking(spec, reasoning=False)
     messages = [
         {
             "role": "user",
@@ -640,15 +641,18 @@ async def caption_image(data_url: str, prompt: str) -> str:
             async with _tracked_call(
                 kind=accounting.KIND_LLM,
                 purpose="image_caption",
+                thinking=caption_thinking,
                 context=context,
             ) as call_id:
-                resp = await elitellm.complete(spec, messages)
+                # Captions never inherit a user's chat reasoning level. The
+                # provider adapter resolves this to the model's fixed minimum.
+                resp = await elitellm.complete(spec, messages, reasoning=False)
                 obs.record_completion(spec.provider_slug, _record_name(spec), resp)
                 await accounting.settle(
                     call_id=call_id,
                     kind=accounting.KIND_LLM,
                     purpose="image_caption",
-                    thinking="",
+                    thinking=caption_thinking,
                     spec=spec,
                     usage=extract_usage(
                         getattr(resp, "usage", None), provider=spec.provider_slug

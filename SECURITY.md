@@ -12,7 +12,7 @@ Review all first-party code and deployment configuration in this repository:
 - Go product gateway, operator API, migrations, and background jobs
 - Python ingest and retrieval services
 - Hocuspocus/Yjs collaboration service
-- Cloudflare Workers, Docker Compose, the dedicated parser VM, and CI workflows
+- Cloudflare Workers, Docker Compose, the dedicated ingest host, and CI workflows
 
 Generated clients, recorded test cassettes, vendored code, and build artifacts
 are evidence about first-party behavior but are not primary finding locations.
@@ -44,7 +44,7 @@ The important boundaries are:
 - Browser to Clerk, Stripe, object storage, and collaboration WebSocket
 - Cloudflare to public origins
 - Gateway to retrieval, import relay, collaboration, Redis, Postgres, and B2
-- Worker to the parser VM, model providers, B2, Redis, and Postgres
+- Worker to the parser service, model providers, B2, Redis, and Postgres
 - Provider webhooks to unauthenticated webhook routes
 - Operator browser through Cloudflare Access and Clerk to the operator API
 - Operator API to its four least-privilege database roles

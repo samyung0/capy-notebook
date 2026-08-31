@@ -71,7 +71,7 @@ operator hostname before traffic reaches its origin.
 | `collab.abcd.com`  | Hocuspocus WebSocket (`collaboration`, :1234)      | yes        | yes                  |
 | `ops.evonotes.com` | Go ops API + static dashboard (`ops`, :8082)       | yes        | yes, Access required |
 | retrieval :8001    | Python chat/generate                               | **no**     | —                    |
-| ingest worker      | parser VM + embed                                  | **no**     | —                    |
+| ingest host        | parser + ingest worker + embed                     | **no**     | —                    |
 | Postgres / Redis   | —                                                  | **no**     | —                    |
 
 The browser talks to the gateway at same-origin `/api` (`src/api/client.ts`
@@ -298,6 +298,10 @@ reconciliation request:
 ```
 OPS_DATABASE_URL=postgres://evo_ops:<password>@<private-postgres-host>:5432/evo?sslmode=require
 OPS_ADMIN_DATABASE_URL=postgres://evo_ops_admin:<password>@<private-postgres-host>:5432/evo?sslmode=require
+OPS_INGEST_PRIMARY_ENVIRONMENT=production
+# Optional: the same column-limited evo_ops role in the other app databases.
+OPS_INGEST_UAT_DATABASE_URL=postgres://evo_ops:<password>@<uat-postgres-host>:5432/evo?sslmode=require
+OPS_INGEST_LOCAL_DATABASE_URL=postgres://evo_ops:<password>@<local-postgres-host>:5432/evo?sslmode=require
 OPS_CF_ACCESS_ISSUER=https://<team-name>.cloudflareaccess.com
 OPS_CF_ACCESS_AUDIENCE=<Access application AUD>
 # OPS_CF_ACCESS_JWKS_URL defaults to <issuer>/cdn-cgi/access/certs
@@ -547,26 +551,27 @@ committed success or terminal failure.
 
 ### Ingest worker replicas
 
-`WORKER_REPLICAS` in `deploy/docker-compose.yml` (default 1) is the number of
-ingest worker containers. `claim_job` uses `FOR UPDATE SKIP LOCKED`, so replicas
-share the queue without extra coordination. Each replica runs one job at a time.
-Parse admission has its own cap (eight queued requests); the service then admits
-four digital jobs or two OCR-heavy jobs. Extra jobs stay `pending`.
+The dedicated-host Compose file defaults to four `worker` containers. Each
+claims only `ingest` rows and runs exactly one direct-route or post-parse job.
+Each has a 1 CPU, 1 GiB RAM, 1.25 GiB memory-plus-swap, and 128-process hard
+ceiling. `EVO_CAPTION_CONCURRENCY=4` caps embedded-figure fan-out inside each
+job, so four workers can make at most sixteen uncached figure-caption calls at
+once. Embedding, summary, and concept calls remain sequential inside each job;
+their host-wide concurrency is at most four. These are limits, not reserved
+capacity; idle containers use little CPU or memory. The legacy app-host
+debugging profile still defaults to one worker.
 
-Connection budget after the worker's sync pool (`max_size=4`) plus the async
-retrieval pool (`max_size=8`): **12 connections per replica**. Against default
-Postgres `max_connections=100`, and alongside the gateway, retrieval service,
-and collaboration:
+One `parse-coordinator` container supervises four child processes, each
+claiming one `parse` row. Its container limit is 1 CPU, 512 MiB RAM, 768 MiB
+memory-plus-swap, and 128 processes. A child spends most of its lifetime
+waiting on MinerU. It has two-connection sync and async pool ceilings; each
+ingest worker retains the ordinary four/eight limits. `claim_job` filters by
+type and uses `FOR UPDATE SKIP LOCKED`, so the pools never consume one another's
+work.
 
-- 3 replicas (36 worker connections) is comfortable.
-- Beyond ~5 replicas, raise `max_connections` or put pgbouncer in front.
-
-Provider rate limits scale with replica count. `EVO_CAPTION_CONCURRENCY` is 8
-_per job_, so N replicas means up to 8N concurrent vision calls.
-
-Do not scale above 1 until the worker running in production includes
-lease-keyed content-claim steal. A waiter on a second replica can otherwise
-delete a live creator's `rag_contents` row.
+Provider rate limits scale only with ingest workers. Parse coordinators have no
+provider keys and accept only exact-vector donor reuse, so a donor requiring
+re-embedding stays on the parse path and is handled later by ingest.
 
 > B2 egress is **not** in `usage_events` — the browser fetches presigned URLs
 > directly and the gateway never sees the transfer. B2's own reporting is the
@@ -602,17 +607,18 @@ delete a live creator's `rag_contents` row.
 
 ---
 
-## 7. Dedicated parser VM
+## 7. Dedicated ingest host
 
-The Netcup VM runs the ingest workers, parser, and host sampler. Uploaded bytes
-move from the Cloudflare relay to B2 and once from B2 to this VM; they do not
-traverse the Go application process. Worker and parser containers mount the
-same `parse_spool` volume. The compose init service gives the unprivileged parser
-user access before either service starts.
+The Netcup ingest host runs the parse coordinator, ingest workers, parser, and
+host sampler. Uploaded bytes move from the Cloudflare relay to B2 and once from
+B2 to this ingest host; they do not traverse the Go application process.
+Coordinator, worker, and parser containers mount the same `parse_spool` volume.
+The compose init service gives the unprivileged pipeline user access before
+those services start.
 
 1. Apply `deploy/ansible/app-host/playbook.yml` to build the app side of the
    point-to-point WireGuard service network, then put its displayed public key
-   in the parser inventory. The app host uses `10.77.0.1/32` and the parser VM
+   in the ingest-host inventory. The app host uses `10.77.0.1/32` and the ingest host
    uses `10.77.0.2/32`. Netcup's
    [community WireGuard guide](https://community.netcup.com/en/tutorials/how-to-setup-wireguard-ubuntu)
    covers the provider-specific setup and applies to Debian. Do not add a
@@ -623,101 +629,219 @@ user access before either service starts.
    PostgreSQL cluster but preserves its files under `/var/lib/postgresql`.
    `deploy/docker-compose.prod.yml` publishes Evo Postgres and Redis only on
    WireGuard. The default bind address is loopback, never the public interface.
-3. Copy `deploy/ansible/parser-vm/inventory.example.yml` to the ignored
-   `inventory.yml`, encrypt it with Ansible Vault, and follow that directory's
-   README. Set `parser_repo_version` to the same full Git SHA being promoted;
-   branch names are rejected. The first pass keeps password SSH enabled. Verify
-   key login in a second terminal before setting `parser_harden_ssh: true`.
-4. Store the values from `deploy/parser-vm.env.example` in encrypted
-   `parser_env`, including `ELEVENLABS_API_KEY` and `ELEVENLABS_WEBHOOK_ID` for uploaded-audio
-   transcription. The worker also needs the Gemini key/model registry pin for
-   standalone-image captions; those calls happen on this VM after it downloads
-   the B2 object, never in Go. The parser binds only to
+3. Copy `deploy/ansible/ingest-host/inventory.example.yml` to the ignored
+   `inventory.yml`, restrict it to mode `0600`, and follow that directory's
+   README. The inventory remains plaintext and must never be committed, shared,
+   or pasted. Set `ingest_repo_version` to the same full Git SHA being promoted;
+   branch names are rejected. Password and root SSH login remain enabled for
+   now. This is easier to operate, but exposes the public SSH endpoint to
+   password guessing. Fail2ban reduces repeated attempts but does not remove
+   the risk of a reusable password.
+4. Store the values from `deploy/ingest-host.env.example` in the ignored
+   `ingest_env`, including `ELEVENLABS_API_KEY` and `ELEVENLABS_WEBHOOK_ID` for
+   uploaded-audio transcription. The worker also needs `DEEPINFRA_API_KEY` for the seeded Qwen
+   embedding route and the exact ZAI GLM routing exception used by
+   standalone-image captions. Those calls happen on this ingest host after it
+   downloads the B2 object, never in Go. The parser binds only to
    `PARSER_BIND_ADDRESS`; its bearer token remains defense in depth. The
-   measured default is generous selective OCR.
-   Initial limits are eight queued HTTP requests, four digital Marker slots, and
-   two OCR-heavy slots. The default time hierarchy is a 2,300-second hard parse
-   deadline after lane admission, 40-minute parser request, 45-minute Redis slot,
-   and 60-minute ingest job; the process rejects contradictory overrides. The
-   worker writes the raw source to `parse_spool`
-   while hashing it, the parser atomically publishes the fingerprint zip there,
-   and the worker extracts it locally. All-page OCR remains an explicit
-   benchmark/retry mode.
-5. Apply the app migration before starting `host-sampler`, because it writes
-   `parse_host_samples`. Start `evo-parser.service`, wait for model warmup, and
+   measured default is MinerU pipeline with OCR `auto`.
+   Initial limits are four coordinator processes, four admitted document jobs,
+   and four active 26-page slices. The default time hierarchy is a 600-second
+   per-slice execution deadline, 40-minute parser request, 45-minute Redis slot,
+   and 60-minute parse job. Its ingest continuation has a separate 20-minute
+   bound. Queue wait does not spend a slice's 600-second budget. The process
+   rejects contradictory overrides. The coordinator writes the raw source to
+   `parse_spool` while hashing it, the parser atomically publishes the
+   fingerprint zip there, and an ingest worker extracts it locally. Explicit
+   `txt` and `ocr` modes remain benchmark/retry options.
+5. Provision a persistent 24 GiB swapfile as emergency headroom for four-slice
+   parsing. The steady-state target is still zero swap use:
+
+   ```bash
+   fallocate -l 24G /swapfile
+   chmod 600 /swapfile
+   mkswap /swapfile
+   swapon /swapfile
+   grep -q '^/swapfile none swap sw 0 0$' /etc/fstab || \
+     printf '%s\n' '/swapfile none swap sw 0 0' >> /etc/fstab
+   ```
+
+   Verify with `swapon --show --bytes` and `free -h`. Do not interpret available
+   swap as permission to raise the four-slice cap.
+
+6. Apply the app migration before starting `host-sampler`, because it writes
+   the ingest host/worker sample and rollup tables. Start `evo-ingest.service`, wait for model warmup, and
    verify `/healthz` through WireGuard. It must return HTTP 200 with `ok=true`,
    `state=ready`, and a `release_sha` equal to the app's deployed revision. No
    parser port may listen on the public address.
-6. Run `bench/parsers/accuracy_report.py` across representative PDF, image,
-   DOC/DOCX, PPT/PPTX, and XLS/XLSX inputs in all three modes. Review every
-   rejected row and the rendered page comparisons. Run the 1/2/4/6/8 sweep;
-   production remains at two OCR-heavy jobs unless four preserves at least 3
-   GiB headroom, uses no swap, and materially improves throughput.
-7. Production deployment builds the candidate parser and pipeline images under
+7. Run `bench/parsers/accuracy_report.py` across representative PDF, DOC/DOCX,
+   PPT/PPTX, and XLS/XLSX inputs in `auto`, `txt`, and `ocr` modes. Review every
+   rejected row and the rendered page comparisons. A 610-page PDF should yield
+   24 slices at the 26-page default. Record wall time, peak RAM, swap, and
+   ordering/geometry accuracy at one and four concurrent slices.
+8. Production deployment builds the candidate parser and pipeline images under
    immutable full-SHA tags while the current ingest services keep running. At
-   cutover, `parser-vm-release.sh prepare` records the previous and candidate
-   SHAs in `/opt/evo-parser/release.pending`, pauses the worker and sampler, and
+   cutover, `ingest-host-release.sh prepare` records the previous and candidate
+   SHAs in `/opt/evo-ingest/release.pending`, pauses the parse coordinator,
+   workers, and sampler, and
    starts the candidate parser without rebuilding. A failed candidate health
    check triggers the prepare script's exit trap and restores the previous
-   parser, worker, and sampler images. After the app deployment and exact-SHA
-   verification succeed, `activate` starts the matching worker and sampler and
+   parser, coordinator, worker, and sampler images. After the app deployment
+   and exact-SHA verification succeed, `activate` starts the matching
+   coordinator, workers, and sampler and
    removes the pending marker. The workflow has an unconditional final cleanup
    that calls `rollback-if-pending`; therefore any failure after prepare but
    before committed activation restores ingest. After activation, roll back by
    promoting the previous known-good exact SHA through the same workflow. The
-   parser, worker, migration, and app remain revision-matched, and the artifact
-   schema plus release-derived fingerprint prevents cache confusion.
+   parser, coordinator, worker, migration, and app remain revision-matched. The
+   artifact schema plus release-derived fingerprint prevents cache confusion.
 
-### 7.1 Production and non-production parser storage
+### 7.1 Production and non-production ingest-host storage
 
-Production keeps the existing explicitly named `evo-parser_parse_spool` volume.
-Local and UAT must never mount it. They both use `evo_parse_nonprod` through
-`deploy/docker-compose.parser-vm.nonprod.yml`. Docker named volumes grow only as
-files are written; this setup reserves no fixed number of bytes for nonproduction.
-The ordinary source/artifact sweeper bounds retained data by age instead.
+Production keeps the explicitly named `evo-ingest_parse_spool` volume. The one
+local/UAT project uses `evo-ingest_nonprod_parse_spool` through
+`deploy/docker-compose.ingest-host.nonprod.yml` and never mounts the production
+volume. Docker named volumes grow only as files are written, so this setup
+reserves no fixed number of bytes for nonproduction. The ordinary
+source/artifact sweeper bounds retained data by age instead.
 
-Local and UAT remain separate Compose projects, processes, release SHAs,
-databases, Redis instances, B2 buckets, parser tokens, and provider credentials.
-Only their nonproduction spool is shared. This lets both run concurrently when
-needed without making a dirty local parser satisfy UAT's exact-release contract.
-The default nonproduction cap is one ingest worker, two Marker processes, one
-digital lane, one OCR lane, 2 CPUs/6 GiB for the parser, and 1 CPU/2 GiB for the
-worker. These are hard container ceilings, not reservations. Stop either Compose
-project when it is unused so production gets the host's idle CPU and memory.
+Local and UAT keep separate databases, Redis instances, B2 buckets, and
+provider credentials. Their queue consumers run in one nonproduction Compose
+project and point to one parser process. Each profile also runs a sampler
+against its own database. It reports that environment's durable queue and the
+shared parser pool, but deliberately omits physical-host CPU, RAM, disk, and
+network so the same host is not attributed to both environments. Queue consumers take role-specific
+file locks on the shared spool before claiming a row. Across local and UAT,
+only one parse job, one MinerU slice, and one ingest job can run at a time. A
+consumer that cannot take its role lock leaves the database row pending. The
+lock descriptor closes automatically if its process or container dies.
 
-Copy `deploy/parser-vm.nonprod.env.example` twice on the Netcup VM. Use unique
-project names and ports, but leave the shared volume name unchanged:
+Compose hard-codes parser concurrency, per-consumer coordinator concurrency,
+and Redis admission to one. It also hard-codes the shared capacity-lock path,
+so environment files cannot raise the global parse or ingest limit. The parser
+gets 2 CPUs, 6 GiB RAM, and 8 GiB total memory plus swap. Each coordinator gets
+0.5 CPU, 384 MiB RAM, and 512 MiB total. Each worker gets 1 CPU, 1 GiB RAM, and
+1.25 GiB total. Local and UAT each need an idle queue consumer because one
+process cannot connect to two databases, but the locks allow only one consumer
+per role to do job work. These resource values are hard container ceilings,
+not reservations.
 
-```text
-local: EVO_NONPROD_PROJECT_NAME=evo-parser-local, PARSER_PORT=8091
-UAT:   EVO_NONPROD_PROJECT_NAME=evo-parser-uat,   PARSER_PORT=8092
-both:  EVO_NONPROD_PARSE_SPOOL_VOLUME=evo_parse_nonprod
-```
-
-Start or stop either environment by selecting its environment file:
+Install one shared stack file and one queue credential file per app
+environment:
 
 ```bash
-docker compose --env-file /opt/evo-parser/local.env \
-  -f deploy/docker-compose.parser-vm.nonprod.yml up -d --build
-docker compose --env-file /opt/evo-parser/uat.env \
-  -f deploy/docker-compose.parser-vm.nonprod.yml up -d --build
-docker compose --env-file /opt/evo-parser/local.env \
-  -f deploy/docker-compose.parser-vm.nonprod.yml down
+cp deploy/ingest-host.nonprod.env.example /opt/evo-ingest/nonprod.env
+cp deploy/ingest-host.nonprod.queue.env.example /opt/evo-ingest/local.queue.env
+cp deploy/ingest-host.nonprod.queue.env.example /opt/evo-ingest/uat.queue.env
+chmod 0640 /opt/evo-ingest/nonprod.env \
+  /opt/evo-ingest/local.queue.env /opt/evo-ingest/uat.queue.env
+```
+
+`nonprod.env` owns the shared parser token, port, release, resource limits, and
+the two queue-file paths. Fill `local.queue.env` with the disposable local app
+stack's private Postgres and Redis addresses reachable from the ingest VM, its
+test B2 bucket, and its provider credentials. Fill `uat.queue.env` with the
+future UAT server's dedicated private values. Neither file may contain
+production credentials.
+
+Start only local consumers while no UAT server exists:
+
+```bash
+docker compose --env-file /opt/evo-ingest/nonprod.env \
+  -f deploy/docker-compose.ingest-host.nonprod.yml \
+  --profile local up -d --build
+```
+
+Once UAT exists, enable both profiles in the same project:
+
+```bash
+docker compose --env-file /opt/evo-ingest/nonprod.env \
+  -f deploy/docker-compose.ingest-host.nonprod.yml \
+  --profile local --profile uat up -d --build
+```
+
+Both profiles use the single `RELEASE_SHA` from `nonprod.env`. Stop the shared
+project when neither local nor UAT needs ingest so production gets the host's
+idle CPU and memory.
+
+```bash
+docker compose --env-file /opt/evo-ingest/nonprod.env \
+  -f deploy/docker-compose.ingest-host.nonprod.yml down
 ```
 
 Do not add `-v` to `down`: that would request deletion of project volumes. The
 shared spool has an explicit name, but treating destructive volume flags as safe
 would be a bad operational habit. The default app-host Compose worker is behind
-the `app-host-ingest` profile; normal local ingest must use this VM stack so the
+the `app-host-ingest` profile; normal local ingest must use this ingest-host stack so the
 worker and parser actually see the same filesystem.
 
-A hard-timeout marker lives under `quarantine/{fingerprint}.json` in the owning
-spool. It makes the offending file terminal for that exact parser version while
-Docker restarts the parser container for collateral jobs. Do not manually clear
-the marker just to force a retry. Reproduce and fix the parser, then deploy a new
-release; the versioned fingerprint changes automatically. Manual removal is only
-for an operator-confirmed false marker where the underlying parser version has
-not changed.
+A hard-timeout or OOM marker lives under `quarantine/{fingerprint}.json` in the
+owning spool. It makes the offending file terminal for that exact parser
+version while Docker restarts the parser container for collateral jobs. Do not
+manually clear the marker just to force a retry. Reproduce and fix the parser,
+then deploy a new release; the versioned fingerprint changes automatically.
+Manual removal is only for an operator-confirmed false marker where the
+underlying parser version has not changed.
+
+### 7.2 Parser capacity and failure handling
+
+The current MinerU capacity and failure-injection record is
+[`bench/parsers/netcup-2026-08-31-stress.md`](../bench/parsers/netcup-2026-08-31-stress.md).
+Keep both the Redis document admission cap and the parser slice concurrency at
+four. Eight concurrent slices completed, but filled the parser's 14 GiB memory
+cgroup, used 5.32 GiB of swap, left about 450 MiB available on the host, and
+processed fewer pages per second than four slices.
+
+Each of the four production ingest workers has a 1 CPU, 1 GiB RAM, 1.25 GiB
+total memory-plus-swap, and 128-process ceiling. Four-job 26-page digital,
+mixed, mostly-OCR, and all-OCR bursts measured at most 83 MB worker RSS on the
+old combined path. A separate 120 MiB content-list edge test needed about 518
+MiB and failed under a 512 MiB no-swap cgroup. The 1 GiB ceiling leaves room for
+that allowed shape while bounding the four-worker pool to 4 GiB of resident
+memory. A 48 MiB no-swap fault injection killed worker
+PID 1 with exit 137 and Docker restarted it. The lease reaper retries that
+post-parse job once from its artifact; an OOM never quarantines the file.
+
+The production parse coordinator is a separate 512 MiB/768 MiB-total container
+with four child processes and no LLM credentials. A coordinator timeout durably
+requeues its claim and exits that child; the supervisor replaces only that
+child. If the kernel kills a coordinator child, its lease expires and follows
+the same one-retry rule. This differs from a MinerU child OOM: the parser's
+cgroup OOM watcher terminates and replaces the parser container.
+
+The four parser lanes are asyncio tasks backed by threads, not independently
+killable operating-system processes. Restart the whole parser container after
+a slice timeout, a broken MinerU process-pool error, or a dead slice worker.
+Killing one MinerU multiprocessing child is
+not a safe lane-recovery mechanism. The parser now treats a broken MinerU pool
+as fatal, changes `/healthz` to HTTP 503, fails the request, and exits so Docker
+starts a clean process.
+
+`restart: unless-stopped` recovered PID 1 kills, cgroup OOM kills, a Docker
+daemon restart, and a full VM reboot in testing. The parser health route was
+available on the first successful probe about 32 seconds after reboot was
+issued, with cold models. Docker health status alone remains diagnostic, so the
+Ansible role installs `evo-ingest-watchdog.service`. It restarts the parser after
+three failed health checks. Per-slice execution deadlines own stuck-work
+detection; the watchdog does not independently time active work. It skips
+absent containers and planned release cutovers. A restart
+drops in-flight connections, but ordinary parser errors get one retry and the
+client recovers an atomically published spool artifact when publication
+completed before the disconnect.
+
+Each parser slice has a 600-second execution limit that begins after it leaves
+the fair queue. A timed-out slice quarantines the whole document and restarts
+the parser so its sibling slices stop too. Hard-timeout and OOM fingerprints
+are terminal without a retry. An OOM marker covers only documents that had an
+executing slice when the cgroup counter changed. Queued documents and all other
+retryable failures get one retry.
+
+Once parsing publishes an artifact and hands off an `ingest` row, all timeout,
+OOM, provider, database, and worker-death failures use the ingest job's one
+retry. Exhaustion fails that job but creates no problematic-file marker, so a
+later operator/user re-ingest remains valid. A missing or corrupt handoff bundle
+is removed and sent through parsing once; a second invalid bundle is terminal
+to prevent a repair loop.
 
 ---
 
@@ -775,16 +899,23 @@ not changed.
      user_id, period_start, used_micros, reserved_micros
    ) ON user_credits TO evo_ops;
    GRANT SELECT (
+     plan_tier, storage_limit_bytes, credit_limit_micros,
+     source_file_max_bytes, material_revision_limit,
+     owned_workspace_limit, files_per_workspace, files_per_upload
+   ) ON plan_limits TO evo_ops;
+   GRANT SELECT (
      id, actor_user_id, trace_id, surface, paid_by, status,
      created_at, expires_at, settled_at
    ) ON provider_sessions TO evo_ops;
    GRANT SELECT (
-     id, reservation_id, actor_user_id, kind, purpose, status, thinking,
+     id, reservation_id, actor_user_id, job_attempt_id, job_stage,
+     kind, purpose, status, thinking, input_tokens, output_tokens,
      cached_read_tokens, cache_write_tokens, reasoning_tokens, cache_anomaly,
      context_system_tokens, context_tool_tokens,
      context_conversation_tokens, context_total_tokens,
      context_window_tokens, context_counting_method,
-     context_counting_version, opened_at, applied_at
+     context_counting_version, opened_at, applied_at, abandoned_at,
+     error_category, error_code, provider_status
    ) ON provider_calls TO evo_ops;
    GRANT SELECT (
      id, job_type, trigger, status, requested_by_id, requested_by_name,
@@ -833,7 +964,7 @@ not changed.
    GRANT SELECT (id, workspace_id)
      ON files TO evo_ops;
    GRANT SELECT (
-     status, locked_at, lease_expires_at, updated_at
+     type, status, not_before, locked_at, lease_expires_at, queued_at, updated_at
    ) ON jobs TO evo_ops;
    GRANT SELECT (
      status, updated_at
@@ -850,10 +981,31 @@ not changed.
      credit_micros, reservation_id, provider_call_id, created_at
    ) ON usage_events TO evo_ops;
    GRANT SELECT (
-     sampled_at, host_id, active_jobs, queued_jobs, cpu_percent, load_1,
+     sampled_at, environment, host_id, release_sha, host_metrics_available,
+     active_jobs, queued_jobs,
+     active_slices, queued_slices, oldest_active_slice_ms,
+     oldest_queued_slice_ms, last_slice_completed_age_ms,
+     parser_oom_kill_events, cpu_percent, load_1,
      memory_total_bytes, memory_used_bytes, swap_used_bytes,
-     parser_memory_bytes, parser_pss_bytes, network_rx_bytes, network_tx_bytes
-   ) ON parse_host_samples TO evo_ops;
+     parser_memory_bytes, parser_pss_bytes, parser_memory_peak_bytes,
+     network_rx_bytes, network_tx_bytes, parse_ready_jobs,
+     parse_delayed_jobs, parse_running_jobs, ingest_ready_jobs,
+     ingest_delayed_jobs, ingest_running_jobs, expired_leases,
+     oldest_queued_job_ms, disk_free_bytes, spool_bytes, spool_files
+   ) ON ingest_host_samples TO evo_ops;
+   GRANT SELECT (
+     sampled_at, environment, host_id, worker_instance_id, role, release_sha,
+     state, stage, job_attempt_id, cpu_cores, memory_bytes, memory_limit_bytes,
+     pids_current, pids_limit, oom_events, oom_kill_events
+   ) ON ingest_worker_samples TO evo_ops;
+   GRANT SELECT (
+     id, job_id, operation_id, attempt, job_type, environment, status, stage,
+     error_category, error_code, retryable, route, source_format, claimed_at,
+     finished_at, next_retry_at, queue_milliseconds, duration_milliseconds,
+     stage_timings,
+     parse_pages, parse_ocr_pages, parse_slices, figures_selected, figures_cached,
+     figures_captioned, figures_failed, chunks_created, concepts_created
+   ) ON ingest_job_attempts TO evo_ops;
 
    GRANT EXECUTE ON FUNCTION touch_operator_seen(text) TO evo_ops;
    GRANT EXECUTE ON FUNCTION request_reconciliation(text, text, text)
@@ -1008,21 +1160,21 @@ Embedding rows are the ones the database will actually reject a delete of.
 
 ## 10. Post-deploy verification
 
-| Check                                                                          | Expected                                         |
-| ------------------------------------------------------------------------------ | ------------------------------------------------ |
-| `curl -sI https://api.abcd.com/healthz`                                        | `x-request-id` header present                    |
-| Send a chat turn, then `SELECT * FROM usage_events ORDER BY id DESC LIMIT 5`   | rows with non-zero `output_tokens`               |
-| Same `trace_id` searched in Sentry and in gateway logs                         | both return the request                          |
+| Check                                                                        | Expected                                         |
+| ---------------------------------------------------------------------------- | ------------------------------------------------ |
+| `curl -sI https://api.abcd.com/healthz`                                      | `x-request-id` header present                    |
+| Send a chat turn, then `SELECT * FROM usage_events ORDER BY id DESC LIMIT 5` | rows with non-zero `output_tokens`               |
+| Same `trace_id` searched in Sentry and in gateway logs                       | both return the request                          |
 | `SELECT * FROM provider_sessions WHERE status='open' AND expires_at < now()` | empty after a minute (sweeper is running)        |
-| Open Ops Overview after sending a chat turn                                   | current-month usage appears within 30 seconds    |
-| `curl -sI https://ops.evonotes.com` without Access credentials                 | Cloudflare Access login or denial, never the app |
-| Sign in through Access + Clerk as a user absent from `operators`               | `403` from the ops service                       |
-| Sign in as an operator with `role='viewer'`, then submit registry Save         | `403`; registry writer pool remains unopened     |
-| `curl -sI http://127.0.0.1:8082/healthz` on the host                           | `200`; :8082 is not reachable from another host  |
-| Fire >200 AI requests in an hour, or 16 in a minute                            | `429` with `code: "ai_rate_limited"`             |
-| Open 6 platform-paid AI calls at once                                          | 6th returns `429 too_many_streams`               |
-| Hit the origin IP directly                                                     | connection refused                               |
-| Coolify: `ss`/`docker ps` shows `:8080`/`:1234`/`:8082` bound on `0.0.0.0`     | wrong: only Traefik `:80` should be public       |
+| Open Ops Overview after sending a chat turn                                  | current-month usage appears within 30 seconds    |
+| `curl -sI https://ops.evonotes.com` without Access credentials               | Cloudflare Access login or denial, never the app |
+| Sign in through Access + Clerk as a user absent from `operators`             | `403` from the ops service                       |
+| Sign in as an operator with `role='viewer'`, then submit registry Save       | `403`; registry writer pool remains unopened     |
+| `curl -sI http://127.0.0.1:8082/healthz` on the host                         | `200`; :8082 is not reachable from another host  |
+| Fire >200 AI requests in an hour, or 16 in a minute                          | `429` with `code: "ai_rate_limited"`             |
+| Open 6 platform-paid AI calls at once                                        | 6th returns `429 too_many_streams`               |
+| Hit the origin IP directly                                                   | connection refused                               |
+| Coolify: `ss`/`docker ps` shows `:8080`/`:1234`/`:8082` bound on `0.0.0.0`   | wrong: only Traefik `:80` should be public       |
 
 If `usage_events` stays empty while chat works, the usual cause is a streamed
 completion without `stream_options={"include_usage": True}` — the request
@@ -1146,16 +1298,16 @@ credentials with it. The only local/UAT exception is the short-lived,
 fingerprint-addressed nonproduction parser spool described in §7.1; production
 never mounts that volume.
 
-| Resource            | Local development    | UAT                                             | Production                                   |
-| ------------------- | -------------------- | ----------------------------------------------- | -------------------------------------------- |
-| App compute         | local compose        | separate Coolify environment/resource           | production Coolify environment/resource      |
-| Postgres and Redis  | disposable/local     | dedicated UAT instances/volumes                 | production instances/volumes                 |
-| Blob storage        | local/test bucket    | dedicated private UAT bucket and key            | production private bucket and key            |
-| Parser VM           | capped local nonprod Compose project | capped UAT nonprod Compose project; shares only `evo_parse_nonprod` with local | production project and `evo-parser_parse_spool` |
-| Clerk               | development instance | separate Clerk application, Production instance | production application's Production instance |
-| Stripe              | sandbox/test data    | named UAT sandbox                               | live mode                                    |
-| Users and content   | developer fixtures   | synthetic accounts and fixtures only            | real users and content                       |
-| Scanner credentials | local only           | GitHub `uat` environment                        | never supplied to scanners                   |
+| Resource            | Local development                    | UAT                                                                                         | Production                                      |
+| ------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------- | ----------------------------------------------- |
+| App compute         | local compose                        | separate Coolify environment/resource                                                       | production Coolify environment/resource         |
+| Postgres and Redis  | disposable/local                     | dedicated UAT instances/volumes                                                             | production instances/volumes                    |
+| Blob storage        | local/test bucket                    | dedicated private UAT bucket and key                                                        | production private bucket and key               |
+| Ingest host         | shared nonprod project, local queue consumers | same nonprod project, UAT queue consumers; one global `1/1/1` capacity with local | production project and `evo-ingest_parse_spool` |
+| Clerk               | development instance                 | separate Clerk application, Production instance                                             | production application's Production instance    |
+| Stripe              | sandbox/test data                    | named UAT sandbox                                                                           | live mode                                       |
+| Users and content   | developer fixtures                   | synthetic accounts and fixtures only                                                        | real users and content                          |
+| Scanner credentials | local only                           | GitHub `uat` environment                                                                    | never supplied to scanners                      |
 
 Do not clone a production database, user table, object bucket, Clerk users, API
 keys, or webhook secrets into UAT. Never set `AUTH_DISABLED`,
@@ -1195,6 +1347,11 @@ authentication strategy.
    temporary Clerk webhook secret until the public UAT webhook URL exists.
    Replace it with Clerk's actual endpoint signing secret and redeploy before
    creating fixtures.
+8. Give the ingest VM private network routes to the UAT Postgres and Redis
+   ports. Fill `/opt/evo-ingest/uat.queue.env` with the dedicated UAT database,
+   Redis, B2, and provider values. Restart the one nonproduction project with
+   both the `local` and `uat` profiles as shown in §7.1. Do not start an ingest
+   worker inside the UAT Coolify resource.
 
 Give UAT a visible banner and separate Sentry/PostHog projects if practical.
 Budget alerts and conservative rate limits belong on UAT too: automated

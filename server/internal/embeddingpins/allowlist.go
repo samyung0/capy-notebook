@@ -12,7 +12,7 @@ type Spec struct {
 }
 
 var specs = map[models.Pin]Spec{
-	{Ref: models.Ref{ProviderSlug: "openrouter", ModelSlug: models.SeededHopEmbedSlug}, Version: 1}: {
+	{Ref: models.Ref{ProviderSlug: "deepinfra", ModelSlug: models.SeededHopEmbedSlug}, Version: 1}: {
 		VectorTable: "rag_chunk_vectors_2560",
 		Dimensions:  2560,
 	},

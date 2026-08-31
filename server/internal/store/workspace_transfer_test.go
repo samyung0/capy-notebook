@@ -183,7 +183,7 @@ func TestTransferRefusedWhenRecipientCannotAffordIt(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `INSERT INTO files
 		(id, workspace_id, user_id, name, kind, size_bytes)
 		VALUES ($1,$2,$3,'huge.pdf','pdf',$4)`,
-		uid("f"), ws.ID, senderID, FreeStorageLimitBytes+1); err != nil {
+		uid("f"), ws.ID, senderID, mustPlanLimits(t, s, PlanFree).StorageBytes+1); err != nil {
 		t.Fatal(err)
 	}
 

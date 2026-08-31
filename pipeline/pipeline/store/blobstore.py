@@ -2,7 +2,7 @@
 
 The Go gateway records a B2 object key in ``files.blob_path`` and echoes it
 into each ingest job as ``blobPath``. The worker downloads that object once
-into the Netcup VM's shared spool while calculating its trusted SHA-256. The
+into the Netcup ingest host's shared spool while calculating its trusted SHA-256. The
 parser container reads the same local file.
 
 ``fetch_local`` is synchronous (boto3 + file IO block); the worker calls it via

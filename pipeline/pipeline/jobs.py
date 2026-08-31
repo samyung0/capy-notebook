@@ -43,11 +43,19 @@ class JobPolicy:
     lease_s: int
 
 
-# The whole job outlives the parser request. This leaves a ten-minute post-parse
-# budget at the defaults for captions, embeddings, and the usage receipt.
 POLICIES: dict[str, JobPolicy] = {
+    "parse": JobPolicy(
+        # One initial attempt and one retry. Confirmed hard parser resource
+        # failures are TerminalError and do not spend the second attempt.
+        max_attempts=2,
+        backoff_base_s=30,
+        timeout_s=cfg.parse_job_timeout,
+        lease_s=180,
+    ),
     "ingest": JobPolicy(
-        max_attempts=3,
+        # Post-parse resource failures always receive this one retry. They never
+        # quarantine the source fingerprint because MinerU already completed.
+        max_attempts=2,
         backoff_base_s=30,
         timeout_s=cfg.ingest_timeout,
         lease_s=180,

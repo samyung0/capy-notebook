@@ -6,6 +6,7 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import {
   formatBytes,
   formatCredits,
+  storageLimitLabel,
   usagePercent,
 } from '@/features/billing/format';
 import { planLabel } from '@/features/settings/SubscriptionTab';
@@ -203,7 +204,7 @@ export default function Billing() {
 
           <div className="grid gap-4 md:grid-cols-2">
             <Meter
-              limitLabel={formatBytes(billing?.storageLimitBytes ?? 0)}
+              limitLabel={storageLimitLabel(billing?.storageLimitBytes ?? 0)}
               percent={storagePct}
               reservedLabel={
                 billing && billing.storageReservedBytes > 0

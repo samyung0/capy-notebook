@@ -28,6 +28,7 @@ import type {
   WireMessage,
   Workspace,
 } from '@/api/types';
+import { PLAN_LIMITS } from '@/features/billing/planLimits';
 import {
   parseFlashcardsBlock,
   parseQuizBlock,
@@ -186,7 +187,7 @@ export const workspaces: Workspace[] = [
     color: 'green',
     createdAt: days(40),
     fileCount: 24,
-    filesLimit: 100,
+    filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
     id: 'ws_bio',
     isOwner: true,
     lastAccessedAt: hours(3),
@@ -208,7 +209,7 @@ export const workspaces: Workspace[] = [
     color: 'purple',
     createdAt: days(30),
     fileCount: 12,
-    filesLimit: 100,
+    filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
     id: 'ws_calc',
     isOwner: true,
     lastAccessedAt: days(1),
@@ -230,7 +231,7 @@ export const workspaces: Workspace[] = [
     color: 'amber',
     createdAt: days(22),
     fileCount: 18,
-    filesLimit: 100,
+    filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
     id: 'ws_hist',
     isOwner: true,
     lastAccessedAt: days(2),
@@ -252,7 +253,7 @@ export const workspaces: Workspace[] = [
     color: 'blue',
     createdAt: days(12),
     fileCount: 9,
-    filesLimit: 100,
+    filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
     id: 'ws_chem',
     isOwner: true,
     lastAccessedAt: days(5),
@@ -274,7 +275,7 @@ export const workspaces: Workspace[] = [
     color: 'coral',
     createdAt: days(8),
     fileCount: 21,
-    filesLimit: 100,
+    filesLimit: PLAN_LIMITS.pro.filesPerWorkspace,
     id: 'ws_eng',
     isOwner: true,
     lastAccessedAt: hours(20),
@@ -1086,7 +1087,7 @@ export const notificationPrefs: NotificationPrefs = {
 export const accountStatus: AccountStatus = {
   planTier: 'pro',
   state: 'active',
-  storageLimitBytes: 1024 * 1024 * 1024,
+  storageLimitBytes: PLAN_LIMITS.pro.storageLimitBytes,
   storageUsedBytes: 128 * 1024 * 1024,
   userId: user.id,
 };

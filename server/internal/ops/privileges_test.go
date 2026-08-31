@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/evonotes/server/internal/models"
-	"github.com/evonotes/server/internal/store"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -212,15 +211,45 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 	}
 	if _, err := owner.Exec(ctx, fmt.Sprintf(`
 		GRANT SELECT (
+			plan_tier, storage_limit_bytes, credit_limit_micros,
+			source_file_max_bytes, material_revision_limit,
+			owned_workspace_limit, files_per_workspace, files_per_upload
+		) ON plan_limits TO %s;
+		GRANT SELECT (
 			resource_key, version, unit, credit_micros_per_unit, active, created_at
 		) ON resource_credit_rates TO %s;
 		GRANT SELECT (
-			sampled_at, host_id, active_jobs, queued_jobs, cpu_percent, load_1,
+			sampled_at, environment, host_id, release_sha,
+			host_metrics_available, active_jobs, queued_jobs,
+			active_slices, queued_slices, oldest_active_slice_ms,
+			oldest_queued_slice_ms, last_slice_completed_age_ms,
+			parser_oom_kill_events, cpu_percent, load_1,
 			memory_total_bytes, memory_used_bytes, swap_used_bytes,
-			parser_memory_bytes, parser_pss_bytes,
-			network_rx_bytes, network_tx_bytes
-		) ON parse_host_samples TO %s;
-	`, readIdent, readIdent)); err != nil {
+			parser_memory_bytes, parser_pss_bytes, parser_memory_peak_bytes,
+			network_rx_bytes, network_tx_bytes, parse_ready_jobs,
+			parse_delayed_jobs, parse_running_jobs, ingest_ready_jobs,
+			ingest_delayed_jobs, ingest_running_jobs, expired_leases,
+			oldest_queued_job_ms, disk_free_bytes, spool_bytes, spool_files
+		) ON ingest_host_samples TO %s;
+		GRANT SELECT (
+			job_attempt_id, job_stage, input_tokens, output_tokens,
+			abandoned_at, error_category, error_code, provider_status
+		) ON provider_calls TO %s;
+		GRANT SELECT (type, not_before, queued_at) ON jobs TO %s;
+		GRANT SELECT (
+			sampled_at, environment, host_id, worker_instance_id, role,
+			release_sha, state, stage, job_attempt_id, cpu_cores, memory_bytes,
+			memory_limit_bytes, pids_current, pids_limit, oom_events, oom_kill_events
+		) ON ingest_worker_samples TO %s;
+		GRANT SELECT (
+			id, job_id, operation_id, attempt, job_type, environment,
+			status, stage, error_category, error_code, retryable, route,
+			source_format, claimed_at, finished_at, next_retry_at,
+			queue_milliseconds, duration_milliseconds, stage_timings, parse_pages,
+			parse_ocr_pages, parse_slices, figures_selected, figures_cached,
+			figures_captioned, figures_failed, chunks_created, concepts_created
+		) ON ingest_job_attempts TO %s;
+	`, readIdent, readIdent, readIdent, readIdent, readIdent, readIdent, readIdent)); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := owner.Exec(ctx, fmt.Sprintf(`
@@ -271,7 +300,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		t.Fatalf("read/auth direct update error = %v, want insufficient privilege", err)
 	}
 
-	readStore := NewReadStore(store.NewWithPool(readPool))
+	readStore := newReadStoreForTest(t, readPool)
 	modelRef := models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-pro"}
 	userID := "ops_role_user_" + suffix
 	if _, err := owner.Exec(ctx, `

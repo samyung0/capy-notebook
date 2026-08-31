@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -15,7 +16,7 @@ const testLLMParams = `{"temperature":0.3}`
 
 var (
 	flashRef = Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-v4-flash-vision-exp"}
-	embedRef = Ref{ProviderSlug: "openrouter", ModelSlug: "qwen/qwen3-embedding-4b"}
+	embedRef = Ref{ProviderSlug: "deepinfra", ModelSlug: "Qwen/Qwen3-Embedding-4B"}
 )
 
 func openRegistry(t *testing.T) (*pgxpool.Pool, *Registry) {
@@ -330,7 +331,7 @@ func TestAuthRouting(t *testing.T) {
 	if !gpt.Available(true) || !gpt.UsesUserKey(true) {
 		t.Fatal("openai with a key is selectable and billed to the user")
 	}
-	embed := Config{PlatformEnabled: true, ByokEnabled: false, ProviderSlug: "openrouter"}
+	embed := Config{PlatformEnabled: true, ByokEnabled: false, ProviderSlug: "deepinfra"}
 	if embed.UsesUserKey(true) {
 		t.Fatal("platform rows never use a user key")
 	}
@@ -445,5 +446,34 @@ func TestSeedOmitsAnthropicModels(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("seeded anthropic models = %d, want none", count)
+	}
+}
+
+func TestSeededGLMKeepsZAIIdentityAndMaxChatDefault(t *testing.T) {
+	pool, _ := openRegistry(t)
+	var (
+		platformEnabled, byokEnabled bool
+		contextWindow                int
+		thinkingLevels, surfaces     []string
+		defaultThinking              string
+	)
+	if err := pool.QueryRow(context.Background(), `
+		SELECT platform_enabled, byok_enabled, context_window_tokens,
+		       thinking_levels, default_thinking, surfaces
+		  FROM model_configs
+		 WHERE provider_slug='zai' AND model_slug='glm-5.3-flash' AND version=1`).Scan(
+		&platformEnabled, &byokEnabled, &contextWindow,
+		&thinkingLevels, &defaultThinking, &surfaces,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if !platformEnabled || byokEnabled || contextWindow != 1048576 {
+		t.Fatalf("routed GLM auth/window = %v/%v/%d", platformEnabled, byokEnabled, contextWindow)
+	}
+	if !slices.Equal(thinkingLevels, []string{"low", "high", "max"}) || defaultThinking != "max" {
+		t.Fatalf("routed GLM thinking = %v default %q", thinkingLevels, defaultThinking)
+	}
+	if !slices.Equal(surfaces, []string{"chat", "vision"}) {
+		t.Fatalf("routed GLM surfaces = %v", surfaces)
 	}
 }

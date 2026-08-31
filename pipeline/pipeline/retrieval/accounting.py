@@ -17,7 +17,7 @@ from typing import Any
 
 import requests
 
-from .. import obs
+from .. import elitellm, obs
 from ..config import cfg
 from ..registry import ModelConfig
 from .usage_extract import NormalizedUsage
@@ -140,6 +140,8 @@ class RequestAccounting:
     terminal_call_allowed: bool = False
     settled_calls: int = 0
     resource_rates: dict[str, dict[str, Any]] | None = None
+    job_attempt_id: int | None = None
+    job_stage: str = ""
 
 
 _accounting: contextvars.ContextVar[RequestAccounting | None] = contextvars.ContextVar(
@@ -156,7 +158,11 @@ def bind(session_id: str) -> contextvars.Token[RequestAccounting | None]:
 
 
 def bind_ingest(
-    session_id: str, resource_rates: dict[str, dict[str, Any]]
+    session_id: str,
+    resource_rates: dict[str, dict[str, Any]],
+    *,
+    job_attempt_id: int | None = None,
+    job_stage: str = "",
 ) -> contextvars.Token[RequestAccounting | None]:
     """Bind a post-paid ingest reservation for per-call local settlement."""
     if not session_id:
@@ -168,6 +174,8 @@ def bind_ingest(
             session_id=session_id,
             settlement_mode="ingest",
             resource_rates=resource_rates,
+            job_attempt_id=job_attempt_id,
+            job_stage=job_stage,
         )
     )
 
@@ -178,6 +186,12 @@ def reset(token: contextvars.Token[RequestAccounting | None]) -> None:
 
 def current() -> RequestAccounting | None:
     return _accounting.get()
+
+
+def set_job_stage(stage: str) -> None:
+    state = current()
+    if state is not None and state.settlement_mode == "ingest":
+        state.job_stage = stage[:80]
 
 
 def new_call_id() -> str:
@@ -206,8 +220,7 @@ async def open_call(
     if not cfg.dsn:
         raise AccountingError("provider call open requires a database")
     call_context = context or ContextComposition()
-    await asyncio.to_thread(
-        _open_call_sync,
+    arguments: tuple[Any, ...] = (
         state.session_id,
         call_id,
         kind,
@@ -215,15 +228,18 @@ async def open_call(
         thinking,
         call_context,
     )
+    if state.job_attempt_id is not None or state.job_stage:
+        arguments += (state.job_attempt_id, state.job_stage)
+    await asyncio.to_thread(_open_call_sync, *arguments)
 
 
-async def abandon_call(call_id: str) -> None:
+async def abandon_call(call_id: str, exc: BaseException | None = None) -> None:
     """Mark an open stub that never produced usage. Best-effort."""
     state = current()
     if state is None or not call_id or not cfg.dsn:
         return
     try:
-        await asyncio.to_thread(_abandon_call_sync, call_id)
+        await asyncio.to_thread(_abandon_call_sync, call_id, exc)
     except Exception:
         log.exception("failed to abandon provider call %s", call_id)
 
@@ -235,6 +251,8 @@ def _open_call_sync(
     purpose: str,
     thinking: str,
     context: ContextComposition,
+    job_attempt_id: int | None = None,
+    job_stage: str = "",
 ) -> None:
     from ..store import db
 
@@ -247,6 +265,8 @@ def _open_call_sync(
                 kind,
                 purpose,
                 thinking,
+                job_attempt_id=job_attempt_id,
+                job_stage=job_stage,
                 context_system_tokens=context.system_tokens,
                 context_tool_tokens=context.tool_tokens,
                 context_conversation_tokens=context.conversation_tokens,
@@ -258,12 +278,37 @@ def _open_call_sync(
         conn.commit()
 
 
-def _abandon_call_sync(call_id: str) -> None:
+def _abandon_call_sync(call_id: str, exc: BaseException | None) -> None:
     from ..store import db
 
+    raw_status = getattr(exc, "status_code", None) if exc is not None else None
+    provider_status = (
+        raw_status if isinstance(raw_status, int) and 100 <= raw_status <= 599 else None
+    )
+    if provider_status is not None:
+        category = "provider"
+        code = f"provider_http_{provider_status}"
+    elif exc is not None:
+        category = "provider"
+        code = (
+            "provider_"
+            + "".join(
+                character.lower() if character.isalnum() else "_"
+                for character in type(exc).__name__
+            ).strip("_")[:60]
+        )
+    else:
+        category = "provider"
+        code = "provider_abandoned"
     with db.connect() as conn:
         with conn.cursor() as cur:
-            db.abandon_provider_call(cur, call_id)
+            db.abandon_provider_call(
+                cur,
+                call_id,
+                error_category=category,
+                error_code=code,
+                provider_status=provider_status,
+            )
         conn.commit()
 
 
@@ -299,8 +344,8 @@ async def settle(
         "kind": kind,
         "purpose": purpose,
         "thinking": thinking,
-        "provider": spec.provider_slug,
-        "model": spec.litellm_model_id,
+        "provider": elitellm.transport_provider_slug(spec),
+        "model": elitellm.transport_model_slug(spec),
         **usage.as_dict(),
     }
     response = await _post_settlement(payload)
@@ -397,8 +442,8 @@ def _settle_ingest_call_sync(
                 kind=kind,
                 purpose=purpose,
                 thinking=thinking,
-                provider=spec.provider_slug,
-                model=spec.litellm_model_id,
+                provider=elitellm.transport_provider_slug(spec),
+                model=elitellm.transport_model_slug(spec),
                 catalog_provider_slug=spec.provider_slug,
                 catalog_model_slug=spec.model_slug,
                 model_version=spec.version,

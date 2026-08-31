@@ -50,8 +50,8 @@ func AgenticLoopCertified(providerSlug, modelSlug string) bool {
 
 const (
 	EliteLLMProvidersSchemaVersion = 1
-	SeededHopEmbedSlug             = "qwen/qwen3-embedding-4b"
-	ProviderOpenRouter             = "openrouter"
+	SeededHopEmbedSlug             = "Qwen/Qwen3-Embedding-4B"
+	ProviderDeepInfra              = "deepinfra"
 	ProviderAnthropic              = "anthropic"
 	EliteLLMModeChat               = "chat"
 	EliteLLMModeVision             = "vision"
@@ -175,9 +175,9 @@ func (c *EliteLLMProviders) AllowsModel(slug, modelSlug string) (bool, string) {
 	if !ok {
 		return false, "provider is not handled by elitellm"
 	}
-	if slug == ProviderOpenRouter {
+	if slug == ProviderDeepInfra {
 		if !containsString(spec.AllowedModelSlugs, modelSlug) {
-			return false, "openrouter is only allowed for the seeded qwen embed hop"
+			return false, "deepinfra is only allowed for the seeded qwen embed hop"
 		}
 		return true, ""
 	}
@@ -242,11 +242,11 @@ func (c *EliteLLMProviders) CredentialEnv(slug string) string {
 }
 
 func IsFirstPartyProvider(slug string) bool {
-	return slug == "anthropic" || slug == "openai" || slug == "deepseek" || slug == "gemini"
+	return slug == "anthropic" || slug == "openai" || slug == "deepseek" || slug == "gemini" || slug == "zai"
 }
 
 func IsSeededHopException(providerSlug, modelSlug string) bool {
-	return providerSlug == ProviderOpenRouter && modelSlug == SeededHopEmbedSlug
+	return providerSlug == ProviderDeepInfra && modelSlug == SeededHopEmbedSlug
 }
 
 func JoinModelLabel(providerName, modelName string) string {

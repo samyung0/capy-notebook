@@ -13,5 +13,5 @@ def test_a_dead_redis_lets_the_parse_through(monkeypatch):
     assert slots.try_acquire("fast", "job_1") is True
 
 
-def test_slot_cap_matches_the_vm_outer_queue():
-    assert slots.cap_for("fast") == 8
+def test_slot_cap_matches_the_ingest_host_outer_queue():
+    assert slots.cap_for("fast") == 4

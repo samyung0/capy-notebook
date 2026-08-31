@@ -9,8 +9,8 @@ import (
 	texttemplate "text/template"
 )
 
-// The React Email build step writes these files from emails/*.tsx. Keeping the
-// rendered artifacts in the Go package means production does not need Node.
+// The Maily build step writes these files from emails/templates/*.json. Keeping
+// the rendered artifacts in the Go package means production does not need Node.
 //
 //go:embed templates/*.gohtml templates/*.txt
 var templateFS embed.FS

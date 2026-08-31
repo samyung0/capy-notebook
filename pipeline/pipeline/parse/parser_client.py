@@ -1,4 +1,4 @@
-"""Client for the persistent parse service on the ingest VM.
+"""Client for the persistent parser service on the ingest host.
 
 The worker downloads each source from B2 once. This client gives the parser a
 relative key in their shared local spool, and the parser publishes its bundle
@@ -7,9 +7,9 @@ back to that volume atomically. The zip contains ``content_list.json``
 it extracted. That block list is what makes page-accurate citations and figure
 captioning possible.
 
-The live route supports Marker-only, selective RapidOCR, and all-page
-RapidOCR. Unknown parse modes fail and each mode has a separate artifact
-fingerprint.
+The live route uses MinerU's pipeline backend with ``auto``, ``txt``, or
+``ocr`` extraction. Unknown parse modes fail and each mode has a separate
+artifact fingerprint.
 
 Artifacts are addressed by a fingerprint over the source object, parse options,
 route, parser version, and artifact schema. A retry, re-upload, or workspace
@@ -40,10 +40,10 @@ ARTIFACT_SCHEMA = "evo-parser-bundle-v3"
 
 ROUTE_FAST = "fast"
 
-# Must match parser-vm/app.py. The implementation generation and exact release
+# Must match parser/app.py. The implementation generation and exact release
 # SHA form one identity, so rebuilt parser output cannot masquerade as an older
 # artifact even when the source and parse mode are unchanged.
-PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "marker-2-vm-hybrid-v3"}
+PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "mineru-3.4.5-pipeline-sliced-v1"}
 OFFICE_SUFFIXES = frozenset({".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"})
 
 
@@ -51,8 +51,20 @@ class ParserClientError(RuntimeError):
     """The remote parser violated its request or artifact contract."""
 
 
-class ParserHardTimeoutError(ParserClientError):
-    """This exact parser fingerprint is quarantined after a hard timeout."""
+class ParserTerminalResourceError(ParserClientError):
+    """This parser fingerprint must not be retried on the current release."""
+
+
+class ParserHardTimeoutError(ParserTerminalResourceError):
+    """The fingerprint exceeded the parser execution deadline."""
+
+
+class ParserOOMError(ParserTerminalResourceError):
+    """The fingerprint was active when the parser cgroup killed a process."""
+
+
+class ParserCapacityError(ParserClientError):
+    """The parser's bounded local document queue is full."""
 
 
 def _record_measurement(payload: object) -> None:
@@ -70,6 +82,8 @@ def _record_measurement(payload: object) -> None:
         cpu_milliseconds=cpu_milliseconds,
         elapsed_milliseconds=elapsed_milliseconds,
         queue_milliseconds=max(0, int(payload.get("_queue_ms") or 0)),
+        execution_milliseconds=max(0, int(payload.get("_execution_ms") or 0)),
+        slices=max(0, int(payload.get("_slice_count") or 0)),
         download_milliseconds=max(0, int(payload.get("_download_ms") or 0)),
         upload_milliseconds=max(0, int(payload.get("_upload_ms") or 0)),
         worker_rss_bytes=max(0, int(payload.get("_worker_rss_bytes") or 0)),
@@ -199,20 +213,33 @@ def _local_artifact(
     )
 
 
-def _local_quarantine(fingerprint: str) -> str:
+def _local_quarantine(fingerprint: str) -> tuple[str, str] | None:
     path = _shared_path(f"quarantine/{fingerprint}.json")
     try:
         value = json.loads(path.read_bytes())
     except (FileNotFoundError, OSError, ValueError):
-        return ""
+        return None
     if (
         not isinstance(value, dict)
-        or value.get("reason") != "parse_hard_timeout"
+        or value.get("reason") not in {"parse_hard_timeout", "parse_oom"}
         or value.get("source_fingerprint") != fingerprint
         or value.get("parser_version") != parser_version(ROUTE_FAST)
     ):
-        return ""
-    return str(value.get("detail") or "parse exceeded its hard deadline")
+        return None
+    reason = str(value["reason"])
+    default = (
+        "parser ran out of memory"
+        if reason == "parse_oom"
+        else "parse exceeded its hard deadline"
+    )
+    return reason, str(value.get("detail") or default)
+
+
+def _raise_quarantine(marker: tuple[str, str]) -> None:
+    reason, detail = marker
+    if reason == "parse_oom":
+        raise ParserOOMError(detail)
+    raise ParserHardTimeoutError(detail)
 
 
 def _request_artifact(
@@ -227,8 +254,6 @@ def _request_artifact(
     version = parser_version(route)
 
     artifact_key, fingerprint = artifact_identity(descriptor)
-    if detail := _local_quarantine(fingerprint):
-        raise ParserHardTimeoutError(detail)
     cached = _local_artifact(artifact_key, fingerprint, request_id)
     if cached is not None:
         artifact, receipt = cached
@@ -237,6 +262,8 @@ def _request_artifact(
             "parse artifact cache hit key=%s bytes=%s", artifact_key, artifact["size"]
         )
         return artifact
+    if quarantine := _local_quarantine(fingerprint):
+        _raise_quarantine(quarantine)
     endpoint = _endpoint()
 
     headers = {"Content-Type": "application/json"}
@@ -267,6 +294,8 @@ def _request_artifact(
         # especially on the job's final allowed attempt.
         recovered = _local_artifact(artifact_key, fingerprint, request_id)
         if recovered is None:
+            if quarantine := _local_quarantine(fingerprint):
+                _raise_quarantine(quarantine)
             raise
         artifact, receipt = recovered
         _record_measurement(receipt)
@@ -278,12 +307,17 @@ def _request_artifact(
     _record_measurement(payload)
     if resp.status_code >= 300:
         detail = payload.get("detail") if isinstance(payload, dict) else resp.text[:500]
+        if resp.status_code == 422 and isinstance(payload, dict):
+            if payload.get("code") == "parse_hard_timeout":
+                raise ParserHardTimeoutError(str(detail))
+            if payload.get("code") == "parse_oom":
+                raise ParserOOMError(str(detail))
         if (
-            resp.status_code == 422
+            resp.status_code == 429
             and isinstance(payload, dict)
-            and payload.get("code") == "parse_hard_timeout"
+            and payload.get("code") == "parser_capacity"
         ):
-            raise ParserHardTimeoutError(str(detail))
+            raise ParserCapacityError(str(detail))
         raise ParserClientError(f"remote parse {resp.status_code}: {detail}")
     if not isinstance(payload, dict):
         raise ParserClientError("parser returned an invalid JSON response")
@@ -299,8 +333,8 @@ def _request_artifact(
     if not str(artifact.get("sha256") or ""):
         raise ParserClientError("parser returned no artifact checksum")
     artifact["fingerprint"] = fingerprint
-    # Wall time remains useful for latency. The charge uses page counts, and
-    # _worker_cpu_ms is the dedicated Marker child process's actual CPU time.
+    # Wall time remains useful for latency. Page counts, not CPU time, drive the
+    # charge; host sampling captures shared MinerU resource use.
     parse_seconds = payload.get("_server_parse_s")
     log.info(
         "parser published %s local artifact key=%s bytes=%s parse_s=%s cpu_ms=%s pages=%s ocr_pages=%s queue_ms=%s",
@@ -443,6 +477,74 @@ def _extract(
         with preview.open("rb") as handle:
             if handle.read(4) != b"%PDF":
                 raise ParserClientError("Office parse artifact is missing preview.pdf")
+
+
+def ensure_artifact(
+    descriptor: Mapping[str, Any], upload_name: str, request_id: str
+) -> dict[str, Any]:
+    """Publish or recover one immutable artifact without extracting it."""
+    if not request_id:
+        raise ParserClientError("parser request id is required")
+    route = _route(descriptor)
+    artifact = dict(_request_artifact(descriptor, upload_name, request_id))
+    artifact["version"] = parser_version(route)
+    return artifact
+
+
+def extract_artifact(
+    artifact: Mapping[str, Any],
+    raw_dir: Path,
+    *,
+    route: str,
+    require_office_preview: bool,
+) -> list[dict[str, Any]]:
+    """Verify and extract an artifact handed off by a completed parse job."""
+    expected_version = parser_version(route)
+    if str(artifact.get("version") or "") != expected_version:
+        raise ParserClientError("parsed artifact handoff has an unexpected version")
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    try:
+        _extract(
+            artifact,
+            raw_dir,
+            expected_version,
+            require_office_preview=require_office_preview,
+        )
+        content_path = raw_dir / "content_list.json"
+        if content_path.stat().st_size > cfg.parse_content_max_bytes:
+            raise ParserClientError("content_list.json exceeds configured byte limit")
+        content_list = json.loads(content_path.read_text(encoding="utf-8"))
+    except ParserClientError:
+        raise
+    except (KeyError, OSError, ValueError, zipfile.BadZipFile) as exc:
+        raise ParserClientError("parsed artifact could not be read") from exc
+    if not isinstance(content_list, list):
+        raise ParserClientError("content_list.json is not a list of blocks")
+    if len(content_list) > cfg.parse_content_max_blocks:
+        raise ParserClientError("content_list.json contains too many blocks")
+    return content_list
+
+
+def discard_artifact(artifact: Mapping[str, Any]) -> None:
+    """Remove one invalid handed-off artifact from the shared spool.
+
+    The descriptor came from a durable job payload, so constrain deletion to
+    the exact fingerprint-addressed artifact shape before touching the file.
+    A later parse job can then rebuild it instead of repeatedly consuming the
+    same corrupt cache entry.
+    """
+    fingerprint = str(artifact.get("fingerprint") or "")
+    key = str(artifact.get("key") or "")
+    if (
+        len(fingerprint) != 64
+        or any(character not in "0123456789abcdef" for character in fingerprint)
+        or key != f"artifacts/{fingerprint}.zip"
+    ):
+        raise ParserClientError("invalid parsed artifact repair descriptor")
+    try:
+        _shared_path(key).unlink()
+    except FileNotFoundError:
+        pass
 
 
 def parse_to_bundle(

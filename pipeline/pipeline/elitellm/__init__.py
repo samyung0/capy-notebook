@@ -11,6 +11,8 @@ from .client import (
     observed_continuity,
     resolve_thinking,
     stream,
+    transport_model_slug,
+    transport_provider_slug,
     uses_responses,
 )
 
@@ -25,5 +27,7 @@ __all__ = [
     "observed_continuity",
     "resolve_thinking",
     "stream",
+    "transport_model_slug",
+    "transport_provider_slug",
     "uses_responses",
 ]

@@ -12,9 +12,9 @@ function localeTag(): string {
 }
 
 export function formatBytes(bytes: number): string {
-  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)} GiB`;
-  if (bytes >= 1024 ** 2) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
-  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KiB`;
+  if (bytes >= 1_000_000_000) return `${(bytes / 1_000_000_000).toFixed(1)} GB`;
+  if (bytes >= 1_000_000) return `${(bytes / 1_000_000).toFixed(1)} MB`;
+  if (bytes >= 1000) return `${Math.round(bytes / 1000)} KB`;
   return `${Math.max(0, Math.round(bytes))} B`;
 }
 
@@ -35,7 +35,7 @@ export function usagePercent(
 }
 
 export function storageLimitLabel(bytes: number): string {
-  const unit = bytes >= 1024 ** 3 ? 'GB' : 'MB';
-  const divisor = unit === 'GB' ? 1024 ** 3 : 1024 ** 2;
+  const unit = bytes >= 1_000_000_000 ? 'GB' : 'MB';
+  const divisor = unit === 'GB' ? 1_000_000_000 : 1_000_000;
   return `${Math.round(bytes / divisor)} ${unit}`;
 }

@@ -21,22 +21,10 @@ import (
 // ledger to provider dashboards, not by deriving one from the other.
 const MicrosPerCredit = 1_000_000
 
-const (
-	FreeCreditsPerMonth = 1_000
-	ProCreditsPerMonth  = 20_000
-)
-
 // reservationTTL bounds how long an unsettled reservation holds budget. It is
 // longer than the pipeline's 90s sync timeout and longer than a realistic chat
 // stream, so a settle always wins the race against the sweeper.
 const reservationTTL = 30 * time.Minute
-
-func CreditLimitMicros(tier PlanTier) int64 {
-	if tier == PlanPro {
-		return ProCreditsPerMonth * MicrosPerCredit
-	}
-	return FreeCreditsPerMonth * MicrosPerCredit
-}
 
 var ErrCreditsExhausted = errors.New("llm credits exhausted")
 
@@ -46,7 +34,7 @@ var ErrCreditsExhausted = errors.New("llm credits exhausted")
 var ErrTooManyLLMLeases = errors.New("too many llm leases")
 
 // ErrTooManyIngestLeases means the actor already has ConcurrentIngestLeases
-// pending or running ingest jobs. Distinct from too-many-llm-leases and from
+// pending or running pipeline reservations. Distinct from too-many-llm-leases and from
 // credits exhausted.
 var ErrTooManyIngestLeases = errors.New("too many ingest leases")
 
@@ -59,7 +47,7 @@ var ErrTerminalCallNotAllowed = errors.New("terminal provider call not allowed")
 // a lease. Ingest uses ConcurrentIngestLeases instead.
 const ConcurrentLLMLeases = 5
 
-// ConcurrentIngestLeases caps pending+running ingest jobs per actor.
+// ConcurrentIngestLeases caps pending+running parse/ingest pipelines per actor.
 const ConcurrentIngestLeases = 20
 
 // ingestReservationHold is far enough that a live pending job is never
@@ -248,7 +236,11 @@ func (s *Store) lockedCreditUsageTx(
 	}
 	usage.UserID = userID
 	usage.PlanTier = tier
-	usage.LimitMicros = CreditLimitMicros(tier)
+	limits, err := s.PlanLimits(tier)
+	if err != nil {
+		return usage, err
+	}
+	usage.LimitMicros = limits.CreditMicros
 	return usage, nil
 }
 
@@ -285,7 +277,11 @@ func (s *Store) CreditBalance(ctx context.Context, userID string) (CreditUsage, 
 	}
 	usage.UserID = userID
 	usage.PlanTier = tier
-	usage.LimitMicros = CreditLimitMicros(tier)
+	limits, err := s.PlanLimits(tier)
+	if err != nil {
+		return usage, err
+	}
+	usage.LimitMicros = limits.CreditMicros
 	return usage, nil
 }
 
@@ -1083,7 +1079,7 @@ func (s *Store) sweepOrphanIngestReservations(ctx context.Context) (int64, error
 		     AND r.created_at < now() - ($2 * interval '1 millisecond')
 		     AND NOT EXISTS (
 		       SELECT 1 FROM jobs j
-		        WHERE j.type = 'ingest'
+		        WHERE j.type IN ('parse', 'ingest')
 		          AND j.status IN ('pending', 'running')
 		          AND j.payload->>'reservationId' = r.id
 		     )

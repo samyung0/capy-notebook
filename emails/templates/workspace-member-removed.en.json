@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "subject": "You were removed from {{.WorkspaceName}}",
+  "preview": "Your membership in {{.WorkspaceName}} changed.",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              { "type": "bold" },
+              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
+            ],
+            "text": "Evo Notes"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "attrs": { "level": 1 },
+        "content": [{ "type": "text", "text": "Removed from workspace" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          { "type": "text", "text": "Your membership in " },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "WorkspaceName",
+              "label": "Workspace name",
+              "required": true
+            }
+          },
+          { "type": "text", "text": " was removed by a workspace owner." }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "WorkspaceName",
+              "label": "Workspace name",
+              "required": true
+            },
+            "marks": [{ "type": "bold" }]
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "Open Evo Notes",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      { "type": "horizontalRule" },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "You received this message because your Evo Notes workspace membership changed."
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ],
+            "text": "Manage product email preferences"
+          }
+        ]
+      }
+    ]
+  }
+}

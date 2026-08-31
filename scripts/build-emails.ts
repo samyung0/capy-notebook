@@ -1,162 +1,72 @@
 /**
- * Renders emails/*.tsx into Go templates that the API embeds, so production
- * never needs Node. All copy comes from the Paraglide catalog in messages/*.json:
- * Go placeholders such as `{{.WorkspaceName}}` are passed in as Paraglide message
- * parameters, so they survive interpolation and land in the rendered output.
+ * Renders locale-specific Maily JSON into Go templates that the API embeds, so
+ * production never needs Node. Subject and body placeholders remain Go
+ * template actions and are filled when the API sends a message.
  */
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { compile } from '@inlang/paraglide-js';
-import { render, toPlainText } from '@react-email/render';
-import { createElement, type ReactElement } from 'react';
+import { Maily } from '@maily-to/render';
+import type { JSONContent } from '@tiptap/core';
+import {
+  type EmailLocale,
+  emailLocales,
+  emailRendererTheme,
+  emailTemplateDefinitions,
+  emailTemplateSourceSchema,
+  validateTemplateVariables,
+} from '../emails/schema';
 
 const projectRoot = process.cwd();
 const paraglideOutDir = join(projectRoot, 'src', 'i18n', 'paraglide');
+const sourceDir = join(projectRoot, 'emails', 'templates');
 const mailDir = join(projectRoot, 'server', 'internal', 'mail');
 const templateDir = join(mailDir, 'templates');
+const TRAILING_WHITESPACE_PATTERN = /[ \t]+$/gm;
 
-// The Paraglide output is generated, not committed, and the email components
-// import it directly — so compile before anything pulls them in.
+// Workspace roles remain application messages because they also appear outside
+// email templates. Compile the catalog before importing the generated module.
 await compile({
   outdir: paraglideOutDir,
   project: join(projectRoot, 'project.inlang'),
 });
 
-const { m } = await import('../emails/i18n');
-const { locales } = await import('../src/i18n/paraglide/runtime.js');
-const { default: AccountDeletionCancelledEmail } = await import(
-  '../emails/account-deletion-cancelled'
-);
-const { default: AccountDeletionRequestedEmail } = await import(
-  '../emails/account-deletion-requested'
-);
-const { default: ModelDeprecatedEmail } = await import(
-  '../emails/model-deprecated'
-);
-const { default: SubscriptionFrozenEmail } = await import(
-  '../emails/subscription-frozen'
-);
-const { default: SubscriptionOverQuotaEmail } = await import(
-  '../emails/subscription-over-quota'
-);
-const { default: WorkspaceInviteEmail } = await import(
-  '../emails/workspace-invite'
-);
-const { default: WorkspaceMemberRemovedEmail } = await import(
-  '../emails/workspace-member-removed'
-);
-const { default: WorkspaceRoleChangedEmail } = await import(
-  '../emails/workspace-role-changed'
-);
+const { m } = await import('../src/i18n/paraglide/messages.js');
 
-type Locale = 'en' | 'zh';
+async function readSource(templateId: string, locale: EmailLocale) {
+  const file = join(sourceDir, `${templateId}.${locale}.json`);
+  const raw = await readFile(file, 'utf8');
+  return emailTemplateSourceSchema.parse(JSON.parse(raw));
+}
 
-const placeholder = (name: string) => `{{.${name}}}`;
-const fromName = placeholder('FromName');
-const graceDays = placeholder('GraceDays');
-const openUrl = placeholder('OpenURL');
-const toName = placeholder('ToName');
-const workspaceName = placeholder('WorkspaceName');
-const unsubscribeUrl = placeholder('UnsubscribeURL');
+async function renderSource(
+  templateId: string,
+  locale: EmailLocale,
+  source: Awaited<ReturnType<typeof readSource>>
+) {
+  const definition = emailTemplateDefinitions.find(
+    (candidate) => candidate.id === templateId
+  );
+  if (!definition) throw new Error(`unknown email template ${templateId}`);
+  validateTemplateVariables(definition, source);
 
-const templates: Array<{
-  name: string;
-  render: (locale: Locale) => ReactElement;
-  subject: (locale: Locale) => string;
-}> = [
-  {
-    name: 'workspace-invite',
-    render: (locale) =>
-      createElement(WorkspaceInviteEmail, {
-        inviteUrl: placeholder('InviteURL'),
-        locale,
-        unsubscribeUrl,
-        workspaceName,
-      }),
-    subject: (locale) => m.email_invite_subject({ workspaceName }, { locale }),
-  },
-  {
-    name: 'workspace-role-changed',
-    render: (locale) =>
-      createElement(WorkspaceRoleChangedEmail, {
-        locale,
-        openUrl,
-        roleName: placeholder('RoleName'),
-        unsubscribeUrl,
-        workspaceName,
-      }),
-    subject: (locale) =>
-      m.email_role_changed_subject({ workspaceName }, { locale }),
-  },
-  {
-    name: 'workspace-member-removed',
-    render: (locale) =>
-      createElement(WorkspaceMemberRemovedEmail, {
-        locale,
-        openUrl,
-        unsubscribeUrl,
-        workspaceName,
-      }),
-    subject: (locale) =>
-      m.email_member_removed_subject({ workspaceName }, { locale }),
-  },
-  {
-    name: 'account-deletion-requested',
-    render: (locale) =>
-      createElement(AccountDeletionRequestedEmail, {
-        graceDays,
-        locale,
-        openUrl,
-        unsubscribeUrl,
-      }),
-    subject: (locale) => m.email_deletion_requested_subject({}, { locale }),
-  },
-  {
-    name: 'account-deletion-cancelled',
-    render: (locale) =>
-      createElement(AccountDeletionCancelledEmail, {
-        locale,
-        openUrl,
-        unsubscribeUrl,
-      }),
-    subject: (locale) => m.email_deletion_cancelled_subject({}, { locale }),
-  },
-  {
-    name: 'subscription-over-quota',
-    render: (locale) =>
-      createElement(SubscriptionOverQuotaEmail, {
-        locale,
-        openUrl,
-        unsubscribeUrl,
-      }),
-    subject: (locale) => m.email_over_quota_subject({}, { locale }),
-  },
-  {
-    name: 'subscription-frozen',
-    render: (locale) =>
-      createElement(SubscriptionFrozenEmail, {
-        locale,
-        openUrl,
-        unsubscribeUrl,
-      }),
-    subject: (locale) => m.email_frozen_subject({}, { locale }),
-  },
-  {
-    name: 'model-deprecated',
-    render: (locale) =>
-      createElement(ModelDeprecatedEmail, {
-        fromName,
-        locale,
-        openUrl,
-        toName,
-        unsubscribeUrl,
-      }),
-    subject: (locale) =>
-      m.email_model_deprecated_subject({ fromName }, { locale }),
-  },
-];
+  const renderer = new Maily(source.content as JSONContent);
+  renderer.setHtmlProps({ dir: 'ltr', lang: locale });
+  renderer.setPreviewText(source.preview);
+  renderer.setTheme(emailRendererTheme);
+  renderer.setVariableFormatter(({ variable }) => `{{.${variable}}}`);
 
-const roleLabels: Record<string, (locale: Locale) => string> = {
+  return {
+    html: (await renderer.render())
+      .replace(TRAILING_WHITESPACE_PATTERN, '')
+      .trim(),
+    text: (await renderer.render({ plainText: true }))
+      .replace(TRAILING_WHITESPACE_PATTERN, '')
+      .trim(),
+  };
+}
+
+const roleLabels: Record<string, (locale: EmailLocale) => string> = {
   commenter: (locale) => m.notification_role_commenter({}, { locale }),
   editor: (locale) => m.notification_role_editor({}, { locale }),
   viewer: (locale) => m.notification_role_viewer({}, { locale }),
@@ -182,17 +92,15 @@ const subjects = new Map<string, string>();
 const roles = new Map<string, string>();
 
 await mkdir(templateDir, { recursive: true });
-for (const locale of locales as readonly Locale[]) {
-  for (const template of templates) {
-    const key = `${template.name}.${locale}`;
-    subjects.set(key, template.subject(locale));
+for (const locale of emailLocales) {
+  for (const definition of emailTemplateDefinitions) {
+    const key = `${definition.id}.${locale}`;
+    const source = await readSource(definition.id, locale);
+    const rendered = await renderSource(definition.id, locale, source);
 
-    const html = await render(template.render(locale));
-    await writeFile(join(templateDir, `${key}.gohtml`), `${html.trim()}\n`);
-    await writeFile(
-      join(templateDir, `${key}.txt`),
-      `${toPlainText(html).trim()}\n`
-    );
+    subjects.set(key, source.subject);
+    await writeFile(join(templateDir, `${key}.gohtml`), `${rendered.html}\n`);
+    await writeFile(join(templateDir, `${key}.txt`), `${rendered.text}\n`);
   }
   for (const [role, label] of Object.entries(roleLabels)) {
     roles.set(`${role}.${locale}`, label(locale));
@@ -201,7 +109,7 @@ for (const locale of locales as readonly Locale[]) {
 
 const generatedGo = [
   '// Code generated by scripts/build-emails.ts. DO NOT EDIT.',
-  '// Source of truth: messages/*.json. Run `pnpm email:build` to regenerate.',
+  '// Source of truth: emails/templates/*.json. Run `pnpm email:build` to regenerate.',
   '',
   'package mail',
   '',

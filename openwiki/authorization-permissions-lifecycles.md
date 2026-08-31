@@ -118,7 +118,10 @@ Sources: [workspace versus material access rules](../server/internal/store/share
   **transfer ownership** and select an existing live member.
 - On transfer, the recipient becomes owner and assumes the complete storage
   bill. The old owner remains as an editor. Transfer is refused if the recipient
-  cannot fit the workspace's used and reserved bytes.
+  cannot fit the workspace's used and reserved bytes or file count.
+- Workspace creation, clone, and transfer-to-recipient all run the owned-workspace
+  plan gate. Both current plans are unlimited (`owned_workspace_limit IS NULL`),
+  but the gate is ready for a finite catalog value without changing those flows.
 - An over-quota owner may still transfer because giving away bytes is a recovery
   action.
 
@@ -278,7 +281,7 @@ Every storage-**creating** transaction checks both conditions:
 1. the storage owner's lifecycle permits creation; and
 2. `used bytes + reserved bytes + requested bytes <= plan limit`.
 
-The current limits are 100 MiB for free accounts and 1 GiB for Pro accounts.
+The current limits are 100 MB for free accounts and 1 GB for Pro accounts.
 Upload reservations count immediately so concurrent uploads cannot both spend
 the same remaining quota. Quota errors use `storage_quota_exceeded`; lifecycle
 over-quota errors use `account_over_quota`.

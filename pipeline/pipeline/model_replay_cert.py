@@ -14,6 +14,10 @@ from typing import Any
 import httpx
 
 from pipeline.config import env_name_for_provider
+from pipeline.elitellm.client import (
+    DEEPINFRA_GLM_FLASH_MODEL,
+    ZAI_GLM_FLASH_MODEL,
+)
 from pipeline.elitellm.providers import load_providers
 
 REPO = Path(__file__).resolve().parents[2]
@@ -24,6 +28,7 @@ MODEL_LIST_ENDPOINTS = {
     "anthropic": "https://api.anthropic.com/v1/models",
     "deepseek": "https://api.deepseek.com/models",
     "openai": "https://api.openai.com/v1/models",
+    "zai": "https://api.deepinfra.com/v1/models",
 }
 
 
@@ -146,6 +151,12 @@ def fetch_available_model_slugs(
     }
     if not model_ids:
         raise ModelListError(f"{provider_slug} returned no available model slugs")
+    if provider_slug == "zai":
+        if DEEPINFRA_GLM_FLASH_MODEL not in model_ids:
+            raise ModelListError(
+                f"zai routed model {DEEPINFRA_GLM_FLASH_MODEL} is unavailable"
+            )
+        return [ZAI_GLM_FLASH_MODEL]
     return sorted(model_ids)
 
 

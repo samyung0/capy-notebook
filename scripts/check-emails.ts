@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 
-// Copy lives in messages/*.json, but the API embeds prerendered artifacts, so a
-// translation edit without a rebuild silently ships stale emails.
+// Maily source lives in emails/templates/*.json, but the API embeds prerendered
+// artifacts, so a saved edit without a rebuild would otherwise ship stale mail.
 const generated = [
   'server/internal/mail/templates',
   'server/internal/mail/copy_gen.go',

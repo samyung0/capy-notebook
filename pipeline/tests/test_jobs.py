@@ -24,9 +24,14 @@ def test_unknown_errors_are_retryable():
 
 def test_backoff_grows_with_attempts():
     policy = policy_for("ingest")
+    assert policy.max_attempts == 2
     assert backoff_s(policy, 1) == policy.backoff_base_s
     assert backoff_s(policy, 2) == policy.backoff_base_s * 2
-    assert backoff_s(policy, 3) == policy.backoff_base_s * 4
+
+
+def test_parse_and_post_parse_each_have_one_retry():
+    assert policy_for("parse").max_attempts == 2
+    assert policy_for("ingest").max_attempts == 2
 
 
 def test_unknown_job_types_are_terminal():

@@ -1,0 +1,6 @@
+payload: slice-01-p0001-p0026.pdf (19541531 bytes)
+
+=== fast  http://127.0.0.1:18090/file_parse
+healthz: 0.03s  uptime_s=1.354  version=mineru-3.4.5-pipeline-sliced-v1+2725da1cbe39407786c9b3bdcd40fe68e0149046
+-- one job --
+  wall=92.81s  server_parse=92.694  uptime_s=None  blocks=330 chars=57173 headings=43 images=34  ocr_pages=[]  lane=digital  rss=3605MB/3procs

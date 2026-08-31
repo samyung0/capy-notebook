@@ -1,7 +1,8 @@
 """Evo Notes retrieval pipeline.
 
-Two runtime roles share this package (compose picks the command):
-- ``pipeline.ingest.worker``    — claims jobs, calls the parser VM,
+Three runtime roles share this package (compose picks the command):
+- ``pipeline.ingest.parse_worker`` — coordinates document parsing and artifact handoff.
+- ``pipeline.ingest.worker``    — handles direct and post-parse ingestion,
   chunks and embeds into the retrieval index, publishes progress to Redis.
 - ``pipeline.retrieve.service`` — FastAPI chat/generate over that index.
 

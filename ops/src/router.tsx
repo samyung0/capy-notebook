@@ -27,8 +27,10 @@ const OverviewPage = lazy(() =>
     default: module.OverviewPage,
   }))
 );
-const ParserPage = lazy(() =>
-  import('@/pages/parser').then((module) => ({ default: module.ParserPage }))
+const IngestHostPage = lazy(() =>
+  import('@/pages/ingest-host').then((module) => ({
+    default: module.IngestHostPage,
+  }))
 );
 const ReconciliationPage = lazy(() =>
   import('@/pages/reconciliation').then((module) => ({
@@ -188,14 +190,14 @@ const healthRoute = createRoute({
   getParentRoute: () => authenticatedRoute,
   path: '/health',
 });
-const parserRoute = createRoute({
+const ingestHostRoute = createRoute({
   component: () => (
     <PageBoundary>
-      <ParserPage />
+      <IngestHostPage />
     </PageBoundary>
   ),
   getParentRoute: () => authenticatedRoute,
-  path: '/parser',
+  path: '/ingest-host',
 });
 const reconciliationRoute = createRoute({
   component: () => (
@@ -249,7 +251,7 @@ const routeTree = rootRoute.addChildren([
   authenticatedRoute.addChildren([
     overviewRoute,
     healthRoute,
-    parserRoute,
+    ingestHostRoute,
     reconciliationRoute,
     usersRoute,
     userDetailRoute,

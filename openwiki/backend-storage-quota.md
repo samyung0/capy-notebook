@@ -12,6 +12,36 @@ cleanup) live in
 [authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md).
 This page is the accounting contract.
 
+## Product plan limits
+
+`plan_limits` in `server/migrations/0001_init.sql` is the canonical backend
+catalog for every numeric limit that may vary by subscription plan:
+
+| Limit | Free | Pro |
+| --- | ---: | ---: |
+| Storage | 100,000,000 bytes (100 MB) | 1,000,000,000 bytes (1 GB) |
+| Monthly credits | 1,000 | 20,000 |
+| Source file | 10 MiB | 30 MiB |
+| Material daily-history entries | 3 | 30 |
+| Owned workspaces | Unlimited (`NULL`) | Unlimited (`NULL`) |
+| Files per workspace | 100 | 100 |
+| Files per upload/import request | 20 | 20 |
+
+The Go gateway and ops process load and validate the complete two-row catalog
+once during startup. The Python ingest worker does the same before it starts its
+model registry or claims a job. Request paths read only the immutable process
+snapshot; they do not query `plan_limits`, and a missing, unknown, or malformed
+plan makes startup fail.
+
+The frontend intentionally has no plan-catalog endpoint. Product copy uses the
+explicit snapshot in `src/features/billing/planLimits.ts`; changing a displayed
+limit requires updating that file and the affected Paraglide translations along
+with the SQL seed. APIs may still return a requester's effective current value,
+such as workspace `filesLimit`, upload-policy `maxBytes`, and billing counters.
+
+Subscription projection remains owned by the existing Stripe lifecycle code.
+Loading this catalog does not add or change cancellation/downgrade transitions.
+
 ## What counts
 
 Storage is charged once per logical row owned by a user:
@@ -26,14 +56,13 @@ Workspace-owned rows resolve the payer from `workspaces.user_id` into
 `files.user_id` / `editor_assets.user_id` / `materials.owner_user_id`. A
 standalone material sets `owner_user_id` from its creator.
 
-Plan limits: **100 MiB** free, **1 GiB** Pro
-(`FreeStorageLimitBytes` / `ProStorageLimitBytes`). The UI labels them
-100 MB / 1 GB.
+Storage limits are **100 MB** free and **1 GB** Pro. These use decimal bytes:
+100,000,000 and 1,000,000,000 respectively.
 
 Per-file **source upload** caps are separate from that quota and from editor-asset
 purpose limits (images 20 MB, audio 100 MB, …). They follow the **workspace
 owner's** plan, create-only (no retroactive invalidation): **10 MiB** free,
-**30 MiB** Pro (`sourceupload.SourceMaxBytes`). GPU/LLM cost is metered
+**30 MiB** Pro (from the startup plan snapshot). GPU/LLM cost is metered
 elsewhere. `GET /api/source-upload-policy?workspaceId=` returns the cap the
 dialog should enforce.
 
@@ -45,14 +74,14 @@ clone, and donor reuse, then queues deletion after its last file/cache reference
 is gone. Native PDFs reuse `blob_path` and do not create another preview object.
 
 Per-workspace **file count** is a separate bound from byte quota: it exists so
-the chat catalogue (`list_sources`) fits in one tool result. `MaxFilesPerWorkspace`
-is 100. Open unexpired source upload sessions count toward the cap so concurrent
+the chat catalogue (`list_sources`) fits in one tool result. Both plans currently
+allow 100. Open unexpired source upload sessions count toward the cap so concurrent
 session creates cannot all pass a check against 99; `SweepExpiredUploads` returns
-those slots. `MaxFilesPerUpload` is 20 and is enforced server-side per request
+those slots. The per-upload limit is 20 and is enforced server-side per request
 (the browser picker is only the first line). Both gates run in
 `gateWorkspaceFilesTx` at session creation and on every other file-insert path
-(cloud import preflights the whole batch). Clone needs no exemption: a source at
-or under 100 clones to at most 100. The workspace payload reports `fileCount` and
+(cloud import preflights the whole batch). Clone and ownership transfer also
+check the recipient plan's workspace-file cap. The workspace payload reports `fileCount` and
 `filesLimit`. Overflow is `files_limit_exceeded`; a too-large batch is
 `files_batch_exceeded`.
 

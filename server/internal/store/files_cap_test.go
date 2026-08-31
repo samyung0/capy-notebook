@@ -28,7 +28,8 @@ func TestWorkspaceFileCapRejectsThe101stFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seedWorkspaceFiles(t, s, ws.ID, owner, MaxFilesPerWorkspace)
+	workspaceLimit := mustPlanLimits(t, s, PlanFree).FilesPerWorkspace
+	seedWorkspaceFiles(t, s, ws.ID, owner, workspaceLimit)
 
 	_, err = s.CreateSourceReady(ctx, ws.ID, owner, "overflow.pdf", "pdf",
 		nil, "", 1, "sources/"+uid("f"))
@@ -39,8 +40,8 @@ func TestWorkspaceFileCapRejectsThe101stFile(t *testing.T) {
 	if limit.Kind != "workspace" || limit.Code() != "files_limit_exceeded" {
 		t.Fatalf("kind=%s code=%s", limit.Kind, limit.Code())
 	}
-	if limit.Limit != MaxFilesPerWorkspace {
-		t.Fatalf("limit = %d, want %d", limit.Limit, MaxFilesPerWorkspace)
+	if limit.Limit != workspaceLimit {
+		t.Fatalf("limit = %d, want %d", limit.Limit, workspaceLimit)
 	}
 }
 
@@ -52,7 +53,8 @@ func TestPendingUploadSessionsOccupyFileSlots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seedWorkspaceFiles(t, s, ws.ID, owner, MaxFilesPerWorkspace-1)
+	workspaceLimit := mustPlanLimits(t, s, PlanFree).FilesPerWorkspace
+	seedWorkspaceFiles(t, s, ws.ID, owner, workspaceLimit-1)
 
 	_, err = s.CreateUploadSession(ctx, NewUploadSession{
 		ID: uid("up"), WorkspaceID: ws.ID, CreatedBy: owner,
@@ -86,7 +88,8 @@ func TestExpiredUploadSessionsDoNotOccupyFileSlots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seedWorkspaceFiles(t, s, ws.ID, owner, MaxFilesPerWorkspace-1)
+	workspaceLimit := mustPlanLimits(t, s, PlanFree).FilesPerWorkspace
+	seedWorkspaceFiles(t, s, ws.ID, owner, workspaceLimit-1)
 
 	_, err = s.CreateUploadSession(ctx, NewUploadSession{
 		ID: uid("up"), WorkspaceID: ws.ID, CreatedBy: owner,
@@ -120,7 +123,8 @@ func TestFileBatchCapRejectsMoreThanTwenty(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = s.AssertWorkspaceFileRoom(ctx, ws.ID, MaxFilesPerUpload+1)
+	uploadLimit := mustPlanLimits(t, s, PlanFree).FilesPerUpload
+	err = s.AssertWorkspaceFileRoom(ctx, ws.ID, uploadLimit+1)
 	var limit *FileLimitExceededError
 	if !errors.As(err, &limit) {
 		t.Fatalf("err = %v, want FileLimitExceededError", err)
@@ -128,8 +132,8 @@ func TestFileBatchCapRejectsMoreThanTwenty(t *testing.T) {
 	if limit.Kind != "batch" || limit.Code() != "files_batch_exceeded" {
 		t.Fatalf("kind=%s code=%s", limit.Kind, limit.Code())
 	}
-	if limit.Limit != MaxFilesPerUpload {
-		t.Fatalf("limit = %d, want %d", limit.Limit, MaxFilesPerUpload)
+	if limit.Limit != uploadLimit {
+		t.Fatalf("limit = %d, want %d", limit.Limit, uploadLimit)
 	}
 }
 
@@ -145,8 +149,9 @@ func TestWorkspacePayloadReportsFileLimit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.FilesLimit != MaxFilesPerWorkspace {
-		t.Fatalf("filesLimit = %d, want %d", got.FilesLimit, MaxFilesPerWorkspace)
+	wantLimit := mustPlanLimits(t, s, PlanFree).FilesPerWorkspace
+	if got.FilesLimit != wantLimit {
+		t.Fatalf("filesLimit = %d, want %d", got.FilesLimit, wantLimit)
 	}
 	if got.FileCount != 0 {
 		t.Fatalf("fileCount = %d, want 0", got.FileCount)

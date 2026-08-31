@@ -4,14 +4,10 @@ import { useBillingCheckout, useBillingPortal, useMe } from '@/api/hooks';
 import type { BillingCheckoutReq, PlanTier } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { storageLimitLabel } from '@/features/billing/format';
+import { PLAN_LIMITS } from '@/features/billing/planLimits';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { track } from '@/lib/observability';
-
-const STORAGE_LIMITS = {
-  free: 100 * 1024 * 1024,
-  pro: 1024 * 1024 * 1024,
-} as const;
 
 export function planLabel(tier: PlanTier) {
   switch (tier) {
@@ -34,7 +30,7 @@ const PLANS: {
     bullets: () => [
       m.subscription_bullet_workspaces_free(),
       m.subscription_bullet_storage({
-        size: storageLimitLabel(STORAGE_LIMITS.free),
+        size: storageLimitLabel(PLAN_LIMITS.free.storageLimitBytes),
       }),
       m.subscription_bullet_chat(),
     ],
@@ -44,7 +40,7 @@ const PLANS: {
     bullets: () => [
       m.subscription_bullet_workspaces_unlimited(),
       m.subscription_bullet_storage({
-        size: storageLimitLabel(STORAGE_LIMITS.pro),
+        size: storageLimitLabel(PLAN_LIMITS.pro.storageLimitBytes),
       }),
       m.subscription_bullet_generate(),
       m.subscription_bullet_priority_ingest(),

@@ -47,8 +47,8 @@ func TestUpsertLLMCredentialRejectsMarketplaceHop(t *testing.T) {
 	ctx := context.Background()
 	s.SetLLMCredentialKey(bytes.Repeat([]byte{7}, 32))
 	userID := newCreditsTestUser(t, s)
-	if err := s.UpsertLLMCredential(ctx, userID, "openrouter", "sk-or-test"); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("openrouter upsert = %v, want ErrNotFound", err)
+	if err := s.UpsertLLMCredential(ctx, userID, "deepinfra", "sk-or-test"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("deepinfra upsert = %v, want ErrNotFound", err)
 	}
 }
 

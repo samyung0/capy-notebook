@@ -39,7 +39,7 @@ def test_python_embedding_allowlist_matches_go():
         / "allowlist.go"
     ).read_text(encoding="utf-8")
     go_tables = {
-        (provider, "qwen/qwen3-embedding-4b", int(version)): table
+        (provider, "Qwen/Qwen3-Embedding-4B", int(version)): table
         for provider, version, table in re.findall(
             r'ProviderSlug: "([^"]+)", ModelSlug: models\.SeededHopEmbedSlug\}, Version: (\d+)\}: \{\s*'
             r'VectorTable: "([^"]+)"',
@@ -58,21 +58,21 @@ def test_embedding_rows_are_frozen(_test_infra):
             conn.execute(
                 """
                 UPDATE model_configs SET enabled=false
-                 WHERE provider_slug='openrouter' AND model_slug='qwen/qwen3-embedding-4b' AND version=1
+                 WHERE provider_slug='deepinfra' AND model_slug='Qwen/Qwen3-Embedding-4B' AND version=1
                 """
             )
         with pytest.raises(psycopg.Error):
             conn.execute(
                 """
                 UPDATE model_configs SET surfaces=ARRAY['chat']
-                 WHERE provider_slug='openrouter' AND model_slug='qwen/qwen3-embedding-4b' AND version=1
+                 WHERE provider_slug='deepinfra' AND model_slug='Qwen/Qwen3-Embedding-4B' AND version=1
                 """
             )
         with pytest.raises(psycopg.Error):
             conn.execute(
                 """
                 UPDATE model_configs SET model_slug='other-embed'
-                 WHERE provider_slug='openrouter' AND model_slug='qwen/qwen3-embedding-4b' AND version=1
+                 WHERE provider_slug='deepinfra' AND model_slug='Qwen/Qwen3-Embedding-4B' AND version=1
                 """
             )
         with pytest.raises(psycopg.Error):
@@ -80,18 +80,18 @@ def test_embedding_rows_are_frozen(_test_infra):
                 """
                 UPDATE model_configs
                    SET params='{"dimensions": 2560, "x": 1}'::jsonb
-                 WHERE provider_slug='openrouter' AND model_slug='qwen/qwen3-embedding-4b' AND version=1
+                 WHERE provider_slug='deepinfra' AND model_slug='Qwen/Qwen3-Embedding-4B' AND version=1
                 """
             )
         with pytest.raises(psycopg.Error):
             conn.execute(
-                "DELETE FROM model_configs WHERE provider_slug='openrouter' AND model_slug='qwen/qwen3-embedding-4b' AND version=1"
+                "DELETE FROM model_configs WHERE provider_slug='deepinfra' AND model_slug='Qwen/Qwen3-Embedding-4B' AND version=1"
             )
         with pytest.raises(psycopg.Error):
             conn.execute(
                 f"""
                 INSERT INTO model_configs ({_LLM_COLS}) VALUES (
-                    1, 'Ghost', 'Ghost', 'openrouter', 'ghost',
+                    1, 'Ghost', 'Ghost', 'deepinfra', 'ghost',
                     true, false, 0, ARRAY[]::text[], '',
                     '{{"dimensions": 2560, "vector_table": "rag_chunk_vectors_2560"}}'::jsonb,
                     ARRAY['embedding'],
@@ -223,7 +223,7 @@ def test_credit_rates_zero_only_for_byok(_test_infra):
             conn.execute(
                 f"""
                 INSERT INTO model_configs ({_LLM_COLS}) VALUES (
-                    1, 'Embed', 'In0', 'openrouter', %s,
+                    1, 'Embed', 'In0', 'deepinfra', %s,
                     true, false, 0, ARRAY[]::text[], '',
                     '{{"dimensions": 2560, "vector_table": "rag_chunk_vectors_in0"}}'::jsonb,
                     ARRAY['embedding'],
@@ -283,7 +283,7 @@ def test_llm_rows_require_thinking(_test_infra):
             conn.execute(
                 f"""
                 INSERT INTO model_configs ({_LLM_COLS}) VALUES (
-                    1, 'Embed', 'Think', 'openrouter', %s,
+                    1, 'Embed', 'Think', 'deepinfra', %s,
                     true, false, 0, ARRAY['instant']::text[], 'instant',
                     '{{"dimensions": 2560, "vector_table": "rag_chunk_vectors_think"}}'::jsonb,
                     ARRAY['embedding'],

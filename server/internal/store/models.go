@@ -40,6 +40,9 @@ type Workspace struct {
 	// It is the account whose quota governs whether members may add content,
 	// so it is not interchangeable with the requester.
 	OwnerUserID string `json:"ownerUserId"`
+	// OwnerPlanTier is loaded only to resolve this process's startup plan
+	// snapshot. It is not exposed as workspace API data.
+	OwnerPlanTier PlanTier `json:"-"`
 	// OwnerName is that account's display name, so a member can be told whose
 	// limit is blocking them rather than a nameless "the owner".
 	OwnerName      string    `json:"ownerName"`

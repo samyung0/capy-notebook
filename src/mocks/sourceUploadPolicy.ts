@@ -1,4 +1,5 @@
 import type { FileKind, SourceUploadPolicy } from '@/api/types';
+import { PLAN_LIMITS } from '@/features/billing/planLimits';
 
 const explicitExtensions: Record<string, string[]> = {
   audio: [
@@ -100,18 +101,18 @@ export const sourceUploadPolicy: SourceUploadPolicy = {
     kind,
     text: kind === 'txt' || kind === 'md' || kind === 'json',
   })),
-  maxBytes: 10 * 1024 * 1024,
+  maxBytes: PLAN_LIMITS.free.sourceFileMaxBytes,
   ocrParsePageCreditMicros: 52_000_000,
   parseModes: [
     {
       extensions: parseExtensions,
-      maxBytes: 10 * 1024 * 1024,
+      maxBytes: PLAN_LIMITS.free.sourceFileMaxBytes,
       mode: 'fast',
       supportsFigures: true,
     },
     {
       extensions: [],
-      maxBytes: 10 * 1024 * 1024,
+      maxBytes: PLAN_LIMITS.free.sourceFileMaxBytes,
       mode: 'none',
       supportsFigures: false,
     },

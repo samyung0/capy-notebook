@@ -1,1 +1,1 @@
-"""Document parsing through the dedicated Marker and RapidOCR VM."""
+"""Document parsing through the dedicated MinerU parser service."""

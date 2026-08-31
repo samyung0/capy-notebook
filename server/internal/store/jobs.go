@@ -11,13 +11,14 @@ import (
 	"github.com/evonotes/server/internal/sourceupload"
 )
 
-// CreateSourceWithJob inserts an uploaded file as 'pending' and enqueues an
-// ingest job in the same transaction (Postgres-backed queue; the Python worker
-// claims it with SKIP LOCKED). The file stays pending until a worker actually
-// starts (or a parser slot is free); then it becomes 'processing'. The
+// CreateSourceWithJob inserts an uploaded file as 'pending' and enqueues its
+// first pipeline stage in the same transaction. Document routes start as parse
+// jobs; direct routes start as ingest jobs. The file stays pending until a
+// coordinator/worker actually starts (and, for documents, gets a parser slot);
+// then it becomes 'processing'. The
 // file's url points at the raw-blob endpoint so the viewer can render it
-// immediately. parseMode selects the CPU parser the worker runs:
-// 'fast' (Marker + RapidOCR on scans). Unknown names fail validation.
+// immediately. parseMode selects the CPU parser the coordinator runs:
+// 'fast' (MinerU pipeline with automatic OCR selection). Unknown names fail validation.
 // Text kinds ignore it and are inserted directly. captionImages asks the
 // worker to describe the figures that parse extracted.
 func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, kind string, chapterID *string, chapterName string, sizeBytes int64, blobPath, parser, engine, parseMode string, captionImages bool) (File, string, error) {
@@ -75,7 +76,7 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 	if err != nil {
 		return File{}, "", err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO jobs (id, type, payload) VALUES ($1,'ingest',$2)`, jobID, payload); err != nil {
+	if _, err := tx.Exec(ctx, `INSERT INTO jobs (id, type, payload) VALUES ($1,$2,$3)`, jobID, initialPipelineJobType(processingPlan), payload); err != nil {
 		return File{}, "", err
 	}
 
@@ -85,6 +86,13 @@ func (s *Store) CreateSourceWithJob(ctx context.Context, wsID, createdBy, name, 
 
 	f := File{ID: fileID, WorkspaceID: wsID, ChapterID: chapterID, Name: name, Kind: FileKind(kind), SizeBytes: sizeBytes, AddedAt: now, Status: "pending", Indexed: false, URL: &url, Revision: 1}
 	return f, jobID, nil
+}
+
+func initialPipelineJobType(plan sourceupload.ProcessingPlan) string {
+	if plan.Route == sourceupload.RouteDocumentParse {
+		return "parse"
+	}
+	return "ingest"
 }
 
 // CreateSourceReady inserts an uploaded file that skips parsing entirely

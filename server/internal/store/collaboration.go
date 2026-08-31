@@ -555,6 +555,14 @@ func isInviteID(reference string) bool {
 }
 
 func (s *Store) ListMaterialRevisions(ctx context.Context, materialID string) ([]MaterialRevision, error) {
+	free, err := s.PlanLimits(PlanFree)
+	if err != nil {
+		return nil, err
+	}
+	pro, err := s.PlanLimits(PlanPro)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := s.pool.Query(ctx, `WITH retention AS (
 		SELECT CASE WHEN u.plan_tier = 'pro'
 			THEN $2::bigint ELSE $3::bigint
@@ -570,8 +578,8 @@ func (s *Store) ListMaterialRevisions(ctx context.Context, materialID string) ([
 		ORDER BY version_date DESC
 		LIMIT COALESCE((SELECT revision_limit FROM retention), $3)`,
 		materialID,
-		premiumMaterialRevisionLimit,
-		freeMaterialRevisionLimit,
+		pro.MaterialRevisions,
+		free.MaterialRevisions,
 	)
 	if err != nil {
 		return nil, err

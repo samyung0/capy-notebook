@@ -14,13 +14,16 @@ func openRevisionTestStore(t *testing.T) *Store {
 	t.Helper()
 	dsn := testdb.URL(t)
 	ctx := context.Background()
-	store, err := New(ctx, dsn)
+	store, err := Open(ctx, dsn)
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
 	t.Cleanup(store.Close)
 	if err := store.Migrate(ctx); err != nil {
 		t.Fatalf("migrate: %v", err)
+	}
+	if err := store.LoadPlanLimits(ctx); err != nil {
+		t.Fatalf("plan limits: %v", err)
 	}
 	return store
 }
@@ -98,7 +101,7 @@ func replaceRevisionTestHistory(
 			value := revision - 1
 			parent = &value
 		}
-		if err := upsertMaterialRevisionTx(ctx, tx, MaterialRevision{
+		if err := s.upsertMaterialRevisionTx(ctx, tx, MaterialRevision{
 			MaterialID:     material.ID,
 			Revision:       revision,
 			ParentRevision: parent,
@@ -210,7 +213,7 @@ func TestMaterialVersionsRollOverAtUTCDateBoundary(t *testing.T) {
 			CreatedBy: &userID, CreatedAt: firstDay.Add(4*time.Hour + time.Minute),
 		},
 	} {
-		if err := upsertMaterialRevisionTx(ctx, tx, revision); err != nil {
+		if err := s.upsertMaterialRevisionTx(ctx, tx, revision); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -239,8 +242,8 @@ func TestMaterialVersionRetentionUsesOwnerTier(t *testing.T) {
 		tier  PlanTier
 		limit int
 	}{
-		{name: "free", tier: PlanFree, limit: freeMaterialRevisionLimit},
-		{name: "pro", tier: PlanPro, limit: premiumMaterialRevisionLimit},
+		{name: "free", tier: PlanFree, limit: mustPlanLimits(t, s, PlanFree).MaterialRevisions},
+		{name: "pro", tier: PlanPro, limit: mustPlanLimits(t, s, PlanPro).MaterialRevisions},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			ctx, _, material := createRevisionTestMaterial(t, s, test.tier)
@@ -294,14 +297,15 @@ func TestMaterialVersionDowngradeIsCappedThenPhysicallyPruned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(listed) != freeMaterialRevisionLimit {
-		t.Fatalf("downgraded history exposed %d versions, want %d", len(listed), freeMaterialRevisionLimit)
+	freeLimit := mustPlanLimits(t, s, PlanFree).MaterialRevisions
+	if len(listed) != freeLimit {
+		t.Fatalf("downgraded history exposed %d versions, want %d", len(listed), freeLimit)
 	}
 	deleted, err := s.PruneMaterialRevisions(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if deleted < 5 || physicalRevisionCount(t, s, ctx, material.ID) != freeMaterialRevisionLimit {
+	if deleted < 5 || physicalRevisionCount(t, s, ctx, material.ID) != freeLimit {
 		t.Fatalf("downgrade prune deleted %d rows", deleted)
 	}
 }

@@ -9,7 +9,7 @@ func TestValidateEditorAssetMetadata(t *testing.T) {
 	t.Run("accepts matching image metadata", func(t *testing.T) {
 		name, ext, contentType, err := validateEditorAssetMetadata(reserveEditorAssetRequest{
 			Name: "photo.JPEG", Purpose: "image", SizeBytes: 1024, ContentType: "image/jpeg",
-		})
+		}, 100_000_000)
 		if err != nil {
 			t.Fatalf("validateEditorAssetMetadata: %v", err)
 		}
@@ -40,7 +40,7 @@ func TestValidateEditorAssetMetadata(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, _, _, err := validateEditorAssetMetadata(tt.in); err == nil {
+			if _, _, _, err := validateEditorAssetMetadata(tt.in, 100_000_000); err == nil {
 				t.Fatal("metadata was accepted")
 			}
 		})

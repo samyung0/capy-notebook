@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "subject": "你的 Evo Notes 存储已超过免费额度",
+  "preview": "订阅已失效，且存储超过免费额度。",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              { "type": "bold" },
+              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
+            ],
+            "text": "Evo Notes"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "attrs": { "level": 1 },
+        "content": [{ "type": "text", "text": "存储超过免费额度" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [{ "type": "text", "text": "你好，" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "你的订阅已失效，且存储用量超过免费计划限额。你仍有一段缓冲期可释放空间。目前尚未删除任何内容。"
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "管理订阅",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      { "type": "horizontalRule" },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "你收到这封邮件是因为 Evo Notes 订阅与存储限额发生了变化。"
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ],
+            "text": "管理产品邮件偏好"
+          }
+        ]
+      }
+    ]
+  }
+}

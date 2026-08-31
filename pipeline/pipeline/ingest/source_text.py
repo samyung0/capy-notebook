@@ -1,7 +1,7 @@
 """Worker-side derived text for non-document source files.
 
 Images, audio, and delimited tables need searchable text but do not belong in
-the Marker/OCR document parser. The worker already owns the source download,
+the MinerU document parser. The worker already owns the source download,
 so it derives that text locally and caches provider-backed results by the
 server-computed source SHA.
 """
@@ -202,8 +202,8 @@ def _encode_image(path: Path, name: str) -> str:
 
 async def caption_image_source(
     *, local_path: str, name: str, source_sha256: str
-) -> tuple[str, str, int]:
-    """Return source caption text, artifact path, and serialized byte size."""
+) -> tuple[str, str, int, bool]:
+    """Return caption text, artifact path, byte size, and cache-hit state."""
     key = artifact_key(source_sha256, "image")
     identity = f"image-caption:{source_sha256}:{cfg.caption_version}"
     async with _source_lock(identity):
@@ -217,6 +217,7 @@ async def caption_image_source(
                         cached, ensure_ascii=False, separators=(",", ":")
                     ).encode()
                 ),
+                True,
             )
         data_url = await asyncio.to_thread(_encode_image, Path(local_path), name)
         text = (await models.caption_image(data_url, _IMAGE_PROMPT)).strip()
@@ -228,7 +229,7 @@ async def caption_image_source(
             "version": cfg.caption_version,
         }
         size = await asyncio.to_thread(_save_artifact, key, payload)
-        return text, key, size
+        return text, key, size, False
 
 
 def audio_duration_seconds(path: Path) -> float:

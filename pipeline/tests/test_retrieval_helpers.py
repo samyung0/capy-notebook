@@ -347,7 +347,7 @@ def _embed_spec(litellm_model_id: str) -> ModelConfig:
         version=1,
         provider_name="Qwen",
         model_name="embed",
-        provider_slug="openrouter",
+        provider_slug="deepinfra",
         model_slug=litellm_model_id,
         params={"dimensions": 2560},
         surfaces=("embedding",),
@@ -355,7 +355,7 @@ def _embed_spec(litellm_model_id: str) -> ModelConfig:
 
 
 def test_qwen3_query_gets_instruct_prefix():
-    spec = _embed_spec("qwen/qwen3-embedding-4b")
+    spec = _embed_spec("Qwen/Qwen3-Embedding-4B")
     shaped = models.format_query("chlorophyll", spec)
 
     assert shaped.startswith("Instruct:")
@@ -375,13 +375,13 @@ def test_non_qwen3_query_stays_raw():
 
 async def test_search_prefixes_qwen3_vectors_not_lexical_terms(monkeypatch):
     """The workspace pin decides the prefix. Lexical terms stay the raw query."""
-    spec = _embed_spec("qwen/qwen3-embedding-4b")
+    spec = _embed_spec("Qwen/Qwen3-Embedding-4B")
     seen: dict[str, object] = {}
 
     async def pin(_ws: str) -> dict[str, object]:
         return {
-            "embedding_provider_slug": "openrouter",
-            "embedding_model_slug": "qwen/qwen3-embedding-4b",
+            "embedding_provider_slug": "deepinfra",
+            "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
             "embedding_model_version": 1,
             "embedding_dim": 2560,
         }

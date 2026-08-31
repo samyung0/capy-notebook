@@ -208,7 +208,7 @@ func (s *Store) GetReplacementUploadSession(ctx context.Context, id string) (Upl
 	return u, err
 }
 
-// FinalizeUploadSession creates the source and ingest job exactly once. The
+// FinalizeUploadSession creates the source and its first pipeline job exactly once. The
 // B2 promotion happens before this transaction and is safe to retry.
 func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag, parser, engine string) (File, error) {
 	tx, err := s.pool.Begin(ctx)
@@ -317,8 +317,8 @@ func (s *Store) finalizeUploadSessionTx(
 			return File{}, err
 		}
 		if _, err := tx.Exec(ctx,
-			`INSERT INTO jobs (id, type, payload) VALUES ($1,'ingest',$2)`,
-			jobID, payload); err != nil {
+			`INSERT INTO jobs (id, type, payload) VALUES ($1,$2,$3)`,
+			jobID, initialPipelineJobType(processingPlan), payload); err != nil {
 			return File{}, err
 		}
 	}
@@ -424,7 +424,7 @@ func (s *Store) FinalizeReplacementUploadSession(
 	if err != nil {
 		return File{}, err
 	}
-	if err := supersedeOlderIngestJobsTx(ctx, tx, *u.FileID, file.Revision); err != nil {
+	if err := supersedeOlderPipelineJobsTx(ctx, tx, *u.FileID, file.Revision); err != nil {
 		return File{}, err
 	}
 
@@ -449,8 +449,8 @@ func (s *Store) FinalizeReplacementUploadSession(
 			return File{}, err
 		}
 		if _, err := tx.Exec(ctx,
-			`INSERT INTO jobs (id, type, payload) VALUES ($1,'ingest',$2)`,
-			uid("job"), payload); err != nil {
+			`INSERT INTO jobs (id, type, payload) VALUES ($1,$2,$3)`,
+			uid("job"), initialPipelineJobType(processingPlan), payload); err != nil {
 			return File{}, err
 		}
 	}
@@ -466,11 +466,11 @@ func (s *Store) FinalizeReplacementUploadSession(
 	return file, nil
 }
 
-// supersedeOlderIngestJobsTx fences workers for the blob that replacement just
+// supersedeOlderPipelineJobsTx fences workers for the blob that replacement just
 // retired. SKIP LOCKED avoids a file->job/job->file deadlock with a worker that
 // is inside its final transaction; that worker will instead hit the file
 // revision guard and close its own reservation on the terminal path.
-func supersedeOlderIngestJobsTx(
+func supersedeOlderPipelineJobsTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	fileID string,
@@ -479,7 +479,7 @@ func supersedeOlderIngestJobsTx(
 	var superseded int64
 	return tx.QueryRow(ctx, `WITH candidates AS (
 		SELECT id FROM jobs
-		WHERE type='ingest' AND payload->>'fileId'=$1
+		WHERE type IN ('parse','ingest') AND payload->>'fileId'=$1
 		  AND status IN ('pending','running')
 		  AND CASE
 		    WHEN jsonb_typeof(payload->'sourceRevision')='number'

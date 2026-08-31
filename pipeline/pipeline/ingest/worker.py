@@ -1,17 +1,17 @@
 """Ingestion worker.
 
-Claims jobs from the Postgres queue and executes the server-owned processing
-plan attached at enqueue time. File-category checks do not select the pipeline.
-The worker downloads the B2 source once into the Netcup VM's shared spool;
-document parsing consumes that local file and returns a local cached bundle.
+Claims one selected stage from the Postgres queue and executes the server-owned
+processing plan attached at enqueue time. File-category checks do not select
+the pipeline. Parse coordinators download the B2 source into the ingest host's
+shared spool and hand an immutable local bundle to an ingest continuation.
 
 The parse returns a bundle — a ``content_list.json`` carrying a page index and
 bounding box per block, plus the extracted images — so citations a reader can
 jump to and figures that can be captioned come from the same shape.
 
 Live progress is published to Redis; the Go gateway fans it to the browser over
-SSE. A file is ``pending`` until this worker is actually parsing and holds a
-parse slot; extra jobs wait there instead of oversubscribing the VM.
+SSE. A document stays ``pending`` until a coordinator holds a parse slot; ingest
+workers never wait on MinerU.
 
 Run: ``python -m pipeline.ingest.worker``
 """
@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
+import os
 import shutil
 import tempfile
 import threading
@@ -28,7 +29,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from .. import obs, progress, registry, use_compatible_event_loop
+from .. import obs, plan_limits, progress, registry, use_compatible_event_loop
 from ..config import cfg
 from ..jobs import (
     CONTENT_CLAIM_STALE_S,
@@ -51,8 +52,8 @@ from ..retrieval.chunking import (
     chunk_markdown,
 )
 from ..store import blobstore, db
+from . import capacity, source_text, telemetry
 from . import plan as ingest_plan
-from . import source_text
 
 log = logging.getLogger("evo.worker")
 
@@ -73,6 +74,12 @@ _resource_rates: contextvars.ContextVar[dict | None] = contextvars.ContextVar(
 _PARSE_ROUTES = {
     "fast": parser_client.ROUTE_FAST,
 }
+
+
+def _set_stage(name: str) -> None:
+    telemetry.stage(name)
+    accounting.set_job_stage(name)
+
 
 _REQUIRED_INGEST_STRINGS = (
     "fileId",
@@ -129,7 +136,7 @@ def _announce_reclaimed(row: dict) -> None:
             payload.get("fileId"),
             payload.get("workspaceId"),
             row["id"],
-            "ingest timed out after the worker died",
+            f"{row.get('type') or 'pipeline'} worker died before the job completed",
             payload=payload,
         )
     except db.SourceSupersededError:
@@ -144,16 +151,29 @@ def _announce_reclaimed(row: dict) -> None:
         )
 
 
-def _claim_one() -> dict | None:
+def _claim_one(job_type: str) -> dict | None:
     leases = {name: p.lease_s for name, p in POLICIES.items()}
     max_attempts = {name: p.max_attempts for name, p in POLICIES.items()}
     backoff_base = {name: p.backoff_base_s for name, p in POLICIES.items()}
+    trace_id = obs.new_trace_id()
+    claim = telemetry.claim_metadata(job_type)
     with db.connect() as conn:
         with conn.cursor() as cur:
             reclaimed = db.reclaim_expired_leases(
                 cur, max_attempts=max_attempts, backoff_base_s=backoff_base
             )
-            job = db.claim_job(cur, leases)
+            job = db.claim_job(cur, job_type, leases[job_type])
+            if job is not None:
+                job["attemptId"] = db.start_job_attempt(
+                    cur,
+                    job=job,
+                    trace_id=trace_id,
+                    environment=claim["environment"],
+                    host_id=claim["host_id"],
+                    worker_instance_id=claim["worker_instance_id"],
+                    release_sha=claim["release_sha"],
+                )
+                job["traceId"] = trace_id
         conn.commit()
     for row in reclaimed:
         log.warning(
@@ -171,6 +191,25 @@ def _claim_one() -> dict | None:
         except Exception:
             log.exception("could not announce reclaimed job %s", row["id"])
     return job
+
+
+def _claim_one_with_capacity(
+    job_type: str,
+) -> tuple[dict | None, capacity.CapacityLease | None, bool]:
+    """Claim only while this process owns the optional host-wide role slot."""
+
+    lease = capacity.try_acquire(job_type)
+    if lease is None:
+        return None, None, True
+    try:
+        job = _claim_one(job_type)
+    except BaseException:
+        lease.release()
+        raise
+    if job is None:
+        lease.release()
+        return None, None, False
+    return job, lease, False
 
 
 def _claim_audio_cleanup() -> dict | None:
@@ -285,6 +324,12 @@ def _finish_ok(
                         artifact_version or "",
                     )
                 db.set_job(cur, job_id, "done")
+                db.finish_job_attempt(
+                    cur,
+                    attempt_id=telemetry.current_attempt_id(),
+                    outcome="succeeded",
+                    snapshot=telemetry.snapshot(),
+                )
             conn.commit()
     except Exception:
         obs.record_parse_usage(
@@ -293,6 +338,8 @@ def _finish_ok(
             cpu_milliseconds=usage.cpu_milliseconds,
             elapsed_milliseconds=usage.elapsed_milliseconds,
             queue_milliseconds=usage.queue_milliseconds,
+            execution_milliseconds=usage.execution_milliseconds,
+            slices=usage.slices,
             download_milliseconds=usage.download_milliseconds,
             upload_milliseconds=usage.upload_milliseconds,
             worker_rss_bytes=usage.worker_rss_bytes,
@@ -334,6 +381,8 @@ def _finish_fail(
     reservation_id: str = "",
     source_revision: int | None = None,
     source_etag: str = "",
+    error_category: str = "",
+    error_code: str = "",
 ) -> bool:
     with db.connect() as conn:
         with conn.cursor() as cur:
@@ -350,6 +399,14 @@ def _finish_fail(
             db.fail_audio_transcription_for_job(cur, job_id, error)
             db.set_job(cur, job_id, "failed", error[:500])
             db.close_credit_reservation(cur, reservation_id)
+            db.finish_job_attempt(
+                cur,
+                attempt_id=telemetry.current_attempt_id(),
+                outcome="failed",
+                snapshot=telemetry.snapshot(),
+                error_category=error_category,
+                error_code=error_code,
+            )
         conn.commit()
     return True
 
@@ -360,6 +417,12 @@ def _finish_job_ok(job_id: str, attempt: int | None = None) -> None:
             if _lost_claim(cur, job_id, attempt):
                 return
             db.set_job(cur, job_id, "done")
+            db.finish_job_attempt(
+                cur,
+                attempt_id=telemetry.current_attempt_id(),
+                outcome="succeeded",
+                snapshot=telemetry.snapshot(),
+            )
         conn.commit()
 
 
@@ -372,13 +435,23 @@ def _finish_superseded(
     with db.connect() as conn, conn.cursor() as cur:
         if not _lost_claim(cur, job_id, attempt):
             db.set_job(cur, job_id, "failed", "superseded by file replacement")
+            db.finish_job_attempt(
+                cur,
+                attempt_id=telemetry.current_attempt_id(),
+                outcome="superseded",
+                snapshot=telemetry.snapshot(),
+                error_category="superseded",
+                error_code="source_superseded",
+            )
         # Replacement normally closes this while canceling the old job. This
         # also covers the SKIP LOCKED race where the worker held the job row.
         db.close_credit_reservation(cur, reservation_id)
         conn.commit()
 
 
-def _requeue(job: dict, error: str) -> str:
+def _requeue(
+    job: dict, error: str, *, error_category: str = "", error_code: str = ""
+) -> str:
     job_type = (job.get("type") or "").strip()
     policy = policy_for(job_type)
     payload = job.get("payload") or {}
@@ -386,7 +459,7 @@ def _requeue(job: dict, error: str) -> str:
     with db.connect() as conn, conn.cursor() as cur:
         if _lost_claim(cur, job["id"], attempt):
             return "stale"
-        if job_type == "ingest" and payload.get("fileId"):
+        if job_type in {"parse", "ingest"} and payload.get("fileId"):
             db.require_current_file_source(
                 cur,
                 str(payload["fileId"]),
@@ -400,6 +473,18 @@ def _requeue(job: dict, error: str) -> str:
             workspace_id=payload.get("workspaceId"),
             error=error,
             backoff_s=backoff_s(policy, attempt),
+        )
+        cur.execute("SELECT not_before FROM jobs WHERE id=%s", (job["id"],))
+        row = cur.fetchone()
+        db.finish_job_attempt(
+            cur,
+            attempt_id=telemetry.current_attempt_id(),
+            outcome="retrying",
+            snapshot=telemetry.snapshot(),
+            error_category=error_category,
+            error_code=error_code,
+            retryable=True,
+            next_retry_at=row[0] if row else None,
         )
         conn.commit()
     return outcome
@@ -416,6 +501,8 @@ def _notify_ingest_terminal(
     error: str,
     attempt: int | None = None,
     payload: dict | None = None,
+    error_category: str = "",
+    error_code: str = "",
 ) -> None:
     reservation_id = _reservation_id(payload or {})
     if not file_id:
@@ -424,6 +511,14 @@ def _notify_ingest_terminal(
                 return
             db.set_job(cur, job_id, "failed", error[:500])
             db.close_credit_reservation(cur, reservation_id)
+            db.finish_job_attempt(
+                cur,
+                attempt_id=telemetry.current_attempt_id(),
+                outcome="failed",
+                snapshot=telemetry.snapshot(),
+                error_category=error_category,
+                error_code=error_code,
+            )
             conn.commit()
         return
     name = _read_name(file_id)
@@ -436,6 +531,8 @@ def _notify_ingest_terminal(
         reservation_id,
         int(source_revision) if source_revision is not None else None,
         str((payload or {}).get("sourceETag") or ""),
+        error_category,
+        error_code,
     )
     if not committed:
         return
@@ -751,6 +848,7 @@ def _yield_for_capacity(
     source_etag: str,
     message: str = "waiting for a parser slot",
     backoff_s: int = slots.YIELD_BACKOFF_S,
+    outcome: str = "capacity_wait",
 ) -> None:
     """Give the parse slot back to the queue. File stays pending; attempt is undone."""
     attempt = int(job.get("attempts") or 1)
@@ -760,6 +858,17 @@ def _yield_for_capacity(
         db.require_current_file_source(cur, file_id, source_revision, source_etag)
         db.release_job_for_capacity(cur, job["id"], attempt, backoff_s=backoff_s)
         db.set_file_status(cur, file_id, "pending")
+        cur.execute("SELECT not_before FROM jobs WHERE id=%s", (job["id"],))
+        row = cur.fetchone()
+        db.finish_job_attempt(
+            cur,
+            attempt_id=telemetry.current_attempt_id(),
+            outcome=outcome,
+            snapshot=telemetry.snapshot(),
+            error_category="capacity" if outcome == "capacity_wait" else "provider",
+            error_code=outcome,
+            next_retry_at=row[0] if row else None,
+        )
         conn.commit()
     progress.publish(
         workspace_id,
@@ -823,13 +932,22 @@ def _record_parse_usage_tx(
 ) -> None:
     if usage.is_empty():
         return
+    db.record_job_parse_metrics(
+        cur,
+        attempt_id=telemetry.current_attempt_id(),
+        pages=usage.pages,
+        ocr_pages=usage.ocr_pages,
+        slices=usage.slices,
+        queue_milliseconds=usage.queue_milliseconds,
+        execution_milliseconds=usage.execution_milliseconds,
+    )
     db.record_usage_event(
         cur,
         actor_user_id=actor_user_id,
         workspace_id=workspace_id,
         kind="parse",
         surface="ingest",
-        provider="netcup-vm",
+        provider="netcup-ingest",
         units=usage.pages,
         unit="pages",
         parse_pages=usage.pages,
@@ -906,6 +1024,8 @@ def _record_parse_attempt(
             cpu_milliseconds=usage.cpu_milliseconds,
             elapsed_milliseconds=usage.elapsed_milliseconds,
             queue_milliseconds=usage.queue_milliseconds,
+            execution_milliseconds=usage.execution_milliseconds,
+            slices=usage.slices,
             download_milliseconds=usage.download_milliseconds,
             upload_milliseconds=usage.upload_milliseconds,
             worker_rss_bytes=usage.worker_rss_bytes,
@@ -917,6 +1037,172 @@ def _record_parse_attempt(
             receipt_id=usage.receipt_id,
         )
         raise
+
+
+def _handoff_parsed_artifact(
+    *,
+    job: dict,
+    payload: dict,
+    file_id: str,
+    workspace_id: str,
+    artifact: dict,
+) -> bool:
+    """Finish the parse claim and enqueue its ingest continuation atomically."""
+    attempt = int(job.get("attempts") or 1)
+    source_revision = int(payload["sourceRevision"])
+    source_etag = str(payload.get("sourceETag") or "")
+    continuation_payload = dict(payload)
+    continuation_payload["parseArtifact"] = dict(artifact)
+    continuation_payload["parseJobId"] = job["id"]
+    continuation_id = f"{job['id']}_ingest"
+    usage = obs.take_parse_usage()
+    try:
+        with db.connect() as conn, conn.cursor() as cur:
+            if _lost_claim(cur, job["id"], attempt):
+                return False
+            db.require_current_file_source(cur, file_id, source_revision, source_etag)
+            _record_parse_usage_tx(
+                cur,
+                usage=usage,
+                file_id=file_id,
+                workspace_id=workspace_id,
+                actor_user_id=str(payload.get("actorUserId") or ""),
+                reservation_id=_reservation_id(payload),
+                job_id=job["id"],
+                attempt=attempt,
+                outcome="succeeded",
+            )
+            db.enqueue_job(cur, continuation_id, "ingest", continuation_payload)
+            db.set_job(cur, job["id"], "done")
+            db.finish_job_attempt(
+                cur,
+                attempt_id=telemetry.current_attempt_id(),
+                outcome="succeeded",
+                snapshot=telemetry.snapshot(),
+            )
+            conn.commit()
+    except Exception:
+        obs.record_parse_usage(
+            pages=usage.pages,
+            ocr_pages=usage.ocr_pages,
+            cpu_milliseconds=usage.cpu_milliseconds,
+            elapsed_milliseconds=usage.elapsed_milliseconds,
+            queue_milliseconds=usage.queue_milliseconds,
+            execution_milliseconds=usage.execution_milliseconds,
+            slices=usage.slices,
+            download_milliseconds=usage.download_milliseconds,
+            upload_milliseconds=usage.upload_milliseconds,
+            worker_rss_bytes=usage.worker_rss_bytes,
+            worker_pss_bytes=usage.worker_pss_bytes,
+            io_read_bytes=usage.io_read_bytes,
+            io_write_bytes=usage.io_write_bytes,
+            method=usage.method,
+            source_format=usage.source_format,
+            receipt_id=usage.receipt_id,
+        )
+        raise
+    return True
+
+
+def _handoff_for_artifact_repair(
+    *,
+    job: dict,
+    payload: dict,
+    file_id: str,
+) -> bool:
+    """Return one invalid post-parse artifact to parsing exactly once."""
+    attempt = int(job.get("attempts") or 1)
+    source_revision = int(payload["sourceRevision"])
+    source_etag = str(payload.get("sourceETag") or "")
+    repair_payload = dict(payload)
+    repair_payload.pop("parseArtifact", None)
+    repair_payload["artifactRepairAttempts"] = 1
+    repair_payload["repairingIngestJobId"] = job["id"]
+    repair_id = f"{job['id']}_parse"
+    with db.connect() as conn, conn.cursor() as cur:
+        if _lost_claim(cur, job["id"], attempt):
+            return False
+        db.require_current_file_source(cur, file_id, source_revision, source_etag)
+        db.clear_file_parse_artifact(cur, file_id)
+        db.enqueue_job(cur, repair_id, "parse", repair_payload)
+        db.set_job(cur, job["id"], "done")
+        db.set_file_status(cur, file_id, "pending")
+        db.finish_job_attempt(
+            cur,
+            attempt_id=telemetry.current_attempt_id(),
+            outcome="succeeded",
+            snapshot=telemetry.snapshot(),
+        )
+        conn.commit()
+    return True
+
+
+async def _ensure_document_artifact(
+    *,
+    job: dict,
+    payload: dict,
+    name: str,
+    processing_plan: ingest_plan.ProcessingPlan,
+    source_key: str,
+    source_sha256: str,
+    workspace_id: str,
+    file_id: str,
+) -> dict:
+    """Run only the document parse stage and return its immutable artifact."""
+    _set_stage("parser_admission")
+    route = _parse_route(processing_plan.parser_route)
+    descriptor = parser_client.source_descriptor(
+        source_key=source_key,
+        source_sha256=source_sha256,
+        route=route,
+    )
+    held_slot = await asyncio.to_thread(slots.try_acquire, route, job["id"])
+    if not held_slot:
+        raise CapacityWait(route)
+    try:
+        await asyncio.to_thread(
+            _set_file_status,
+            file_id,
+            "processing",
+            int(payload["sourceRevision"]),
+            str(payload.get("sourceETag") or ""),
+        )
+        progress.publish(workspace_id, file_id, "parsing", 15, status="processing")
+        try:
+            _set_stage("mineru_parse")
+            artifact = await asyncio.to_thread(
+                parser_client.ensure_artifact,
+                descriptor,
+                name,
+                job["id"],
+            )
+        except parser_client.ParserTerminalResourceError as exc:
+            raise TerminalError(
+                "this file hit a terminal parser resource limit and is "
+                "quarantined for the current parser version"
+            ) from exc
+        except parser_client.ParserCapacityError as exc:
+            raise CapacityWait(route) from exc
+    finally:
+        await asyncio.to_thread(slots.release, route, job["id"])
+
+    artifact_key = str(artifact.get("key") or "")
+    fingerprint = str(artifact.get("fingerprint") or "")
+    version = str(artifact.get("version") or "")
+    if not artifact_key or not fingerprint or not version:
+        raise RetryableError("parser returned an incomplete artifact descriptor")
+    telemetry.record(artifact_bytes=max(0, int(artifact.get("size") or 0)))
+    _set_stage("parse_handoff")
+    await asyncio.to_thread(
+        _record_parse_artifact,
+        file_id,
+        artifact_key,
+        fingerprint,
+        version,
+        int(payload["sourceRevision"]),
+        str(payload.get("sourceETag") or ""),
+    )
+    return artifact
 
 
 # ------------------------------------------------------------------ parsing
@@ -950,6 +1236,7 @@ async def _chunks_for(
                 source_revision,
                 source_etag,
             )
+        _set_stage("text_normalization")
         text = await asyncio.to_thread(_read_text, local_path)
         progress.publish(ws, file_id, "indexing", 40, status="processing")
         return chunk_markdown(text), None, None, None
@@ -984,16 +1271,25 @@ async def _chunks_for(
         if direct == "image":
             if not local_path:
                 raise RetryableError("local image source is missing")
+            _set_stage("image_caption")
             (
                 text,
                 derived_key,
                 derived_size,
+                caption_cached,
             ) = await source_text.caption_image_source(
                 local_path=local_path,
                 name=name,
                 source_sha256=source_sha256,
             )
+            telemetry.record(
+                figures_selected=1,
+                figures_cached=1 if caption_cached else 0,
+                figures_captioned=0 if caption_cached else 1,
+                figures_applied=1,
+            )
         elif direct == "audio":
+            _set_stage("audio_transcription")
             (
                 text,
                 derived_key,
@@ -1009,6 +1305,7 @@ async def _chunks_for(
         else:
             if not local_path:
                 raise RetryableError("local delimited source is missing")
+            _set_stage("tabular_normalization")
             text = await asyncio.to_thread(source_text.tabular_text, local_path, name)
         if derived_key:
             await asyncio.to_thread(
@@ -1030,58 +1327,30 @@ async def _chunks_for(
 
     if processing_plan.route != ingest_plan.DOCUMENT_PARSE:
         raise TerminalError(f"unsupported processing route {processing_plan.route!r}")
-    if not local_path or not source_key:
-        raise RetryableError("local document source is missing")
     route = _parse_route(processing_plan.parser_route)
-    descriptor = parser_client.source_descriptor(
-        source_key=source_key,
-        source_sha256=source_sha256,
-        route=route,
-    )
-    held_slot = False
-    if job_id:
-        held_slot = await asyncio.to_thread(slots.try_acquire, route, job_id)
-        if not held_slot:
-            raise CapacityWait(route)
-        await asyncio.to_thread(
-            _set_file_status,
-            file_id,
-            "processing",
-            source_revision,
-            source_etag,
-        )
-    progress.publish(ws, file_id, "parsing", 15, status="processing")
+    artifact = payload.get("parseArtifact")
+    if not isinstance(artifact, dict):
+        raise TerminalError("document ingest has no completed parse artifact")
     raw_dir = Path(tempfile.mkdtemp(prefix="evo_parse_"))
     try:
-        try:
-            try:
-                content_list, artifact_key, fingerprint = await asyncio.to_thread(
-                    parser_client.parse_to_bundle,
-                    descriptor,
-                    name,
-                    raw_dir,
-                    processing_plan.office_preview,
-                    request_id=str(job_id or ""),
-                )
-            except parser_client.ParserHardTimeoutError as exc:
-                raise TerminalError(
-                    "this file exceeded the parser hard deadline and is quarantined "
-                    "for the current parser version"
-                ) from exc
-        finally:
-            # Free the parse slot before captioning / indexing; those do not
-            # occupy a parser process.
-            if held_slot and job_id:
-                await asyncio.to_thread(slots.release, route, job_id)
+        _set_stage("artifact_extract")
+        content_list = await asyncio.to_thread(
+            parser_client.extract_artifact,
+            artifact,
+            raw_dir,
+            route=route,
+            require_office_preview=processing_plan.office_preview,
+        )
+        artifact_key = str(artifact.get("key") or "")
+        fingerprint = str(artifact.get("fingerprint") or "")
+        artifact_version = str(artifact.get("version") or "")
         if artifact_key:
-            # Record the local cache identity before captioning so an operator
-            # can see which parse completed if a later provider call fails.
             await asyncio.to_thread(
                 _record_parse_artifact,
                 file_id,
                 artifact_key,
                 fingerprint,
-                parser_client.parser_version(route),
+                artifact_version,
                 source_revision,
                 source_etag,
             )
@@ -1092,7 +1361,7 @@ async def _chunks_for(
                 raw_dir=raw_dir,
                 file_id=file_id,
                 source_sha256=source_sha256,
-                parser_version=parser_client.parser_version(route),
+                parser_version=artifact_version,
                 fingerprint=fingerprint,
                 source_revision=source_revision,
                 source_etag=source_etag,
@@ -1107,6 +1376,7 @@ async def _chunks_for(
             # Before chunking on purpose: a caption has to be inside the passage
             # it belongs to before that passage is embedded, summarized and
             # concept-extracted, or the figure stays invisible to all three.
+            _set_stage("figure_captioning")
             counts = await figures.caption_figures(
                 content_list=content_list,
                 raw_dir=raw_dir,
@@ -1114,6 +1384,17 @@ async def _chunks_for(
                 source_sha256=source_sha256,
             )
             log.info("captioned figures for %s: %s", name, counts)
+            selected = max(0, int(counts.get("selected") or 0))
+            captioned = max(0, int(counts.get("captioned") or 0))
+            cached = max(0, int(counts.get("cached") or 0))
+            telemetry.record(
+                figures_selected=selected,
+                figures_cached=cached,
+                figures_captioned=captioned,
+                figures_decorative=max(0, int(counts.get("decorative") or 0)),
+                figures_applied=max(0, int(counts.get("applied") or 0)),
+                figures_failed=max(0, selected - cached - captioned),
+            )
             if counts.get("key"):
                 await asyncio.to_thread(
                     _touch_or_upsert_artifact,
@@ -1128,12 +1409,13 @@ async def _chunks_for(
                     source_revision,
                     source_etag,
                 )
+        _set_stage("chunking")
         progress.publish(ws, file_id, "indexing", 55)
         return (
             chunk_content_list(content_list),
             artifact_key,
             fingerprint,
-            parser_client.parser_version(route),
+            artifact_version,
         )
     finally:
         shutil.rmtree(raw_dir, ignore_errors=True)
@@ -1161,18 +1443,31 @@ def _require_ingest_payload(payload: dict) -> None:
 async def process_job(job: dict) -> None:
     job_type = (job.get("type") or "").strip()
     policy_for(job_type)
-    if job_type != "ingest":
+    if job_type not in {"parse", "ingest"}:
         raise TerminalError(f"unknown job type {job_type!r}")
     await process_ingest_job(job)
 
 
 async def process_ingest_job(job: dict) -> None:
+    _set_stage("validating")
     payload = job["payload"] or {}
     _require_ingest_payload(payload)
     file_id = payload["fileId"]
     ws = payload["workspaceId"]
     kind = str(payload["kind"]).lower()
     processing_plan = ingest_plan.require(payload.get("processingPlan"))
+    job_type = str(job.get("type") or "ingest")
+    if job_type == "parse" and processing_plan.route != ingest_plan.DOCUMENT_PARSE:
+        raise TerminalError("parse job does not select document parsing")
+    if (
+        job_type == "ingest"
+        and processing_plan.route == ingest_plan.DOCUMENT_PARSE
+        and (
+            not isinstance(payload.get("parseArtifact"), dict)
+            or not str(payload.get("parseJobId") or "").strip()
+        )
+    ):
+        raise TerminalError("document ingest has no completed parse handoff")
     rates = payload.get("resourceRates")
     if not isinstance(rates, dict) or not _REQUIRED_RESOURCE_RATES.issubset(rates):
         raise TerminalError("ingest payload is missing resource rate snapshots")
@@ -1190,7 +1485,12 @@ async def process_ingest_job(job: dict) -> None:
     rates_token = _resource_rates.set(rates)
     accounting_token = None
     try:
-        accounting_token = accounting.bind_ingest(_reservation_id(payload), rates)
+        accounting_token = accounting.bind_ingest(
+            _reservation_id(payload),
+            rates,
+            job_attempt_id=telemetry.current_attempt_id(),
+            job_stage=telemetry.current_stage(),
+        )
         await _process_ingest_job(job, payload, file_id, ws, kind, processing_plan)
     except (CapacityWait, ExternalWait) as exc:
         name = await asyncio.to_thread(_read_name, file_id)
@@ -1207,6 +1507,7 @@ async def process_ingest_job(job: dict) -> None:
             if external
             else "waiting for a parser slot",
             30 if external else slots.YIELD_BACKOFF_S,
+            "external_wait" if external else "capacity_wait",
         )
         raise
     finally:
@@ -1416,6 +1717,8 @@ async def _reuse_donor(
                 claim_job_id=job["id"],
                 mark_ready=False,
             )
+        if isinstance(result.get("chunks"), int):
+            telemetry.record(chunks_created=max(0, int(result["chunks"])))
         if preview_blob_path and not await asyncio.to_thread(
             _reuse_office_preview,
             file_id=file_id,
@@ -1481,6 +1784,8 @@ async def _process_ingest_job(
     kind: str,
     processing_plan: ingest_plan.ProcessingPlan,
 ) -> None:
+    _set_stage("validating_source")
+    job_type = str(job.get("type") or "ingest")
     attempt = int(job.get("attempts") or 1)
     source_revision = int(payload["sourceRevision"])
     source_etag = str(payload.get("sourceETag") or "")
@@ -1500,7 +1805,16 @@ async def _process_ingest_job(
     await asyncio.to_thread(
         _require_current_source, file_id, source_revision, source_etag
     )
-    if not await asyncio.to_thread(_account_allows_ingest, file_id, payload):
+    parsed_document_continuation = (
+        job_type == "ingest"
+        and processing_plan.route == ingest_plan.DOCUMENT_PARSE
+        and isinstance(payload.get("parseArtifact"), dict)
+        and bool(str(payload.get("parseJobId") or "").strip())
+    )
+    _set_stage("admission_check")
+    if not parsed_document_continuation and not await asyncio.to_thread(
+        _account_allows_ingest, file_id, payload
+    ):
         note = f"{name}: ingest refused because the account is locked or over quota."
         committed = await asyncio.to_thread(
             _finish_fail,
@@ -1511,6 +1825,8 @@ async def _process_ingest_job(
             _reservation_id(payload),
             source_revision,
             source_etag,
+            "accounting",
+            "ingest_admission_refused",
         )
         if not committed:
             return
@@ -1521,6 +1837,7 @@ async def _process_ingest_job(
     progress.publish(ws, file_id, "queued", 5, status="pending")
 
     if processing_plan.route == ingest_plan.STORE_ONLY:
+        _set_stage("store_only")
         note = f"{name}: stored without parsing (not indexed for retrieval)."
         committed = await asyncio.to_thread(
             _finish_ok,
@@ -1559,6 +1876,7 @@ async def _process_ingest_job(
         cleanup_source: Callable[[], None] = lambda: None
     else:
         try:
+            _set_stage("source_download")
             (
                 local_path,
                 source_key,
@@ -1569,6 +1887,11 @@ async def _process_ingest_job(
             )
         except FileNotFoundError as exc:
             raise TerminalError("source blob is missing") from exc
+    if local_path:
+        try:
+            telemetry.record(source_bytes=max(0, Path(local_path).stat().st_size))
+        except OSError:
+            pass
     await asyncio.to_thread(
         _record_source_sha,
         file_id,
@@ -1577,6 +1900,7 @@ async def _process_ingest_job(
         source_etag,
     )
     identity = _pipeline_identity(processing_plan)
+    _set_stage("donor_lookup")
     pin = await store.workspace_embedding_pin(ws)
     donor = None
     if audio_state is None:
@@ -1588,9 +1912,23 @@ async def _process_ingest_job(
             embedding_model_version=pin["embedding_model_version"],
             embedding_dim=pin["embedding_dim"],
         )
+    if job_type == "parse" and donor:
+        # A parse coordinator may take the exact-vector donor fast path, which
+        # is only database copying. A donor in another vector space needs an
+        # embedding provider and therefore belongs to an ingest worker.
+        exact_vector_space = (
+            donor.get("embedding_provider_slug") == pin["embedding_provider_slug"]
+            and donor.get("embedding_model_slug") == pin["embedding_model_slug"]
+            and donor.get("embedding_model_version") == pin["embedding_model_version"]
+            and donor.get("embedding_dim") == pin["embedding_dim"]
+        )
+        if not exact_vector_space:
+            donor = None
     if donor:
         preview_blob_path = await asyncio.to_thread(_donor_office_preview, name, donor)
         if preview_blob_path is not None:
+            _set_stage("donor_reuse")
+            telemetry.record(donor_reused=True)
             reused = await _reuse_donor(
                 job=job,
                 payload=payload,
@@ -1608,19 +1946,80 @@ async def _process_ingest_job(
                 await asyncio.to_thread(cleanup_source)
                 return
 
-    chunks, artifact_key, fingerprint, artifact_version = await _chunks_for(
-        payload=payload,
-        name=name,
-        processing_plan=processing_plan,
-        local_path=local_path,
-        source_key=source_key,
-        ws=ws,
-        file_id=file_id,
-        source_sha256=source_sha256,
-        job_id=job["id"],
-    )
+    if job_type == "parse":
+        if not local_path or not source_key:
+            raise RetryableError("local document source is missing")
+        artifact = await _ensure_document_artifact(
+            job=job,
+            payload=payload,
+            name=name,
+            processing_plan=processing_plan,
+            source_key=source_key,
+            source_sha256=source_sha256,
+            workspace_id=ws,
+            file_id=file_id,
+        )
+        handed_off = await asyncio.to_thread(
+            _handoff_parsed_artifact,
+            job=job,
+            payload=payload,
+            file_id=file_id,
+            workspace_id=ws,
+            artifact=artifact,
+        )
+        if handed_off:
+            progress.publish(
+                ws,
+                file_id,
+                "indexing",
+                45,
+                status="processing",
+                message=f"{name}: parsed; waiting for ingestion.",
+            )
+        return
+
+    _set_stage("content_prepare")
+    try:
+        chunks, artifact_key, fingerprint, artifact_version = await _chunks_for(
+            payload=payload,
+            name=name,
+            processing_plan=processing_plan,
+            local_path=local_path,
+            source_key=source_key,
+            ws=ws,
+            file_id=file_id,
+            source_sha256=source_sha256,
+            job_id=job["id"],
+        )
+    except parser_client.ParserClientError:
+        artifact = payload.get("parseArtifact")
+        repair_attempts = int(payload.get("artifactRepairAttempts") or 0)
+        if (
+            processing_plan.route != ingest_plan.DOCUMENT_PARSE
+            or not isinstance(artifact, dict)
+            or repair_attempts >= 1
+        ):
+            raise
+        await asyncio.to_thread(parser_client.discard_artifact, artifact)
+        repaired = await asyncio.to_thread(
+            _handoff_for_artifact_repair,
+            job=job,
+            payload=payload,
+            file_id=file_id,
+        )
+        if repaired:
+            progress.publish(
+                ws,
+                file_id,
+                "queued",
+                5,
+                status="pending",
+                message=f"{name}: parse artifact was invalid; parsing once more.",
+            )
+        return
     if not chunks:
         raise RetryableError("parse produced no indexable content")
+    telemetry.record(chunks_created=len(chunks))
 
     digest = indexing.content_hash(chunks)
     association = await store.attach_file_content(
@@ -1633,6 +2032,7 @@ async def _process_ingest_job(
         source_revision=source_revision,
         source_etag=source_etag,
     )
+    _set_stage("content_claim")
     association = await _wait_for_content(
         association,
         workspace_id=ws,
@@ -1646,6 +2046,8 @@ async def _process_ingest_job(
     )
 
     if association["ready"]:
+        _set_stage("content_reuse")
+        telemetry.record(donor_reused=True)
         note = f"{name}: identical content already indexed; reusing its index."
         committed = await asyncio.to_thread(
             _finish_ok,
@@ -1679,6 +2081,7 @@ async def _process_ingest_job(
         await asyncio.to_thread(cleanup_source)
         return
 
+    _set_stage("indexing")
     try:
         result = await indexing.index_file(
             workspace_id=ws,
@@ -1692,6 +2095,11 @@ async def _process_ingest_job(
     except BaseException:
         await store.abandon_content(association["content_id"])
         raise
+    telemetry.record(
+        chunks_created=max(0, int(result.get("chunks") or 0)),
+        concepts_created=max(0, int(result.get("concepts") or 0)),
+    )
+    _set_stage("finalizing")
     committed = await asyncio.to_thread(
         _finish_ok,
         file_id,
@@ -1722,18 +2130,25 @@ async def _process_ingest_job(
     log.info("indexed %s: %s", name, result)
 
 
-async def main_async() -> None:
-    obs.init_logging("worker")
-    obs.init_sentry("worker")
+async def main_async(job_type: str = "ingest") -> None:
+    worker_role = job_type
+    policy_for(worker_role)
+    obs.init_logging(f"{worker_role}-worker")
+    obs.init_sentry(f"{worker_role}-worker")
+    # Product limits are a process snapshot. A malformed or missing catalog is
+    # a startup failure, never a per-job database lookup or numeric fallback.
+    await asyncio.to_thread(plan_limits.load_once)
     registry.registry.start()
     threading.Thread(
         target=registry.poll_forever, name="model-registry", daemon=True
     ).start()
+    runtime_reporter = telemetry.start_runtime_reporter(worker_role)
     # No models are reported: ingest and vision come from each job's payload and
     # embedding from its workspace, so this process has no single answer for any
     # of them.
     log.info(
-        "worker up — parse=%s",
+        "%s worker up — parse=%s",
+        worker_role,
         cfg.parser_url or "(unset)",
     )
 
@@ -1743,22 +2158,28 @@ async def main_async() -> None:
     try:
         while True:
             now = time.monotonic()
-            if now - last_audio_cleanup >= 30:
+            if worker_role == "ingest" and now - last_audio_cleanup >= 30:
                 try:
                     await _run_audio_cleanup_once()
                 except Exception:
                     log.warning("audio provider cleanup failed", exc_info=True)
                 last_audio_cleanup = now
             try:
-                job = await asyncio.to_thread(_claim_one)
+                job, capacity_lease, capacity_busy = await asyncio.to_thread(
+                    _claim_one_with_capacity, worker_role
+                )
             except Exception:
                 log.warning("claim error", exc_info=True)
                 await asyncio.sleep(cfg.poll_interval)
                 continue
 
+            if capacity_busy:
+                await asyncio.sleep(cfg.poll_interval)
+                continue
+
             if not job:
                 now = time.monotonic()
-                if now - last_sweep >= sweep_every:
+                if worker_role == "ingest" and now - last_sweep >= sweep_every:
                     try:
                         with db.connect() as conn, conn.cursor() as cur:
                             db.sweep_artifact_cache(
@@ -1777,55 +2198,78 @@ async def main_async() -> None:
                 await asyncio.sleep(cfg.poll_interval)
                 continue
 
-            # One trace and one usage accumulator per job. Ingest has no
-            # inbound request to continue a trace from, so it starts its own;
-            # the job id is what links it back to the upload that queued it.
-            obs.set_trace(obs.new_trace_id())
-            obs.start_usage()
-            obs.bind_error_context()
+            try:
+                # One trace and one usage accumulator per job. Ingest has no
+                # inbound request to continue a trace from, so it starts its own;
+                # the job id is what links it back to the upload that queued it.
+                obs.set_trace(str(job.get("traceId") or obs.new_trace_id()))
+                obs.start_usage()
+                obs.bind_error_context()
+                job_telemetry_token = telemetry.begin_job(job)
 
-            log.info(
-                "claimed %s job %s",
-                job.get("type"),
-                job["id"],
-                extra={"job_id": job["id"]},
-            )
-            job_type = (job.get("type") or "").strip()
-            try:
-                policy = policy_for(job_type)
-            except TerminalError as exc:
-                await _handle_job_failure(job, exc)
-                continue
-            stop = threading.Event()
-            heartbeat = threading.Thread(
-                target=_heartbeat_loop,
-                args=(job["id"], policy.lease_s, int(job.get("attempts") or 1), stop),
-                name=f"job-lease-{job['id']}",
-                daemon=True,
-            )
-            heartbeat.start()
-            try:
-                async with asyncio.timeout(policy.timeout_s):
-                    await process_job(job)
-                log.info("job %s done", job["id"])
-            except (CapacityWait, ExternalWait) as exc:
-                wait_target = (
-                    "an external provider"
-                    if isinstance(exc, ExternalWait)
-                    else "a parser slot"
+                log.info(
+                    "claimed %s job %s",
+                    job.get("type"),
+                    job["id"],
+                    extra={"job_id": job["id"]},
                 )
-                log.info("job %s waiting for %s", job["id"], wait_target)
-            except Exception as exc:  # noqa: BLE001 - retry vs terminal is decided below
+                claimed_type = (job.get("type") or "").strip()
                 try:
-                    async with asyncio.timeout(30):
+                    policy = policy_for(claimed_type)
+                except TerminalError as exc:
+                    try:
                         await _handle_job_failure(job, exc)
-                except Exception:
-                    # Bookkeeping for one failed job must not take the worker
-                    # down; the lease reaper is the backstop for this row.
-                    log.exception("could not record failure of job %s", job["id"])
+                    finally:
+                        telemetry.reset_job(job_telemetry_token)
+                    continue
+                stop = threading.Event()
+                heartbeat = threading.Thread(
+                    target=_heartbeat_loop,
+                    args=(
+                        job["id"],
+                        policy.lease_s,
+                        int(job.get("attempts") or 1),
+                        stop,
+                    ),
+                    name=f"job-lease-{job['id']}",
+                    daemon=True,
+                )
+                heartbeat.start()
+                restart_after_failure = False
+                try:
+                    async with asyncio.timeout(policy.timeout_s):
+                        await process_job(job)
+                    log.info("job %s done", job["id"])
+                except (CapacityWait, ExternalWait) as exc:
+                    wait_target = (
+                        "an external provider"
+                        if isinstance(exc, ExternalWait)
+                        else "a parser slot"
+                    )
+                    log.info("job %s waiting for %s", job["id"], wait_target)
+                except Exception as exc:  # noqa: BLE001 - retry policy lives below
+                    restart_after_failure = isinstance(exc, TimeoutError)
+                    try:
+                        async with asyncio.timeout(30):
+                            await _handle_job_failure(job, exc)
+                    except Exception:
+                        # Bookkeeping for one failed job must not take the worker
+                        # down; the lease reaper is the backstop for this row.
+                        log.exception("could not record failure of job %s", job["id"])
+                finally:
+                    stop.set()
+                    telemetry.reset_job(job_telemetry_token)
             finally:
-                stop.set()
+                assert capacity_lease is not None
+                capacity_lease.release()
+            if restart_after_failure:
+                # Work delegated through asyncio.to_thread cannot be killed by
+                # cancellation. Exit this one-job worker process after durable
+                # retry bookkeeping so no timed-out thread overlaps a successor.
+                log.error("job %s timed out; restarting this worker", job["id"])
+                os._exit(1)
     finally:
+        runtime_reporter.stop()
         db.close_pool()
         await store.close_pool()
 
@@ -1837,9 +2281,14 @@ async def _handle_job_failure(job: dict, exc: BaseException) -> None:
     job_type = (job.get("type") or "").strip()
     policy = POLICIES.get(job_type)
     attempts = int(job.get("attempts") or 1)
+    error_category, error_code, _provider_status = telemetry.classify_error(exc)
     if isinstance(exc, TimeoutError):
         exc = RetryableError("job exceeded its wall-clock timeout")
-    if job_type == "ingest" and fid and payload.get("sourceRevision") is not None:
+    if (
+        job_type in {"parse", "ingest"}
+        and fid
+        and payload.get("sourceRevision") is not None
+    ):
         try:
             await asyncio.to_thread(
                 _require_current_source,
@@ -1852,8 +2301,9 @@ async def _handle_job_failure(job: dict, exc: BaseException) -> None:
             # if the original error would normally retry. Never re-pend A once
             # the logical file points at B.
             exc = superseded
+            error_category, error_code, _provider_status = telemetry.classify_error(exc)
     retry = policy is not None and is_retryable(exc) and attempts < policy.max_attempts
-    if job_type == "ingest":
+    if job_type == "parse":
         await asyncio.to_thread(
             _record_parse_attempt,
             str(fid or ""),
@@ -1877,7 +2327,13 @@ async def _handle_job_failure(job: dict, exc: BaseException) -> None:
     if retry:
         log.warning("%s job %s failed; retrying: %s", job_type, job["id"], exc)
         try:
-            outcome = await asyncio.to_thread(_requeue, job, str(exc))
+            outcome = await asyncio.to_thread(
+                _requeue,
+                job,
+                str(exc),
+                error_category=error_category,
+                error_code=error_code,
+            )
         except db.SourceSupersededError:
             await asyncio.to_thread(
                 _finish_superseded,
@@ -1900,6 +2356,8 @@ async def _handle_job_failure(job: dict, exc: BaseException) -> None:
             str(exc),
             attempts,
             payload,
+            error_category,
+            error_code,
         )
     except db.SourceSupersededError:
         await asyncio.to_thread(
@@ -1912,9 +2370,9 @@ async def _handle_job_failure(job: dict, exc: BaseException) -> None:
         log.exception("failed to record job failure")
 
 
-def main() -> None:
+def main(job_type: str = "ingest") -> None:
     use_compatible_event_loop()
-    asyncio.run(main_async())
+    asyncio.run(main_async(job_type))
 
 
 if __name__ == "__main__":

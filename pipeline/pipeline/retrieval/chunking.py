@@ -2,7 +2,7 @@
 
 Two entry points, one output shape:
 
-- :func:`chunk_content_list` consumes the parser VM's ``content_list.json``,
+- :func:`chunk_content_list` consumes the parser service's ``content_list.json``,
   which carries a heading level and a page plus bounding box per block. That
   structure is the whole reason citations can name a page.
 - :func:`chunk_markdown` consumes plain markdown (txt/md uploads and the

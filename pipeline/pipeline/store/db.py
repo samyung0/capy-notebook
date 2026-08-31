@@ -10,16 +10,20 @@ from __future__ import annotations
 
 import secrets
 import threading
+import time
 from typing import Any
 
 from psycopg.types.json import Jsonb
 from psycopg_pool import ConnectionPool
 
+from .. import plan_limits
 from ..config import cfg
 from ..jobs import TerminalError
 
 _pool: ConnectionPool | None = None
 _pool_lock = threading.Lock()
+_telemetry_maintenance_lock = threading.Lock()
+_telemetry_maintenance_at = 0.0
 
 
 class SourceSupersededError(TerminalError):
@@ -35,7 +39,7 @@ def pool() -> ConnectionPool:
                 _pool = ConnectionPool(
                     cfg.dsn,
                     min_size=1,
-                    max_size=4,
+                    max_size=cfg.db_sync_pool_max_size,
                     kwargs={
                         "connect_timeout": 5,
                         "options": "-c statement_timeout=30000",
@@ -56,6 +60,114 @@ def close_pool() -> None:
         _pool = None
     if pool is not None:
         pool.close()
+
+
+def record_worker_sample(
+    *,
+    environment: str,
+    host_id: str,
+    worker_instance_id: str,
+    role: str,
+    release_sha: str,
+    state: str,
+    stage: str,
+    job_attempt_id: int | None,
+    values: dict[str, int | float],
+) -> None:
+    """Insert one worker cgroup sample and refresh its current minute rollup."""
+    global _telemetry_maintenance_at
+    with connect() as conn, conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO ingest_worker_samples
+              (environment, host_id, worker_instance_id, role, release_sha,
+               state, stage, job_attempt_id, cpu_cores, cpu_usage_usec,
+               memory_bytes, memory_peak_bytes, memory_limit_bytes,
+               io_read_bytes, io_write_bytes, pids_current, pids_limit,
+               oom_events, oom_kill_events)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """,
+            (
+                environment,
+                host_id,
+                worker_instance_id,
+                role,
+                release_sha,
+                state,
+                stage[:80],
+                job_attempt_id,
+                max(0.0, float(values.get("cpu_cores") or 0)),
+                max(0, int(values.get("cpu_usage_usec") or 0)),
+                max(0, int(values.get("memory_bytes") or 0)),
+                max(0, int(values.get("memory_peak_bytes") or 0)),
+                max(0, int(values.get("memory_limit_bytes") or 0)),
+                max(0, int(values.get("io_read_bytes") or 0)),
+                max(0, int(values.get("io_write_bytes") or 0)),
+                max(0, int(values.get("pids_current") or 0)),
+                max(0, int(values.get("pids_limit") or 0)),
+                max(0, int(values.get("oom_events") or 0)),
+                max(0, int(values.get("oom_kill_events") or 0)),
+            ),
+        )
+        cur.execute(
+            """
+            INSERT INTO ingest_worker_sample_rollups
+              (bucket, environment, host_id, worker_instance_id, role,
+               release_sha, samples, busy_samples, cpu_cores_avg,
+               cpu_cores_max, memory_bytes_avg, memory_bytes_max,
+               memory_peak_bytes_max, memory_limit_bytes_max,
+               io_read_bytes_max, io_write_bytes_max, pids_current_max,
+               pids_limit_max, oom_events_max, oom_kill_events_max)
+            SELECT date_bin('1 minute', sampled_at, timestamptz '1970-01-01'),
+                   environment, max(host_id), worker_instance_id, max(role),
+                   max(release_sha), count(*)::int,
+                   count(*) FILTER (WHERE state='busy')::int,
+                   avg(cpu_cores)::real, max(cpu_cores)::real,
+                   avg(memory_bytes)::bigint, max(memory_bytes)::bigint,
+                   max(memory_peak_bytes)::bigint,
+                   max(memory_limit_bytes)::bigint,
+                   max(io_read_bytes)::bigint, max(io_write_bytes)::bigint,
+                   max(pids_current)::int, max(pids_limit)::int,
+                   max(oom_events)::bigint, max(oom_kill_events)::bigint
+            FROM ingest_worker_samples
+            WHERE environment=%s AND worker_instance_id=%s
+              AND sampled_at >= date_bin(
+                '1 minute', now(), timestamptz '1970-01-01'
+              )
+            GROUP BY 1, environment, worker_instance_id
+            ON CONFLICT (bucket, environment, worker_instance_id) DO UPDATE SET
+              host_id=EXCLUDED.host_id, role=EXCLUDED.role,
+              release_sha=EXCLUDED.release_sha, samples=EXCLUDED.samples,
+              busy_samples=EXCLUDED.busy_samples,
+              cpu_cores_avg=EXCLUDED.cpu_cores_avg,
+              cpu_cores_max=EXCLUDED.cpu_cores_max,
+              memory_bytes_avg=EXCLUDED.memory_bytes_avg,
+              memory_bytes_max=EXCLUDED.memory_bytes_max,
+              memory_peak_bytes_max=EXCLUDED.memory_peak_bytes_max,
+              memory_limit_bytes_max=EXCLUDED.memory_limit_bytes_max,
+              io_read_bytes_max=EXCLUDED.io_read_bytes_max,
+              io_write_bytes_max=EXCLUDED.io_write_bytes_max,
+              pids_current_max=EXCLUDED.pids_current_max,
+              pids_limit_max=EXCLUDED.pids_limit_max,
+              oom_events_max=EXCLUDED.oom_events_max,
+              oom_kill_events_max=EXCLUDED.oom_kill_events_max
+            """,
+            (environment, worker_instance_id),
+        )
+        now = time.monotonic()
+        maintain = False
+        with _telemetry_maintenance_lock:
+            if now - _telemetry_maintenance_at >= 3600:
+                _telemetry_maintenance_at = now
+                maintain = True
+        if maintain:
+            cur.execute(
+                "DELETE FROM ingest_worker_samples WHERE sampled_at < now() - interval '30 days'"
+            )
+            cur.execute(
+                "DELETE FROM ingest_worker_sample_rollups WHERE bucket < now() - interval '1 year'"
+            )
+        conn.commit()
 
 
 def try_source_artifact_lock(identity: str):
@@ -98,11 +210,8 @@ def uid(prefix: str) -> str:
 # ---------------------------------------------------------------- job queue
 
 
-def claim_job(cur, leases: dict[str, int]) -> dict[str, Any] | None:
-    """Claim one due pending job atomically (FOR UPDATE SKIP LOCKED)."""
-    # The lease is job policy (pipeline/jobs.py). A fallback here would be a
-    # second copy of it that silently wins whenever the policy is edited.
-    ingest_lease = int(leases["ingest"])
+def claim_job(cur, job_type: str, lease_s: int) -> dict[str, Any] | None:
+    """Claim one due pending job of exactly ``job_type`` atomically."""
     cur.execute(
         """
         UPDATE jobs SET
@@ -114,23 +223,194 @@ def claim_job(cur, leases: dict[str, int]) -> dict[str, Any] | None:
         WHERE id = (
             SELECT id FROM jobs
             WHERE status='pending'
+              AND type=%s
               AND (not_before IS NULL OR not_before <= now())
             ORDER BY created_at FOR UPDATE SKIP LOCKED LIMIT 1
         )
-        RETURNING id, type, payload, attempts
+        RETURNING id, type, payload, attempts, queued_at
         """,
-        (ingest_lease,),
+        (lease_s, job_type),
     )
     row = cur.fetchone()
     if not row:
         return None
-    return {"id": row[0], "type": row[1], "payload": row[2], "attempts": row[3]}
+    return {
+        "id": row[0],
+        "type": row[1],
+        "payload": row[2],
+        "attempts": row[3],
+        "queued_at": row[4],
+    }
+
+
+def start_job_attempt(
+    cur,
+    *,
+    job: dict[str, Any],
+    trace_id: str,
+    environment: str,
+    host_id: str,
+    worker_instance_id: str,
+    release_sha: str,
+) -> int:
+    payload = job.get("payload") or {}
+    plan = payload.get("processingPlan") or {}
+    queued_at = job.get("queued_at")
+    cur.execute(
+        """
+        INSERT INTO ingest_job_attempts
+          (job_id, operation_id, attempt, job_type, environment, host_id,
+           worker_instance_id, release_sha, trace_id, route, source_format,
+           queued_at, queue_milliseconds)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                GREATEST(0, round(extract(epoch FROM (now() - %s)) * 1000)))
+        RETURNING id
+        """,
+        (
+            job["id"],
+            str(payload.get("reservationId") or job["id"]),
+            int(job.get("attempts") or 1),
+            str(job.get("type") or ""),
+            environment,
+            host_id,
+            worker_instance_id,
+            release_sha,
+            trace_id,
+            str(plan.get("route") or ""),
+            str(plan.get("format") or ""),
+            queued_at,
+            queued_at,
+        ),
+    )
+    row = cur.fetchone()
+    if row is None:
+        raise RuntimeError("job attempt could not be created")
+    return int(row[0])
+
+
+def enqueue_job(cur, job_id: str, job_type: str, payload: dict[str, Any]) -> None:
+    cur.execute(
+        "INSERT INTO jobs (id, type, payload) VALUES (%s, %s, %s)",
+        (job_id, job_type, Jsonb(payload)),
+    )
 
 
 def set_job(cur, job_id: str, status: str, error: str | None = None) -> None:
     cur.execute(
         "UPDATE jobs SET status=%s, error=%s, updated_at=now(), lease_expires_at=NULL WHERE id=%s",
         (status, error, job_id),
+    )
+
+
+def finish_job_attempt(
+    cur,
+    *,
+    attempt_id: int | None,
+    outcome: str,
+    snapshot: dict[str, Any] | None = None,
+    error_category: str = "",
+    error_code: str = "",
+    error_detail: str = "",
+    retryable: bool = False,
+    next_retry_at: Any = None,
+) -> None:
+    if not attempt_id:
+        return
+    values = snapshot or {}
+    stats = values.get("stats") if isinstance(values.get("stats"), dict) else {}
+    timings = (
+        values.get("stage_timings")
+        if isinstance(values.get("stage_timings"), dict)
+        else {}
+    )
+    typed = {
+        "source_bytes": max(0, int(stats.get("source_bytes") or 0)),
+        "artifact_bytes": max(0, int(stats.get("artifact_bytes") or 0)),
+        "figures_selected": max(0, int(stats.get("figures_selected") or 0)),
+        "figures_cached": max(0, int(stats.get("figures_cached") or 0)),
+        "figures_captioned": max(0, int(stats.get("figures_captioned") or 0)),
+        "figures_decorative": max(0, int(stats.get("figures_decorative") or 0)),
+        "figures_applied": max(0, int(stats.get("figures_applied") or 0)),
+        "figures_failed": max(0, int(stats.get("figures_failed") or 0)),
+        "chunks_created": max(0, int(stats.get("chunks_created") or 0)),
+        "concepts_created": max(0, int(stats.get("concepts_created") or 0)),
+        "donor_reused": bool(stats.get("donor_reused") or False),
+    }
+    details = {
+        key: value
+        for key, value in stats.items()
+        if key not in typed and isinstance(value, (bool, int, str))
+    }
+    cur.execute(
+        """
+        UPDATE ingest_job_attempts SET
+          status=%s, stage=%s, error_category=%s, error_code=%s,
+          error_detail=%s, retryable=%s, next_retry_at=%s,
+          finished_at=now(),
+          duration_milliseconds=GREATEST(
+            0, round(extract(epoch FROM (now() - claimed_at)) * 1000)
+          ),
+          source_bytes=%s, artifact_bytes=%s,
+          figures_selected=%s, figures_cached=%s, figures_captioned=%s,
+          figures_decorative=%s, figures_applied=%s, figures_failed=%s,
+          chunks_created=%s, concepts_created=%s, donor_reused=%s,
+          stage_timings=%s, details=%s
+        WHERE id=%s AND status='running'
+        """,
+        (
+            outcome,
+            str(values.get("stage") or "")[:80],
+            error_category[:80],
+            error_code[:80],
+            error_detail[:160],
+            retryable,
+            next_retry_at,
+            typed["source_bytes"],
+            typed["artifact_bytes"],
+            typed["figures_selected"],
+            typed["figures_cached"],
+            typed["figures_captioned"],
+            typed["figures_decorative"],
+            typed["figures_applied"],
+            typed["figures_failed"],
+            typed["chunks_created"],
+            typed["concepts_created"],
+            typed["donor_reused"],
+            Jsonb(timings),
+            Jsonb(details),
+            attempt_id,
+        ),
+    )
+
+
+def record_job_parse_metrics(
+    cur,
+    *,
+    attempt_id: int | None,
+    pages: int,
+    ocr_pages: int,
+    slices: int,
+    queue_milliseconds: int,
+    execution_milliseconds: int,
+) -> None:
+    if not attempt_id:
+        return
+    cur.execute(
+        """
+        UPDATE ingest_job_attempts SET
+          parse_pages=%s, parse_ocr_pages=%s, parse_slices=%s,
+          parser_queue_milliseconds=%s,
+          parser_execution_milliseconds=%s
+        WHERE id=%s
+        """,
+        (
+            max(0, pages),
+            min(max(0, pages), max(0, ocr_pages)),
+            max(0, slices),
+            max(0, queue_milliseconds),
+            max(0, execution_milliseconds),
+            attempt_id,
+        ),
     )
 
 
@@ -203,6 +483,7 @@ def requeue_job(
             error=%s,
             not_before=now() + make_interval(secs => %s),
             lease_expires_at=NULL,
+            queued_at=now(),
             updated_at=now()
         WHERE id=%s
         """,
@@ -216,7 +497,7 @@ def release_job_for_capacity(cur, job_id: str, attempt: int, *, backoff_s: int) 
 
     Used when every parser slot is taken. ``claim_job`` already incremented
     ``attempts``; undoing that is what keeps a long queue from looking like
-    three failures.
+    repeated failures.
     """
     cur.execute(
         """
@@ -226,6 +507,7 @@ def release_job_for_capacity(cur, job_id: str, attempt: int, *, backoff_s: int) 
             error=NULL,
             not_before=now() + make_interval(secs => %s),
             lease_expires_at=NULL,
+            queued_at=now(),
             updated_at=now()
         WHERE id=%s AND status='running' AND attempts=%s
         """,
@@ -541,6 +823,7 @@ def reclaim_expired_leases(
         if "lease expired" not in note:
             note = f"{note}; lease expired"
         outcome = "failed"
+        retryable = False
         if not job_type or cap is None:
             set_job(cur, job_id, "failed", f"unknown job type {job_type!r}"[:500])
         elif attempts >= cap:
@@ -555,6 +838,26 @@ def reclaim_expired_leases(
                 error=note,
                 backoff_s=base * (2 ** max(int(attempts) - 1, 0)),
             )
+            retryable = True
+        cur.execute(
+            """
+            UPDATE ingest_job_attempts SET
+              status='lease_expired', stage=COALESCE(NULLIF(stage, ''), 'unknown'),
+              error_category='worker', error_code='lease_expired',
+              error_detail='worker lease expired', retryable=%s,
+              next_retry_at=(SELECT not_before FROM jobs WHERE id=%s),
+              finished_at=now(),
+              duration_milliseconds=GREATEST(
+                0, round(extract(epoch FROM (now() - claimed_at)) * 1000)
+              )
+            WHERE id = (
+              SELECT id FROM ingest_job_attempts
+              WHERE job_id=%s AND attempt=%s AND status='running'
+              ORDER BY claimed_at DESC LIMIT 1
+            )
+            """,
+            (retryable, job_id, job_id, attempts),
+        )
         reclaimed.append(
             {
                 "id": job_id,
@@ -819,23 +1122,12 @@ def workspace_owner_user_id(cur, workspace_id: str) -> str | None:
     return row[0] if row else None
 
 
-MICROS_PER_CREDIT = 1_000_000
-_FREE_CREDITS_PER_MONTH = 1_000
-_PRO_CREDITS_PER_MONTH = 20_000
-
-
 def credits_for_parse_pages(
     pages: int, ocr_pages: int, *, digital_rate: int, ocr_rate: int
 ) -> int:
     pages = max(0, int(pages))
     ocr_pages = min(pages, max(0, int(ocr_pages)))
     return (pages - ocr_pages) * int(digital_rate) + ocr_pages * int(ocr_rate)
-
-
-def credit_limit_micros(plan_tier: str) -> int:
-    if plan_tier == "pro":
-        return _PRO_CREDITS_PER_MONTH * MICROS_PER_CREDIT
-    return _FREE_CREDITS_PER_MONTH * MICROS_PER_CREDIT
 
 
 def record_usage_event(
@@ -956,6 +1248,8 @@ def open_provider_call(
     purpose: str,
     thinking: str,
     *,
+    job_attempt_id: int | None = None,
+    job_stage: str = "",
     context_system_tokens: int = 0,
     context_tool_tokens: int = 0,
     context_conversation_tokens: int = 0,
@@ -1002,7 +1296,8 @@ def open_provider_call(
 
     cur.execute(
         """
-        SELECT reservation_id, actor_user_id, kind, purpose, thinking, status,
+        SELECT reservation_id, actor_user_id, job_attempt_id, job_stage,
+               kind, purpose, thinking, status,
                context_system_tokens, context_tool_tokens,
                context_conversation_tokens, context_total_tokens,
                context_window_tokens, context_counting_method,
@@ -1016,6 +1311,8 @@ def open_provider_call(
         expected = (
             session_id,
             actor_user_id,
+            job_attempt_id,
+            job_stage,
             kind,
             purpose,
             thinking,
@@ -1034,18 +1331,21 @@ def open_provider_call(
     cur.execute(
         """
         INSERT INTO provider_calls (
-          id, reservation_id, actor_user_id, kind, purpose, thinking,
+          id, reservation_id, actor_user_id, job_attempt_id, job_stage,
+          kind, purpose, thinking,
           context_system_tokens, context_tool_tokens,
           context_conversation_tokens, context_total_tokens,
           context_window_tokens, context_counting_method,
           context_counting_version
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """,
         (
             call_id,
             session_id,
             actor_user_id,
+            job_attempt_id,
+            job_stage,
             kind,
             purpose,
             thinking,
@@ -1067,16 +1367,24 @@ def open_provider_call(
         )
 
 
-def abandon_provider_call(cur, call_id: str) -> None:
+def abandon_provider_call(
+    cur,
+    call_id: str,
+    *,
+    error_category: str = "provider",
+    error_code: str = "provider_abandoned",
+    provider_status: int | None = None,
+) -> None:
     if not call_id:
         return
     cur.execute(
         """
-        UPDATE provider_calls SET status = 'abandoned'
+        UPDATE provider_calls SET status = 'abandoned', abandoned_at=now(),
+          error_category=%s, error_code=%s, provider_status=%s
          WHERE id = %s AND status = 'open'
          RETURNING reservation_id, purpose
         """,
-        (call_id,),
+        (error_category[:80], error_code[:80], provider_status, call_id),
     )
     abandoned = cur.fetchone()
     if abandoned is not None and abandoned[1] == "terminal":
@@ -1318,12 +1626,10 @@ def account_allows_ingest(cur, user_id: str) -> bool:
         end = (
             period_end if period_end.tzinfo else period_end.replace(tzinfo=timezone.utc)
         )
-        if end < now:
-            # After lapse the free-tier storage limit applies regardless of the
-            # denormalized plan_tier column, which may lag a missed webhook.
-            free_limit = 100 * 1024 * 1024
-            if effective_used > free_limit:
-                return False
+        # After lapse the free-tier storage limit applies regardless of the
+        # denormalized plan_tier column, which may lag a missed webhook.
+        if end < now and effective_used > plan_limits.for_tier("free").storage_bytes:
+            return False
     return True
 
 
@@ -1357,4 +1663,4 @@ def actor_has_credits(cur, user_id: str) -> bool:
     today = datetime.now(timezone.utc).date()
     if period_start is not None and period_start < today.replace(day=1):
         used = 0
-    return (used + reserved) < credit_limit_micros(plan_tier)
+    return (used + reserved) < plan_limits.for_tier(plan_tier).credit_micros

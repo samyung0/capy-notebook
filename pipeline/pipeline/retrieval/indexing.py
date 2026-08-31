@@ -310,6 +310,7 @@ async def _summarize_once(body: str, word_target: int) -> tuple[str, str]:
         ],
         model=ingest_spec(),
         reasoning=False,
+        call_purpose="file_summary",
     )
     return _parse_summary_payload(raw)
 
@@ -331,6 +332,7 @@ async def _summarize_mapped(chunks: list[Chunk], word_target: int) -> tuple[str,
             ],
             model=ingest_spec(),
             reasoning=False,
+            call_purpose="file_summary",
         )
         if raw and raw.strip():
             partials.append(raw.strip())
@@ -414,6 +416,7 @@ async def extract_concepts(
                 model=ingest_spec(),
                 temperature=0.0,
                 reasoning=False,
+                call_purpose="concept_extraction",
             )
         except Exception:
             log.warning("concept extraction failed for %s", file_name, exc_info=True)

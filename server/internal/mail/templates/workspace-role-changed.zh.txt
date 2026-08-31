@@ -5,9 +5,9 @@ Evo Notes
 
 {{.WorkspaceName}} 中的角色已由工作区所有者更改。
 
-工作区: {{.WorkspaceName}}
+工作区：{{.WorkspaceName}}
 
-新角色: {{.RoleName}}
+新角色：{{.RoleName}}
 
 打开 Evo Notes {{.OpenURL}}
 

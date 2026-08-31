@@ -91,7 +91,7 @@ function input(name: string) {
 }
 
 describe('source analysis classification', () => {
-  it('matches the parser VM page thresholds', () => {
+  it('matches the parser page thresholds', () => {
     expect(classifySourcePage('a'.repeat(800), 0.95, 1).reason).toBe(
       'text_layer'
     );

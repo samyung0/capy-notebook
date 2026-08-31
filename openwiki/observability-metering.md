@@ -30,7 +30,7 @@ browser  →  Go gateway  →  Python retrieval  →  provider
 | Go gateway | continues or mints | `server/internal/obs/trace.go` |
 | Go → pipeline | injects | `obs.Inject` in `internal/pipeline/client.go` |
 | Python | continues | `pipeline/pipeline/obs.py` middleware |
-| Python → parser VM | injects | `obs.outbound_headers()` in `parse/parser_client.py` |
+| Python → parser service | injects | `obs.outbound_headers()` in `parse/parser_client.py` |
 | Ingest worker | mints per job | `ingest/worker.py` claim loop |
 
 The gateway echoes it as `X-Request-Id`, so a user can quote the id from a
@@ -224,16 +224,28 @@ Every inference path is actor-billed.
 
 ### Model registry and pinning
 
-`model_configs` rows are immutable and versioned. The provider-facing identity
-is `provider_slug` + `model_slug` from the closed elitellm list
-(`elitellm_providers.json`). First-party only (`anthropic`, `openai`,
-`deepseek`, `gemini`), plus the OpenRouter qwen-embed hop. The typed surface
-policy in `server/internal/models/surface.go` lists which product surfaces need
-an agentic loop. Assigning a model to any listed surface requires a current
-two-turn streaming replay certification for the exact
+`model_configs` rows are immutable and versioned. Their catalog identity is
+`provider_slug` + `model_slug` from the closed EliteLLM list
+(`elitellm_providers.json`). Most rows call the named provider directly. Two
+exact DeepInfra exceptions are allowed:
+
+- `deepinfra/Qwen/Qwen3-Embedding-4B` uses the same identity on DeepInfra's
+  OpenAI-compatible embedding endpoint.
+- `zai/glm-5.3-flash` remains a ZAI catalog row but EliteLLM sends it to
+  DeepInfra as `zai-org/GLM-5.3-Flash`.
+
+Neither exception opens a general router path. Other DeepInfra embedding slugs
+and other ZAI slugs fail registry validation. Both use the platform-only
+`DEEPINFRA_API_KEY`; a ZAI user key cannot authenticate the routed GLM call.
+The typed surface policy in `server/internal/models/surface.go` lists which
+product surfaces need an agentic loop. Assigning a model to any listed surface
+requires a current two-turn streaming replay certification for the exact
 `(provider_slug, model_slug)` identity. Chat is currently the only listed
-surface. The gate also runs when an existing catalog row is saved, so a stale
-row cannot bypass a removed certificate.
+surface. The seeded GLM row lists chat before a certificate so the transport and
+recording workflow can be tested. Do not select it for production chat until
+`zai/glm-5.3-flash` has a certificate. Ops cannot assign or save that chat cell
+before then. The gate also runs when an existing catalog row is saved, so a
+stale row cannot bypass a removed certificate.
 `pnpm test:pipeline:replay` only replays the checked-in certification tapes and
 never records. `pnpm model:certify` makes the paid live calls needed to certify
 a new exact model slug or replace an existing certification, then regenerates
@@ -309,11 +321,18 @@ input > 0; cached-read and output may be 0.
 | `usage_events` | append-only source of truth; includes the actual per-call thinking level; corrections are new rows |
 | `user_credits` | the counter the gate locks; monthly period resets lazily on first read |
 | `provider_sessions` | request or ingest sessions; owns the concurrency lease, per-session credit reservation, and pinned provider configuration, swept on expiry |
-| `provider_calls` | one row inserted before each provider attempt; records lifecycle, measured usage, and numeric-only context composition telemetry |
-| `parse_host_samples` | permanent 5-second-active / 60-second-idle numeric host samples; contains no file, user, path, or document identity |
+| `provider_calls` | one row inserted before each provider attempt; records lifecycle, measured usage, numeric-only context composition, and optional ingest attempt/stage linkage |
+| `ingest_job_attempts` | one durable row per actual parse/ingest queue claim, including stage timings, retry/error classification, page/OCR/slice/caption/chunk counts, and no source name or content |
+| `ingest_host_samples` / `ingest_host_sample_rollups` | shared MinerU-pool, queue, spool, and physical-host samples; raw rows retain 30 days and one-minute rollups retain one year |
+| `ingest_worker_samples` / `ingest_worker_sample_rollups` | per-container parse/ingest worker cgroup samples; raw rows retain 30 days and one-minute rollups retain one year |
 
 Shape mirrors `backend-storage-quota.md` on purpose: hot-path ledger, counter
 row for the gate to lock, reconcile pass for drift.
+
+Monthly credit limits come from the immutable `plan_limits` startup snapshot
+(1,000 free / 20,000 Pro), shared with the other upgradeable product limits.
+The Go gateway and Python ingest worker do not query that table while admitting
+or claiming work.
 
 The signed-in billing page reads this ledger directly. `GET /api/billing` now
 includes the current credit counter (`creditsUsedMicros` / reserved / limit /
@@ -359,7 +378,8 @@ Immediately before an LLM request, the pipeline applies the provider-specific
 request transformation and estimates the resulting variable-sized fields in
 three categories: system-prompt content, tool definitions and response schemas,
 and conversation content. This includes OpenAI Responses input items, Anthropic
-tool and thinking blocks, DeepSeek `reasoning_content`, full tool arguments, and
+tool and thinking blocks, DeepSeek and routed GLM `reasoning_content`, full tool
+arguments, and
 tool results. Rolling summaries and compactions count as conversation. Only
 token counts, the context-window size, and the estimator method/version are
 stored on `provider_calls`; prompt, schema, tool argument, and response content
@@ -476,6 +496,10 @@ Claim-time gating is two lookups, not one widened check:
 | Actor (payload `actorUserId`) | credits only | refuse the job |
 | Actor | lifecycle | **not checked** |
 
+This admission check runs on a direct ingest job or the initial parse job. A
+document ingest continuation with the immutable parse handoff is already in
+flight and does not repeat the credit check between stages.
+
 Actor lifecycle does not gate ingest. A `deletion_pending` uploader must not
 leave the owner holding an unindexed file whose bytes they already paid for.
 Credits are the actor's money; lifecycle is the owner's workspace's business.
@@ -487,8 +511,9 @@ with the same distinct errors.
 Charging happens after the fact because nothing is waiting on an ingest job,
 the file was already accepted, and refusing halfway leaves a half-indexed
 document. LLM and embedding calls settle individually when each provider
-response returns. The worker records each parse attempt before it marks the job
-for retry, failure, or success. Either path can push a user past their limit;
+response returns. The parse coordinator records each measured parse attempt
+before it marks that stage for retry/failure or atomically enqueues the ingest
+continuation. Either path can push a user past their limit;
 the next interactive request is what refuses.
 
 The parse event uses `kind='parse'`, `unit='pages'`, and one row per actual
@@ -498,10 +523,10 @@ idempotency key for that work, so a lost HTTP response can be recovered from the
 bundle without charging again. Concurrent waiters receive the artifact but not
 the creator's receipt. Legacy responses without a receipt retain
 `parse:{job id}:{attempt}` as their compatibility key. Cache and donor hits do
-not create parse events because they did not run Marker.
+not create parse events because they did not run MinerU.
 
 The charge is per page, not per container time. Every page gets exactly one of
-two active database rates: the digital-page rate or the RapidOCR-page rate. The
+two active database rates: the digital-page rate or the OCR-page rate. The
 OCR rate replaces the digital rate. It is not a surcharge added on top.
 
 `GET /api/source-upload-policy` returns both page rates and the audio-second
@@ -512,25 +537,44 @@ write. PDF page count is exact but OCR routing remains estimated; OOXML counts
 can also be estimated. Only the parser receipt creates `usage_events` and
 settles the actual charge.
 
-The seeded 31/52-credit page rates remain provisional during the VM benchmark.
+The seeded 31/52-credit page rates remain provisional during the ingest-host benchmark.
 Operators can create a new active version without deploying. Enqueue snapshots
 the applicable versions and microcredit amounts into the job, so an edit never
 reprices work already waiting in the queue.
 
-The persistent parser returns attributable child-process CPU, wall time, queue
-time, shared-spool source-read/bundle-write time, current RSS/PSS, and I/O
-bytes. The historical database column names still say parse download/upload,
-but those values no longer measure B2 transfers. CPU includes the
-LibreOffice child used to normalize DOC/DOCX, PPT/PPTX, and XLS/XLSX. Those fields are operational
-telemetry only. Page counts determine the charge.
+The persistent parser returns wall time, queue time, shared-spool
+source-read/bundle-write time, and current process/cgroup RSS/PSS and I/O. The
+historical database column names still say parse download/upload, but those
+values no longer measure B2 transfers. Four concurrent MinerU slices share one
+process, so per-document CPU is not attributed; whole-host sampling captures
+CPU and memory. These fields are operational telemetry only. Page counts
+determine the charge.
 
-Host saturation is separate. `pipeline.parse.host_sampler` reads host `/proc`,
-polls parser admission counts, and writes compact typed rows every five seconds
-while active and every sixty seconds while idle. Raw samples are kept
-permanently and the Ops API groups them into one-minute buckets. Shared Marker
-layout-server CPU cannot be assigned honestly to one concurrent job, so the
-dashboard shows attributable job CPU, parser memory, and whole-host CPU/memory
-as distinct series.
+Host saturation is separate. `pipeline.ingest.host_sampler` reads host `/proc`,
+polls parser admission counts, reads the durable parse/ingest queues and spool,
+and writes compact typed rows every five seconds while any work is active or
+queued and every sixty seconds while idle. Each one-job coordinator/worker also
+writes its own cgroup CPU, memory, I/O, PID, and OOM counters at the same adaptive
+cadence. The recursive spool size/count is cached for sixty seconds so an active
+parser does not rescan the volume every five seconds. Raw rows retain 30 days; each writer refreshes the current one-minute
+rollup, retained for one year. Shared MinerU CPU cannot be assigned honestly to
+one concurrent document, so the dashboard keeps MinerU pool memory and
+whole-host CPU/memory separate from per-worker cgroups and page billing.
+
+Every queue claim opens `ingest_job_attempts` in the same transaction as the
+claim. Terminal success, retry, capacity wait, external wait, supersession, and
+failure close that exact row. The lease reaper closes rows abandoned by a dead
+worker as `lease_expired`. Capacity/external waits may decrement the visible
+`jobs.attempts` value, so the generated attempt id—not `(job_id, attempt)`—is
+the durable identity. Provider calls opened by ingest carry that id and the
+current job stage, which lets Ops connect figure captions and other LLM calls
+to a file operation without storing prompts, paths, file names, or content.
+
+Production, UAT, and local samples carry an explicit environment label. The
+local/UAT samplers write queue and shared-parser activity to their separate
+application databases but set `host_metrics_available=false`; reporting the
+same physical host twice would imply false ownership. Ops always reads its
+primary database and can add optional column-limited read DSNs for UAT/local.
 
 ### Pricing is policy
 
@@ -676,7 +720,9 @@ year and longer custom ranges use monthly buckets. Each response carries one
 `dataAsOf` timestamp so live rows are not presented as a periodic snapshot.
 Provider/model grouping uses the catalog provider, model slug, and version as
 the primary billing identity; the transport-observed provider/model is shown as
-secondary diagnostic data.
+secondary diagnostic data. Routed GLM rows therefore group under
+`zai/glm-5.3-flash` while the observed pair is
+`deepinfra/zai-org/GLM-5.3-Flash`.
 
 The header's refresh button refetches all active Ops GET queries. It never
 calls an LLM provider, the parser, or Stripe and it never starts reconciliation.

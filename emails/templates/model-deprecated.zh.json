@@ -1,0 +1,91 @@
+{
+  "schemaVersion": 1,
+  "subject": "{{.FromName}} 已从 Evo Notes 下线",
+  "preview": "新的消息将使用 {{.ToName}}。",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              { "type": "bold" },
+              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
+            ],
+            "text": "Evo Notes"
+          }
+        ]
+      },
+      {
+        "type": "heading",
+        "attrs": { "level": 1 },
+        "content": [{ "type": "text", "text": "你的对话模型已更换" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [{ "type": "text", "text": "你好，" }]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "variable",
+            "attrs": { "id": "FromName", "label": "原模型", "required": true }
+          },
+          {
+            "type": "text",
+            "text": " 已下线。你的下一条对话和下一次生成将使用 "
+          },
+          {
+            "type": "variable",
+            "attrs": { "id": "ToName", "label": "替代模型", "required": true }
+          },
+          { "type": "text", "text": "。你可以在设置中选择其他模型。" }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "打开模型设置",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      { "type": "horizontalRule" },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "你收到这封邮件是因为你选用的 Evo Notes 模型已下线。"
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ],
+            "text": "管理产品邮件偏好"
+          }
+        ]
+      }
+    ]
+  }
+}

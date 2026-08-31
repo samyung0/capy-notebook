@@ -31,7 +31,7 @@ func main() {
 
 	dsn := env("DATABASE_URL", "postgres://evo:evo@localhost:5432/evo?sslmode=disable")
 	ctx := context.Background()
-	st, err := store.New(ctx, dsn)
+	st, err := store.Open(ctx, dsn)
 	if err != nil {
 		log.Fatalf("db: %v", err)
 	}

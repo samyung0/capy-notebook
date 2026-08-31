@@ -135,7 +135,7 @@ Parser regions use 1-based pages and normalized `[x0,y0,x1,y1]` coordinates in
 over each rendered page. The overlay is read-only and is never shown while an
 Office editor is active.
 
-Office coordinates belong to the exact LibreOffice PDF that Marker parsed, not
+Office coordinates belong to the exact LibreOffice PDF that MinerU parsed, not
 to BetterOffice's native layout. Parser bundle v3 therefore includes
 `preview.pdf` for Office inputs. Ingest stores it as a reusable
 `office_preview` artifact and exposes `/api/files/{id}/preview` after the file

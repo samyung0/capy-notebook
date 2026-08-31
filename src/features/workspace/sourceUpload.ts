@@ -1,5 +1,6 @@
 import { isApiError } from '@/api/client';
 import type { FileKind, SourceUploadPolicy } from '@/api/types';
+import { PLAN_LIMITS } from '@/features/billing/planLimits';
 
 export type ParseMode = 'fast' | 'none';
 
@@ -108,9 +109,9 @@ export function aggregateUploadPct(
   return Math.round((uploadedBytes / totalBytes) * 100);
 }
 
-export const MAX_FILES_PER_UPLOAD = 20;
+export const MAX_FILES_PER_UPLOAD = PLAN_LIMITS.free.filesPerUpload;
 export const MAX_SOURCE_UPLOAD_FILES = MAX_FILES_PER_UPLOAD;
-export const MAX_FILES_PER_WORKSPACE = 100;
+export const MAX_FILES_PER_WORKSPACE = PLAN_LIMITS.free.filesPerWorkspace;
 export const SOURCE_UPLOAD_CONCURRENCY = 3;
 
 export function needsIngestJob(

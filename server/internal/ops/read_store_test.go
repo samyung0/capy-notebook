@@ -20,15 +20,20 @@ func TestReadStoreQueriesMatchTheProductionSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	read := NewReadStore(store.NewWithPool(pool))
+	read := newReadStoreForTest(t, pool)
 	if _, err := read.Overview(ctx); err != nil {
 		t.Fatalf("overview: %v", err)
 	}
 	if _, err := read.Health(ctx, 30); err != nil {
 		t.Fatalf("health: %v", err)
 	}
-	if _, err := read.ParserMetrics(ctx, 24); err != nil {
+	ingestMetrics, err := read.IngestHostMetrics(ctx, 24)
+	if err != nil {
 		t.Fatalf("parser metrics: %v", err)
+	}
+	if len(ingestMetrics.Environments) != 1 ||
+		ingestMetrics.Environments[0].Environment != "production" {
+		t.Fatalf("ingest environments = %+v", ingestMetrics.Environments)
 	}
 	if _, err := read.Reconciliation(ctx); err != nil {
 		t.Fatalf("reconciliation: %v", err)
@@ -61,7 +66,7 @@ func TestReadStoreQueriesMatchTheProductionSchema(t *testing.T) {
 		WHERE schemaname='public'
 		  AND indexname IN (
 			'usage_events_trace_idx',
-			'parse_host_samples_sampled_brin_idx',
+			'ingest_host_samples_sampled_brin_idx',
 			'messages_ops_assistant_idx',
 			'provider_calls_reservation_idx',
 			'provider_calls_context_idx',
@@ -83,7 +88,7 @@ func TestHealthClassifiesTurnAndProviderLifecycles(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	read := NewReadStore(store.NewWithPool(pool))
+	read := newReadStoreForTest(t, pool)
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	userID := "ops_health_user_" + suffix
 	workspaceID := "ops_health_ws_" + suffix
@@ -221,7 +226,7 @@ func TestOperatorRejectsProductAccountLocksButAllowsOverQuota(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	read := NewReadStore(store.NewWithPool(pool))
+	read := newReadStoreForTest(t, pool)
 	userID := fmt.Sprintf("ops_lifecycle_%d", time.Now().UnixNano())
 	if _, err := pool.Exec(ctx, `
 		INSERT INTO users (id, name, email)

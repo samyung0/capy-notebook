@@ -87,7 +87,7 @@ def test_source_method_schema_and_release_all_participate_in_identity(monkeypatc
     _, other_source = parser_client.artifact_identity(
         _descriptor(source_sha256="bb" * 32)
     )
-    monkeypatch.setattr(parser_client.cfg, "parse_method", "marker_only")
+    monkeypatch.setattr(parser_client.cfg, "parse_method", "ocr")
     _, other_method = parser_client.artifact_identity(_descriptor())
     monkeypatch.setattr(parser_client, "ARTIFACT_SCHEMA", "evo-parser-bundle-v4")
     _, other_schema = parser_client.artifact_identity(_descriptor())
@@ -253,6 +253,62 @@ def test_local_hard_timeout_quarantine_fails_without_calling_parser(
         parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
 
 
+def test_local_oom_quarantine_fails_without_calling_parser(
+    tmp_path: Path, monkeypatch, parser_url
+):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    _, fingerprint = parser_client.artifact_identity(_descriptor())
+    marker = tmp_path / "quarantine" / f"{fingerprint}.json"
+    marker.parent.mkdir(parents=True)
+    marker.write_text(
+        json.dumps(
+            {
+                "reason": "parse_oom",
+                "detail": "memory exhausted",
+                "source_fingerprint": fingerprint,
+                "parser_version": FAST_VERSION,
+            }
+        )
+    )
+    monkeypatch.setattr(
+        parser_client.requests,
+        "post",
+        lambda *_a, **_k: (_ for _ in ()).throw(
+            AssertionError("quarantined fingerprint called the parser")
+        ),
+    )
+
+    with pytest.raises(parser_client.ParserOOMError, match="memory exhausted"):
+        parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
+
+
+def test_connection_loss_checks_oom_marker_before_retry(
+    tmp_path: Path, monkeypatch, parser_url
+):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    _, fingerprint = parser_client.artifact_identity(_descriptor())
+
+    def _oom_then_disconnect(*_args, **_kwargs):
+        marker = tmp_path / "quarantine" / f"{fingerprint}.json"
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(
+            json.dumps(
+                {
+                    "reason": "parse_oom",
+                    "detail": "memory exhausted",
+                    "source_fingerprint": fingerprint,
+                    "parser_version": FAST_VERSION,
+                }
+            )
+        )
+        raise parser_client.requests.ConnectionError("parser exited")
+
+    monkeypatch.setattr(parser_client.requests, "post", _oom_then_disconnect)
+
+    with pytest.raises(parser_client.ParserOOMError, match="memory exhausted"):
+        parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
+
+
 def test_missing_parser_url_is_a_configuration_error(monkeypatch):
     monkeypatch.setattr(parser_client.cfg, "parser_url", "")
     with pytest.raises(parser_client.ParserClientError, match="PARSER_URL"):
@@ -300,6 +356,26 @@ def test_hard_timeout_response_is_terminally_classified(monkeypatch, parser_url)
         _Resp(422, {"code": "parse_hard_timeout", "detail": "too slow"}),
     )
     with pytest.raises(parser_client.ParserHardTimeoutError, match="too slow"):
+        parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
+
+
+def test_oom_response_is_terminally_classified(monkeypatch, parser_url):
+    _stub_request(
+        monkeypatch,
+        _Resp(422, {"code": "parse_oom", "detail": "memory exhausted"}),
+    )
+    with pytest.raises(parser_client.ParserOOMError, match="memory exhausted"):
+        parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
+
+
+def test_parser_capacity_response_is_classified_without_becoming_terminal(
+    monkeypatch, parser_url
+):
+    _stub_request(
+        monkeypatch,
+        _Resp(429, {"code": "parser_capacity", "detail": "queue is full"}),
+    )
+    with pytest.raises(parser_client.ParserCapacityError, match="queue is full"):
         parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
 
 
@@ -516,6 +592,51 @@ def test_fresh_broken_artifact_is_not_retried(tmp_path: Path, monkeypatch):
     with pytest.raises(zipfile.BadZipFile):
         parser_client.parse_to_bundle(
             _descriptor(), "doc.pdf", tmp_path / "raw", request_id="job-1"
+        )
+
+
+def test_discard_artifact_only_removes_its_fingerprint_addressed_bundle(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    fingerprint = "a" * 64
+    path = tmp_path / "artifacts" / f"{fingerprint}.zip"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"invalid")
+
+    parser_client.discard_artifact(
+        {"key": f"artifacts/{fingerprint}.zip", "fingerprint": fingerprint}
+    )
+    assert not path.exists()
+
+    with pytest.raises(parser_client.ParserClientError, match="repair descriptor"):
+        parser_client.discard_artifact(
+            {"key": "sources/source-1", "fingerprint": fingerprint}
+        )
+
+
+def test_handoff_extraction_classifies_a_broken_zip_for_repair(
+    tmp_path: Path, monkeypatch
+):
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    fingerprint = "a" * 64
+    path = tmp_path / "artifacts" / f"{fingerprint}.zip"
+    path.parent.mkdir(parents=True)
+    path.write_bytes(b"not a zip")
+    artifact = {
+        "key": f"artifacts/{fingerprint}.zip",
+        "fingerprint": fingerprint,
+        "version": FAST_VERSION,
+        "size": path.stat().st_size,
+        "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+
+    with pytest.raises(parser_client.ParserClientError, match="could not be read"):
+        parser_client.extract_artifact(
+            artifact,
+            tmp_path / "raw-handoff",
+            route=parser_client.ROUTE_FAST,
+            require_office_preview=False,
         )
 
 

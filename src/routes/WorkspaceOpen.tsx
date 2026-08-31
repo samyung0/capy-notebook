@@ -611,7 +611,7 @@ export default function WorkspaceOpen() {
                           />
                           <IconButton
                             className="size-6 rounded-md p-1"
-                            icon="minimize"
+                            icon="folderCollapse"
                             label={m.workspace_collapse_chapters()}
                             onClick={() =>
                               setOpenChapters({

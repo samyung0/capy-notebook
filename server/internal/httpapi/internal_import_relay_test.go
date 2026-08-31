@@ -133,7 +133,7 @@ func TestImportRelayCompleteRetriesWhenCreditsExhausted(t *testing.T) {
 		  SET used_micros = EXCLUDED.used_micros,
 		      reserved_micros = 0,
 		      period_start = EXCLUDED.period_start`,
-		actor, store.CreditLimitMicros(store.PlanFree)); err != nil {
+		actor, mustPlanLimits(t, st, store.PlanFree).CreditMicros); err != nil {
 		t.Fatal(err)
 	}
 

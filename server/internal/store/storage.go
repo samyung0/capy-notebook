@@ -8,13 +8,6 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-const (
-	FreeStorageLimitBytes = int64(100 * 1024 * 1024)
-	ProStorageLimitBytes  = int64(1024 * 1024 * 1024)
-	MaxFilesPerWorkspace  = 100
-	MaxFilesPerUpload     = 20
-)
-
 var ErrStorageQuotaExceeded = errors.New("storage quota exceeded")
 
 // QuotaExceededError contains the values used by the creation gate. The
@@ -83,13 +76,6 @@ type StorageUsage struct {
 	ReservedBytes int64    `json:"storageReservedBytes"`
 	LimitBytes    int64    `json:"storageLimitBytes"`
 	PlanTier      PlanTier `json:"planTier"`
-}
-
-func StorageLimitBytes(tier PlanTier) int64 {
-	if tier == PlanPro {
-		return ProStorageLimitBytes
-	}
-	return FreeStorageLimitBytes
 }
 
 // WorkspaceOwnerPlan is the plan of the account that pays for the workspace.
@@ -176,11 +162,16 @@ func (s *Store) lockedStorageUsageTx(
 	if err != nil {
 		return
 	}
+	limits, limitsErr := s.PlanLimits(tier)
+	if limitsErr != nil {
+		err = limitsErr
+		return
+	}
 	usage = StorageUsage{
 		UserID:        userID,
 		UsedBytes:     baseUsed + pending,
 		ReservedBytes: reserved,
-		LimitBytes:    StorageLimitBytes(tier),
+		LimitBytes:    limits.StorageBytes,
 		PlanTier:      tier,
 	}
 	return
@@ -212,11 +203,15 @@ func (s *Store) unlockedStorageUsage(
 	if err != nil {
 		return usage, err
 	}
+	limits, err := s.PlanLimits(tier)
+	if err != nil {
+		return usage, err
+	}
 	return StorageUsage{
 		UserID:        userID,
 		UsedBytes:     baseUsed + pending,
 		ReservedBytes: reserved,
-		LimitBytes:    StorageLimitBytes(tier),
+		LimitBytes:    limits.StorageBytes,
 		PlanTier:      tier,
 	}, nil
 }
@@ -265,13 +260,19 @@ func (s *Store) reserveStorageTx(ctx context.Context, tx pgx.Tx, userID string, 
 	return err
 }
 
-func (s *Store) lockWorkspaceTx(ctx context.Context, tx pgx.Tx, workspaceID string) error {
-	var id string
-	err := tx.QueryRow(ctx, `SELECT id FROM workspaces WHERE id=$1 FOR UPDATE`, workspaceID).Scan(&id)
+func (s *Store) lockWorkspaceOwnerPlanTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	workspaceID string,
+) (PlanTier, error) {
+	var tier PlanTier
+	err := tx.QueryRow(ctx, `SELECT u.plan_tier
+		FROM workspaces w JOIN users u ON u.id=w.user_id
+		WHERE w.id=$1 FOR UPDATE OF w`, workspaceID).Scan(&tier)
 	if isNoRows(err) {
-		return ErrNotFound
+		return "", ErrNotFound
 	}
-	return err
+	return tier, err
 }
 
 func (s *Store) workspaceFileUsageTx(ctx context.Context, tx pgx.Tx, workspaceID string) (files, reserved int, err error) {
@@ -294,30 +295,35 @@ func (s *Store) gateWorkspaceFilesTx(ctx context.Context, tx pgx.Tx, workspaceID
 	if requested < 0 {
 		return fmt.Errorf("negative file request: %d", requested)
 	}
-	if err := s.lockWorkspaceTx(ctx, tx, workspaceID); err != nil {
+	tier, err := s.lockWorkspaceOwnerPlanTx(ctx, tx, workspaceID)
+	if err != nil {
+		return err
+	}
+	limits, err := s.PlanLimits(tier)
+	if err != nil {
 		return err
 	}
 	files, reserved, err := s.workspaceFileUsageTx(ctx, tx, workspaceID)
 	if err != nil {
 		return err
 	}
-	if requested > MaxFilesPerUpload {
+	if requested > limits.FilesPerUpload {
 		return &FileLimitExceededError{
 			WorkspaceID: workspaceID,
 			Used:        files,
 			Reserved:    reserved,
 			Requested:   requested,
-			Limit:       MaxFilesPerUpload,
+			Limit:       limits.FilesPerUpload,
 			Kind:        "batch",
 		}
 	}
-	if files+reserved+requested > MaxFilesPerWorkspace {
+	if files+reserved+requested > limits.FilesPerWorkspace {
 		return &FileLimitExceededError{
 			WorkspaceID: workspaceID,
 			Used:        files,
 			Reserved:    reserved,
 			Requested:   requested,
-			Limit:       MaxFilesPerWorkspace,
+			Limit:       limits.FilesPerWorkspace,
 			Kind:        "workspace",
 		}
 	}

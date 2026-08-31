@@ -1,13 +1,12 @@
-"""Cap concurrent calls admitted to the persistent parser VM.
+"""Cap concurrent calls admitted to the persistent parser service.
 
-Eight ingest workers may queue HTTP calls. The parser owns the resource-aware
-admission policy inside that boundary: two OCR-heavy jobs, or up to four
-digital jobs, until benchmarks justify changing it.
+Four ingest workers may queue document calls. The parser then fairly schedules
+their page slices and runs no more than four MinerU pipeline calls at once.
 
 The ingest worker takes a slot only for the parser HTTP call. When every slot
 is taken, the job goes back to ``pending`` and the file stays ``pending`` so
 the user sees a wait, not a stuck parse. Redis is the scoreboard; if Redis is
-down we let the call through and the parser's own semaphores are the backstop.
+down we let the call through and the parser's own bounded queue is the backstop.
 """
 
 from __future__ import annotations

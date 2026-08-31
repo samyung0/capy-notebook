@@ -23,10 +23,11 @@ The Python services share one Postgres schema owned by Go migrations
 
 | Process | Entry | Role |
 | --- | --- | --- |
-| Ingest worker | `python -m pipeline.ingest.worker` | Claims jobs, parses, chunks, embeds, writes a two-tier file summary, extracts concepts. Horizontally scalable (`WORKER_REPLICAS`); each replica runs one job at a time |
+| Parse coordinator | `python -m pipeline.ingest.parse_worker` | Supervises four isolated one-job coordinator processes. They validate and hash document sources, reuse an exact donor when possible, wait for MinerU, then atomically enqueue an immutable artifact handoff |
+| Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then chunks, captions/transcribes, embeds, writes a two-tier file summary, and extracts concepts. Each replica runs one job at a time |
 | Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/quiz-grade`, `/plate-ai/*` over the same index |
-| Parser service | `uvicorn parser-vm/app.py` | Persistent Marker/RapidOCR service on the dedicated VM; normalizes OOXML and legacy Office through LibreOffice and BMP/GIF/JP2 through Pillow |
-| Host sampler | `python -m pipeline.parse.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
+| Parser service | `uvicorn parser/app.py` | Persistent MinerU 3.4.5 pipeline service on the ingest host; independently slices large PDFs and normalizes Office through LibreOffice |
+| Host sampler | `python -m pipeline.ingest.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
 
 The Go gateway is the public face: it authenticates the user, proxies chat and
 generate to the retrieval service, and owns material persistence (including the
@@ -38,15 +39,19 @@ provider keys stay ciphertext on that hop; retrieval decrypts them with
 ```mermaid
 flowchart LR
   Upload[Upload / move file] --> Plan[Go format policy builds processingPlan v1]
-  Plan --> Jobs[(jobs)]
-  Jobs --> Worker[Ingest worker]
-  Worker --> Download[One B2 download + SHA into shared spool]
-  Download --> Route{Contract route}
-  Route -->|PDF / modern Office| Parse[Netcup Marker + RapidOCR]
-  Route -->|image| ImageCaption[Gemini image caption]
-  Route -->|audio| AudioTranscript[Async ElevenLabs Scribe v2]
-  Route -->|CSV / TSV / text| DirectText[Direct normalization]
-  Parse --> Caption[130×130 selection + caption / DECORATIVE]
+  Plan --> Route{Contract route}
+  Route -->|PDF / modern Office| ParseJob[(parse job)]
+  ParseJob --> Coordinator[Parse coordinator]
+  Coordinator --> Download[One B2 download + trusted SHA]
+  Download --> Parse[Netcup MinerU pipeline]
+  Parse --> Artifact[Immutable local artifact]
+  Artifact --> IngestJob[(ingest continuation)]
+  Route -->|direct route| IngestJob
+  IngestJob --> Worker[Ingest worker]
+  Worker -->|image| ImageCaption[ZAI GLM via DeepInfra]
+  Worker -->|audio| AudioTranscript[Async ElevenLabs Scribe v2]
+  Worker -->|CSV / TSV / text| DirectText[Direct normalization]
+  Worker -->|parsed document| Caption[130×130 selection + caption / DECORATIVE]
   Caption --> Chunk[Heading-aware chunker]
   ImageCaption --> Chunk
   AudioTranscript --> Chunk
@@ -181,13 +186,14 @@ the user just did. Until a reindex job exists:
 
 | Type | Enqueued by | Does |
 | --- | --- | --- |
-| Ingest (default) | Upload / re-parse paths in Go | Hash source → reuse a donor index if one exists, else parse → chunk → embed → two-tier file summary → concepts |
+| Parse | Go upload/replacement finalization for `document_parse` plans | Validate → download/hash once → exact-vector donor reuse or MinerU artifact publication → atomic ingest handoff |
+| Ingest | Go for direct routes; parse coordinator for documents | Extract a completed document artifact or normalize a direct source → chunk/caption/transcribe → embed → two-tier file summary → concepts |
 
-Ingest retries: 3 attempts with exponential backoff (`not_before`), a
-per-type wall-clock timeout, and a heartbeat lease so a dead worker does not
-leave the row `running` forever. Unknown errors retry; `TerminalError`
-(missing file, unresolvable pins, locked account) does not. Policy lives in
-`pipeline/jobs.py`, not on the row.
+Both stages get one retry (two total attempts), exponential backoff
+(`not_before`), a per-type wall-clock timeout, and a heartbeat lease so a dead
+process does not leave the row `running` forever. Unknown errors retry;
+`TerminalError` (missing file, unresolvable pins, locked account, confirmed
+parser quarantine) does not. Policy lives in `pipeline/jobs.py`, not on the row.
 
 A reclaimed lease does not stop the old worker: cancellation is cooperative and
 a heartbeat can simply fail. So `attempts` doubles as a fencing token — it is
@@ -211,7 +217,7 @@ normal attempt budget; only a missing or invalid pin is terminal. See
 ### Parse route
 
 The Go gateway resolves every upload into a versioned `processingPlan` when it
-enqueues ingest. The plan names the exact format route, parser route, caption
+enqueues the first stage. The plan names the exact format route, parser route, caption
 mode, Office-preview requirement, ordered stages, and required capabilities.
 The Python worker rejects unknown versions and executes this plan; it does not
 reconstruct orchestration from `kind`, `parseMode`, or the extension. Those
@@ -223,10 +229,10 @@ silently taking a nearby route.
 
 | Source | Worker route | Searchable output | Page model |
 | --- | --- | --- | --- |
-| PDF / DOCX / XLSX / PPTX with `fast` | Persistent VM Marker + generous selective RapidOCR | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
+| PDF / DOCX / XLSX / PPTX with `fast` | Persistent MinerU parser on the ingest host, OCR `auto` | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
 | txt / md / json and other accepted text/code formats | Raw text | original text | No |
 | CSV / TSV | Delimiter/header normalization | explicit row/field text, including formulas | No |
-| supported image | Pinned Gemini vision call | faithful searchable caption | No |
+| supported image | Pinned ZAI GLM-5.3-Flash call through DeepInfra | faithful searchable caption | No |
 | supported audio | Presigned B2 source URL + asynchronous ElevenLabs Scribe v2 | transcript | No |
 | unknown or legacy DOC/XLS/PPT | Store-only | none | No |
 
@@ -234,56 +240,83 @@ HTML, RTF, XML, and source-code extensions have no dedicated handlers. They use
 the same raw-text chunking/indexing route as other text. CSV/TSV remain the one
 format-specific text exception.
 
-The bundle carries page-accurate citations and the figures captioning needs.
-Marker runs with RapidOCR only on pages the scan probe flags.
-Each successful or measured failed attempt reports its total pages, OCR pages,
-dedicated Marker-child CPU milliseconds, and in-container elapsed milliseconds.
-Billing uses the page counts, 31 credits per digital page and 52 credits per OCR
-page. CPU time is diagnostic because jobs share the VM and layout service.
+The bundle carries page-accurate citations and the images figure captioning
+needs. MinerU's pipeline backend chooses text extraction or OCR in `auto` mode;
+tables and formulas remain enabled. Each successful attempt reports total pages,
+OCR pages, elapsed time, and current parser/host resource samples. Billing uses
+the page counts, 31 credits per digital page and 52 credits per OCR page. Shared
+process CPU is diagnostic rather than attributed to one document.
 
 ### Parse capacity
 
-The fixed VM accepts a bounded outer queue and applies a second, resource-aware
-admission limit inside the parser. `EVO_PARSE_SLOTS` must match the outer cap:
+The ingest host accepts at most four document jobs through the outer Redis gate.
+The parser places their independent page slices on one fair round-robin queue
+and runs at most four MinerU calls concurrently:
 
-| Route | Host | Marker processes | Parser admission | Outer cap |
+| Route | Host | Slice size | Parser admission | Outer cap |
 | --- | --- | --- | --- | --- |
-| fast | one 8-core / 16 GiB VM | 6 | 6 digital / 2 OCR-heavy | 8 HTTP |
+| fast | one 8-core / 16 GiB VM | 26 pages | 4 slices | 4 documents |
 
-A new upload lands `files.status=pending` with a `jobs` row still `pending`.
-The worker only flips the file to `processing` once it is actually running
-(and, for VM parse, once it holds a Redis parse slot). If every slot is
-taken, the job is put back to `pending` without spending an attempt, and the
-UI keeps showing a wait. Redis down fails *open*: the call still goes to
-the parser, whose semaphores are the final brake.
+A 610-page PDF becomes 24 slices: 23 ranges of 26 pages and one 12-page range.
+Files of 26 pages or fewer remain one slice. Slices have no overlap and no
+table/paragraph boundary repair; a structure spanning page 26/27 can be split.
+This is an accepted throughput tradeoff. Results are sorted by slice, their page
+indices are restored to the source PDF, and the existing `content_list.json`,
+Markdown, and extracted-image outputs are merged before normal chunking. No
+additional table or slice schema is stored in Postgres.
 
-Each ingest replica still runs one job at a time, so `WORKER_REPLICAS` is how
-many jobs leave the pending queue at once. Do not set it above the parse cap
-you actually want to pay for.
+One long-lived Python process owns the MinerU model cache. The first successful
+slice warms it; later slices and documents reuse the same loaded models and
+plugins instead of constructing a MinerU runtime per request.
 
-Marker and OCR run in child processes. If a child exits abruptly or is
-OOM-killed, Python poisons the whole process pool: the parser changes its
-health state to `failed`, `/healthz` returns HTTP 503, and the parser process
-exits. Docker's `restart: unless-stopped` then starts a fresh container and a
-fresh pool; an ingest attempt that lost the parser connection follows the
-normal job retry path. A non-null pool object is not treated as healthy.
+A new document upload lands `files.status=pending` with a pending `parse` row.
+Four coordinator children claim only parse rows. A coordinator flips the file
+to `processing` only after it holds a Redis parse slot; if every slot is taken,
+the job returns to `pending` without spending an attempt. Redis down fails
+*open*: the parser's four-document/four-slice queues remain the final brake.
+While MinerU runs, no ingest worker slot is occupied.
 
-The hard parse deadline starts only after the relevant probe or child-process
-lane is acquired, so queue wait does not condemn a file. It covers both
-selective-OCR pdfium probing and the Marker child. If one file crosses it, the
-parser atomically writes a quarantine marker keyed by
+Each slice has a 600-second deadline that starts only when a MinerU lane begins
+executing it. Fair-queue wait and the execution time of the document's other
+slices do not spend that slice's budget. If any slice crosses the deadline,
+the parser atomically writes a document quarantine marker keyed by
 source fingerprint, parse method, and exact parser version, returns
 `parse_hard_timeout` for that file, and exits so Docker replaces the whole
-poisoned process pool. The exit is scheduled before response delivery, so a
-client disconnect cannot leave the failed pool running. The offending ingest
+parser process. This also stops the document's other queued or executing
+slices; native lane work is not independently killable. The exit is scheduled
+before response delivery, so a
+client disconnect cannot leave the failed parser running. The offending parse
 is terminal and later submissions of that exact fingerprint fail immediately
 while that parser version is live; it is not retried into the pool. Other
 in-flight jobs interrupted by the container restart follow their ordinary
 retry policy. A parser-version change creates a new fingerprint and is the
 deliberate automatic way to retry the file after parser code changes.
 
-The worker downloads the raw B2 object once while calculating its trusted
-SHA-256, writing a job-scoped source file into the parser/worker shared volume.
+The whole-document parser request has a 2,400-second bound, its Redis admission
+slot expires after 2,700 seconds, and the parse job has a 3,600-second bound.
+The independent ingest continuation has a 1,200-second bound. Queue wait does
+not spend the 600-second slice execution budget. A timed-out coordinator or
+ingest process records its retry and exits; the supervisor or Docker replaces
+only that process, so a cancelled blocking thread cannot overlap a later job.
+
+The parser also watches its cgroup `oom_kill` counter. If the kernel kills a
+MinerU child while slices are active, it writes `parse_oom` quarantine markers
+for those active fingerprints, marks `/healthz` failed, and exits. A completed
+artifact takes precedence over a late marker. Files that were only queued when
+the OOM happened follow the ordinary policy of one retry. The same one-retry
+policy applies to connection errors and poisoned-pool restarts. Hard timeout
+and OOM markers are terminal without a retry.
+
+After an artifact is published, OOM, timeout, worker death, and other
+post-processing failures never create a parser quarantine. The ingest
+continuation gets one retry from the same artifact. If that retry also fails,
+that job becomes terminal, but a later re-ingest is allowed. If extraction
+finds a missing, corrupt, or release-incompatible bundle, the worker deletes
+that exact fingerprint-addressed file and returns it to parsing once; a second
+invalid handoff fails instead of looping.
+
+The parse coordinator downloads the raw B2 object once while calculating its
+trusted SHA-256, writing a job-scoped source file into the shared volume.
 The parser reads that local key and atomically writes
 `artifacts/{parse_fingerprint}.zip` to the same volume. The worker extracts that
 file directly. There is no parser GET of the raw object, parser PUT of the zip,
@@ -301,7 +334,7 @@ bundle during that window.
 
 `files.indexed` is true only after retrieval chunks are written, or reused from
 identical canonical content. Direct image/audio/CSV/TSV routes get an ingest job
-even though they do not use Marker. Unknown and legacy store-only uploads finish
+even though they do not use MinerU. Unknown and legacy store-only uploads finish
 `ready` with `indexed=false`: the original blob stays viewable/downloadable, and
 chat/generate cannot search it. A failed ingest keeps the original blob and
 lands `failed`/unindexed; the UI shows a banner rather than replacing the
@@ -310,8 +343,8 @@ viewer.
 Browser Office saves replace the full source file under the same logical
 `files.id`. Completion uses an expected `files.revision` compare-and-swap,
 increments the revision, removes the old `rag_file_contents` alias, clears
-source/parse artifacts, and enqueues ingest with the saved parse and caption
-policy. The orphan cleanup trigger removes canonical retrieval content only
+source/parse artifacts, and enqueues the correct first stage with the saved
+parse and caption policy. The orphan cleanup trigger removes canonical retrieval content only
 when no other alias uses it. Store-only replacements return ready and unindexed.
 There is no chunk-level dirty update: the serialized OOXML file is the source of
 truth and follows the normal donor/parse/index path.
@@ -319,8 +352,8 @@ truth and follows the normal donor/parse/index path.
 The ingest payload carries the exact source revision and ETag that created it.
 Every source-derived file mutation and retrieval attachment locks and verifies
 that pair in the same transaction. Replacement also terminally supersedes older
-pending/running ingest rows and releases their credit reservations, so an old
-parse cannot publish content, geometry, previews, status, or citations for the
+pending/running parse or ingest rows and releases their credit reservations, so
+an old parse cannot publish content, geometry, previews, status, or citations for the
 new blob. A stale worker that merely lost its lease exits without closing the
 shared reservation used by its successor attempt.
 
@@ -410,6 +443,13 @@ from has to be inside its key, or the same bytes produce different text
 depending on who uploaded them first, and one uploader's file name reaches
 another workspace. The same rule applies to file summaries and concepts, which
 are copied verbatim from donors.
+
+Caption calls never inherit a user's chat reasoning level. The pinned catalog
+identity is `zai/glm-5.3-flash`, routed by EliteLLM to DeepInfra's
+`zai-org/GLM-5.3-Flash`. Captioning always sends `reasoning_effort: low` on the
+DeepInfra wire request. The catalog default is `max` for chat and every other
+reasoning-enabled use. Do not let captioning inherit that default or a user's
+chat choice.
 
 ### Chunking
 
@@ -614,8 +654,10 @@ and are not sent back as LLM history.
    would reject an accepted tool emitted by the call that caused exhaustion;
    editor authorization and storage quota checks still apply.
 7. OpenAI planning uses `POST /v1/responses` with `store=false` and replays
-   encrypted reasoning items inside the current tool loop. DeepSeek and
-   Anthropic stay on Chat Completions-compatible paths. Raw chain-of-thought
+   encrypted reasoning items inside the current tool loop. DeepSeek,
+   Anthropic, and routed ZAI GLM use Chat Completions-compatible paths. The GLM
+   adapter preserves `reasoning_content` on the assistant message immediately
+   before the matching tool result in the next request. Raw chain-of-thought
    is never streamed to the browser. The user's reasoning policy applies to
    every agent model response. A provider failure before the first response
    byte is retried twice on a new call id; the failed attempt is `abandoned`
@@ -711,7 +753,7 @@ A citation is:
 Chat citation chips show `p. N` / `pp. N–M` and open the file scrolled to that
 page and centered on the first valid region. Native PDFs render their source.
 DOCX/XLSX/PPTX citations render the exact LibreOffice PDF preserved in parser
-bundle v3 because that is the coordinate surface Marker measured. Ordinary
+bundle v3 because that is the coordinate surface MinerU measured. Ordinary
 Office viewing and editing still use the native browser viewer; entering edit
 mode removes the citation overlay. Store-only and legacy Office files have no
 parser preview, so citation navigation falls back to the native viewer without
@@ -740,13 +782,15 @@ job and pipeline `/workspace/delete` endpoint are gone.
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
-| Parse | `PARSER_URL`, `PARSER_TOKEN`, `EVO_PARSE_METHOD`, `EVO_OFFICE_PREVIEW_MAX_BYTES`, `RELEASE_SHA` | Persistent Netcup service. Modes are `marker_only`, `selective_rapidocr`, and `all_rapidocr`; mode, schema, and the exact release-derived parser version participate in the artifact fingerprint. LibreOffice preview output is capped before Python reads, bundles, stores, or reuses it (128 MiB by default). |
+| Parse | `PARSER_URL`, `PARSER_TOKEN`, `EVO_PARSE_METHOD`, `EVO_PARSE_SLOTS`, `EVO_PARSE_COORDINATOR_CONCURRENCY`, `EVO_PARSE_CONCURRENCY`, `EVO_MINERU_SLICE_PAGES`, `EVO_PARSE_JOB_TIMEOUT`, `EVO_OFFICE_PREVIEW_MAX_BYTES`, `RELEASE_SHA` | Persistent Netcup MinerU pipeline service. Production defaults to four coordinator processes, 26 pages per slice, four admitted documents, and four active slices. Method, schema, and exact release-derived parser version participate in the artifact fingerprint. |
+| Post-parse ingest | `WORKER_REPLICAS`, `EVO_INGEST_TIMEOUT`, `EVO_CAPTION_CONCURRENCY` | Dedicated-host defaults are four isolated one-job containers, 20 minutes per attempt, and at most four concurrent embedded-figure captions per worker. Other model stages are sequential within each job. |
+| Shared nonproduction capacity | `EVO_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
 | Chunk size | `EVO_CHUNK_*` | Character budgets, not tokens |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
 | Search | `EVO_SEARCH_CANDIDATES`, `EVO_SEARCH_TOP_K`, `EVO_SEARCH_PER_FILE_CAP` | |
 | Agent | `EVO_AGENT_MAX_STEPS` | Default 12. Cap is the design, not a safety valve |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `EVO_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 200k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
-| Captions | `EVO_CAPTION_CONCURRENCY`, `EVO_CAPTION_MAX_EDGE`, `EVO_CAPTION_VERSION` | Caption mode is resolved per file in the processing plan |
+| Captions | `EVO_CAPTION_CONCURRENCY`, `EVO_CAPTION_MAX_EDGE`, `EVO_CAPTION_VERSION` | Caption mode is resolved per file in the processing plan. The ZAI GLM-5.3-Flash catalog row routes through DeepInfra. Captions always use `reasoning_effort: low`; its default on other reasoning-enabled uses is `max`. |
 | Caption safety valve | `EVO_CAPTION_MAX_PER_FILE` | `0` (uncapped); the filters bound the cost |
 | Direct media | `EVO_IMAGE_MAX_PIXELS`, `ELEVENLABS_API_KEY`, `ELEVENLABS_BASE_URL`, `ELEVENLABS_WEBHOOK_ID`, `EVO_ELEVENLABS_TRANSCRIPT_VERSION`, `EVO_ELEVENLABS_CONCURRENCY_UNITS`, `EVO_AUDIO_MAX_DURATION_SECONDS`, `EVO_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. Scribe v2 defaults to 12 weighted Starter units, with each file consuming `min(4, ceil(duration_seconds / 480))`; audio is capped at 10 hours. |
 

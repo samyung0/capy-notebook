@@ -157,14 +157,24 @@ const wsCols = `w.id, w.name, w.color, w.privacy, w.share_role,
 		FROM entity_tags et JOIN tags t ON t.id=et.tag_id
 		WHERE et.workspace_id=w.id), '[]'::jsonb),
 	w.user_id, COALESCE((SELECT u.name FROM users u WHERE u.id=w.user_id), ''),
+	(SELECT u.plan_tier FROM users u WHERE u.id=w.user_id),
 	(SELECT count(*) FROM chapters c WHERE c.workspace_id=w.id),
 	(SELECT count(*) FROM files f WHERE f.workspace_id=w.id),
 	w.created_at, w.last_accessed_at`
 
-func scanWorkspace(row pgx.Row) (Workspace, error) {
+func (s *Store) scanWorkspace(row pgx.Row) (Workspace, error) {
 	var w Workspace
-	err := row.Scan(&w.ID, &w.Name, &w.Color, &w.Privacy, &w.ShareRole, &w.Tags, &w.OwnerUserID, &w.OwnerName, &w.ChapterCount, &w.FileCount, &w.CreatedAt, &w.LastAccessedAt)
-	w.FilesLimit = MaxFilesPerWorkspace
+	err := row.Scan(&w.ID, &w.Name, &w.Color, &w.Privacy, &w.ShareRole, &w.Tags,
+		&w.OwnerUserID, &w.OwnerName, &w.OwnerPlanTier, &w.ChapterCount,
+		&w.FileCount, &w.CreatedAt, &w.LastAccessedAt)
+	if err != nil {
+		return w, err
+	}
+	limits, err := s.PlanLimits(w.OwnerPlanTier)
+	if err != nil {
+		return w, err
+	}
+	w.FilesLimit = limits.FilesPerWorkspace
 	return w, err
 }
 
@@ -223,7 +233,7 @@ func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, color, t
 	defer rows.Close()
 	out := []Workspace{}
 	for rows.Next() {
-		w, err := scanWorkspace(rows)
+		w, err := s.scanWorkspace(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -239,7 +249,7 @@ func (s *Store) GetWorkspace(ctx context.Context, userID, id string, touch bool)
 	if touch {
 		_, _ = s.pool.Exec(ctx, `UPDATE workspaces SET last_accessed_at=now() WHERE id=$1`, id)
 	}
-	w, err := scanWorkspace(s.pool.QueryRow(ctx, "SELECT "+wsCols+" FROM workspaces w WHERE w.id=$1", id))
+	w, err := s.scanWorkspace(s.pool.QueryRow(ctx, "SELECT "+wsCols+" FROM workspaces w WHERE w.id=$1", id))
 	if isNoRows(err) {
 		return w, ErrNotFound
 	}
@@ -287,7 +297,7 @@ func vectorTable(pin models.Pin) (string, error) {
 // default only affects workspaces created after the poll picks it up.
 func (s *Store) newWorkspaceEmbedding(ctx context.Context) (workspaceEmbedding, error) {
 	if s.registry == nil {
-		return workspaceEmbedding{Pin: models.Pin{Ref: models.Ref{ProviderSlug: "openrouter", ModelSlug: models.SeededHopEmbedSlug}, Version: 1}, Dim: 2560}, nil
+		return workspaceEmbedding{Pin: models.Pin{Ref: models.Ref{ProviderSlug: "deepinfra", ModelSlug: models.SeededHopEmbedSlug}, Version: 1}, Dim: 2560}, nil
 	}
 	cfg, err := s.registry.Default(ctx, models.SurfaceEmbedding)
 	if err != nil {
@@ -318,6 +328,9 @@ func (s *Store) CreateWorkspace(ctx context.Context, userID, name string, color 
 		return Workspace{}, err
 	}
 	if err := status.CreateErr(); err != nil {
+		return Workspace{}, err
+	}
+	if _, err := s.gateOwnedWorkspacesTx(ctx, tx, userID, 1); err != nil {
 		return Workspace{}, err
 	}
 
@@ -968,7 +981,7 @@ func (s *Store) CreateMaterial(ctx context.Context, mt Material) (Material, erro
 		}
 		return Material{}, err
 	}
-	if err := upsertMaterialRevisionTx(ctx, tx, MaterialRevision{
+	if err := s.upsertMaterialRevisionTx(ctx, tx, MaterialRevision{
 		MaterialID:    mt.ID,
 		Revision:      1,
 		EventType:     RevisionCreate,
@@ -1271,7 +1284,7 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		if p.UpdatedBy != "" {
 			snapshot.CreatedBy = &p.UpdatedBy
 		}
-		if err := upsertMaterialRevisionTx(ctx, tx, snapshot); err != nil {
+		if err := s.upsertMaterialRevisionTx(ctx, tx, snapshot); err != nil {
 			return Material{}, err
 		}
 	}

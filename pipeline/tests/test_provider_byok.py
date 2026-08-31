@@ -81,30 +81,30 @@ def test_user_key_used_when_bound():
 
 def test_platform_row_ignores_bound_user_key(monkeypatch):
     bind_request_llm(user_api_key="sk-user")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-platform-openrouter")
+    monkeypatch.setenv("DEEPINFRA_API_KEY", "sk-platform-deepinfra")
     key = provider_api_key_for(
         _spec(
-            provider_slug="openrouter",
+            provider_slug="deepinfra",
             platform_enabled=True,
             byok_enabled=False,
             surfaces=("embedding",),
         )
     )
-    assert key == "sk-platform-openrouter"
+    assert key == "sk-platform-deepinfra"
 
 
 def test_embedding_uses_provider_env(monkeypatch):
     bind_request_llm(user_api_key="sk-user")
-    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-openrouter")
+    monkeypatch.setenv("DEEPINFRA_API_KEY", "sk-deepinfra")
     key = provider_api_key_for(
         _spec(
-            provider_slug="openrouter",
+            provider_slug="deepinfra",
             platform_enabled=True,
             byok_enabled=False,
             surfaces=("embedding",),
         )
     )
-    assert key == "sk-openrouter"
+    assert key == "sk-deepinfra"
 
 
 def test_user_key_is_not_copied_into_process_env(monkeypatch):

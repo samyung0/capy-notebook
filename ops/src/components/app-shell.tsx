@@ -31,7 +31,7 @@ import { cn } from '@/lib/utils';
 const navItems = [
   { icon: Gauge, label: 'Overview', permission: null, to: '/' },
   { icon: Activity, label: 'Health', permission: null, to: '/health' },
-  { icon: Cpu, label: 'Parser VM', permission: null, to: '/parser' },
+  { icon: Cpu, label: 'Ingest host', permission: null, to: '/ingest-host' },
   {
     icon: ClipboardList,
     label: 'Reconciliation',

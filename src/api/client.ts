@@ -58,6 +58,10 @@ export function isFileLimitError(err: unknown): err is ApiError {
   );
 }
 
+export function isWorkspaceLimitError(err: unknown): err is ApiError {
+  return isApiError(err) && err.code === 'workspace_limit_exceeded';
+}
+
 export function isModelUnavailableError(err: unknown): err is ApiError {
   return isApiError(err) && err.code === 'model_unavailable';
 }
@@ -92,6 +96,7 @@ const CODED_ERROR_MESSAGES = new Set([
   'storage_quota_exceeded',
   'files_limit_exceeded',
   'files_batch_exceeded',
+  'workspace_limit_exceeded',
   'llm_credits_exhausted',
   'model_unavailable',
   'invalid_llm_key',

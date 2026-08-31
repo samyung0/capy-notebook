@@ -17,7 +17,7 @@
 # - retrieval : Python FastAPI chat/generate over the in-house retrieval index.
 #
 # Worker downloads B2 objects before parsing. Real ingest needs B2 credentials,
-# API keys (DeepSeek/OpenRouter/Google/Whisper), and a parser service URL.
+# API keys (DeepSeek/DeepInfra/Google/Whisper), and a parser service URL.
 # Set them in deploy/.env (see .env.example) or the shell environment.
 #
 # Only `server` (:8080), `collaboration` (:1234), and the Access-protected
@@ -116,7 +116,7 @@ services:
       COLLABORATION_INTERNAL_URL: http://collaboration:1234
       # Vestigial labels stored on the job payload; the parse route is chosen by
       # the file's parseMode, not by these.
-      EVO_PARSER: ${EVO_PARSER:-marker}
+      EVO_PARSER: ${EVO_PARSER:-mineru}
       EVO_ENGINE: ${EVO_ENGINE:-evo}
       PIPELINE_URL: http://retrieval:8001
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
@@ -172,6 +172,9 @@ services:
       OPS_STATIC_DIR: /app/static
       OPS_DATABASE_URL: ${OPS_DATABASE_URL:-}
       OPS_ADMIN_DATABASE_URL: ${OPS_ADMIN_DATABASE_URL:-}
+      OPS_INGEST_PRIMARY_ENVIRONMENT: ${OPS_INGEST_PRIMARY_ENVIRONMENT:-production}
+      OPS_INGEST_UAT_DATABASE_URL: ${OPS_INGEST_UAT_DATABASE_URL:-}
+      OPS_INGEST_LOCAL_DATABASE_URL: ${OPS_INGEST_LOCAL_DATABASE_URL:-}
       OPS_CF_ACCESS_ISSUER: ${OPS_CF_ACCESS_ISSUER:-}
       OPS_CF_ACCESS_AUDIENCE: ${OPS_CF_ACCESS_AUDIENCE:-}
       OPS_CF_ACCESS_JWKS_URL: ${OPS_CF_ACCESS_JWKS_URL:-}
@@ -182,7 +185,7 @@ services:
       CLERK_SECRET_KEY: ${CLERK_SECRET_KEY:-}
       SENTRY_DSN: ${SENTRY_DSN_OPS:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
@@ -205,7 +208,7 @@ services:
     build:
       context: ..
       dockerfile: pipeline/Dockerfile
-    environment:
+    environment: &app-ingest-env
       <<: *observability
       DATABASE_URL: postgres://evo:evo@db:5432/evo?sslmode=disable
       SENTRY_DSN: ${SENTRY_DSN_WORKER:-}
@@ -216,16 +219,18 @@ services:
       B2_KEY_ID: ${B2_KEY_ID:-}
       B2_APP_KEY: ${B2_APP_KEY:-}
       REDIS_URL: redis://redis:6379/0
-      # CPU parse service (Marker + RapidOCR on scans).
+      # CPU MinerU pipeline service on the dedicated ingest host.
       PARSER_URL: ${PARSER_URL:-}
       PARSER_TOKEN: ${PARSER_TOKEN:-}
       PARSER_TIMEOUT: ${PARSER_TIMEOUT:-2400}
-      EVO_PARSE_HARD_TIMEOUT: ${EVO_PARSE_HARD_TIMEOUT:-2300}
+      EVO_PARSE_SLICE_TIMEOUT: ${EVO_PARSE_SLICE_TIMEOUT:-600}
       PARSER_SLOT_TTL: ${PARSER_SLOT_TTL:-2700}
       EVO_PARSE_SHARED_DIR: ${EVO_PARSE_SHARED_DIR:-/tmp/evo-parse-spool}
-      EVO_INGEST_TIMEOUT: ${EVO_INGEST_TIMEOUT:-3600}
-      EVO_PARSE_SLOTS: ${EVO_PARSE_SLOTS:-8}
-      EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-selective_rapidocr}
+      EVO_PARSE_JOB_TIMEOUT: ${EVO_PARSE_JOB_TIMEOUT:-3600}
+      EVO_INGEST_TIMEOUT: ${EVO_INGEST_TIMEOUT:-1200}
+      # The local app-host worker may submit only one parse at a time.
+      EVO_PARSE_SLOTS: "1"
+      EVO_PARSE_METHOD: ${EVO_PARSE_METHOD:-auto}
       EVO_OFFICE_PREVIEW_MAX_BYTES: ${EVO_OFFICE_PREVIEW_MAX_BYTES:-134217728}
       EVO_PARSE_ARTIFACT_MAX_BYTES: ${EVO_PARSE_ARTIFACT_MAX_BYTES:-268435456}
       EVO_PARSE_ARTIFACT_MAX_ENTRIES: ${EVO_PARSE_ARTIFACT_MAX_ENTRIES:-4096}
@@ -238,7 +243,7 @@ services:
       # Platform keys match elitellm_providers.json. Model identity lives on
       # model_configs.
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
@@ -267,6 +272,24 @@ services:
       redis:
         condition: service_healthy
 
+  parse-coordinator:
+    profiles:
+      - app-host-ingest
+    build:
+      context: ..
+      dockerfile: pipeline/Dockerfile
+    environment:
+      <<: *app-ingest-env
+      EVO_PARSE_COORDINATOR_CONCURRENCY: "1"
+      EVO_DB_SYNC_POOL_MAX_SIZE: "2"
+      EVO_DB_ASYNC_POOL_MAX_SIZE: "2"
+    command: ["python", "-m", "pipeline.ingest.parse_worker"]
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   retrieval:
     build:
       context: ..
@@ -281,7 +304,7 @@ services:
       PIPELINE_SECRET: ${PIPELINE_SECRET:-dev-pipeline-secret}
       LLM_CREDENTIALS_KEY: ${LLM_CREDENTIALS_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
-      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      DEEPINFRA_API_KEY: ${DEEPINFRA_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}

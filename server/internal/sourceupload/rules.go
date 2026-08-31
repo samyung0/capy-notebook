@@ -10,19 +10,9 @@ import (
 )
 
 const (
-	// ParseModeFast is the live CPU parser (Marker + RapidOCR on scans).
+	// ParseModeFast is the live MinerU CPU pipeline with automatic OCR selection.
 	ParseModeFast = "fast"
 	ParseModeNone = "none"
-
-	// Per-file source caps, independent of plan storage quota and of editor
-	// assets (which have their own purpose ladder). GPU/LLM cost is metered
-	// separately; these bounds only stop a single upload from being enormous.
-	FreeSourceMaxBytes = 10 << 20
-	ProSourceMaxBytes  = 30 << 20
-	// Absolute ceiling used as the HTTP body limit so a request is rejected
-	// before we look up the owner's plan. Must be >= ProSourceMaxBytes.
-	ParseMaxBytes  = ProSourceMaxBytes
-	UploadMaxBytes = ParseMaxBytes + (4 << 20)
 
 	// ProcessingPlanVersion changes whenever the enqueue-time contract changes
 	// incompatibly. Workers reject versions they do not understand instead of
@@ -54,14 +44,6 @@ type ProcessingPlan struct {
 	OfficePreview bool     `json:"officePreview"`
 	Stages        []string `json:"stages"`
 	Resources     []string `json:"resources"`
-}
-
-// SourceMaxBytes is the per-file cap for the workspace owner's plan.
-func SourceMaxBytes(pro bool) int64 {
-	if pro {
-		return ProSourceMaxBytes
-	}
-	return FreeSourceMaxBytes
 }
 
 // explicitKindExtensions mirrors AddSourceDialog's KIND_BY_EXT. Text/code
@@ -526,7 +508,7 @@ func Validate(name, kind, mode string, size, maxBytes int64) error {
 		return fmt.Errorf("file kind %q does not match extension %q", kind, Extension(name))
 	}
 	if maxBytes <= 0 {
-		maxBytes = ProSourceMaxBytes
+		return fmt.Errorf("source file limit must be positive")
 	}
 	if size < 0 || size > maxBytes {
 		return fmt.Errorf("uploads support files up to %d MB", maxBytes>>20)

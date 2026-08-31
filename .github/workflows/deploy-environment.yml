@@ -87,29 +87,29 @@ jobs:
           VITE_SENTRY_DSN: ${{ vars.VITE_SENTRY_DSN }}
           VITE_USE_MSW: "false"
         run: pnpm build
-      - name: Configure parser VM release access
-        id: parser_access
+      - name: Configure ingest host release access
+        id: ingest_access
         if: inputs.environment_name == 'production'
         env:
-          PARSER_VM_HOST: ${{ vars.PARSER_VM_HOST }}
-          PARSER_VM_KNOWN_HOSTS: ${{ secrets.PARSER_VM_KNOWN_HOSTS }}
-          PARSER_VM_SSH_PRIVATE_KEY: ${{ secrets.PARSER_VM_SSH_PRIVATE_KEY }}
+          INGEST_HOST: ${{ vars.INGEST_HOST }}
+          INGEST_HOST_KNOWN_HOSTS: ${{ secrets.INGEST_HOST_KNOWN_HOSTS }}
+          INGEST_HOST_SSH_PRIVATE_KEY: ${{ secrets.INGEST_HOST_SSH_PRIVATE_KEY }}
         run: |
-          [[ -n "$PARSER_VM_HOST" ]] || { echo "PARSER_VM_HOST is required" >&2; exit 1; }
-          [[ -n "$PARSER_VM_KNOWN_HOSTS" ]] || { echo "PARSER_VM_KNOWN_HOSTS is required" >&2; exit 1; }
-          [[ -n "$PARSER_VM_SSH_PRIVATE_KEY" ]] || { echo "PARSER_VM_SSH_PRIVATE_KEY is required" >&2; exit 1; }
+          [[ -n "$INGEST_HOST" ]] || { echo "INGEST_HOST is required" >&2; exit 1; }
+          [[ -n "$INGEST_HOST_KNOWN_HOSTS" ]] || { echo "INGEST_HOST_KNOWN_HOSTS is required" >&2; exit 1; }
+          [[ -n "$INGEST_HOST_SSH_PRIVATE_KEY" ]] || { echo "INGEST_HOST_SSH_PRIVATE_KEY is required" >&2; exit 1; }
           install -m 700 -d "$HOME/.ssh"
-          printf '%s\n' "$PARSER_VM_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
-          printf '%s\n' "$PARSER_VM_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+          printf '%s\n' "$INGEST_HOST_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          printf '%s\n' "$INGEST_HOST_SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
           chmod 600 "$HOME/.ssh/known_hosts" "$HOME/.ssh/id_ed25519"
       - name: Build the matching parser revision and pause ingest for cutover
         if: inputs.environment_name == 'production'
         env:
           DEPLOY_REVISION: ${{ inputs.revision }}
-          PARSER_VM_HOST: ${{ vars.PARSER_VM_HOST }}
-          PARSER_VM_SSH_PORT: ${{ vars.PARSER_VM_SSH_PORT || '22' }}
-          PARSER_VM_USER: ${{ vars.PARSER_VM_USER || 'evo-parser' }}
-        run: scripts/deploy/parser-vm-release.sh prepare
+          INGEST_HOST: ${{ vars.INGEST_HOST }}
+          INGEST_HOST_SSH_PORT: ${{ vars.INGEST_HOST_SSH_PORT || '22' }}
+          INGEST_HOST_USER: ${{ vars.INGEST_HOST_USER || 'evo-ingest' }}
+        run: scripts/deploy/ingest-host-release.sh prepare
       - name: Deploy the pinned backend revision through Coolify
         id: coolify
         env:
@@ -118,14 +118,14 @@ jobs:
           COOLIFY_RESOURCE_UUID: ${{ vars.COOLIFY_RESOURCE_UUID }}
           DEPLOY_REVISION: ${{ inputs.revision }}
         run: scripts/deploy/coolify-deploy.sh
-      - name: Activate matching parser VM workers after migrations
+      - name: Activate matching ingest host workers after migrations
         if: inputs.environment_name == 'production'
         env:
           DEPLOY_REVISION: ${{ inputs.revision }}
-          PARSER_VM_HOST: ${{ vars.PARSER_VM_HOST }}
-          PARSER_VM_SSH_PORT: ${{ vars.PARSER_VM_SSH_PORT || '22' }}
-          PARSER_VM_USER: ${{ vars.PARSER_VM_USER || 'evo-parser' }}
-        run: scripts/deploy/parser-vm-release.sh activate
+          INGEST_HOST: ${{ vars.INGEST_HOST }}
+          INGEST_HOST_SSH_PORT: ${{ vars.INGEST_HOST_SSH_PORT || '22' }}
+          INGEST_HOST_USER: ${{ vars.INGEST_HOST_USER || 'evo-ingest' }}
+        run: scripts/deploy/ingest-host-release.sh activate
       - name: Deploy the matching SPA revision to Cloudflare Pages
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
@@ -147,11 +147,11 @@ jobs:
           DEPLOYMENT_COLLAB_URL: ${{ vars.DEPLOYMENT_COLLAB_URL }}
           EXPECTED_REVISION: ${{ inputs.revision }}
         run: scripts/deploy/verify-release.sh
-      - name: Restore the previous parser release if activation did not commit
-        if: always() && inputs.environment_name == 'production' && steps.parser_access.outcome == 'success'
+      - name: Restore the previous ingest release if activation did not commit
+        if: always() && inputs.environment_name == 'production' && steps.ingest_access.outcome == 'success'
         env:
           DEPLOY_REVISION: ${{ inputs.revision }}
-          PARSER_VM_HOST: ${{ vars.PARSER_VM_HOST }}
-          PARSER_VM_SSH_PORT: ${{ vars.PARSER_VM_SSH_PORT || '22' }}
-          PARSER_VM_USER: ${{ vars.PARSER_VM_USER || 'evo-parser' }}
-        run: scripts/deploy/parser-vm-release.sh rollback-if-pending
+          INGEST_HOST: ${{ vars.INGEST_HOST }}
+          INGEST_HOST_SSH_PORT: ${{ vars.INGEST_HOST_SSH_PORT || '22' }}
+          INGEST_HOST_USER: ${{ vars.INGEST_HOST_USER || 'evo-ingest' }}
+        run: scripts/deploy/ingest-host-release.sh rollback-if-pending

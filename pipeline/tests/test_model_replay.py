@@ -17,6 +17,7 @@ from pipeline.elitellm.client import (
     anthropic_request,
     deepseek_request,
     openai_responses_request,
+    zai_request,
 )
 from pipeline.model_replay_cert import two_turn_cassette_ok
 from pipeline.registry import ModelConfig, bind_request_llm
@@ -69,6 +70,9 @@ def _spec(provider_slug: str, model_id: str) -> ModelConfig:
     if provider_slug == "anthropic":
         levels = ("low", "mid", "high", "max")
         default = "high"
+    elif provider_slug == "zai":
+        levels = ("low", "high", "max")
+        default = "max"
     else:
         levels = ("instant", "low", "mid", "high", "max")
         default = "instant"
@@ -202,6 +206,24 @@ def test_certified_request_shape(provider_slug: str, model_id: str):
         assert body["include"] == ["reasoning.encrypted_content"]
         assert body["stream"] is True
         return
+    if spec.provider_slug == "zai":
+        assert uses_responses(spec, tools=True) is False
+        body = zai_request(
+            spec,
+            [{"role": "user", "content": "q"}],
+            temperature=0.0,
+            tools=[SEARCH_TOOL],
+            response_format=None,
+            max_tokens=4096,
+            thinking="max",
+            stream=True,
+            tool_choice="auto",
+        )
+        assert body["model"] == "zai-org/GLM-5.3-Flash"
+        assert body["reasoning_effort"] == "max"
+        assert "thinking" not in body
+        assert body["stream"] is True
+        return
     assert spec.provider_slug == "deepseek"
     assert uses_responses(spec, tools=True) is False
     body = deepseek_request(
@@ -281,8 +303,8 @@ def test_missing_certified_cassette_fails():
 def test_router_slug_does_not_inherit_direct_cert():
     manifest = _load_manifest()
     assert "deepseek-v4-flash" in manifest["deepseek"]
-    assert "openrouter" not in manifest
-    assert not (manifest.get("openrouter") or {}).get("deepseek-v4-flash")
+    assert "deepinfra" not in manifest
+    assert not (manifest.get("deepinfra") or {}).get("deepseek-v4-flash")
 
 
 def test_continuity_keys_cover_known_providers():

@@ -1,0 +1,5 @@
+payload: slice-02-p0027-p0052.pdf (2321267 bytes)
+
+=== fast  http://127.0.0.1:18090/file_parse
+healthz: 0.04s  uptime_s=275.27  version=mineru-3.4.5-pipeline-sliced-v1+2725da1cbe39407786c9b3bdcd40fe68e0149046
+-- one job --

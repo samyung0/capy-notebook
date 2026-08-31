@@ -1,0 +1,9 @@
+fastapi[standard]>=0.110,<1
+mineru[pipeline]==3.4.5
+psutil>=6,<8
+python-multipart>=0.0.9,<1
+requests>=2.31,<3
+six==1.17.0
+torch @ https://download.pytorch.org/whl/cpu/torch-2.13.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl
+torchvision @ https://download.pytorch.org/whl/cpu/torchvision-0.28.0%2Bcpu-cp312-cp312-manylinux_2_28_x86_64.whl
+uvicorn[standard]>=0.29,<1

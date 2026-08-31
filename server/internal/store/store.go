@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -15,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/evonotes/server/internal/models"
+	"github.com/evonotes/server/internal/planlimits"
 )
 
 // ErrNotFound is returned by Get-style methods when a row is absent.
@@ -74,6 +76,8 @@ type Store struct {
 	collaborationSecret string
 	collaborationHTTP   *http.Client
 	credKey             []byte
+	planLimits          planlimits.Catalog
+	planLimitsMu        sync.Mutex
 }
 
 // SetLLMCredentialKey installs the AES-256-GCM key used for user provider
@@ -90,7 +94,9 @@ func (s *Store) SetModelRegistry(r *models.Registry) { s.registry = r }
 
 func (s *Store) ModelRegistry() *models.Registry { return s.registry }
 
-func New(ctx context.Context, dsn string) (*Store, error) {
+// Open connects to Postgres without reading application tables. Migration and
+// test-database commands use it before the schema necessarily exists.
+func Open(ctx context.Context, dsn string) (*Store, error) {
 	pool, err := pgxpool.New(ctx, dsn)
 	if err != nil {
 		return nil, err
@@ -104,11 +110,49 @@ func New(ctx context.Context, dsn string) (*Store, error) {
 	}, nil
 }
 
+// New opens a serving store and loads the complete plan catalog. It fails
+// startup when the schema or either required plan row is missing or invalid.
+func New(ctx context.Context, dsn string) (*Store, error) {
+	s, err := Open(ctx, dsn)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.LoadPlanLimits(ctx); err != nil {
+		s.Close()
+		return nil, err
+	}
+	return s, nil
+}
+
 func NewWithPool(pool *pgxpool.Pool) *Store {
 	return &Store{
 		pool:              pool,
 		collaborationHTTP: &http.Client{Timeout: 20 * time.Second},
 	}
+}
+
+// LoadPlanLimits installs one immutable snapshot for this process. Callers
+// invoke it once during startup after migrations, never from a request path.
+func (s *Store) LoadPlanLimits(ctx context.Context) error {
+	s.planLimitsMu.Lock()
+	defer s.planLimitsMu.Unlock()
+	if _, err := s.planLimits.For(planlimits.TierFree); err == nil {
+		return nil
+	}
+	catalog, err := planlimits.Load(ctx, s.pool)
+	if err != nil {
+		return err
+	}
+	s.planLimits = catalog
+	return nil
+}
+
+func (s *Store) PlanLimits(tier PlanTier) (planlimits.Limits, error) {
+	return s.planLimits.For(string(tier))
+}
+
+func (s *Store) MaxSourceFileBytes() (int64, error) {
+	return s.planLimits.MaxSourceFileBytes()
 }
 
 func (s *Store) Close() { s.pool.Close() }

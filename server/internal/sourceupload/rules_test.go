@@ -8,6 +8,11 @@ import (
 	"testing"
 )
 
+const (
+	testFreeSourceBytes = 10 << 20
+	testProSourceBytes  = 30 << 20
+)
+
 func TestWorkerTextFormatContractMatchesServerPolicy(t *testing.T) {
 	raw, err := os.ReadFile("text_extensions.json")
 	if err != nil {
@@ -58,9 +63,9 @@ func TestValidate(t *testing.T) {
 		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: 1},
 		{name: "notes.pdf", kind: "pdf", mode: "accurate", size: 1, wantError: "unknown parse mode"},
 		{name: "script.py", kind: "txt", mode: ParseModeNone, size: 1},
-		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: FreeSourceMaxBytes + 1, wantError: "10 MB"},
-		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: ProSourceMaxBytes + 1, maxBytes: ProSourceMaxBytes, wantError: "30 MB"},
-		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: ProSourceMaxBytes, maxBytes: ProSourceMaxBytes},
+		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: testFreeSourceBytes + 1, wantError: "10 MB"},
+		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: testProSourceBytes + 1, maxBytes: testProSourceBytes, wantError: "30 MB"},
+		{name: "notes.pdf", kind: "pdf", mode: ParseModeFast, size: testProSourceBytes, maxBytes: testProSourceBytes},
 		{name: "song.mp3", kind: "audio", mode: ParseModeFast, size: 1, wantError: "does not support"},
 		{name: "notes.pdf", kind: "txt", mode: ParseModeFast, size: 1, wantError: "does not match"},
 		{name: "archive.zip", kind: "unknown", mode: ParseModeNone, size: 1},
@@ -71,7 +76,7 @@ func TestValidate(t *testing.T) {
 		t.Run(test.name+"-"+test.mode, func(t *testing.T) {
 			maxBytes := test.maxBytes
 			if maxBytes == 0 {
-				maxBytes = FreeSourceMaxBytes
+				maxBytes = testFreeSourceBytes
 			}
 			err := Validate(test.name, test.kind, test.mode, test.size, maxBytes)
 			if test.wantError == "" {

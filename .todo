@@ -13,10 +13,12 @@ low priority:
 11. integrate storyblocks? (is there a better way to visualize/dev components like dialog/erorr messages that require steps to trigger it to be viisble)
 12. check how the router should be implemented, manually typing routes dont seemt to be recommened (and lazyRouteComponent is not in the docs?), also sometimes when navigating in dev with msw, it seems to take a bit to render the component (but shouldnt be the case if the loader is non blocking? there is a 1 second delay simulated in msw handler but is data is loaded async and non blocked, this delay shouldnt occur?) and if the component takes a bit to render, then switching between open workspace and other pages causes significant layout shifts because in openworkspace the sidenav is not rendered. With the delay, when navigating away from openworkspace, the sidebar renders instantly but the route component is still stuck on openworkspace, or when navigating to openworkspace, the sidebar disappears first before the content renders
 13. manage feature flags better than just env, likely in posthog?
+14. Gemma-4-E2B
 
 high PRIORITIES:
 
-1. maily
+account downgrade/deletion/lock/plan expiration, workspace cloning and deletion, and lifecycles of files/artifacts
+does headings/bullet point from image/audio captioning effect embedding/vector search? actually does html tags impact quality of vector search? if so -> clean html tags (which also solves the superscript/subscript issue) but preserve tables,formulaes,etc
 enrich agentic loop tools. Add edit files (both uploaded/imported files -> need a list of editable files (ppt, office, text, json, md), and materials)
 , then make categories like: list, read, create, edit (for how we display them in the UI). I dont think we need to set tool permissions yet or set available services for the tools (only chat right now).
 and make sure the context reporting (before + after)/ tool runtime, mostly i need in telementry and not something that needs to be reported to user.
@@ -27,12 +29,12 @@ MiB file size/workspace storage -> MB
 currently push to UAT and from UAT to prod can trigger the uat only security/ etc tests + manual run as well,
 remove the UAT to prod auto run, but requires the UAT environment to fully passes the tests first (stamp it or label it?) before being able to promote to prod,
 auto run on push to uat = manual run (same workflow, if any passes, can promote to prod)
-1. separate orchestrator (go server + pythong) and worker flow (netcup vm -> currently does parsing and ingest)
+1. separate orchestrator (go server + pythong) and worker flow (the Netcup ingest host currently does parsing and ingest)
 1. diagrams.net (generate have a 1 turn generate->QA->fix loop on server)
    we need to orchestrate the behavior for material generation for different surfaces (for anything that includes non-text):
     -> determine the surface needing this (chat or editor (plate))
     -> start flow in go server
-    -> QA loop necessary:  run job in worker vm (because it might involve spawning different processes and I dont want to have the load on the main server)
+    -> QA loop necessary: run the job on the ingest host (because it might involve spawning different processes and I dont want to have the load on the main server)
         not necessary (like generating images -> one shot, cant really tune after pixel is generated): run in main server is fine
     -> upload artifacts/files onto blackblaze if necessary (decide on policies for combinations of surfaces + material)
     -> render in appropriate surfaces (if chat surface sucks because vercel ai sdk we are using sucks at embed/custom plugins, then find another solution)
@@ -62,8 +64,7 @@ check how search files/chunks work
     - calendar event names
     - tasks title
     - Remove: thinking space (not worked on yet)
-11. enable website mcp for the LLM so users can ask (summarize file page x to xx or how to answer quiz A question 5), curate list of tools available to workspace chat llm/website convo llm (two different set of tools & context provided since workspace can provide more informations)
-12. drag and drop on workspace files tree shows dropping line for both bottom of a file item and top of the next file item but its the same gap between
+11. drag and drop on workspace files tree shows dropping line for both bottom of a file item and top of the next file item but its the same gap between
 13. llm telementry?
 14. why events use array text for label id?
 15. workspaceopen, read only does not have the chat panel, we should scope chat sessions/histories to per user and per workspace so users dont see the chat sessions of other people. then reenable the chat panel (disable generate if read only), conversations user_id doesnt have declared foreign key

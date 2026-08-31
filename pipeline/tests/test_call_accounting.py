@@ -89,6 +89,42 @@ async def test_settlement_is_a_noop_outside_chat():
     assert state is None
 
 
+async def test_routed_glm_settles_transport_identity_and_keeps_catalog_pricing(
+    monkeypatch,
+):
+    monkeypatch.setattr(accounting.cfg, "gateway_url", "http://gateway")
+    monkeypatch.setattr(accounting.cfg, "pipeline_secret", "secret")
+    sent = {}
+
+    async def post_settlement(payload):
+        sent.update(payload)
+        return {}
+
+    monkeypatch.setattr(accounting, "_post_settlement", post_settlement)
+    token = accounting.bind("cr_glm")
+    try:
+        await accounting.settle(
+            call_id="pc_glm",
+            kind=accounting.KIND_LLM,
+            purpose=accounting.PURPOSE_AGENT,
+            thinking="max",
+            spec=_spec(
+                provider_slug="zai",
+                model_slug="glm-5.3-flash",
+                byok_enabled=False,
+                thinking_levels=("low", "high", "max"),
+                default_thinking="max",
+            ),
+            usage=NormalizedUsage(input_tokens=10, output_tokens=4),
+        )
+    finally:
+        accounting.reset(token)
+
+    assert sent["provider"] == "deepinfra"
+    assert sent["model"] == "zai-org/GLM-5.3-Flash"
+    assert sent["thinking"] == "max"
+
+
 async def test_open_and_abandon_are_noop_when_unbound():
     await accounting.open_call("pc_1", kind=accounting.KIND_LLM, purpose="agent")
     await accounting.abandon_call("pc_1")

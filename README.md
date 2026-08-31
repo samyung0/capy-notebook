@@ -9,11 +9,11 @@ Study workspace: notes, sources, quizzes, flashcards, schedule, and AI retrieval
 - **Ops dashboard** (`ops/` + `server/cmd/ops`). Separate operator SPA and Go origin (`:8082`) with overview, health, user lookup, usage explorer, append-only operator audit history, permission-gated model-registry writes, and a dedicated storage/Stripe reconciliation page. Every mounted database read refreshes every 30 seconds, and the global refresh button refetches all active Ops reads without calling providers or starting jobs. It is not on the product OpenAPI contract (`/api/ops`). Clerk provides identity, and production also requires Cloudflare Access on `ops.evonotes.com`. Membership is the `operators` table, with no grant API. `ops_permissions` maps `viewer`/`admin` to tokens (`read_all`, `write_registry`, `execute_reconciliation_job`). A read/auth pool and a shared admin-actions pool stay off note bodies, file bytes, prompts, responses, and email payloads; workspace-record metadata is visible.
 - **Collaboration** (`collaboration/`) — Hocuspocus/Yjs sidecar. Authoritative live document state for materials.
 - **Pipeline** (`pipeline/`) — Python ingest worker (parse, chunk, embed, summarize) and FastAPI retrieval service (chat, generate).
-- **Parser VM** (`parser-vm/`) — persistent CPU Marker + RapidOCR service with dedicated digital and OCR lanes.
+- **Parser** (`parser/`) — persistent CPU MinerU service with bounded document and page-slice concurrency.
 - **Postgres** — App data plus `pgvector` retrieval index.
 - **Redis** — Pub/sub and collaboration replica sync.
 - **Object storage** — Backblaze B2 for uploads, parse artifacts, and editor assets.
-- **Emails** (`emails/`) — React Email templates (invites, billing, account lifecycle).
+- **Emails** (`emails/`) — Locale-specific Maily sources for invites, billing, and account lifecycle emails. The build emits embedded Go HTML and text templates.
 - **Contract** (`openapi.yaml`) — Product OpenAPI spec; Orval generates the frontend client.
 - **Deploy** (`deploy/`) — Docker Compose for the backend stack. `ops` and `reconcile` are opt-in profiles.
 - **Docs** (`openwiki/`) — Authz, quota, retrieval, editor, observability/metering (operator access), deployment runbook, tests.
@@ -45,6 +45,12 @@ docker compose -f deploy/docker-compose.yml --profile ops up --build ops
 
 # Ops UI only, proxies /api → :8082
 pnpm --filter @evo-notes/ops dev
+
+# Standalone Maily editor on http://127.0.0.1:3000
+pnpm email:dev
+
+# Regenerate server/internal/mail/templates/*.gohtml and *.txt
+pnpm email:build
 ```
 
 Copy `deploy/.env.example` to `deploy/.env` for the compose stack. Ops auth is fail-closed: local owner DSNs or skipped Access/Clerk need `APP_ENV=development`, `OPS_UNSAFE_DEVELOPMENT=true`, and the matching bypass flags. Grant an operator by inserting into `operators` after they already have a product user id.

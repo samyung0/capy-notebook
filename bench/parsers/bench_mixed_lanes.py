@@ -1,6 +1,6 @@
-"""Mixed-lane load: four digital lecture jobs plus two OCR jobs on the parser VM.
+"""Mixed-lane load: four digital lecture jobs plus two OCR jobs on the ingest host.
 
-The VM has four digital Marker slots and two RapidOCR slots. This script fills
+The ingest host has four digital Marker slots and two RapidOCR slots. This script fills
 the digital lane with a lecture deck whose text layer keeps it out of OCR. It
 fills both OCR slots with a combined PDF containing those slides plus two
 full-page newspaper scans.
