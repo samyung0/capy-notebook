@@ -1,0 +1,300 @@
+{
+  "purpose": "Qualitative reason review; two cases per expected grade and language, with rotating domains. Not a prevalence estimate.",
+  "selection_seed": 20260905,
+  "cases": [
+    {
+      "id": "core-biology-33-en:4",
+      "case_sha256": "95476ccd31a1e431c45be80465aa83ce8055b17898f3f8ec829444f1b57e2cac",
+      "language": "en",
+      "domain": "biology",
+      "expected": 0
+    },
+    {
+      "id": "core-chemistry-43-en:4",
+      "case_sha256": "e786aab7f216bae17d1a73c9a19a5a5cda8ba379b9f73f0a92082918e1f5e9a9",
+      "language": "en",
+      "domain": "chemistry",
+      "expected": 0
+    },
+    {
+      "id": "core-computing-48-en:3",
+      "case_sha256": "11d99fc53e6509dba54605a6944f056a95ff1fbcc66214d2fb73aaff0aceae75",
+      "language": "en",
+      "domain": "computing",
+      "expected": 0.5
+    },
+    {
+      "id": "core-geography_economics-03-en:3",
+      "case_sha256": "2c07859b7a2c002645ebf7535af6afceb088ece2f46a200257f6dd7792630160",
+      "language": "en",
+      "domain": "geography_economics",
+      "expected": 0.5
+    },
+    {
+      "id": "core-history_civics-23-en:1",
+      "case_sha256": "2ca45768cd002e123aa9f7da0973142f25a3b030b495d79bd2899af7a76868b3",
+      "language": "en",
+      "domain": "history_civics",
+      "expected": 1
+    },
+    {
+      "id": "core-language_literature-49-en:1",
+      "case_sha256": "9262a0fea64d12a199b8e88bf34c0ec9beb0ce0cef6a5160c6bf865e73942675",
+      "language": "en",
+      "domain": "language_literature",
+      "expected": 1
+    },
+    {
+      "id": "core-chemistry-36-es:4",
+      "case_sha256": "daaca5b5db545c5d8e71e6ef145de48d3a505f3f3298661be04546c5012f920c",
+      "language": "es",
+      "domain": "chemistry",
+      "expected": 0
+    },
+    {
+      "id": "core-computing-50-es:4",
+      "case_sha256": "4d9d3ed34a40d3b91d150d09f388faa4e0fd8e82fead2749acf64586be8ea49c",
+      "language": "es",
+      "domain": "computing",
+      "expected": 0
+    },
+    {
+      "id": "core-geography_economics-30-es:3",
+      "case_sha256": "c2b02dfa7f0ba190e1a34ee36520e8f1366ce102a57d2865819694f035107ad1",
+      "language": "es",
+      "domain": "geography_economics",
+      "expected": 0.5
+    },
+    {
+      "id": "core-history_civics-27-es:2",
+      "case_sha256": "2a2fd80e93d56bae8fd2c1ed82ae1d8a7c0d861b1d13abd70e2fdd0d1f728ba1",
+      "language": "es",
+      "domain": "history_civics",
+      "expected": 0.5
+    },
+    {
+      "id": "core-language_literature-26-es:1",
+      "case_sha256": "b8bdbbd3a73dbdceb52e126b306a3d43e0a19dab1c82c61aaaadd36dafca938f",
+      "language": "es",
+      "domain": "language_literature",
+      "expected": 1
+    },
+    {
+      "id": "core-mathematics-09-es:1",
+      "case_sha256": "36f15c45b862e71ccca48e1f18cdcf130a0849a17f5a7cb128f5760091301380",
+      "language": "es",
+      "domain": "mathematics",
+      "expected": 1
+    },
+    {
+      "id": "core-computing-40-fr:4",
+      "case_sha256": "c851478161ff8352345e45bf847064fcd17a95603c79c05c7f5e1403134d08f8",
+      "language": "fr",
+      "domain": "computing",
+      "expected": 0
+    },
+    {
+      "id": "core-geography_economics-27-fr:4",
+      "case_sha256": "f01be829447c38b8c832242fdb6c6ff383efd349c04262c32629259ed76e0e81",
+      "language": "fr",
+      "domain": "geography_economics",
+      "expected": 0
+    },
+    {
+      "id": "core-history_civics-47-fr:2",
+      "case_sha256": "1309dd48dab036493c322ab949540a6c4b3ec7d9f77c13dbe99995f34ce7153b",
+      "language": "fr",
+      "domain": "history_civics",
+      "expected": 0.5
+    },
+    {
+      "id": "core-language_literature-33-fr:2",
+      "case_sha256": "86846190884c077215b6402c6327179832539fce9fa35a05c945d0713bed357a",
+      "language": "fr",
+      "domain": "language_literature",
+      "expected": 0.5
+    },
+    {
+      "id": "core-mathematics-01-fr:1",
+      "case_sha256": "87b58a73fa011dd533a31f1f8e0ea2ff8130d91c65ab3714ce77fac04c2e6b59",
+      "language": "fr",
+      "domain": "mathematics",
+      "expected": 1
+    },
+    {
+      "id": "core-physics-49-fr:1",
+      "case_sha256": "76ee4790452e5067ad911b3dd14f045854b104761c277b5be067c48f5a19629f",
+      "language": "fr",
+      "domain": "physics",
+      "expected": 1
+    },
+    {
+      "id": "core-geography_economics-31-ja:4",
+      "case_sha256": "f11abe1a16937a0bf10852ea1da8421f2f2290a292d20a56caaf8740757e5322",
+      "language": "ja",
+      "domain": "geography_economics",
+      "expected": 0
+    },
+    {
+      "id": "core-history_civics-17-ja:4",
+      "case_sha256": "4bb40cab962300add2ead3d96b08aa2de121dc526d4b530d104727c13a355db0",
+      "language": "ja",
+      "domain": "history_civics",
+      "expected": 0
+    },
+    {
+      "id": "core-language_literature-11-ja:3",
+      "case_sha256": "f29c38a1efa438fca46a496ba4f1be1ef0794ee5e7a741dd3da1ba656ad7b74e",
+      "language": "ja",
+      "domain": "language_literature",
+      "expected": 0.5
+    },
+    {
+      "id": "core-mathematics-31-ja:3",
+      "case_sha256": "01609ee9caef550f74b53ded01d7b343e9b1948370721af27d004abe37e613a5",
+      "language": "ja",
+      "domain": "mathematics",
+      "expected": 0.5
+    },
+    {
+      "id": "core-physics-21-ja:1",
+      "case_sha256": "600ed11aff58d1f58a913fa56f35148c95333b60764117a22d432e5bbea8aa2e",
+      "language": "ja",
+      "domain": "physics",
+      "expected": 1
+    },
+    {
+      "id": "core-biology-14-ja:1",
+      "case_sha256": "3e458659471cfd8c3240f3e668dd6755116ebc121f888b919b97f549529efeb5",
+      "language": "ja",
+      "domain": "biology",
+      "expected": 1
+    },
+    {
+      "id": "core-history_civics-18-ko:4",
+      "case_sha256": "62b4e468d0c84dbc34ef2996ebe939ea5f25e86571b63fed7bfc4752ef8dd2cb",
+      "language": "ko",
+      "domain": "history_civics",
+      "expected": 0
+    },
+    {
+      "id": "core-language_literature-07-ko:4",
+      "case_sha256": "b92e53f01e52df2b330a488531d1abf76a6377a4a3ef982c64c855a2ada79654",
+      "language": "ko",
+      "domain": "language_literature",
+      "expected": 0
+    },
+    {
+      "id": "core-mathematics-41-ko:2",
+      "case_sha256": "cb62b7d0d26b6cb11d2cc9e92c5d2d97ae2b648f84bdf81d3358cbb02900a84e",
+      "language": "ko",
+      "domain": "mathematics",
+      "expected": 0.5
+    },
+    {
+      "id": "core-physics-01-ko:3",
+      "case_sha256": "5df4390c637bb66288975808719cf78c1d259d1dd70a70f6ed3ace6247731b6f",
+      "language": "ko",
+      "domain": "physics",
+      "expected": 0.5
+    },
+    {
+      "id": "core-biology-12-ko:1",
+      "case_sha256": "971b1d904c06975c9dedf88402130c6074075898ef860aeacaa457d358bcd335",
+      "language": "ko",
+      "domain": "biology",
+      "expected": 1
+    },
+    {
+      "id": "core-chemistry-16-ko:1",
+      "case_sha256": "8328e90ab54d978d7af4c8fac2fe4f2552de8b27244ddd80120e774543349bfc",
+      "language": "ko",
+      "domain": "chemistry",
+      "expected": 1
+    },
+    {
+      "id": "core-language_literature-30-zh-Hans:4",
+      "case_sha256": "58e3fdb9fc65edc5f1526878541ac0ee40dc64b241e52685a5fe3508c4be4a0d",
+      "language": "zh-Hans",
+      "domain": "language_literature",
+      "expected": 0
+    },
+    {
+      "id": "core-mathematics-25-zh-Hans:4",
+      "case_sha256": "7f632885c9b2c7e5ebf99f0b1d8d90e9930aa0febaa5a4adfcc6173ae4f4ab0b",
+      "language": "zh-Hans",
+      "domain": "mathematics",
+      "expected": 0
+    },
+    {
+      "id": "core-physics-39-zh-Hans:3",
+      "case_sha256": "641afca3cdffc1cc6d8188617c4ee21eebbf8ee096423a5cda976d4b3d07bda5",
+      "language": "zh-Hans",
+      "domain": "physics",
+      "expected": 0.5
+    },
+    {
+      "id": "core-biology-36-zh-Hans:3",
+      "case_sha256": "f5c09f28d5ee922902929798af0b09c619ae4c015a149fdc5b66192729319af8",
+      "language": "zh-Hans",
+      "domain": "biology",
+      "expected": 0.5
+    },
+    {
+      "id": "core-chemistry-33-zh-Hans:1",
+      "case_sha256": "f5be3d116ad1d45186ab9ff5d9a4efdf4e961dd88e9e98b7952d926e5929c071",
+      "language": "zh-Hans",
+      "domain": "chemistry",
+      "expected": 1
+    },
+    {
+      "id": "core-computing-36-zh-Hans:1",
+      "case_sha256": "a5b52244ce845ff42c215963b87855cfec0b973cf8641c8759883b6390aa8755",
+      "language": "zh-Hans",
+      "domain": "computing",
+      "expected": 1
+    },
+    {
+      "id": "core-mathematics-12-zh-Hant:4",
+      "case_sha256": "2163323441fd7aeb39c58e7c1ff8744b6e7ecd67dd8ea69d794cb45f99cc1fc0",
+      "language": "zh-Hant",
+      "domain": "mathematics",
+      "expected": 0
+    },
+    {
+      "id": "core-physics-26-zh-Hant:4",
+      "case_sha256": "0f327bd84f5fceb8ece7455d0231efe03a1935fdf0cbc7f0a82c0531c676375f",
+      "language": "zh-Hant",
+      "domain": "physics",
+      "expected": 0
+    },
+    {
+      "id": "core-biology-31-zh-Hant:2",
+      "case_sha256": "a16399bf45a23de7ce0f43fc82e4395b64b04a4742bccdb6d90596badd123741",
+      "language": "zh-Hant",
+      "domain": "biology",
+      "expected": 0.5
+    },
+    {
+      "id": "core-chemistry-14-zh-Hant:3",
+      "case_sha256": "429b163778cad0ff3e160b852490a8eecec38bd86d147bff807ef909a649c058",
+      "language": "zh-Hant",
+      "domain": "chemistry",
+      "expected": 0.5
+    },
+    {
+      "id": "core-computing-28-zh-Hant:1",
+      "case_sha256": "cef75fd1a9419a48b277ad69900ecf44d5d6e266496d8a9e39249a1e1e5207b9",
+      "language": "zh-Hant",
+      "domain": "computing",
+      "expected": 1
+    },
+    {
+      "id": "core-geography_economics-39-zh-Hant:1",
+      "case_sha256": "e1b3cae8570e488b4ab5c2644dceafbdd05c2537e1ff2cb5f709d4253f329614",
+      "language": "zh-Hant",
+      "domain": "geography_economics",
+      "expected": 1
+    }
+  ]
+}

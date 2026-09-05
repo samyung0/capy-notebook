@@ -1,0 +1,54 @@
+{
+  "reviewer": "Codex primary agent and independent Codex reviewer",
+  "scope": "These corrections apply to faithful translations of the named source question. Other answer variants retain their individually authored labels.",
+  "source_sha256": {
+    "mathematics.en.json": "8fe1a5d89d9cc9368de17e570d0565e64ab7de518eff1872e86c9e25ff69748a",
+    "physics.en.json": "c8808b16d6b67e29535112de7dee0e0d08212cb840d1527439f92354c20e4e8c",
+    "chemistry.en.json": "05b592a05a7f6810db575c1fac0e33faa462b136a0898e25a9e84acddaacf9d4",
+    "biology.en.json": "e77affc08da9d462c87d096eace72a47b6e68107f9e28d6b87cf3e339bf3a2ca",
+    "computing.en.json": "181207ac1e23acd4fa6508d6f78db7792cf0d6997b55a25b32cfc9f05d640dc6",
+    "language_literature.en.json": "fab2af2185187973eb4e02a5a92158bbde8b7144e07812bcdc079dfa29020c05",
+    "history_civics.en.json": "08654e298c2817258d4c2e48242ff2c2f016c9823278d7d6652c24d6e8242ca3",
+    "geography_economics.en.json": "34712154670472fc03946c9bb794040702fd35c580b3ed13496c7c394d738c01"
+  },
+  "cases": {
+    "mathematics/18/misconception": {
+      "score": 0.5,
+      "rationale": "The answer explicitly includes checking P(1), satisfying the base-case point. Its claim of sufficiency and circular inductive step fail the second point. Correct and incorrect claims are mixed.",
+      "ambiguous": true
+    },
+    "mathematics/26/misconception": {
+      "score": 0.5,
+      "rationale": "Decreasing on both intervals correctly conveys decreasing on (2,4), but contradicts increasing on (0,2). Only the second required point earns credit."
+    },
+    "physics/2/misconception": {
+      "score": 0.5,
+      "rationale": "The answer states an average-speed magnitude of 2 m/s, satisfying A. Its direction, nonzero average velocity, and explanation are incorrect; B earns no credit."
+    },
+    "mathematics/15/misconception": {
+      "score": 0.5,
+      "rationale": "The causation claim asserts a tutoring/score association, satisfying A, but wrongly rules out confounding and fails B.",
+      "ambiguous": true
+    },
+    "mathematics/45/misconception": {
+      "score": 0.5,
+      "rationale": "The answer wrongly gives distance times time the units m/s, failing A, but treats m/s as valid speed units and thereby conveys B.",
+      "ambiguous": true
+    },
+    "language_literature/16/misconception": {
+      "score": 0.5,
+      "rationale": "Always faster in all traffic includes faster during quiet traffic, satisfying A; never losing that advantage contradicts B.",
+      "ambiguous": false
+    },
+    "language_literature/22/misconception": {
+      "score": 0.5,
+      "rationale": "Keeping all borrowed items includes keeping the exempt red folder, satisfying B under the reviewed entailment reading; it contradicts A.",
+      "ambiguous": true
+    },
+    "geography_economics/50/misconception": {
+      "score": 0.5,
+      "rationale": "Equal means explicitly states the shared arithmetic average, satisfying A; the identical-distribution conclusion contradicts B.",
+      "ambiguous": false
+    }
+  }
+}

@@ -25,6 +25,10 @@ at the top of each section.
 | Playwright editor perf           | `pnpm perf`                                                      |
 | Playwright authorized UAT        | `pnpm e2e:uat`                                                   |
 | Review automation contracts      | `pnpm review:validate-boundaries` / `pnpm review:validate-scanners` |
+| Local grading comparison         | `python -m unittest discover -s scripts/grading_benchmark -p test_benchmark.py` |
+| Browser grading failure lifecycle | `node scripts/grading_benchmark/test_browser.mjs` |
+
+The local grading checks in [`scripts/grading_benchmark/test_benchmark.py`](../scripts/grading_benchmark/test_benchmark.py) cover invalid-score handling, family split integrity, interrupted result recovery, separation of run configurations and changed coverage, exclusion of anchors/ambiguous labels from primary matched/native metrics, complete hash-matched comparison with invalid paired scores, and native/browser pairing restricted to identical cases, model hashes and explicit decoding controls. [`test_browser.mjs`](../scripts/grading_benchmark/test_browser.mjs) checks that a runtime exception saves bounded diagnostic logs, stops requests to the failed worker, releases it, permits the next model to run and visibly reports the failure. Model evaluations are opt-in experiments described in [`scripts/grading_benchmark/README.md`](../scripts/grading_benchmark/README.md), with artifacts under ignored `data/grading-benchmark/`.
 
 ---
 

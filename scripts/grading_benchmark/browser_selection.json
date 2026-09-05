@@ -1,0 +1,13 @@
+{
+  "core_sha256": "cb54a6b0e61426a39dcc23cfa9370f7817686f424424d3a7b865652db1efebbf",
+  "subset_sha256": "5ad853846f416d74fd6d0fb83bf2ecaf6da184ec6c93ce37d12da8ff3e6f6c50",
+  "source_row_indices": [
+    1,
+    18,
+    34,
+    46
+  ],
+  "question_versions": 224,
+  "grading_cases": 1120,
+  "purpose": "Browser runtime agreement and serial latency across all domains and languages; selected before the full model results."
+}

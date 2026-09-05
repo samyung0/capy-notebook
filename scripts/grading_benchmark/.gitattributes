@@ -1,0 +1,2 @@
+# Review and experiment manifests bind exact bytes, including line endings.
+* -text

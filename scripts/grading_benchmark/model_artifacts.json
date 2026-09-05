@@ -1,0 +1,96 @@
+{
+  "purpose": "Exact original artifacts used for the September 2026 local grading comparison. Downloaded bytes were verified before inference; derived EngSAF and browser Gemma shards have separate provenance.",
+  "native_runtime": "llama.cpp b10809 Windows CUDA 12.4",
+  "browser_runtime": "@wllama/wllama 3.6.0",
+  "models": [
+    {
+      "model": "bonsai-1.7b-q1",
+      "file": "prism-ml--Bonsai-1.7B-gguf/Bonsai-1.7B-Q1_0.gguf",
+      "bytes": 248302272,
+      "sha256": "3d7c6c90dd98717a203adb22d5eacd2581850e40aa5327e144b97766cae5f7e3",
+      "source": {
+        "path": "models\\prism-ml--Bonsai-1.7B-gguf\\Bonsai-1.7B-Q1_0.gguf",
+        "bytes": 248302272,
+        "sha256": "3d7c6c90dd98717a203adb22d5eacd2581850e40aa5327e144b97766cae5f7e3",
+        "url": "https://huggingface.co/prism-ml/Bonsai-1.7B-gguf/resolve/210a9e99f79cb184909d49595906526eb2b3dd9a/Bonsai-1.7B-Q1_0.gguf",
+        "repo": "prism-ml/Bonsai-1.7B-gguf",
+        "revision": "210a9e99f79cb184909d49595906526eb2b3dd9a"
+      }
+    },
+    {
+      "model": "bonsai-4b-q1",
+      "file": "prism-ml--Bonsai-4B-gguf/Bonsai-4B-Q1_0.gguf",
+      "bytes": 572270624,
+      "sha256": "4524b3f997f0f06444e568d1f26e2efd69effa3218c7ad3047432fb171e42168",
+      "source": {
+        "path": "models\\prism-ml--Bonsai-4B-gguf\\Bonsai-4B-Q1_0.gguf",
+        "bytes": 572270624,
+        "sha256": "4524b3f997f0f06444e568d1f26e2efd69effa3218c7ad3047432fb171e42168",
+        "url": "https://huggingface.co/prism-ml/Bonsai-4B-gguf/resolve/78f2c2bacd0904ffaba24b4873ed975e5818354a/Bonsai-4B-Q1_0.gguf",
+        "repo": "prism-ml/Bonsai-4B-gguf",
+        "revision": "78f2c2bacd0904ffaba24b4873ed975e5818354a"
+      }
+    },
+    {
+      "model": "qwen3.5-2b-q4",
+      "file": "unsloth--Qwen3.5-2B-GGUF/Qwen3.5-2B-Q4_K_M.gguf",
+      "bytes": 1280835840,
+      "sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+      "source": {
+        "path": "models\\unsloth--Qwen3.5-2B-GGUF\\Qwen3.5-2B-Q4_K_M.gguf",
+        "bytes": 1280835840,
+        "sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
+        "url": "https://huggingface.co/unsloth/Qwen3.5-2B-GGUF/resolve/f6d5376be1edb4d416d56da11e5397a961aca8ae/Qwen3.5-2B-Q4_K_M.gguf",
+        "repo": "unsloth/Qwen3.5-2B-GGUF",
+        "revision": "f6d5376be1edb4d416d56da11e5397a961aca8ae"
+      }
+    },
+    {
+      "model": "gemma4-e2b-q4",
+      "file": "unsloth--gemma-4-E2B-it-GGUF/gemma-4-E2B-it-Q4_K_M.gguf",
+      "bytes": 3106738272,
+      "sha256": "740185b21d22ceb83a11c3aa62ad5842ef32c70f6096d756bbee85a1e4ec34b8",
+      "source": {
+        "path": "models\\unsloth--gemma-4-E2B-it-GGUF\\gemma-4-E2B-it-Q4_K_M.gguf",
+        "bytes": 3106738272,
+        "sha256": "740185b21d22ceb83a11c3aa62ad5842ef32c70f6096d756bbee85a1e4ec34b8",
+        "url": "https://huggingface.co/unsloth/gemma-4-E2B-it-GGUF/resolve/0314792d7f1f7e229411f620751375812bb9faf2/gemma-4-E2B-it-Q4_K_M.gguf",
+        "repo": "unsloth/gemma-4-E2B-it-GGUF",
+        "revision": "0314792d7f1f7e229411f620751375812bb9faf2"
+      }
+    },
+    {
+      "model": "lfm2.5-1.2b-q4",
+      "file": "LiquidAI--LFM2.5-1.2B-Instruct-GGUF/LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
+      "bytes": 730895168,
+      "sha256": "b1b3de114215d9507409a662a501a631095a479a419584e8a2ded6304b19b4f5",
+      "source": {
+        "path": "models\\LiquidAI--LFM2.5-1.2B-Instruct-GGUF\\LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
+        "bytes": 730895168,
+        "sha256": "b1b3de114215d9507409a662a501a631095a479a419584e8a2ded6304b19b4f5",
+        "url": "https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF/resolve/6767265158422fb8a19c62ceb45f16f05363615b/LFM2.5-1.2B-Instruct-Q4_K_M.gguf",
+        "repo": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF",
+        "revision": "6767265158422fb8a19c62ceb45f16f05363615b"
+      }
+    },
+    {
+      "model": "engsaf-qwen2.5-1.5b-q4",
+      "file": "engsaf/Qwen2.5-1.5B-Instruct-EngSaf-211K-Q4_K_M.gguf",
+      "bytes": 986048032,
+      "sha256": "d3d444ac9ec3cdff9b987e834a56114ffcfcc9c7aa8becc0f73f1793ac84c1c8",
+      "source": {
+        "upstream": {
+          "path": "models\\IsmaelMousa--Qwen2.5-1.5B-Instruct-EngSaf-211K\\model.safetensors",
+          "bytes": 3087467144,
+          "sha256": "aa3daf370d7ebfc086fb051b238f79ed03ea97b5cd080af8e075af88a0a595d5",
+          "url": "https://huggingface.co/IsmaelMousa/Qwen2.5-1.5B-Instruct-EngSaf-211K/resolve/b6a7fa5a393375fb3542feb27d2d47a710ea8ec2/model.safetensors",
+          "repo": "IsmaelMousa/Qwen2.5-1.5B-Instruct-EngSaf-211K",
+          "revision": "b6a7fa5a393375fb3542feb27d2d47a710ea8ec2"
+        },
+        "conversion": "llama.cpp b10809 convert_hf_to_gguf.py --outtype f16; llama-quantize Q4_K_M 8",
+        "size": 986048032,
+        "sha256": "d3d444ac9ec3cdff9b987e834a56114ffcfcc9c7aa8becc0f73f1793ac84c1c8"
+      }
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "status": "approved",
+  "templates_sha256": "3e0afccadf3cdeccb121a159e2ecb3e7e8d9cc131062970bc57f73b940ddc017",
+  "builder_sha256": "6f216eb4ab645ae6f74024ca9a4779a10642397e5570ab75accf5f7c4581ee78",
+  "base_questions_sha256": "a6bdb287ab927bb2995c9b7b76fe43df566d913be6905aa917906ef652de7432",
+  "reviewer": "Independent Codex reviewer /root/review_ja_translations",
+  "notes": "Reviewed all 21 template strings, all 280 strings in the 56 first source rows across eight domains and seven language/script groups, and the three builder transformations. Japanese and Korean single-point wording was corrected before approval so extra B content does not invalidate A. The admitted French literature example preserves the intended memory metaphor. Verified all 168 generated question versions and 728 answer labels. In reference/paraphrase/A/B/misconception order, rubric-change labels are [1,1,1,0,0] and mixed-language labels are [1,1,0.5,0.5,0]. Adversarial A-plus-instruction, wrong-plus-instruction, and A+B followed by an explicit denial of A earn [0.5,0,0.5] under the pointwise rubric. The selected rows have no label exceptions or ambiguity flags. There are 616 non-anchor control cases, grouped into eight underlying source families. No remaining concrete translation or label defect was identified within this scope. Approval is limited to the recorded templates, builder and complete base-object digest. This is independent Codex AI review, not external human validation."
+}
