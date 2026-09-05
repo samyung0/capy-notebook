@@ -78,6 +78,19 @@ func TestImportCompleteSettlesActualSizeAndRejectsOversize(t *testing.T) {
 		done.DeclaredSize != int64(len(payload)) {
 		t.Fatalf("completed job=%+v err=%v", done, err)
 	}
+	// A retry arriving after the winning commit must replay without touching blobs
+	// or changing the settled size, even if its reported estimate differs.
+	retry := doInternal(t, h, http.MethodPost, "/api/internal/import/complete", pipeSecret, map[string]any{
+		"jobId": job.ID, "attemptToken": claimed.LeaseToken, "actualSize": len(payload) + 1,
+	})
+	if retry.Code != http.StatusOK || retry.Body.String() != ok.Body.String() {
+		t.Fatalf("completed retry status=%d body=%s; first=%s", retry.Code, retry.Body.String(), ok.Body.String())
+	}
+	settled, err := st.GetSourceImportByID(ctx, job.ID)
+	if err != nil || settled.DeclaredSize != int64(len(payload)) {
+		t.Fatalf("retry changed settlement: %+v err=%v", settled, err)
+	}
+
 }
 
 func TestImportCompleteRetriesWhenCreditsExhausted(t *testing.T) {

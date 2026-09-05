@@ -17,6 +17,7 @@
       "!!**/.vscode",
       "!!vendor",
       "!!**/src/api/gen",
+      "!!ops/src/api-gen",
       "!!workers/site/worker-configuration.d.ts",
       "!!**/public/mockServiceWorker.js",
       "!!**/src/styles/tailwind.css",

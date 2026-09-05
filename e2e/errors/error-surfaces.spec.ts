@@ -33,36 +33,31 @@ test.describe('standardized error surfaces', () => {
     await expect(surface).toHaveCount(1);
   });
 
-  for (const status of [401, 404] as const) {
-    test(`a public workspace ${status} response stays non-disclosing`, async ({
-      anonymousPage,
-      seed,
-    }) => {
-      const workspace = seed.publicWorkspace;
-      await anonymousPage.route(`**/api/workspaces/${workspace.id}`, (route) =>
-        route.fulfill({
-          body: JSON.stringify(
-            apiError(
-              status,
-              status === 401 ? 'Sign in required.' : 'Workspace missing.'
-            )
-          ),
-          contentType: 'application/json',
-          status,
-        })
-      );
-
-      await anonymousPage.goto(`/share/workspaces/${workspace.id}`);
-
-      const surface = await expectErrorSurface(
-        anonymousPage,
-        'page',
-        'This item is private or unavailable.'
-      );
-      await expect(surface).toHaveCount(1);
-      await expect(anonymousPage.getByText(workspace.name)).toHaveCount(0);
-    });
-  }
+  test('private and missing workspace summaries stay non-disclosing', async ({
+    anonymousPage,
+    seed,
+  }) => {
+    const bodies: string[] = [];
+    for (const id of [seed.privateWorkspace.id, 'ws_e2e_missing_summary']) {
+      // The summary fetch runs on the server, outside browser route interception.
+      const response = await anonymousPage.goto(`/share/workspaces/${id}`);
+      expect(response?.status()).toBe(404);
+      expect(response?.headers()['cache-control']).toBe('no-store');
+      expect(response?.headers()['x-robots-tag']).toBe('noindex, nofollow');
+      await expect(anonymousPage).toHaveURL(`/w/${id}`);
+      await expect(
+        anonymousPage.getByRole('heading', { name: 'Workspace unavailable' })
+      ).toBeVisible();
+      await expect(
+        anonymousPage.getByText('This workspace is private or unavailable.')
+      ).toBeVisible();
+      await expect(
+        anonymousPage.getByText(seed.privateWorkspace.name)
+      ).toHaveCount(0);
+      bodies.push(await anonymousPage.locator('body').innerText());
+    }
+    expect(bodies[0]).toBe(bodies[1]);
+  });
 
   test('browser offline state renders the connection status', async ({
     ownerPage,

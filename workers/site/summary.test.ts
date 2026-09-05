@@ -100,6 +100,23 @@ describe('public workspace SSR', () => {
     expect(await revoked.text()).not.toContain('Biology');
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
+  it('renders identical non-disclosing 404 pages for upstream 401, 403 and 404', async () => {
+    const bodies: string[] = [];
+    for (const status of [401, 403, 404]) {
+      const fetcher = vi
+        .fn<typeof fetch>()
+        .mockResolvedValue(new Response('PRIVATE BODY', { status }));
+      const response = await handleSiteRequest(request(), env, fetcher);
+      expect(response.status).toBe(404);
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+      expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
+      const html = await response.text();
+      expect(html).toContain('This workspace is private or unavailable.');
+      expect(html).not.toMatch(PRIVATE_CONTENT);
+      bodies.push(html);
+    }
+    expect(new Set(bodies).size).toBe(1);
+  });
   it('rejects invalid IDs, private data, redirects, oversized bodies and malformed JSON', async () => {
     expect(
       (await handleSiteRequest(request('/w/not-a-workspace'), env, upstream()))
